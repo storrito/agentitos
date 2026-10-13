@@ -9,7 +9,8 @@
     "render": "npx --yes hyperframes@0.8.141 render",
     "publish": "npx --yes hyperframes@0.8.141 publish",
     "build": "node tools/build.mjs",
-    "qa": "node tools/qa.mjs"
+    "qa": "node tools/qa.mjs",
+    "gallery": "node tools/gallery.mjs"
   },
   "devDependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",

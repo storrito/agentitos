@@ -272,6 +272,8 @@ Optional per-word overrides:
 | `note` | `circle`, `underline` or `strike`: force an annotation by hand |
 | `viz` | e.g. `{"kind":"gauge","value":75}`, `{"kind":"compare","value":2}`, `{"kind":"units","value":5,"icon":"person"}`; `null` switches off the automatic graphic |
 
+**See every effect:** `npm run gallery` builds a small demo for every word effect and every exit into `gallery/` and shows them in HyperFrames players at http://localhost:8092: a card plays while the pointer is over it. It only rebuilds what changed in the engine or the tools since (`--rebuild` forces it). A new effect gets its demo in `tools/gallery.mjs`.
+
 ## Pipeline
 
 ```

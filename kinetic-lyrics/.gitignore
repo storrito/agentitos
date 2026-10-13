@@ -22,3 +22,6 @@ qa/
 .waveform-cache/
 .hyperframes/
 *.words.json
+
+# effect gallery (tools/gallery.mjs)
+/gallery/
