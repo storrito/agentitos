@@ -1,0 +1,570 @@
+{
+ "model": "opus (claude code)",
+ "hook": "From Apollo to a permanent moon base",
+ "phrases": [
+  {
+   "first": 0,
+   "last": 5,
+   "hero": 4,
+   "minor": [
+    0,
+    1,
+    3
+   ],
+   "mood": "night",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 6,
+   "last": 12,
+   "hero": null,
+   "minor": [
+    6,
+    8,
+    9,
+    12
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 13,
+   "last": 16,
+   "hero": 15,
+   "minor": [
+    13,
+    14
+   ],
+   "mood": "night",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 17,
+   "last": 22,
+   "hero": 21,
+   "minor": [
+    17,
+    19
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 23,
+   "last": 28,
+   "hero": 27,
+   "minor": [
+    23,
+    25,
+    28
+   ],
+   "mood": "violet",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 29,
+   "last": 34,
+   "hero": 34,
+   "minor": [
+    29,
+    30,
+    32,
+    33
+   ],
+   "mood": "violet",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 35,
+   "last": 36,
+   "hero": 36,
+   "minor": [
+    35
+   ],
+   "mood": "violet",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 37,
+   "last": 42,
+   "hero": 42,
+   "minor": [
+    37,
+    38,
+    40,
+    41
+   ],
+   "mood": "violet",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 43,
+   "last": 46,
+   "hero": 46,
+   "minor": [
+    44,
+    45
+   ],
+   "mood": "gold",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 47,
+   "last": 49,
+   "hero": 49,
+   "minor": [
+    47
+   ],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 50,
+   "last": 53,
+   "hero": 53,
+   "minor": [
+    50,
+    52
+   ],
+   "mood": "gold",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 54,
+   "last": 57,
+   "hero": null,
+   "minor": [
+    54,
+    55,
+    56
+   ],
+   "mood": "gold",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 58,
+   "last": 60,
+   "hero": 60,
+   "minor": [
+    58
+   ],
+   "mood": "gold",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 61,
+   "last": 66,
+   "hero": 66,
+   "minor": [
+    61,
+    62,
+    63
+   ],
+   "mood": "dawn",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 67,
+   "last": 68,
+   "hero": null,
+   "minor": [
+    67,
+    68
+   ],
+   "mood": "dawn",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 69,
+   "last": 73,
+   "hero": 73,
+   "minor": [
+    70,
+    71
+   ],
+   "mood": "dawn",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 74,
+   "last": 78,
+   "hero": 77,
+   "minor": [
+    74,
+    75,
+    76,
+    78
+   ],
+   "mood": "dawn",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 79,
+   "last": 83,
+   "hero": 81,
+   "minor": [
+    80,
+    82
+   ],
+   "mood": "dawn",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 84,
+   "last": 87,
+   "hero": null,
+   "minor": [
+    84,
+    85,
+    87
+   ],
+   "mood": "dawn",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 88,
+   "last": 91,
+   "hero": 90,
+   "minor": [
+    88
+   ],
+   "mood": "dawn",
+   "layout": "cascade",
+   "exit": "blur"
+  },
+  {
+   "first": 92,
+   "last": 95,
+   "hero": 95,
+   "minor": [
+    92
+   ],
+   "mood": "dawn",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 96,
+   "last": 101,
+   "hero": 101,
+   "minor": [
+    96,
+    97,
+    98,
+    99
+   ],
+   "mood": "dawn",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 102,
+   "last": 104,
+   "hero": null,
+   "minor": [
+    102,
+    104
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 105,
+   "last": 108,
+   "hero": 108,
+   "minor": [
+    107
+   ],
+   "mood": "night",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 109,
+   "last": 113,
+   "hero": 112,
+   "minor": [
+    109
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 114,
+   "last": 116,
+   "hero": 115,
+   "minor": [
+    114
+   ],
+   "mood": "violet",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 117,
+   "last": 119,
+   "hero": 119,
+   "minor": [
+    117,
+    118
+   ],
+   "mood": "violet",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 120,
+   "last": 123,
+   "hero": null,
+   "minor": [
+    120,
+    122
+   ],
+   "mood": "violet",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 124,
+   "last": 128,
+   "hero": null,
+   "minor": [
+    124,
+    126
+   ],
+   "mood": "violet",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 129,
+   "last": 133,
+   "hero": 133,
+   "minor": [
+    129,
+    131,
+    132
+   ],
+   "mood": "dark",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 134,
+   "last": 139,
+   "hero": 138,
+   "minor": [
+    135,
+    136
+   ],
+   "mood": "dark",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 140,
+   "last": 145,
+   "hero": 145,
+   "minor": [
+    140,
+    141,
+    142,
+    143
+   ],
+   "mood": "ocean",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 146,
+   "last": 149,
+   "hero": null,
+   "minor": [
+    146,
+    147,
+    148
+   ],
+   "mood": "ocean",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 150,
+   "last": 153,
+   "hero": 151,
+   "minor": [
+    150,
+    152
+   ],
+   "mood": "ocean",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 154,
+   "last": 157,
+   "hero": 157,
+   "minor": [
+    156
+   ],
+   "mood": "gold",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 158,
+   "last": 160,
+   "hero": 160,
+   "minor": [
+    158
+   ],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "lift"
+  }
+ ],
+ "words": [
+  {
+   "i": 4,
+   "concept": "stars",
+   "fx": "sparkle",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 20,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.5,
+   "mark": true
+  },
+  {
+   "i": 36,
+   "concept": "sky",
+   "fx": "rise",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 49,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.6,
+   "mark": true
+  },
+  {
+   "i": 53,
+   "concept": "money",
+   "fx": "flash",
+   "emphasis": 0.6,
+   "mark": true
+  },
+  {
+   "i": 66,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 81,
+   "concept": "tech",
+   "fx": "glitch",
+   "emphasis": 0.5,
+   "mark": false
+  },
+  {
+   "i": 108,
+   "concept": "tech",
+   "fx": "glitch",
+   "emphasis": 0.5,
+   "mark": false
+  },
+  {
+   "i": 115,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 138,
+   "concept": "dark",
+   "fx": "fog",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 145,
+   "concept": "water",
+   "fx": "wave",
+   "emphasis": 0.9,
+   "mark": true
+  },
+  {
+   "i": 151,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 160,
+   "concept": "light",
+   "fx": "glow",
+   "emphasis": 0.8,
+   "mark": true
+  }
+ ],
+ "notes": [
+  {
+   "i": 53,
+   "kind": "circle"
+  },
+  {
+   "i": 66,
+   "kind": "underline"
+  },
+  {
+   "i": 115,
+   "kind": "underline"
+  },
+  {
+   "i": 145,
+   "kind": "circle"
+  },
+  {
+   "i": 160,
+   "kind": "underline"
+  }
+ ],
+ "quotes": [
+  {
+   "first": 43,
+   "last": 53
+  }
+ ],
+ "world": "cosmos",
+ "preset": "podcast"
+}

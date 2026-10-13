@@ -1,0 +1,457 @@
+[
+ {
+  "id": "w0",
+  "text": "So",
+  "start": 0.16,
+  "end": 0.4,
+  "speaker": "A"
+ },
+ {
+  "id": "w1",
+  "text": "last",
+  "start": 0.4,
+  "end": 0.64,
+  "speaker": "A"
+ },
+ {
+  "id": "w2",
+  "text": "year",
+  "start": 0.64,
+  "end": 0.8,
+  "speaker": "A"
+ },
+ {
+  "id": "w3",
+  "text": "we",
+  "start": 0.88,
+  "end": 1.04,
+  "speaker": "A"
+ },
+ {
+  "id": "w4",
+  "text": "were",
+  "start": 1.04,
+  "end": 1.2,
+  "speaker": "A"
+ },
+ {
+  "id": "w5",
+  "text": "a",
+  "start": 1.2,
+  "end": 1.28,
+  "speaker": "A"
+ },
+ {
+  "id": "w6",
+  "text": "team",
+  "start": 1.28,
+  "end": 1.52,
+  "speaker": "A"
+ },
+ {
+  "id": "w7",
+  "text": "of",
+  "start": 1.52,
+  "end": 1.68,
+  "speaker": "A"
+ },
+ {
+  "id": "w8",
+  "text": "six,",
+  "start": 1.68,
+  "end": 2.24,
+  "speaker": "A"
+ },
+ {
+  "id": "w9",
+  "text": "and",
+  "start": 2.24,
+  "end": 2.48,
+  "speaker": "A"
+ },
+ {
+  "id": "w10",
+  "text": "honestly,",
+  "start": 2.48,
+  "end": 3.04,
+  "speaker": "A"
+ },
+ {
+  "id": "w11",
+  "text": "we",
+  "start": 3.04,
+  "end": 3.2,
+  "speaker": "A"
+ },
+ {
+  "id": "w12",
+  "text": "were",
+  "start": 3.2,
+  "end": 3.36,
+  "speaker": "A"
+ },
+ {
+  "id": "w13",
+  "text": "drowning",
+  "start": 3.36,
+  "end": 3.92,
+  "speaker": "A"
+ },
+ {
+  "id": "w14",
+  "text": "in",
+  "start": 3.92,
+  "end": 4.08,
+  "speaker": "A"
+ },
+ {
+  "id": "w15",
+  "text": "busy",
+  "start": 4.08,
+  "end": 4.4,
+  "speaker": "A"
+ },
+ {
+  "id": "w16",
+  "text": "work.",
+  "start": 4.4,
+  "end": 4.96,
+  "speaker": "A"
+ },
+ {
+  "id": "w17",
+  "text": "What",
+  "start": 4.96,
+  "end": 5.36,
+  "speaker": "B"
+ },
+ {
+  "id": "w18",
+  "text": "changed?",
+  "start": 5.36,
+  "end": 6.24,
+  "speaker": "B"
+ },
+ {
+  "id": "w19",
+  "text": "We",
+  "start": 6.24,
+  "end": 6.48,
+  "speaker": "A"
+ },
+ {
+  "id": "w20",
+  "text": "let",
+  "start": 6.48,
+  "end": 6.8,
+  "speaker": "A"
+ },
+ {
+  "id": "w21",
+  "text": "AI",
+  "start": 6.8,
+  "end": 7.28,
+  "speaker": "A"
+ },
+ {
+  "id": "w22",
+  "text": "handle",
+  "start": 7.28,
+  "end": 7.6,
+  "speaker": "A"
+ },
+ {
+  "id": "w23",
+  "text": "the",
+  "start": 7.6,
+  "end": 7.68,
+  "speaker": "A"
+ },
+ {
+  "id": "w24",
+  "text": "boring",
+  "start": 7.68,
+  "end": 8.16,
+  "speaker": "A"
+ },
+ {
+  "id": "w25",
+  "text": "parts.",
+  "start": 8.16,
+  "end": 8.88,
+  "speaker": "A"
+ },
+ {
+  "id": "w26",
+  "text": "Reports,",
+  "start": 8.88,
+  "end": 9.6,
+  "speaker": "A"
+ },
+ {
+  "id": "w27",
+  "text": "tickets,",
+  "start": 9.6,
+  "end": 10.16,
+  "speaker": "A"
+ },
+ {
+  "id": "w28",
+  "text": "first",
+  "start": 10.16,
+  "end": 10.48,
+  "speaker": "A"
+ },
+ {
+  "id": "w29",
+  "text": "drafts,",
+  "start": 10.48,
+  "end": 11.2,
+  "speaker": "A"
+ },
+ {
+  "id": "w30",
+  "text": "within",
+  "start": 11.2,
+  "end": 11.6,
+  "speaker": "A"
+ },
+ {
+  "id": "w31",
+  "text": "three",
+  "start": 11.6,
+  "end": 11.84,
+  "speaker": "A"
+ },
+ {
+  "id": "w32",
+  "text": "months",
+  "start": 11.84,
+  "end": 12.16,
+  "speaker": "A"
+ },
+ {
+  "id": "w33",
+  "text": "we",
+  "start": 12.16,
+  "end": 12.32,
+  "speaker": "A"
+ },
+ {
+  "id": "w34",
+  "text": "saved",
+  "start": 12.32,
+  "end": 12.72,
+  "speaker": "A"
+ },
+ {
+  "id": "w35",
+  "text": "about",
+  "start": 12.72,
+  "end": 12.96,
+  "speaker": "A"
+ },
+ {
+  "id": "w36",
+  "text": "40%",
+  "start": 12.96,
+  "end": 13.52,
+  "speaker": "A"
+ },
+ {
+  "id": "w37",
+  "text": "of",
+  "start": 13.68,
+  "end": 13.76,
+  "speaker": "A"
+ },
+ {
+  "id": "w38",
+  "text": "our",
+  "start": 13.76,
+  "end": 13.92,
+  "speaker": "A"
+ },
+ {
+  "id": "w39",
+  "text": "week.",
+  "start": 13.92,
+  "end": 14.64,
+  "speaker": "A"
+ },
+ {
+  "id": "w40",
+  "text": "40%?",
+  "start": 14.64,
+  "end": 15.6,
+  "speaker": "B"
+ },
+ {
+  "id": "w41",
+  "text": "That's",
+  "start": 15.6,
+  "end": 15.92,
+  "speaker": "B"
+ },
+ {
+  "id": "w42",
+  "text": "huge,",
+  "start": 15.92,
+  "end": 16.48,
+  "speaker": "B"
+ },
+ {
+  "id": "w43",
+  "text": "but",
+  "start": 16.48,
+  "end": 16.72,
+  "speaker": "B"
+ },
+ {
+  "id": "w44",
+  "text": "didn't",
+  "start": 16.72,
+  "end": 17.04,
+  "speaker": "B"
+ },
+ {
+  "id": "w45",
+  "text": "quality",
+  "start": 17.12,
+  "end": 17.6,
+  "speaker": "B"
+ },
+ {
+  "id": "w46",
+  "text": "drop?",
+  "start": 17.6,
+  "end": 18.08,
+  "speaker": "B"
+ },
+ {
+  "id": "w47",
+  "text": "That",
+  "start": 18.4,
+  "end": 18.64,
+  "speaker": "A"
+ },
+ {
+  "id": "w48",
+  "text": "was",
+  "start": 18.64,
+  "end": 18.88,
+  "speaker": "A"
+ },
+ {
+  "id": "w49",
+  "text": "my",
+  "start": 18.88,
+  "end": 19.04,
+  "speaker": "A"
+ },
+ {
+  "id": "w50",
+  "text": "biggest",
+  "start": 19.04,
+  "end": 19.52,
+  "speaker": "A"
+ },
+ {
+  "id": "w51",
+  "text": "fear.",
+  "start": 19.52,
+  "end": 20.16,
+  "speaker": "A"
+ },
+ {
+  "id": "w52",
+  "text": "The",
+  "start": 20.16,
+  "end": 20.32,
+  "speaker": "A"
+ },
+ {
+  "id": "w53",
+  "text": "opposite",
+  "start": 20.32,
+  "end": 20.8,
+  "speaker": "A"
+ },
+ {
+  "id": "w54",
+  "text": "happened",
+  "start": 20.8,
+  "end": 21.6,
+  "speaker": "A"
+ },
+ {
+  "id": "w55",
+  "text": "people",
+  "start": 21.6,
+  "end": 21.84,
+  "speaker": "A"
+ },
+ {
+  "id": "w56",
+  "text": "finally",
+  "start": 22.08,
+  "end": 22.48,
+  "speaker": "A"
+ },
+ {
+  "id": "w57",
+  "text": "had",
+  "start": 22.48,
+  "end": 22.72,
+  "speaker": "A"
+ },
+ {
+  "id": "w58",
+  "text": "time",
+  "start": 22.72,
+  "end": 22.96,
+  "speaker": "A"
+ },
+ {
+  "id": "w59",
+  "text": "to",
+  "start": 22.96,
+  "end": 23.2,
+  "speaker": "A"
+ },
+ {
+  "id": "w60",
+  "text": "think,",
+  "start": 23.2,
+  "end": 23.52,
+  "speaker": "A"
+ },
+ {
+  "id": "w61",
+  "text": "and",
+  "start": 23.52,
+  "end": 23.68,
+  "speaker": "A"
+ },
+ {
+  "id": "w62",
+  "text": "our",
+  "start": 23.68,
+  "end": 23.84,
+  "speaker": "A"
+ },
+ {
+  "id": "w63",
+  "text": "revenue",
+  "start": 23.84,
+  "end": 24.32,
+  "speaker": "A"
+ },
+ {
+  "id": "w64",
+  "text": "doubled.",
+  "start": 24.32,
+  "end": 25.04,
+  "speaker": "A"
+ }
+]

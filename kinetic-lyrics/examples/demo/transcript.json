@@ -1,0 +1,392 @@
+[
+  {
+    "id": "w0",
+    "text": "In",
+    "start": 0,
+    "end": 0.24
+  },
+  {
+    "id": "w1",
+    "text": "the",
+    "start": 0.24,
+    "end": 0.32
+  },
+  {
+    "id": "w2",
+    "text": "dark",
+    "start": 0.32,
+    "end": 0.64
+  },
+  {
+    "id": "w3",
+    "text": "I",
+    "start": 0.72,
+    "end": 0.88
+  },
+  {
+    "id": "w4",
+    "text": "heard",
+    "start": 0.88,
+    "end": 1.12
+  },
+  {
+    "id": "w5",
+    "text": "a",
+    "start": 1.12,
+    "end": 1.28
+  },
+  {
+    "id": "w6",
+    "text": "quiet",
+    "start": 1.28,
+    "end": 1.68
+  },
+  {
+    "id": "w7",
+    "text": "whisper.",
+    "start": 1.68,
+    "end": 2.56
+  },
+  {
+    "id": "w8",
+    "text": "It",
+    "start": 2.56,
+    "end": 2.8
+  },
+  {
+    "id": "w9",
+    "text": "told",
+    "start": 2.8,
+    "end": 3.12
+  },
+  {
+    "id": "w10",
+    "text": "me,",
+    "start": 3.12,
+    "end": 3.44
+  },
+  {
+    "id": "w11",
+    "text": "rise,",
+    "start": 3.68,
+    "end": 4.32
+  },
+  {
+    "id": "w12",
+    "text": "so",
+    "start": 4.32,
+    "end": 4.56
+  },
+  {
+    "id": "w13",
+    "text": "I",
+    "start": 4.56,
+    "end": 4.72
+  },
+  {
+    "id": "w14",
+    "text": "climbed",
+    "start": 4.72,
+    "end": 5.2
+  },
+  {
+    "id": "w15",
+    "text": "above",
+    "start": 5.2,
+    "end": 5.44
+  },
+  {
+    "id": "w16",
+    "text": "the",
+    "start": 5.44,
+    "end": 5.52
+  },
+  {
+    "id": "w17",
+    "text": "city",
+    "start": 5.52,
+    "end": 6
+  },
+  {
+    "id": "w18",
+    "text": "lights.",
+    "start": 6,
+    "end": 6.8
+  },
+  {
+    "id": "w19",
+    "text": "Higher,",
+    "start": 6.8,
+    "end": 7.68
+  },
+  {
+    "id": "w20",
+    "text": "higher,",
+    "start": 7.68,
+    "end": 8.48
+  },
+  {
+    "id": "w21",
+    "text": "into",
+    "start": 8.48,
+    "end": 8.8
+  },
+  {
+    "id": "w22",
+    "text": "the",
+    "start": 8.8,
+    "end": 8.96
+  },
+  {
+    "id": "w23",
+    "text": "electric",
+    "start": 8.96,
+    "end": 9.68
+  },
+  {
+    "id": "w24",
+    "text": "sky.",
+    "start": 9.68,
+    "end": 10.48
+  },
+  {
+    "id": "w25",
+    "text": "The",
+    "start": 10.48,
+    "end": 10.72
+  },
+  {
+    "id": "w26",
+    "text": "stars",
+    "start": 10.72,
+    "end": 11.28
+  },
+  {
+    "id": "w27",
+    "text": "were",
+    "start": 11.28,
+    "end": 11.52
+  },
+  {
+    "id": "w28",
+    "text": "falling",
+    "start": 11.52,
+    "end": 12
+  },
+  {
+    "id": "w29",
+    "text": "like",
+    "start": 12,
+    "end": 12.16
+  },
+  {
+    "id": "w30",
+    "text": "the",
+    "start": 12.16,
+    "end": 12.32
+  },
+  {
+    "id": "w31",
+    "text": "rain,",
+    "start": 12.32,
+    "end": 12.72
+  },
+  {
+    "id": "w32",
+    "text": "and",
+    "start": 12.72,
+    "end": 12.96
+  },
+  {
+    "id": "w33",
+    "text": "every",
+    "start": 12.96,
+    "end": 13.28
+  },
+  {
+    "id": "w34",
+    "text": "wave",
+    "start": 13.28,
+    "end": 13.68
+  },
+  {
+    "id": "w35",
+    "text": "of",
+    "start": 13.68,
+    "end": 13.76
+  },
+  {
+    "id": "w36",
+    "text": "the",
+    "start": 13.76,
+    "end": 13.84
+  },
+  {
+    "id": "w37",
+    "text": "ocean",
+    "start": 13.84,
+    "end": 14.32
+  },
+  {
+    "id": "w38",
+    "text": "carried",
+    "start": 14.32,
+    "end": 14.8
+  },
+  {
+    "id": "w39",
+    "text": "your",
+    "start": 14.8,
+    "end": 15.04
+  },
+  {
+    "id": "w40",
+    "text": "name.",
+    "start": 15.04,
+    "end": 15.76
+  },
+  {
+    "id": "w41",
+    "text": "Time",
+    "start": 15.76,
+    "end": 16.16
+  },
+  {
+    "id": "w42",
+    "text": "keeps",
+    "start": 16.16,
+    "end": 16.56
+  },
+  {
+    "id": "w43",
+    "text": "spinning",
+    "start": 16.56,
+    "end": 17.04
+  },
+  {
+    "id": "w44",
+    "text": "around",
+    "start": 17.04,
+    "end": 17.36
+  },
+  {
+    "id": "w45",
+    "text": "the",
+    "start": 17.36,
+    "end": 17.44
+  },
+  {
+    "id": "w46",
+    "text": "world,",
+    "start": 17.44,
+    "end": 17.76
+  },
+  {
+    "id": "w47",
+    "text": "but",
+    "start": 17.76,
+    "end": 18
+  },
+  {
+    "id": "w48",
+    "text": "my",
+    "start": 18,
+    "end": 18.16
+  },
+  {
+    "id": "w49",
+    "text": "heart",
+    "start": 18.16,
+    "end": 18.4
+  },
+  {
+    "id": "w50",
+    "text": "is",
+    "start": 18.4,
+    "end": 18.64
+  },
+  {
+    "id": "w51",
+    "text": "a",
+    "start": 18.64,
+    "end": 18.72
+  },
+  {
+    "id": "w52",
+    "text": "fire",
+    "start": 18.72,
+    "end": 19.12
+  },
+  {
+    "id": "w53",
+    "text": "that",
+    "start": 19.12,
+    "end": 19.28
+  },
+  {
+    "id": "w54",
+    "text": "will",
+    "start": 19.28,
+    "end": 19.52
+  },
+  {
+    "id": "w55",
+    "text": "never",
+    "start": 19.52,
+    "end": 19.84
+  },
+  {
+    "id": "w56",
+    "text": "break.",
+    "start": 19.84,
+    "end": 20.56
+  },
+  {
+    "id": "w57",
+    "text": "Hold",
+    "start": 20.56,
+    "end": 20.96
+  },
+  {
+    "id": "w58",
+    "text": "on,",
+    "start": 20.96,
+    "end": 21.52
+  },
+  {
+    "id": "w59",
+    "text": "burn",
+    "start": 21.52,
+    "end": 22
+  },
+  {
+    "id": "w60",
+    "text": "bright,",
+    "start": 22,
+    "end": 22.56
+  },
+  {
+    "id": "w61",
+    "text": "we",
+    "start": 22.56,
+    "end": 22.72
+  },
+  {
+    "id": "w62",
+    "text": "are",
+    "start": 22.72,
+    "end": 22.88
+  },
+  {
+    "id": "w63",
+    "text": "the",
+    "start": 22.88,
+    "end": 23.04
+  },
+  {
+    "id": "w64",
+    "text": "light.",
+    "start": 23.04,
+    "end": 23.44
+  }
+]

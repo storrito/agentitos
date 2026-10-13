@@ -1,0 +1,992 @@
+[
+{
+"text": "And",
+"start": 0.32,
+"end": 0.56,
+"speaker": "A"
+},
+{
+"text": "we're",
+"start": 0.56,
+"end": 0.96,
+"speaker": "A"
+},
+{
+"text": "doing",
+"start": 1.04,
+"end": 1.52,
+"speaker": "A"
+},
+{
+"text": "this",
+"start": 1.52,
+"end": 1.84,
+"speaker": "A"
+},
+{
+"text": "moon",
+"start": 2.08,
+"end": 2.56,
+"speaker": "A"
+},
+{
+"text": "base.",
+"start": 2.56,
+"end": 3.44,
+"speaker": "A"
+},
+{
+"text": "So",
+"start": 3.44,
+"end": 3.68,
+"speaker": "A"
+},
+{
+"text": "tell",
+"start": 3.84,
+"end": 4.16,
+"speaker": "A"
+},
+{
+"text": "us",
+"start": 4.16,
+"end": 4.4,
+"speaker": "A"
+},
+{
+"text": "a",
+"start": 4.4,
+"end": 4.48,
+"speaker": "A"
+},
+{
+"text": "little",
+"start": 4.48,
+"end": 4.72,
+"speaker": "A"
+},
+{
+"text": "bit",
+"start": 4.72,
+"end": 4.96,
+"speaker": "A"
+},
+{
+"text": "about",
+"start": 5.2,
+"end": 5.52,
+"speaker": "A"
+},
+{
+"text": "what",
+"start": 5.76,
+"end": 6.08,
+"speaker": "A"
+},
+{
+"text": "is",
+"start": 6.08,
+"end": 6.24,
+"speaker": "A"
+},
+{
+"text": "different",
+"start": 6.4,
+"end": 6.88,
+"speaker": "A"
+},
+{
+"text": "now",
+"start": 6.88,
+"end": 7.12,
+"speaker": "A"
+},
+{
+"text": "to",
+"start": 7.2,
+"end": 7.44,
+"speaker": "A"
+},
+{
+"text": "make",
+"start": 7.44,
+"end": 7.68,
+"speaker": "A"
+},
+{
+"text": "that",
+"start": 7.68,
+"end": 7.92,
+"speaker": "A"
+},
+{
+"text": "sustained",
+"start": 7.92,
+"end": 8.56,
+"speaker": "A"
+},
+{
+"text": "presence",
+"start": 8.56,
+"end": 9.12,
+"speaker": "A"
+},
+{
+"text": "possible.",
+"start": 9.12,
+"end": 10.08,
+"speaker": "A"
+},
+{
+"text": "I",
+"start": 10.84,
+"end": 11,
+"speaker": "B"
+},
+{
+"text": "think",
+"start": 11,
+"end": 11.16,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 11.32,
+"end": 11.48,
+"speaker": "B"
+},
+{
+"text": "key",
+"start": 11.64,
+"end": 11.96,
+"speaker": "B"
+},
+{
+"text": "objective",
+"start": 11.96,
+"end": 12.52,
+"speaker": "B"
+},
+{
+"text": "of",
+"start": 12.52,
+"end": 12.84,
+"speaker": "B"
+},
+{
+"text": "what",
+"start": 12.84,
+"end": 13.08,
+"speaker": "B"
+},
+{
+"text": "we",
+"start": 13.08,
+"end": 13.24,
+"speaker": "B"
+},
+{
+"text": "did",
+"start": 13.24,
+"end": 13.4,
+"speaker": "B"
+},
+{
+"text": "in",
+"start": 13.4,
+"end": 13.48,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 13.48,
+"end": 13.64,
+"speaker": "B"
+},
+{
+"text": "past",
+"start": 13.64,
+"end": 13.8,
+"speaker": "B"
+},
+{
+"text": "through",
+"start": 13.88,
+"end": 14.2,
+"speaker": "B"
+},
+{
+"text": "Apollo",
+"start": 14.2,
+"end": 14.84,
+"speaker": "B"
+},
+{
+"text": "was",
+"start": 15.48,
+"end": 15.8,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 15.8,
+"end": 16.12,
+"speaker": "B"
+},
+{
+"text": "get",
+"start": 16.12,
+"end": 16.44,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 16.44,
+"end": 16.6,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 16.6,
+"end": 16.84,
+"speaker": "B"
+},
+{
+"text": "moon.",
+"start": 16.84,
+"end": 17.72,
+"speaker": "B"
+},
+{
+"text": "Getting",
+"start": 18.28,
+"end": 18.6,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 18.6,
+"end": 18.76,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 18.76,
+"end": 18.92,
+"speaker": "B"
+},
+{
+"text": "moon",
+"start": 18.92,
+"end": 19.24,
+"speaker": "B"
+},
+{
+"text": "is",
+"start": 19.24,
+"end": 19.4,
+"speaker": "B"
+},
+{
+"text": "step",
+"start": 19.4,
+"end": 19.72,
+"speaker": "B"
+},
+{
+"text": "one,",
+"start": 19.72,
+"end": 20.12,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 20.12,
+"end": 20.28,
+"speaker": "B"
+},
+{
+"text": "price",
+"start": 20.28,
+"end": 20.6,
+"speaker": "B"
+},
+{
+"text": "of",
+"start": 20.6,
+"end": 20.76,
+"speaker": "B"
+},
+{
+"text": "admission",
+"start": 20.76,
+"end": 21.16,
+"speaker": "B"
+},
+{
+"text": "for",
+"start": 21.32,
+"end": 21.56,
+"speaker": "B"
+},
+{
+"text": "what",
+"start": 21.56,
+"end": 21.72,
+"speaker": "B"
+},
+{
+"text": "we",
+"start": 21.72,
+"end": 21.88,
+"speaker": "B"
+},
+{
+"text": "want",
+"start": 21.88,
+"end": 22.04,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 22.04,
+"end": 22.2,
+"speaker": "B"
+},
+{
+"text": "do",
+"start": 22.2,
+"end": 22.52,
+"speaker": "B"
+},
+{
+"text": "now.",
+"start": 22.52,
+"end": 23.48,
+"speaker": "B"
+},
+{
+"text": "So",
+"start": 23.6,
+"end": 23.84,
+"speaker": "B"
+},
+{
+"text": "it's",
+"start": 24,
+"end": 24.4,
+"speaker": "B"
+},
+{
+"text": "a",
+"start": 24.4,
+"end": 24.56,
+"speaker": "B"
+},
+{
+"text": "completely",
+"start": 24.56,
+"end": 24.96,
+"speaker": "B"
+},
+{
+"text": "different",
+"start": 24.96,
+"end": 25.28,
+"speaker": "B"
+},
+{
+"text": "mindset,",
+"start": 25.28,
+"end": 25.92,
+"speaker": "B"
+},
+{
+"text": "even",
+"start": 25.92,
+"end": 26.08,
+"speaker": "B"
+},
+{
+"text": "though",
+"start": 26.24,
+"end": 26.72,
+"speaker": "B"
+},
+{
+"text": "uh",
+"start": 26.96,
+"end": 27.2,
+"speaker": "B"
+},
+{
+"text": "one",
+"start": 27.28,
+"end": 27.52,
+"speaker": "B"
+},
+{
+"text": "of",
+"start": 27.52,
+"end": 27.6,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 27.6,
+"end": 27.76,
+"speaker": "B"
+},
+{
+"text": "key",
+"start": 27.76,
+"end": 28.08,
+"speaker": "B"
+},
+{
+"text": "initiatives",
+"start": 28.08,
+"end": 28.72,
+"speaker": "B"
+},
+{
+"text": "is",
+"start": 28.72,
+"end": 28.88,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 28.88,
+"end": 29.04,
+"speaker": "B"
+},
+{
+"text": "be",
+"start": 29.04,
+"end": 29.28,
+"speaker": "B"
+},
+{
+"text": "able",
+"start": 29.28,
+"end": 29.68,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 29.68,
+"end": 30,
+"speaker": "B"
+},
+{
+"text": "uh",
+"start": 30.56,
+"end": 30.72,
+"speaker": "B"
+},
+{
+"text": "develop",
+"start": 30.8,
+"end": 31.36,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 31.36,
+"end": 31.52,
+"speaker": "B"
+},
+{
+"text": "systems",
+"start": 31.52,
+"end": 32,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 32,
+"end": 32.08,
+"speaker": "B"
+},
+{
+"text": "enable",
+"start": 32.32,
+"end": 32.8,
+"speaker": "B"
+},
+{
+"text": "us",
+"start": 32.8,
+"end": 32.96,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 32.96,
+"end": 33.12,
+"speaker": "B"
+},
+{
+"text": "do",
+"start": 33.12,
+"end": 33.28,
+"speaker": "B"
+},
+{
+"text": "that",
+"start": 33.28,
+"end": 33.44,
+"speaker": "B"
+},
+{
+"text": "and",
+"start": 33.52,
+"end": 33.76,
+"speaker": "B"
+},
+{
+"text": "get",
+"start": 33.76,
+"end": 33.92,
+"speaker": "B"
+},
+{
+"text": "back",
+"start": 33.92,
+"end": 34.16,
+"speaker": "B"
+},
+{
+"text": "there",
+"start": 34.16,
+"end": 34.32,
+"speaker": "B"
+},
+{
+"text": "is",
+"start": 34.48,
+"end": 34.56,
+"speaker": "B"
+},
+{
+"text": "is",
+"start": 34.72,
+"end": 34.8,
+"speaker": "B"
+},
+{
+"text": "really",
+"start": 34.88,
+"end": 35.04,
+"speaker": "B"
+},
+{
+"text": "step",
+"start": 35.12,
+"end": 35.36,
+"speaker": "B"
+},
+{
+"text": "one,",
+"start": 35.36,
+"end": 35.68,
+"speaker": "B"
+},
+{
+"text": "that's",
+"start": 35.68,
+"end": 35.92,
+"speaker": "B"
+},
+{
+"text": "what",
+"start": 35.92,
+"end": 36.08,
+"speaker": "B"
+},
+{
+"text": "we're",
+"start": 36.08,
+"end": 36.32,
+"speaker": "B"
+},
+{
+"text": "on",
+"start": 36.32,
+"end": 36.48,
+"speaker": "B"
+},
+{
+"text": "right",
+"start": 36.56,
+"end": 36.88,
+"speaker": "B"
+},
+{
+"text": "now.",
+"start": 36.88,
+"end": 37.6,
+"speaker": "B"
+},
+{
+"text": "Being",
+"start": 38.5,
+"end": 38.9,
+"speaker": "B"
+},
+{
+"text": "able",
+"start": 38.9,
+"end": 39.06,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 39.06,
+"end": 39.22,
+"speaker": "B"
+},
+{
+"text": "set",
+"start": 39.22,
+"end": 39.38,
+"speaker": "B"
+},
+{
+"text": "up",
+"start": 39.38,
+"end": 39.54,
+"speaker": "B"
+},
+{
+"text": "an",
+"start": 39.54,
+"end": 39.7,
+"speaker": "B"
+},
+{
+"text": "infrastructure",
+"start": 39.7,
+"end": 40.34,
+"speaker": "B"
+},
+{
+"text": "that",
+"start": 40.34,
+"end": 40.58,
+"speaker": "B"
+},
+{
+"text": "enables",
+"start": 40.58,
+"end": 40.9,
+"speaker": "B"
+},
+{
+"text": "long",
+"start": 41.06,
+"end": 41.14,
+"speaker": "B"
+},
+{
+"text": "long",
+"start": 41.38,
+"end": 41.54,
+"speaker": "B"
+},
+{
+"text": "duration",
+"start": 41.62,
+"end": 42.02,
+"speaker": "B"
+},
+{
+"text": "missions",
+"start": 42.02,
+"end": 42.34,
+"speaker": "B"
+},
+{
+"text": "and",
+"start": 42.42,
+"end": 42.66,
+"speaker": "B"
+},
+{
+"text": "permanent",
+"start": 42.66,
+"end": 43.14,
+"speaker": "B"
+},
+{
+"text": "presence",
+"start": 43.14,
+"end": 43.62,
+"speaker": "B"
+},
+{
+"text": "and",
+"start": 43.7,
+"end": 43.94,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 43.94,
+"end": 44.1,
+"speaker": "B"
+},
+{
+"text": "capability",
+"start": 44.1,
+"end": 44.82,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 44.82,
+"end": 44.98,
+"speaker": "B"
+},
+{
+"text": "do",
+"start": 44.98,
+"end": 45.14,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 45.14,
+"end": 45.22,
+"speaker": "B"
+},
+{
+"text": "things",
+"start": 45.22,
+"end": 45.54,
+"speaker": "B"
+},
+{
+"text": "we",
+"start": 45.54,
+"end": 45.62,
+"speaker": "B"
+},
+{
+"text": "want",
+"start": 45.62,
+"end": 45.78,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 45.78,
+"end": 45.94,
+"speaker": "B"
+},
+{
+"text": "do",
+"start": 45.94,
+"end": 46.1,
+"speaker": "B"
+},
+{
+"text": "there.",
+"start": 46.18,
+"end": 46.98,
+"speaker": "B"
+},
+{
+"text": "Like",
+"start": 46.98,
+"end": 47.3,
+"speaker": "B"
+},
+{
+"text": "go",
+"start": 47.38,
+"end": 47.62,
+"speaker": "B"
+},
+{
+"text": "to",
+"start": 47.62,
+"end": 47.86,
+"speaker": "B"
+},
+{
+"text": "the",
+"start": 47.86,
+"end": 48.02,
+"speaker": "B"
+},
+{
+"text": "areas",
+"start": 48.02,
+"end": 48.42,
+"speaker": "B"
+},
+{
+"text": "perhaps",
+"start": 48.74,
+"end": 49.14,
+"speaker": "B"
+},
+{
+"text": "where",
+"start": 49.22,
+"end": 49.46,
+"speaker": "B"
+},
+{
+"text": "there's",
+"start": 49.46,
+"end": 49.94,
+"speaker": "B"
+},
+{
+"text": "Permanently",
+"start": 50.77,
+"end": 51.41,
+"speaker": "B"
+},
+{
+"text": "shadowed",
+"start": 51.65,
+"end": 52.29,
+"speaker": "B"
+},
+{
+"text": "regions",
+"start": 52.29,
+"end": 52.77,
+"speaker": "B"
+},
+{
+"text": "or",
+"start": 52.93,
+"end": 53.17,
+"speaker": "B"
+},
+{
+"text": "where",
+"start": 53.33,
+"end": 53.57,
+"speaker": "B"
+},
+{
+"text": "we",
+"start": 53.57,
+"end": 53.81,
+"speaker": "B"
+},
+{
+"text": "may",
+"start": 53.81,
+"end": 54.05,
+"speaker": "B"
+},
+{
+"text": "find",
+"start": 54.05,
+"end": 54.37,
+"speaker": "B"
+},
+{
+"text": "water",
+"start": 54.37,
+"end": 54.77,
+"speaker": "B"
+},
+{
+"text": "that",
+"start": 54.77,
+"end": 55.01,
+"speaker": "B"
+},
+{
+"text": "has",
+"start": 55.01,
+"end": 55.25,
+"speaker": "B"
+},
+{
+"text": "been",
+"start": 55.25,
+"end": 55.41,
+"speaker": "B"
+},
+{
+"text": "there",
+"start": 55.41,
+"end": 55.65,
+"speaker": "B"
+},
+{
+"text": "for",
+"start": 55.65,
+"end": 55.89,
+"speaker": "B"
+},
+{
+"text": "billions",
+"start": 55.89,
+"end": 56.37,
+"speaker": "B"
+},
+{
+"text": "of",
+"start": 56.37,
+"end": 56.53,
+"speaker": "B"
+},
+{
+"text": "years.",
+"start": 56.53,
+"end": 57.65,
+"speaker": "B"
+},
+{
+"text": "Setting",
+"start": 57.68,
+"end": 58.24,
+"speaker": "B"
+},
+{
+"text": "up",
+"start": 58.24,
+"end": 58.48,
+"speaker": "B"
+},
+{
+"text": "that",
+"start": 58.48,
+"end": 58.72,
+"speaker": "B"
+},
+{
+"text": "capability,",
+"start": 58.72,
+"end": 59.76,
+"speaker": "B"
+},
+{
+"text": "it's",
+"start": 59.76,
+"end": 60.16,
+"speaker": "B"
+},
+{
+"text": "all",
+"start": 60.16,
+"end": 60.48,
+"speaker": "B"
+},
+{
+"text": "new.",
+"start": 60.48,
+"end": 61.44,
+"speaker": "B"
+}
+]

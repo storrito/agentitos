@@ -1,0 +1,352 @@
+{
+ "model": "opus (claude code)",
+ "hook": "How AI Doubled Our Team's Revenue",
+ "phrases": [
+  {
+   "first": 0,
+   "last": 2,
+   "hero": 2,
+   "minor": [
+    0
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 3,
+   "last": 8,
+   "hero": 8,
+   "minor": [
+    3,
+    4,
+    5,
+    7
+   ],
+   "mood": "night",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 9,
+   "last": 10,
+   "hero": 10,
+   "minor": [
+    9
+   ],
+   "mood": "cool",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 11,
+   "last": 16,
+   "hero": 13,
+   "minor": [
+    11,
+    12,
+    14
+   ],
+   "mood": "cool",
+   "layout": "cascade",
+   "exit": "blur"
+  },
+  {
+   "first": 17,
+   "last": 18,
+   "hero": 18,
+   "minor": [
+    17
+   ],
+   "mood": "electric",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 19,
+   "last": 21,
+   "hero": 21,
+   "minor": [
+    19
+   ],
+   "mood": "electric",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 22,
+   "last": 25,
+   "hero": 24,
+   "minor": [
+    23
+   ],
+   "mood": "electric",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 26,
+   "last": 29,
+   "hero": null,
+   "minor": [],
+   "mood": "electric",
+   "layout": "list",
+   "exit": "blur"
+  },
+  {
+   "first": 30,
+   "last": 34,
+   "hero": 34,
+   "minor": [
+    30,
+    33
+   ],
+   "mood": "gold",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 35,
+   "last": 39,
+   "hero": 36,
+   "minor": [
+    35,
+    37,
+    38
+   ],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 40,
+   "last": 42,
+   "hero": 40,
+   "minor": [
+    41
+   ],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 43,
+   "last": 46,
+   "hero": 46,
+   "minor": [
+    43,
+    44
+   ],
+   "mood": "ember",
+   "layout": "inline",
+   "exit": "blur"
+  },
+  {
+   "first": 47,
+   "last": 51,
+   "hero": 51,
+   "minor": [
+    47,
+    48,
+    49
+   ],
+   "mood": "ember",
+   "layout": "cascade",
+   "exit": "lift"
+  },
+  {
+   "first": 52,
+   "last": 54,
+   "hero": 53,
+   "minor": [
+    52
+   ],
+   "mood": "dawn",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 55,
+   "last": 60,
+   "hero": 60,
+   "minor": [
+    57,
+    59
+   ],
+   "mood": "dawn",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 61,
+   "last": 64,
+   "hero": 64,
+   "minor": [
+    61,
+    62
+   ],
+   "mood": "gold",
+   "layout": "block",
+   "exit": "zoom"
+  }
+ ],
+ "words": [
+  {
+   "i": 6,
+   "concept": "people",
+   "fx": "pulse",
+   "emphasis": 0.4,
+   "mark": false
+  },
+  {
+   "i": 8,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 13,
+   "concept": "water",
+   "fx": "wave",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 18,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.6,
+   "mark": true
+  },
+  {
+   "i": 21,
+   "concept": "tech",
+   "fx": "glitch",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 24,
+   "concept": "quiet",
+   "fx": "whisper",
+   "emphasis": 0.5,
+   "mark": true
+  },
+  {
+   "i": 31,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.5,
+   "mark": false
+  },
+  {
+   "i": 32,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.4,
+   "mark": false
+  },
+  {
+   "i": 34,
+   "concept": "success",
+   "fx": "glow",
+   "emphasis": 0.5,
+   "mark": false
+  },
+  {
+   "i": 36,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.9,
+   "mark": true
+  },
+  {
+   "i": 40,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 42,
+   "concept": "loud",
+   "fx": "slam",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 46,
+   "concept": "fall",
+   "fx": "drop",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 51,
+   "concept": "dark",
+   "fx": "fog",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 53,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 58,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.5,
+   "mark": false
+  },
+  {
+   "i": 60,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 63,
+   "concept": "money",
+   "fx": "flash",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 64,
+   "concept": "growth",
+   "fx": "rise",
+   "emphasis": 1,
+   "mark": true
+  }
+ ],
+ "notes": [
+  {
+   "i": 13,
+   "kind": "underline"
+  },
+  {
+   "i": 21,
+   "kind": "circle"
+  },
+  {
+   "i": 46,
+   "kind": "strike"
+  },
+  {
+   "i": 53,
+   "kind": "circle"
+  },
+  {
+   "i": 63,
+   "kind": "underline"
+  }
+ ],
+ "world": "editorial",
+ "preset": "podcast"
+}

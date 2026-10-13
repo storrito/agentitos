@@ -1,0 +1,351 @@
+{
+ "model": "opus (claude code)",
+ "hook": "Remember 3x more with one habit",
+ "phrases": [
+  {
+   "first": 0,
+   "last": 1,
+   "hero": 0,
+   "minor": [],
+   "mood": "electric",
+   "layout": "hero",
+   "exit": "zoom"
+  },
+  {
+   "first": 2,
+   "last": 4,
+   "hero": 3,
+   "minor": [
+    2
+   ],
+   "mood": "electric",
+   "layout": "block",
+   "exit": "lift"
+  },
+  {
+   "first": 5,
+   "last": 8,
+   "hero": 8,
+   "minor": [
+    5,
+    6
+   ],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "scatter"
+  },
+  {
+   "first": 9,
+   "last": 10,
+   "hero": 10,
+   "minor": [
+    9
+   ],
+   "mood": "gold",
+   "layout": "split",
+   "exit": "blur"
+  },
+  {
+   "first": 11,
+   "last": 13,
+   "hero": 13,
+   "minor": [
+    11,
+    12
+   ],
+   "mood": "gold",
+   "layout": "cascade",
+   "exit": "zoom"
+  },
+  {
+   "first": 14,
+   "last": 15,
+   "hero": 15,
+   "minor": [
+    14
+   ],
+   "mood": "night",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 16,
+   "last": 17,
+   "hero": 17,
+   "minor": [
+    16
+   ],
+   "mood": "night",
+   "layout": "split",
+   "exit": "lift"
+  },
+  {
+   "first": 18,
+   "last": 21,
+   "hero": 21,
+   "minor": [
+    18,
+    19
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "scatter"
+  },
+  {
+   "first": 22,
+   "last": 23,
+   "hero": 23,
+   "minor": [
+    22
+   ],
+   "mood": "electric",
+   "layout": "hero",
+   "exit": "zoom"
+  },
+  {
+   "first": 24,
+   "last": 27,
+   "hero": 27,
+   "minor": [
+    24,
+    26
+   ],
+   "mood": "electric",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 28,
+   "last": 30,
+   "hero": 30,
+   "minor": [
+    28,
+    29
+   ],
+   "mood": "ember",
+   "layout": "cascade",
+   "exit": "lift"
+  },
+  {
+   "first": 31,
+   "last": 33,
+   "hero": 33,
+   "minor": [
+    32
+   ],
+   "mood": "ember",
+   "layout": "inline",
+   "exit": "scatter"
+  },
+  {
+   "first": 34,
+   "last": 37,
+   "hero": 36,
+   "minor": [
+    34,
+    37
+   ],
+   "mood": "ember",
+   "layout": "hero",
+   "exit": "zoom"
+  },
+  {
+   "first": 38,
+   "last": 40,
+   "hero": 38,
+   "minor": [],
+   "mood": "gold",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 41,
+   "last": 42,
+   "hero": 42,
+   "minor": [
+    41
+   ],
+   "mood": "gold",
+   "layout": "split",
+   "exit": "lift"
+  },
+  {
+   "first": 43,
+   "last": 45,
+   "hero": 43,
+   "minor": [],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "zoom"
+  },
+  {
+   "first": 46,
+   "last": 48,
+   "hero": 48,
+   "minor": [
+    47
+   ],
+   "mood": "dawn",
+   "layout": "hero",
+   "exit": "lift"
+  }
+ ],
+ "words": [
+  {
+   "i": 0,
+   "concept": "loud",
+   "fx": "slam",
+   "emphasis": 0.9,
+   "mark": true
+  },
+  {
+   "i": 1,
+   "concept": "speed",
+   "fx": "streak",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 3,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 4,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.5,
+   "mark": false
+  },
+  {
+   "i": 8,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.9,
+   "mark": true
+  },
+  {
+   "i": 10,
+   "concept": "growth",
+   "fx": "rise",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 13,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 15,
+   "concept": "stars",
+   "fx": "sparkle",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 17,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.6,
+   "mark": true
+  },
+  {
+   "i": 23,
+   "concept": "loud",
+   "fx": "slam",
+   "emphasis": 0.9,
+   "mark": true
+  },
+  {
+   "i": 27,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 30,
+   "concept": "problem",
+   "fx": "slam",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 33,
+   "concept": "light",
+   "fx": "glow",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 35,
+   "concept": "break",
+   "fx": "shatter",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 36,
+   "concept": "idea",
+   "fx": "glow",
+   "emphasis": 0.8,
+   "mark": true
+  },
+  {
+   "i": 38,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 0.7,
+   "mark": true
+  },
+  {
+   "i": 42,
+   "concept": "growth",
+   "fx": "rise",
+   "emphasis": 0.6,
+   "mark": false
+  },
+  {
+   "i": 43,
+   "concept": "number",
+   "fx": "count",
+   "emphasis": 1,
+   "mark": true
+  },
+  {
+   "i": 45,
+   "concept": "growth",
+   "fx": "rise",
+   "emphasis": 0.8,
+   "mark": false
+  },
+  {
+   "i": 48,
+   "concept": "stars",
+   "fx": "sparkle",
+   "emphasis": 0.8,
+   "mark": true
+  }
+ ],
+ "notes": [
+  {
+   "i": 8,
+   "kind": "circle"
+  },
+  {
+   "i": 23,
+   "kind": "circle"
+  },
+  {
+   "i": 36,
+   "kind": "underline"
+  }
+ ],
+ "world": "aurora",
+ "preset": "social"
+}

@@ -1,0 +1,296 @@
+[
+  {
+    "id": "w0",
+    "text": "Stop",
+    "start": 0,
+    "end": 0.48
+  },
+  {
+    "id": "w1",
+    "text": "scrolling",
+    "start": 0.48,
+    "end": 1.04
+  },
+  {
+    "id": "w2",
+    "text": "for",
+    "start": 1.04,
+    "end": 1.28
+  },
+  {
+    "id": "w3",
+    "text": "ten",
+    "start": 1.28,
+    "end": 1.44
+  },
+  {
+    "id": "w4",
+    "text": "seconds.",
+    "start": 1.6,
+    "end": 2.4
+  },
+  {
+    "id": "w5",
+    "text": "Here's",
+    "start": 2.4,
+    "end": 2.8
+  },
+  {
+    "id": "w6",
+    "text": "the",
+    "start": 2.8,
+    "end": 2.96
+  },
+  {
+    "id": "w7",
+    "text": "one",
+    "start": 2.96,
+    "end": 3.2
+  },
+  {
+    "id": "w8",
+    "text": "habit",
+    "start": 3.2,
+    "end": 3.68
+  },
+  {
+    "id": "w9",
+    "text": "that",
+    "start": 3.68,
+    "end": 3.92
+  },
+  {
+    "id": "w10",
+    "text": "changed",
+    "start": 3.92,
+    "end": 4.4
+  },
+  {
+    "id": "w11",
+    "text": "how",
+    "start": 4.4,
+    "end": 4.64
+  },
+  {
+    "id": "w12",
+    "text": "I",
+    "start": 4.64,
+    "end": 4.88
+  },
+  {
+    "id": "w13",
+    "text": "learn.",
+    "start": 4.88,
+    "end": 5.68
+  },
+  {
+    "id": "w14",
+    "text": "Every",
+    "start": 5.68,
+    "end": 6.08
+  },
+  {
+    "id": "w15",
+    "text": "night",
+    "start": 6.08,
+    "end": 6.32
+  },
+  {
+    "id": "w16",
+    "text": "I",
+    "start": 6.4,
+    "end": 6.64
+  },
+  {
+    "id": "w17",
+    "text": "explain",
+    "start": 6.64,
+    "end": 7.12
+  },
+  {
+    "id": "w18",
+    "text": "what",
+    "start": 7.12,
+    "end": 7.28
+  },
+  {
+    "id": "w19",
+    "text": "I",
+    "start": 7.28,
+    "end": 7.44
+  },
+  {
+    "id": "w20",
+    "text": "learned",
+    "start": 7.44,
+    "end": 7.92
+  },
+  {
+    "id": "w21",
+    "text": "today",
+    "start": 7.92,
+    "end": 8.4
+  },
+  {
+    "id": "w22",
+    "text": "out",
+    "start": 8.56,
+    "end": 8.8
+  },
+  {
+    "id": "w23",
+    "text": "loud",
+    "start": 8.8,
+    "end": 9.2
+  },
+  {
+    "id": "w24",
+    "text": "in",
+    "start": 9.28,
+    "end": 9.52
+  },
+  {
+    "id": "w25",
+    "text": "under",
+    "start": 9.52,
+    "end": 9.76
+  },
+  {
+    "id": "w26",
+    "text": "a",
+    "start": 9.76,
+    "end": 10
+  },
+  {
+    "id": "w27",
+    "text": "minute.",
+    "start": 10,
+    "end": 10.56
+  },
+  {
+    "id": "w28",
+    "text": "If",
+    "start": 10.56,
+    "end": 10.8
+  },
+  {
+    "id": "w29",
+    "text": "I",
+    "start": 10.8,
+    "end": 10.96
+  },
+  {
+    "id": "w30",
+    "text": "can't",
+    "start": 10.96,
+    "end": 11.28
+  },
+  {
+    "id": "w31",
+    "text": "explain",
+    "start": 11.28,
+    "end": 11.68
+  },
+  {
+    "id": "w32",
+    "text": "it",
+    "start": 11.68,
+    "end": 11.92
+  },
+  {
+    "id": "w33",
+    "text": "simply,",
+    "start": 11.92,
+    "end": 12.4
+  },
+  {
+    "id": "w34",
+    "text": "I",
+    "start": 12.4,
+    "end": 12.56
+  },
+  {
+    "id": "w35",
+    "text": "didn't",
+    "start": 12.56,
+    "end": 12.96
+  },
+  {
+    "id": "w36",
+    "text": "understand",
+    "start": 12.96,
+    "end": 13.52
+  },
+  {
+    "id": "w37",
+    "text": "it.",
+    "start": 13.52,
+    "end": 14
+  },
+  {
+    "id": "w38",
+    "text": "Thirty",
+    "start": 14,
+    "end": 14.48
+  },
+  {
+    "id": "w39",
+    "text": "days",
+    "start": 14.48,
+    "end": 14.72
+  },
+  {
+    "id": "w40",
+    "text": "later",
+    "start": 14.72,
+    "end": 15.04
+  },
+  {
+    "id": "w41",
+    "text": "I",
+    "start": 15.12,
+    "end": 15.36
+  },
+  {
+    "id": "w42",
+    "text": "remembered",
+    "start": 15.36,
+    "end": 15.84
+  },
+  {
+    "id": "w43",
+    "text": "three",
+    "start": 15.84,
+    "end": 16.16
+  },
+  {
+    "id": "w44",
+    "text": "times",
+    "start": 16.16,
+    "end": 16.64
+  },
+  {
+    "id": "w45",
+    "text": "more.",
+    "start": 16.64,
+    "end": 17.12
+  },
+  {
+    "id": "w46",
+    "text": "Try",
+    "start": 17.12,
+    "end": 17.44
+  },
+  {
+    "id": "w47",
+    "text": "it",
+    "start": 17.44,
+    "end": 17.6
+  },
+  {
+    "id": "w48",
+    "text": "tonight.",
+    "start": 17.6,
+    "end": 18.08
+  }
+]

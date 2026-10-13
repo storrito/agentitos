@@ -1,0 +1,335 @@
+{
+ "model": "opus (claude code)",
+ "phrases": [
+  {
+   "first": 0,
+   "last": 2,
+   "hero": 2,
+   "minor": [
+    0,
+    1
+   ],
+   "mood": "dark",
+   "layout": "hero",
+   "exit": "blur"
+  },
+  {
+   "first": 3,
+   "last": 7,
+   "hero": 7,
+   "minor": [
+    3,
+    5
+   ],
+   "mood": "dark",
+   "layout": "cascade",
+   "exit": "blur"
+  },
+  {
+   "first": 8,
+   "last": 11,
+   "hero": 11,
+   "minor": [
+    8,
+    10
+   ],
+   "mood": "dawn",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 12,
+   "last": 14,
+   "hero": 14,
+   "minor": [
+    12,
+    13
+   ],
+   "mood": "dawn",
+   "layout": "inline",
+   "exit": "lift"
+  },
+  {
+   "first": 15,
+   "last": 18,
+   "hero": 17,
+   "minor": [
+    15,
+    16
+   ],
+   "mood": "electric",
+   "layout": "block",
+   "exit": "zoom"
+  },
+  {
+   "first": 19,
+   "last": 20,
+   "hero": 20,
+   "minor": [],
+   "mood": "dawn",
+   "layout": "split",
+   "exit": "lift"
+  },
+  {
+   "first": 21,
+   "last": 24,
+   "hero": 24,
+   "minor": [
+    21,
+    22
+   ],
+   "mood": "electric",
+   "layout": "cascade",
+   "exit": "zoom"
+  },
+  {
+   "first": 25,
+   "last": 31,
+   "hero": 26,
+   "minor": [
+    25,
+    27,
+    29,
+    30
+   ],
+   "mood": "night",
+   "layout": "inline",
+   "exit": "scatter"
+  },
+  {
+   "first": 32,
+   "last": 37,
+   "hero": 37,
+   "minor": [
+    32,
+    35,
+    36
+   ],
+   "mood": "ocean",
+   "layout": "block",
+   "exit": "blur"
+  },
+  {
+   "first": 38,
+   "last": 40,
+   "hero": 40,
+   "minor": [
+    39
+   ],
+   "mood": "rose",
+   "layout": "hero",
+   "exit": "lift"
+  },
+  {
+   "first": 41,
+   "last": 46,
+   "hero": 43,
+   "minor": [
+    45
+   ],
+   "mood": "violet",
+   "layout": "cascade",
+   "exit": "scatter"
+  },
+  {
+   "first": 47,
+   "last": 52,
+   "hero": 52,
+   "minor": [
+    47,
+    48,
+    50,
+    51
+   ],
+   "mood": "ember",
+   "layout": "inline",
+   "exit": "zoom"
+  },
+  {
+   "first": 53,
+   "last": 56,
+   "hero": 56,
+   "minor": [
+    53,
+    54
+   ],
+   "mood": "ember",
+   "layout": "hero",
+   "exit": "scatter"
+  },
+  {
+   "first": 57,
+   "last": 60,
+   "hero": 59,
+   "minor": [],
+   "mood": "ember",
+   "layout": "split",
+   "exit": "zoom"
+  },
+  {
+   "first": 61,
+   "last": 64,
+   "hero": 64,
+   "minor": [
+    61,
+    62,
+    63
+   ],
+   "mood": "gold",
+   "layout": "hero",
+   "exit": "lift"
+  }
+ ],
+ "words": [
+  {
+   "i": 2,
+   "concept": "dark",
+   "fx": "fog",
+   "emphasis": 0.8
+  },
+  {
+   "i": 7,
+   "concept": "quiet",
+   "fx": "whisper",
+   "emphasis": 0.7
+  },
+  {
+   "i": 11,
+   "concept": "rise",
+   "fx": "rise",
+   "emphasis": 0.9
+  },
+  {
+   "i": 14,
+   "concept": "rise",
+   "fx": "rise",
+   "emphasis": 0.6
+  },
+  {
+   "i": 17,
+   "concept": "city",
+   "fx": "flash",
+   "emphasis": 0.7
+  },
+  {
+   "i": 18,
+   "concept": "light",
+   "fx": "glow",
+   "emphasis": 0.6
+  },
+  {
+   "i": 19,
+   "concept": "sky",
+   "fx": "rise",
+   "emphasis": 0.6
+  },
+  {
+   "i": 20,
+   "concept": "sky",
+   "fx": "rise",
+   "emphasis": 0.8
+  },
+  {
+   "i": 23,
+   "concept": "electric",
+   "fx": "glitch",
+   "emphasis": 0.8
+  },
+  {
+   "i": 24,
+   "concept": "sky",
+   "fx": "rise",
+   "emphasis": 0.7
+  },
+  {
+   "i": 26,
+   "concept": "stars",
+   "fx": "sparkle",
+   "emphasis": 0.8
+  },
+  {
+   "i": 28,
+   "concept": "fall",
+   "fx": "drop",
+   "emphasis": 0.6
+  },
+  {
+   "i": 31,
+   "concept": "rain",
+   "fx": "drop",
+   "emphasis": 0.6
+  },
+  {
+   "i": 34,
+   "concept": "water",
+   "fx": "wave",
+   "emphasis": 0.6
+  },
+  {
+   "i": 37,
+   "concept": "water",
+   "fx": "wave",
+   "emphasis": 0.8
+  },
+  {
+   "i": 40,
+   "concept": "love",
+   "fx": "pulse",
+   "emphasis": 0.8
+  },
+  {
+   "i": 41,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.7
+  },
+  {
+   "i": 43,
+   "concept": "time",
+   "fx": "spin",
+   "emphasis": 0.7
+  },
+  {
+   "i": 46,
+   "concept": "world",
+   "fx": "spin",
+   "emphasis": 0.6
+  },
+  {
+   "i": 49,
+   "concept": "love",
+   "fx": "pulse",
+   "emphasis": 0.7
+  },
+  {
+   "i": 52,
+   "concept": "fire",
+   "fx": "flicker",
+   "emphasis": 0.9
+  },
+  {
+   "i": 56,
+   "concept": "break",
+   "fx": "shatter",
+   "emphasis": 0.8
+  },
+  {
+   "i": 59,
+   "concept": "fire",
+   "fx": "flicker",
+   "emphasis": 0.8
+  },
+  {
+   "i": 60,
+   "concept": "light",
+   "fx": "glow",
+   "emphasis": 0.7
+  },
+  {
+   "i": 64,
+   "concept": "light",
+   "fx": "glow",
+   "emphasis": 1
+  }
+ ]
+}

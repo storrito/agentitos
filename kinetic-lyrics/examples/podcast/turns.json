@@ -1,0 +1,27 @@
+[
+ {
+  "speaker": "A",
+  "start": 0.25,
+  "end": 4.666
+ },
+ {
+  "speaker": "B",
+  "start": 5.016,
+  "end": 6.104
+ },
+ {
+  "speaker": "A",
+  "start": 6.454,
+  "end": 14.305
+ },
+ {
+  "speaker": "B",
+  "start": 14.655,
+  "end": 18.089
+ },
+ {
+  "speaker": "A",
+  "start": 18.439,
+  "end": 24.797
+ }
+]
