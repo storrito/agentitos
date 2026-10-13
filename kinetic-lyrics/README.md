@@ -100,6 +100,8 @@ node tools/build.mjs examples/my-clip/transcript.json --video examples/my-clip/v
 - `blink`: the word opens like an eye and blinks once (concept `eye`: see, look, watch, blink …).
 - `redact`: a censor bar slides over the empty spot, the word appears underneath, the bar pulls away (concept `secret`: lie, secret, CIA, truth …).
 - `bounce`: the letters bounce in one after another (concept `animal`: dog, cat, Tier …).
+- `window`: the word sits dim behind a closed window whose two casements swing open as it is spoken (windows, doors, opening up, a reveal: "opened the door", "ein Fenster auf").
+- Exit `mow`: a cute push mower drives through the phrase and cuts the letters down to stubble. A gag: only for a phrase about mowing, a lawn or cutting grass, at most once per video; the mower follows the letters in, so the phrase is cut while it is spoken.
 - Concept `body` (brain, cortisol, sleep, stress, Körper …): heartbeat pulse. `speed` also knows car, lap, drive, Runde and Strecke.
 
 ## Numbers as graphics, annotations, checklists
@@ -249,7 +251,7 @@ Optional per-word overrides:
 
 | Field | Effect |
 | --- | --- |
-| `fx` | force a word effect: `rise drop flicker glow sparkle fog whisper slam glitch wave spin pulse shatter flash streak mask depth blur blink redact bounce` |
+| `fx` | force a word effect: `rise drop flicker glow sparkle fog whisper slam glitch wave spin pulse shatter flash streak mask depth blur blink redact bounce window count` |
 | `concept` | force a concept (`fire`, `water`, `time`, …) or `null` to switch it off |
 | `emphasis` | 0..1, controls size and hero choice |
 | `hero` | `true`: the word becomes the phrase's hero |
