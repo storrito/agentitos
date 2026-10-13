@@ -22,17 +22,16 @@ metadata:
 
 ```bash
 cd <skill> && npm install                     # node 20+, ffmpeg on the PATH
-npx hyperframes models install parakeet       # word-level speech recognition
 ```
 
-Speaker detection needs `<skill>/.venv` with sherpa-onnx and the models in `<skill>/models/diarize/`; fixing recognition gaps needs `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself, unless you are the operator's setup agent.
+With `OPENROUTER_API_KEY` in the environment, the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. Without it, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx and the models in `<skill>/models/diarize/`, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself, unless you are the operator's setup agent.
 
 ## A short from a clip (the main use)
 
 The person brings a clip of people talking and gets a vertical short: every spoken word appears big the moment it is said, over the clip's own footage (or a world of light for audio only), with effects on the words that carry the point and the speakers' names. Work in one folder per short, `<dir>`; it may already exist (made by your harness).
 
 1. `node <skill>/tools/short.mjs new <dir> <clip>` writes down every word with its timing into `<dir>/source/`. It takes a minute or two; say so before you start.
-2. Read the words (`<dir>/source/transcript.json`) and decide how many people speak. Then `node <skill>/tools/short.mjs brief <dir> --speakers <n>` works out who speaks when and writes `<dir>/source/brief.md`. Read the whole brief: it is your direction for this one video, with the vocabulary of the engine, the rules and the numbered words.
+2. Read the words (`<dir>/source/transcript.json`). Through OpenRouter they already say who speaks (`speaker` A, B, …): run `node <skill>/tools/short.mjs brief <dir>`. Without speakers, decide how many people speak and run `node <skill>/tools/short.mjs brief <dir> --speakers <n>`, which works out who speaks when. The brief goes to `<dir>/source/brief.md`. Read the whole brief: it is your direction for this one video, with the vocabulary of the engine, the rules and the numbered words.
 3. Direct the video: write the staging the brief asks for into `<dir>/source/staging.json`, all words, as one JSON file. You choose the world, the hook (a short headline in the language of the clip), the phrases, the words that get an effect and the marks. Respell words the speech recognition clearly misheard, under `fixes`.
 4. `node <skill>/tools/short.mjs build <dir>` builds the HyperFrames project into `<dir>/composition/`. If the staging has a mistake, the message names the field; fix the file and build again.
 5. `node <skill>/tools/short.mjs check <dir> 4,15` plays it through and lists what a viewer would notice. Fix the errors (✗) in the staging; the warnings (⚠) are mostly words read quickly. The seconds you name become pictures in `<dir>/stills/<t>.png`, which you can show.

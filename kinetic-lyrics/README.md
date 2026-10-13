@@ -65,7 +65,7 @@ Across all presets:
 
 `--out <dir>` creates a separate HyperFrames project per video.
 
-**Transcription:** Please use Parakeet (`npx hyperframes models install parakeet`, then `npx hyperframes transcribe audio.wav -e parakeet`). Whisper's word timings were off by up to 0.5 s in places in the demo.
+**Transcription:** `tools/clip.mjs` transcribes through OpenRouter when `OPENROUTER_API_KEY` is set (`tools/stt.mjs`, Gemini 3.5 Transcribe, about $0.006 per minute): words, timings and who speaks, with nothing to install but ffmpeg. The model gives times in tenths of a second; the build snaps every onset to the voice (`tools/align.mjs`). Speaker detection is switched on with the provider option `diarization_mode: "speaker"`, which OpenRouter passes to Google. On two-voice test clips, its text and speakers matched the local chain exactly. Without a key, or with `--asr parakeet`, it runs locally: Parakeet (`npx hyperframes models install parakeet`), speakers via `--diarize`, gaps via whisper.cpp. Whisper's own word timings were off by up to 0.5 s in places in the demo.
 
 ## Worlds
 
@@ -246,7 +246,7 @@ Claude only chooses from the renderer's fixed vocabulary, and the output is sche
 If the build runs inside an agent (Claude Code, a chat agent, …), that agent can do the directing itself instead of `claude -p`:
 
 ```bash
-node tools/clip.mjs upload.mp4 --out shorts/x          # audio, video, words (Parakeet, gaps via Whisper)
+node tools/clip.mjs upload.mp4 --out shorts/x          # audio, video, words and speakers (OpenRouter; or Parakeet, gaps via Whisper)
 node tools/build.mjs shorts/x/transcript.json --audio shorts/x/audio.wav --video shorts/x/video.mp4 \
   --preset podcast --aspect 9:16 --full-text --diarize 2 --staging-brief shorts/x/brief.md --staging shorts/x/staging.json
 # the agent reads brief.md and writes staging.json
@@ -343,4 +343,4 @@ Only use footage and audio you have the rights to. Build output (`videos/`, `ren
 
 ## Requirements
 
-Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). Optional: Python 3 + sherpa-onnx (`--diarize`), whisper.cpp (`repair.mjs`), Claude Code or an Anthropic API key (`--llm`).
+Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). `OPENROUTER_API_KEY` for transcription and speakers. Without it: Parakeet, Python 3 + sherpa-onnx (`--diarize`), whisper.cpp (`repair.mjs`). Optional: Claude Code or an Anthropic API key (`--llm`).

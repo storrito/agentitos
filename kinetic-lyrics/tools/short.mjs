@@ -83,8 +83,9 @@ const README = `# source/
 
 What \`tools/short.mjs\` of kinetic-lyrics keeps for this short:
 
-- \`video.*\`, \`audio.wav\`: the clip; \`transcript.json\`: its words with their timings
-- \`transcript.speakers*.json\`: who speaks when
+- \`video.*\`, \`audio.wav\`: the clip; \`transcript.json\`: its words with their timings and,
+  transcribed through OpenRouter, who speaks them
+- \`transcript.speakers*.json\`: who speaks when, found on this machine when the transcript has no speakers
 - \`settings.json\`: the options of the builds
 - \`brief.md\`: the direction to read; \`staging.json\`: the staging written from it
 
@@ -112,7 +113,8 @@ function brief(dir, opts) {
   const s = settings(dir, opts);
   if (node("build.mjs", ...buildArgs(dir, s), "--staging-brief", source(dir, "brief.md"), "--staging", source(dir, "staging.json")) !== 0)
     fail("The brief failed, see above.");
-  const latest = fs.readdirSync(source(dir)).filter((f) => /^transcript\.speakers.*\.json$/.test(f))
+  // who speaks: the transcript itself (OpenRouter) or the newest local diarization
+  const latest = fs.readdirSync(source(dir)).filter((f) => /^transcript(\.speakers.*)?\.json$/.test(f))
     .map((f) => source(dir, f)).sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs).pop();
   if (latest) {
     const raw = JSON.parse(fs.readFileSync(latest, "utf8"));

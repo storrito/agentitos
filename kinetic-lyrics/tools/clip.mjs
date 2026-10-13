@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 // A clip someone brings (video or audio) → a folder ready for build.mjs.
 //
-//   node tools/clip.mjs <clip> --out <dir> [--lang auto|de|en] [--no-repair]
+//   node tools/clip.mjs <clip> --out <dir> [--lang auto|de|en] [--asr openrouter|parakeet] [--no-repair]
 //
 // <dir>/audio.wav     the voice, mono 48 kHz
 // <dir>/video.<ext>   the footage as it came (build.mjs transcodes what the renderer can't play)
-// <dir>/transcript.json   word timings from Parakeet; stretches where the audio has speech but
-//                     Parakeet heard nothing are filled by Whisper when whisper.cpp is installed
-// Prints one JSON line: { duration, video, width, height, words, repaired, text }.
+// <dir>/transcript.json   word timings and who speaks (A, B, …). With OPENROUTER_API_KEY set
+//                     they come from Gemini 3.5 Transcribe through OpenRouter (tools/stt.mjs),
+//                     nothing to install; otherwise, or with --asr parakeet, from Parakeet on
+//                     this machine, without speakers (build.mjs --diarize finds them), and
+//                     stretches Parakeet heard nothing of are filled by Whisper when
+//                     whisper.cpp is installed
+// Prints one JSON line: { duration, video, width, height, words, speakers, repaired, asr, text }.
 
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { transcribe, duration } from "./asr.mjs";
 import { repairTranscript } from "./repair.mjs";
+import { transcribeRemote } from "./stt.mjs";
 
 const argv = process.argv.slice(2);
 const opt = {};
@@ -49,13 +54,23 @@ if (v) {
   if (path.resolve(clip) !== dst) fs.copyFileSync(clip, dst);
 }
 
-console.error("clip: transcribing with Parakeet …");
-let words = transcribe(wav, { log: console.error });
+const lang = typeof opt.lang === "string" ? opt.lang : "auto";
+const asr = typeof opt.asr === "string" ? opt.asr : process.env.OPENROUTER_API_KEY ? "openrouter" : "parakeet";
+if (!["openrouter", "parakeet"].includes(asr)) fail(`--asr ${asr}: openrouter or parakeet`);
+let words;
+if (asr === "openrouter") {
+  console.error("clip: transcribing with Gemini 3.5 Transcribe (OpenRouter) …");
+  try { words = await transcribeRemote(wav, { lang, log: console.error }); } catch (e) { fail(`transcription failed: ${e.message}`); }
+} else {
+  console.error("clip: transcribing with Parakeet …");
+  words = transcribe(wav, { log: console.error });
+}
 if (!words.length) fail("no speech found");
 let repaired = 0;
-if (!opt["no-repair"]) {
+// the gap repair makes up for what Parakeet misses; it needs whisper.cpp on this machine
+if (asr === "parakeet" && !opt["no-repair"]) {
   try {
-    const res = repairTranscript(wav, words, { lang: typeof opt.lang === "string" ? opt.lang : "auto", log: console.error });
+    const res = repairTranscript(wav, words, { lang, log: console.error });
     words = res.words;
     repaired = res.filled.length;
   } catch (e) { console.error(`clip: no gap repair (${e.message})`); }
@@ -64,5 +79,5 @@ fs.writeFileSync(path.join(out, "transcript.json"), JSON.stringify(words, null, 
 const text = words.map((w) => w.text).join(" ");
 console.log(JSON.stringify({
   duration: +duration(wav).toFixed(2), video: !!v, width: v?.width ?? null, height: v?.height ?? null,
-  words: words.length, repaired, text: text.length > 400 ? text.slice(0, 400) + " …" : text,
+  words: words.length, speakers: new Set(words.map((w) => w.speaker).filter(Boolean)).size, repaired, asr, text: text.length > 400 ? text.slice(0, 400) + " …" : text,
 }));
