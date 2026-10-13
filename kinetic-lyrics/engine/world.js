@@ -106,6 +106,12 @@ export function mount(canvas, plan) {
   }
 
   // ------------------------------------------------ layers
+  // scaling is bilinear everywhere: what gets scaled up is soft anyway, and the high quality
+  // filter costs several times as much per full-frame draw
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "low";
+  const BKS = 4;
+  const [bgc, B] = canvasOf(W / BKS, H / BKS); // the background, a quarter of the size
+  B.imageSmoothingQuality = "low";
   const [fx, fg] = canvasOf(W, H); // additive light (motifs), black = nothing
   const BL = [4, 8, 16].map((k) => canvasOf(W / k, H / k)); // bloom pyramid
   const [inv, ig] = INK ? canvasOf(W, H) : [null, null];
@@ -169,7 +175,7 @@ export function mount(canvas, plan) {
       img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.min(255, k); img.data[i + 3] = 255;
     }
     g.putImageData(img, 0, 0);
-    tex.fibre = c;
+    tex.fibre = c; // the vignette is drawn into it once VIG exists, below
   }
   // vignette (black, alpha by distance)
   // in frame coordinates (0..1 on both axes), the x distance weighted 1.25, as the shaders had it
@@ -185,7 +191,16 @@ export function mount(canvas, plan) {
     g.fillStyle = gr; g.fillRect(0, 0, 1.25, 1);
     return c;
   };
+  // neon scanlines need the full size: made once, laid on with one draw
+  let SCAN = null;
+  if (NEON) {
+    const [c, g] = canvasOf(W, H);
+    g.fillStyle = "rgba(0,0,0,0.16)";
+    for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 2);
+    SCAN = c;
+  }
   const VIG = vignette(STUDIO ? 0.16 : AURORA ? 0.35 : BOKEH ? 0.5 : NEON ? 0.4 : NOIR ? 0.6 : INK ? 0.07 : 0.55, 0.45, 1.25);
+  if (INK) tex.fibre.getContext("2d").drawImage(VIG, 0, 0, tex.fibre.width, tex.fibre.height);
 
   // ------------------------------------------------ motif data (seeded once)
   // particles: dust / embers / rising / rain / warp / stars
@@ -305,15 +320,15 @@ export function mount(canvas, plan) {
   }
 
   // ------------------------------------------------ backgrounds
-  function tinted(texture, col, alpha, dx = 0, dy = 0, scale = 1.15) {
+  function tinted(target, texture, col, alpha, dx = 0, dy = 0, scale = 1.15) {
     if (alpha <= 0.002) return;
     const [c, g] = tintBuf(texture);
     g.globalCompositeOperation = "copy"; g.drawImage(texture, 0, 0);
     g.globalCompositeOperation = "source-in"; g.fillStyle = rgba(col); g.fillRect(0, 0, c.width, c.height);
-    ctx.globalAlpha = clamp01(alpha);
+    target.globalAlpha = clamp01(alpha);
     const w = W * scale, h = H * scale;
-    ctx.drawImage(c, (W - w) / 2 + dx, (H - h) / 2 + dy, w, h);
-    ctx.globalAlpha = 1;
+    target.drawImage(c, (W - w) / 2 + dx, (H - h) / 2 + dy, w, h);
+    target.globalAlpha = 1;
   }
   const tintBufs = new Map();
   function tintBuf(texture) {
@@ -331,11 +346,14 @@ export function mount(canvas, plan) {
   const SPX = Math.max(Math.min(W, H), 0.6 * H);
   const px = (x) => W / 2 + x * SPX, py = (y) => H / 2 - y * SPX;
 
+  // the background is soft everywhere: drawn at a quarter of the size (vignette and fade included)
+  // and scaled up once, so its many full-frame layers cost a sixteenth
   function background(t, pal, L, fade) {
     const [c0, c1, c2, c3] = pal;
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = rgba(c0); ctx.fillRect(0, 0, W, H);
-    ctx.globalCompositeOperation = "lighter";
+    B.setTransform(1 / BKS, 0, 0, 1 / BKS, 0, 0); B.globalAlpha = 1;
+    B.globalCompositeOperation = "source-over";
+    B.fillStyle = rgba(c0); B.fillRect(0, 0, W, H);
+    B.globalCompositeOperation = "lighter";
     const sunY = L.sunY;
     if (NOIR) {
       // a dark room cut by slanted light through blinds; light / idea words open them wider.
@@ -359,87 +377,85 @@ export function mount(canvas, plan) {
       bg.restore();
       bg.globalCompositeOperation = "multiply";
       bg.drawImage(tex.haze, 0, 0, bc.width, bc.height);
-      ctx.globalCompositeOperation = "lighter";
-      ctx.drawImage(bc, 0, 0, W, H);
+      B.globalCompositeOperation = "lighter";
+      B.drawImage(bc, 0, 0, W, H);
     } else if (NEON) {
       // near-black, a glowing horizon over the grid floor, faint scanlines
-      const g = ctx.createLinearGradient(0, py(0.9), 0, py(-0.35));
+      const g = B.createLinearGradient(0, py(0.9), 0, py(-0.35));
       g.addColorStop(0, rgba(c0, 0)); g.addColorStop(1, rgba(mulc(c1, 0.55), 1));
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
       const hy = py(-0.28), hz = mixc(c2, c3, 0.35), k = (0.32 + L.pulse * 0.08 + L.flash * 0.2) * fade;
-      const hg = ctx.createLinearGradient(0, hy - SPX * 0.3, 0, hy + SPX * 0.3);
+      const hg = B.createLinearGradient(0, hy - SPX * 0.3, 0, hy + SPX * 0.3);
       hg.addColorStop(0, rgba(hz, 0)); hg.addColorStop(0.47, rgba(hz, k * 0.4)); hg.addColorStop(0.5, rgba(hz, k)); hg.addColorStop(0.53, rgba(hz, k * 0.4)); hg.addColorStop(1, rgba(hz, 0));
-      ctx.fillStyle = hg; ctx.fillRect(0, hy - SPX * 0.3, W, SPX * 0.6);
-      radial(ctx, px(0), py(sunY), SPX * 0.9, c3, L.sun * 0.1 * fade);
-      ctx.globalCompositeOperation = "multiply";
-      ctx.fillStyle = "rgba(0,0,0,0.16)";
-      for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 2);
+      B.fillStyle = hg; B.fillRect(0, hy - SPX * 0.3, W, SPX * 0.6);
+      radial(B, px(0), py(sunY), SPX * 0.9, c3, L.sun * 0.1 * fade);
     } else if (BOKEH) {
       // a warm, filmic dark room – soft light pools that drift very slowly
       const tt = t * 0.03;
-      const g = ctx.createLinearGradient(0, H, 0, 0);
+      const g = B.createLinearGradient(0, H, 0, 0);
       g.addColorStop(0, rgba(c0, 0)); g.addColorStop(0.75, rgba(mulc(c1, 0.6), 0.9));
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      radial(ctx, px(Math.sin(tt * 2) * 0.5), py(-0.35), SPX * 0.95, c2, 0.07 * fade * (1 + L.pulse * 0.05));
-      radial(ctx, px(Math.cos(tt * 1.7) * 0.55), py(0.4), SPX * 0.8, c3, 0.05 * fade);
-      radial(ctx, px(0), py(sunY), SPX * 0.7, c3, L.sun * 0.1 * fade);
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+      radial(B, px(Math.sin(tt * 2) * 0.5), py(-0.35), SPX * 0.95, c2, 0.07 * fade * (1 + L.pulse * 0.05));
+      radial(B, px(Math.cos(tt * 1.7) * 0.55), py(0.4), SPX * 0.8, c3, 0.05 * fade);
+      radial(B, px(0), py(sunY), SPX * 0.7, c3, L.sun * 0.1 * fade);
     } else if (STUDIO) {
       // seamless backdrop, light from above, soft floor shade
-      ctx.globalCompositeOperation = "source-over";
-      const g = ctx.createLinearGradient(0, H, 0, H * 0.28);
+      B.globalCompositeOperation = "source-over";
+      const g = B.createLinearGradient(0, H, 0, H * 0.28);
       g.addColorStop(0, rgba(c1)); g.addColorStop(1, rgba(c0));
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      radial(ctx, W / 2, H * 0.36, Math.max(W, H) * 0.55, mixc(c0, [1, 1, 1], 0.55), 0.65, [[0, 1], [0.5, 0.45], [1, 0]]);
-      ctx.globalCompositeOperation = "lighter";
-      radial(ctx, W / 2, H * 0.36, Math.max(W, H) * 0.45, c2, L.sun * 0.08);
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+      radial(B, W / 2, H * 0.36, Math.max(W, H) * 0.55, mixc(c0, [1, 1, 1], 0.55), 0.65, [[0, 1], [0.5, 0.45], [1, 0]]);
+      B.globalCompositeOperation = "lighter";
+      radial(B, W / 2, H * 0.36, Math.max(W, H) * 0.45, c2, L.sun * 0.08);
     } else if (AURORA) {
       // drifting colour fields and soft light bands
-      ctx.globalCompositeOperation = "source-over";
+      B.globalCompositeOperation = "source-over";
       const tt = t * 0.06;
-      const field = (x, y, r, col, a) => radial(ctx, px(x), py(y), SPX * r, col, a, [[0, 1], [0.5, 0.6], [1, 0]]);
+      const field = (x, y, r, col, a) => radial(B, px(x), py(y), SPX * r, col, a, [[0, 1], [0.5, 0.6], [1, 0]]);
       field(Math.sin(tt * 1.3) * 0.45, Math.cos(tt * 1.1) * 0.3 + 0.12, 1.3, c1, 0.85);
       field(Math.cos(tt * 0.9 + 2) * 0.5, Math.sin(tt * 1.2 + 1) * 0.35 - 0.18, 1.15, mixc(c1, c2, 0.4), 0.4);
       field(Math.sin(tt * 0.7 + 4) * 0.42, Math.cos(tt * 0.8 + 3) * 0.4, 1.0, mixc(c1, c3, 0.2), 0.16);
-      ctx.globalCompositeOperation = "lighter";
+      B.globalCompositeOperation = "lighter";
       // light bands: narrow curtains swaying sideways, brightest at the top
       for (let i = 0; i < 4; i++) {
         const x = px(Math.sin(tt * 2 + i * 1.7) * 0.6 + (i - 1.5) * 0.35), w = SPX * 0.05;
-        const g = ctx.createLinearGradient(x - w, 0, x + w, 0);
+        const g = B.createLinearGradient(x - w, 0, x + w, 0);
         g.addColorStop(0, rgba(c2, 0)); g.addColorStop(0.5, rgba(c2, 0.1 * fade)); g.addColorStop(1, rgba(c2, 0));
-        ctx.fillStyle = g; ctx.fillRect(x - w, 0, w * 2, py(0.1));
-        const fadeOut = ctx.createLinearGradient(0, py(0.1), 0, py(-0.7));
+        B.fillStyle = g; B.fillRect(x - w, 0, w * 2, py(0.1));
+        const fadeOut = B.createLinearGradient(0, py(0.1), 0, py(-0.7));
         fadeOut.addColorStop(0, rgba(c2, 0.1 * fade)); fadeOut.addColorStop(1, rgba(c2, 0));
-        ctx.save(); ctx.beginPath(); ctx.rect(x - w, py(0.1), w * 2, py(-0.7) - py(0.1)); ctx.clip();
-        ctx.fillStyle = g; ctx.globalAlpha = 0.5; ctx.fillRect(x - w, py(0.1), w * 2, py(-0.7) - py(0.1)); ctx.restore();
+        B.save(); B.beginPath(); B.rect(x - w, py(0.1), w * 2, py(-0.7) - py(0.1)); B.clip();
+        B.fillStyle = g; B.globalAlpha = 0.5; B.fillRect(x - w, py(0.1), w * 2, py(-0.7) - py(0.1)); B.restore();
       }
-      tinted(tex.cloud, c3, 0.08 * fade, Math.sin(tt) * 40, Math.cos(tt) * 30, 1.3);
-      radial(ctx, px(0), py(sunY), SPX * 0.8, c3, L.sun * 0.16 * fade);
-      if (L.flash > 0.01) { ctx.fillStyle = rgba(c3, L.flash * 0.15); ctx.fillRect(0, 0, W, H); }
-      if (L.fog > 0.01) { ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = rgba(c0, L.fog * 0.4); ctx.fillRect(0, 0, W, H); }
+      tinted(B, tex.cloud, c3, 0.08 * fade, Math.sin(tt) * 40, Math.cos(tt) * 30, 1.3);
+      radial(B, px(0), py(sunY), SPX * 0.8, c3, L.sun * 0.16 * fade);
+      if (L.flash > 0.01) { B.fillStyle = rgba(c3, L.flash * 0.15); B.fillRect(0, 0, W, H); }
+      if (L.fog > 0.01) { B.globalCompositeOperation = "source-over"; B.fillStyle = rgba(c0, L.fog * 0.4); B.fillRect(0, 0, W, H); }
     } else if (!INK) {
       // cosmos: the nebula drifts, highlights breathe, clouds pass, a light source rises
       const tt = t * 0.035, cy = L.camY;
-      tinted(tex.mid, c1, 0.9 * fade, Math.sin(tt) * W * 0.03, (Math.cos(tt * 0.8) * 0.02 + cy * 0.01) * H, 1.18 + Math.sin(tt * 0.5) * 0.03);
-      tinted(tex.hi, c2, 0.45 * fade, Math.cos(tt * 0.9) * W * 0.035, Math.sin(tt) * H * 0.02, 1.22);
-      tinted(tex.cloud, mixc(mulc(c1, 1.25), c3, 0.16), L.cloud * 0.55 * fade, ((t * 0.05 * SPX) % (W * 0.3)) - W * 0.15, 0, 1.4);
+      tinted(B, tex.mid, c1, 0.9 * fade, Math.sin(tt) * W * 0.03, (Math.cos(tt * 0.8) * 0.02 + cy * 0.01) * H, 1.18 + Math.sin(tt * 0.5) * 0.03);
+      tinted(B, tex.hi, c2, 0.45 * fade, Math.cos(tt * 0.9) * W * 0.035, Math.sin(tt) * H * 0.02, 1.22);
+      tinted(B, tex.cloud, mixc(mulc(c1, 1.25), c3, 0.16), L.cloud * 0.55 * fade, ((t * 0.05 * SPX) % (W * 0.3)) - W * 0.15, 0, 1.4);
       const sx = px(0), sy = py(sunY);
-      radial(ctx, sx, sy, SPX * 0.8, c3, L.sun * 0.12 * fade, [[0, 1], [0.25, 0.3], [1, 0]]);
-      radial(ctx, sx, sy, SPX * 1.6, c2, L.sun * 0.06 * fade);
+      radial(B, sx, sy, SPX * 0.8, c3, L.sun * 0.12 * fade, [[0, 1], [0.25, 0.3], [1, 0]]);
+      radial(B, sx, sy, SPX * 1.6, c2, L.sun * 0.06 * fade);
       if (L.horizon > 0.01) {
-        const hy = py(-0.16), g = ctx.createLinearGradient(0, hy - SPX * 0.15, 0, hy + SPX * 0.15);
+        const hy = py(-0.16), g = B.createLinearGradient(0, hy - SPX * 0.15, 0, hy + SPX * 0.15);
         g.addColorStop(0, rgba(c2, 0)); g.addColorStop(0.5, rgba(c2, L.horizon * 0.55 * fade)); g.addColorStop(1, rgba(c2, 0));
-        ctx.fillStyle = g; ctx.fillRect(0, hy - SPX * 0.15, W, SPX * 0.3);
+        B.fillStyle = g; B.fillRect(0, hy - SPX * 0.15, W, SPX * 0.3);
       }
-      if (L.warpBg > 0.01) radial(ctx, W / 2, H / 2, Math.max(W, H) * 0.9, c2, L.warpBg * 0.18 * fade, [[0, 0], [0.4, 0], [1, 1]]);
-      if (L.flash > 0.01) { ctx.fillStyle = rgba(mixc(c2, [1, 1, 1], 0.4), L.flash * 0.22); ctx.fillRect(0, 0, W, H); }
+      if (L.warpBg > 0.01) radial(B, W / 2, H / 2, Math.max(W, H) * 0.9, c2, L.warpBg * 0.18 * fade, [[0, 0], [0.4, 0], [1, 1]]);
+      if (L.flash > 0.01) { B.fillStyle = rgba(mixc(c2, [1, 1, 1], 0.4), L.flash * 0.22); B.fillRect(0, 0, W, H); }
       if (L.fog > 0.01) {
         // fog: desaturate and sink
-        ctx.globalCompositeOperation = "saturation"; ctx.fillStyle = `rgba(128,128,128,${(L.fog * 0.65).toFixed(3)})`; ctx.fillRect(0, 0, W, H);
-        ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = rgba(c0, L.fog * 0.35); ctx.fillRect(0, 0, W, H);
+        B.globalCompositeOperation = "saturation"; B.fillStyle = `rgba(128,128,128,${(L.fog * 0.65).toFixed(3)})`; B.fillRect(0, 0, W, H);
+        B.globalCompositeOperation = "source-over"; B.fillStyle = rgba(c0, L.fog * 0.35); B.fillRect(0, 0, W, H);
       }
     }
-    ctx.globalCompositeOperation = "source-over";
-    if (!STUDIO) ctx.drawImage(VIG, 0, 0, W, H);
+    B.globalCompositeOperation = "source-over";
+    if (!STUDIO) B.drawImage(VIG, 0, 0, W, H);
+    if (fade < 1 && !STUDIO) { B.fillStyle = `rgba(0,0,0,${(1 - fade).toFixed(3)})`; B.fillRect(0, 0, W, H); }
   }
 
   // ------------------------------------------------ motifs (additive, on fx)
@@ -855,16 +871,21 @@ export function mount(canvas, plan) {
     if (strength <= 0.01) return;
     let src = fx;
     for (const [i, [c, g]] of BL.entries()) {
-      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "medium";
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "medium"; // filtered, so small lights do not flicker
       g.globalCompositeOperation = "copy"; g.drawImage(src, 0, 0, c.width, c.height);
       // a soft threshold, as the bloom pass had: squaring keeps the bright light, drops the faint
       if (i === 0) { g.globalCompositeOperation = "multiply"; g.drawImage(c, 0, 0); g.drawImage(c, 0, 0); g.globalCompositeOperation = "lighter"; g.drawImage(c, 0, 0); }
       src = c;
     }
-    target.globalCompositeOperation = "lighter";
-    target.imageSmoothingEnabled = true; target.imageSmoothingQuality = "high";
+    // the three levels summed into the quarter-size one, which is scaled up once
     const w = [0.5, 0.65, 0.8].map((k) => k * strength * (0.6 + radius));
-    BL.forEach(([c], i) => { target.globalAlpha = clamp01(w[i]); target.drawImage(c, 0, 0, W, H); });
+    const [c0, g0] = BL[0];
+    g0.globalCompositeOperation = "copy"; g0.globalAlpha = clamp01(w[0]); g0.drawImage(c0, 0, 0);
+    g0.globalCompositeOperation = "lighter"; g0.imageSmoothingQuality = "high"; // small, so the good filter is cheap
+    for (const i of [1, 2]) { g0.globalAlpha = clamp01(w[i]); g0.drawImage(BL[i][0], 0, 0, c0.width, c0.height); }
+    g0.globalAlpha = 1;
+    target.globalCompositeOperation = "lighter";
+    target.drawImage(c0, 0, 0, W, H);
     target.globalAlpha = 1;
     target.globalCompositeOperation = "source-over";
   }
@@ -914,7 +935,9 @@ export function mount(canvas, plan) {
     } else {
       if (bgFade > 0.001) {
         background(t, pal, BG, bgFade);
-        if (bgFade < 1 && !STUDIO) { ctx.fillStyle = `rgba(0,0,0,${(1 - bgFade).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
+        ctx.globalCompositeOperation = "copy"; ctx.drawImage(bgc, 0, 0, W, H);
+        ctx.globalCompositeOperation = "source-over";
+        if (SCAN) ctx.drawImage(SCAN, 0, 0);
       } else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
       if (STUDIO) studio(t, pal, L, fade);
       else {
@@ -939,12 +962,15 @@ export function mount(canvas, plan) {
   }
 
   function paper(pal) {
-    // paper from the ground colours: mottled between the two, fibre multiplied in, a faint vignette
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = rgba(pal[1]); ctx.fillRect(0, 0, W, H);
-    tinted(tex.mottle, pal[0], 1, 0, 0, 1);
+    // paper from the ground colours, mottled between the two (small, scaled up), then the fibre
+    // with the vignette baked in, multiplied in one draw
+    B.setTransform(1 / BKS, 0, 0, 1 / BKS, 0, 0); B.globalAlpha = 1;
+    B.globalCompositeOperation = "source-over";
+    B.fillStyle = rgba(pal[1]); B.fillRect(0, 0, W, H);
+    tinted(B, tex.mottle, pal[0], 1, 0, 0, 1);
+    ctx.globalCompositeOperation = "copy"; ctx.drawImage(bgc, 0, 0, W, H);
     ctx.globalCompositeOperation = "multiply"; ctx.drawImage(tex.fibre, 0, 0, W, H);
-    ctx.globalCompositeOperation = "source-over"; ctx.drawImage(VIG, 0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
   }
 
   return { renderAt, signals: S };

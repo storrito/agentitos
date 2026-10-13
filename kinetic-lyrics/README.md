@@ -11,7 +11,7 @@ npx hyperframes preview --background       # Studio
 npx hyperframes render                     # MP4, on the CPU: no graphics card needed
 ```
 
-**Render speed:** The world is drawn with Canvas 2D in CPU memory, no WebGL, so a render needs no graphics card. The 25-second 16:9 demo with every motif renders in 173 s on 8 laptop CPU cores (155 s on 20 threads), a 13-second 9:16 short in 75 s; the former three.js world took about 4 s per frame (~50 min for the demo) without a GPU.
+**Render speed:** The world is drawn with Canvas 2D in CPU memory, no WebGL, so a render needs no graphics card. On 8 laptop CPU cores the 25-second 16:9 demo with every motif renders in 109 s and a 13-second 9:16 short in 68 s; the former three.js world took about 4 s per frame without a GPU. The world itself costs 10–37 ms per frame: what costs is every layer that covers the whole frame, not the number of motifs, so the background is drawn at a quarter of the size and scaled up once, and the bloom is summed small and scaled up once.
 
 Options: `--aspect 16:9|9:16|1:1|4:5|21:9` or `--size 2560x1080`, `--audio <file>`, `--title`, `--seed` (another layout variant), `--tail` (seconds after the last word).
 
