@@ -162,6 +162,10 @@ export function createSignals(plan) {
   // stars are always faintly present; dark scenes bring fog
   for (let i = 0; i < N; i++) tables.stars[i] = Math.max(tables.stars[i], 0.18);
 
+  // the soft ripple behind a hero word only where its effect lands with a hit or a burst:
+  // a whispered, fogged or opened word gets no shockwave
+  const RIPPLE_FX = new Set(["slam", "shatter", "drop", "pulse", "glow"]);
+
   // rhythmic energy from word onsets
   // Fast speech has 3–4 words a second: pulsing on every one reads as a nervous zoom.
   // Every word only breathes a little; stressed words pulse, at most every 1.4 s;
@@ -182,7 +186,7 @@ export function createSignals(plan) {
       pulseT[i] = Math.max(pulseT[i], a * env);
       if (kick) kickT[i] = Math.max(kickT[i], Math.min(1, dt / 0.12) * Math.exp(-dt * 2.6));
     }
-    if (w.hero) heroOnsets.push({ t: w.start, e: w.emphasis });
+    if (w.hero && RIPPLE_FX.has(w.fx)) heroOnsets.push({ t: w.start, e: w.emphasis });
   }
   for (let i = 0; i < N; i++) flashT[i] = Math.max(tables.lightning[i] * 0.6 * ((i * 7) % 5 === 0 ? 1 : 0.35), tables.shock[i] * 0.5);
 

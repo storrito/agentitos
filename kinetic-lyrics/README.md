@@ -112,8 +112,8 @@ node tools/build.mjs examples/my-clip/transcript.json --video examples/my-clip/v
 
 - `blink`: the word opens like an eye and blinks once (concept `eye`: see, look, watch, blink …).
 - `redact`: a censor bar slides over the empty spot, the word appears underneath, the bar pulls away (concept `secret`: lie, secret, CIA, truth …).
-- `bounce`: the letters bounce in one after another (concept `animal`: dog, cat, Tier …).
-- `window`: the word sits dim behind a closed window whose two casements swing open as it is spoken (windows, doors, opening up, a reveal: "opened the door", "ein Fenster auf").
+- `bounce`: the letters jump up from the line one after another, land squashed, and now and then one hops again (concept `animal`: dog, cat, Tier …).
+- `window`: the word is the window: as the next word is spoken it splits down the middle and both halves swing open towards the viewer like casements, light pouring through the gap (windows, doors, opening up, a reveal: "opened the door", "ein Fenster auf").
 - Exit `mow`: a cute push mower drives through the phrase and cuts the letters down to stubble. A gag: only for a phrase about mowing, a lawn or cutting grass, at most once per video; the mower follows the letters in, so the phrase is cut while it is spoken.
 - Concept `body` (brain, cortisol, sleep, stress, Körper …): heartbeat pulse. `speed` also knows car, lap, drive, Runde and Strecke.
 
@@ -264,7 +264,7 @@ Optional per-word overrides:
 
 | Field | Effect |
 | --- | --- |
-| `fx` | force a word effect: `rise drop flicker glow sparkle fog whisper slam glitch wave spin pulse shatter flash streak mask depth blur blink redact bounce window count` |
+| `fx` | force a word effect: `rise drop flicker glow sparkle fog whisper slam glitch wave spin pulse shatter flash streak count blink redact bounce window depth blur`, and only by hand `mask soft snap` |
 | `concept` | force a concept (`fire`, `water`, `time`, …) or `null` to switch it off |
 | `emphasis` | 0..1, controls size and hero choice |
 | `hero` | `true`: the word becomes the phrase's hero |
@@ -292,19 +292,22 @@ transcript.json ──► tools/analyze.mjs ──► plan.json ──► compos
 | Concept | Word | World |
 | --- | --- | --- |
 | rise / sky | letters rise, phrase drifts up | rising particles, clouds |
-| fall / rain | letters drop with a bounce | rain streaks |
-| fire | flicker + ember glow | embers |
+| fall / rain | heavy letters fall and land with a thud | rain streaks |
+| fire | letters catch fire from below and keep licking | embers |
 | light | glow burst | sun with rays |
 | stars | sparkles | star field, twinkle |
-| water | wave motion | dot ocean |
+| water | a wave keeps rolling through the letters | dot ocean |
 | time | 3D flip | gyroscope rings, clock ticks |
 | world | 3D flip | dot planet with atmosphere |
 | love | heartbeat pulses | double pulse rings |
 | break | letters explode | glass shards |
 | electric | glitch, RGB split | lightning, glitch pass |
-| city | neon switch-on | neon grid + skyline |
+| city | neon tubes stutter on, one buzzes later | neon grid + skyline |
 | loud | slam + shake | shockwave, camera shake |
-| dark / quiet | blur-in, wide spacing, serif | fog, desaturated |
+| dark | big letters loom one by one out of drifting mist | fog, desaturated |
+| quiet | small hushed serif, breathed in letter by letter | fog, desaturated |
+
+The soft ripple ring behind a hero word only comes with an effect that lands with a hit or a burst (`slam`, `shatter`, `drop`, `pulse`, `glow`); concept rings (love, loud) stay. Before a real pause (over 0.9 s) an exit may take up to 0.5 s instead of 0.36 s, so it can be seen; when the last word has no time to be read, the exit is a plain fade.
 
 Everything is deterministic: the world is a pure function `(plan, t)`, particle motion runs on pre-integrated phases, and randomness comes from seeded PRNGs.
 

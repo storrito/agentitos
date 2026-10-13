@@ -42,9 +42,9 @@ function rng(seed) {
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const el = (tag, cls, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; if (parent) parent.appendChild(e); return e; };
 
-const SOFT_FX = new Set(["whisper", "fog"]);
+const SOFT_FX = new Set(["whisper"]);
 // effects that reveal letters from below a baseline mask; everything else may glow / fly freely
-const MASKED_FX = new Set(["mask", "rise", "wave", "flicker"]);
+const MASKED_FX = new Set(["mask", "wave"]);
 
 export function build(root, plan, gsap) {
   const PALETTES = palettesOf(plan);
@@ -93,7 +93,7 @@ export function build(root, plan, gsap) {
   function tokens(ws, fnK = 0.56) {
     return ws.map((w) => {
       const style = styleOf(w);
-      return { w, style, k: style === "serif" ? (w.role === "fn" ? fnK : 0.78) : 1 };
+      return { w, style, k: style === "serif" ? (w.role === "fn" ? fnK : w.fx === "whisper" ? 0.62 : 0.78) : 1 };
     });
   }
   function width100(line) {
@@ -470,15 +470,15 @@ export function build(root, plan, gsap) {
   // How long each effect needs before the word is readable. Effects start that much
   // *before* the spoken onset, so legibility – not the first pixel – hits the beat.
   const LEAD = {
-    soft: 0.1, mask: 0.1, rise: 0.14, drop: 0.32, flicker: 0.1, glow: 0.08, sparkle: 0.16, fog: 0.16, whisper: 0.16,
+    soft: 0.1, mask: 0.1, rise: 0.24, drop: 0.32, flicker: 0.1, glow: 0.08, sparkle: 0.16, fog: 0.24, whisper: 0.16,
     slam: 0.06, glitch: 0.04, wave: 0.1, snap: 0.06, spin: 0.2, pulse: 0.1, shatter: 0.05, flash: 0.08, streak: 0.12, depth: 0.2, blur: 0.12,
     blink: 0.1, redact: 0.14, bounce: 0.14, window: 0.2,
   };
   // seconds until a word is whole, per effect (schedule + QA)
   const READY_AT = {
-    soft: 0.3, mask: 0.38, rise: 0.5, drop: 0.55, flicker: 0.42, glow: 0.2, sparkle: 0.3, fog: 0.3, whisper: 0.3, slam: 0.25,
-    glitch: 0.45, wave: 0.38, spin: 0.45, pulse: 0.35, shatter: 0.2, flash: 0.4, streak: 0.35, depth: 0.42, blur: 0.4, count: 0.45, snap: 0.14,
-    blink: 0.22, redact: 0.4, bounce: 0.42, window: 0.3,
+    soft: 0.3, mask: 0.38, rise: 0.85, drop: 0.55, flicker: 0.42, glow: 0.2, sparkle: 0.3, fog: 0.85, whisper: 0.3, slam: 0.25,
+    glitch: 0.45, wave: 0.38, spin: 0.45, pulse: 0.35, shatter: 0.2, flash: 0.55, streak: 0.35, depth: 0.7, blur: 0.4, count: 0.45, snap: 0.14,
+    blink: 0.22, redact: 0.4, bounce: 0.45, window: 0.3,
   };
   const fxOf = (w, ph) => w.fx || (w.role === "fn" ? "soft" : ph.enter);
   const baseAppear = (ph) => {
@@ -556,7 +556,8 @@ export function build(root, plan, gsap) {
         xs = Math.max(minExit, plan.cta ? plan.cta.start - 0.3 : plan.duration - 0.95);
       } else {
         const nextAt = baseAppear(next);
-        xd = clamp((nextAt - ph.end) * 0.8 + 0.18, 0.2, 0.36);
+        // fast speech leaves a quick exit; a real pause before the next lockup lets it be seen
+        xd = clamp((nextAt - ph.end) * 0.8 + 0.18, 0.2, nextAt - ph.end > 0.9 ? 0.5 : 0.36);
         // a short gap is no pause worth showing: an empty frame for a few tenths reads as a flicker
         xs = (nextAt - ph.tOut < 0.8 ? nextAt + 0.02 : ph.tOut) - xd;
         if (xs < minExit) {
@@ -592,7 +593,7 @@ export function build(root, plan, gsap) {
     const st = Math.min(0.035, D * 0.6 / Math.max(1, chars.length), 0.22 / Math.max(1, chars.length));
     const shuffled = chars.map((c) => [r(), c]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
     // effects that reveal letter by letter are whole only after the stagger
-    const perLetter = ["mask", "rise", "drop", "flicker", "sparkle", "wave", "spin", "flash", "bounce"].includes(fx) ? st * (fx === "bounce" ? 1.2 : 1) * Math.max(0, chars.length - 1) : 0;
+    const perLetter = ["mask", "whisper", "drop", "flicker", "sparkle", "wave", "spin", "bounce"].includes(fx) ? st * (fx === "bounce" ? 1.4 : 1) * Math.max(0, chars.length - 1) : 0;
     QA.words.push({ i: w.i, phrase: ph.id, fx, ready: +(T + (READY[fx] ?? 0.4) + perLetter).toFixed(3), exit: ph.exitAt });
     we.T = T;
 
@@ -615,21 +616,31 @@ export function build(root, plan, gsap) {
         tl.fromTo(tgt, { opacity: 0, y: "0.25em", filter: "blur(10px)" }, { opacity: 0.82, y: 0, filter: "blur(0px)", duration: 0.45, ease: "power3.out" }, T);
         break;
       case "rise":
-        tl.fromTo(chars, { yPercent: 130, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.9, ease: "expo.out", stagger: st * 1.4 }, T);
-        // marked words hold still: drifting letters would climb out of the marker
-        if (!we.marker) tl.fromTo(tgt, { y: 0 }, { y: "-0.12em", duration: Math.max(0.4, ph.tOut - T), ease: "none" }, T);
+        // balloons let go: every letter floats up from below at its own pace, swaying, and the
+        // word keeps drifting a little higher (marked words hold still, or they leave the marker)
+        chars.forEach((c) => {
+          const at = T + r() * 0.3, dur = 0.85 + r() * 0.3, sway = (r() - 0.5) * 0.24;
+          tl.fromTo(c, { y: `${(1.1 + r() * 0.7).toFixed(2)}em`, opacity: 0 }, { y: 0, opacity: 1, duration: dur, ease: "sine.out" }, at);
+          tl.fromTo(c, { x: `${sway.toFixed(3)}em`, rotation: (r() - 0.5) * 24 }, { x: 0, rotation: 0, duration: dur, ease: "back.out(1.6)" }, at);
+        });
+        if (!we.marker) tl.fromTo(tgt, { y: 0 }, { y: "-0.22em", duration: Math.max(0.6, ph.tOut - T), ease: "sine.inOut" }, T);
         break;
       case "drop":
         tl.fromTo(shuffled, { y: () => -(0.6 + r() * 0.8) * we.size, rotation: () => (r() - 0.5) * 40, opacity: 0 },
           { y: 0, rotation: 0, opacity: 1, duration: 0.6, ease: "bounce.out", stagger: st }, T);
         break;
       case "flicker": {
-        tl.fromTo(chars, { yPercent: 115 }, { yPercent: 0, duration: 0.5, ease: E.out, stagger: st }, T);
+        // firelight: the letters catch from the bottom like flames, then keep licking and
+        // glowing warm while the word is up
+        const hold = Math.max(T + 1, ph.exitAt ?? ph.tOut);
+        tl.fromTo(chars, { scaleY: 0, opacity: 0, transformOrigin: "50% 100%" }, { scaleY: 1, opacity: 1, duration: 0.45, ease: "back.out(2.2)", stagger: st }, T);
         chars.forEach((c, ci) => {
-          for (let k = 0; k < 7; k++) tl.set(c, { opacity: k === 6 ? 1 : r() > 0.45 ? 1 : 0.15 }, T + ci * st + k * 0.045);
+          for (let t = T + 0.4 + ci * st; t < hold; t += 0.09 + r() * 0.09) {
+            tl.to(c, { scaleY: 0.93 + r() * 0.14, skewX: (r() - 0.5) * 7, opacity: 0.72 + r() * 0.28, duration: 0.09, ease: "sine.inOut" }, t);
+          }
         });
-        tl.fromTo(tgt, { textShadow: "0 0 0.05em rgba(255,140,40,1), 0 0 0.6em rgba(255,90,20,0.9)" },
-          { textShadow: "0 0 0.02em rgba(255,140,40,0.6), 0 0 0.3em rgba(255,90,20,0.45)", duration: 1.2, ease: "power2.out" }, T);
+        tl.fromTo(tgt, { textShadow: "0 0 0.05em rgba(255,150,50,1), 0 0 0.7em rgba(255,90,20,0.95)" },
+          { textShadow: "0 -0.04em 0.05em rgba(255,150,50,0.75), 0 -0.1em 0.4em rgba(255,90,20,0.55)", duration: 1.2, ease: "power2.out" }, T);
         break;
       }
       case "glow":
@@ -651,10 +662,23 @@ export function build(root, plan, gsap) {
         }
         break;
       }
-      case "fog":
+      case "fog": {
+        // letters loom out of a fog bank one by one, grey before they are whole, while a veil
+        // of mist drifts across the word and thins out
+        const veil = el("i", "ky-fogveil", wd);
+        tl.fromTo(veil, { xPercent: -30, opacity: 0 }, { xPercent: 22, opacity: 0.75, duration: 1.1, ease: "sine.inOut" }, T);
+        tl.to(veil, { xPercent: 45, opacity: 0, duration: 1.3, ease: "sine.in" }, T + 1.1);
+        shuffled.forEach((c, k) => {
+          const at = T + (k / Math.max(1, chars.length - 1)) * 0.45 + r() * 0.15;
+          tl.fromTo(c, { opacity: 0, filter: "blur(14px) saturate(0)", scale: 1.12 },
+            { opacity: 1, filter: "blur(0px) saturate(1)", scale: 1, duration: 0.7 + r() * 0.3, ease: "power1.out" }, at);
+        });
+        break;
+      }
       case "whisper":
-        tl.fromTo(tgt, { opacity: 0, filter: "blur(12px)" }, { opacity: 0.92, filter: "blur(0px)", duration: 0.3, ease: "power2.out" }, T);
-        tl.fromTo(tgt, { letterSpacing: "0.3em" }, { letterSpacing: "0.02em", duration: Math.max(0.9, D * 1.6), ease: "power3.out" }, T);
+        // small and hushed: the letters are breathed in one after another, no glow, kept airy
+        tl.set(tgt, { textShadow: "none", letterSpacing: "0.12em" }, T);
+        tl.fromTo(chars, { opacity: 0, y: "0.18em" }, { opacity: 0.78, y: 0, duration: 0.5, ease: "sine.out", stagger: st * 1.6 }, T);
         break;
       case "slam":
         tl.fromTo(tgt, { scale: 2.6, opacity: 0, filter: "blur(10px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.32, ease: "power4.out" }, T);
@@ -667,14 +691,19 @@ export function build(root, plan, gsap) {
         tl.fromTo(shuffled, { opacity: 0 }, { opacity: 1, duration: 0.01, stagger: 0.03 }, T);
         break;
       }
-      case "wave":
-        tl.fromTo(chars, { yPercent: 115, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.6, ease: E.out, stagger: st }, T);
-        chars.forEach((c, ci) => {
-          const span = Math.max(0.6, ph.tOut - T - 0.5);
-          const cycles = Math.max(1, Math.floor(span / 0.9));
-          tl.fromTo(c, { y: 0 }, { y: `-${(0.06).toFixed(2)}em`, duration: 0.45, ease: "sine.inOut", yoyo: true, repeat: cycles * 2 - 1 }, T + 0.4 + ci * 0.07);
-        });
+      case "wave": {
+        // the letters roll in on a crest, then a wave keeps running through the word
+        tl.fromTo(chars, { yPercent: 115, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.6, ease: E.out, stagger: st * 1.6 }, T);
+        const hold = (ph.exitAt ?? ph.tOut) - 0.3;
+        for (let t0 = T + 0.45; t0 + chars.length * 0.07 < hold; t0 += 1.1) {
+          chars.forEach((c, ci) => {
+            const at = t0 + ci * 0.07;
+            tl.to(c, { y: "-0.2em", rotation: -6, duration: 0.2, ease: "sine.out" }, at);
+            tl.to(c, { y: 0, rotation: 0, duration: 0.26, ease: "sine.in" }, at + 0.2);
+          });
+        }
         break;
+      }
       case "spin":
         tl.fromTo(chars, { rotationY: -100, opacity: 0, transformOrigin: "50% 50% -0.3em" },
           { rotationY: 0, opacity: 1, duration: 0.6, ease: "back.out(1.6)", stagger: st }, T);
@@ -699,16 +728,31 @@ export function build(root, plan, gsap) {
         shake(phraseEls.find((p) => p.ph.id === ph.id).lk, tb, 0.3, we.size * 0.04, r);
         break;
       }
-      case "flash":
-        // neon switching on: letters light up one after another, glow settles
-        tl.fromTo(shuffled, { opacity: 0, filter: "brightness(2.2)" }, { opacity: 1, filter: "brightness(1)", duration: 0.35, ease: "power2.out", stagger: 0.04 }, T);
-        tl.fromTo(tgt, { textShadow: `0 0 0.5em ${C.accent}` }, { textShadow: `0 0 0.18em ${C.accent}`, duration: 1, ease: "power2.out" }, T);
+      case "flash": {
+        // neon switching on: every tube stutters into life at its own moment, glowing hard;
+        // a while later one letter buzzes off and on again
+        tl.fromTo(tgt, { textShadow: `0 0 0.04em #fff, 0 0 0.2em ${C.accent}, 0 0 0.6em ${C.accent}` },
+          { textShadow: `0 0 0.02em #fff, 0 0 0.14em ${C.accent}, 0 0 0.4em ${C.accent}`, duration: 1.2, ease: "power1.out" }, T + 0.3);
+        shuffled.forEach((c) => {
+          tl.fromTo(c, { opacity: 0 }, { opacity: 0.1, duration: 0.01 }, T);
+          let at = T + r() * 0.3;
+          for (const o of [1, 0.15, 1, 0.35, 1]) { tl.set(c, { opacity: o }, at); at += 0.03 + r() * 0.04; }
+        });
+        const tb = T + 1.05;
+        if (tb < (ph.exitAt ?? Infinity) - 0.35) {
+          const c = chars[Math.floor(r() * chars.length)];
+          [0.15, 1, 0.3, 1].forEach((o, j) => tl.set(c, { opacity: o }, tb + j * 0.05));
+        }
         break;
+      }
       case "streak":
         tl.fromTo(tgt, { x: -W * 0.4, skewX: -28, opacity: 0, filter: "blur(16px)" }, { x: 0, skewX: 0, opacity: 1, filter: "blur(0px)", duration: 0.5, ease: "expo.out" }, T);
         break;
       case "depth":
-        tl.fromTo(tgt, { z: -700, rotationX: 50, opacity: 0, filter: "blur(10px)" }, { z: 0, rotationX: 0, opacity: 1, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, T);
+        // rises from far below the horizon, lying flat, and stands up as it arrives
+        // (its own perspective: the stage's does not reach through the lockup's nesting)
+        tl.fromTo(tgt, { z: -we.size * 22, y: "0.8em", rotationX: 72, opacity: 0, filter: "blur(6px)", transformPerspective: we.size * 8 },
+          { z: 0, y: 0, rotationX: 0, opacity: 1, filter: "blur(0px)", duration: 0.9, ease: "power2.out" }, T);
         break;
       case "blur":
         tl.fromTo(tgt, { opacity: 0, scale: 1.12, filter: "blur(18px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.55, ease: "power3.out" }, T);
@@ -756,33 +800,43 @@ export function build(root, plan, gsap) {
         tl.to(bar, { scaleX: 0, transformOrigin: "100% 50%", duration: 0.24, ease: "power3.in" }, T + 0.16 + Math.min(0.14, D * 0.3));
         break;
       }
-      case "bounce":
-        // letters hop in one after another and land with a little spring (animals, play, joy)
-        tl.fromTo(chars, { y: () => -0.55 * we.size, scaleY: 1.25, opacity: 0 },
-          { y: 0, scaleY: 1, opacity: 1, duration: 0.5, ease: "bounce.out", stagger: st * 1.2 }, T);
-        tl.fromTo(chars, { scaleY: 0.82, scaleX: 1.12, transformOrigin: "50% 100%" },
-          { scaleY: 1, scaleX: 1, duration: 0.3, ease: "back.out(3)", stagger: st * 1.2 }, T + 0.32);
-        break;
-      case "window": {
-        // a window frame with two closed casements over the word, the word dim behind the
-        // glass; the casements swing open on their hinges as the next word comes, the word lights up
-        const win = el("div", "ky-win", wd);
-        wd.style.margin = "0 .2em"; // room for the frame and the open casements
-        const wings = [el("i", "ky-wing ky-wing-l", win), el("i", "ky-wing ky-wing-r", win)];
-        const open = Math.max(T + 0.45, w.end - 0.04);
-        tl.fromTo(win, { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, T);
-        tl.fromTo(chars, { opacity: 0 }, { opacity: 0.4, duration: 0.3, ease: "power1.out" }, T + 0.05);
-        // the casements swing out past the wall and settle almost flat against it
-        wings.forEach((wing, k) => {
-          const dir = k ? 1 : -1, at = open + k * 0.04;
-          tl.fromTo(wing, { rotationY: 0 }, { rotationY: dir * 104, transformOrigin: k ? "100% 50%" : "0% 50%", transformPerspective: we.size * 8, duration: 0.45, ease: "power3.out" }, at);
-          tl.to(wing, { rotationY: dir * 92, duration: 0.35, ease: "sine.inOut" }, at + 0.45);
+      case "bounce": {
+        // the letters jump up from the line one after another and land with a squash; while
+        // the word is up, now and then one hops again (animals, play, joy)
+        chars.forEach((c, ci) => {
+          const at = T + ci * st * 1.4;
+          tl.fromTo(c, { y: 0, scale: 0.2, opacity: 0, transformOrigin: "50% 100%" }, { y: "-0.5em", scale: 1, opacity: 1, duration: 0.2, ease: "power2.out" }, at);
+          tl.to(c, { y: 0, duration: 0.19, ease: "power2.in" }, at + 0.2);
+          tl.fromTo(c, { scaleX: 1.2, scaleY: 0.75 }, { scaleX: 1, scaleY: 1, duration: 0.32, ease: "back.out(3)", immediateRender: false }, at + 0.39);
         });
-        tl.to(chars, { opacity: 1, duration: 0.2, ease: "power1.out" }, open + 0.05);
-        tl.fromTo(we.mk, { scale: 0.94 }, { scale: 1, duration: 0.45, ease: "back.out(3)" }, open + 0.05);
+        const hold = (ph.exitAt ?? ph.tOut) - 0.4;
+        for (let t = T + 0.95; t < hold; t += 0.5 + r() * 0.35) {
+          const c = chars[Math.floor(r() * chars.length)];
+          tl.to(c, { y: "-0.24em", duration: 0.14, ease: "power2.out" }, t);
+          tl.to(c, { y: 0, duration: 0.14, ease: "power2.in" }, t + 0.14);
+        }
+        break;
+      }
+      case "window": {
+        // the word is the window: it splits down the middle as the next word comes and both
+        // halves swing open on their outer hinges, towards the viewer, light pouring through the gap
+        const mid = Math.ceil(chars.length / 2);
+        const halves = [el("span", "ky-half", we.mk), el("span", "ky-half", we.mk)];
+        chars.forEach((c, ci) => halves[ci < mid ? 0 : 1].append(c));
+        wd.style.margin = "0 .12em"; // the near edges grow as they swing out
+        const gap = el("i", "ky-gap", wd);
+        const open = Math.max(T + 0.45, w.end - 0.04);
+        tl.fromTo(tgt, { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, T);
+        halves.forEach((h, k) => {
+          const dir = k ? 1 : -1, at = open + k * 0.03;
+          const hinge = { rotationY: 0, transformOrigin: k ? "100% 50%" : "0% 50%", transformPerspective: we.size * 6 };
+          tl.fromTo(h, hinge, { rotationY: dir * 68, duration: 0.42, ease: "power3.out" }, at);
+          tl.to(h, { rotationY: dir * 50, duration: 0.5, ease: "back.out(2)" }, at + 0.42);
+        });
+        tl.fromTo(gap, { scaleX: 0, opacity: 0 }, { scaleX: 1, opacity: 1, duration: 0.35, ease: "power2.out" }, open);
+        tl.to(gap, { opacity: 0.35, duration: 0.9, ease: "power1.inOut" }, open + 0.35);
         tl.fromTo(tgt, { textShadow: `0 0 0.6em ${C.glow}` }, { textShadow: `0 0 0.22em ${C.accent}`, duration: 0.9, ease: "power2.out" }, open + 0.05);
-        // the frame leaves with the lockup
-        if (ph.exitAt != null) tl.to(win, { opacity: 0, duration: 0.25, ease: "power1.in" }, ph.exitAt);
+        if (ph.exitAt != null) tl.to(gap, { opacity: 0, duration: 0.2, ease: "power1.in" }, ph.exitAt);
         break;
       }
       case "snap":
@@ -1013,16 +1067,10 @@ export const CSS = /* css */ `
   .ky-w { position:relative; display:inline-block; transform-style: preserve-3d; will-change: transform, opacity; }
   .ky-mk { display:inline-block; clip-path: inset(-1.5em -1.5em 0 -1.5em); padding: .06em .05em .05em; margin: -.06em -.05em -.05em; }
   .ky-ch { display:inline-block; will-change: transform, opacity; backface-visibility: hidden; }
-  .ky-win { position:absolute; left:-.2em; right:-.2em; top:-.16em; bottom:-.12em; border:.065em solid var(--ink); border-radius:.05em;
-    transform-style: preserve-3d; pointer-events:none; opacity:0; }
-  .ky-win::after { content:""; position:absolute; left:-.16em; right:-.16em; bottom:-.15em; height:.08em; border-radius:.03em; background: var(--ink); }
-  .ky-wing { position:absolute; top:0; bottom:0; width:50%; box-sizing:border-box; border:.04em solid var(--ink);
-    background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 34%, transparent), color-mix(in srgb, var(--accent) 16%, transparent) 45%, color-mix(in srgb, #fff 26%, transparent) 52%, color-mix(in srgb, var(--accent) 16%, transparent) 60%); }
-  .ky-wing::before { content:""; position:absolute; left:0; right:0; top:50%; height:.035em; background: var(--ink); }
-  .ky-wing::after { content:""; position:absolute; top:44%; width:.05em; height:.16em; border-radius:.03em; background: var(--ink); }
-  .ky-wing-l { left:0; } .ky-wing-l::after { right:.06em; }
-  .ky-wing-r { right:0; } .ky-wing-r::after { left:.06em; }
-  :not(.ky-light) > .ky-stage .ky-win { filter: drop-shadow(0 0 .2em color-mix(in srgb, var(--accent) 45%, transparent)); }
+  .ky-half { display:inline-block; transform-style: preserve-3d; }
+  .ky-gap { position:absolute; left:36%; right:36%; top:-.22em; bottom:-.22em; display:block; pointer-events:none; z-index:-1; opacity:0;
+    background: radial-gradient(ellipse 50% 50% at 50% 50%, color-mix(in srgb, #fff 75%, var(--glow, #fff)), color-mix(in srgb, var(--glow, #fff) 40%, transparent) 45%, transparent 75%);
+    filter: blur(.08em); }
   .ky-mower { position:absolute; left:0; visibility:hidden; opacity:0; z-index:3; }
   .ky-mower svg { display:block; overflow:visible; }
   .ky-mower .mw-acc { fill: var(--accent); }
@@ -1093,6 +1141,9 @@ export const CSS = /* css */ `
   :not(.ky-light) > .ky-stage .ky-note svg, :not(.ky-light) > .ky-stage .ky-viz svg { filter: drop-shadow(0 0 .35em color-mix(in srgb, var(--accent) 45%, transparent)); }
   .ky-redact { position:absolute; left:-.06em; right:-.06em; top:.08em; bottom:.04em; display:block; pointer-events:none;
     background: var(--ink, #f2f0ea); transform: scaleX(0); }
+  .ky-fogveil { position:absolute; left:-35%; right:-35%; top:-25%; bottom:-25%; display:block; pointer-events:none; opacity:0;
+    background: radial-gradient(ellipse 50% 50% at 50% 50%, color-mix(in srgb, var(--ink, #f2f0ea) 55%, transparent), transparent 72%);
+    filter: blur(.12em); }
   .ky-spark { position:absolute; width:1em; height:1em; display:block; pointer-events:none; background: var(--glow);
     clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
     filter: drop-shadow(0 0 .3em var(--accent)); }

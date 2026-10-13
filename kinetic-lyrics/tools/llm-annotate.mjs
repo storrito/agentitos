@@ -19,7 +19,7 @@ import { PALETTES } from "../engine/signals.js";
 export const MODEL = "claude-opus-5-5";
 
 const CONCEPT_KEYS = Object.keys(CONCEPTS);
-const FX = ["rise", "drop", "flicker", "glow", "sparkle", "fog", "whisper", "slam", "glitch", "wave", "spin", "pulse", "shatter", "flash", "streak", "count", "blink", "redact", "bounce", "window"];
+const FX = ["rise", "drop", "flicker", "glow", "sparkle", "fog", "whisper", "slam", "glitch", "wave", "spin", "pulse", "shatter", "flash", "streak", "count", "blink", "redact", "bounce", "window", "depth", "blur"];
 const MOODS = Object.keys(PALETTES);
 const LAYOUTS = ["hero", "block", "cascade", "inline", "split", "list"];
 const NOTES = ["circle", "underline", "strike"];
@@ -71,14 +71,16 @@ CONCEPTS (each drives a word effect + a 3D motif behind the text):
 ${Object.entries(CONCEPTS).map(([k, c]) => `- ${k}: default word fx "${c.fx}", world motif "${c.motif}", mood "${c.mood}"`).join("\n")}
 
 WORD EFFECTS (fx):
-rise = letters float upward · drop = letters fall in with a bounce · flicker = firelight flicker + ember glow ·
-glow = bright burst that settles · sparkle = letters pop with little stars · fog = slow blur-in, wide spacing ·
-whisper = soft, small, serif · slam = huge impact + shake · glitch = digital jitter, RGB split ·
-wave = letters undulate · spin = 3D flip · pulse = heartbeat · shatter = letters explode apart ·
-flash = neon switching on · streak = shoots in with motion blur · count = a number counts up (use for numeric words) ·
+rise = letters float up like balloons let go, each at its own pace, swaying (rising, floating, lightness, hope) · drop = heavy letters fall from above and land with a thud (falling, weight, landing) · flicker = letters catch fire from below and keep licking like flames (fire, heat, passion, burning) ·
+glow = bright burst that settles · sparkle = letters pop with little stars · fog = big letters loom one by one out of a drifting mist (darkness, night, loneliness, being lost, nothing) ·
+whisper = small hushed serif, breathed in letter by letter (whispering, quiet, gentle, small, slow) · slam = huge impact + shake · glitch = digital jitter, RGB split ·
+wave = a wave keeps rolling through the letters (sea, water, waves, music, swaying) · spin = 3D flip · pulse = heartbeat · shatter = letters explode apart ·
+flash = neon tubes stutter on letter by letter and one buzzes later (neon, light switched on, city at night, signs) · streak = shoots in with motion blur · count = a number counts up (use for numeric words) ·
 blink = opens like an eye and blinks once (seeing, watching, noticing) · redact = appears under a censor bar that pulls
-away (secrets, lies, the hidden, the classified) · bounce = letters hop in playfully (animals, play, joy, comedy) ·
-window = appears behind a closed window whose two casements swing open as the next word is spoken (windows, doors, opening up, a reveal: "ein Fenster auf", "opened the door")
+away (secrets, lies, the hidden, the classified) · bounce = letters jump up from the line, land squashed and keep hopping now and then (animals, play, joy, comedy) ·
+window = the word splits down the middle as the next word is spoken and both halves swing open like casements, light pouring through (windows, doors, opening up, a reveal: "ein Fenster auf", "opened the door") ·
+depth = lying flat far away, the word rises out of the depth and stands up as it arrives (depth, distance, from afar, the abyss, the past) ·
+blur = comes into focus out of a heavy blur (focus, clarity, realising, waking up, seeing clearly)
 
 MOODS (palette families): ${MOODS.join(", ")}
   night=deep blue neutral, dark=desaturated grey, dawn=peach/violet hope, electric=cyan/magenta energy,
