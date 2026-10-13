@@ -18,6 +18,20 @@ Options: `--aspect 16:9|9:16|1:1|4:5|21:9` or `--size 2560x1080`, `--audio <file
 
 To create a transcript with timings: `npx hyperframes transcribe audio.wav` → `transcript.json`.
 
+## A short from a clip, step by step (`tools/short.mjs`)
+
+For agents: one folder per short, each step prints what to do next. Settings are kept in `<dir>/source/settings.json`.
+
+```bash
+node tools/short.mjs new shorts/ep12 upload.mp4                 # source/: audio.wav, video.*, transcript.json
+node tools/short.mjs brief shorts/ep12 --speakers 2             # who speaks when; writes source/brief.md
+# the agent reads brief.md and writes source/staging.json
+node tools/short.mjs build shorts/ep12 --names "A=Anna,B=Ben"    # HyperFrames project in composition/
+node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.png, stills/15.png
+```
+
+It always uses the `podcast` preset, 9:16 by default and full-text mode; options: `--speakers`, `--names`, `--title`, `--subtitle`, `--hook`, `--world`, `--aspect`, `--cta`, `--handle`, `--keywords` / `--full-text`. `<dir>` may already exist (e.g. made by a harness); `new` replaces `<dir>/composition/`.
+
 ## Presets: lyric, podcast, social
 
 ```bash
@@ -302,6 +316,7 @@ Everything is deterministic: the world is a pure function `(plan, t)`, particle 
 - `engine/type.js`: layout via canvas measurement and the GSAP timeline for all word and phrase effects
 - `engine/overlay.js`: grain, HUD, progress
 - `tools/build.mjs`: entry point – transcript → HyperFrames project
+- `tools/short.mjs`: a short from a clip, step by step, in one project folder (for agents)
 - `tools/analyze.mjs`, `tools/lexicon.mjs`, `tools/viz.mjs`: phrasing, concepts, number graphics
 - `tools/llm-annotate.mjs`: staging by Claude or by the agent running the build
 - `tools/align.mjs`, `tools/audio.mjs`: word timings snapped to the audio, audiogram bands

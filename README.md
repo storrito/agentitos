@@ -17,6 +17,20 @@ agentitos/
 
 Every agent folder is a **vertical slice**: an independent recipe with its own dependencies, scripts, examples and docs. Folders never import from each other, so you can copy a single one into your agent setup (e.g. Claude Code, or any skill-capable agent runtime), follow its `SKILL.md` / README and you're good to go.
 
+## For harnesses
+
+Each `SKILL.md` follows the [Agent Skills](https://agentskills.io/specification) format, so any skill-capable agent can load it. A harness that lets people pick a task up front (like [pchat](https://github.com/simplemono/pchat)) reads these optional `metadata` keys for its onboarding, each with an optional `-de` variant for German:
+
+| Key | Use |
+| --- | --- |
+| `title` | the task's name in a picker |
+| `summary` | one sentence under the title |
+| `ask` | the first message: what the person should bring |
+| `placeholder` | the composer's placeholder |
+| `inputs` | what to attach, comma-separated: `video`, `audio`, `image` (empty: nothing) |
+
+Paths in a `SKILL.md` are written as `<skill>/…`, relative to the skill's folder; outputs always go to the caller's working directory, never into the skill.
+
 ## Agents
 
 | Agent | Description |
