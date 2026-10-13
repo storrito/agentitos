@@ -1,7 +1,7 @@
 // Transcript -> plan. Pure and deterministic: same transcript + options = same plan.
 //
 // The plan is the single contract between the build step and both renderers
-// (typography + three.js world). Everything "semantic" is decided here so the
+// (typography + world). Everything "semantic" is decided here so the
 // browser only has to draw.
 
 import { CONCEPTS, STOPWORDS, MEANINGFUL_STOP, CLAUSE_OPENERS, keyOf, conceptOf, numberOf } from "./lexicon.mjs";

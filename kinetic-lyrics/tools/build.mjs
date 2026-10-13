@@ -238,28 +238,10 @@ if (typeof opt.audio === "string") {
 fs.writeFileSync(path.join(OUT, "plan.json"), JSON.stringify(plan, null, 1));
 
 // ---------------------------------------------------------------- bundles
-// three.js ships a few wall-clock / random helpers we never use for pixels (UUIDs,
-// Clock, the animation loop). Swap them for deterministic stand-ins so the bundle is
-// seek-safe by construction (and passes HyperFrames' determinism lint).
-const deterministicThree = {
-  name: "deterministic-three",
-  setup(b) {
-    b.onLoad({ filter: /node_modules[\\/]three[\\/].*\.js$/ }, async (args) => {
-      let src = await fs.promises.readFile(args.path, "utf8");
-      src = src.replace(/Math\.random\(\)/g, "__kwRand()")
-        .replace(/performance\.now\(\)/g, "__kwNow()")
-        .replace(/\b(request|cancel)AnimationFrame\b/g, "__kwNoFrame");
-      return { contents: src, loader: "js" };
-    });
-  },
-};
-const BANNER = "var __kwS=1234567;function __kwRand(){__kwS=(__kwS*16807)%2147483647;return(__kwS-1)/2147483646}function __kwNow(){return 0}";
-
 async function bundle(entry, globalName) {
   const r = await esbuild.build({
     entryPoints: [path.join(ROOT, "engine", entry)], bundle: true, format: "iife", globalName,
     minify: true, write: false, target: "es2020", legalComments: "none",
-    plugins: [deterministicThree], banner: { js: BANNER },
   });
   const out = path.join(OUT, "assets/engine", entry);
   fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -301,7 +283,7 @@ ${body}
 `;
 }
 
-// ---------------------------------------------------------------- world (three.js)
+// ---------------------------------------------------------------- world (Canvas 2D)
 // With footage (plan.video) the world sits on the video (tools/footage.mjs)
 const V = plan.video;
 const F = V ? footageLayer(plan) : { css: "", html: "", js: "" };

@@ -1,6 +1,6 @@
 ---
 name: kinetic-lyrics
-description: Turn a clip of people talking (podcast, interview, talk; video or audio) or any spoken audio into a kinetic-typography video where every word appears big as it is said, animated by meaning over a three.js world of light. Use for vertical shorts for Reels, TikTok, Stories or Shorts from podcast clips, lyric videos, podcast audiograms, or cutting the best highlight out of a long episode.
+description: Turn a clip of people talking (podcast, interview, talk; video or audio) or any spoken audio into a kinetic-typography video where every word appears big as it is said, animated by meaning over a world of light; renders on the CPU, no graphics card needed. Use for vertical shorts for Reels, TikTok, Stories or Shorts from podcast clips, lyric videos, podcast audiograms, or cutting the best highlight out of a long episode.
 license: MIT
 metadata:
   title: "Kinetic shorts"

@@ -1,6 +1,6 @@
 # kinetic-lyrics
 
-Turns a **per-word timing transcript** into a kinetic-typography video in the style of a lyric video, at any aspect ratio. Words animate according to their meaning, and a three.js world adds illustrating animation behind them. Built on [HyperFrames](https://hyperframes.heygen.com/).
+Turns a **per-word timing transcript** into a kinetic-typography video in the style of a lyric video, at any aspect ratio. Words animate according to their meaning, and an illustrated world of light, drawn with Canvas 2D on the CPU, moves behind them. Built on [HyperFrames](https://hyperframes.heygen.com/).
 
 > Agents: start with [`SKILL.md`](SKILL.md).
 
@@ -8,11 +8,10 @@ Turns a **per-word timing transcript** into a kinetic-typography video in the st
 npm install
 node tools/build.mjs examples/demo/transcript.json --audio examples/demo/voice.wav --aspect 16:9 --title "My Title"
 npx hyperframes preview --background       # Studio
-npx hyperframes render                     # MP4 (software GPU, slow: ~3 s per frame)
-npm run render:gpu -- -o renders/out.mp4   # MP4 via an NVIDIA GPU (~0.2 s per frame)
+npx hyperframes render                     # MP4, on the CPU: no graphics card needed
 ```
 
-**Render speed:** By default HyperFrames renders on Linux with SwiftShader, i.e. WebGL on the CPU. For the three.js world with bloom that is about 3 s per frame. `--browser-gpu` uses the graphics card. On Optimus laptops (Intel + NVIDIA), Chrome then picks the NVIDIA card but only gets a WebGL context when EGL explicitly points at the NVIDIA driver. That is exactly what `render:gpu` sets. The frames are practically identical (PSNR 47 dB against the software version).
+**Render speed:** The world is drawn with Canvas 2D in CPU memory, no WebGL, so a render needs no graphics card. The 25-second 16:9 demo with every motif renders in 173 s on 8 laptop CPU cores (155 s on 20 threads), a 13-second 9:16 short in 75 s; the former three.js world took about 4 s per frame (~50 min for the demo) without a GPU.
 
 Options: `--aspect 16:9|9:16|1:1|4:5|21:9` or `--size 2560x1080`, `--audio <file>`, `--title`, `--seed` (another layout variant), `--tail` (seconds after the last word).
 
@@ -44,14 +43,14 @@ node tools/build.mjs examples/podcast/transcript.json --preset podcast --audio e
 node tools/build.mjs examples/social/transcript.json --preset social --audio examples/social/voice.wav \
   --cta "Try it tonight" --handle "@learnoutloud" --llm --out videos/social-demo
 
-cd videos/social-demo && npm run render:gpu -- -o renders/social.mp4
+cd videos/social-demo && npx hyperframes render -o renders/social.mp4
 ```
 
 | | `lyric` (default) | `podcast` | `social` |
 | --- | --- | --- | --- |
 | **Format** | 16:9 | 16:9 | 9:16 |
 | **Pacing** | big gestures, up to 6 words | readable sentences, up to 7 words | 2–4 words, hero for the punchline |
-| **3D world** | full presence | calm (45 %) | 70 % |
+| **World** | full presence | calm (45 %) | 70 % |
 | **Text** | effects by meaning | markers on key statements, speaker colours | markers on key statements |
 | **HUD** | title, timecode, concept | show title, speaker chip on every change, audiogram | hook card, progress bar, CTA card |
 | **Safe zone** | title-safe (80 %) | clear of speaker chip and audiogram | below the hook, above the apps' caption bar, left of the button column |
@@ -74,17 +73,17 @@ Every video plays in a **world** that fits its topic. Each world has its own pal
 
 | World | Look | Fits | Default for |
 | --- | --- | --- | --- |
-| `cosmos` | nebula, stars, bloom | night, dreams, big emotions, lyrics | `lyric` |
+| `cosmos` | nebula, stars, glow | night, dreams, big emotions, lyrics | `lyric` |
 | `aurora` | flowing, saturated colour fields, soft light | lifestyle, motivation, social | `social` |
 | `editorial` | paper with fibre texture, dark ink | business, education, interviews | `podcast` |
-| `geometry` | bright studio, matte 3D shapes with soft shadows | tech, product, explainers | – |
+| `geometry` | bright studio, matte shapes with soft shadows | tech, product, explainers | – |
 | `bokeh` | warm, blurred circles of light in the dark, cinematic | people, lifestyle, health, animals, film, comedy | – |
 | `neon` | glowing perspective grid, light streaks in the slipstream | tech, gaming, sports, racing, machines | – |
 | `noir` | dark room, slanted light through blinds, dust in the beam | crime, espionage, secrets, history, psychology | – |
 
 Select with `--world <name>`. If omitted, Claude picks one to fit the content with `--llm`, otherwise the preset's default applies.
 
-- **Editorial** keeps using all motifs: the glowing 3D scene is put onto paper subtractively, so light becomes ink.
+- **Editorial** keeps using all motifs: the glowing scene is put onto paper subtractively, so light becomes ink.
 - **Geometry** expresses the concepts through its objects: they orbit (time), rise and fall (rise/fall), get pushed away (impact), grow (growth, numbers) and pulse (love). The key light brightens for light and idea.
 - **Light worlds** switch typography and HUD to dark type and use darker speaker colours.
 
@@ -183,7 +182,7 @@ Long files are transcribed with Parakeet in 10-minute chunks (the CLI otherwise 
 
 **Full-text mode for short-form** (social default, `--full-text` for podcast): every word appears big. In portrait, phrases of five words or more are stacked instead of set in one or two small lines. No empty frame appears between two phrases if the pause is shorter than 0.8 s. If there isn't enough time for a long last word ("Neukundenverträgen"), it appears without an effect and stays until the next phrase comes; that phrase waits up to 0.3 s for it. Phrases that are too short merge into a slightly longer lockup if necessary.
 
-**Effect budget:** So that long excerpts don't light up every second, accents keep a minimum distance per preset: image effects (word effect + 3D motif) 6 s for podcast, 2.4 s for social, 1.6 s for lyric; annotations 9 / 4.5 / 4 s; markers 3.2 / 1.6 s. The strongest words win (emphasis, hero, numbers), the rest are set calmly. Hand-set `fx`/`concept`/`note` always stay. The camera only pushes forward on hero words (at most every 2.4 s, weaker for podcast); single words only make the world breathe slightly.
+**Effect budget:** So that long excerpts don't light up every second, accents keep a minimum distance per preset: image effects (word effect + world motif) 6 s for podcast, 2.4 s for social, 1.6 s for lyric; annotations 9 / 4.5 / 4 s; markers 3.2 / 1.6 s. The strongest words win (emphasis, hero, numbers), the rest are set calmly. Hand-set `fx`/`concept`/`note` always stay. The camera only pushes forward on hero words (at most every 2.4 s, weaker for podcast); single words only make the world breathe slightly.
 
 Fillers and stutters ("is is", "the the") are removed before analysis; `--keep-fillers` keeps them. The fillers depend on the detected language: English "uh", "um", "er"; German "äh", "ähm", "öhm" – because German "um" and "er" are real words.
 
@@ -277,7 +276,7 @@ Optional per-word overrides:
 
 ```
 transcript.json ──► tools/analyze.mjs ──► plan.json ──► compositions/
-                     · phrases (punctuation, pauses, clause starters,       world.html   three.js world  (graphics)
+                     · phrases (punctuation, pauses, clause starters,       world.html   Canvas 2D world (graphics)
                        word count per aspect, no dangling articles)         lyrics.html  typography      (captions)
                      · role: function word (serif italic) / content word    overlay.html grain + HUD     (graphics)
                        (League Gothic)                                      index.html   hosts + audio
@@ -288,7 +287,7 @@ transcript.json ──► tools/analyze.mjs ──► plan.json ──► compos
 
 `plan.json` is editable (layouts, moods, exits, hero …). `node tools/build.mjs --plan plan.json` rebuilds from it.
 
-**Concept → word effect → 3D motif** (excerpt):
+**Concept → word effect → world motif** (excerpt):
 
 | Concept | Word | World |
 | --- | --- | --- |
@@ -307,12 +306,12 @@ transcript.json ──► tools/analyze.mjs ──► plan.json ──► compos
 | loud | slam + shake | shockwave, camera shake |
 | dark / quiet | blur-in, wide spacing, serif | fog, desaturated |
 
-Everything is deterministic: the world is a pure function `(plan, t)`, particle motion runs on pre-integrated phases, and randomness comes from seeded PRNGs. three.js's time and random helpers are replaced by deterministic stand-ins during bundling (`tools/build.mjs`).
+Everything is deterministic: the world is a pure function `(plan, t)`, particle motion runs on pre-integrated phases, and randomness comes from seeded PRNGs.
 
 ## Files
 
 - `engine/signals.js`: palettes, motif levels, phases, pulse rings (shared by world and type)
-- `engine/world.js`: three.js scene (nebula shader, particles, motifs, bloom, CA)
+- `engine/world.js`: the world in Canvas 2D on the CPU: backgrounds from noise textures made once and moved per frame, particles, motifs in a simple perspective, bloom from scaled copies
 - `engine/type.js`: layout via canvas measurement and the GSAP timeline for all word and phrase effects
 - `engine/overlay.js`: grain, HUD, progress
 - `tools/build.mjs`: entry point – transcript → HyperFrames project

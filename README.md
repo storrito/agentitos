@@ -35,7 +35,7 @@ Paths in a `SKILL.md` are written as `<skill>/…`, relative to the skill's fold
 
 | Agent | Description |
 |-------|-------------|
-| [kinetic-lyrics](kinetic-lyrics/) | Spoken audio, podcasts or talking-head clips → kinetic-typography video (lyric-video style) with a three.js world, for 16:9, 9:16 and more. Includes highlight finding, speaker detection, ASR repair and automatic QA. |
+| [kinetic-lyrics](kinetic-lyrics/) | Spoken audio, podcasts or talking-head clips → kinetic-typography video (lyric-video style) over an illustrated world of light that renders on the CPU, for 16:9, 9:16 and more. Includes highlight finding, speaker detection, ASR repair and automatic QA. |
 
 ## Contributing
 

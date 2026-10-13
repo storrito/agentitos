@@ -9,7 +9,6 @@
     "render": "npx --yes hyperframes@0.8.141 render",
     "publish": "npx --yes hyperframes@0.8.141 publish",
     "build": "node tools/build.mjs",
-    "render:gpu": "__NV_PRIME_RENDER_OFFLOAD=1 __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json npx --yes hyperframes@0.8.141 render --browser-gpu",
     "qa": "node tools/qa.mjs"
   },
   "devDependencies": {
@@ -18,8 +17,7 @@
     "esbuild": "^0.25.10",
     "gsap": "^3.15.0",
     "pngjs": "^7.0.0",
-    "puppeteer-core": "^25.13.0",
-    "three": "^0.181.2"
+    "puppeteer-core": "^25.13.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

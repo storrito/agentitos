@@ -1,5 +1,5 @@
 // Background footage (plan.video): the video fills the frame, a band darkens where the type
-// goes (and hides burned-in captions / logos below it), and the three.js canvas is screened on
+// goes (and hides burned-in captions / logos below it), and the world's canvas is screened on
 // top, so only the world's light (stars, embers, rings) shows. The footage breathes: a slow
 // push-in, small punches on hero lockups. Shared by build.mjs (render) and qa.mjs (stills).
 //

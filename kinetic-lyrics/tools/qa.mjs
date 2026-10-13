@@ -3,7 +3,7 @@
 //   node tools/qa.mjs videos/my-clip [--no-contrast] [--max-shots 20] [--frames 12.5,25,31]
 //   (--frames also saves stills at those times to <project>/qa/at-<t>s.png, for a quick look)
 //
-// Plays the real scene (three.js world + typography + HUD, the same bundles the render uses)
+// Plays the real scene (world + typography + HUD, the same bundles the render uses)
 // in headless Chrome, seeks to the moment every lockup is fully drawn and measures:
 //   ✗ cut off      a word reaches past the frame edge
 //   ✗ overlap      two lockups are on screen at the same time
