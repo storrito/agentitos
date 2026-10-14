@@ -150,7 +150,8 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
           + (v.label ? T(x0, cy + big * 0.35 + fs * 1.3, fs, v.label, "ky-lbl", "start") : ""),
         anim(tl, q, qa, Tw, end) {
           const D = clamp(end - Tw, 0.5, 1.6), o = `${f1(cx)} ${f1(cy)}`;
-          if (dur) draw(tl, q(".ky-gslice"), Tw, D, "power2.out");
+          // the slice fills the share of the hour (or of twelve hours) the duration takes
+          if (dur) tl.fromTo(q(".ky-gslice"), { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 1 - frac }, duration: D, ease: "power2.out" }, Tw);
           tl.fromTo(q(".ky-hand-m"), { rotation: 0, svgOrigin: o }, { rotation: dur ? frac * 360 : Math.floor(h) * 360 + m * 6, svgOrigin: o, duration: D, ease: "power2.inOut" }, Tw);
           tl.fromTo(q(".ky-hand-h"), { rotation: 0, svgOrigin: o }, { rotation: dur ? frac * 30 : h * 30, svgOrigin: o, duration: D, ease: "power2.inOut" }, Tw);
           fade(tl, qa(".ky-g-big, .ky-lbl"), Tw + D * 0.5, 0.35);
