@@ -473,14 +473,14 @@ export function build(root, plan, gsap) {
     soft: 0.1, mask: 0.1, rise: 0.24, drop: 0.32, flicker: 0.1, glow: 0.08, sparkle: 0.16, fog: 0.24, whisper: 0.16,
     slam: 0.06, glitch: 0.04, wave: 0.1, snap: 0.06, spin: 0.2, pulse: 0.1, shatter: 0.05, flash: 0.08, streak: 0.12, depth: 0.2, blur: 0.12,
     blink: 0.1, redact: 0.14, bounce: 0.14, window: 0.2,
-    grow: 0.2, shrink: 0.08, type: 0.06, scramble: 0.08, tremble: 0.08, assemble: 0.3,
+    grow: 0.2, shrink: 0.08, type: 0.06, scramble: 0.08, tremble: 0.08, assemble: 0.3, freeze: 0.08, echo: 0.1,
   };
   // seconds until a word is whole, per effect (schedule + QA)
   const READY_AT = {
     soft: 0.3, mask: 0.38, rise: 0.85, drop: 0.55, flicker: 0.42, glow: 0.2, sparkle: 0.3, fog: 0.85, whisper: 0.3, slam: 0.25,
     glitch: 0.45, wave: 0.38, spin: 0.45, pulse: 0.35, shatter: 0.2, flash: 0.55, streak: 0.35, depth: 0.7, blur: 0.4, count: 0.45, snap: 0.14,
     blink: 0.22, redact: 0.4, bounce: 0.45, window: 0.3,
-    grow: 0.85, shrink: 0.25, type: 0.1, scramble: 0.2, tremble: 0.2, assemble: 0.8,
+    grow: 0.85, shrink: 0.25, type: 0.1, scramble: 0.2, tremble: 0.2, assemble: 0.8, freeze: 0.2, echo: 0.3,
   };
   const fxOf = (w, ph) => w.fx || (w.role === "fn" ? "soft" : ph.enter);
   const baseAppear = (ph) => {
@@ -560,6 +560,8 @@ export function build(root, plan, gsap) {
         const nextAt = baseAppear(next);
         // fast speech leaves a quick exit; a real pause before the next lockup lets it be seen
         xd = clamp((nextAt - ph.end) * 0.8 + 0.18, 0.2, nextAt - ph.end > 0.9 ? 0.5 : 0.36);
+        // burning and falling need a moment; without the time for it the phrase fades (below)
+        if (ph.exit === "burn" || ph.exit === "fall") xd = Math.max(xd, 0.65);
         // a short gap is no pause worth showing: an empty frame for a few tenths reads as a flicker
         xs = (nextAt - ph.tOut < 0.8 ? nextAt + 0.02 : ph.tOut) - xd;
         if (xs < minExit) {
@@ -890,6 +892,40 @@ export function build(root, plan, gsap) {
         tl.fromTo(tgt, { scale: 1 }, { scale: 1.06, duration: 0.08, ease: "power2.out", yoyo: true, repeat: 1 }, snap);
         break;
       }
+      case "freeze": {
+        // frost creeps over the word: the letters turn icy and stiff, crystals grow at the
+        // edges, then a short crack as it freezes solid (cold, ice, frozen, standing still)
+        tl.fromTo(tgt, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, T);
+        tl.to(chars, { color: "#dff4ff", textShadow: "0 0 0.25em rgba(150,215,255,0.9)", duration: 0.7, ease: "power1.in", stagger: 0.03 }, T + 0.15);
+        for (let k = 0; k < 5; k++) {
+          const ice = el("i", "ky-ice", wd);
+          ice.style.left = `${(4 + k * 22 + r() * 8).toFixed(1)}%`;
+          ice.style.top = `${(k % 2 ? -10 - r() * 14 : 84 + r() * 10).toFixed(1)}%`;
+          ice.style.fontSize = `${(0.22 + r() * 0.14).toFixed(3)}em`;
+          tl.fromTo(ice, { scale: 0, rotation: -45, opacity: 0 }, { scale: 1, rotation: 0, opacity: 0.95, duration: 0.5, ease: "power2.out" }, T + 0.3 + k * 0.08);
+        }
+        const crack = T + 0.95;
+        if (crack < (ph.exitAt ?? Infinity) - 0.2) {
+          tl.to(tgt, { x: we.size * 0.025, duration: 0.03, ease: "none" }, crack);
+          tl.to(tgt, { x: -we.size * 0.02, duration: 0.03, ease: "none" }, crack + 0.03);
+          tl.to(tgt, { x: 0, duration: 0.04, ease: "none" }, crack + 0.06);
+          tl.fromTo(tgt, { filter: "brightness(1.6)" }, { filter: "brightness(1)", duration: 0.3, ease: "power2.out", immediateRender: false }, crack);
+        }
+        break;
+      }
+      case "echo": {
+        // the word lands, then pale copies of it ring out and fade, again and again
+        // (echo, again, over and over, repeating)
+        tl.fromTo(tgt, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out" }, T);
+        const text = chars.map((c) => c.textContent).join("");
+        for (let k = 0; k < 3; k++) {
+          const copy = el("span", "ky-echo", wd);
+          copy.textContent = text;
+          const at = T + 0.3 + k * 0.28;
+          tl.fromTo(copy, { opacity: 0.5, scale: 1, transformOrigin: "50% 55%" }, { opacity: 0, scale: 1.45 + k * 0.1, duration: 0.85, ease: "power2.out" }, at);
+        }
+        break;
+      }
       case "window": {
         // the word is the window: it splits down the middle as the next word comes and both
         // halves swing open on their outer hinges, towards the viewer, light pouring through the gap
@@ -1063,7 +1099,7 @@ export function build(root, plan, gsap) {
     if (viz) {
       animateViz(viz, phrase, tShow, xs);
       // exits that only move letters take the graphic out with them
-      if (ph.exit === "lift" || ph.exit === "scatter" || ph.exit === "mow") tl.to(viz.el, { opacity: 0, y: -viz.vh * 0.2, duration: xd, ease: E.in }, xs);
+      if (["lift", "scatter", "mow", "burn", "fall"].includes(ph.exit)) tl.to(viz.el, { opacity: 0, y: -viz.vh * 0.2, duration: xd, ease: E.in }, xs);
     }
     const allChars = wordEls.flatMap((we) => we.chars);
     switch (ph.exit) {
@@ -1084,6 +1120,37 @@ export function build(root, plan, gsap) {
       case "mow":
         mowExit(lk, MOWS.get(ph.id), r);
         break;
+      case "burn": {
+        // a fuse runs through the letters left to right: each glows hot, chars to black and
+        // crumbles to ash rising away, embers drift up
+        const n = allChars.length, run = xd * 0.45, each = xd - run;
+        allChars.forEach((c, k) => {
+          const at = xs + (k / Math.max(1, n - 1)) * run;
+          tl.to(c, { color: "#ffcf7a", textShadow: "0 0 0.25em #ff7a1a, 0 -0.12em 0.5em #ff3d00", duration: each * 0.35, ease: "power1.in" }, at);
+          tl.to(c, { color: "#2a140a", textShadow: "0 -0.1em 0.3em rgba(255,80,0,0.4)", duration: each * 0.25, ease: "none" }, at + each * 0.35);
+          tl.to(c, { opacity: 0, y: "-0.5em", scale: 0.7, filter: "blur(3px)", duration: each * 0.4, ease: "power1.in" }, at + each * 0.6);
+        });
+        wordEls.forEach((we) => {
+          for (let k = 0; k < 4; k++) {
+            const ember = el("i", "ky-ember", we.wd);
+            ember.style.left = `${(10 + r() * 80).toFixed(1)}%`;
+            ember.style.fontSize = `${(0.06 + r() * 0.06).toFixed(3)}em`;
+            const at = xs + r() * run;
+            tl.fromTo(ember, { opacity: 0, y: 0, x: 0 }, { opacity: 1, duration: 0.08, immediateRender: false }, at);
+            tl.to(ember, { y: -we.size * (0.8 + r() * 0.8), x: (r() - 0.5) * we.size * 0.4, opacity: 0, duration: xd * 0.9, ease: "power1.out" }, at + 0.08);
+          }
+        });
+        break;
+      }
+      case "fall": {
+        // gravity takes over: the letters drop away one by one, tumbling, out of the frame
+        allChars.forEach((c) => {
+          const at = xs + r() * xd * 0.4;
+          tl.to(c, { y: H * (0.35 + r() * 0.2), rotation: (r() - 0.5) * 90, duration: xd * 0.6, ease: "power2.in" }, at);
+          tl.to(c, { opacity: 0, duration: xd * 0.25, ease: "power1.in" }, at + xd * 0.35);
+        });
+        break;
+      }
       case "lift":
       default:
         tl.to(allChars, { yPercent: -110, opacity: 0, duration: xd, ease: "power3.in", stagger: Math.min(0.012, 0.2 / allChars.length) }, xs);
@@ -1140,6 +1207,12 @@ export const CSS = /* css */ `
   .ky-w { position:relative; display:inline-block; transform-style: preserve-3d; will-change: transform, opacity; }
   .ky-mk { display:inline-block; clip-path: inset(-1.5em -1.5em 0 -1.5em); padding: .06em .05em .05em; margin: -.06em -.05em -.05em; }
   .ky-ch { display:inline-block; will-change: transform, opacity; backface-visibility: hidden; }
+  .ky-ice { position:absolute; width:1em; height:1em; display:block; pointer-events:none; opacity:0; background: #e8f7ff;
+    clip-path: polygon(50% 0, 56% 38%, 93% 25%, 62% 50%, 93% 75%, 56% 62%, 50% 100%, 44% 62%, 7% 75%, 38% 50%, 7% 25%, 44% 38%);
+    filter: drop-shadow(0 0 .25em rgba(150,215,255,.9)); }
+  .ky-echo { position:absolute; left:0; right:0; top:.06em; text-align:center; white-space:pre; pointer-events:none; opacity:0; }
+  .ky-ember { position:absolute; top:40%; width:1em; height:1em; border-radius:50%; display:block; pointer-events:none; opacity:0;
+    background: #ffb347; box-shadow: 0 0 .6em .2em rgba(255,110,20,.8); }
   .ky-caret { position:absolute; left:0; top:.08em; bottom:.06em; width:.06em; display:block; pointer-events:none; opacity:0;
     background: var(--accent); border-radius:.02em; }
   .ky-half { display:inline-block; transform-style: preserve-3d; }

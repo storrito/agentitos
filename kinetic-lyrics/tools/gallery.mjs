@@ -57,6 +57,8 @@ const WORDS = [
   fx("scramble", "Zufällige Zeichen rattern durch jeden Buchstaben, bis er von links nach rechts einrastet", "Das [Passwort] ist geknackt"),
   fx("tremble", "Die Buchstaben zittern dauerhaft, jeder für sich", "Ich hatte richtig [Angst]"),
   fx("assemble", "Die Buchstaben fliegen von überall her zusammen und rasten mit einem kleinen Klick ein", "Wir sind ein [Team]"),
+  fx("freeze", "Frost kriecht über das Wort: die Buchstaben werden eisig, Kristalle wachsen an den Rändern, ein kurzes Knacken", "Mir ist [eiskalt] geworden", { still: 1.3 }),
+  fx("echo", "Blasse Kopien des Worts hallen nach und verklingen, immer wieder", "Und das [immer] wieder"),
   fx("window", "Das Wort teilt sich beim nächsten Wort in der Mitte und schwingt wie zwei Fensterflügel auf, Licht fällt durch den Spalt", "Ich mache das [Fenster] auf", { still: 1.3 }),
 ];
 // what the engine sets by itself: the plain entrance and the one for no time
@@ -71,6 +73,8 @@ const EXITS = [
   exit("zoom", "Fliegt durch die Kamera", "Mitten durch die Kamera"),
   exit("blur", "Löst sich in Unschärfe auf", "Und alles löst sich auf"),
   exit("scatter", "Die Wörter treiben auseinander", "Alles treibt auseinander"),
+  exit("burn", "Eine Lunte läuft durch die Buchstaben: sie glühen, verkohlen, zerfallen zu Asche, Glut steigt auf", "Alle Brücken sind verbrannt"),
+  exit("fall", "Die Schwerkraft übernimmt: die Buchstaben fallen einzeln und trudelnd aus dem Bild", "Und dann ist alles eingestürzt"),
   exit("mow", "Ein Rasenmäher mäht die Buchstaben bis auf die Stoppeln ab, Zeile für Zeile", "Wer will den Rasen mähen?"),
 ];
 

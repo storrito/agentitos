@@ -19,11 +19,11 @@ import { PALETTES } from "../engine/signals.js";
 export const MODEL = "claude-opus-5-5";
 
 const CONCEPT_KEYS = Object.keys(CONCEPTS);
-const FX = ["rise", "drop", "flicker", "glow", "sparkle", "fog", "whisper", "slam", "glitch", "wave", "spin", "pulse", "shatter", "flash", "streak", "count", "blink", "redact", "bounce", "window", "depth", "blur", "grow", "shrink", "type", "scramble", "tremble", "assemble"];
+const FX = ["rise", "drop", "flicker", "glow", "sparkle", "fog", "whisper", "slam", "glitch", "wave", "spin", "pulse", "shatter", "flash", "streak", "count", "blink", "redact", "bounce", "window", "depth", "blur", "grow", "shrink", "type", "scramble", "tremble", "assemble", "freeze", "echo"];
 const MOODS = Object.keys(PALETTES);
 const LAYOUTS = ["hero", "block", "cascade", "inline", "split", "list"];
 const NOTES = ["circle", "underline", "strike"];
-const EXITS = ["lift", "zoom", "blur", "scatter", "mow"];
+const EXITS = ["lift", "zoom", "blur", "scatter", "mow", "burn", "fall"];
 const CHARTS = ["growth", "split", "compare", "gauge"];
 
 const WORLDS = ["cosmos", "aurora", "editorial", "geometry", "bokeh", "neon", "noir"];
@@ -86,7 +86,9 @@ shrink = appears full size, then deflates in two steps (less, smaller, falling n
 type = typed out letter by letter behind a blinking caret (writing, a message, an email, a chat, AI) ·
 scramble = random characters rattle through each letter until it locks (code, a password, decoding, figuring out, hacking) ·
 tremble = the letters keep trembling (fear, nerves, panic, anxiety, shivering) ·
-assemble = the letters fly in from all around and snap together (a team, together, building, connecting, putting together)
+assemble = the letters fly in from all around and snap together (a team, together, building, connecting, putting together) ·
+freeze = frost creeps over the word, crystals grow at its edges, a short crack as it freezes solid (cold, ice, frozen, standing still, numb) ·
+echo = pale copies of the word ring out and fade, again and again (echo, again, over and over, repeating, a rumour spreading)
 
 MOODS (palette families): ${MOODS.join(", ")}
   night=deep blue neutral, dark=desaturated grey, dawn=peach/violet hope, electric=cyan/magenta energy,
@@ -133,7 +135,7 @@ charts: add a chart yourself where the speaker *relates* numbers to each other, 
   Use only figures stated in the transcript or exactly derived from them (a sum, a share, a factor) – never invent
   or round them into something the speaker did not say. Unused fields: base null, parts [], focus null, label "", unit "".
 
-EXITS: lift (letters rise out) · zoom (flies through the camera) · blur (dissolves) · scatter (words drift apart) · mow (a cute lawn mower drives through and cuts the letters down to stubble – a gag: only for a phrase that says mowing, a lawn or cutting grass, at most once per video; the mower follows the letters in, so the phrase is cut while it is spoken)
+EXITS: lift (letters rise out) · zoom (flies through the camera) · blur (dissolves) · scatter (words drift apart) · mow (a cute lawn mower drives through and cuts the letters down to stubble – a gag: only for a phrase that says mowing, a lawn or cutting grass, at most once per video; the mower follows the letters in, so the phrase is cut while it is spoken) · burn (a fuse runs through the letters, they glow hot, char and crumble to ash, embers rise – fire, burning, burning out, destroyed, a bridge burnt) · fall (gravity takes over, the letters drop away one by one, tumbling – falling, collapse, crash, failure, letting go)
 `;
 
 const PRESET_DIRECTION = {
