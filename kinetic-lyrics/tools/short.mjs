@@ -14,8 +14,8 @@
 // <dir> may already exist (e.g. made by the harness the agent runs in); `new` only needs
 // <dir>/source/ to be free. Options are kept in source/settings.json for the next steps:
 //   --speakers N  --names "A=Anna,B=Ben"  --title "…"  --subtitle "…"  --hook "…"
-//   --world cosmos|aurora|bokeh|neon|noir  --aspect 9:16|1:1|4:5|16:9
-//   --cta "…"  --handle @name  --keywords (only the key words big)  --full-text (every word, default)
+//   --world cosmos|aurora|bokeh|neon|noir|editorial|geometry  --aspect 9:16|1:1|4:5|16:9
+//   --colors "A=#ff5a36,B=#4fc3f7" (each speaker's colour; "" = the world's)  --cta "…"  --handle @name
 
 import fs from "node:fs";
 import path from "node:path";
@@ -23,8 +23,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["speakers", "names", "title", "subtitle", "hook", "world", "aspect", "cta", "handle"];
-const SWITCHES = ["keywords", "full-text"];
+const VALUED = ["speakers", "names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle"];
 
 function fail(message) {
   console.log(message);
@@ -37,9 +36,8 @@ function parse(args) {
     const a = args[i];
     if (!a.startsWith("--")) { pos.push(a); continue; }
     const k = a.slice(2);
-    if (SWITCHES.includes(k)) { for (const s of SWITCHES) delete opts[s]; opts[k] = true; }
-    else if (VALUED.includes(k)) { if (i + 1 >= args.length) fail(`${a} needs a value.`); opts[k] = String(args[++i]); }
-    else fail(`Unknown option ${a}. Options: ${[...VALUED, ...SWITCHES].map((o) => "--" + o).join(" ")}`);
+    if (VALUED.includes(k)) { if (i + 1 >= args.length) fail(`${a} needs a value.`); opts[k] = String(args[++i]); }
+    else fail(`Unknown option ${a}. Options: ${VALUED.map((o) => "--" + o).join(" ")}`);
   }
   return [pos, opts];
 }
@@ -49,7 +47,8 @@ const source = (dir, file = "") => path.join(dir, "source", file);
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
-  if (opts.keywords || opts["full-text"]) { delete kept.keywords; delete kept["full-text"]; }
+  // shorts from before: the text mode is gone, every word is big
+  delete kept.keywords; delete kept["full-text"];
   const merged = { aspect: "9:16", ...kept, ...opts };
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return merged;
@@ -71,11 +70,13 @@ function footage(dir) {
 
 function buildArgs(dir, s) {
   const args = [source(dir, "transcript.json"), "--preset", "podcast", "--aspect", s.aspect,
-    "--audio", source(dir, "audio.wav"), "--diarize", s.speakers || "0", s.keywords ? "--keywords" : "--full-text"];
+    "--audio", source(dir, "audio.wav"), "--diarize", s.speakers || "0"];
   const video = footage(dir);
   if (video) args.push("--video", video);
-  for (const [k, flag] of [["names", "--speakers"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
+  for (const [k, flag] of [["names", "--speakers"], ["colors", "--colors"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
     ["world", "--world"], ["cta", "--cta"], ["handle", "--handle"]]) if (s[k]) args.push(flag, s[k]);
+  // no title: none on screen (build.mjs takes a bare --title as none, else the file's name)
+  if (!s.title) args.push("--title");
   return args;
 }
 
@@ -135,6 +136,12 @@ function build(dir, opts) {
   const exit = node("build.mjs", ...buildArgs(dir, s), ...(has ? ["--staging", staging] : []), "--out", path.join(dir, "composition"));
   if (exit === 2) fail("Fix the staging as the message above says, then build again.");
   if (exit !== 0) fail("The build failed, see above.");
+  // what the built short has, for a page beside it (the interview page reads it from the
+  // project, which serves composition/): the settings and the voices
+  const plan = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  fs.writeFileSync(path.join(dir, "composition", "settings.json"), JSON.stringify({
+    settings: s, world: plan.world, speakers: (plan.speakers || []).map((sp) => sp.id),
+  }, null, 2) + "\n");
   console.log(`${dir}/composition is built. short.mjs check ${dir} finds what a viewer would notice.`);
 }
 

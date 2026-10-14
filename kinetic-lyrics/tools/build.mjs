@@ -13,11 +13,11 @@
 //   --cta "…" --handle @name   end card (social)
 //   --subtitle "…"   e.g. episode / guest line (podcast)
 //   --speakers A=Anna,B=Ben   names for the transcript's speaker labels (podcast)
+//   --colors A=#ff5a36,B=#4fc3f7   their colours (accent words, name chip); default by world
 //   --audiogram / --no-audiogram   waveform bars from the audio (default on for podcast)
 //   --out <dir>      write a separate HyperFrames project there (one project per video)
 //   --diarize [N]    detect who speaks when from --audio (tools/diarize.py, local sherpa-onnx);
 //                    N = number of voices, omit to estimate. Overwrites "speaker" labels.
-//   --keywords / --full-text   keyword mode (big keywords + running caption; podcast default)
 //                    or every word as a big lockup (lyric/social default)
 //   --keep-fillers   keep "uh", "um", "äh" and stutters ("is is") – removed by default
 //   --no-align       keep the transcript's word timings as they are (by default they are
@@ -43,7 +43,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
-import { normalizeTranscript, analyze } from "./analyze.mjs";
+import { normalizeTranscript, analyze, LIGHT_WORLDS } from "./analyze.mjs";
 import { annotate, validate, brief, readStaging } from "./llm-annotate.mjs";
 import { alignToAudio } from "./align.mjs";
 import { audioBands } from "./audio.mjs";
@@ -180,12 +180,14 @@ if (opt.plan) {
     }
   }
   const str = (k) => (typeof opt[k] === "string" ? opt[k] : undefined);
-  const speakerNames = str("speakers") ? Object.fromEntries(str("speakers").split(",").map((kv) => kv.split("=").map((x) => x.trim()))) : undefined;
+  const pairs = (k) => str(k) ? Object.fromEntries(str(k).split(",").map((kv) => kv.split("=").map((x) => x.trim()))) : undefined;
+  const speakerNames = pairs("speakers");
+  // a colour per speaker, "A=#ff5a36,B=#4fc3f7": their accent words and name chip
+  const speakerColors = pairs("colors");
   plan = analyze(words, {
     width, height, seed: Number(opt.seed), tail: opt.tail != null ? Number(opt.tail) : undefined, title, annotations,
-    preset: str("preset") || "lyric", world: str("world"), hook: str("hook"), cta: str("cta"), handle: str("handle"), subtitle: str("subtitle"), speakerNames,
+    preset: str("preset") || "lyric", world: str("world"), hook: str("hook"), cta: str("cta"), handle: str("handle"), subtitle: str("subtitle"), speakerNames, speakerColors,
     audiogram: opt["no-audiogram"] ? false : opt.audiogram ? true : undefined,
-    mode: opt.keywords ? "keywords" : opt["full-text"] ? "full" : undefined,
     video: !!VIDEO,
   });
   if (plan.style.audiogram && typeof opt.audio === "string") plan.bands = audioBands(opt.audio);
@@ -228,8 +230,25 @@ if (VIDEO) {
     dim: opt["video-dim"] != null ? Number(opt["video-dim"]) : burned || !burn ? 1 : 0.85,
     burnin: burn ? { captions: burn.band, graphics: burn.overlay ?? null } : undefined,
   };
+  // a light world puts the footage into a frame on its ground (tools/footage.mjs)
+  if (LIGHT_WORLDS.has(plan.world)) plan.video.frame = frameBox(plan, v);
+  else delete plan.video.frame;
   // the speaker is on camera: no audiogram
   plan.style.audiogram = false; delete plan.bands;
+}
+
+// The frame of the footage in a light world, [x0, y0, x1, y1] as frame fractions: on top in
+// portrait and square (the type below it), on the left in landscape (the type beside it). A
+// clip of another shape is cut to fit (cover), never squeezed.
+function frameBox(plan, v) {
+  const W = plan.width, H = plan.height, va = v.width / v.height;
+  if (W > H * 1.2) {
+    const w = 0.48, h = Math.min(0.72, (w * W) / va / H);
+    return [0.05, +((1 - h) / 2).toFixed(4), 0.05 + w, +((1 + h) / 2).toFixed(4)].map((x) => +x.toFixed(4));
+  }
+  const w = 0.86, x0 = (1 - w) / 2, y0 = W < H * 0.9 ? 0.12 : 0.15;
+  const h = Math.min(W < H * 0.9 ? 0.36 : 0.4, (w * W) / Math.min(va, 16 / 9) / H);
+  return [x0, y0, x0 + w, y0 + h].map((x) => +x.toFixed(4));
 }
 
 // audio: copy into assets/ so the project is self-contained
@@ -276,6 +295,36 @@ const { width: W, height: H, duration: D } = plan;
 const planJson = JSON.stringify({ ...plan, bands: undefined });
 const overlayPlanJson = JSON.stringify(plan);
 
+// Live settings. A page around the player (the interview page) sends the settings not
+// built yet as a "kinetic-settings" event on the composition's window (and as
+// window.__kineticSettings for a layer that comes later): {world, title, subtitle,
+// names: {A: "Anna"}, colors: {A: "#ff5a36"}, cta, handle}, each optional. The layers draw themselves
+// again from the built plan with them, at once; only the next build makes them stay (the
+// render reads the files). The length stays as built: an end card can change its words or
+// go, not come.
+const LIVE_JS = `
+          function kineticPatch(plan, s) {
+            var p = Object.assign({}, plan);
+            if (s.world) p.world = s.world;
+            if ("title" in s) { p.title = s.title || ""; p.subtitle = s.subtitle || ""; }
+            if (p.cta && ("cta" in s || "handle" in s)) p.cta = Object.assign({}, p.cta, { text: s.cta || "", handle: s.handle || "" });
+            if (s.colors) p.speakers = (p.speakers || []).map(function (sp) { return s.colors[sp.id] ? Object.assign({}, sp, { color: s.colors[sp.id] }) : sp; });
+            if (s.names) {
+              p.speakers = (p.speakers || []).map(function (sp) { return Object.assign({}, sp, { name: s.names[sp.id] != null ? s.names[sp.id] : String(sp.id) }); });
+              var named = p.speakers.some(function (sp) { return s.names[sp.id] != null; });
+              p.turns = [];
+              if (named) (plan.phrases || []).forEach(function (ph) {
+                if (ph.speaker != null && (!p.turns.length || p.turns[p.turns.length - 1].speaker !== ph.speaker)) p.turns.push({ t: ph.tIn, speaker: ph.speaker });
+              });
+            }
+            return p;
+          }
+          // a layer built again: its children and classes back to the start, then built anew
+          function kineticReset(root, kids, cls) {
+            Array.prototype.slice.call(root.children).forEach(function (c) { if (kids.indexOf(c) < 0) c.remove(); });
+            root.className = cls;
+          }`;
+
 function subcomp(id, body) {
   return `<!doctype html>
 <html>
@@ -306,9 +355,26 @@ const world = subcomp("world", `
       <script>
         (function () {
           var plan = ${planJson};
-          var api = KineticWorld.mount(document.getElementById("world-canvas"), plan);
+          // Played live in a player (an iframe, and not the renderer's capture), the world is
+          // drawn at 40 % of its size: in full it takes some 40 ms a frame on the CPU and the
+          // words stutter. The render, top level or captured, keeps every pixel.
+          var canvas = document.getElementById("world-canvas");
+          if (!window.__HF_RENDER_CAPTURE_MODE && window.top !== window) {
+            plan = Object.assign({}, plan, { width: Math.round(plan.width * 0.4), height: Math.round(plan.height * 0.4) });
+            canvas.width = plan.width; canvas.height = plan.height;
+          }
+          var api = KineticWorld.mount(canvas, plan);
           var last = -1;
-          function draw(t) { if (t === last) return; last = t; api.renderAt(t); }
+          function draw(t) { if (t === last) return; last = t; api.renderAt(t); }${LIVE_JS}
+          var built = plan;
+          function live(s) {
+            var p = kineticPatch(built, s || {});
+            if (p.world === plan.world) return;
+            plan = p; api = KineticWorld.mount(canvas, plan);
+            var t = last; last = -1; draw(Math.max(0, t));
+          }
+          window.addEventListener("kinetic-settings", function (e) { live(e.detail); });
+          if (window.__kineticSettings) live(window.__kineticSettings);
           window.addEventListener("hf-seek", function (e) { draw(e.detail.time); });
           // GSAP mirror so preview scrubbing and timeline-driven seeks also land here
           var proxy = { t: 0 };
@@ -336,14 +402,30 @@ const lyrics = subcomp("lyrics", `
         (function () {
           var plan = ${planJson};
           var root = document.getElementById("lyrics-root");
-          Promise.all([
-            document.fonts.load('400 100px "League Gothic"'),
-            document.fonts.load('italic 400 100px "Instrument Serif"'),
-          ]).catch(function () {}).then(function () {
-            var built = KineticType.build(root, plan, gsap);
+          var kids = Array.prototype.slice.call(root.children), cls = root.className, built = null;${LIVE_JS}
+          function sigOf(p) { return JSON.stringify([p.world, (p.speakers || []).map(function (sp) { return sp.color; })]); }
+          var shown = sigOf(plan);
+          function make(p) {
+            if (built) { built.timeline.kill(); kineticReset(root, kids, cls); }
+            built = KineticType.build(root, p, gsap);
             window.__timelines["lyrics"] = built.timeline;
             if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
-          });
+          }
+          var fonts = Promise.all([
+            document.fonts.load('400 100px "League Gothic"'),
+            document.fonts.load('italic 400 100px "Instrument Serif"'),
+          ]).catch(function () {});
+          fonts.then(function () { make(plan); });
+          // the words take their colours from the world and the speakers
+          function live(s) {
+            var p = kineticPatch(plan, s || {});
+            var sig = sigOf(p);
+            if (sig === shown) return;
+            shown = sig;
+            fonts.then(function () { make(p); });
+          }
+          window.addEventListener("kinetic-settings", function (e) { live(e.detail); });
+          if (window.__kineticSettings) live(window.__kineticSettings);
         })();
       </script>`);
 
@@ -367,18 +449,35 @@ const overlay = subcomp("overlay", `
           // canvas parts (audiogram) are drawn from time, like the 3D world
           function draw(t) { pending = t; if (!built || t === last) return; last = t; built.draw(t); }
           window.addEventListener("hf-seek", function (e) { draw(e.detail.time); });
-          Promise.all([
+          var root = document.getElementById("overlay-root");
+          var kids = Array.prototype.slice.call(root.children), cls = root.className, shown = "";${LIVE_JS}
+          function make(p) {
+            if (built) { built.timeline.kill(); kineticReset(root, kids, cls); }
+            built = KineticOverlay.build(root, p, gsap);
+            var proxy = { t: 0 };
+            built.timeline.to(proxy, { t: p.duration, duration: p.duration, ease: "none", onUpdate: function () { draw(proxy.t); } }, 0);
+            last = -1; draw(pending);
+            window.__timelines["overlay"] = built.timeline;
+            if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
+          }
+          var fonts = Promise.all([
             document.fonts.load('400 100px "League Gothic"'),
             document.fonts.load('italic 400 100px "Instrument Serif"'),
             document.fonts.load('700 20px "JetBrains Mono"'),
-          ]).catch(function () {}).then(function () {
-            built = KineticOverlay.build(document.getElementById("overlay-root"), plan, gsap);
-            var proxy = { t: 0 };
-            built.timeline.to(proxy, { t: plan.duration, duration: plan.duration, ease: "none", onUpdate: function () { draw(proxy.t); } }, 0);
-            draw(pending);
-            window.__timelines["overlay"] = built.timeline;
-            if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
-          });
+          ]).catch(function () {});
+          fonts.then(function () { make(plan); });
+          // title, names, end card and the world's colours
+          function sigOf(p) { return JSON.stringify([p.world, p.title, p.subtitle, p.cta, p.speakers, p.turns]); }
+          shown = sigOf(plan);
+          function live(s) {
+            var p = kineticPatch(plan, s || {});
+            var sig = sigOf(p);
+            if (sig === shown) return;
+            shown = sig;
+            fonts.then(function () { make(p); });
+          }
+          window.addEventListener("kinetic-settings", function (e) { live(e.detail); });
+          if (window.__kineticSettings) live(window.__kineticSettings);
         })();
       </script>`);
 
