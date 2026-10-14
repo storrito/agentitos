@@ -97,7 +97,7 @@ export const CONCEPTS = {
   },
   // ---- non-poetic content (podcasts, explainers, social posts) ----
   growth: {
-    fx: "rise", motif: "chart", mood: "gold",
+    fx: "grow", motif: "chart", mood: "gold",
     stems: ["grow", "growth", "increase", "scale", "double", "triple", "boost", "improve", "progress", "expand", "faster", "more",
       "wachs", "wuchs", "verdoppel", "verdreifach", "skalier", "verbesser", "fortschritt", "mehr", "zunehm"],
     exact: ["more", "mehr"],

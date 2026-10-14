@@ -51,6 +51,12 @@ const WORDS = [
   fx("bounce", "Die Buchstaben springen nacheinander von der Linie hoch und landen gestaucht; ab und zu hüpft einer nach", "Der Welpe [hüpft] herum"),
   fx("depth", "Steigt flach liegend aus der Tiefe auf und richtet sich auf", "Aus der [Tiefe] des Raums"),
   fx("blur", "Wird aus starker Unschärfe scharf", "Langsam wird es [klar]"),
+  fx("grow", "Wächst aus einem Keim an der Grundlinie auf volle Größe und wächst langsam weiter (auch das Konzept growth)", "Unser Umsatz [wächst] weiter"),
+  fx("shrink", "Erscheint in voller Größe und schrumpft in zwei Stufen zusammen", "Die Kosten [schrumpfen] jedes Jahr"),
+  fx("type", "Wird Buchstabe für Buchstabe hinter einem blinkenden Cursor getippt", "Ich schreibe eine [Nachricht]"),
+  fx("scramble", "Zufällige Zeichen rattern durch jeden Buchstaben, bis er von links nach rechts einrastet", "Das [Passwort] ist geknackt"),
+  fx("tremble", "Die Buchstaben zittern dauerhaft, jeder für sich", "Ich hatte richtig [Angst]"),
+  fx("assemble", "Die Buchstaben fliegen von überall her zusammen und rasten mit einem kleinen Klick ein", "Wir sind ein [Team]"),
   fx("window", "Das Wort teilt sich beim nächsten Wort in der Mitte und schwingt wie zwei Fensterflügel auf, Licht fällt durch den Spalt", "Ich mache das [Fenster] auf", { still: 1.3 }),
 ];
 // what the engine sets by itself: the plain entrance and the one for no time

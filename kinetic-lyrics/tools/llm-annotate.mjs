@@ -19,7 +19,7 @@ import { PALETTES } from "../engine/signals.js";
 export const MODEL = "claude-opus-5-5";
 
 const CONCEPT_KEYS = Object.keys(CONCEPTS);
-const FX = ["rise", "drop", "flicker", "glow", "sparkle", "fog", "whisper", "slam", "glitch", "wave", "spin", "pulse", "shatter", "flash", "streak", "count", "blink", "redact", "bounce", "window", "depth", "blur"];
+const FX = ["rise", "drop", "flicker", "glow", "sparkle", "fog", "whisper", "slam", "glitch", "wave", "spin", "pulse", "shatter", "flash", "streak", "count", "blink", "redact", "bounce", "window", "depth", "blur", "grow", "shrink", "type", "scramble", "tremble", "assemble"];
 const MOODS = Object.keys(PALETTES);
 const LAYOUTS = ["hero", "block", "cascade", "inline", "split", "list"];
 const NOTES = ["circle", "underline", "strike"];
@@ -80,7 +80,13 @@ blink = opens like an eye and blinks once (seeing, watching, noticing) · redact
 away (secrets, lies, the hidden, the classified) · bounce = letters jump up from the line, land squashed and keep hopping now and then (animals, play, joy, comedy) ·
 window = the word splits down the middle as the next word is spoken and both halves swing open like casements, light pouring through (windows, doors, opening up, a reveal: "ein Fenster auf", "opened the door") ·
 depth = lying flat far away, the word rises out of the depth and stands up as it arrives (depth, distance, from afar, the abyss, the past) ·
-blur = comes into focus out of a heavy blur (focus, clarity, realising, waking up, seeing clearly)
+blur = comes into focus out of a heavy blur (focus, clarity, realising, waking up, seeing clearly) ·
+grow = grows from a seedling at the baseline to full size and keeps growing (growth, more, rising, expanding) ·
+shrink = appears full size, then deflates in two steps (less, smaller, falling numbers, losing, cutting back) ·
+type = typed out letter by letter behind a blinking caret (writing, a message, an email, a chat, AI) ·
+scramble = random characters rattle through each letter until it locks (code, a password, decoding, figuring out, hacking) ·
+tremble = the letters keep trembling (fear, nerves, panic, anxiety, shivering) ·
+assemble = the letters fly in from all around and snap together (a team, together, building, connecting, putting together)
 
 MOODS (palette families): ${MOODS.join(", ")}
   night=deep blue neutral, dark=desaturated grey, dawn=peach/violet hope, electric=cyan/magenta energy,

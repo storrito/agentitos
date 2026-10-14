@@ -264,7 +264,7 @@ Optional per-word overrides:
 
 | Field | Effect |
 | --- | --- |
-| `fx` | force a word effect: `rise drop flicker glow sparkle fog whisper slam glitch wave spin pulse shatter flash streak count blink redact bounce window depth blur`, and only by hand `mask soft snap` |
+| `fx` | force a word effect: `rise drop flicker glow sparkle fog whisper slam glitch wave spin pulse shatter flash streak count blink redact bounce window depth blur grow shrink type scramble tremble assemble`, and only by hand `mask soft snap` |
 | `concept` | force a concept (`fire`, `water`, `time`, …) or `null` to switch it off |
 | `emphasis` | 0..1, controls size and hero choice |
 | `hero` | `true`: the word becomes the phrase's hero |
@@ -308,6 +308,9 @@ transcript.json ──► tools/analyze.mjs ──► plan.json ──► compos
 | loud | slam + shake | shockwave, camera shake |
 | dark | big letters loom one by one out of drifting mist | fog, desaturated |
 | quiet | small hushed serif, breathed in letter by letter | fog, desaturated |
+| growth | grows from a seedling at the baseline and keeps growing | rising curve |
+
+Word effects without a concept of their own, for the direction to pick: `shrink` (appears full size, deflates in two steps), `type` (typed out behind a blinking caret), `scramble` (random characters rattle through each letter until it locks), `tremble` (the letters keep trembling), `assemble` (the letters fly in from all around and snap together).
 
 The soft ripple ring behind a hero word only comes with an effect that lands with a hit or a burst (`slam`, `shatter`, `drop`, `pulse`, `glow`); concept rings (love, loud) stay. Before a real pause (over 0.9 s) an exit may take up to 0.5 s instead of 0.36 s, so it can be seen; when the last word has no time to be read, the exit is a plain fade.
 

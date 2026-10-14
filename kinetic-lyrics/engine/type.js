@@ -473,12 +473,14 @@ export function build(root, plan, gsap) {
     soft: 0.1, mask: 0.1, rise: 0.24, drop: 0.32, flicker: 0.1, glow: 0.08, sparkle: 0.16, fog: 0.24, whisper: 0.16,
     slam: 0.06, glitch: 0.04, wave: 0.1, snap: 0.06, spin: 0.2, pulse: 0.1, shatter: 0.05, flash: 0.08, streak: 0.12, depth: 0.2, blur: 0.12,
     blink: 0.1, redact: 0.14, bounce: 0.14, window: 0.2,
+    grow: 0.2, shrink: 0.08, type: 0.06, scramble: 0.08, tremble: 0.08, assemble: 0.3,
   };
   // seconds until a word is whole, per effect (schedule + QA)
   const READY_AT = {
     soft: 0.3, mask: 0.38, rise: 0.85, drop: 0.55, flicker: 0.42, glow: 0.2, sparkle: 0.3, fog: 0.85, whisper: 0.3, slam: 0.25,
     glitch: 0.45, wave: 0.38, spin: 0.45, pulse: 0.35, shatter: 0.2, flash: 0.55, streak: 0.35, depth: 0.7, blur: 0.4, count: 0.45, snap: 0.14,
     blink: 0.22, redact: 0.4, bounce: 0.45, window: 0.3,
+    grow: 0.85, shrink: 0.25, type: 0.1, scramble: 0.2, tremble: 0.2, assemble: 0.8,
   };
   const fxOf = (w, ph) => w.fx || (w.role === "fn" ? "soft" : ph.enter);
   const baseAppear = (ph) => {
@@ -593,7 +595,10 @@ export function build(root, plan, gsap) {
     const st = Math.min(0.035, D * 0.6 / Math.max(1, chars.length), 0.22 / Math.max(1, chars.length));
     const shuffled = chars.map((c) => [r(), c]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
     // effects that reveal letter by letter are whole only after the stagger
-    const perLetter = ["mask", "whisper", "drop", "flicker", "sparkle", "wave", "spin", "bounce"].includes(fx) ? st * (fx === "bounce" ? 1.4 : 1) * Math.max(0, chars.length - 1) : 0;
+    // typing and decoding: one letter after another at their own pace (see the cases below)
+    const typeStep = clamp((w.end - w.start) * 0.8 / Math.max(1, chars.length), 0.035, 0.075);
+    const perLetter = ["mask", "whisper", "drop", "flicker", "sparkle", "wave", "spin", "bounce"].includes(fx) ? st * (fx === "bounce" ? 1.4 : 1) * Math.max(0, chars.length - 1)
+      : fx === "type" ? typeStep * Math.max(0, chars.length - 1) : fx === "scramble" ? 0.05 * Math.max(0, chars.length - 1) : 0;
     QA.words.push({ i: w.i, phrase: ph.id, fx, ready: +(T + (READY[fx] ?? 0.4) + perLetter).toFixed(3), exit: ph.exitAt });
     we.T = T;
 
@@ -815,6 +820,74 @@ export function build(root, plan, gsap) {
           tl.to(c, { y: "-0.24em", duration: 0.14, ease: "power2.out" }, t);
           tl.to(c, { y: 0, duration: 0.14, ease: "power2.in" }, t + 0.14);
         }
+        break;
+      }
+      case "grow": {
+        // grows from a seedling at the baseline to full size, overshoots a little, and keeps
+        // growing slowly while it is up (growth, more, rising numbers)
+        tl.fromTo(tgt, { scale: 0.08, opacity: 0, transformOrigin: "50% 100%" }, { scale: 1.1, opacity: 1, duration: 0.8, ease: "sine.inOut" }, T);
+        tl.to(tgt, { scale: 1, duration: 0.3, ease: "sine.inOut" }, T + 0.8);
+        tl.to(tgt, { scale: 1.08, duration: Math.max(0.6, (ph.exitAt ?? ph.tOut) - T - 1.1), ease: "sine.inOut" }, T + 1.1);
+        break;
+      }
+      case "shrink": {
+        // appears at full size, then deflates in two steps and dims a little (less, smaller, losing)
+        tl.fromTo(tgt, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, T);
+        tl.fromTo(tgt, { scale: 1.12, transformOrigin: "50% 100%" }, { scale: 0.86, duration: 0.3, ease: "power2.in" }, T + 0.35);
+        tl.to(tgt, { scale: 0.7, opacity: 0.8, duration: 0.4, ease: "power2.in" }, T + 0.85);
+        break;
+      }
+      case "type": {
+        // typed out letter by letter behind a blinking caret (writing, a message, an email, AI)
+        const caret = el("i", "ky-caret", wd);
+        tl.fromTo(caret, { opacity: 0 }, { opacity: 1, duration: 0.01 }, T - 0.12);
+        chars.forEach((c, ci) => {
+          const at = T + ci * typeStep;
+          tl.fromTo(c, { opacity: 0 }, { opacity: 1, duration: 0.01 }, at);
+          // the caret's place is read when the frame is drawn, after the fonts have loaded
+          tl.set(caret, { x: () => c.offsetLeft + c.offsetWidth }, at);
+        });
+        const done = T + chars.length * typeStep;
+        for (let k = 0; k < 6; k++) tl.set(caret, { opacity: k % 2 ? 1 : 0 }, done + 0.08 + k * 0.26);
+        break;
+      }
+      case "scramble": {
+        // random characters rattle through each letter until it locks, left to right
+        // (code, a password, decoding, figuring something out)
+        const GLYPHS = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789#%&$?";
+        chars.forEach((c, ci) => {
+          const real = c.textContent;
+          c.style.width = `${(measure(real, "gothic", 100) / 100).toFixed(3)}em`; // no jitter of the line
+          c.style.textAlign = "center";
+          tl.fromTo(c, { opacity: 0 }, { opacity: 1, duration: 0.01 }, T);
+          const lock = T + 0.12 + ci * 0.05;
+          for (let t = T; t < lock; t += 0.045) tl.set(c, { textContent: GLYPHS[Math.floor(r() * GLYPHS.length)] + "​" }, t);
+          tl.set(c, { textContent: real }, lock);
+          tl.fromTo(c, { textShadow: `0 0 0.35em ${C.glow}` }, { textShadow: `0 0 0em ${C.glow}`, duration: 0.35, ease: "power1.out", immediateRender: false }, lock);
+        });
+        break;
+      }
+      case "tremble": {
+        // the letters keep trembling, each on its own, while the word is up (fear, nerves, panic, cold)
+        tl.fromTo(tgt, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, T);
+        const hold = (ph.exitAt ?? ph.tOut) - 0.1;
+        chars.forEach((c) => {
+          for (let t = T + r() * 0.05; t < hold; t += 0.045 + r() * 0.03) {
+            tl.to(c, { x: (r() - 0.5) * we.size * 0.06, y: (r() - 0.5) * we.size * 0.06, rotation: (r() - 0.5) * 7, duration: 0.04, ease: "none" }, t);
+          }
+        });
+        break;
+      }
+      case "assemble": {
+        // the letters fly in from all around and snap together, then the word gives a small
+        // click (a team, together, building, connecting)
+        shuffled.forEach((c, k) => {
+          const at = T + k * 0.03;
+          tl.fromTo(c, { x: (r() - 0.5) * we.size * 4, y: (r() - 0.5) * we.size * 2.4, rotation: (r() - 0.5) * 160, scale: 0.6, opacity: 0 },
+            { x: 0, y: 0, rotation: 0, scale: 1, opacity: 1, duration: 0.55, ease: "power3.out" }, at);
+        });
+        const snap = T + 0.55 + chars.length * 0.03;
+        tl.fromTo(tgt, { scale: 1 }, { scale: 1.06, duration: 0.08, ease: "power2.out", yoyo: true, repeat: 1 }, snap);
         break;
       }
       case "window": {
@@ -1067,6 +1140,8 @@ export const CSS = /* css */ `
   .ky-w { position:relative; display:inline-block; transform-style: preserve-3d; will-change: transform, opacity; }
   .ky-mk { display:inline-block; clip-path: inset(-1.5em -1.5em 0 -1.5em); padding: .06em .05em .05em; margin: -.06em -.05em -.05em; }
   .ky-ch { display:inline-block; will-change: transform, opacity; backface-visibility: hidden; }
+  .ky-caret { position:absolute; left:0; top:.08em; bottom:.06em; width:.06em; display:block; pointer-events:none; opacity:0;
+    background: var(--accent); border-radius:.02em; }
   .ky-half { display:inline-block; transform-style: preserve-3d; }
   .ky-gap { position:absolute; left:36%; right:36%; top:-.22em; bottom:-.22em; display:block; pointer-events:none; z-index:-1; opacity:0;
     background: radial-gradient(ellipse 50% 50% at 50% 50%, color-mix(in srgb, #fff 75%, var(--glow, #fff)), color-mix(in srgb, var(--glow, #fff) 40%, transparent) 45%, transparent 75%);
