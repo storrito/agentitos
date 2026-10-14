@@ -63,14 +63,16 @@ export function build(root, plan, gsap) {
   }[preset] || [0.1, 0.13, 0.9, 0.87];
   // over footage the type keeps to the darkened band below the speaker (see build.mjs, plan.video)
   // (short-form: clear of the platform UI – caption/username block at the bottom, action rail right)
-  if (plan.video) {
+  // in a frame (a light world) the type keeps below it, or beside it in landscape
+  if (plan.video?.frame) {
+    const [, , fx1, fy1] = plan.video.frame;
+    if (W > H * 1.2) SAFE[0] = Math.max(SAFE[0], fx1 + 0.04);
+    else SAFE[1] = Math.max(SAFE[1], fy1 + 0.045);
+    if (portrait) { SAFE[0] = 0.07; SAFE[2] = 0.88; SAFE[3] = 0.8; }
+  } else if (plan.video) {
     SAFE[1] = Math.max(SAFE[1], plan.video.shade[0] + (plan.video.shade[1] - plan.video.shade[0]) * 0.55);
     if (portrait) { SAFE[0] = 0.07; SAFE[2] = 0.88; SAFE[3] = 0.78; }
   }
-  // keyword mode: the running caption takes the bottom of the safe box, lockups the rest
-  const CAPS = plan.captions || null;
-  const CAPBOX = CAPS ? [SAFE[0], SAFE[3] - (portrait ? 0.11 : 0.12), SAFE[2], SAFE[3]] : null;
-  if (CAPS) SAFE[3] = CAPBOX[1] - 0.02;
   const drift = plan.style?.drift ?? 1;
   // a lockup breathes while it is up (push-in up to +4 %, pulses on strong words): lay it out in
   // a box narrow enough that the grown lockup still stays inside the safe area
@@ -395,7 +397,7 @@ export function build(root, plan, gsap) {
 
   // ------------------------------------------------------------ DOM
   if (LIGHT) root.classList.add("ky-light");
-  if (plan.video) root.classList.add("ky-video");
+  if (plan.video && !plan.video.frame) root.classList.add("ky-video");
   const scrim = el("div", "ky-scrim", root);
   const stage = el("div", "ky-stage", root);
   const px = (v) => `${Math.round(v)}px`;
@@ -1174,35 +1176,7 @@ export function build(root, plan, gsap) {
     tl.set(box, { autoAlpha: 0 }, xs + xd + 0.04);
   });
 
-  // ------------------------------------------------------------ running caption (keyword mode)
-  if (CAPS) {
-    const bar = el("div", "ky-caps", root);
-    Object.assign(bar.style, {
-      left: px(W * CAPBOX[0]), top: px(H * CAPBOX[1]), width: px(W * (CAPBOX[2] - CAPBOX[0])), height: px(H * (CAPBOX[3] - CAPBOX[1])),
-      fontSize: px(portrait ? W * 0.068 : H * 0.047),
-    });
-    CAPS.forEach((c, k) => {
-      const pal = PALETTES[c.mood] || PALETTES.night;
-      const ink = pal[4], accent = (c.speaker != null && speakerColor[c.speaker]) || pal[2];
-      const line = el("div", "ky-cap", bar);
-      const spans = c.words.map((i) => { const sp = el("span", "ky-cw", line); sp.textContent = words[i].text; return sp; });
-      // one line at a time: it leaves just before the next one arrives
-      const n = CAPS[k + 1];
-      const t0 = Math.max(0, c.start - 0.2);
-      const t1 = Math.max(t0 + 0.4, n ? Math.min(n.start - 0.3, c.end + 1.2) : Math.min(plan.duration - 0.4, c.end + 1.5));
-      tl.fromTo(line, { autoAlpha: 0, y: H * 0.008 }, { autoAlpha: 1, y: 0, duration: 0.16, ease: "power2.out" }, t0);
-      tl.to(line, { autoAlpha: 0, duration: 0.1, ease: "power1.in" }, t1);
-      // karaoke: upcoming words are dim, the spoken word lights up in the speaker colour
-      spans.forEach((sp, j) => {
-        const w = words[c.words[j]];
-        tl.fromTo(sp, { opacity: 0.55, color: ink }, { opacity: 1, color: accent, duration: 0.06 }, Math.max(t0, w.start - 0.03));
-        tl.to(sp, { color: ink, duration: 0.25 }, Math.max(t0, w.end + 0.05));
-      });
-    });
-  }
-
   QA.phrases = plan.phrases.map((ph) => ({ id: ph.id, ...SCHED.get(ph.id) }));
-  QA.captions = !!CAPS;
   return { timeline: tl, signals: S, qa: QA };
 }
 
@@ -1260,11 +1234,6 @@ export const CSS = /* css */ `
   .ky-marked { text-shadow: none; }
   .ky-num { text-align:center; }
   .ky-qmark { position:absolute; left:-.32em; top:-.42em; line-height:1; font-family: ${SERIF}, serif; color: var(--accent); opacity:.9; pointer-events:none; }
-  .ky-caps { position:absolute; display:block; pointer-events:none; }
-  .ky-cap { position:absolute; inset:0; display:flex; flex-wrap:wrap; align-content:center; justify-content:center; column-gap:.26em; row-gap:.05em;
-    text-align:center; line-height:1.12; visibility:hidden; opacity:0; font-family: ${SERIF}, serif; font-weight:400; font-style: normal;
-    text-shadow: 0 .03em .12em rgba(0,0,0,.9), 0 .04em .5em rgba(0,0,0,.7); -webkit-text-stroke: .012em currentColor; }
-  .ky-light .ky-cap { text-shadow: 0 0 .5em rgba(255,255,255,.9); }
   /* tinted with the palette's own deep tone, so it reads as shade, not as a grey smudge */
   .ky-halo { position:absolute; inset:-34% -20%; pointer-events:none;
     background: radial-gradient(closest-side, color-mix(in srgb, var(--markink) 58%, transparent),

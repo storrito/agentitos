@@ -29,7 +29,17 @@ node tools/short.mjs build shorts/ep12 --names "A=Anna,B=Ben"    # HyperFrames p
 node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.png, stills/15.png
 ```
 
-It always uses the `podcast` preset, 9:16 by default and full-text mode; options: `--speakers`, `--names`, `--title`, `--subtitle`, `--hook`, `--world`, `--aspect`, `--cta`, `--handle`, `--keywords` / `--full-text`. `<dir>` may already exist (e.g. made by a harness); `new` replaces `<dir>/composition/`.
+It always uses the `podcast` preset, 9:16 by default, every word big; options: `--speakers`, `--names`, `--colors "A=#ff5a36,B=#4fc3f7"` (each speaker's colour: accent words and name chip), `--title`, `--subtitle`, `--hook`, `--world`, `--aspect`, `--cta`, `--handle`. `<dir>` may already exist (e.g. made by a harness); `new` replaces `<dir>/composition/`.
+
+### Actions for a page (`actions.json`)
+
+`actions.json` declares what a page beside the short may run without the agent, for a harness that supports skill actions (pchat runs them: the command in the workspace, `{"artifact": "<name>", "input": {...}}` on stdin, the last JSON line as the result). `apply` is `tools/apply.mjs`: it checks every setting (`world`, `aspect`, `title`, `subtitle`, `names`, `colors`, `cta`, `handle`), builds `artifacts/<name>` with them, checks it, removes the outdated `artifacts/<name>.mp4` and answers `{"ok": true, "note": "Built, 0 errors, 12 warnings"}`. Every build writes `composition/settings.json` (the settings, the world, the voices), from which the interview page reads what the short has.
+
+### Live settings in the player
+
+A built composition takes settings without a build, for a page around the player (the interview page, `interview/setup.html`): a `kinetic-settings` event on the composition's window, `{world, title, subtitle, names: {A: "Anna"}, colors: {A: "#ff5a36"}, cta, handle}`, each optional, also kept as `window.__kineticSettings` for layers that load later. The world, the words' colours, the show's name, the speaker chips and an existing end card draw themselves again at once; `{}` goes back to what is built. The length stays: an end card can change or go, not come, and the format needs a build. Only a build makes them stay for the render, which reads the files.
+
+Played in a player (an iframe, not the renderer's capture), the world is drawn at 40 % of its size, so the words stay smooth; the render keeps every pixel.
 
 ## Presets: lyric, podcast, social
 
@@ -93,13 +103,14 @@ If the podcast exists as a video, the camera image can be the background:
 
 ```bash
 node tools/build.mjs examples/my-clip/transcript.json --video examples/my-clip/video.mp4 \
-  --preset podcast --aspect 9:16 --full-text --llm --speakers "A=Jane Doe" \
+  --preset podcast --aspect 9:16 --llm --speakers "A=Jane Doe" \
   --title "My Show" --subtitle "Jane Doe · Astrophysicist" \
   --video-shade 0.44:0.565 --video-dim 1 --out videos/my-clip
 ```
 
 - **Layout:** The video fills the frame. A gradient darkens the lower half of the frame, where the typography sits. The face at the top stays clear.
-- **The world** is laid over the video with `screen` blending, so only its light is visible (stars, sparks, rings). Over the face it is barely visible, in the dark area it is at full strength. Light worlds are replaced by `cosmos`, and the type is always light.
+- **The world** is laid over the video with `screen` blending, so only its light is visible (stars, sparks, rings). Over the face it is barely visible, in the dark area it is at full strength, and the type is light.
+- **Light worlds** (`editorial`, `geometry`) frame the video instead: it sits as a picture with rounded corners on the paper or in the studio (on top in portrait and square, on the left in landscape, cut to fit, `plan.video.frame`), the dark type below or beside it, the world drawn as without footage.
 - **Motion:** The image slowly zooms in by 6 % and gives a small push (2.5 %) on hero lockups.
 - **Burned-in captions** are found automatically by `tools/burnin.mjs`. It looks for bright, sharp-edged text that changes every few tenths of a second and sits in a fixed band. Temporary overlays such as name tags or title cards are detected as well. The gradient is fully dark just above them, never higher than 50 % (the face stays clear) and never lower than 60 % (the type needs room). Without burned-in text it is a little lighter (`dim` 0.85). Result on 7 shorts: 6 caption bands and 4 overlays found, and correctly none for the clip without captions.
 - **`--video-shade a:b` / `--video-dim x`** override the detection: at frame height `a` the gradient is still transparent, from `b` on it is dark, and `x` sets how dark. The values are stored in `plan.json` under `video`.
@@ -178,7 +189,7 @@ There is at most one graphic per phrase; percentages and factors win over pictog
 
 Most graphics need a square-ish box and get more height under the phrase; the wide ones (two sides, a line, labels in a row) take the full width.
 
-**German numbers:** `258.000` and `3,5` count up in their own format (not as `258,000` / `3.5`), and graphics are labelled in the format of the detected language (`258.000 €` / `€258,000`). In keyword mode a number stays together with its unit: "100 Euro", "50 Jahren", "40 Prozent".
+**German numbers:** `258.000` and `3,5` count up in their own format (not as `258,000` / `3.5`), and graphics are labelled in the format of the detected language (`258.000 €` / `€258,000`).
 
 **Hand-drawn annotations** draw onto a word as if with a pen: `circle` (key term), `underline` (key statement), `strike` (what is negated or replaced; the word fades). Claude places them sparingly with `--llm`. Without the LLM the rule "not X but Y" / "nicht X sondern Y" / "instead of X" applies: X is struck through, Y circled. An underline across another line becomes a circle; a word that fills almost the whole width is underlined instead of circled.
 
@@ -219,9 +230,9 @@ node tools/build.mjs examples/my-clip/transcript.json --audio examples/my-clip/a
 
 Long files are transcribed with Parakeet in 10-minute chunks (the CLI otherwise fails on its timeout) and cached as `<audio>.words.json`. Claude reads the episode as numbered sentences and proposes up to three clips: understandable without the rest of the episode, with a hook at the start and a payoff at the end. `highlight.json` contains the title, the reasoning and the alternatives. `--hint "…"` steers the search, `--from`/`--to` (seconds in the source) set the cut by hand to the nearest sentence boundary.
 
-**Keyword mode** (podcast default, `--keywords` / `--full-text`): the sentence runs small as a caption, and the spoken word lights up in the speaker's colour. Only words with weight (hero, marker, image, number, annotation) appear big and animated. If two keywords are less than 1.4 s apart, they share a lockup, and each stays until the next one. **Quotes:** Claude picks the punchline (`quotes`), which appears as a whole sentence in quotation marks instead of in pieces. **Reading time:** phrases that would be shorter than the minimum reading time (podcast 1.25 s, social 0.95 s, lyric 0.8 s) merge with the nearest neighbour of the same voice.
+**Quotes:** Claude picks the punchline (`quotes`), which appears as a whole sentence in quotation marks instead of in pieces. **Reading time:** phrases that would be shorter than the minimum reading time (podcast 1.25 s, social 0.95 s, lyric 0.8 s) merge with the nearest neighbour of the same voice.
 
-**Full-text mode for short-form** (social default, `--full-text` for podcast): every word appears big. In portrait, phrases of five words or more are stacked instead of set in one or two small lines. No empty frame appears between two phrases if the pause is shorter than 0.8 s. If there isn't enough time for a long last word ("Neukundenverträgen"), it appears without an effect and stays until the next phrase comes; that phrase waits up to 0.3 s for it. Phrases that are too short merge into a slightly longer lockup if necessary.
+**Every word big** (every preset): the spoken words appear big, phrase by phrase. In portrait, phrases of five words or more are stacked instead of set in one or two small lines. No empty frame appears between two phrases if the pause is shorter than 0.8 s. If there isn't enough time for a long last word ("Neukundenverträgen"), it appears without an effect and stays until the next phrase comes; that phrase waits up to 0.3 s for it. Phrases that are too short merge into a slightly longer lockup if necessary.
 
 **Effect budget:** So that long excerpts don't light up every second, accents keep a minimum distance per preset: image effects (word effect + world motif) 6 s for podcast, 2.4 s for social, 1.6 s for lyric; annotations 9 / 4.5 / 4 s; markers 3.2 / 1.6 s. The strongest words win (emphasis, hero, numbers), the rest are set calmly. Hand-set `fx`/`concept`/`note` always stay. The camera only pushes forward on hero words (at most every 2.4 s, weaker for podcast); single words only make the world breathe slightly.
 
@@ -289,7 +300,7 @@ If the build runs inside an agent (Claude Code, a chat agent, …), that agent c
 ```bash
 node tools/clip.mjs upload.mp4 --out shorts/x          # audio, video, words and speakers (OpenRouter; or Parakeet, gaps via Whisper)
 node tools/build.mjs shorts/x/transcript.json --audio shorts/x/audio.wav --video shorts/x/video.mp4 \
-  --preset podcast --aspect 9:16 --full-text --diarize 2 --staging-brief shorts/x/brief.md --staging shorts/x/staging.json
+  --preset podcast --aspect 9:16 --diarize 2 --staging-brief shorts/x/brief.md --staging shorts/x/staging.json
 # the agent reads brief.md and writes staging.json
 node tools/build.mjs … --staging shorts/x/staging.json --out shorts/x/project
 ```

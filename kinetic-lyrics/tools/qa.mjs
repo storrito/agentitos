@@ -12,7 +12,6 @@
 //   ⚠ collision    words of one lockup run into each other, or into the HUD (chip, hook, waveform)
 //   ⚠ contrast     text vs. the world right behind it (WCAG ratio from two screenshots:
 //                  with and without the text layer) is below 3:1 – ✗ below 1.8:1
-//   ⚠ caption      a running caption needs more than two lines
 //   ⚠ transcript   the audio has speech where the transcript has no words (missed passage)
 // Writes <project>/qa/report.json and a frame for every finding; exits 1 if there are ✗.
 
@@ -87,9 +86,13 @@ ${FOOT ? FOOT.css : ""}
 ${["world", "type", "overlay"].map((n) => `<script>${fs.readFileSync(path.join(dir, "assets/engine", `${n}.js`), "utf8")}</script>`).join("\n")}
 </body></html>`;
 
+// Chrome puts a socket into TMPDIR, and a socket path has at most 107 bytes: a deep TMPDIR (a
+// harness's per-chat folder) makes it fail to start, so Chrome gets the system's then
+const tmpOk = (process.env.TMPDIR || "/tmp").length <= 60;
 const browser = await puppeteer.launch({
   executablePath: chromePath(), headless: "shell",
   args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu-sandbox", "--hide-scrollbars", "--force-color-profile=srgb"],
+  ...(tmpOk ? {} : { env: { ...process.env, TMPDIR: "/tmp" } }),
 });
 const page = await browser.newPage();
 await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
@@ -231,21 +234,6 @@ for (const p of qa.phrases) {
   if (shotNeeded) { const f = await frameShot(t, shotNeeded); if (f) findings[findings.length - 1].frame = f; }
 }
 
-// ---------------------------------------------------------------- captions
-if (plan.captions) {
-  for (const [k, c] of plan.captions.entries()) {
-    const t = (c.start + c.end) / 2;
-    await footageAt(t);
-    const lines = await page.evaluate((t, k) => {
-      window.__qa.seek(t);
-      const e = document.querySelectorAll(".ky-cap")[k];
-      const lh = parseFloat(getComputedStyle(e).lineHeight) || parseFloat(getComputedStyle(e).fontSize) * 1.12;
-      const tops = new Set([...e.children].map((s) => Math.round(s.offsetTop / (lh * 0.5))));
-      return tops.size;
-    }, t, k);
-    if (lines > 2) add("warn", t, "caption", `caption needs ${lines} lines: "${c.words.map((i) => plan.words[i].text).join(" ").slice(0, 60)}…"`);
-  }
-}
 const AT = argv.includes("--frames") ? String(argv[argv.indexOf("--frames") + 1]).split(",").map(Number).filter(Number.isFinite) : [];
 for (const t of AT) {
   await footageAt(t);

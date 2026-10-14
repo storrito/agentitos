@@ -15,19 +15,19 @@ import { TEXT_GRAPHICS } from "../engine/graphics.js";
 export const PRESETS = {
   lyric: {
     maxWords: [6, 5, 4], maxChars: [36, 28, 22], world: 1, tilt: 1, drift: 1, marker: false, tail: 1.8, audiogram: false,
-    budget: { fx: 1.6, note: 4, mark: 0 }, minRead: 0.8, mode: "full",
+    budget: { fx: 1.6, note: 4, mark: 0 }, minRead: 0.8,
     enter: ["mask", "mask", "depth", "blur"], exits: ["lift", "zoom", "blur", "lift", "scatter"],
     layouts: { wide: ["block", "cascade", "hero", "split", "block"], tall: ["block", "hero", "cascade", "block"], long: ["block", "inline", "cascade"] },
   },
   podcast: {
     maxWords: [7, 6, 5], maxChars: [42, 32, 26], world: 0.45, tilt: 0.25, drift: 0.4, marker: true, tail: 1.4, audiogram: true,
-    budget: { fx: 6, note: 9, mark: 3.2 }, minRead: 1.25, mode: "keywords",
+    budget: { fx: 6, note: 9, mark: 3.2 }, minRead: 1.25,
     enter: ["mask", "blur", "mask"], exits: ["lift", "blur", "lift"],
     layouts: { wide: ["inline", "block", "inline", "hero"], tall: ["block", "inline", "block", "hero"], long: ["inline", "block"] },
   },
   social: {
     maxWords: [5, 4, 3], maxChars: [30, 24, 18], world: 0.7, tilt: 0.45, drift: 0.6, marker: true, tail: 1.6, audiogram: false,
-    budget: { fx: 2.4, note: 4.5, mark: 1.6 }, minRead: 0.95, mode: "full",
+    budget: { fx: 2.4, note: 4.5, mark: 1.6 }, minRead: 0.95,
     enter: ["mask", "mask", "blur"], exits: ["lift", "zoom", "lift"],
     layouts: { wide: ["block", "hero", "inline"], tall: ["block", "hero", "block", "inline"], long: ["block", "inline"] },
   },
@@ -58,9 +58,6 @@ const LANG_HINTS = {
   de: new Set(["der", "die", "das", "und", "ist", "nicht", "wir", "ich", "sie", "ein", "eine", "zu", "mit", "auf", "für", "es", "dass", "auch", "sind", "haben", "wenn", "aber", "von", "den", "dem"]),
   en: new Set(["the", "and", "is", "to", "of", "you", "we", "it", "that", "in", "a", "for", "this", "was", "are", "have", "with", "but", "they", "be", "on", "so", "what", "like"]),
 };
-// unit words that belong to the number before them
-const UNIT = /^(euro|eur|cent|dollar|dollars|pfund|franken|prozent|percent|prozentpunkte|punkte|points|jahre|jahren|jahr|years?|monate|monaten|months?|wochen|weeks?|tage|tagen|days?|stunden|hours?|minuten|minutes?|mal|times|millionen|million|millions|milliarden|billion|billions|billionen|trillion|tausend|thousand|mio|mrd)$/;
-
 export function detectLang(list) {
   const n = { de: 0, en: 0 };
   for (const w of list) {
@@ -419,61 +416,7 @@ export function analyze(rawWords, opts = {}) {
   }
   if (!moodTrack.length) moodTrack.push({ t: 0, mood: curMood });
 
-  // 5b. keyword mode (podcast default): the sentence runs as a small caption, the big kinetic
-  // lockups carry only the words that matter (hero, marked, images, numbers, notes) and can
-  // stay up until the next keyword – far calmer and easier to read with real, fast speech.
-  // Quotes and checklists stay whole.
-  const mode = ["full", "keywords"].includes(opts.mode) ? opts.mode : P.mode;
-  let lockups = out, captions = null;
-  if (mode === "keywords") {
-    // a quotation is already shown whole – no caption under it
-    captions = out.filter((p) => p.layout !== "quote").map((p) => ({ start: p.start, end: p.end, speaker: p.speaker, mood: p.mood, words: p.words }));
-    // a keyword must carry weight on its own: being the hero of a weak phrase ("is to be able to") is not enough
-    const isKey = (w) => w.role === "content" && (w.mark || w.concept || w.viz || w.note || w.num || (w.hero && w.emphasis >= 0.45));
-    lockups = [];
-    for (const p of out) {
-      if (p.layout === "quote" || p.layout === "list") { lockups.push({ ...p }); continue; }
-      let ks = p.words.map((i) => words[i]).filter(isKey);
-      if (!ks.length) continue;
-      if (ks.length > 3) {
-        const top = new Set([...ks].sort((a, b) => (b.i === p.hero) - (a.i === p.hero) || b.emphasis - a.emphasis).slice(0, 3));
-        ks = ks.filter((w) => top.has(w));
-      }
-      // a number keeps its unit: "100" alone says nothing, "100 Euro" does
-      for (const w of [...ks]) {
-        const u = words[w.i + 1];
-        if (w.num && u && p.words.includes(u.i) && !ks.includes(u) && UNIT.test(u.key) && !/[.!?]/.test(w.punct)) { u.unit = true; ks.push(u); }
-      }
-      ks.sort((a, b) => a.i - b.i);
-      const hero = ks.find((w) => w.i === p.hero) || [...ks].sort((a, b) => b.emphasis - a.emphasis)[0];
-      lockups.push({
-        ...p, words: ks.map((w) => w.i), hero: hero.i, start: ks[0].start, end: ks[ks.length - 1].end,
-        layout: ks.length - ks.filter((w) => w.unit).length === 1 ? (ks.length === 1 ? "hero" : "inline") : ks.length === 2 ? "inline" : "block",
-        viz: ks.some((w) => w.i === p.viz) ? p.viz : null, items: null,
-      });
-    }
-    // keywords spoken close together share a lockup (one flashing by is unreadable);
-    // more than three at once is too many – the weaker lockup gives way
-    const keyCount = (l) => l.words.filter((i) => !words[i].unit).length;
-    const strength = (l) => Math.max(...l.words.map((i) => words[i].emphasis + (i === l.hero ? 0.3 : 0)));
-    for (let k = 0; k < lockups.length - 1; k++) {
-      const a = lockups[k], b = lockups[k + 1];
-      if ([a.layout, b.layout].some((x) => x === "quote" || x === "list") || a.speaker !== b.speaker || b.start - a.start >= 1.4) continue;
-      if (keyCount(a) + keyCount(b) > 3) { lockups.splice(strength(a) >= strength(b) ? k + 1 : k, 1); k--; continue; }
-      const ws2 = [...a.words, ...b.words];
-      lockups.splice(k, 2, {
-        ...a, words: ws2, hero: strength(a) >= strength(b) ? a.hero : b.hero, end: b.end,
-        layout: ws2.length === 2 || (ws2.length === 3 && ws2.some((i) => words[i].unit)) ? "inline" : "block", viz: a.viz ?? b.viz,
-      });
-      k--;
-    }
-    lockups.forEach((l, k) => {
-      const n = lockups[k + 1];
-      l.id = `p${k}`; l.index = k;
-      l.tIn = +Math.max(0, l.start - 0.14).toFixed(3);
-      l.tOut = +(n ? Math.max(l.end + 0.05, Math.min(n.start - 0.12, l.end + 2.6)) : cta ? cta.start - 0.05 : duration - 0.5).toFixed(3);
-    });
-  }
+  const lockups = out;
 
   // 6. motif events (for the 3D world): one per concept word, sustained to phrase end
   const events = [];
@@ -497,14 +440,14 @@ export function analyze(rawWords, opts = {}) {
   const speakers = [];
   // world: explicit > Claude's choice > preset default
   let world = WORLD_NAMES.includes(opts.world) ? opts.world : WORLD_NAMES.includes(ann?.world) ? ann.world : DEFAULT_WORLD[presetName] || "cosmos";
-  // over footage the type is light-on-dark: the world only adds light (stars, sparks) on top
-  // (the light worlds' dark counterparts: paper/interview → warm bokeh, studio/tech → neon)
-  if (opts.video && LIGHT_WORLDS.has(world)) world = world === "geometry" ? "neon" : "bokeh";
+  // over footage a dark world adds its light to the picture; a light one puts the picture
+  // into a frame on its ground (build.mjs, plan.video.frame)
   const spkColors = LIGHT_WORLDS.has(world) ? SPEAKER_COLORS_LIGHT : SPEAKER_COLORS;
   for (const w of words) {
     if (w.speaker == null || speakers.some((s) => s.id === w.speaker)) continue;
     const k = speakers.length;
-    speakers.push({ id: w.speaker, name: opts.speakerNames?.[w.speaker] ?? String(w.speaker), color: spkColors[k % spkColors.length] });
+    const own = opts.speakerColors?.[w.speaker];
+    speakers.push({ id: w.speaker, name: opts.speakerNames?.[w.speaker] ?? String(w.speaker), color: /^#[0-9a-f]{3,8}$/i.test(own || "") ? own : spkColors[k % spkColors.length] });
   }
   const turns = [];
   for (const p of out) if (p.speaker != null && (!turns.length || turns[turns.length - 1].speaker !== p.speaker)) turns.push({ t: p.tIn, speaker: p.speaker });
@@ -515,10 +458,10 @@ export function analyze(rawWords, opts = {}) {
     version: 2, title, subtitle: opts.subtitle || "", width, height, duration, seed, portrait, square,
     lang: opts.lang || detectLang(rawWords),
     preset: PRESETS[presetName] ? presetName : "lyric", world,
-    style: { world: P.world, drift: P.drift, marker: P.marker, audiogram: opts.audiogram ?? P.audiogram, mode },
+    style: { world: P.world, drift: P.drift, marker: P.marker, audiogram: opts.audiogram ?? P.audiogram },
     hook: opts.hook || ann?.hook || "",
     cta, speakers, turns,
     staging: ann ? `claude (${ann.model})` : "lexicon",
-    words, phrases: lockups, captions, moodTrack, events, onsets,
+    words, phrases: lockups, moodTrack, events, onsets,
   };
 }

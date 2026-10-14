@@ -280,7 +280,7 @@ async function buildAll() {
     fs.writeFileSync(path.join(src, "transcript.json"), JSON.stringify(words, null, 1));
     fs.writeFileSync(path.join(src, "staging.json"), JSON.stringify(staging, null, 1));
     jobs.push({ name: id, args: [path.join(ROOT, "tools", "build.mjs"), path.join(src, "transcript.json"),
-      ...(set.preset ? ["--preset", set.preset, "--full-text"] : []),
+      ...(set.preset ? ["--preset", set.preset] : []),
       "--aspect", "9:16", "--size", "720x1280", "--tail", String(set.tail ?? (set.exit ? 1.2 : 2)), "--staging", path.join(src, "staging.json"), "--out", dir] });
   }
   if (!jobs.length) return console.log("gallery: every demo is up to date");

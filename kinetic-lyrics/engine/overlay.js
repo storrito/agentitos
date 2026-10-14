@@ -85,18 +85,25 @@ export function build(root, plan, gsap) {
   }
 
   if (preset === "podcast") {
-    const tlft = el("div", "ko-tl ko-show", hud);
-    el("span", "ko-dot", tlft);
-    const tt = el("div", "ko-showtext", tlft);
-    el("div", "ko-showtitle", tt, (plan.title || "Podcast").toUpperCase());
-    if (plan.subtitle) el("div", "ko-showsub", tt, plan.subtitle);
+    // the show's name top left; without one, nothing there
+    if (plan.title || plan.subtitle) {
+      const tlft = el("div", "ko-tl ko-show", hud);
+      el("span", "ko-dot", tlft);
+      const tt = el("div", "ko-showtext", tlft);
+      if (plan.title) el("div", "ko-showtitle", tt, plan.title.toUpperCase());
+      if (plan.subtitle) el("div", "ko-showsub", tt, plan.subtitle);
+    }
     const fill = el("div", "ko-fill", el("div", "ko-bar", hud));
     tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1, duration: plan.duration, ease: "none" }, 0);
     // one chip per speaker turn, sliding in where the voice changes
     const chipBox = el("div", "ko-chips", hud);
     chipBox.style.fontSize = `${Math.round(u * 0.034)}px`;
     // over footage the chip sits right above the type, where the shade begins (a lower third)
-    if (plan.video && plan.portrait) {
+    if (plan.video?.frame && !(W > H * 1.2)) {
+      chipBox.style.left = `${(plan.video.frame[0] * 100).toFixed(1)}%`;
+      chipBox.style.bottom = "auto";
+      chipBox.style.top = `${((plan.video.frame[3] + 0.012) * 100).toFixed(1)}%`;
+    } else if (plan.video && plan.portrait && !plan.video.frame) {
       const [a, b] = plan.video.shade;
       chipBox.style.left = "7%";
       chipBox.style.bottom = `${((1 - (a + (b - a) * 0.55)) * 100 + 0.6).toFixed(1)}%`;

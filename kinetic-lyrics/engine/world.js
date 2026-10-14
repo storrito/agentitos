@@ -84,7 +84,7 @@ export function mount(canvas, plan) {
   const WORLD = plan.world || "cosmos";
   const INK = WORLD === "editorial", STUDIO = WORLD === "geometry", AURORA = WORLD === "aurora";
   const BOKEH = WORLD === "bokeh", NEON = WORLD === "neon", NOIR = WORLD === "noir";
-  const VIDEO = !!plan.video;
+  const VIDEO = !!plan.video && !plan.video.frame; // framed footage sits on the world, not under it
   const CAM_MOVE = plan.style?.drift ?? 1;
 
   // camera: the short side keeps a 40° field of view, as before
