@@ -25,9 +25,9 @@ export const GRAPHIC_DOC = `  clock   = a clock face: value = the time of day in
   timeline = a line with points in time: parts = 2–5 {label: what happened, value: the year}; focus = the point this phrase is about
   route   = a line from one place to another: parts = 2 {label: place, value: 0}; value = the distance (0 if not said), unit = "km"
   speed   = a speedometer, the needle swings to value; base = the end of the scale (or null), unit = "km/h"
-  temperature = a thermometer fills to value °C, cold blue to hot red
-  rank    = a podium, the place value (1, 2, 3) lights up; label = who or what
-  ratio   = value of base people light up ("jeder Fünfte": value 1, base 5)
+  temperature = a thermometer fills to value °C (unit "F": value in °F), cold blue to hot red
+  rank    = a podium, the place value (1, 2, 3) lights up; from 4 on a leaderboard scrolls down to it; label = who or what
+  ratio   = value of base people light up ("jeder Fünfte": value 1, base 5); a fraction fills one partly (2.5 of 10)
   rating  = stars fill to value; base = the number of stars (5)
   trend   = an arrow shoots up or down, value = the change in percent (+20, -30)
   battery = a battery charges or runs down to value % (energy, exhaustion)
@@ -160,45 +160,78 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
     },
     calendar(v, vw, vh, fs) {
       const ph = vh * 0.9, pw = ph * 0.86, x = (vw - pw) / 2, y = vh * 0.05, hb = ph * 0.26, rx = pw * 0.08;
-      const n = Math.round(v.value), big = fit(String(n), pw * 0.8, ph * 0.5, 0.5);
+      const n = Math.round(v.value), big = fit(String(n), pw * 0.8, ph * 0.5, 0.5), ny = y + hb + (ph - hb) / 2 + big * 0.36;
+      // the body of the page below the header: the final number on the page, the counting one on
+      // a sheet over it that tears off at its top edge when the number has arrived
+      const body = `M${f1(x)} ${f1(y + hb)} H${f1(x + pw)} V${f1(y + ph - rx)} Q${f1(x + pw)} ${f1(y + ph)} ${f1(x + pw - rx)} ${f1(y + ph)} H${f1(x + rx)} Q${f1(x)} ${f1(y + ph)} ${f1(x)} ${f1(y + ph - rx)} Z`;
+      // the torn edge: a zigzag along the top of the sheet
+      let rip = `M${f1(x)} ${f1(y + hb)}`;
+      for (let k = 1; k <= 12; k++) rip += ` L${f1(x + (pw * k) / 12)} ${f1(y + hb + (k % 2 ? ph * 0.025 : 0))}`;
       return {
         html: `<g class="ky-page"><rect class="ky-gpanel" x="${f1(x)}" y="${f1(y)}" width="${f1(pw)}" height="${f1(ph)}" rx="${f1(rx)}" stroke-width="2"/>`
           + `<path class="ky-gf" d="M${f1(x)} ${f1(y + rx)} Q${f1(x)} ${f1(y)} ${f1(x + rx)} ${f1(y)} H${f1(x + pw - rx)} Q${f1(x + pw)} ${f1(y)} ${f1(x + pw)} ${f1(y + rx)} V${f1(y + hb)} H${f1(x)} Z"/>`
           + [0.3, 0.7].map((k) => `<rect class="ky-gk" x="${f1(x + pw * k - pw * 0.03)}" y="${f1(y - ph * 0.06)}" width="${f1(pw * 0.06)}" height="${f1(ph * 0.12)}" rx="${f1(pw * 0.03)}"/>`).join("")
           + (v.label ? T(x + pw / 2, y + hb * 0.7, fit(v.label, pw * 0.85, hb * 0.6, 0.5), v.label, "ky-gt", "middle", 'style="fill:var(--markink, #111)"') : "")
-          + T(x + pw / 2, y + hb + (ph - hb) / 2 + big * 0.36, big, "1", "ky-gt ky-gt-hi ky-g-num")
-          + `</g><rect class="ky-gpanel ky-g-leaf" x="${f1(x)}" y="${f1(y + hb)}" width="${f1(pw)}" height="${f1(ph - hb)}" rx="${f1(rx)}" stroke-width="2" opacity="0"/>`,
+          + T(x + pw / 2, ny, big, String(n), "ky-gt ky-gt-hi") + `</g>`
+          + `<g class="ky-g-leaf"><path class="ky-gk" style="fill-opacity:.94" d="${body}"/><path class="ky-gi" style="stroke:var(--markink, #111);stroke-opacity:.35" stroke-width="2" d="${rip}"/>`
+          + T(x + pw / 2, ny, big, "1", "ky-gt ky-g-num", "middle", 'style="fill:var(--markink, #111)"') + `</g>`,
         anim(tl, q, qa, Tw, end) {
-          const D = clamp(end - Tw, 0.5, 1.4);
-          pop(tl, q(".ky-page"), Tw - 0.1, 0.35, "back.out(1.8)");
-          countText(tl, q(".ky-g-num"), n, Tw + 0.15, D * 0.75, (x) => String(Math.max(1, Math.round(x))));
-          // the last page tears off upward when the number lands
-          tl.fromTo(q(".ky-g-leaf"), { opacity: 0.9, y: 0, rotation: 0 }, { opacity: 0, y: -vh * 0.4, rotation: -14, transformOrigin: "0% 0%", duration: 0.45, ease: "power2.in" }, Tw + 0.15 + D * 0.75);
+          const D = clamp(end - Tw, 0.6, 1.4), count = D * 0.6, tear = Tw + 0.15 + count + 0.1;
+          pop(tl, qa(".ky-page, .ky-g-leaf"), Tw - 0.1, 0.35, "back.out(1.8)");
+          countText(tl, q(".ky-g-num"), Math.max(1, n - 1), Tw + 0.15, count, (x) => String(Math.max(1, Math.round(x))));
+          // it tears from the right, hangs on its left corner for a moment, then falls away
+          const leaf = q(".ky-g-leaf"), o = `${f1(x)} ${f1(y + hb)}`;
+          tl.to(leaf, { rotation: 14, svgOrigin: o, duration: 0.18, ease: "power2.out" }, tear);
+          tl.to(leaf, { rotation: 62, x: pw * 0.25, y: vh * 0.9, opacity: 0, svgOrigin: o, duration: 0.55, ease: "power2.in" }, tear + 0.22);
         },
       };
     },
     countdown(v, vw, vh, fs) {
-      const R = Math.min(vh * 0.44, vw * 0.3), cx = vw / 2, cy = vh / 2, sw = R * 0.16;
-      const big = fit(fmtNum(v.value), R * 1.3, R * 0.7, 0.5);
+      // a stopwatch: the hand ticks round once, the ring of what is left shrinks tick by tick,
+      // the number twitches on every tick, and at the end it all turns red and shakes
+      const R = Math.min(vh * 0.4, vw * 0.3), cx = vw / 2, cy = vh * 0.55, sw = R * 0.16, N = 12;
+      const big = fit(fmtNum(v.value), R * 1.2, R * 0.62, 0.5);
+      const ticks = Array.from({ length: N }, (_, k) => {
+        const a = (k * 30 * Math.PI) / 180;
+        return `<line class="ky-gi-soft" stroke-width="${f1(sw * 0.22)}" x1="${f1(cx + R * 0.66 * Math.sin(a))}" y1="${f1(cy - R * 0.66 * Math.cos(a))}" x2="${f1(cx + R * 0.76 * Math.sin(a))}" y2="${f1(cy - R * 0.76 * Math.cos(a))}"/>`;
+      }).join("");
       return {
-        html: `<circle class="ky-gi-soft" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="${f1(sw)}"/>`
-          + `<path class="ky-ga ky-g-ring" d="${circlePath(cx, cy, R)}" pathLength="1" stroke-dasharray="1 1" stroke-dashoffset="0" stroke-width="${f1(sw)}"/>`
-          + T(cx, cy + big * 0.3, big, fmtNum(v.value), "ky-gt ky-gt-hi ky-g-num")
-          + (v.unit ? T(cx, cy + big * 0.3 + fs * 1.1, fs * 0.9, v.unit.toUpperCase(), "ky-lbl") : ""),
+        html: `<g class="ky-g-watch"><rect class="ky-gk ky-g-crown" x="${f1(cx - R * 0.12)}" y="${f1(cy - R - sw * 0.5 - R * 0.2)}" width="${f1(R * 0.24)}" height="${f1(R * 0.16)}" rx="${f1(R * 0.04)}"/>`
+          + `<circle class="ky-gi-soft" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="${f1(sw)}"/>`
+          + `<path class="ky-ga ky-g-ring" d="${circlePath(cx, cy, R)}" pathLength="1" stroke-dasharray="1 1" stroke-dashoffset="0" stroke-width="${f1(sw)}"/>${ticks}`
+          + `<circle class="ky-gf ky-g-hand" cx="${f1(cx)}" cy="${f1(cy - R)}" r="${f1(sw * 0.85)}"/>`
+          + T(cx, cy + big * 0.35, big, fmtNum(v.value), "ky-gt ky-gt-hi ky-g-num")
+          + (v.unit ? T(cx, cy + big * 0.35 + fs * 1.05, fs * 0.85, v.unit.toUpperCase(), "ky-lbl") : "") + `</g>`,
         anim(tl, q, qa, Tw, end) {
-          const D = clamp(end - Tw, 0.6, 2.2);
-          pop(tl, qa(".ky-g-num"), Tw - 0.1, 0.35);
-          tl.fromTo(q(".ky-g-ring"), { attr: { "stroke-dashoffset": 0 } }, { attr: { "stroke-dashoffset": -0.92 }, duration: D, ease: "none" }, Tw);
-          tl.fromTo(q(".ky-g-num"), { scale: 1, transformOrigin: "50% 50%" }, { scale: 1.12, duration: 0.12, yoyo: true, repeat: 1, ease: "power2.out" }, Tw + D - 0.25);
+          const D = clamp(end - Tw - 0.5, 1.2, 2.4), o = `${f1(cx)} ${f1(cy)}`, ring = q(".ky-g-ring"), hand = q(".ky-g-hand"), num = q(".ky-g-num");
+          pop(tl, q(".ky-g-watch"), Tw - 0.2, 0.35, "back.out(1.8)");
+          // the crown is pressed: the watch starts
+          tl.fromTo(q(".ky-g-crown"), { y: 0 }, { y: R * 0.08, duration: 0.08, yoyo: true, repeat: 1, ease: "power2.in" }, Tw + 0.1);
+          for (let k = 1; k <= N; k++) {
+            const at = Tw + 0.25 + (k / N) * D;
+            tl.to(hand, { rotation: k * 30, svgOrigin: o, duration: 0.07, ease: "back.out(3)" }, at);
+            tl.to(ring, { attr: { "stroke-dashoffset": -k / N }, duration: 0.07, ease: "power2.out" }, at);
+            tl.fromTo(num, { scale: 1, transformOrigin: "50% 50%" }, { scale: 1.07, duration: 0.05, yoyo: true, repeat: 1, ease: "power1.out", immediateRender: false }, at);
+          }
+          // time is up
+          const up = Tw + 0.25 + D + 0.05;
+          tl.to(ring, { stroke: "#ff5a4f", duration: 0.15 }, up);
+          tl.to(hand, { fill: "#ff5a4f", duration: 0.15 }, up);
+          tl.to(num, { fill: "#ff5a4f", duration: 0.15 }, up);
+          for (let k = 0; k < 6; k++) tl.to(q(".ky-g-watch"), { x: k === 5 ? 0 : k % 2 ? -R * 0.05 : R * 0.05, duration: 0.04, ease: "none" }, up + k * 0.04);
         },
       };
     },
     timeline(v, vw, vh, fs) {
       const ps = partsOf(v, 2, 5), y = vh * 0.48, pad = vw * 0.08, vals = ps.map((p) => p.value);
       const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
-      const xs = ps.map((p, k) => (hi > lo ? pad + ((p.value - lo) / span) * (vw - pad * 2) : pad + (k / Math.max(1, ps.length - 1)) * (vw - pad * 2)));
+      // by time when the points have room, else evenly (years close together would overlap)
+      const even = ps.map((_, k) => pad + (k / Math.max(1, ps.length - 1)) * (vw - pad * 2));
+      const byTime = ps.map((p) => pad + ((p.value - lo) / span) * (vw - pad * 2));
+      const minGap = ((vw - pad * 2) / Math.max(1, ps.length - 1)) * 0.7;
+      const xs = hi > lo && byTime.every((x, k) => !k || x - byTime[k - 1] >= minGap) ? byTime : even;
       const fo = v.focus != null && v.focus < ps.length ? v.focus : ps.length - 1, sw = Math.max(3, fs * 0.16);
-      const cap = Math.min(fs * 1.05, ...ps.map((p) => fit(p.label, (vw - pad * 2) / ps.length, fs * 1.05, 0.42)));
+      const cap = Math.min(fs * 1.05, ...ps.map((p) => fit(p.label, (vw - pad * 2) / Math.max(1, ps.length - 1) * 0.9, fs * 1.05, 0.42)));
       return {
         html: P(`M${f1(pad * 0.4)} ${f1(y)} H${f1(vw - pad * 0.4)}`, "ky-gi ky-g-line", sw)
           + ps.map((p, k) => `<g class="ky-g-pt"><circle class="${k === fo ? "ky-gf" : "ky-gk"}" cx="${f1(xs[k])}" cy="${f1(y)}" r="${f1(sw * (k === fo ? 2.6 : 1.8))}"/>`
@@ -261,9 +294,12 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
     },
     temperature(v, vw, vh, fs) {
       const th = vh * 0.92, tw2 = th * 0.16, R = tw2 * 0.95, { cx, x0, tw } = side(vw, vh, R), top = vh * 0.04, bot = top + th - R * 1.6;
-      const lv = clamp((v.value + 20) / 65, 0.04, 1), ly = bot - (bot - top - tw2 / 2) * lv;
-      const col = v.value < 5 ? "#6ec6ff" : v.value < 25 ? "var(--accent)" : "#ff5a3c";
-      const txt = `${fmtNum(v.value)} °C`, big = fit(txt, tw, vh * 0.4, 0.5);
+      // Celsius, or Fahrenheit with unit "F": level and colour go by Celsius either way
+      const fahr = /^°?F$/i.test(v.unit || ""), sym = fahr ? "°F" : "°C", c = fahr ? ((v.value - 32) * 5) / 9 : v.value;
+      const lv = clamp((c + 20) / 65, 0.04, 1), ly = bot - (bot - top - tw2 / 2) * lv;
+      const col = c < 5 ? "#6ec6ff" : c < 25 ? "var(--accent)" : "#ff5a3c";
+      const deg = (x) => `${x < 0 ? "−" : ""}${fmtNum(Math.abs(x))} ${sym}`;
+      const txt = deg(v.value), big = fit(txt, tw, vh * 0.4, 0.5);
       return {
         html: `<rect class="ky-gpanel" x="${f1(cx - tw2 / 2)}" y="${f1(top)}" width="${f1(tw2)}" height="${f1(th - R)}" rx="${f1(tw2 / 2)}" stroke-width="2"/>`
           + `<circle class="ky-gpanel" cx="${f1(cx)}" cy="${f1(top + th - R)}" r="${f1(R)}" stroke-width="2"/>`
@@ -274,33 +310,62 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
           const D = clamp(end - Tw, 0.6, 1.4);
           pop(tl, q(".ky-g-bulb"), Tw - 0.15, 0.3);
           tl.fromTo(q(".ky-g-merc"), { scaleY: 0, transformOrigin: "50% 100%" }, { scaleY: 1, duration: D, ease: "power2.out" }, Tw);
-          countText(tl, q(".ky-g-num"), v.value, Tw, D, (x) => `${Math.round(x)} °C`);
+          countText(tl, q(".ky-g-num"), v.value, Tw, D, (x) => deg(Math.round(x)));
         },
       };
     },
     rank(v, vw, vh, fs) {
-      const place = Math.max(1, Math.round(v.value)), bw = Math.min(vw * 0.26, vh * 0.5), base = vh * 0.96, cx = vw / 2;
+      const place = Math.max(1, Math.round(v.value));
+      if (place > 3) {
+        // a leaderboard: rows 1, 2, 3 … scroll by until the place stops in the middle, lit up
+        const rows = 5, rh = vh / rows, w = Math.min(vw * 0.8, vh * 2.2), x = (vw - w) / 2, last = place + 2, id = `kyrk${Math.round(vw)}`;
+        const who = v.label || "";
+        let list = "";
+        for (let k = 1; k <= last; k++) {
+          const y = (k - 1) * rh, hi = k === place;
+          list += `<g><rect class="${hi ? "ky-gf" : "ky-gsoft"}" x="${f1(x)}" y="${f1(y + rh * 0.08)}" width="${f1(w)}" height="${f1(rh * 0.84)}" rx="${f1(rh * 0.2)}"/>`
+            + T(x + rh * 0.45, y + rh * 0.5 + rh * 0.2, rh * 0.55, `${k}.`, "ky-gt", "start", hi ? 'style="fill:var(--markink, #111)"' : 'style="opacity:.55"')
+            + (hi && who ? T(x + rh * 1.6, y + rh * 0.5 + rh * 0.2, fit(who, w - rh * 2, rh * 0.55, 0.44), who, "ky-gt", "start", 'style="fill:var(--markink, #111)"') : "")
+            + (!hi ? `<rect class="ky-gsoft" x="${f1(x + rh * 1.6)}" y="${f1(y + rh * 0.42)}" width="${f1(w * (0.3 + ((k * 37) % 30) / 100))}" height="${f1(rh * 0.16)}" rx="${f1(rh * 0.08)}"/>` : "") + `</g>`;
+        }
+        const endY = -(place - 1 - (rows - 1) / 2) * rh;
+        return {
+          html: `<clipPath id="${id}"><rect x="0" y="0" width="${f1(vw)}" height="${f1(vh)}"/></clipPath><g clip-path="url(#${id})"><g class="ky-g-list">${list}</g></g>`,
+          anim(tl, q, qa, Tw, end) {
+            const D = clamp(end - Tw, 0.6, 1.3);
+            fade(tl, q(".ky-g-list"), Tw - 0.25, 0.2);
+            tl.fromTo(q(".ky-g-list"), { y: 0 }, { y: endY, duration: D, ease: "power3.inOut" }, Tw - 0.1);
+            tl.fromTo(qa(".ky-g-list > g")[place - 1], { scale: 1, transformOrigin: "50% 50%" }, { scale: 1.06, duration: 0.1, yoyo: true, repeat: 1, ease: "power2.out" }, Tw - 0.1 + D);
+          },
+        };
+      }
+      const bw = Math.min(vw * 0.26, vh * 0.5), base = vh * 0.96, cx = vw / 2;
       const steps = [[2, cx - bw, 0.45], [1, cx, 0.68], [3, cx + bw, 0.3]];
       const lab = v.label ? fit(v.label, vw * 0.9, fs * 1.2, 0.42) : 0;
+      const mine = steps.find((st) => st[0] === place);
       return {
         html: steps.map(([n, x, h]) => `<g class="ky-g-step"><rect class="${n === place ? "ky-gf" : "ky-gsoft"}" x="${f1(x - bw / 2 + 2)}" y="${f1(base - vh * h)}" width="${f1(bw - 4)}" height="${f1(vh * h)}" rx="${f1(bw * 0.05)}"/>`
-          + T(x, base - vh * h + bw * 0.42, bw * 0.4, String(n), n === place ? "ky-gt" : "ky-gt", "middle", n === place ? 'style="fill:var(--markink, #111)"' : 'style="opacity:.5"') + `</g>`).join("")
-          + (place > 3 ? T(cx, vh * 0.3, vh * 0.32, `#${place}`, "ky-gt ky-gt-hi ky-g-badge") : "")
-          + (v.label && place <= 3 ? T(steps.find((s) => s[0] === place)[1], base - vh * steps.find((s) => s[0] === place)[2] - lab * 0.5, lab, v.label, "ky-cap2 ky-g-who") : ""),
+          + T(x, base - vh * h + bw * 0.42, bw * 0.4, String(n), "ky-gt", "middle", n === place ? 'style="fill:var(--markink, #111)"' : 'style="opacity:.5"') + `</g>`).join("")
+          + (v.label ? T(mine[1], base - vh * mine[2] - lab * 0.5, lab, v.label, "ky-cap2 ky-g-who") : ""),
         anim(tl, q, qa, Tw, end) {
           const g = qa(".ky-g-step");
           [0, 2, 1].forEach((k, j) => tl.fromTo(g[k], { scaleY: 0, transformOrigin: "50% 100%" }, { scaleY: 1, duration: 0.4, ease: "back.out(1.6)" }, Tw - 0.2 + j * 0.15));
-          if (q(".ky-g-badge")) pop(tl, q(".ky-g-badge"), Tw + 0.3, 0.4);
           if (q(".ky-g-who")) tl.fromTo(q(".ky-g-who"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, Tw + 0.45);
         },
       };
     },
     ratio(v, vw, vh, fs) {
-      const n = clamp(Math.round(v.base || 5), 2, 12), k = clamp(Math.round(v.value), 0, n);
+      // value of base people light up; a fraction fills the last one partly (2.5 of 10)
+      const n = clamp(Math.round(v.base || 5), 2, 12), k = clamp(v.value, 0, n);
       const lblH = fs * 1.6, cell = Math.min((vh - lblH) * 0.95, vw / n), s = cell * 0.82, gx = (vw - n * cell) / 2 + (cell - s) / 2, gy = (vh - lblH - s) / 2;
-      const txt = DE ? `${k} von ${n}` : `${k} in ${n}`;
+      const txt = DE ? `${fmtNum(k)} von ${n}` : `${fmtNum(k)} in ${n}`, id = `kyra${Math.round(vw)}${Math.round(vh)}`;
       let g = "";
-      for (let j = 0; j < n; j++) g += `<g transform="translate(${f1(gx + j * cell)} ${f1(gy)})"><g class="ky-ghostu ky-g-p">${person(s)}</g>${j < k ? `<g class="ky-unit ky-g-on">${person(s)}</g>` : ""}</g>`;
+      for (let j = 0; j < n; j++) {
+        const f = clamp(k - j, 0, 1);
+        const lit = f >= 1 ? `<g class="ky-unit ky-g-on">${person(s)}</g>`
+          : f > 0 ? `<clipPath id="${id}"><rect x="0" y="0" width="${f1(s * f)}" height="${f1(s)}"/></clipPath><g class="ky-unit ky-g-on" clip-path="url(#${id})">${person(s)}</g>` : "";
+        g += `<g transform="translate(${f1(gx + j * cell)} ${f1(gy)})"><g class="ky-ghostu ky-g-p">${person(s)}</g>${lit}</g>`;
+      }
       return {
         html: g + T(vw / 2, vh - fs * 0.3, fs * 1.1, txt, "ky-lbl ky-lbl-hi ky-g-txt"),
         anim(tl, q, qa, Tw, end) {

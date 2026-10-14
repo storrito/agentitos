@@ -144,12 +144,12 @@ There is at most one graphic per phrase; percentages and factors win over pictog
 | `clock` | a clock face, the hands turn to the time; with unit `min`/`h` a slice of the dial fills for a duration |
 | `calendar` | a calendar page, the number flips up, the last page tears off |
 | `countdown` | a ring runs out around the number |
-| `timeline` | a line, the years set their points one after another |
+| `timeline` | a line, 2–5 years set their points one after another (by time, or evenly when they would crowd) |
 | `route` | a line from place to place, a dot travels, the distance counts up |
 | `speed` | a speedometer, the needle swings to the value and quivers |
-| `temperature` | a thermometer rises, cold blue to hot red |
-| `rank` | a podium builds up, the place lights up |
-| `ratio` | a row of people, some light up ("one in five") |
+| `temperature` | a thermometer rises, cold blue to hot red; °C, or °F with unit `F` |
+| `rank` | a podium builds up, the place lights up; from place 4 a leaderboard scrolls down to it |
+| `ratio` | a row of people, some light up ("one in five"); a fraction fills one partly (2.5 of 10) |
 | `rating` | stars fill, partly too |
 | `trend` | an arrow shoots up (or down, in red) with the change in percent |
 | `battery` | a battery charges or runs low, the last cell blinks red |
