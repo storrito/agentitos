@@ -134,6 +134,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
         return `<line class="ky-gi" stroke-width="${f1(sw * (k % 3 ? 0.5 : 0.9))}" x1="${f1(cx + r0 * Math.sin(a))}" y1="${f1(cy - r0 * Math.cos(a))}" x2="${f1(cx + R * 0.92 * Math.sin(a))}" y2="${f1(cy - R * 0.92 * Math.cos(a))}"/>`;
       }).join("");
       const frac = dur ? clamp(v.value / (v.unit === "min" ? 60 : 12), 0, 1) : 0;
+      // h with its fraction (5.5 = half past five: the hour hand halfway between 5 and 6)
       const h = ((v.value % 12) + 12) % 12, m = (v.value % 1) * 60;
       const hh = Math.floor(v.value), mm = Math.round((v.value - hh) * 60);
       const txt = dur ? withUnit(v.value, v.unit === "min" ? (DE ? "Min." : "min") : (DE ? "Std." : "h")) : `${hh}:${String(mm).padStart(2, "0")}`;
@@ -151,7 +152,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
           const D = clamp(end - Tw, 0.5, 1.6), o = `${f1(cx)} ${f1(cy)}`;
           if (dur) draw(tl, q(".ky-gslice"), Tw, D, "power2.out");
           tl.fromTo(q(".ky-hand-m"), { rotation: 0, svgOrigin: o }, { rotation: dur ? frac * 360 : Math.floor(h) * 360 + m * 6, svgOrigin: o, duration: D, ease: "power2.inOut" }, Tw);
-          tl.fromTo(q(".ky-hand-h"), { rotation: 0, svgOrigin: o }, { rotation: dur ? frac * 30 : (h + m / 60) * 30, svgOrigin: o, duration: D, ease: "power2.inOut" }, Tw);
+          tl.fromTo(q(".ky-hand-h"), { rotation: 0, svgOrigin: o }, { rotation: dur ? frac * 30 : h * 30, svgOrigin: o, duration: D, ease: "power2.inOut" }, Tw);
           fade(tl, qa(".ky-g-big, .ky-lbl"), Tw + D * 0.5, 0.35);
         },
       };
