@@ -100,7 +100,9 @@ export function build(root, plan, gsap) {
   function width100(line) {
     let sum = 0;
     line.forEach((tk, i) => {
-      sum += measure(textOf(tk.w, tk.style), tk.style, 100 * tk.k);
+      const m = measure(textOf(tk.w, tk.style), tk.style, 100 * tk.k);
+      // a circled word keeps room for its circle, which is wider than the word (see noteSvg)
+      sum += m + (tk.w.note === "circle" ? m * 0.12 + 40 * tk.k : 0);
       if (i) sum += 100 * 0.2 * Math.min(tk.k, line[i - 1].k);
     });
     return sum;
@@ -454,8 +456,8 @@ export function build(root, plan, gsap) {
         if (tk.w.note) {
           const tw = measure(txt, tk.style, we.size) + (tk.style === "gothic" ? we.size * 0.012 * txt.length : 0); // + letter-spacing
           // an underline above another line would run into it: circle the word instead –
-          // unless the word spans the frame, where a circle would leave the picture
-          const wide = tw > safeW * 0.72;
+          // unless the circle (about 1.1 × the word + 0.4 em) would not fit the frame
+          const wide = tw * 1.1 + we.size * 0.4 > safeW;
           let kind = tk.w.note;
           if (kind === "underline" && li < lines.length - 1 && !wide) kind = "circle";
           if (kind === "circle" && wide) kind = "underline";
@@ -617,7 +619,8 @@ export function build(root, plan, gsap) {
       // marker sweep behind the word as it is spoken; the word turns dark on it
       tl.fromTo(we.marker, { scaleX: 0 }, { scaleX: 1, duration: 0.32, ease: "power3.out" }, Math.max(T, w.start - 0.04));
       tint({ color: C.ink }, { color: C.deep, duration: 0.2, ease: "power1.out" }, Math.max(T, w.start + 0.04));
-    } else if (w.role !== "fn") {
+    } else if (w.role !== "fn" && !ph.calm) {
+      // (a calm phrase sits over a graphic with words of its own: no word of it lights up)
       if (w.hero) tint({ color: C.glow }, { color: C.accent, duration: 0.6, ease: "power2.out" }, T);
       else tint({ color: C.accent }, { color: C.ink, duration: 0.7, ease: "power1.inOut" }, w.end + 0.05);
     }

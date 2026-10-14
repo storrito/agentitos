@@ -14,8 +14,12 @@ export const NUMBER_KINDS = ["clock", "calendar", "countdown", "timeline", "rout
 export const TOPIC_KINDS = ["versus", "cause", "cycle", "steps", "balance", "overlap", "fork", "said", "thought", "verdict", "warning", "notify", "target", "lock", "search", "puzzle", "summit", "place"];
 export const GRAPHIC_KINDS = [...NUMBER_KINDS, ...TOPIC_KINDS];
 // kinds that need a square-ish box (more height under the phrase), kinds that need the width
-export const TALL = new Set(["clock", "calendar", "countdown", "speed", "temperature", "rank", "pie", "cycle", "balance", "overlap", "fork", "thought", "verdict", "warning", "target", "lock", "summit", "place", "said", "versus", "cause", "notify", "search", "puzzle"]);
+export const TALL = new Set(["clock", "calendar", "countdown", "speed", "temperature", "rank", "pie", "cycle", "balance", "overlap", "fork", "thought", "verdict", "warning", "target", "lock", "summit", "place", "said", "versus", "cause", "notify", "search", "puzzle", "steps"]);
 export const WIDE = new Set(["timeline", "route", "versus", "cause", "steps", "notify", "search", "puzzle", "overlap", "balance", "ratio", "cycle"]);
+
+// graphics that show words of their own: the phrase above them is set calm, nothing in it is
+// highlighted, or the same word would stand out twice (tools/analyze.mjs)
+export const TEXT_GRAPHICS = new Set(["versus", "cause", "cycle", "steps", "balance", "overlap", "fork", "puzzle", "timeline", "route", "said", "thought", "notify", "search"]);
 
 // for the direction (tools/llm-annotate.mjs): what each kind shows and which fields it reads
 export const GRAPHIC_DOC = `  clock   = a clock face: value = the time of day in hours (17.5 = half past five), the hands turn to it;
@@ -88,6 +92,33 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
     return `<text class="${cls}" x="${f1(x)}" y="${f1(y0)}" font-size="${f1(size)}" text-anchor="${anchor}">${ls.map((l, k) => `<tspan x="${f1(x)}" dy="${k ? f1(size * 0.95) : 0}">${esc(l)}</tspan>`).join("")}</text>`;
   };
   const longest = (txt) => Math.max(...lines2(txt).map((l) => l.length));
+  // a text that may break into up to maxLines lines: the largest size at which it fits the box
+  // maxW × maxH, centred on yc; it stays on one line unless more lines make it clearly bigger
+  const wrapN = (txt, n) => {
+    // pieces to break between: words, and the parts of a hyphenated word (kept with its hyphen)
+    const ws = String(txt).split(/\s+/).filter(Boolean).flatMap((w) => w.split(/(?<=-)(?=\S)/).map((p, i) => ({ p, glue: i > 0 })));
+    const all = ws.map((x, i) => (i && !x.glue ? " " : "") + x.p).join("");
+    if (n <= 1 || ws.length < 2) return [all];
+    const target = all.length / n, out = [];
+    let cur = "";
+    for (const { p, glue } of ws) {
+      const next = cur ? cur + (glue ? "" : " ") + p : p;
+      if (cur && next.length > target * 1.15 && out.length < n - 1) { out.push(cur); cur = p; } else cur = next;
+    }
+    out.push(cur);
+    return out;
+  };
+  const TF = (x, yc, maxW, maxH, maxSize, txt, cls, anchor = "middle", extra = "", k = 0.46, maxLines = 2) => {
+    let best = null;
+    for (let n = 1; n <= maxLines; n++) {
+      const ls = wrapN(txt, n);
+      if (n > 1 && ls.length < n) break;
+      const size = Math.max(8, Math.min(maxSize, maxW / (Math.max(1, ...ls.map((l) => l.length)) * k), maxH / (ls.length * 1.08)));
+      if (!best || size > best.size * 1.15) best = { ls, size };
+    }
+    const { ls, size } = best, lh = size * 1.02, y0 = yc - ((ls.length - 1) * lh) / 2 + size * 0.34;
+    return `<text class="${cls}" x="${f1(x)}" y="${f1(y0)}" font-size="${f1(size)}" text-anchor="${anchor}" ${extra}>${ls.map((l, i) => `<tspan x="${f1(x)}" dy="${i ? f1(lh) : 0}">${esc(l)}</tspan>`).join("")}</text>`;
+  };
   const draw = (tl, els, at, dur, ease = "power2.inOut") =>
     tl.fromTo(els, { attr: { "stroke-dashoffset": 1 } }, { attr: { "stroke-dashoffset": 0 }, duration: dur, ease }, at);
   const pop = (tl, els, at, dur = 0.35, ease = "back.out(2.4)", stagger = 0) =>
@@ -230,13 +261,16 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       const byTime = ps.map((p) => pad + ((p.value - lo) / span) * (vw - pad * 2));
       const minGap = ((vw - pad * 2) / Math.max(1, ps.length - 1)) * 0.7;
       const xs = hi > lo && byTime.every((x, k) => !k || x - byTime[k - 1] >= minGap) ? byTime : even;
-      const fo = v.focus != null && v.focus < ps.length ? v.focus : ps.length - 1, sw = Math.max(3, fs * 0.16);
+      const fo = v.focus != null && v.focus < ps.length ? v.focus : ps.length - 1, sw = Math.max(3, fs * 0.16), slot = (vw - pad * 2) / Math.max(1, ps.length - 1);
+      // the end captions grow inward from their point, the ones between are centred on it
+      const anc = (k) => (ps.length > 1 && k === 0 ? "start" : ps.length > 1 && k === ps.length - 1 ? "end" : "middle");
+      const cx2 = (k) => xs[k] + (anc(k) === "start" ? -sw * 2 : anc(k) === "end" ? sw * 2 : 0);
       const cap = Math.min(fs * 1.05, ...ps.map((p) => fit(p.label, (vw - pad * 2) / Math.max(1, ps.length - 1) * 0.9, fs * 1.05, 0.42)));
       return {
         html: P(`M${f1(pad * 0.4)} ${f1(y)} H${f1(vw - pad * 0.4)}`, "ky-gi ky-g-line", sw)
           + ps.map((p, k) => `<g class="ky-g-pt"><circle class="${k === fo ? "ky-gf" : "ky-gk"}" cx="${f1(xs[k])}" cy="${f1(y)}" r="${f1(sw * (k === fo ? 2.6 : 1.8))}"/>`
             + T(xs[k], y - fs * 0.9, fs * (k === fo ? 1.3 : 1.05), p.value ? String(p.value) : "", k === fo ? "ky-lbl ky-lbl-hi" : "ky-lbl")
-            + T(xs[k], y + cap * 1.9, cap, p.label, "ky-cap2") + `</g>`).join(""),
+            + TF(cx2(k), y + fs * 2.3, slot * (anc(k) === "middle" ? 0.8 : 0.6), fs * 2.6, fs * 1.1, p.label, "ky-cap2", anc(k), "", 0.42, 2) + `</g>`).join(""),
         anim(tl, q, qa, Tw, end) {
           const D = clamp(end - Tw, 0.6, 1.6);
           draw(tl, q(".ky-g-line"), Tw - 0.1, D, "power1.inOut");
@@ -254,7 +288,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       return {
         html: `<path class="ky-gi-soft" d="${d}" stroke-width="${f1(sw * 0.6)}" stroke-dasharray="${f1(sw * 1.5)} ${f1(sw * 1.5)}"/>`
           + P(d, "ky-ga ky-g-way", sw)
-          + [[x0, a], [x1, b]].map(([x, p], k) => `<g class="ky-g-end"><circle class="${k ? "ky-gf" : "ky-gk"}" cx="${f1(x)}" cy="${f1(y)}" r="${f1(sw * 2.2)}"/>${T(x, y + cap * 1.8, cap, p.label, "ky-cap2")}</g>`).join("")
+          + [[x0, a], [x1, b]].map(([x, p], k) => `<g class="ky-g-end"><circle class="${k ? "ky-gf" : "ky-gk"}" cx="${f1(x)}" cy="${f1(y)}" r="${f1(sw * 2.2)}"/>${TF(k ? x + sw * 2 : x - sw * 2, y + fs * 2.1, vw * 0.45, fs * 2.6, fs * 1.25, p.label, "ky-cap2", k ? "end" : "start", "", 0.42, 2)}</g>`).join("")
           + `<circle class="ky-gf ky-g-dot" cx="${f1(x0)}" cy="${f1(y)}" r="${f1(sw * 1.6)}"/>`
           + (dist ? T(vw / 2, top + fs * 0.4, fs * 1.3, dist, "ky-lbl ky-lbl-hi ky-g-dist") : ""),
         anim(tl, q, qa, Tw, end) {
@@ -346,7 +380,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       return {
         html: steps.map(([n, x, h]) => `<g class="ky-g-step"><rect class="${n === place ? "ky-gf" : "ky-gsoft"}" x="${f1(x - bw / 2 + 2)}" y="${f1(base - vh * h)}" width="${f1(bw - 4)}" height="${f1(vh * h)}" rx="${f1(bw * 0.05)}"/>`
           + T(x, base - vh * h + bw * 0.42, bw * 0.4, String(n), "ky-gt", "middle", n === place ? 'style="fill:var(--markink, #111)"' : 'style="opacity:.5"') + `</g>`).join("")
-          + (v.label ? T(mine[1], base - vh * mine[2] - lab * 0.5, lab, v.label, "ky-cap2 ky-g-who") : ""),
+          + (v.label ? TF(mine[1], base - vh * mine[2] - fs * 1.3, bw * 1.6, fs * 2.4, fs * 1.2, v.label, "ky-cap2 ky-g-who", "middle", "", 0.42, 2) : ""),
         anim(tl, q, qa, Tw, end) {
           const g = qa(".ky-g-step");
           [0, 2, 1].forEach((k, j) => tl.fromTo(g[k], { scaleY: 0, transformOrigin: "50% 100%" }, { scaleY: 1, duration: 0.4, ease: "back.out(1.6)" }, Tw - 0.2 + j * 0.15));
@@ -453,7 +487,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       const rr = stack ? Rs : R;
       return {
         html: (stack
-          ? T(vw / 2, cy - rr * 1.3, size, a.label, "ky-gt ky-g-a") + T(vw / 2, cy + rr * 1.3 + size * 0.75, size, b.label, "ky-gt ky-g-b")
+          ? TF(vw / 2, cy - rr - vh * 0.2, vw * 0.92, vh * 0.36, vh * 0.3, a.label, "ky-gt ky-g-a", "middle", "", 0.44, 2) + TF(vw / 2, cy + rr + vh * 0.2, vw * 0.92, vh * 0.36, vh * 0.3, b.label, "ky-gt ky-g-b", "middle", "", 0.44, 2)
           : T(vw / 2 - R * 1.5, cy + size * 0.35, size, a.label, "ky-gt ky-g-a", "end") + T(vw / 2 + R * 1.5, cy + size * 0.35, size, b.label, "ky-gt ky-g-b", "start"))
           + `<g class="ky-g-vs"><circle class="ky-gf" cx="${f1(vw / 2)}" cy="${f1(cy)}" r="${f1(rr)}"/>${T(vw / 2, cy + rr * 0.32, rr * 0.9, "VS", "ky-gt", "middle", 'style="fill:var(--markink, #111)"')}</g>`,
         anim(tl, q, qa, Tw, end) {
@@ -471,13 +505,13 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
         : Math.min(fit(a.label, vw * 0.36, vh * 0.4, 0.44), fit(b.label, vw * 0.36, vh * 0.4, 0.44));
       const sw = Math.max(4, size * 0.09), hl = sw * 3;
       // the arrow: across between the two, or down from the cause to the effect
-      const [ax, ay, bx, by] = stack ? [vw / 2, size * 0.95, vw / 2, vh - size * 1.15] : [vw * 0.4 + sw, cy, vw * 0.6 - sw * 2, cy];
+      const [ax, ay, bx, by] = stack ? [vw / 2, vh * 0.33, vw / 2, vh * 0.66] : [vw * 0.4 + sw, cy, vw * 0.6 - sw * 2, cy];
       const head = stack ? `M${f1(bx - hl)} ${f1(by - hl)} L${f1(bx)} ${f1(by)} L${f1(bx + hl)} ${f1(by - hl)}` : `M${f1(bx - hl)} ${f1(by - hl)} L${f1(bx)} ${f1(by)} L${f1(bx - hl)} ${f1(by + hl)}`;
       return {
-        html: (stack ? T(vw / 2, size * 0.75, size, a.label, "ky-gt ky-g-a") : T(vw * 0.4 - sw, cy + size * 0.35, size, a.label, "ky-gt ky-g-a", "end"))
+        html: (stack ? TF(vw / 2, vh * 0.14, vw * 0.92, vh * 0.28, vh * 0.26, a.label, "ky-gt ky-g-a", "middle", "", 0.44, 2) : T(vw * 0.4 - sw, cy + size * 0.35, size, a.label, "ky-gt ky-g-a", "end"))
           + P(`M${f1(ax)} ${f1(ay)} L${f1(bx)} ${f1(by)}`, "ky-ga ky-g-arrow", sw)
           + `<path class="ky-ga ky-g-head" d="${head}" stroke-width="${f1(sw)}" opacity="0"/>`
-          + (stack ? T(vw / 2, vh - size * 0.1, size, b.label, "ky-gt ky-gt-hi ky-g-b") : T(vw * 0.6, cy + size * 0.35, size, b.label, "ky-gt ky-gt-hi ky-g-b", "start")),
+          + (stack ? TF(vw / 2, vh * 0.86, vw * 0.92, vh * 0.28, vh * 0.26, b.label, "ky-gt ky-gt-hi ky-g-b", "middle", "", 0.44, 2) : T(vw * 0.6, cy + size * 0.35, size, b.label, "ky-gt ky-gt-hi ky-g-b", "start")),
         anim(tl, q, qa, Tw, end) {
           const D = clamp(end - Tw, 0.6, 1.2);
           fade(tl, q(".ky-g-a"), Tw - 0.2, 0.3);
@@ -513,19 +547,27 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       };
     },
     steps(v, vw, vh, fs) {
-      const ps = partsOf(v, 2, 5), n = ps.length, w = vw / n, sh = (vh * 0.6) / n, cap = Math.min(...ps.map((p) => fit(p.label, w * 0.9, fs * 1.15, 0.44)));
+      const ps = partsOf(v, 2, 5), n = ps.length, w = vw / n, sh = (vh * 0.55) / n, dr = Math.max(4, fs * 0.25);
       const fo = v.focus != null && v.focus < n ? v.focus : n - 1;
+      // each label above its step, over the dot that hops along; from the second step on it may
+      // reach left over the lower step before it
+      const lh = Math.max(fs * 1.3, Math.min(fs * 2.3, sh * 0.9)), top = (k) => vh - sh * (k + 1);
+      const label = (p, k) => {
+        const cls = k === fo ? "ky-gt ky-gt-hi" : "ky-gt", yc = top(k) - dr * 2.8 - lh / 2;
+        return k === 0 ? TF(w / 2, yc, w * 0.94, lh, fs * 1.2, p.label, cls, "middle", "", 0.44, 2)
+          : TF((k + 1) * w - w * 0.05, yc, w * 1.75, lh, fs * 1.2, p.label, cls, "end", "", 0.44, 2);
+      };
       return {
-        html: ps.map((p, k) => { const h = sh * (k + 1), y = vh - h; return `<g class="ky-g-step"><rect class="${k === fo ? "ky-gf" : "ky-gsoft"}" x="${f1(k * w + 2)}" y="${f1(y)}" width="${f1(w - 4)}" height="${f1(h)}" rx="${f1(w * 0.04)}"/>${T(k * w + w / 2, y - cap * 0.45, cap, p.label, k === fo ? "ky-gt ky-gt-hi" : "ky-gt")}</g>`; }).join("")
-          + `<circle class="ky-gk ky-g-dot" cx="${f1(w / 2)}" cy="${f1(vh - sh - cap * 1.6)}" r="${f1(Math.max(4, fs * 0.25))}" opacity="0"/>`,
+        html: ps.map((p, k) => `<g class="ky-g-step"><rect class="${k === fo ? "ky-gf" : "ky-gsoft"}" x="${f1(k * w + 2)}" y="${f1(top(k))}" width="${f1(w - 4)}" height="${f1(sh * (k + 1))}" rx="${f1(w * 0.04)}"/>${label(p, k)}</g>`).join("")
+          + `<circle class="ky-gk ky-g-dot" cx="${f1(w / 2)}" cy="${f1(top(0) - dr * 1.1)}" r="${f1(dr)}" opacity="0"/>`,
         anim(tl, q, qa, Tw, end) {
           const g = qa(".ky-g-step"), step = Math.min(0.3, clamp(end - Tw, 0.6, 1.6) / n);
-          g.forEach((s, k) => tl.fromTo(s, { scaleY: 0, opacity: 0, transformOrigin: "50% 100%" }, { scaleY: 1, opacity: 1, duration: 0.3, ease: "back.out(1.6)" }, Tw - 0.2 + k * step));
+          g.forEach((st, k) => tl.fromTo(st, { scaleY: 0, opacity: 0, transformOrigin: "50% 100%" }, { scaleY: 1, opacity: 1, duration: 0.3, ease: "back.out(1.6)" }, Tw - 0.2 + k * step));
           const dot = q(".ky-g-dot"), t0 = Tw - 0.2 + n * step;
           tl.fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.1 }, t0);
           for (let k = 1; k <= fo; k++) {
             tl.to(dot, { attr: { cx: k * w + w / 2 }, duration: 0.22, ease: "none" }, t0 + (k - 1) * 0.24);
-            tl.to(dot, { attr: { cy: vh - sh * (k + 1) - cap * 1.6 }, duration: 0.22, ease: "back.out(3)" }, t0 + (k - 1) * 0.24);
+            tl.to(dot, { attr: { cy: top(k) - dr * 1.1 }, duration: 0.22, ease: "back.out(3)" }, t0 + (k - 1) * 0.24);
           }
         },
       };
@@ -535,7 +577,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       const wa = a.value || 1, wb = b.value || 1, ang = wa === wb ? 0 : clamp((wb - wa) / Math.max(wa, wb), -1, 1) * 14;
       const drop = vh * 0.38, pr = L * 0.42, cap = Math.min(fit(a.label, pr * 2, fs * 1.3, 0.44), fit(b.label, pr * 2, fs * 1.3, 0.44));
       const pan = (sx, p, cls) => `<g class="${cls}"><path class="ky-gi" stroke-width="${f1(sw * 0.6)}" d="M${f1(sx)} ${f1(py)} L${f1(sx - pr * 0.8)} ${f1(py + drop)} M${f1(sx)} ${f1(py)} L${f1(sx + pr * 0.8)} ${f1(py + drop)}"/>`
-        + `<path class="ky-gf" d="M${f1(sx - pr)} ${f1(py + drop)} Q${f1(sx)} ${f1(py + drop + pr * 0.45)} ${f1(sx + pr)} ${f1(py + drop)} Z"/>${T(sx, py + drop + pr * 0.45 + cap * 1.2, cap, p.label, "ky-gt")}</g>`;
+        + `<path class="ky-gf" d="M${f1(sx - pr)} ${f1(py + drop)} Q${f1(sx)} ${f1(py + drop + pr * 0.45)} ${f1(sx + pr)} ${f1(py + drop)} Z"/>${TF(sx, py + drop + pr * 0.45 + fs * 1.4, pr * 2.4, fs * 2.6, fs * 1.3, p.label, "ky-gt", "middle", "", 0.44, 2)}</g>`;
       return {
         html: `<path class="ky-gk" d="M${f1(cx - vh * 0.12)} ${f1(vh)} L${f1(cx)} ${f1(py)} L${f1(cx + vh * 0.12)} ${f1(vh)} Z" opacity=".35"/>`
           + `<line class="ky-gi ky-g-beam" stroke-width="${f1(sw)}" x1="${f1(cx - L)}" y1="${f1(py)}" x2="${f1(cx + L)}" y2="${f1(py)}"/>`
@@ -559,10 +601,10 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       const cap = Math.min(fit(a.label, R * 1.1, fs * 1.25, 0.44), fit(b.label, R * 1.1, fs * 1.25, 0.44)), id = `kyov${Math.round(vw)}${Math.round(vh)}`;
       return {
         html: `<clipPath id="${id}"><circle cx="${f1(ca)}" cy="${f1(cy)}" r="${f1(R)}"/></clipPath>`
-          + `<g class="ky-g-ca"><circle class="ky-gsoft" cx="${f1(ca)}" cy="${f1(cy)}" r="${f1(R)}"/><circle class="ky-gi" cx="${f1(ca)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="2"/>${T(ca - R * 0.4, cy + cap * 0.35, cap, a.label, "ky-gt")}</g>`
-          + `<g class="ky-g-cb"><circle class="ky-gsoft" cx="${f1(cb)}" cy="${f1(cy)}" r="${f1(R)}"/><circle class="ky-gi" cx="${f1(cb)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="2"/>${T(cb + R * 0.4, cy + cap * 0.35, cap, b.label, "ky-gt")}</g>`
+          + `<g class="ky-g-ca"><circle class="ky-gsoft" cx="${f1(ca)}" cy="${f1(cy)}" r="${f1(R)}"/><circle class="ky-gi" cx="${f1(ca)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="2"/>${TF(ca - R * 0.42, cy, R * 1.0, R * 1.3, fs * 1.4, a.label, "ky-gt", "middle", "", 0.44, 3)}</g>`
+          + `<g class="ky-g-cb"><circle class="ky-gsoft" cx="${f1(cb)}" cy="${f1(cy)}" r="${f1(R)}"/><circle class="ky-gi" cx="${f1(cb)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="2"/>${TF(cb + R * 0.42, cy, R * 1.0, R * 1.3, fs * 1.4, b.label, "ky-gt", "middle", "", 0.44, 3)}</g>`
           + `<circle class="ky-gf ky-g-mid" clip-path="url(#${id})" cx="${f1(cb)}" cy="${f1(cy)}" r="${f1(R)}" opacity="0"/>`
-          + (v.label ? T(vw / 2, cy + fs * 0.35, fit(v.label, (2 * R - 2 * d) * 0.9, fs, 0.6), v.label, "ky-lbl ky-g-mtxt", "middle", 'style="fill:var(--markink, #111);fill-opacity:1;font-weight:700"') : ""),
+          + (v.label ? TF(vw / 2, cy, (2 * R - 2 * d) * 0.9, R * 0.9, fs, v.label, "ky-lbl ky-g-mtxt", "middle", 'style="fill:var(--markink, #111);fill-opacity:1;font-weight:700"', 0.6, 3) : ""),
         anim(tl, q, qa, Tw, end) {
           tl.fromTo(q(".ky-g-ca"), { x: -R * 0.9, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, Tw - 0.2);
           tl.fromTo(q(".ky-g-cb"), { x: R * 0.9, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, Tw - 0.2);
@@ -579,8 +621,8 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
         html: P(`M${f1(cx)} ${f1(vh)} V${f1(split)}`, "ky-gi ky-g-stem", sw)
           + P(br(-1), fo === 0 ? "ky-ga ky-g-br" : fo === 1 ? "ky-gi-soft ky-g-br" : "ky-gi ky-g-br", sw)
           + P(br(1), fo === 1 ? "ky-ga ky-g-br" : fo === 0 ? "ky-gi-soft ky-g-br" : "ky-gi ky-g-br", sw)
-          + T(cx - ex, ey - cap * 0.6, cap, a.label, fo === 0 ? "ky-gt ky-gt-hi ky-g-lab" : "ky-gt ky-g-lab")
-          + T(cx + ex, ey - cap * 0.6, cap, b.label, fo === 1 ? "ky-gt ky-gt-hi ky-g-lab" : "ky-gt ky-g-lab"),
+          + TF(cx - ex, ey - fs * 1.2, (cx - ex) * 1.9, fs * 2.4, fs * 1.4, a.label, fo === 0 ? "ky-gt ky-gt-hi ky-g-lab" : "ky-gt ky-g-lab", "middle", "", 0.44, 2)
+          + TF(cx + ex, ey - fs * 1.2, (cx - ex) * 1.9, fs * 2.4, fs * 1.4, b.label, fo === 1 ? "ky-gt ky-gt-hi ky-g-lab" : "ky-gt ky-g-lab", "middle", "", 0.44, 2),
         anim(tl, q, qa, Tw, end) {
           draw(tl, q(".ky-g-stem"), Tw - 0.25, 0.3, "power1.in");
           draw(tl, qa(".ky-g-br"), Tw + 0.05, 0.45, "power1.out");
@@ -595,7 +637,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       const size = fit(txt, bw * 0.86, bh * 0.42, 0.42);
       return {
         html: `<g class="ky-g-bub"><path class="ky-gpanel" stroke-width="2" d="M${f1(x + r)} ${f1(y)} H${f1(x + bw - r)} Q${f1(x + bw)} ${f1(y)} ${f1(x + bw)} ${f1(y + r)} V${f1(y + bh - r)} Q${f1(x + bw)} ${f1(y + bh)} ${f1(x + bw - r)} ${f1(y + bh)} H${f1(x + bw * 0.3)} L${f1(x + bw * 0.16)} ${f1(y + bh + vh * 0.26)} L${f1(x + bw * 0.2)} ${f1(y + bh)} H${f1(x + r)} Q${f1(x)} ${f1(y + bh)} ${f1(x)} ${f1(y + bh - r)} V${f1(y + r)} Q${f1(x)} ${f1(y)} ${f1(x + r)} ${f1(y)} Z"/>`
-          + T(vw / 2, y + bh / 2 + size * 0.32, size, `„${txt}“`, "ky-gtxt") + `</g>`
+          + TF(vw / 2, y + bh / 2, bw * 0.86, bh * 0.82, bh * 0.42, `„${txt}“`, "ky-gtxt", "middle", "", 0.42, 3) + `</g>`
           + (v.unit ? T(x + bw * 0.3, y + bh + vh * 0.2, fs * 0.95, v.unit.toUpperCase(), "ky-lbl ky-g-who", "start") : ""),
         anim(tl, q, qa, Tw, end) {
           tl.fromTo(q(".ky-g-bub"), { scale: 0, opacity: 0, transformOrigin: "18% 100%" }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(2.2)" }, Tw - 0.15);
@@ -604,16 +646,26 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       };
     },
     thought(v, vw, vh, fs) {
-      const txt = v.label || "", cw = Math.min(vw * 0.8, vh * 2.2), ch = vh * 0.6, cx = vw / 2, cy = ch / 2 + vh * 0.02, size = txt ? fit(txt, cw * 0.72, ch * 0.32, 0.42) : 0;
-      const puffs = Array.from({ length: 9 }, (_, k) => { const a = (k / 9) * Math.PI * 2; return `<ellipse cx="${f1(cx + cw * 0.4 * Math.cos(a))}" cy="${f1(cy + ch * 0.36 * Math.sin(a))}" rx="${f1(cw * 0.16)}" ry="${f1(ch * 0.24)}"/>`; }).join("");
+      // one cloud outline of bulges round an ellipse (the speech bubble's style), small bubbles
+      // rising to it from below left
+      const txt = v.label || "", cw = Math.min(vw * 0.82, vh * 2.3), ch = vh * 0.64, cx = vw / 2 + cw * 0.04, cy = ch / 2 + vh * 0.02;
+      const a = cw * 0.4, b = ch * 0.34, n = 11;
+      const pts = Array.from({ length: n }, (_, k) => { const t = (k / n) * Math.PI * 2 + 0.2; return [cx + a * Math.cos(t), cy + b * Math.sin(t)]; });
+      let d = `M${f1(pts[0][0])} ${f1(pts[0][1])}`;
+      pts.forEach((p, k) => {
+        const q2 = pts[(k + 1) % n], r = Math.hypot(q2[0] - p[0], q2[1] - p[1]) * 0.62;
+        d += ` A${f1(r)} ${f1(r)} 0 0 1 ${f1(q2[0])} ${f1(q2[1])}`;
+      });
+      const size = txt ? fit(txt, a * 1.65, b * 1.05, 0.42) : 0;
+      const trail = [[0.075, 0.2, 0.06], [0.05, 0.27, 0.17], [0.032, 0.32, 0.26]];
       return {
-        html: `<g class="ky-g-cloud"><g class="ky-gpanel" style="stroke:none;fill-opacity:.16">${puffs}<ellipse cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(cw * 0.42)}" ry="${f1(ch * 0.38)}"/></g>`
-          + (txt ? T(cx, cy + size * 0.32, size, txt, "ky-gtxt") : [-1, 0, 1].map((k) => `<circle class="ky-gk ky-g-dot3" cx="${f1(cx + k * ch * 0.18)}" cy="${f1(cy)}" r="${f1(ch * 0.06)}"/>`).join("")) + `</g>`
-          + [0.07, 0.045, 0.03].map((s, k) => `<circle class="ky-gsoft ky-g-trail" style="fill-opacity:.3" cx="${f1(cx - cw * (0.22 + k * 0.07))}" cy="${f1(ch + vh * (0.08 + k * 0.1))}" r="${f1(vh * s)}"/>`).reverse().join(""),
+        html: `<g class="ky-g-cloud"><path class="ky-gpanel" stroke-width="2" d="${d} Z"/>`
+          + (txt ? TF(cx, cy, a * 1.6, b * 1.55, b * 1.05, txt, "ky-gtxt", "middle", "", 0.42, 3) : [-1, 0, 1].map((k) => `<circle class="ky-gk ky-g-dot3" cx="${f1(cx + k * b * 0.5)}" cy="${f1(cy)}" r="${f1(b * 0.14)}"/>`).join("")) + `</g>`
+          + trail.map(([r, dx, dy]) => `<circle class="ky-gpanel ky-g-trail" stroke-width="2" cx="${f1(cx - a * 0.95 + cw * (0.3 - dx))}" cy="${f1(cy + b + vh * dy)}" r="${f1(vh * r)}"/>`).reverse().join(""),
         anim(tl, q, qa, Tw, end) {
-          pop(tl, qa(".ky-g-trail"), Tw - 0.3, 0.2, "back.out(2)", 0.1);
-          tl.fromTo(q(".ky-g-cloud"), { scale: 0, opacity: 0, transformOrigin: "30% 90%" }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(1.8)" }, Tw);
-          qa(".ky-g-dot3").forEach((d, k) => tl.fromTo(d, { opacity: 0.2 }, { opacity: 1, duration: 0.2, yoyo: true, repeat: 5, ease: "sine.inOut" }, Tw + 0.4 + k * 0.15));
+          pop(tl, qa(".ky-g-trail"), Tw - 0.35, 0.2, "back.out(2.5)", 0.1);
+          tl.fromTo(q(".ky-g-cloud"), { scale: 0.2, opacity: 0, transformOrigin: "20% 90%" }, { scale: 1, opacity: 1, duration: 0.45, ease: "back.out(1.7)" }, Tw - 0.05);
+          qa(".ky-g-dot3").forEach((dt, k) => tl.fromTo(dt, { opacity: 0.2 }, { opacity: 1, duration: 0.2, yoyo: true, repeat: 5, ease: "sine.inOut" }, Tw + 0.4 + k * 0.15));
         },
       };
     },
@@ -625,7 +677,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       return {
         html: `<g class="ky-g-stamp"><circle class="${ok ? "ky-ga" : "ky-gbad"}" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(R)}" stroke-width="${f1(sw * 0.45)}"/></g>`
           + P(mark, ok ? "ky-ga ky-g-mark" : "ky-gbad ky-g-mark", sw)
-          + (txt ? T(x0, cy + big * 0.35, big, txt, ok ? "ky-gt ky-gt-hi ky-g-txt" : "ky-gt ky-g-txt", "start", ok ? "" : 'style="fill:#ff5a4f"') : ""),
+          + (txt ? TF(x0, cy, tw, vh * 0.9, vh * 0.46, txt, ok ? "ky-gt ky-gt-hi ky-g-txt" : "ky-gt ky-g-txt", "start", ok ? "" : 'style="fill:#ff5a4f"', 0.44, 2) : ""),
         anim(tl, q, qa, Tw, end) {
           tl.fromTo(q(".ky-g-stamp"), { scale: 1.8, opacity: 0, transformOrigin: "50% 50%" }, { scale: 1, opacity: 1, duration: 0.25, ease: "power4.in" }, Tw - 0.15);
           draw(tl, q(".ky-g-mark"), Tw + 0.1, 0.35, "power2.out");
@@ -641,7 +693,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
         html: `<g class="ky-g-sign"><path class="ky-gf" d="${tri}" opacity=".2"/><path class="ky-ga" d="${tri}" stroke-width="${f1(sw)}"/>`
           + `<rect class="ky-gf" x="${f1(cx - sw * 0.6)}" y="${f1(top + (bot - top) * 0.32)}" width="${f1(sw * 1.2)}" height="${f1((bot - top) * 0.36)}" rx="${f1(sw * 0.5)}"/>`
           + `<circle class="ky-gf" cx="${f1(cx)}" cy="${f1(top + (bot - top) * 0.8)}" r="${f1(sw * 0.75)}"/></g>`
-          + (txt ? T(x0, vh / 2 + big * 0.35, big, txt, "ky-gt ky-gt-hi ky-g-txt", "start") : ""),
+          + (txt ? TF(x0, vh / 2, tw, vh * 0.9, vh * 0.44, txt, "ky-gt ky-gt-hi ky-g-txt", "start", "", 0.44, 2) : ""),
         anim(tl, q, qa, Tw, end) {
           pop(tl, q(".ky-g-sign"), Tw - 0.15, 0.3);
           [0.2, 1, 0.2, 1].forEach((o, k) => tl.to(q(".ky-g-sign"), { opacity: o, duration: 0.01 }, Tw + 0.3 + k * 0.16));
@@ -655,9 +707,11 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       return {
         html: `<g class="ky-g-card"><rect class="ky-gpanel" x="${f1(x)}" y="${f1(y)}" width="${f1(cw)}" height="${f1(ch)}" rx="${f1(ch * 0.22)}" stroke-width="2"/>`
           + `<rect class="ky-gf" x="${f1(x + ch * 0.2)}" y="${f1(y + (ch - ic) / 2)}" width="${f1(ic)}" height="${f1(ic)}" rx="${f1(ic * 0.24)}"/>`
-          + `<path class="ky-gi" stroke-width="${f1(ic * 0.07)}" style="stroke:var(--markink, #111)" d="M${f1(x + ch * 0.2 + ic * 0.22)} ${f1(y + ch / 2 - ic * 0.12)} L${f1(x + ch * 0.2 + ic * 0.5)} ${f1(y + ch / 2 + ic * 0.08)} L${f1(x + ch * 0.2 + ic * 0.78)} ${f1(y + ch / 2 - ic * 0.12)}"/>`
-          + T(x + ch * 0.35 + ic, y + ch * 0.36, Math.min(fs * 0.85, ch * 0.2), app, "ky-lbl", "start")
-          + T(x + ch * 0.35 + ic, y + ch * 0.36 + size * 1.25, size, msg, "ky-gtxt", "start") + `</g>`,
+          // an envelope in the app icon: its outline and the flap
+          + (() => { const ex = x + ch * 0.2 + ic * 0.17, ey = y + (ch - ic) / 2 + ic * 0.27, ew = ic * 0.66, eh = ic * 0.46, st = `stroke-width="${f1(ic * 0.065)}" style="stroke:var(--markink, #111)"`;
+            return `<rect class="ky-gi" ${st} x="${f1(ex)}" y="${f1(ey)}" width="${f1(ew)}" height="${f1(eh)}" rx="${f1(ic * 0.05)}"/><path class="ky-gi" ${st} d="M${f1(ex)} ${f1(ey)} L${f1(ex + ew / 2)} ${f1(ey + eh * 0.58)} L${f1(ex + ew)} ${f1(ey)}"/>`; })()
+          + T(x + ch * 0.35 + ic, y + ch * 0.3, Math.min(fs * 0.85, ch * 0.2, fit(app, cw - ic - ch * 0.6, ch * 0.2, 0.62)), app, "ky-lbl", "start")
+          + TF(x + ch * 0.35 + ic, y + ch * 0.64, cw - ic - ch * 0.6, ch * 0.52, ch * 0.28, msg, "ky-gtxt", "start", "", 0.42, 2) + `</g>`,
         anim(tl, q, qa, Tw, end) {
           tl.fromTo(q(".ky-g-card"), { y: -vh * 0.5, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: "back.out(1.5)" }, Tw - 0.2);
           for (let k = 0; k < 6; k++) tl.to(q(".ky-g-card"), { x: k === 5 ? 0 : k % 2 ? -4 : 4, duration: 0.04, ease: "none" }, Tw + 0.35 + k * 0.04 + (k > 2 ? 0.12 : 0));
@@ -669,15 +723,33 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
     target(v, vw, vh, fs) {
       const R = vh * 0.46, { cx, x0, tw } = side(vw, vh, R), cy = vh / 2, sw = Math.max(3, R * 0.05);
       const txt = v.label || "", big = txt ? fit(txt, tw, vh * 0.42, 0.44) : 0;
+      // the arrow comes in from the upper right; u points from its tip (in the bull's-eye) to its tail
+      const u = [Math.SQRT1_2, -Math.SQRT1_2], n = [Math.SQRT1_2, Math.SQRT1_2], L = R * 1.05;
+      const at = (d, s2 = 0) => [cx + u[0] * d + n[0] * s2, cy + u[1] * d + n[1] * s2];
+      const pt = ([x, y]) => `${f1(x)} ${f1(y)}`;
+      // two feathers at the tail, one each side of the shaft
+      const feather = (side2) => {
+        const r0 = at(L * 0.62), r1 = at(L), o1 = at(L * 1.04, side2 * R * 0.24), o0 = at(L * 0.7, side2 * R * 0.1);
+        return { d: `M${pt(r0)} L${pt(r1)} L${pt(o1)} Q${pt(at(L * 0.86, side2 * R * 0.2))} ${pt(o0)} Z`, root: pt(r0) };
+      };
+      const fa = feather(1), fb = feather(-1);
       return {
         html: `<g class="ky-g-board">${[1, 0.68, 0.36].map((k, j) => `<circle class="${j % 2 ? "ky-gsoft" : "ky-gpanel"}" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(R * k)}" stroke-width="2"/>`).join("")}<circle class="ky-gf" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(R * 0.14)}"/></g>`
-          + `<g class="ky-g-arrow"><line class="ky-gi" stroke-width="${f1(sw)}" x1="${f1(cx)}" y1="${f1(cy)}" x2="${f1(cx + R * 0.9)}" y2="${f1(cy - R * 0.9)}"/>`
-          + `<path class="ky-gf" d="M${f1(cx + R * 0.72)} ${f1(cy - R * 0.94)} L${f1(cx + R * 0.98)} ${f1(cy - R * 1.12)} L${f1(cx + R * 0.94)} ${f1(cy - R * 0.86)} Z"/></g>`
-          + (txt ? T(x0 + R * 0.2, cy + big * 0.35, big, txt, "ky-gt ky-gt-hi ky-g-txt", "start") : ""),
+          + `<g class="ky-g-arrow"><line class="ky-gi" stroke-width="${f1(sw)}" x1="${f1(cx)}" y1="${f1(cy)}" x2="${pt(at(L)).split(" ")[0]}" y2="${pt(at(L)).split(" ")[1]}"/>`
+          + `<path class="ky-gf ky-g-fa" d="${fa.d}"/><path class="ky-gf ky-g-fb" d="${fb.d}"/></g>`
+          + (txt ? TF(x0 + R * 0.2, cy, tw - R * 0.2, vh * 0.9, vh * 0.42, txt, "ky-gt ky-gt-hi ky-g-txt", "start", "", 0.44, 2) : ""),
         anim(tl, q, qa, Tw, end) {
+          const hit = Tw + 0.35, tip = `${f1(cx)} ${f1(cy)}`;
           pop(tl, q(".ky-g-board"), Tw - 0.25, 0.3);
           tl.fromTo(q(".ky-g-arrow"), { x: R * 1.6, y: -R * 1.6, opacity: 0 }, { x: 0, y: 0, opacity: 1, duration: 0.3, ease: "power3.in" }, Tw + 0.05);
-          tl.fromTo(q(".ky-g-board"), { x: 0 }, { x: 4, duration: 0.04, yoyo: true, repeat: 3, ease: "none" }, Tw + 0.35);
+          // the shaft quivers round its tip, dying away
+          [5, -4, 3, -2.2, 1.4, -0.8, 0.3, 0].forEach((a, k) => tl.to(q(".ky-g-arrow"), { rotation: a, svgOrigin: tip, duration: 0.055, ease: "sine.inOut" }, hit + k * 0.055));
+          // the feathers flutter, opposite to each other
+          [9, -7, 6, -4, 3, -1.5, 0].forEach((a, k) => {
+            tl.to(q(".ky-g-fa"), { rotation: a, svgOrigin: fa.root, duration: 0.07, ease: "sine.inOut" }, hit + 0.05 + k * 0.07);
+            tl.to(q(".ky-g-fb"), { rotation: -a, svgOrigin: fb.root, duration: 0.07, ease: "sine.inOut" }, hit + 0.05 + k * 0.07);
+          });
+          tl.fromTo(q(".ky-g-board"), { x: 0 }, { x: 4, duration: 0.04, yoyo: true, repeat: 3, ease: "none" }, hit);
           if (q(".ky-g-txt")) fade(tl, q(".ky-g-txt"), Tw + 0.35);
         },
       };
@@ -690,7 +762,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
         html: `<path class="ky-gi ky-g-shackle" stroke-width="${f1(sw)}" d="${shackle}"/>`
           + `<rect class="ky-gf ky-g-body" x="${f1(cx - bw / 2)}" y="${f1(by)}" width="${f1(bw)}" height="${f1(bh)}" rx="${f1(bw * 0.14)}"/>`
           + `<circle class="ky-gk" style="fill:var(--markink, #111)" cx="${f1(cx)}" cy="${f1(by + bh * 0.42)}" r="${f1(bw * 0.09)}"/>`
-          + (txt ? T(x0, vh / 2 + big * 0.35, big, txt, "ky-gt ky-gt-hi ky-g-txt", "start") : ""),
+          + (txt ? TF(x0, vh / 2, tw, vh * 0.9, vh * 0.44, txt, "ky-gt ky-gt-hi ky-g-txt", "start", "", 0.44, 2) : ""),
         anim(tl, q, qa, Tw, end) {
           pop(tl, qa(".ky-g-body"), Tw - 0.25, 0.3);
           tl.fromTo(q(".ky-g-shackle"), { y: closes ? -lift : 0, opacity: 0 }, { y: closes ? -lift : 0, opacity: 1, duration: 0.15 }, Tw - 0.2);
@@ -702,11 +774,12 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
     },
     search(v, vw, vh, fs) {
       const txt = v.label || "", bw = vw * 0.94, bh = vh * 0.5, x = (vw - bw) / 2, y = (vh - bh) / 2, R = bh * 0.22, mx = x + bh * 0.55, my = y + bh / 2;
-      const size = fit(txt, bw - bh * 1.4, bh * 0.42, 0.42);
+      const size = Math.max(bh * 0.34, fit(txt, bw - bh * 1.4, bh * 0.42, 0.42)), tx = x + bh * 1.1, avail = bw - bh * 1.4, id = `kysr${Math.round(vw)}${Math.round(vh)}`;
       return {
         html: `<rect class="ky-gpanel" x="${f1(x)}" y="${f1(y)}" width="${f1(bw)}" height="${f1(bh)}" rx="${f1(bh / 2)}" stroke-width="2"/>`
           + `<g class="ky-g-lens"><circle class="ky-ga" cx="${f1(mx - R * 0.2)}" cy="${f1(my - R * 0.2)}" r="${f1(R)}" stroke-width="${f1(R * 0.3)}"/><line class="ky-ga" stroke-width="${f1(R * 0.34)}" x1="${f1(mx + R * 0.5)}" y1="${f1(my + R * 0.5)}" x2="${f1(mx + R * 1.1)}" y2="${f1(my + R * 1.1)}"/></g>`
-          + T(x + bh * 1.1, my + size * 0.33, size, "", "ky-gtxt ky-g-typed", "start")
+          + `<clipPath id="${id}"><rect x="${f1(tx - 2)}" y="${f1(y)}" width="${f1(avail + 4)}" height="${f1(bh)}"/></clipPath>`
+          + `<g clip-path="url(#${id})">${T(tx, my + size * 0.33, size, "", "ky-gtxt ky-g-typed", "start")}</g>`
           + `<rect class="ky-gf ky-g-caret" x="${f1(x + bh * 1.1)}" y="${f1(my - size * 0.45)}" width="${f1(Math.max(2, size * 0.07))}" height="${f1(size * 0.9)}" opacity="0"/>`,
         anim(tl, q, qa, Tw, end) {
           const typed = q(".ky-g-typed"), caret = q(".ky-g-caret"), n = txt.length, step = clamp((clamp(end - Tw, 0.6, 1.6) * 0.7) / Math.max(1, n), 0.03, 0.08);
@@ -714,7 +787,9 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
           for (let k = 1; k <= n; k++) {
             tl.set(typed, { textContent: txt.slice(0, k) + "​" }, Tw + k * step);
             // the caret follows the text, measured when the frame is drawn
-            tl.set(caret, { attr: { x: () => x + bh * 1.1 + (typed.getComputedTextLength ? typed.getComputedTextLength() : 0) + 3 } }, Tw + k * step + 0.001);
+            const len = () => (typed.getComputedTextLength ? typed.getComputedTextLength() : 0);
+            tl.set(typed, { attr: { x: () => tx - Math.max(0, len() - avail) } }, Tw + k * step + 0.001);
+            tl.set(caret, { attr: { x: () => tx + Math.min(len(), avail) + 3 } }, Tw + k * step + 0.002);
           }
           tl.fromTo(q(".ky-g-lens"), { scale: 1, transformOrigin: "50% 50%" }, { scale: 1.25, duration: 0.15, yoyo: true, repeat: 1, ease: "power2.out" }, Tw + n * step + 0.1);
         },
@@ -728,8 +803,8 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       const pbFixed = `M${f1(cx)} ${f1(y)} H${f1(cx + s)} V${f1(y + s)} H${f1(cx)} L${f1(cx)} ${f1(y + s * 0.65)} C${f1(cx + k * 1.6)} ${f1(y + s * 0.8)} ${f1(cx + k * 1.6)} ${f1(y + s * 0.2)} ${f1(cx)} ${f1(y + s * 0.35)} Z`;
       const cap = Math.min(fit(a.label, s * 0.8, fs * 1.3, 0.44), fit(b.label, s * 0.8, fs * 1.3, 0.44));
       return {
-        html: `<g class="ky-g-pa"><path class="ky-gsoft" style="fill-opacity:.3" d="${pa}"/><path class="ky-gi" stroke-width="2" d="${pa}"/>${T(cx - s / 2, y + s / 2 + cap * 0.35, cap, a.label, "ky-gt")}</g>`
-          + `<g class="ky-g-pb"><path class="ky-gf" d="${pbFixed}"/>${T(cx + s / 2 + k * 0.6, y + s / 2 + cap * 0.35, cap, b.label, "ky-gt", "middle", 'style="fill:var(--markink, #111)"')}</g>`,
+        html: `<g class="ky-g-pa"><path class="ky-gsoft" style="fill-opacity:.3" d="${pa}"/><path class="ky-gi" stroke-width="2" d="${pa}"/>${TF(cx - s / 2, y + s / 2, s * 0.8, s * 0.8, fs * 1.4, a.label, "ky-gt", "middle", "", 0.44, 3)}</g>`
+          + `<g class="ky-g-pb"><path class="ky-gf" d="${pbFixed}"/>${TF(cx + s / 2 + k * 0.6, y + s / 2, s * 0.75, s * 0.8, fs * 1.4, b.label, "ky-gt", "middle", 'style="fill:var(--markink, #111)"', 0.44, 3)}</g>`,
         anim(tl, q, qa, Tw, end) {
           tl.fromTo(q(".ky-g-pa"), { x: -s * 0.5, rotation: -8, opacity: 0, transformOrigin: "50% 50%" }, { x: -s * 0.08, rotation: 0, opacity: 1, duration: 0.4, ease: "power2.out" }, Tw - 0.2);
           tl.fromTo(q(".ky-g-pb"), { x: s * 0.5, rotation: 8, opacity: 0, transformOrigin: "50% 50%" }, { x: s * 0.08, rotation: 0, opacity: 1, duration: 0.4, ease: "power2.out" }, Tw - 0.15);
@@ -746,7 +821,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
       return {
         html: `<path class="ky-gsoft" d="${ridge} Z"/>` + P(ridge, "ky-gi ky-g-ridge", sw)
           + `<g class="ky-g-flag"><line class="ky-gi" stroke-width="${f1(sw * 0.7)}" x1="${f1(px)}" y1="${f1(py)}" x2="${f1(px)}" y2="${f1(py - fh * 1.3)}"/><path class="ky-gf ky-g-cloth" d="M${f1(px)} ${f1(py - fh * 1.3)} L${f1(px + fh)} ${f1(py - fh * 1.0)} L${f1(px)} ${f1(py - fh * 0.7)} Z"/></g>`
-          + (txt ? T(px + fh * 1.3, py - fh * 0.85 + cap * 0.35, cap, txt, "ky-gt ky-gt-hi ky-g-txt", "start") : ""),
+          + (txt ? TF(px + fh * 1.3, py - fh * 0.85, vw - (px + fh * 1.3) - 4, vh * 0.5, fs * 1.5, txt, "ky-gt ky-gt-hi ky-g-txt", "start", "", 0.44, 2) : ""),
         anim(tl, q, qa, Tw, end) {
           draw(tl, q(".ky-g-ridge"), Tw - 0.3, 0.6, "power1.inOut");
           tl.fromTo(q(".ky-g-flag"), { scaleY: 0, transformOrigin: "50% 100%" }, { scaleY: 1, duration: 0.3, ease: "back.out(2.5)" }, Tw + 0.3);
@@ -767,7 +842,7 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
         html: `<g class="ky-gsoft ky-g-map" style="fill-opacity:.35">${dots}</g>`
           + `<ellipse class="ky-ga ky-g-ring" cx="${f1(cx)}" cy="${f1(cy)}" rx="${f1(pw * 0.5)}" ry="${f1(pw * 0.16)}" stroke-width="2" opacity="0"/>`
           + `<g class="ky-g-pin"><path class="ky-gf" d="${pin}"/><circle class="ky-gk" style="fill:var(--markink, #111)" cx="${f1(cx)}" cy="${f1(cy - ph * 0.72)}" r="${f1(pw * 0.17)}"/></g>`
-          + (txt ? T(cx + pw * 0.75, cy - ph * 0.55 + cap * 0.35, cap, txt, "ky-gt ky-gt-hi ky-g-txt", "start") : ""),
+          + (txt ? TF(cx + pw * 0.75, cy - ph * 0.55, vw - (cx + pw * 0.75) - 4, vh * 0.7, vh * 0.34, txt, "ky-gt ky-gt-hi ky-g-txt", "start", "", 0.44, 2) : ""),
         anim(tl, q, qa, Tw, end) {
           fade(tl, q(".ky-g-map"), Tw - 0.3, 0.4);
           tl.fromTo(q(".ky-g-pin"), { y: -vh * 0.9, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, ease: "bounce.out" }, Tw - 0.05);

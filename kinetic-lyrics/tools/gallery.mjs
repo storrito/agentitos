@@ -161,7 +161,7 @@ const layout = (name, what, text, set = {}) => [`layout-${name}`, name, what, te
 const LAYOUTS = [
   layout("hero", "Ein riesiges Wort, der Rest klein darum", "Das ist [unglaublich] gut"),
   layout("block", "Gestapelte Zeilen im Blocksatz", "Wir haben das [ganze] Team umgebaut"),
-  layout("cascade", "Treppenförmig versetzte Zeilen", "Schritt für Schritt nach [oben]"),
+  layout("cascade", "Treppenförmig versetzte Zeilen", "Es ging Stufe für Stufe [bergab]"),
   layout("inline", "Eine oder zwei Zeilen, für längere Phrasen (im Hochformat bis vier Wörter)", "Die beste [Entscheidung] überhaupt"),
   layout("split", "Zwei Hälften in gegenüberliegenden Ecken", "Vorher [langsam] nachher schnell"),
   layout("list", "Eine Checkliste: jeder Punkt bekommt eine Zeile und ein Häkchen, wenn er gesprochen wird", "Berichte, Tickets, erste [Entwürfe]", { still: 1.4 }),
@@ -188,6 +188,18 @@ const MOTIFS = [
   motif("sky", "Wolken", "Himmel, Wolken, Wind, frei", "Über den [Wolken]"),
 ];
 
+// the same graphics with long words: how they hold up
+const LONG = [
+  chart("search", "Ein langer Suchbegriff", "Ich habe das [gegoogelt]", { label: "Darf man in Deutschland am Sonntag eigentlich Rasen mähen" }, "long-search"),
+  chart("said", "Ein langes Zitat", "Mein Chef [meinte] nur", { label: "Das machen wir jetzt einfach mal so und schauen dann", unit: "Chef" }, "long-said"),
+  chart("thought", "Ein langer Gedanke", "Ich dachte mir [insgeheim]", { label: "Das schaffe ich niemals bis Freitag" }, "long-thought"),
+  chart("notify", "Eine lange Nachricht", "Dann kam die [Nachricht]", { unit: "Personalabteilung", label: "Bitte kommen Sie morgen um neun Uhr in mein Büro" }, "long-notify"),
+  chart("versus", "Lange Begriffe gegeneinander", "[Festanstellung] oder Selbstständigkeit?", { parts: P2("Unbefristete Festanstellung", "Selbstständigkeit") }, "long-versus"),
+  chart("steps", "Lange Stufen", "Vom Praktikum zur [Geschäftsführung]", { parts: [{ label: "Praktikum", value: 0 }, { label: "Projektleitung", value: 0 }, { label: "Abteilungsleitung", value: 0 }, { label: "Geschäftsführung", value: 0 }], focus: 3 }, "long-steps"),
+  chart("place", "Ein langer Ortsname", "Das war in [Garmisch-Partenkirchen]", { label: "Garmisch-Partenkirchen" }, "long-place"),
+  chart("timeline", "Lange Stationen", "Von der Gründung bis zum [Börsengang]", { parts: [{ label: "Gründung in der Garage", value: 2004 }, { label: "Internationale Expansion", value: 2012 }, { label: "Börsengang in New York", value: 2019 }], focus: 2 }, "long-timeline"),
+];
+
 const PAGES = [
   { file: "index.html", nav: "Wörter", title: "Wort-Effekte und Abgänge", sections: [
     { title: "Wort-Effekte", note: "Die Regie (und der Chat-Agent) wählt sie im Staging als fx.", demos: WORDS },
@@ -202,6 +214,7 @@ const PAGES = [
     { title: "Anmerkungen und Marker", note: "Von Hand gezeichnet auf ein Wort: notes im Staging; der Marker (mark) nur in den Presets podcast und social.", demos: NOTES },
     { title: "Grafiken: Zahlen", note: "Eine Grafik unter der Phrase, die zeigt, was eine Zahl bedeutet: charts im Staging; Prozente, Faktoren und kleine Mengen erkennt die Engine auch selbst.", demos: CHARTS },
     { title: "Grafiken: Themen", note: "Bilder für den Aufbau eines Arguments, Momente im Gespräch und Sinnbilder: ebenfalls charts im Staging, value 0 wo keine Zahl gemeint ist.", demos: TOPICS },
+    { title: "Lange Texte", note: "Dieselben Grafiken mit langen Begriffen: wie sie damit umgehen.", demos: LONG },
     { title: "Layouts", note: "Wie eine Phrase gesetzt wird: layout im Staging.", demos: LAYOUTS },
     { title: "Konzepte", note: "Ein Konzept auf einem Wort bringt seinen Wort-Effekt und ein Motiv in die Welt: concept im Staging.", demos: MOTIFS },
   ] },

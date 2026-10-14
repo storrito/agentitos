@@ -6,6 +6,7 @@
 
 import { CONCEPTS, STOPWORDS, MEANINGFUL_STOP, CLAUSE_OPENERS, keyOf, conceptOf, numberOf } from "./lexicon.mjs";
 import { detectViz, detectNotes, detectLists, listItems } from "./viz.mjs";
+import { TEXT_GRAPHICS } from "../engine/graphics.js";
 
 // Presets tune pacing and presence for the kind of source material.
 //   lyric   – songs, poems, spoken word: big gestures, full 3D world
@@ -383,6 +384,16 @@ export function analyze(rawWords, opts = {}) {
     // one data graphic per phrase: the first number that has one
     const VIZ_RANK = { growth: 0, split: 0, gauge: 0, compare: 0, units: 1 };
     const vizWord = pw.filter((w) => w.viz).sort((a, b) => (VIZ_RANK[a.viz.kind] ?? 0) - (VIZ_RANK[b.viz.kind] ?? 0))[0];
+    // a graphic that shows words of its own (versus, cause, steps …) is the accent of its phrase:
+    // the line above it is set calm – no hero, no word effect, no note, no marker, no concept –
+    // or the same word would stand out twice
+    const calm = !!vizWord && TEXT_GRAPHICS.has(vizWord.viz.kind);
+    if (calm) {
+      for (const w of pw) Object.assign(w, { hero: false, fx: null, note: null, mark: false, concept: null });
+      hero = null;
+      concepts.length = 0;
+      if (layout === "hero") layout = pw.length <= 4 ? "inline" : "block";
+    }
     const mood = ap ? ap.mood : tones.length ? MOOD_OF[tones[0]] : null;
     return {
       id: `p${pi}`, index: pi, start: +start.toFixed(3), end: +end.toFixed(3),
@@ -393,7 +404,7 @@ export function analyze(rawWords, opts = {}) {
       exit: ap ? ap.exit : pick(P.exits, h >> 13),
       speaker: pw[0].speaker,
       hero: hero ? hero.i : null, mood, concepts,
-      viz: vizWord ? vizWord.i : null, items: layout === "list" ? items : null,
+      viz: vizWord ? vizWord.i : null, items: layout === "list" ? items : null, ...(calm && { calm: true }),
       words: pw.map((w) => w.i),
     };
   });
