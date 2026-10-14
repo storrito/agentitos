@@ -137,6 +137,47 @@ Where the speaker **relates numbers to each other**, Claude picks a graphic itse
 
 There is at most one graphic per phrase; percentages and factors win over pictograms. The graphic is always complete before the phrase fades out.
 
+**More graphics** (`engine/graphics.js`), set by the direction in `charts` like the ones above, with the same fields (`value`, `base`, `parts`, `focus`, `label`, `unit`; `value` 0 where no number is meant). The staging is checked: a graphic that lacks its parts or its label is dropped.
+
+| Numbers | Graphic |
+| --- | --- |
+| `clock` | a clock face, the hands turn to the time; with unit `min`/`h` a slice of the dial fills for a duration |
+| `calendar` | a calendar page, the number flips up, the last page tears off |
+| `countdown` | a ring runs out around the number |
+| `timeline` | a line, the years set their points one after another |
+| `route` | a line from place to place, a dot travels, the distance counts up |
+| `speed` | a speedometer, the needle swings to the value and quivers |
+| `temperature` | a thermometer rises, cold blue to hot red |
+| `rank` | a podium builds up, the place lights up |
+| `ratio` | a row of people, some light up ("one in five") |
+| `rating` | stars fill, partly too |
+| `trend` | an arrow shoots up (or down, in red) with the change in percent |
+| `battery` | a battery charges or runs low, the last cell blinks red |
+| `pie` | a ring fills to the share |
+
+| Topics | Graphic |
+| --- | --- |
+| `versus` | two things fly in, a "VS" slams between them (stacked in portrait) |
+| `cause` | an arrow draws from the cause to the effect, which lands |
+| `cycle` | things on a circle, arrows lead from one to the next, a dot keeps going round |
+| `steps` | stairs build up, a dot hops to the step in question |
+| `balance` | a scale swings and tips to the heavier side |
+| `overlap` | two circles slide into each other, what they share lights up |
+| `fork` | the road splits, the way taken lights up |
+| `said` | a speech bubble pops up, who said it below |
+| `thought` | a thought bubble rises |
+| `verdict` | a big tick or cross, stamped |
+| `warning` | a warning sign blinks twice |
+| `notify` | a phone notification slides in and buzzes |
+| `target` | an arrow hits the bull's-eye |
+| `lock` | a padlock snaps shut or springs open |
+| `search` | a search bar, the query is typed in |
+| `puzzle` | two pieces slide together and snap |
+| `summit` | a mountain draws itself, a flag goes up on top |
+| `place` | a pin drops onto a map, a ring spreads out |
+
+Most graphics need a square-ish box and get more height under the phrase; the wide ones (two sides, a line, labels in a row) take the full width.
+
 **German numbers:** `258.000` and `3,5` count up in their own format (not as `258,000` / `3.5`), and graphics are labelled in the format of the detected language (`258.000 €` / `€258,000`). In keyword mode a number stays together with its unit: "100 Euro", "50 Jahren", "40 Prozent".
 
 **Hand-drawn annotations** draw onto a word as if with a pen: `circle` (key term), `underline` (key statement), `strike` (what is negated or replaced; the word fades). Claude places them sparingly with `--llm`. Without the LLM the rule "not X but Y" / "nicht X sondern Y" / "instead of X" applies: X is struck through, Y circled. An underline across another line becomes a circle; a word that fills almost the whole width is underlined instead of circled.

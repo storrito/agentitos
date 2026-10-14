@@ -15,6 +15,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { CONCEPTS } from "./lexicon.mjs";
 import { PALETTES } from "../engine/signals.js";
+import { GRAPHIC_KINDS, GRAPHIC_DOC } from "../engine/graphics.js";
 
 export const MODEL = "claude-opus-5-5";
 
@@ -24,7 +25,11 @@ const MOODS = Object.keys(PALETTES);
 const LAYOUTS = ["hero", "block", "cascade", "inline", "split", "list"];
 const NOTES = ["circle", "underline", "strike"];
 const EXITS = ["lift", "zoom", "blur", "scatter", "mow", "burn", "fall"];
-const CHARTS = ["growth", "split", "compare", "gauge"];
+const CHARTS = ["growth", "split", "compare", "gauge", ...GRAPHIC_KINDS];
+// the graphics that need their parts, and how many
+const PARTS = { timeline: [2, 5], route: [2, 2], versus: [2, 2], cause: [2, 2], cycle: [2, 5], steps: [2, 5], balance: [2, 2], overlap: [2, 2], fork: [2, 2], puzzle: [2, 2] };
+// the graphics that show nothing without their label
+const LABELLED = new Set(["said", "notify", "search", "place"]);
 
 const WORLDS = ["cosmos", "aurora", "editorial", "geometry", "bokeh", "neon", "noir"];
 const Annotation = z.object({
@@ -132,6 +137,9 @@ charts: add a chart yourself where the speaker *relates* numbers to each other, 
             on consecutive numbers with a different focus.
   compare = before/after bars, value = the factor (e.g. 3.3 when a return of 200.000 exceeds 60.000 "many times")
   gauge   = a share filling a bar, value = 0–100
+${GRAPHIC_DOC}
+  A graphic without a number (versus, cause, said, place …) sets value 0. Graphics are accents: the same restraint as
+  for charts, one where it makes the moment, not on every phrase that could take one.
   Use only figures stated in the transcript or exactly derived from them (a sum, a share, a factor) – never invent
   or round them into something the speaker did not say. Unused fields: base null, parts [], focus null, label "", unit "".
 
@@ -334,6 +342,13 @@ export function validate(ann, n) {
     if (c.kind === "growth" && !(c.value > 0)) return false;
     if (c.kind === "gauge" && !(c.value > 0 && c.value <= 100)) return false;
     if (c.kind === "compare" && !(c.value >= 0.2 && c.value <= 20)) return false;
+    const pr = PARTS[c.kind];
+    if (pr && !(c.parts?.length >= pr[0] && c.parts.length <= pr[1] && c.parts.every((x) => x.label?.trim()))) return false;
+    if (LABELLED.has(c.kind) && !c.label?.trim()) return false;
+    if ((c.kind === "pie" || c.kind === "battery") && !(c.value >= 0 && c.value <= 100)) return false;
+    if (c.kind === "clock" && !(c.value >= 0 && (c.unit === "min" || c.unit === "h" || c.value < 24))) return false;
+    if (c.kind === "ratio" && !(c.base >= 2 && c.base <= 12 && c.value >= 0 && c.value <= c.base)) return false;
+    if (c.kind === "rank" && !(c.value >= 1)) return false;
     chartSeen.add(p);
     return true;
   });

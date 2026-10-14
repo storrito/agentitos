@@ -382,7 +382,7 @@ export function analyze(rawWords, opts = {}) {
     lastLayout = layout;
     // one data graphic per phrase: the first number that has one
     const VIZ_RANK = { growth: 0, split: 0, gauge: 0, compare: 0, units: 1 };
-    const vizWord = pw.filter((w) => w.viz).sort((a, b) => VIZ_RANK[a.viz.kind] - VIZ_RANK[b.viz.kind])[0];
+    const vizWord = pw.filter((w) => w.viz).sort((a, b) => (VIZ_RANK[a.viz.kind] ?? 0) - (VIZ_RANK[b.viz.kind] ?? 0))[0];
     const mood = ap ? ap.mood : tones.length ? MOOD_OF[tones[0]] : null;
     return {
       id: `p${pi}`, index: pi, start: +start.toFixed(3), end: +end.toFixed(3),

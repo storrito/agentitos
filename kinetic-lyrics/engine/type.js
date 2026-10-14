@@ -5,6 +5,7 @@
 // Bundled by tools/build.mjs (esbuild, IIFE, global `KineticType`).
 
 import { palettesOf, worldOf, createSignals } from "./signals.js";
+import { makeGraphics, graphicsCss, TALL, WIDE } from "./graphics.js";
 
 const GOTHIC = '"League Gothic"';
 const SERIF = '"Instrument Serif"';
@@ -116,7 +117,7 @@ export function build(root, plan, gsap) {
     const blockW = portrait || ph.layout === "quote" ? safeW : Math.min(safeW, safeH * (ph.layout === "block" ? 1.05 : 1.5));
     // a data graphic sits under the text and takes its share of the height
     const vk = ph.viz != null ? words[ph.viz].viz.kind : null;
-    const vizH = !vk ? 0 : vk === "growth" ? safeH * (portrait ? 0.26 : 0.34) : safeH * (portrait ? 0.17 : 0.19);
+    const vizH = !vk ? 0 : vk === "growth" || TALL.has(vk) ? safeH * (portrait ? 0.26 : 0.34) : safeH * (portrait ? 0.17 : 0.19);
     const availH = safeH - (vizH ? vizH + H * 0.03 : 0);
 
     if (ph.layout === "list" && ph.items) {
@@ -233,7 +234,8 @@ export function build(root, plan, gsap) {
       bw = Math.min(safeW, Math.max(bw, maxLineW * 1.18));
       lines.forEach((l) => (l.indent = l.step != null ? (bw - lineW(l)) * l.step : 0));
     }
-    const vizW = vizH ? Math.min(safeW * (portrait ? 0.9 : 0.62), Math.max(bw, safeW * (vk === "growth" || vk === "split" ? 0.56 : 0.42))) : 0;
+    // wide graphics (two sides, a line, labels in a row) take the full width they may have
+    const vizW = vizH ? Math.min(safeW * (portrait ? 0.9 : 0.62), WIDE.has(vk) ? safeW : Math.max(bw, safeW * (vk === "growth" || vk === "split" ? 0.56 : 0.42))) : 0;
     return { lines, blockW: Math.max(bw, vizW), vizW, vizH };
   }
 
@@ -257,6 +259,8 @@ export function build(root, plan, gsap) {
   };
   const withUnit = (v, unit = "") =>
     unit === "€" ? (DE ? `${fmtNum(v)} €` : `€${fmtNum(v)}`) : unit === "$" ? `$${fmtNum(v)}` : unit === "%" ? `${fmtNum(v)}%` : `${fmtNum(v)}${unit ? " " + unit : ""}`;
+  // the graphics beyond the five charts below (engine/graphics.js)
+  const G = makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE });
 
   // checklist box with a tick that draws itself
   function checkBox(ln) {
@@ -365,6 +369,8 @@ export function build(root, plan, gsap) {
             + `<text class="ky-cap2 ky-seglbl" x="${f1(tx)}" y="${f1(y + bh + fs * 1.15)}" font-size="${f1(fs * 1.05)}" text-anchor="${anchor}">${esc(g.p.label)}</text>`;
         }).join("");
       Object.assign(out, { segs: Array.from(svg.querySelectorAll(".ky-seg")), lbls: Array.from(svg.querySelectorAll(".ky-seglbl")) });
+    } else if (G.has(viz.kind)) {
+      out.g = G.build(svg, viz, vw, vh, fs);
     } else {
       const n = Math.round(viz.value), rows = n <= 12 ? 1 : n <= 24 ? 2 : 3, cols = Math.ceil(n / rows);
       const cell = Math.min(vh / rows, vw / cols), s = cell * 0.8;
@@ -1008,6 +1014,8 @@ export function build(root, plan, gsap) {
     } else if (vz.kind === "split") {
       vz.segs.forEach((sg, j) => tl.fromTo(sg, { attr: { width: 0 } }, { attr: { width: +sg.getAttribute("data-w") }, duration: 0.5, ease: "power3.out" }, Tw + j * 0.2));
       tl.fromTo(vz.lbls, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out", stagger: 0.08 }, Tw + 0.15);
+    } else if (vz.g) {
+      G.animate(tl, vz.g, Tw, end);
     } else {
       const n = vz.units.length;
       const total = Math.max(0.3, Math.min(clamp(0.04 * n + 0.3, 0.4, 1.2), end - Tw));
@@ -1286,6 +1294,7 @@ export const CSS = /* css */ `
   .ky-dot { fill: var(--accent); }
   .ky-seg { fill: var(--ink); fill-opacity:.22; }
   .ky-seg-hi { fill: var(--accent); fill-opacity:1; }
+${graphicsCss({ GOTHIC, SERIF })}
   :not(.ky-light) > .ky-stage .ky-note svg, :not(.ky-light) > .ky-stage .ky-viz svg { filter: drop-shadow(0 0 .35em color-mix(in srgb, var(--accent) 45%, transparent)); }
   .ky-redact { position:absolute; left:-.06em; right:-.06em; top:.08em; bottom:.04em; display:block; pointer-events:none;
     background: var(--ink, #f2f0ea); transform: scaleX(0); }

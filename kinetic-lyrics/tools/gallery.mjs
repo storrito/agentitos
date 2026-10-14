@@ -108,13 +108,48 @@ const NOTES = [
   ["note-strike", "strike", "Durchgestrichen: nur was der Sprecher ausdrücklich verwirft", "Nicht [Glück], sondern Arbeit", { note: "strike" }],
   ["mark", "mark", "Marker: ein Leuchtstift-Balken fährt beim Sprechen unter das Wort (Podcast und Social)", "Das ist der [entscheidende] Punkt", { mark: true, preset: "podcast" }],
 ];
-const chart = (name, what, text, c) => [`chart-${name}`, name, what, text, { chart: { kind: name, ...c }, still: 1.6, tail: 3 }];
+const chart = (name, what, text, c, id = `chart-${name}`) => [id, name, what, text, { chart: { kind: name, value: 0, ...c }, still: 1.6, tail: 3 }];
+const P2 = (a, b) => [{ label: a, value: 0 }, { label: b, value: 0 }];
 const CHARTS = [
   chart("gauge", "Ein Anteil füllt einen Balken", "Wir sparen [40%] unserer Woche", { value: 40 }),
   chart("compare", "Vorher-nachher-Balken mit dem Faktor", "Der Umsatz hat sich [verdreifacht]", { value: 3 }),
   chart("growth", "Eine Kurve, die sich über die Zeit nach oben biegt, gegen die gerade Linie", "Nach dreißig Jahren sind es [200.000] Euro", { value: 200000, base: 60000, label: "30 Jahre", unit: "€" }),
   chart("split", "Ein Balken, in die Teile eines Ganzen geteilt", "Davon sind [140.000] Euro Zinsen", { value: 140000, parts: [{ label: "eingezahlt", value: 60000 }, { label: "Zinsen", value: 140000 }], focus: 1 }),
   ["units-person", "units", "Piktogramme für kleine Mengen: Menschen, Tage, Minuten", "Wir waren ein Team aus [sechs] Leuten", { viz: { kind: "units", value: 6, icon: "person" }, still: 1.6, tail: 3 }],
+  chart("clock", "Ein Zifferblatt, die Zeiger drehen sich auf die Uhrzeit", "Der Wecker klingelt [halb] sechs", { value: 5.5 }),
+  chart("clock", "Mit Einheit min oder h eine Dauer: ein Stück des Zifferblatts füllt sich", "Ich trainiere [45] Minuten", { value: 45, unit: "min" }, "chart-clock-duration"),
+  chart("calendar", "Ein Kalenderblatt, die Zahl blättert hoch, das letzte Blatt reißt ab", "Seit [dreißig] Tagen kein Zucker", { value: 30, label: "Tage" }),
+  chart("countdown", "Ein Ring läuft um die Zahl herum ab", "Nur noch [drei] Tage", { value: 3, unit: "Tage" }),
+  chart("timeline", "Eine Zeitleiste, die Jahre setzen nacheinander ihre Punkte", "[2015] gegründet, 2020 verkauft", { parts: [{ label: "gegründet", value: 2015 }, { label: "verkauft", value: 2020 }], focus: 0 }),
+  chart("route", "Eine Linie von Ort zu Ort, ein Punkt reist mit, die Entfernung zählt mit", "Von Berlin nach [München]", { value: 585, unit: "km", parts: P2("Berlin", "München") }),
+  chart("speed", "Ein Tacho, die Nadel schnellt auf den Wert und zittert nach", "Mit [200] Sachen über die Autobahn", { value: 200, base: 260, unit: "km/h" }),
+  chart("temperature", "Ein Thermometer steigt, kalt blau, heiß rot", "Draußen sind [40] Grad", { value: 40 }),
+  chart("rank", "Ein Treppchen baut sich auf, der Platz leuchtet", "Wir sind auf Platz [zwei]", { value: 2, label: "Wir" }),
+  chart("ratio", "Eine Reihe Menschen, einige leuchten auf", "[Jeder] Fünfte hört auf", { value: 1, base: 5 }),
+  chart("rating", "Sterne füllen sich, auch zum Teil", "Vier Komma [acht] Sterne", { value: 4.8, base: 5 }),
+  chart("trend", "Ein Pfeil schießt nach oben (oder unten), die Prozentzahl dazu", "Der Umsatz ist um [20] Prozent gestiegen", { value: 20 }),
+  chart("battery", "Eine Batterie lädt oder läuft leer, die letzte Zelle blinkt rot", "Mein Akku ist [leer]", { value: 10 }),
+  chart("pie", "Ein Ring füllt sich auf den Anteil", "Ein [Drittel] aller Kunden", { value: 33 }),
+];
+const TOPICS = [
+  chart("versus", "Zwei Begriffe fliegen von links und rechts herein, dazwischen knallt ein VS", "Angestellt oder [selbstständig]?", { parts: P2("Angestellt", "Selbstständig") }),
+  chart("cause", "Ein Pfeil zieht sich von der Ursache zur Folge, die Folge schlägt auf", "Zu wenig Schlaf macht [krank]", { parts: P2("Wenig Schlaf", "Krank") }),
+  chart("cycle", "Begriffe auf einem Kreis, Pfeile führen von einem zum nächsten, ein Punkt läuft immer weiter", "Stress, schlechter Schlaf, noch mehr [Stress]", { parts: [{ label: "Stress", value: 0 }, { label: "Schlechter Schlaf", value: 0 }, { label: "Müdigkeit", value: 0 }] }),
+  chart("steps", "Stufen bauen sich auf, ein Punkt hüpft bis zur Stufe, um die es geht", "Erst lernen, dann üben, dann [können]", { parts: [{ label: "Lernen", value: 0 }, { label: "Üben", value: 0 }, { label: "Können", value: 0 }], focus: 2 }),
+  chart("balance", "Eine Waage pendelt und neigt sich zur schwereren Seite", "Arbeit und Leben in [Balance]", { parts: [{ label: "Arbeit", value: 3 }, { label: "Leben", value: 2 }] }),
+  chart("overlap", "Zwei Kreise gleiten ineinander, die Schnittmenge leuchtet", "Wo Talent auf Fleiß [trifft]", { parts: P2("Talent", "Fleiß"), label: "Erfolg" }),
+  chart("fork", "Ein Weg teilt sich, der gewählte leuchtet", "Ich stand am [Scheideweg]", { parts: P2("Bleiben", "Gehen"), focus: 1 }),
+  chart("said", "Eine Sprechblase ploppt auf, darunter wer es gesagt hat", "Mein Chef [meinte] nur", { label: "Mach einfach", unit: "Chef" }),
+  chart("thought", "Eine Gedankenblase steigt auf", "Ich dachte mir [insgeheim]", { label: "Das schaffe ich" }),
+  chart("verdict", "Ein großes Häkchen (value 1) oder Kreuz (value 0) wie ein Stempel", "Das ist ein [Mythos]", { value: 0, label: "Mythos" }),
+  chart("warning", "Ein Warndreieck blinkt zweimal auf", "[Vorsicht] bei solchen Angeboten", { label: "Achtung" }),
+  chart("notify", "Eine Handy-Benachrichtigung rutscht herein und vibriert", "Dann kam die [Nachricht]", { unit: "Chef", label: "Können wir kurz reden?" }),
+  chart("target", "Ein Pfeil trifft die Mitte der Zielscheibe", "Wir haben unser [Ziel] getroffen", { label: "Ziel" }),
+  chart("lock", "Ein Schloss schnappt zu (value 1) oder springt auf (value 0)", "Deine Daten sind [sicher]", { value: 1, label: "Sicher" }),
+  chart("search", "Eine Suchleiste, der Suchbegriff wird eingetippt", "Ich habe das [gegoogelt]", { label: "Rasen mähen Sonntag" }),
+  chart("puzzle", "Zwei Puzzleteile schieben sich zusammen und rasten ein", "Endlich passt alles [zusammen]", { parts: P2("Idee", "Team") }),
+  chart("summit", "Ein Berg zeichnet sich, oben geht eine Fahne hoch", "Wir haben es [geschafft]", { label: "Geschafft" }),
+  chart("place", "Ein Pin fällt auf die Karte, eine Welle läuft aus", "Das war in [Berlin]", { label: "Berlin" }),
 ];
 // every word a content word here: split needs two of them
 const layout = (name, what, text, set = {}) => [`layout-${name}`, name, what, text, { layout: name, minor: false, ...set }];
@@ -160,7 +195,8 @@ const PAGES = [
   ] },
   { file: "akzente.html", nav: "Akzente", title: "Anmerkungen, Grafiken, Layouts, Konzepte", sections: [
     { title: "Anmerkungen und Marker", note: "Von Hand gezeichnet auf ein Wort: notes im Staging; der Marker (mark) nur in den Presets podcast und social.", demos: NOTES },
-    { title: "Grafiken", note: "Eine kleine Grafik unter der Phrase, die zeigt, was eine Zahl bedeutet: charts im Staging; Prozente, Faktoren und kleine Mengen erkennt die Engine auch selbst.", demos: CHARTS },
+    { title: "Grafiken: Zahlen", note: "Eine Grafik unter der Phrase, die zeigt, was eine Zahl bedeutet: charts im Staging; Prozente, Faktoren und kleine Mengen erkennt die Engine auch selbst.", demos: CHARTS },
+    { title: "Grafiken: Themen", note: "Bilder für den Aufbau eines Arguments, Momente im Gespräch und Sinnbilder: ebenfalls charts im Staging, value 0 wo keine Zahl gemeint ist.", demos: TOPICS },
     { title: "Layouts", note: "Wie eine Phrase gesetzt wird: layout im Staging.", demos: LAYOUTS },
     { title: "Konzepte", note: "Ein Konzept auf einem Wort bringt seinen Wort-Effekt und ein Motiv in die Welt: concept im Staging.", demos: MOTIFS },
   ] },
