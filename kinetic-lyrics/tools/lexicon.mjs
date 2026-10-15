@@ -17,7 +17,7 @@ export const CONCEPTS = {
   fall: {
     fx: "drop", motif: "rain", mood: "cool",
     stems: ["fall", "fell", "down", "drop", "sink", "sank", "gravity", "tear", "crash", "collaps",
-      "fall", "fäll", "fiel", "sturz", "stürz", "sink", "unten", "tropf", "träne"],
+      "fall", "fäll", "fiel", "sturz", "stürz", "sink", "unten", "tropf", "träne", "zusammenbr"],
     exact: ["down", "ab"],
   },
   rain: {
@@ -42,8 +42,8 @@ export const CONCEPTS = {
   },
   dark: {
     fx: "fog", motif: "fog", mood: "dark",
-    stems: ["dark", "night", "shadow", "black", "alone", "lonely", "cold", "empty", "lost", "silence", "void", "nothing",
-      "dunkel", "nacht", "schatten", "schwarz", "allein", "einsam", "kalt", "leer", "verlor", "stille", "nichts"],
+    stems: ["dark", "night", "shadow", "black", "alone", "lonely", "empty", "lost", "silence", "void", "nothing",
+      "dunkel", "nacht", "schatten", "schwarz", "allein", "einsam", "leer", "verlor", "stille", "nichts"],
   },
   quiet: {
     fx: "whisper", motif: "fog", mood: "dark",
@@ -53,7 +53,7 @@ export const CONCEPTS = {
   loud: {
     fx: "slam", motif: "shock", mood: "electric",
     stems: ["loud", "scream", "shout", "roar", "big", "huge", "giant", "everything", "boom", "bang", "never", "forever",
-      "laut", "schrei", "brüll", "groß", "riesig", "alles", "niemals", "nie", "immer"],
+      "laut", "schrei", "brüll", "groß", "riesig", "alles", "niemals", "nie"],
   },
   electric: {
     fx: "glitch", motif: "lightning", mood: "electric",
@@ -67,8 +67,8 @@ export const CONCEPTS = {
   },
   time: {
     fx: "spin", motif: "rings", mood: "violet",
-    stems: ["time", "clock", "spin", "turn", "around", "circle", "again", "round", "orbit", "cycle", "endless", "moment", "second",
-      "zeit", "uhr", "dreh", "kreis", "wieder", "rund", "endlos", "moment", "sekunde"],
+    stems: ["time", "clock", "spin", "turn", "around", "circle", "round", "orbit", "cycle", "endless", "moment", "second",
+      "zeit", "uhr", "dreh", "kreis", "rund", "endlos", "moment", "sekunde"],
   },
   world: {
     fx: "spin", motif: "planet", mood: "ocean",
@@ -76,8 +76,8 @@ export const CONCEPTS = {
   },
   love: {
     fx: "pulse", motif: "heartbeat", mood: "rose",
-    stems: ["love", "heart", "kiss", "hold", "touch", "embrace", "together", "beat", "breath", "name",
-      "lieb", "herz", "kuss", "küss", "halt", "berühr", "umarm", "zusammen", "atem", "dein", "name"],
+    stems: ["love", "heart", "kiss", "hold", "touch", "embrace", "beat", "breath", "name",
+      "lieb", "herz", "kuss", "küss", "halt", "berühr", "umarm", "atem", "dein", "name"],
   },
   break: {
     fx: "shatter", motif: "shards", mood: "electric",
@@ -109,7 +109,7 @@ export const CONCEPTS = {
   },
   tech: {
     fx: "glitch", motif: "network", mood: "electric",
-    stems: ["data", "software", "code", "coding", "model", "algorithm", "computer", "digital", "internet", "tech", "app", "automat", "robot", "machine", "online", "platform", "chatgpt", "claude",
+    stems: ["data", "software", "model", "algorithm", "computer", "digital", "internet", "tech", "app", "automat", "robot", "machine", "online", "platform", "chatgpt", "claude",
       "daten", "technolog", "digital", "programm", "maschine", "plattform", "automatis"],
     exact: ["ai", "ki", "api"],
   },
@@ -120,7 +120,7 @@ export const CONCEPTS = {
   },
   people: {
     fx: "pulse", motif: "network", mood: "rose",
-    stems: ["people", "team", "community", "everyone", "everybody", "customer", "user", "human", "friend", "family", "audience", "followers",
+    stems: ["people", "community", "everyone", "everybody", "customer", "user", "human", "friend", "family", "audience", "followers",
       "menschen", "leute", "gemeinschaft", "kunde", "nutzer", "freund", "familie", "publikum"],
   },
   problem: {
@@ -159,6 +159,59 @@ export const CONCEPTS = {
     fx: "rise", motif: "clouds", mood: "dawn",
     stems: ["sky", "cloud", "wind", "air", "breathe", "dream", "free", "wing",
       "wolke", "luft", "traum", "träum", "frei", "flügel"],
+  },
+  // ---- concepts for the effects that act a word out (no motif of their own) ----
+  cold: {
+    fx: "freeze", motif: "fog", mood: "cool",
+    stems: ["cold", "ice", "icy", "frozen", "freez", "frost", "snow", "winter",
+      "kalt", "kält", "eisig", "eiskalt", "gefror", "gefrier", "frier", "fror", "frost", "schnee", "winter"],
+    exact: ["eis"],
+  },
+  fear: {
+    fx: "tremble", motif: "fog", mood: "dark",
+    stems: ["fear", "afraid", "scared", "scary", "panic", "anxi", "nervous", "terrif", "horror", "trembl", "shiver",
+      "angst", "ängst", "furcht", "fürcht", "panik", "nervös", "zitter", "bange", "grusel", "schreck"],
+  },
+  message: {
+    fx: "type", motif: "network", mood: "cool",
+    stems: ["message", "email", "mail", "text", "chat", "typing", "typed", "write", "writing", "wrote", "written",
+      "nachricht", "schreib", "schrieb", "geschrieb", "getippt", "eintipp", "whatsapp"],
+    exact: ["sms"],
+  },
+  code: {
+    fx: "scramble", motif: "network", mood: "electric",
+    stems: ["code", "coding", "password", "hack", "decod", "decrypt", "encrypt", "cipher",
+      "passwort", "entschlüssel", "verschlüssel", "knack", "rätsel", "codier", "kodier"],
+  },
+  together: {
+    fx: "assemble", motif: "network", mood: "rose",
+    stems: ["together", "team", "build", "built", "connect", "assembl", "combin", "unite", "collaborat",
+      "zusammen", "gemeinsam", "verbind", "vereint", "bauen", "baut", "gebaut", "aufbau", "mannschaft"],
+  },
+  echo: {
+    fx: "echo", motif: "rings", mood: "violet",
+    stems: ["echo", "repeat", "rumo", "resonat", "wiederhol", "gerücht", "widerhall", "nachhall", "hallt"],
+    exact: ["again", "wieder", "nochmal"],
+  },
+  less: {
+    fx: "shrink", motif: "chart", mood: "cool",
+    stems: ["less", "fewer", "smaller", "shrink", "shrank", "reduc", "declin", "decreas", "lose", "losing", "loss",
+      "weniger", "kleiner", "schrumpf", "reduzier", "kürzen", "gekürzt", "kürzung", "rückgang", "verlust", "verlier", "minus", "einspar"],
+  },
+  open: {
+    fx: "window", motif: "sun", mood: "gold",
+    stems: ["window", "door", "open", "unlock", "fenster", "türen", "öffn", "geöffn", "aufmach", "aufgemacht"],
+    exact: ["tür", "offen"],
+  },
+  depth: {
+    fx: "depth", motif: "fog", mood: "violet",
+    stems: ["depth", "abyss", "distant", "distance", "faraway", "memor", "remember", "childhood",
+      "abgrund", "tiefe", "ferne", "entfern", "erinner", "kindheit", "vergangen", "damals"],
+  },
+  focus: {
+    fx: "blur", motif: "sun", mood: "dawn",
+    stems: ["focus", "clear", "clarity", "sharp", "wake", "woke", "awake",
+      "fokus", "klar", "scharf", "schärf", "wach", "erwach", "aufgewacht", "deutlich"],
   },
 };
 
@@ -205,6 +258,21 @@ export function conceptOf(key) {
     }
   }
   return best;
+}
+
+// Exits that act a phrase out, when one of its words says so: the phrase burns away ("verbrannt",
+// "burnout"), collapses ("eingestürzt", "crash"), or a lawn mower cuts it down ("Rasen mähen").
+export const EXITS = {
+  burn: { stems: ["burnt", "burned", "burnout", "verbrann", "abgebrann", "ausgebrann", "niedergebrann", "abbrenn", "ausbrenn"] },
+  fall: { stems: ["collaps", "crash", "crumbl", "kollaps", "einstürz", "eingestürz", "zusammenbr", "zusammengebr", "abstürz", "abgestürz",
+    "scheiter", "gescheiter", "pleite", "bankrott"] },
+  mow: { stems: ["mower", "mowing", "mowed", "lawn", "rasenm", "mähen", "gemäht", "mäht"], exact: ["rasen"] },
+};
+
+export function exitOf(key) {
+  if (!key) return null;
+  for (const [exit, e] of Object.entries(EXITS)) if (e.exact?.includes(key) || e.stems.some((s) => key.startsWith(s))) return exit;
+  return null;
 }
 
 // Numbers get their own treatment: digits count up. Returns {value, decimals, prefix, suffix}
