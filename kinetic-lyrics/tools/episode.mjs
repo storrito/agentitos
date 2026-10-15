@@ -124,19 +124,26 @@ async function fetchEpisode(url, dir) {
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
   let words, source;
+  // the sound and words of an episode fetched into this folder before are not this one's
+  for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
   if (process.env.OPENROUTER_API_KEY) {
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
+    let audio = null;
     try {
       download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
+      audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {
       // the captions still give every word and its time; the speakers come with each cut clip
       log(`episode: YouTube gave no sound (${String(e.stderr || e.message).trim().split("\n").pop()}), the captions instead …`);
     }
-    const audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     if (audio) {
       log("episode: writing down every word and who speaks it, a few minutes …");
-      words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
-      source = "openrouter";
+      try {
+        words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
+        source = "openrouter";
+      } catch (e) {
+        log(`episode: the transcription failed (${e.message}), the captions instead …`);
+      }
     }
   } else {
     log("episode: no OPENROUTER_API_KEY, the captions on YouTube (no speakers) …");
@@ -186,6 +193,10 @@ function cut(dir, a, b, c) {
   if (to - from > 180) fail(`That is ${Math.round(to - from)} s; a short takes at most a minute or so.`);
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   const base = out.replace(/\.mp4$/, "");
+  // yt-dlp leaves a file that exists alone: a cut onto a name used before is cut again
+  for (const f of fs.readdirSync(path.dirname(path.resolve(out)))) {
+    if (f.startsWith(path.basename(base) + ".")) fs.rmSync(path.join(path.dirname(path.resolve(out)), f), { force: true });
+  }
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
   // up to 4K: the short shows a third of the wide shot's width, cut closer still in a wide shot
   // (tools/frame.mjs); from 1080p that third is 608 pixels wide and comes out soft

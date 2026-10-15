@@ -22,9 +22,11 @@
 //                   folder of a series that shows several shorts side by side
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readVariables } from "./variables.mjs";
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
 const VALUED = ["speakers", "names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "out"];
@@ -190,11 +192,16 @@ function render(dir, file) {
   const out = path.resolve(file);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const chrome = process.env.CHROME || process.env.HYPERFRAMES_BROWSER_PATH;
-  const r = spawnSync(hf, ["render", ".", "--output", out, "--quiet", "--video-bitrate", "6M"], {
+  // the values the person set on the preview (variables.json beside the project) go into the video too
+  const values = readVariables(comp), valuesFile = path.join(os.tmpdir(), `short-variables-${process.pid}.json`);
+  const withValues = Object.keys(values).length > 0;
+  if (withValues) fs.writeFileSync(valuesFile, JSON.stringify(values));
+  const r = spawnSync(hf, ["render", ".", "--output", out, "--quiet", "--video-bitrate", "6M", ...(withValues ? ["--variables-file", valuesFile] : [])], {
     cwd: comp, stdio: "inherit",
     env: { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1", HYPERFRAMES_SKIP_SKILLS: "1", PUPPETEER_SKIP_DOWNLOAD: "1",
       ...(chrome ? { HYPERFRAMES_BROWSER_PATH: chrome, PRODUCER_HEADLESS_SHELL_PATH: chrome } : {}) },
   });
+  if (withValues) fs.rmSync(valuesFile, { force: true });
   if (r.status !== 0 || !fs.existsSync(out)) fail("The render failed, see above.");
   console.log(`${file}: ${(fs.statSync(out).size / 1e6).toFixed(1)} MB.`);
 }
