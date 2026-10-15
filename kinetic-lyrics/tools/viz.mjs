@@ -51,6 +51,137 @@ function valueOf(w) {
   return wordNumber(w.key);
 }
 
+// "first", "fünfte", "Dritten" → 1 … 12; otherwise null
+const EN_ORD = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10 };
+const DE_ORD = { erst: 1, zweit: 2, dritt: 3, viert: 4, "fünft": 5, sechst: 6, siebt: 7, siebent: 7, acht: 8, neunt: 9, zehnt: 10, elft: 11, "zwölft": 12 };
+function ordinalOf(key) {
+  if (EN_ORD[key]) return EN_ORD[key];
+  const m = key?.match(/^(\p{L}+?)(e|er|en|es|em)$/u);
+  return (m && DE_ORD[m[1]]) || null;
+}
+const NOW = /[.!?,;:]/; // punctuation between two words: they don't belong together
+const at = (w, ...keys) => !!w && keys.some((k) => (k instanceof RegExp ? k.test(w.key) : w.key === k));
+
+// a time of day in hours: "17:30", "5pm", "5 p.m.", "17 Uhr (30)", "five o'clock", "at 5 am"
+function timeOfDay(words, i) {
+  const w = words[i], next = words[i + 1], prev = words[i - 1];
+  const pm = (h, ap) => (ap === "p" && h < 12 ? h + 12 : ap === "a" && h === 12 ? 0 : h);
+  let m = w.text.match(/^(\d{1,2}):(\d{2})\s*(?:([ap])\.?m\.?)?[.,!?;:]*$/i);
+  if (m && +m[1] <= 24 && +m[2] < 60) {
+    const ap = m[3]?.toLowerCase() || (!NOW.test(w.punct) && at(next, "am", "pm") ? next.key[0] : null);
+    return pm(+m[1], ap) + +m[2] / 60;
+  }
+  m = w.text.match(/^(\d{1,2})\s*([ap])\.?m\.?[.,!?;:]*$/i);
+  if (m && +m[1] >= 1 && +m[1] <= 12) return pm(+m[1], m[2].toLowerCase());
+  const v = valueOf(w);
+  if (v == null || !Number.isInteger(v) || v < 0 || v > 24 || NOW.test(w.punct) || !next) return null;
+  if (next.key === "uhr") {
+    if (at(prev, "halb")) return v >= 1 ? v - 0.5 : null; // "halb acht Uhr" is 7:30
+    const mm = !NOW.test(next.punct) && words[i + 2] ? valueOf(words[i + 2]) : null;
+    return v + (Number.isInteger(mm) && mm > 0 && mm < 60 ? mm / 60 : 0);
+  }
+  if (v < 1 || v > 12) return null;
+  if (at(next, "o'clock", "oclock")) return v;
+  if (next.key === "pm" || next.text.toLowerCase().startsWith("p.m")) return pm(v, "p");
+  // "am" is also German ("um 5 am Bahnhof"): only after "at 5", "by 6" …
+  if ((next.key === "am" || next.text.toLowerCase().startsWith("a.m")) && at(prev, "at", "by", "until", "till", "before", "after", "around", "from")) return pm(v, "a");
+  return null;
+}
+
+// a year with a word that says so: "in 2008", "seit 2019", "im Jahr 1989" – not "in 2000 Fällen"
+const YEAR_CUE = new Set(["in", "im", "seit", "since", "bis", "until", "till", "jahr", "jahre", "year", "anno", "ab", "circa", "ca", "um"]);
+const COUNTED = /^(leute|menschen|people|persons?|euro|dollars?|cases|fälle|fällen|mal|times|meter|metres?|meters?|km|kilometern?|miles|meilen|stück|units|users|nutzer\p{L}*|kunden|customers|mitarbeiter\p{L}*|employees)$/u;
+function yearOf(words, i) {
+  const w = words[i], next = words[i + 1];
+  const m = w.text.match(/^(1[89]\d\d|20\d\d)[.,!?;:]*$/);
+  if (!m || !at(words[i - 1], ...YEAR_CUE)) return null;
+  // "in 2000 Fällen", "in 2008 Apple …": a noun right after it makes it a count, or leaves it unclear
+  if (next && !NOW.test(w.punct) && (COUNTED.test(next.key) || /^\p{Lu}/u.test(next.text))) return null;
+  return +m[1];
+}
+
+// a temperature: "40 Grad", "minus 5 degrees Celsius", "-3°C", "100 Fahrenheit"
+const WEATHER = /^(hot|hotter|heat|cold|colder|warm|warmer|warming|freezing|frost|temperature\p{L}*|weather|outside|summer|winter|fever|sauna|celsius|fahrenheit|heiß\p{L}*|hitze|kalt|kälter|kälte|warm\p{L}*|temperatur\p{L}*|wetter|draußen|sommer|fieber)$/u;
+function temperatureOf(words, i) {
+  const w = words[i], next = words[i + 1], prev = words[i - 1];
+  let v, k = i + 1, unit;
+  const m = w.text.match(/^([-−–]?\d+(?:[.,]\d+)?)\s*°\s*([CF])?[.,!?;:]*$/i);
+  if (m) { v = Number(m[1].replace(/[−–]/, "-").replace(",", ".")); unit = m[2]?.toUpperCase() || "deg"; }
+  else {
+    v = valueOf(w);
+    if (v == null || NOW.test(w.punct) || !next) return null;
+    // "°C" / "°F" as a word of its own; a bare "C" is a letter
+    if (/^°\s*[CF]\b/i.test(next.text)) unit = next.key.toUpperCase();
+    else if (next.key === "grad") unit = "grad";
+    else if (at(next, "degrees", "degree")) unit = "deg";
+    else return null;
+    k = i + 2;
+  }
+  if (at(prev, "minus") && v > 0) v = -v;
+  const scale = words[k] && !NOW.test(words[k - 1].punct) ? words[k].key : "";
+  if (unit === "C" || scale === "celsius") unit = "C";
+  else if (unit === "F" || scale === "fahrenheit") unit = "F";
+  // "a 180 degree turn", "90 Grad nach links": angles, unless a scale is said
+  else if ([45, 90, 180, 270, 360].includes(Math.abs(v))) return null;
+  // "two degrees" can be a diploma: in English a word about weather must be near
+  else if (unit === "deg" && !words.slice(Math.max(0, i - 6), i + 7).some((x) => WEATHER.test(x.key))) return null;
+  else unit = unit === "deg" && v > 50 ? "F" : "C";
+  if (unit === "C" ? v < -60 || v > 120 : v < -40 || v > 140) return null;
+  return { kind: "temperature", value: v, unit };
+}
+
+// a speed: "200 km/h", "200 Stundenkilometer", "70 mph", "100 Kilometer pro Stunde", "60 miles an hour"
+function speedOf(words, i) {
+  const w = words[i], next = words[i + 1];
+  const m = w.text.match(/^(\d+(?:[.,]\d+)?)\s*(km\/h|kmh|mph)[.,!?;:]*$/i);
+  if (m) return { kind: "speed", value: Number(m[1].replace(",", ".")), unit: /mph/i.test(m[2]) ? "mph" : "km/h", base: null };
+  const v = valueOf(w);
+  if (v == null || !(v > 0) || NOW.test(w.punct) || !next) return null;
+  if (at(next, "kmh", /^stundenkilometer/)) return { kind: "speed", value: v, unit: "km/h", base: null };
+  if (at(next, "mph")) return { kind: "speed", value: v, unit: "mph", base: null };
+  const per = words[i + 2], hour = words[i + 3];
+  if (at(next, /^(kilometer|kilometers|kilometres|km|miles|meilen)$/) && !NOW.test(next.punct) && at(per, "pro", "per", "an", "the") && at(hour, "stunde", "hour", "h")) {
+    return { kind: "speed", value: v, unit: /^(miles|meilen)$/.test(next.key) ? "mph" : "km/h", base: null };
+  }
+  return null;
+}
+
+// a place in a ranking: "Platz zwei", "auf dem dritten Platz", "first place" (not "in the first place")
+function rankOf(words, i) {
+  const w = words[i], next = words[i + 1], prev = words[i - 1];
+  if (at(prev, "platz", "rang") && !NOW.test(prev.punct)) {
+    const v = valueOf(w);
+    if (Number.isInteger(v) && v >= 1 && v <= 10) return v;
+  }
+  const o = ordinalOf(w.key);
+  if (!o || o > 10 || NOW.test(w.punct) || !at(next, "place", "platz", "rang", "platzierung")) return null;
+  if (at(prev, "the") && at(words[i - 2], "in")) return null;
+  return o;
+}
+
+// "jeder Fünfte", "one in five", "zwei von drei", "4 von 5 Sternen" (stars: a rating)
+const ONE = new Set(["one", "eins", "einer", "eine", "ein"]);
+const PERIOD = /^(weeks?|days?|years?|months?|hours?|minutes?|wochen|tagen?|jahren?|monaten?|stunden|minuten)$/;
+function shareOf(words, i) {
+  const w = words[i], next = words[i + 1];
+  if (at(w, "jeder", "jede", "jedes", "jeden") && !NOW.test(w.punct) && next && /^\p{Lu}/u.test(next.text)) {
+    const n = ordinalOf(next.key);
+    if (n >= 2 && n <= 12) return { kind: "ratio", value: 1, base: n };
+  }
+  const a = ONE.has(w.key) ? 1 : valueOf(w);
+  if (!Number.isInteger(a) || a < 1 || NOW.test(w.punct)) return null;
+  let k = i + 1;
+  if (at(words[k], "out") && at(words[k + 1], "of")) k += 2;
+  else if (at(words[k], "in", "von")) k += 1;
+  else return null;
+  const base = words[k], b = base && valueOf(base);
+  if (!Number.isInteger(b) || b <= a || b < 2 || b > 12 || NOW.test(words[k - 1].punct)) return null;
+  const after = NOW.test(base.punct) ? null : words[k + 1];
+  if (at(after, /^(stars?|sterne|sternen)$/)) return { kind: "rating", value: a, base: b };
+  if (at(after, PERIOD)) return null; // "in two weeks"
+  return { kind: "ratio", value: a, base: b };
+}
+
 // Returns Map(wordIndex → viz). One graphic per phrase is enforced by the caller.
 export function detectViz(words) {
   const out = new Map();
@@ -61,6 +192,15 @@ export function detectViz(words) {
     // multipliers spelled as a verb/adverb
     if (MULT[w.key]) { out.set(i, { kind: "compare", value: MULT[w.key] }); continue; }
     if (HALF.has(w.key) && next && /^(of|der|des|von|aller)$/.test(next.key)) { out.set(i, { kind: "gauge", value: 50 }); continue; }
+    // what a number says by the words around it: a time, a year, a temperature, a speed, a place, a share
+    const hour = timeOfDay(words, i);
+    if (hour != null) { out.set(i, { kind: "clock", value: +hour.toFixed(3) }); continue; }
+    const year = yearOf(words, i);
+    if (year) { out.set(i, { kind: "calendar", value: year }); continue; }
+    const seen = temperatureOf(words, i) || speedOf(words, i) || shareOf(words, i);
+    if (seen) { out.set(i, seen); continue; }
+    const place = rankOf(words, i);
+    if (place) { out.set(i, { kind: "rank", value: place }); continue; }
     const v = valueOf(w);
     if (v == null || !(v > 0)) continue;
     if (w.num?.suffix === "%" || (next && PERCENT.has(next.key))) {

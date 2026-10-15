@@ -191,7 +191,8 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
     },
     calendar(v, vw, vh, fs) {
       const ph = vh * 0.9, pw = ph * 0.86, x = (vw - pw) / 2, y = vh * 0.05, hb = ph * 0.26, rx = pw * 0.08;
-      const n = Math.round(v.value), big = fit(String(n), pw * 0.8, ph * 0.5, 0.5), ny = y + hb + (ph - hb) / 2 + big * 0.36;
+      // a year flips through the last few before it, not up from 1
+      const n = Math.round(v.value), from = n > 100 ? n - 24 : 0, big = fit(String(n), pw * 0.8, ph * 0.5, 0.5), ny = y + hb + (ph - hb) / 2 + big * 0.36;
       // the body of the page below the header: the final number on the page, the counting one on
       // a sheet over it that tears off at its top edge when the number has arrived
       const body = `M${f1(x)} ${f1(y + hb)} H${f1(x + pw)} V${f1(y + ph - rx)} Q${f1(x + pw)} ${f1(y + ph)} ${f1(x + pw - rx)} ${f1(y + ph)} H${f1(x + rx)} Q${f1(x)} ${f1(y + ph)} ${f1(x)} ${f1(y + ph - rx)} Z`;
@@ -205,11 +206,11 @@ export function makeGraphics({ f1, esc, clamp, withUnit, fmtNum, DE }) {
           + (v.label ? T(x + pw / 2, y + hb * 0.7, fit(v.label, pw * 0.85, hb * 0.6, 0.5), v.label, "ky-gt", "middle", 'style="fill:var(--markink, #111)"') : "")
           + T(x + pw / 2, ny, big, String(n), "ky-gt ky-gt-hi") + `</g>`
           + `<g class="ky-g-leaf"><path class="ky-gk" style="fill-opacity:.94" d="${body}"/><path class="ky-gi" style="stroke:var(--markink, #111);stroke-opacity:.35" stroke-width="2" d="${rip}"/>`
-          + T(x + pw / 2, ny, big, "1", "ky-gt ky-g-num", "middle", 'style="fill:var(--markink, #111)"') + `</g>`,
+          + T(x + pw / 2, ny, big, String(Math.max(1, from)), "ky-gt ky-g-num", "middle", 'style="fill:var(--markink, #111)"') + `</g>`,
         anim(tl, q, qa, Tw, end) {
           const D = clamp(end - Tw, 0.6, 1.4), count = D * 0.6, tear = Tw + 0.15 + count + 0.1;
           pop(tl, qa(".ky-page, .ky-g-leaf"), Tw - 0.1, 0.35, "back.out(1.8)");
-          countText(tl, q(".ky-g-num"), Math.max(1, n - 1), Tw + 0.15, count, (x) => String(Math.max(1, Math.round(x))));
+          countText(tl, q(".ky-g-num"), Math.max(1, n - 1 - from), Tw + 0.15, count, (x) => String(Math.max(1, from + Math.round(x))));
           // it tears from the right, hangs on its left corner for a moment, then falls away
           const leaf = q(".ky-g-leaf"), o = `${f1(x)} ${f1(y + hb)}`;
           tl.to(leaf, { rotation: 14, svgOrigin: o, duration: 0.18, ease: "power2.out" }, tear);

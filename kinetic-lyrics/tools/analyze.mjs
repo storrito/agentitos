@@ -15,19 +15,19 @@ import { TEXT_GRAPHICS } from "../engine/graphics.js";
 export const PRESETS = {
   lyric: {
     maxWords: [6, 5, 4], maxChars: [36, 28, 22], world: 1, tilt: 1, drift: 1, marker: false, tail: 1.8, audiogram: false,
-    budget: { fx: 1.6, note: 4, mark: 0 }, minRead: 0.8,
+    budget: { fx: 1.6, note: 4, mark: 0, viz: 4 }, minRead: 0.8,
     enter: ["mask", "mask", "depth", "blur"], exits: ["lift", "zoom", "blur", "lift", "scatter"],
     layouts: { wide: ["block", "cascade", "hero", "split", "block"], tall: ["block", "hero", "cascade", "block"], long: ["block", "inline", "cascade"] },
   },
   podcast: {
     maxWords: [7, 6, 5], maxChars: [42, 32, 26], world: 0.45, tilt: 0.25, drift: 0.4, marker: true, tail: 1.4, audiogram: true,
-    budget: { fx: 6, note: 9, mark: 3.2 }, minRead: 1.25,
+    budget: { fx: 6, note: 9, mark: 3.2, viz: 9 }, minRead: 1.25,
     enter: ["mask", "blur", "mask"], exits: ["lift", "blur", "lift"],
     layouts: { wide: ["inline", "block", "inline", "hero"], tall: ["block", "inline", "block", "hero"], long: ["inline", "block"] },
   },
   social: {
     maxWords: [5, 4, 3], maxChars: [30, 24, 18], world: 0.7, tilt: 0.45, drift: 0.6, marker: true, tail: 1.6, audiogram: false,
-    budget: { fx: 2.4, note: 4.5, mark: 1.6 }, minRead: 0.95,
+    budget: { fx: 2.4, note: 4.5, mark: 1.6, viz: 4.5 }, minRead: 0.95,
     enter: ["mask", "mask", "blur"], exits: ["lift", "zoom", "lift"],
     layouts: { wide: ["block", "hero", "inline"], tall: ["block", "hero", "block", "inline"], long: ["block", "inline"] },
   },
@@ -225,6 +225,8 @@ export function analyze(rawWords, opts = {}) {
     (w) => { w.concept = null; w.fx = w.num ? "count" : null; });
   thin((w) => w.note && rawWords[w.i].note === undefined, B.note, (w) => { w.note = null; });
   if (B.mark) thin((w) => w.mark, B.mark, (w) => { w.mark = false; });
+  // graphics the words gave away on their own; the director's charts and hand-set ones stay
+  if (B.viz) thin((w) => w.viz && rawWords[w.i].viz === undefined && !annChart.has(w.i), B.viz, (w) => { w.viz = null; });
 
   // 2. phrase segmentation (heuristic, unless Claude staged the phrases)
   const phrases = [];

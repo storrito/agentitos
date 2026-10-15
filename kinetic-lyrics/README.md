@@ -154,6 +154,15 @@ Numbers show what they mean (`tools/viz.mjs`, deterministic, English and German)
 | `40%`, `forty percent`, `half of` | bar of 20 segments that fills in sync with the count-up |
 | `doubled`, `3x`, `three times more`, `verdoppelt`, `halbiert` | before/after bars, the second grows to N times |
 | `zwei Stunden`, `20 minutes` | a clock whose dial fills for the duration (up to 12 hours or 60 minutes) |
+| `um 5 Uhr`, `halb acht Uhr`, `17:30`, `3pm`, `five o'clock`, `at 6 am` | a clock whose hands turn to the time |
+| `seit 2019`, `im Jahr 1989`, `in 2008,` (not `in 2000 Fällen`) | a calendar page that flips to the year |
+| `40 Grad`, `minus 5 Grad Celsius`, `-3°C`, `100 degrees` (English only with a word about weather nearby; not `180 Grad`) | a thermometer |
+| `200 km/h`, `250 Stundenkilometer`, `70 mph`, `100 Kilometer pro Stunde` | a speedometer |
+| `Platz zwei`, `den dritten Platz`, `first place` (not `in the first place`) | a podium |
+| `jeder Fünfte`, `one in five`, `zwei von drei` (not `in two weeks`) | people that light up |
+| `4 von 5 Sternen`, `4 out of 5 stars` | stars |
+
+Graphics found this way follow the effect budget like word effects: per preset they keep a minimum distance (lyric 4 s, podcast 9 s, social 4.5 s), and the one on the stronger word wins. Charts the direction sets and `viz` in the transcript are never removed.
 
 Where the speaker **relates numbers to each other**, Claude picks a graphic itself with `--llm` (`charts` in the staging), using only numbers that were spoken or follow exactly from them:
 
@@ -251,7 +260,7 @@ Long files are transcribed with Parakeet in 10-minute chunks (the CLI otherwise 
 
 **Every word big** (every preset): the spoken words appear big, phrase by phrase. In portrait, phrases of five words or more are stacked instead of set in one or two small lines. No empty frame appears between two phrases if the pause is shorter than 0.8 s. If there isn't enough time for a long last word ("Neukundenverträgen"), it appears without an effect and stays until the next phrase comes; that phrase waits up to 0.3 s for it. Phrases that are too short merge into a slightly longer lockup if necessary.
 
-**Effect budget:** So that long excerpts don't light up every second, accents keep a minimum distance per preset: image effects (word effect + world motif) 6 s for podcast, 2.4 s for social, 1.6 s for lyric; annotations 9 / 4.5 / 4 s; markers 3.2 / 1.6 s. The strongest words win (emphasis, hero, numbers), the rest are set calmly. Hand-set `fx`/`concept`/`note` always stay. The camera only pushes forward on hero words (at most every 2.4 s, weaker for podcast); single words only make the world breathe slightly.
+**Effect budget:** So that long excerpts don't light up every second, accents keep a minimum distance per preset: image effects (word effect + world motif) 6 s for podcast, 2.4 s for social, 1.6 s for lyric; annotations 9 / 4.5 / 4 s; markers 3.2 / 1.6 s; graphics found in the words 9 / 4.5 / 4 s. The strongest words win (emphasis, hero, numbers), the rest are set calmly. Hand-set `fx`/`concept`/`note` always stay. The camera only pushes forward on hero words (at most every 2.4 s, weaker for podcast); single words only make the world breathe slightly.
 
 Fillers and stutters ("is is", "the the") are removed before analysis; `--keep-fillers` keeps them. The fillers depend on the detected language: English "uh", "um", "er"; German "äh", "ähm", "öhm" – because German "um" and "er" are real words.
 
