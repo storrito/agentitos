@@ -119,9 +119,14 @@ export function build(root, plan, gsap) {
     const hero = ph.hero != null ? words[ph.hero] : null;
     let lines = []; // {tokens, size, align, dx}
     const blockW = portrait || ph.layout === "quote" ? safeW : Math.min(safeW, safeH * (ph.layout === "block" ? 1.05 : 1.5));
-    // a data graphic sits under the text and takes its share of the height
+    // a data graphic sits under the text and takes its share of the height; over footage the type
+    // has only the dark band below the speaker, and a share of it would leave a clock no bigger
+    // than a line of text: at least a share of the frame, as long as the text keeps most of the band
     const vk = ph.viz != null ? words[ph.viz].viz.kind : null;
-    const vizH = !vk ? 0 : vk === "growth" || TALL.has(vk) ? safeH * (portrait ? 0.26 : 0.34) : safeH * (portrait ? 0.17 : 0.19);
+    const tall = vk === "growth" || TALL.has(vk);
+    const vizH = !vk ? 0 : tall
+      ? Math.min(Math.max(safeH * (portrait ? 0.26 : 0.34), H * 0.11), safeH * 0.42)
+      : Math.min(Math.max(safeH * (portrait ? 0.17 : 0.19), H * 0.07), safeH * 0.3);
     const availH = safeH - (vizH ? vizH + H * 0.03 : 0);
 
     if (ph.layout === "list" && ph.items) {

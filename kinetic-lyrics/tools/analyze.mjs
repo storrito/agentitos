@@ -380,9 +380,10 @@ export function analyze(rawWords, opts = {}) {
     if (layout === lastLayout && layout !== "hero") layout = layout === "block" ? "cascade" : "block";
     if (ap) layout = hero || ap.layout !== "hero" ? ap.layout : "block";
     if (layout === "split" && content.length < 2) layout = "block";
-    // enumerations become a checklist (Claude may ask for it, or it is detected)
+    // enumerations become a checklist: when the staging asks for it, or, without a staging, when
+    // one is detected (a staging that chose another layout knows better: "sag ich, okay, stopp")
     const items = listItems(pw);
-    if (items && (!ap || ap.layout === "list" || pw.every((w) => listRun.has(w.i)))) layout = "list";
+    if (items && (ap ? ap.layout === "list" : pw.every((w) => listRun.has(w.i)))) layout = "list";
     else if (layout === "list") layout = "block";
     // tall frames: a sentence-long phrase in one or two lines ends up small – stacked, it fills the frame
     if (portrait && layout === "inline" && pw.length >= 5) layout = "block";
@@ -390,7 +391,7 @@ export function analyze(rawWords, opts = {}) {
     else if (layout === "quote") layout = "block";
     lastLayout = layout;
     // one data graphic per phrase: the first number that has one
-    const VIZ_RANK = { growth: 0, split: 0, gauge: 0, compare: 0, units: 1 };
+    const VIZ_RANK = { growth: 0, split: 0, gauge: 0, compare: 0, clock: 1, units: 1 };
     const vizWord = pw.filter((w) => w.viz).sort((a, b) => (VIZ_RANK[a.viz.kind] ?? 0) - (VIZ_RANK[b.viz.kind] ?? 0))[0];
     // a graphic that shows words of its own (versus, cause, steps …) is the accent of its phrase:
     // the line above it is set calm – no hero, no word effect, no note, no marker, no concept –

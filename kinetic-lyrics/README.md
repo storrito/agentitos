@@ -27,17 +27,27 @@ node tools/short.mjs brief shorts/ep12 --speakers 2             # who speaks whe
 # the agent reads brief.md and writes source/staging.json
 node tools/short.mjs build shorts/ep12 --names "A=Anna,B=Ben"    # HyperFrames project in composition/
 node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.png, stills/15.png
+node tools/short.mjs render shorts/ep12 ep12.mp4                # the video
 ```
 
 It always uses the `podcast` preset, 9:16 by default, every word big; options: `--speakers`, `--names`, `--colors "A=#ff5a36,B=#4fc3f7"` (each speaker's colour: accent words and name chip), `--title`, `--subtitle`, `--hook`, `--world`, `--aspect`, `--cta`, `--handle`. `<dir>` may already exist (e.g. made by a harness); `new` replaces `<dir>/composition/`.
 
-### Actions for a page (`actions.json`)
+### A YouTube episode, several shorts (`tools/episode.mjs`)
 
-`actions.json` declares what a page beside the short may run without the agent, for a harness that supports skill actions (pchat runs them: the command in the workspace, `{"artifact": "<name>", "input": {...}}` on stdin, the last JSON line as the result). `apply` is `tools/apply.mjs`: it checks every setting (`world`, `aspect`, `title`, `subtitle`, `names`, `colors`, `cta`, `handle`), builds `artifacts/<name>` with them, checks it, removes the outdated `artifacts/<name>.mp4` and answers `{"ok": true, "note": "Built, 0 errors, 12 warnings"}`. Every build writes `composition/settings.json` (the settings, the world, the voices), from which the interview page reads what the short has.
+```bash
+node tools/episode.mjs fetch https://www.youtube.com/watch?v=… work/episode   # the words of the whole episode
+# read work/episode/sentences.txt: `991 [1:06:44–1:06:49] A: …`, pick the moments
+node tools/episode.mjs cut work/episode 991-1004 work/01.mp4                 # sentences 991..1004 as a video
+node tools/short.mjs new work/01 work/01.mp4 && node tools/short.mjs brief work/01
+node tools/short.mjs build work/01 --out artifacts/shorts/composition/01-kuchen  # into a series
+node tools/short.mjs render work/01 work/out/01.mp4
+```
 
-### Live settings in the player
+`fetch` reads the video's facts with yt-dlp (from the PATH, else downloaded once into `~/.cache/kinetic-lyrics/`), takes its sound and writes down every word with its time and speaker through OpenRouter (Gemini 3.5 Transcribe, in 5-minute pieces, eight at a time: an hour in well under a minute); without `OPENROUTER_API_KEY` it takes YouTube's automatic captions in the spoken language, word-timed, without speakers. `sentences.txt` numbers the sentences (they end at . ! ? and where the voice changes). `cut` downloads only the stretch, the sentences `first-last` with a breath of air around them (or `from to` in seconds), as an MP4 of up to 4K. `short.mjs build` cuts footage wider than the short to its frame and follows who speaks (`tools/frame.mjs`): Gemini 3.8 Flash through OpenRouter watches the clip once (about a cent) and names the camera shots and, in each, every face with the voice it speaks with; the window sits on the face of the voice heard most, a lead under 1.5 s (a "ja", an echo) moves nothing, a reaction shot shows who it shows, cuts snap to the footage's own (ffmpeg scene changes). In a wide shot from 1440p and more the window is cut closer. `short.mjs build --out` puts a short's HyperFrames project wherever it belongs, e.g. into a series of several shorts shown side by side (pchat's HyperFrames project does that for `composition/<name>/`), and `short.mjs render` makes the video with HyperFrames at 6 Mbit/s.
 
-A built composition takes settings without a build, for a page around the player (the interview page, `interview/setup.html`): a `kinetic-settings` event on the composition's window, `{world, title, subtitle, names: {A: "Anna"}, colors: {A: "#ff5a36"}, cta, handle}`, each optional, also kept as `window.__kineticSettings` for layers that load later. The world, the words' colours, the show's name, the speaker chips and an existing end card draw themselves again at once; `{}` goes back to what is built. The length stays: an end card can change or go, not come, and the format needs a build. Only a build makes them stay for the render, which reads the files.
+### Settings as HyperFrames variables
+
+Every build declares the settings a person may change on the finished short as composition variables on `index.html` (`data-composition-variables`, see `tools/variables.mjs`): `world` (over footage only the worlds of the built kind), `title`, `subtitle`, `name_A`, `color_A`, … per voice, and `cta`, `handle` when the short has an end card. Their values come as `window.__hfVariables`, from `hyperframes render --variables-file variables.json` or from a harness that shows the composition with controls (pchat's HyperFrames project keeps them in the project's `variables.json`); every layer applies them to the built plan when it loads, and `qa.mjs` reads the same file, so the preview, the check and the video agree. A build keeps `variables.json`, and its values win over the build's. The format, an end card that was not built and, over footage, the step between a dark and a light world need a build.
 
 Played in a player (an iframe, not the renderer's capture), the world is drawn at 40 % of its size, so the words stay smooth; the render keeps every pixel.
 
@@ -136,7 +146,7 @@ Numbers show what they mean (`tools/viz.mjs`, deterministic, English and German)
 | --- | --- |
 | `40%`, `forty percent`, `half of` | bar of 20 segments that fills in sync with the count-up |
 | `doubled`, `3x`, `three times more`, `verdoppelt`, `halbiert` | before/after bars, the second grows to N times |
-| `team of six`, `thirty days`, `ten seconds` | N pictograms (people, calendar days, tally marks) that appear one after another |
+| `zwei Stunden`, `20 minutes` | a clock whose dial fills for the duration (up to 12 hours or 60 minutes) |
 
 Where the speaker **relates numbers to each other**, Claude picks a graphic itself with `--llm` (`charts` in the staging), using only numbers that were spoken or follow exactly from them:
 
@@ -146,7 +156,7 @@ Where the speaker **relates numbers to each other**, Claude picks a graphic itse
 | `split`: one bar split into 2–3 parts of a whole, the part being discussed in the accent colour | €60,000 paid in · €198,000 return |
 | `compare` / `gauge` with a computed value | "exceeds it many times over" → 3.3× |
 
-There is at most one graphic per phrase; percentages and factors win over pictograms. The graphic is always complete before the phrase fades out.
+There is at most one graphic per phrase; percentages and factors win over a clock. The graphic is always complete before the phrase fades out.
 
 **More graphics** (`engine/graphics.js`), set by the direction in `charts` like the ones above, with the same fields (`value`, `base`, `parts`, `focus`, `label`, `unit`; `value` 0 where no number is meant). The staging is checked: a graphic that lacks its parts or its label is dropped.
 

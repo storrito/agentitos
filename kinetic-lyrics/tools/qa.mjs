@@ -13,6 +13,7 @@
 //   ⚠ contrast     text vs. the world right behind it (WCAG ratio from two screenshots:
 //                  with and without the text layer) is below 3:1 – ✗ below 1.8:1
 //   ⚠ transcript   the audio has speech where the transcript has no words (missed passage)
+//   ⚠ crosstalk    short phrases of two voices taking turns: they talk at once (staging `drop`)
 // Writes <project>/qa/report.json and a frame for every finding; exits 1 if there are ✗.
 
 import { voicedGaps } from "./gaps.mjs";
@@ -26,6 +27,7 @@ import puppeteer from "puppeteer-core";
 import { PNG } from "pngjs";
 import { CSS as TYPE_CSS } from "../engine/type.js";
 import { CSS as OVERLAY_CSS } from "../engine/overlay.js";
+import { applyVariables, readVariables } from "./variables.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -34,7 +36,8 @@ if (!dir) { console.error("usage: node tools/qa.mjs <project dir> [--no-contrast
 const NO_CONTRAST = argv.includes("--no-contrast");
 const MAX_SHOTS = Number(argv[argv.indexOf("--max-shots") + 1]) || 20;
 
-const plan = JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8"));
+// the plan as the video shows it: with the values the person set (variables.json of the project)
+const plan = applyVariables(JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8")), readVariables(dir));
 const W = plan.width, H = plan.height;
 const mmss = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 const findings = [];
@@ -129,6 +132,19 @@ for (const w of qa.words) {
   const p = sched.get(w.phrase);
   const readable = p.xs - w.ready;
   if (word.role === "content" && w.fx !== "shatter" && readable < 0.3) add("warn", w.ready, "read time", `"${word.display}" fully readable for only ${Math.max(0, readable).toFixed(2)} s`);
+}
+// two voices at once: their words alternate, and every change of voice starts a phrase, a run of
+// flashes; the staging's `drop` leaves the interjecting voice out of the picture
+for (let k = 0; k < plan.phrases.length;) {
+  let j = k;
+  while (plan.phrases[j + 1]?.speaker != null && plan.phrases[j + 1].speaker !== plan.phrases[j].speaker
+    && plan.phrases[j + 1].start - plan.phrases[j].end < 0.3) j++;
+  const run = plan.phrases.slice(k, j + 1);
+  if (run.length >= 4 && run.filter((p) => p.end - p.start < 0.6).length >= 2) {
+    add("warn", run[0].start, "crosstalk", `${run.length} short phrases of ${[...new Set(run.map((p) => p.speaker))].join(" and ")} taking turns until ${mmss(run[run.length - 1].end)}: `
+      + `two voices at once? "drop" in the staging leaves the interjecting one out of the picture`);
+  }
+  k = j + 1;
 }
 
 // ---------------------------------------------------------------- geometry + contrast (in the scene)

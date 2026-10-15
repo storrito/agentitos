@@ -123,8 +123,8 @@ NOTES (hand-drawn marks drawn onto a single word, like a pen on a printout):
   Use them sparingly: roughly one per two or three sentences, never two in one phrase, and not on a number.
 
 DATA GRAPHICS – a small chart under a phrase that shows what a number *means*. Simple ones are added
-automatically: percentages get a filling bar, multipliers ("doubled", "3x") before/after bars, small counts of
-things ("team of six", "thirty days") pictograms. Keep a number together with its unit or noun in one phrase
+automatically: percentages get a filling bar, multipliers ("doubled", "3x") before/after bars, durations
+("zwei Stunden", "20 minutes") a clock. Keep a number together with its unit or noun in one phrase
 ("40% of our week", "100 Euro monatlich"), and give such phrases a calm layout (hero, inline or block).
 charts: add a chart yourself where the speaker *relates* numbers to each other, so the viewer sees the comparison
 (on the number word it belongs to; at most one per phrase and roughly one per 8 seconds; [] if nothing fits):
@@ -262,9 +262,11 @@ const userTurn = (a, b) => `Stage words ${a} to ${b} (inclusive). Phrases must s
 
 // Backend 3: the agent that runs the build is the director (e.g. a coding or chat agent).
 // `brief` is what it reads, `readStaging` checks what it wrote. The file may also carry
-// `fixes`: words the speech recogniser misheard, respelled (timings stay).
-const Fix = z.object({ i: z.number().int(), text: z.string().min(1) });
-const FileStaging = Annotation.extend({ fixes: z.array(Fix).optional() });
+// `fixes`: words the speech recogniser misheard, respelled, or given to the wrong voice (timings stay).
+const Fix = z.object({ i: z.number().int(), text: z.string().min(1).optional(), speaker: z.string().min(1).optional() });
+// `drop`: words left out of the picture, still heard: a second voice's interjections and echoes
+// while the first one speaks, which would otherwise chop the passage into flashes of a word or two.
+const FileStaging = Annotation.extend({ fixes: z.array(Fix).optional(), drop: z.array(z.number().int()).optional() });
 
 export function brief(words, opts, file = "staging.json") {
   return `${systemPrompt(numberWords(words), opts)}
@@ -272,7 +274,13 @@ export function brief(words, opts, file = "staging.json") {
 Write your staging of all ${words.length} words (0 to ${words.length - 1}) as one JSON object into ${file}. Fields not
 used stay empty: notes [], quotes [], charts [] are fine. Optionally add "fixes": [{"i": 12, "text": "Netzentgelte"}] for
 words the speech recogniser clearly misheard (wrong spelling, two words merged) – the spelling changes (keep the punctuation attached to the word), the timing stays.
+A word given to the wrong voice (it plainly belongs to the other speaker's sentence) is fixed the same way: {"i": 40, "speaker": "B"}.
 Only fix what the context makes certain; never rephrase.
+Where two voices talk at once (one interjects "ja", "genau", "warum?" or echoes the other's words while the other
+goes on), the words alternate in time and every change of voice starts a new phrase: a passage of flashes nobody can read.
+Leave the interjecting voice out of the picture with "drop": [24, 25, 31] (the indices of its words; they are still heard),
+so the voice that carries the passage reads in whole phrases. Phrases still tile all words; a dropped word in a phrase
+is simply not shown. Never drop words that carry the point.
 
 The JSON schema:
 ${JSON.stringify(jsonSchema(FileStaging))}
@@ -284,8 +292,36 @@ ${JSON.stringify(jsonSchema(FileStaging))}
 export function readStaging(raw, n) {
   const r = FileStaging.safeParse(raw);
   if (!r.success) throw new Error(r.error.issues.slice(0, 8).map((x) => `${x.path.join(".") || "(root)"}: ${x.message}`).join("; "));
-  const fixes = (r.data.fixes || []).filter((f) => f.i >= 0 && f.i < n && !/\s/.test(f.text.trim()));
-  return { ...validate({ ...r.data, model: r.data.model ?? "agent", preset: r.data.preset }, n), fixes };
+  const fixes = (r.data.fixes || []).filter((f) => f.i >= 0 && f.i < n && (f.text == null || !/\s/.test(f.text.trim())));
+  const drop = [...new Set((r.data.drop || []).filter((i) => i >= 0 && i < n))];
+  return { ...validate({ ...r.data, model: r.data.model ?? "agent", preset: r.data.preset }, n), fixes, drop };
+}
+
+// The words without the staging's `drop`, and the staging renumbered to match: a phrase keeps
+// the words it has left (and goes when none are), a word effect, note or chart on a dropped
+// word goes with it.
+export function dropWords(words, ann) {
+  const gone = new Set(ann.drop || []);
+  if (!gone.size) return { words, annotations: ann };
+  const to = new Map();
+  words.forEach((_, i) => { if (!gone.has(i)) to.set(i, to.size); });
+  const kept = (first, last) => {
+    const ks = [];
+    for (let i = first; i <= last; i++) if (to.has(i)) ks.push(to.get(i));
+    return ks;
+  };
+  const phrases = ann.phrases.flatMap((p) => {
+    const ks = kept(p.first, p.last);
+    return ks.length ? [{ ...p, first: ks[0], last: ks[ks.length - 1], hero: to.get(p.hero) ?? null, minor: p.minor.filter((i) => to.has(i)).map((i) => to.get(i)) }] : [];
+  });
+  const moved = (xs) => (xs || []).filter((x) => to.has(x.i)).map((x) => ({ ...x, i: to.get(x.i) }));
+  const quotes = (ann.quotes || []).flatMap((q) => {
+    const ks = kept(q.first, q.last);
+    return ks.length ? [{ first: ks[0], last: ks[ks.length - 1] }] : [];
+  });
+  const rest = words.filter((_, i) => !gone.has(i));
+  const annotations = validate({ ...ann, phrases, words: moved(ann.words), notes: moved(ann.notes), quotes, charts: moved(ann.charts), drop: [] }, rest.length);
+  return { words: rest, annotations };
 }
 
 export async function annotate(words, opts, log = console.error) {

@@ -44,7 +44,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { normalizeTranscript, analyze, LIGHT_WORLDS } from "./analyze.mjs";
-import { annotate, validate, brief, readStaging } from "./llm-annotate.mjs";
+import { applyVariables, declarationsAttribute } from "./variables.mjs";
+import { annotate, validate, brief, readStaging, dropWords } from "./llm-annotate.mjs";
 import { alignToAudio } from "./align.mjs";
 import { audioBands } from "./audio.mjs";
 import { footageLayer } from "./footage.mjs";
@@ -158,8 +159,12 @@ if (opt.plan) {
       process.exit(2);
     }
     annotations.preset = preset0;
-    for (const f of annotations.fixes) words[f.i] = { ...words[f.i], text: f.text.trim(), fixed: true };
-    console.error(`staging: ${path.basename(opt.staging)} (${annotations.phrases.length} phrases, ${annotations.fixes.length} fixes)`);
+    for (const f of annotations.fixes) {
+      words[f.i] = { ...words[f.i], ...(f.text != null ? { text: f.text.trim(), fixed: true } : {}), ...(f.speaker != null ? { speaker: f.speaker } : {}) };
+    }
+    const dropped = annotations.drop.length;
+    ({ words, annotations } = dropWords(words, annotations));
+    console.error(`staging: ${path.basename(opt.staging)} (${annotations.phrases.length} phrases, ${annotations.fixes.length} fixes${dropped ? `, ${dropped} words dropped` : ""})`);
   } else if (opt.llm || opt["llm-refresh"]) {
     // staging depends on the frame orientation (phrase length), so cache per orientation
     const preset = typeof opt.preset === "string" ? opt.preset : "lyric";
@@ -295,35 +300,11 @@ const { width: W, height: H, duration: D } = plan;
 const planJson = JSON.stringify({ ...plan, bands: undefined });
 const overlayPlanJson = JSON.stringify(plan);
 
-// Live settings. A page around the player (the interview page) sends the settings not
-// built yet as a "kinetic-settings" event on the composition's window (and as
-// window.__kineticSettings for a layer that comes later): {world, title, subtitle,
-// names: {A: "Anna"}, colors: {A: "#ff5a36"}, cta, handle}, each optional. The layers draw themselves
-// again from the built plan with them, at once; only the next build makes them stay (the
-// render reads the files). The length stays as built: an end card can change its words or
-// go, not come.
-const LIVE_JS = `
-          function kineticPatch(plan, s) {
-            var p = Object.assign({}, plan);
-            if (s.world) p.world = s.world;
-            if ("title" in s) { p.title = s.title || ""; p.subtitle = s.subtitle || ""; }
-            if (p.cta && ("cta" in s || "handle" in s)) p.cta = Object.assign({}, p.cta, { text: s.cta || "", handle: s.handle || "" });
-            if (s.colors) p.speakers = (p.speakers || []).map(function (sp) { return s.colors[sp.id] ? Object.assign({}, sp, { color: s.colors[sp.id] }) : sp; });
-            if (s.names) {
-              p.speakers = (p.speakers || []).map(function (sp) { return Object.assign({}, sp, { name: s.names[sp.id] != null ? s.names[sp.id] : String(sp.id) }); });
-              var named = p.speakers.some(function (sp) { return s.names[sp.id] != null; });
-              p.turns = [];
-              if (named) (plan.phrases || []).forEach(function (ph) {
-                if (ph.speaker != null && (!p.turns.length || p.turns[p.turns.length - 1].speaker !== ph.speaker)) p.turns.push({ t: ph.tIn, speaker: ph.speaker });
-              });
-            }
-            return p;
-          }
-          // a layer built again: its children and classes back to the start, then built anew
-          function kineticReset(root, kids, cls) {
-            Array.prototype.slice.call(root.children).forEach(function (c) { if (kids.indexOf(c) < 0) c.remove(); });
-            root.className = cls;
-          }`;
+// The person's settings: HyperFrames variables (tools/variables.mjs), declared on index.html,
+// given to the page as window.__hfVariables by the preview and the render. Every layer
+// applies them to the plan when it loads.
+const APPLY_JS = `
+          ${applyVariables.toString()}`;
 
 function subcomp(id, body) {
   return `<!doctype html>
@@ -354,7 +335,8 @@ const world = subcomp("world", `
       <script src="${worldJs}"></script>
       <script>
         (function () {
-          var plan = ${planJson};
+          ${APPLY_JS}
+          var plan = applyVariables(${planJson}, window.__hfVariables);
           // Played live in a player (an iframe, and not the renderer's capture), the world is
           // drawn at 40 % of its size: in full it takes some 40 ms a frame on the CPU and the
           // words stutter. The render, top level or captured, keeps every pixel.
@@ -365,16 +347,7 @@ const world = subcomp("world", `
           }
           var api = KineticWorld.mount(canvas, plan);
           var last = -1;
-          function draw(t) { if (t === last) return; last = t; api.renderAt(t); }${LIVE_JS}
-          var built = plan;
-          function live(s) {
-            var p = kineticPatch(built, s || {});
-            if (p.world === plan.world) return;
-            plan = p; api = KineticWorld.mount(canvas, plan);
-            var t = last; last = -1; draw(Math.max(0, t));
-          }
-          window.addEventListener("kinetic-settings", function (e) { live(e.detail); });
-          if (window.__kineticSettings) live(window.__kineticSettings);
+          function draw(t) { if (t === last) return; last = t; api.renderAt(t); }
           window.addEventListener("hf-seek", function (e) { draw(e.detail.time); });
           // GSAP mirror so preview scrubbing and timeline-driven seeks also land here
           var proxy = { t: 0 };
@@ -400,32 +373,17 @@ const lyrics = subcomp("lyrics", `
       <script src="${typeJs}"></script>
       <script>
         (function () {
-          var plan = ${planJson};
+          ${APPLY_JS}
+          var plan = applyVariables(${planJson}, window.__hfVariables);
           var root = document.getElementById("lyrics-root");
-          var kids = Array.prototype.slice.call(root.children), cls = root.className, built = null;${LIVE_JS}
-          function sigOf(p) { return JSON.stringify([p.world, (p.speakers || []).map(function (sp) { return sp.color; })]); }
-          var shown = sigOf(plan);
-          function make(p) {
-            if (built) { built.timeline.kill(); kineticReset(root, kids, cls); }
-            built = KineticType.build(root, p, gsap);
-            window.__timelines["lyrics"] = built.timeline;
-            if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
-          }
-          var fonts = Promise.all([
+          Promise.all([
             document.fonts.load('400 100px "League Gothic"'),
             document.fonts.load('italic 400 100px "Instrument Serif"'),
-          ]).catch(function () {});
-          fonts.then(function () { make(plan); });
-          // the words take their colours from the world and the speakers
-          function live(s) {
-            var p = kineticPatch(plan, s || {});
-            var sig = sigOf(p);
-            if (sig === shown) return;
-            shown = sig;
-            fonts.then(function () { make(p); });
-          }
-          window.addEventListener("kinetic-settings", function (e) { live(e.detail); });
-          if (window.__kineticSettings) live(window.__kineticSettings);
+          ]).catch(function () {}).then(function () {
+            var built = KineticType.build(root, plan, gsap);
+            window.__timelines["lyrics"] = built.timeline;
+            if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
+          });
         })();
       </script>`);
 
@@ -444,40 +402,24 @@ const overlay = subcomp("overlay", `
       <script src="${overlayJs}"></script>
       <script>
         (function () {
-          var plan = ${overlayPlanJson};
+          ${APPLY_JS}
+          var plan = applyVariables(${overlayPlanJson}, window.__hfVariables);
           var built = null, last = -1, pending = window.__hfThreeTime || 0;
           // canvas parts (audiogram) are drawn from time, like the 3D world
           function draw(t) { pending = t; if (!built || t === last) return; last = t; built.draw(t); }
           window.addEventListener("hf-seek", function (e) { draw(e.detail.time); });
-          var root = document.getElementById("overlay-root");
-          var kids = Array.prototype.slice.call(root.children), cls = root.className, shown = "";${LIVE_JS}
-          function make(p) {
-            if (built) { built.timeline.kill(); kineticReset(root, kids, cls); }
-            built = KineticOverlay.build(root, p, gsap);
-            var proxy = { t: 0 };
-            built.timeline.to(proxy, { t: p.duration, duration: p.duration, ease: "none", onUpdate: function () { draw(proxy.t); } }, 0);
-            last = -1; draw(pending);
-            window.__timelines["overlay"] = built.timeline;
-            if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
-          }
-          var fonts = Promise.all([
+          Promise.all([
             document.fonts.load('400 100px "League Gothic"'),
             document.fonts.load('italic 400 100px "Instrument Serif"'),
             document.fonts.load('700 20px "JetBrains Mono"'),
-          ]).catch(function () {});
-          fonts.then(function () { make(plan); });
-          // title, names, end card and the world's colours
-          function sigOf(p) { return JSON.stringify([p.world, p.title, p.subtitle, p.cta, p.speakers, p.turns]); }
-          shown = sigOf(plan);
-          function live(s) {
-            var p = kineticPatch(plan, s || {});
-            var sig = sigOf(p);
-            if (sig === shown) return;
-            shown = sig;
-            fonts.then(function () { make(p); });
-          }
-          window.addEventListener("kinetic-settings", function (e) { live(e.detail); });
-          if (window.__kineticSettings) live(window.__kineticSettings);
+          ]).catch(function () {}).then(function () {
+            built = KineticOverlay.build(document.getElementById("overlay-root"), plan, gsap);
+            var proxy = { t: 0 };
+            built.timeline.to(proxy, { t: plan.duration, duration: plan.duration, ease: "none", onUpdate: function () { draw(proxy.t); } }, 0);
+            draw(pending);
+            window.__timelines["overlay"] = built.timeline;
+            if (window.__hfForceTimelineRebind) window.__hfForceTimelineRebind();
+          });
         })();
       </script>`);
 
@@ -495,11 +437,11 @@ const host = (id, track, kind) => `      <div
       ></div>`;
 
 const index = `<!doctype html>
-<html lang="${plan.lang || "en"}">
+<html lang="${plan.lang || "en"}" data-composition-variables='${declarationsAttribute(plan)}'>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=${W}, height=${H}" />
-    <title>${(plan.title || "Kinetic transcript").replace(/</g, "&lt;")}</title>
+    <title>${(plan.hook || plan.title || "Kinetic transcript").replace(/</g, "&lt;")}</title>
     <script src="${GSAP}"></script>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
