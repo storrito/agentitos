@@ -111,6 +111,10 @@ export function detectNotes(words) {
 
 // Enumeration runs: ≥3 consecutive short items, each ending in a comma except the last.
 // Returns Set of word indices that belong to a run (so segmentation keeps them together).
+// words said in passing, not things named: an item made of them is no list item
+const CALLS = new Set(["okay", "ok", "yes", "yeah", "no", "nope", "well", "right", "sure", "stop", "honestly", "ja", "jo",
+  "nein", "nee", "doch", "genau", "stopp", "gut", "klar", "naja", "tja", "ey", "egal", "sag", "sagt", "sage", "says", "say", "said"]);
+
 export function detectLists(words) {
   const inRun = new Set();
   let i = 0;
@@ -126,8 +130,8 @@ export function detectLists(words) {
       if (!/,/.test(words[e].punct)) break; // the last item ends the run
     }
     const sameVoice = items.length && words.slice(i, k).every((w) => w.speaker === words[i].speaker);
-    // "so, honestly, yes," is not a list: every item must name something
-    const named = items.every(([a, e]) => words.slice(a, e + 1).some((w) => w.role === "content"));
+    // "so, honestly, yes," and "sag ich, okay, stopp" are not lists: every item must name something
+    const named = items.every(([a, e]) => words.slice(a, e + 1).some((w) => w.role === "content" && !CALLS.has(w.key)));
     if (items.length >= 3 && items.length <= 6 && sameVoice && named) {
       for (let j = i; j < k; j++) inRun.add(j);
       i = k;
