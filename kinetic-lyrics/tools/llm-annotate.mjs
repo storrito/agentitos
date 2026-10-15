@@ -123,8 +123,8 @@ NOTES (hand-drawn marks drawn onto a single word, like a pen on a printout):
   Use them sparingly: roughly one per two or three sentences, never two in one phrase, and not on a number.
 
 DATA GRAPHICS – a small chart under a phrase that shows what a number *means*. Simple ones are added
-automatically: percentages get a filling bar, multipliers ("doubled", "3x") before/after bars, small counts of
-things ("team of six", "thirty days") pictograms. Keep a number together with its unit or noun in one phrase
+automatically: percentages get a filling bar, multipliers ("doubled", "3x") before/after bars, durations
+("zwei Stunden", "20 minutes") a clock. Keep a number together with its unit or noun in one phrase
 ("40% of our week", "100 Euro monatlich"), and give such phrases a calm layout (hero, inline or block).
 charts: add a chart yourself where the speaker *relates* numbers to each other, so the viewer sees the comparison
 (on the number word it belongs to; at most one per phrase and roughly one per 8 seconds; [] if nothing fits):

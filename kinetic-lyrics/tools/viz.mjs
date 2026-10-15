@@ -3,7 +3,7 @@
 //   viz  – a small chart under the phrase that shows what a number *means*:
 //          gauge   "40%", "forty percent", "half of"      → a bar filling to the share
 //          compare "doubled", "3x", "three times more"   → before/after bars, the second grows N×
-//          units   "team of six", "thirty days"          → N pictograms (people, days, ticks)
+//          clock   "zwei Stunden", "20 minutes"          → a clock whose dial fills for the duration
 //   note – a hand-drawn mark on a word: circle | underline | strike.
 //          Claude picks notes when staging; without it, "not X but Y" strikes X and circles Y.
 //   list – an enumeration ("reports, tickets, first drafts") becomes a checklist.
@@ -43,15 +43,8 @@ const PERCENT = new Set(["percent", "per", "prozent"]);
 const TIMES = new Set(["times", "mal", "fach", "x"]);
 const HALF = new Set(["half", "hälfte"]);
 
-// pictogram per counted noun (stem match)
-const ICONS = [
-  ["person", ["people", "person", "team", "member", "user", "customer", "client", "employee", "kid", "child", "friend",
-    "colleague", "folk", "guy", "engineer", "developer", "student", "mensch", "leute", "mitarbeit", "kund", "kind",
-    "freund", "kolleg", "nutzer", "schüler", "entwickler"]],
-  ["day", ["day", "night", "week", "month", "year", "tag", "nacht", "woche", "monat", "jahr"]],
-  ["tick", ["second", "minute", "hour", "sekunde", "minute", "stunde"]],
-];
-const iconOf = (key) => ICONS.find(([, stems]) => stems.some((s) => key.startsWith(s)))?.[0] ?? null;
+// a duration's unit: "Stunden" → h, "minutes" → min
+const durationOf = (key) => /^(hours?|stunden?|std)$/.test(key) ? "h" : /^(minutes?|minuten?|min)$/.test(key) ? "min" : null;
 
 function valueOf(w) {
   if (w.num) return w.num.value;
@@ -62,7 +55,7 @@ function valueOf(w) {
 export function detectViz(words) {
   const out = new Map();
   for (let i = 0; i < words.length; i++) {
-    const w = words[i], next = words[i + 1], prev = words[i - 1], prev2 = words[i - 2];
+    const w = words[i], next = words[i + 1];
     if (w.viz === null) continue; // explicitly disabled in the transcript
     if (w.viz) { out.set(i, w.viz); continue; }
     // multipliers spelled as a verb/adverb
@@ -79,12 +72,10 @@ export function detectViz(words) {
       continue;
     }
     if (w.num && (w.num.prefix || w.num.suffix || w.num.decimals)) continue; // money, 3.5 … stay a count
-    if (!Number.isInteger(v) || v < 2 || v > 40) continue;
-    // counted things: "six people", "thirty days", "team of six"
-    const after = next && !/[.!?,;:]/.test(w.punct) ? iconOf(next.key) : null;
-    const before = prev2 && prev?.key === "of" || prev2 && prev?.key === "aus" ? iconOf(prev2.key) : null;
-    const icon = after || before;
-    if (icon) out.set(i, { kind: "units", value: v, icon });
+    if (!Number.isInteger(v)) continue;
+    // a duration: "zwei Stunden", "20 minutes" – the slice of the dial it takes
+    const unit = next && !/[.!?,;:]/.test(w.punct) ? durationOf(next.key) : null;
+    if ((unit === "h" && v <= 12) || (unit === "min" && v <= 60)) out.set(i, { kind: "clock", value: v, unit });
   }
   return out;
 }

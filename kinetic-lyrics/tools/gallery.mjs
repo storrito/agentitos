@@ -115,7 +115,6 @@ const CHARTS = [
   chart("compare", "Vorher-nachher-Balken mit dem Faktor", "Der Umsatz hat sich [verdreifacht]", { value: 3 }),
   chart("growth", "Eine Kurve, die sich über die Zeit nach oben biegt, gegen die gerade Linie", "Nach dreißig Jahren sind es [200.000] Euro", { value: 200000, base: 60000, label: "30 Jahre", unit: "€" }),
   chart("split", "Ein Balken, in die Teile eines Ganzen geteilt", "Davon sind [140.000] Euro Zinsen", { value: 140000, parts: [{ label: "eingezahlt", value: 60000 }, { label: "Zinsen", value: 140000 }], focus: 1 }),
-  ["units-person", "units", "Piktogramme für kleine Mengen: Menschen, Tage, Minuten", "Wir waren ein Team aus [sechs] Leuten", { viz: { kind: "units", value: 6, icon: "person" }, still: 1.6, tail: 3 }],
   chart("clock", "Ein Zifferblatt, die Zeiger drehen sich auf die Uhrzeit", "Der Wecker klingelt [halb] sechs", { value: 5.5 }),
   chart("clock", "Mit Einheit min oder h eine Dauer: ein Stück des Zifferblatts füllt sich", "Ich trainiere [45] Minuten", { value: 45, unit: "min" }, "chart-clock-duration"),
   chart("calendar", "Ein Kalenderblatt, die Zahl blättert hoch, das letzte Blatt reißt ab", "Seit [dreißig] Tagen kein Zucker", { value: 30, label: "Tage" }),

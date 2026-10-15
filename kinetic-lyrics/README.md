@@ -146,7 +146,7 @@ Numbers show what they mean (`tools/viz.mjs`, deterministic, English and German)
 | --- | --- |
 | `40%`, `forty percent`, `half of` | bar of 20 segments that fills in sync with the count-up |
 | `doubled`, `3x`, `three times more`, `verdoppelt`, `halbiert` | before/after bars, the second grows to N times |
-| `team of six`, `thirty days`, `ten seconds` | N pictograms (people, calendar days, tally marks) that appear one after another |
+| `zwei Stunden`, `20 minutes` | a clock whose dial fills for the duration (up to 12 hours or 60 minutes) |
 
 Where the speaker **relates numbers to each other**, Claude picks a graphic itself with `--llm` (`charts` in the staging), using only numbers that were spoken or follow exactly from them:
 
@@ -156,7 +156,7 @@ Where the speaker **relates numbers to each other**, Claude picks a graphic itse
 | `split`: one bar split into 2–3 parts of a whole, the part being discussed in the accent colour | €60,000 paid in · €198,000 return |
 | `compare` / `gauge` with a computed value | "exceeds it many times over" → 3.3× |
 
-There is at most one graphic per phrase; percentages and factors win over pictograms. The graphic is always complete before the phrase fades out.
+There is at most one graphic per phrase; percentages and factors win over a clock. The graphic is always complete before the phrase fades out.
 
 **More graphics** (`engine/graphics.js`), set by the direction in `charts` like the ones above, with the same fields (`value`, `base`, `parts`, `focus`, `label`, `unit`; `value` 0 where no number is meant). The staging is checked: a graphic that lacks its parts or its label is dropped.
 
