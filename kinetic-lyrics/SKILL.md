@@ -46,7 +46,7 @@ writes `work/episode/episode.json` (title, channel, length, the voices), `words.
 
 ### 2. The moments, and how many
 
-Read the whole `sentences.txt` and pick the moments that work as a short: **at most 59 seconds**, best 25–50. A good moment
+Read the whole `sentences.txt` and pick the moments that work as a short: **at most 59 seconds** (it fits every post type Storrito offers, the 60-second stories too), best 25–50. A good moment
 
 - is understandable without the rest of the episode: no "as I said", no unexplained "he" or "that thing";
 - opens with a hook in its first sentence (a question, a surprising claim, a vivid image), not with "and", "so", "yeah" or small talk;
@@ -56,7 +56,7 @@ Read the whole `sentences.txt` and pick the moments that work as a short: **at m
 
 Pick more than you recommend: roughly one strong moment per 8–10 minutes of episode, at most 10. Note each as a sentence range `first-last`, a title of 3–7 words in the episode's language and one sentence on why it works. Then show them as cards and recommend a number, with your reason ("the first four are the strongest, the rest are good fillers"). Each card has the title, the time and length, the first line as a quote, why, and a link to that moment on YouTube (`https://youtu.be/<id>?t=<seconds>`). Ask how many it should be, with buttons for your recommendation, all and fewer, and say they can also name the ones they want.
 
-In the same message, or right after, ask where the shorts go: Instagram Reels, TikTok, YouTube Shorts, or several. Buttons for the usual combinations; they can type others.
+In the same message ask where the shorts go, from what is connected: call `list-social-accounts` of the Storrito connection first (its tools are `mcp__storrito__…`; find them with tool_search). It lists every connected account (Instagram, TikTok, YouTube, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X …) with its `postTypes`: what it takes, the `procedure` that schedules it, `minDurationSeconds` and `maxDurationSeconds`, `maxCaptionLength`, whether the caption is published, its `options`. Show them as checkboxes grouped by platform, one per account and post type that takes a video, labelled "Instagram Reel · @name", "TikTok · name", "YouTube Short · channel"; tick the ones made for shorts (Instagram Reel, TikTok, YouTube Short, Facebook Reel, Snapchat Spotlight) when there are few, and end with a button whose text holds `{checked}` (see "UI in the chat"). An account with `disconnected: true` is shown without a box, with "reconnect it in Storrito". A platform they name that has no account: for Instagram `create-connect-link` makes a link (`[:a {:href …} "Connect Instagram"]`, ask them to say when they are done), for the others they connect it in the Storrito app. Never offer an account the list does not have.
 
 ### 3. The look
 
@@ -113,31 +113,43 @@ Then show the list in the chat (title and length per short) with buttons "They a
 
 ### 5. Which account gets which short
 
-List the accounts through the Storrito connection (its tools are `mcp__storrito__…`; find them with tool_search): `list-social-accounts` (every platform, with the `postTypes` each takes and the procedure that schedules them), `list-instagram-users` and `list-tiktok-accounts`. Show them grouped by platform and ask which of them the shorts go to, as buttons: each account, "All of them", and for a platform without an account a way to connect one (`create-connect-link` makes a link for Instagram; show it as `[:a {:href …} "Connect Instagram"]` and ask them to say when they are done). A short may go to several accounts. Propose the simple rule first ("every short on all chosen accounts") and offer per-short choices only when they want them.
+The accounts are the ones ticked in step 2. Propose the simple rule first ("every short on all chosen accounts"); a short may go to several accounts. Offer a choice per short only when they want one: per short a row of checkboxes of the chosen accounts and one button.
+
+The limits are Storrito's, from `list-social-accounts`, never from memory: before the plan, hold every short's length (the built composition's duration, the end card included) against `minDurationSeconds` and `maxDurationSeconds` of each post type it goes to. A short that does not fit one of them: say which and why in one sentence and offer to shorten it, or to leave that account out for it.
 
 ### 6. When
 
-Propose a plan and show it as a table: per short the date and time, the accounts, and the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language). A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Buttons: "Take the plan", "One every two days", "All today", "Change the captions", and they can type anything else. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
+Propose a plan and show it as a table: per short the date and time, the accounts, and the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Buttons: "Take the plan", "One every two days", "All today", "Change the captions", and they can type anything else. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
 
 Write the plan into `work/plan.json` as you agree on it: per short its folder, file, caption, and per account its platform, id, procedure, `postType`, time (ISO 8601 with offset) and a UUID made now (`uuidgen` or the tool `generate-uuid`), so that a retry never posts twice.
 
 ### 7. Render and schedule
 
-When everything is agreed, show the whole plan once more and ask: "Shall I render all shorts and schedule them?" with the buttons "Render and schedule" and "Not yet". Only after "Render and schedule":
+When everything is agreed, show the whole plan once more and ask: "Shall I render all shorts and schedule them?" In the same block ask whether they want a message when everything is done, and how: radio buttons (one `:name`) for "No message" (ticked), E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp, then the buttons "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`) and "Not yet".
 
-1. Tell them in one or two sentences that you are rendering N shorts now (a few minutes each) and scheduling them, that **they can close this window**, and that everything finishes by itself; the result will be here in the chat.
-2. Per short: `node <skill>/tools/short.mjs render work/<k> work/out/<k>.mp4`.
+A message goes out through the agent's own Storrito connection (`mcp__storrito-agent__…`, Composio; find its tools with tool_search). When they chose one, before anything else:
+
+- `COMPOSIO_SEARCH_TOOLS` for the use case ("send an email", "send a Telegram message", …) names the tool and whether the service is connected. Not connected: `COMPOSIO_MANAGE_CONNECTIONS` with the toolkit gives a sign-in link; show it as `[:a {:href …} "Connect Gmail"]` and ask them to say when they are done.
+- Ask for what the service needs to reach them and you cannot know: the e-mail address, the phone number, the Slack name. Write it into `work/plan.json` under `notify`.
+
+Only after "Render and schedule" (and, with a message, the connection and the address):
+
+1. Tell them in one or two sentences that you are rendering N shorts now (a few minutes each) and scheduling them, that **they can close this window**, and that everything finishes by itself; the result will be here in the chat, and with a message also there.
+2. Render every short: `node <skill>/tools/short.mjs render work/<k> work/out/<k>.mp4`. Never with `&` or `nohup`: a process left running after your turn is no work the machine knows of, it may be paused, and nobody goes on with the uploads when it ends.
+   - With `bin/background` (pchat): all of them as one background task, `bin/background 'for k in 01 02 03; do node <skill>/tools/short.mjs render work/$k work/out/$k.mp4 || exit 1; done'`, and end your turn. pchat keeps the machine awake while it runs and writes to you when it has ended; then check the videos and go on with step 3 (a failed render: its log is in the task's folder (`.background/<n>/log`), fix and render that one again).
+   - Without it: one short per command, in the foreground, with a timeout of 15 minutes each, all in this turn.
 3. Upload it: `create-temp-blob-upload-url` with a new UUID, `contentType` `video/mp4` and the file's exact size, then `curl -sS -T work/out/<k>.mp4 -H 'Content-Type: video/mp4' '<uploadUrl>'`. Its `url` is the video for every post of this short (at most 100 MB; a minute is about 45).
 4. Per account of the short, the procedure the plan names, with `html` `<insta-story src="<url>"></insta-story>`, the time as `date` and the UUID of the plan: `schedule-instagram-reel` (`instagramUsername`, `caption`, `shareToFeed: true`), `schedule-tiktok-post` (`tiktokAccountId`, `title`, `privacyLevel`), `schedule-social-post` (`socialAccountId`, `postType`, `text`, `name` as the title of a YouTube Short) for the others. Read a tool's schema before its first use. Note each answer in `work/plan.json`.
 5. Check with the status tools that each post is scheduled, then write the result into the chat: a table of short, account, time and status, and the videos as `[:video {:src "…" :controls true}]` only when they ask for them.
+6. With a message chosen, send it last, once, in their language: the episode's title, how many shorts are scheduled on which accounts, the first and the last date, what failed if anything, and that the details are in the chat (no tokens, no ids). E-mail with the subject "Your shorts are scheduled" (in their language). If it cannot be sent, say so in the chat; the chat holds the result either way.
 
 If something fails, retry it with the same UUID; if it keeps failing, say which and why in one sentence and go on with the rest.
 
 ## UI in the chat
 
-Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/shorts"` shows the previews. Links and pictures point at `https://…`, at `artifacts/…` or at `uploads/…` (a file of yours there shows in the chat without taking the pane). There are no text fields: for a name or a time they type, so say what to type.
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/shorts"` shows the previews. Links and pictures point at `https://…`, at `artifacts/…` or at `uploads/…` (a file of yours there shows in the chat without taking the pane). An `input` is a checkbox or a radio button (`:type "checkbox"` / `"radio"`, nothing else is shown); `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated, when it is clicked. There are no text fields: for a name or a time they type, so say what to type.
 
-- One question per block, with buttons for the likely answers and a hint that they can type anything else.
+- One question per block, with buttons for the likely answers and a hint that they can type anything else; a choice of several (accounts, shorts) as checkboxes with one button.
 - Make a button's text say what happens, and its `:send` text read as the person's answer ("Take 4 shorts", "Colour of Dominik: #ff9a5a").
 - Cards: a `div` with `:style {:display "flex" :flex-wrap "wrap" :gap "10px"}` around `div`s with a border, a radius and padding; a swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`. A button keeps its light look on a dark card; one you give a `:background` with text on it needs a `:color` that reads on it.
 - Never put a token, an id the person does not need or a raw error into the chat.
@@ -156,6 +168,21 @@ For example, the moments:
  [:button {:send "Take 4 shorts"} "4 (recommended)"] " "
  [:button {:send "Take all 6 shorts"} "All 6"] " "
  [:button {:send "Take only the best 2"} "2"]]
+```
+
+and where they go, from `list-social-accounts`:
+
+```hiccup
+[:div
+ [:p "Where should the shorts go? These accounts are connected to Storrito:"]
+ [:strong "Instagram"]
+ [:label [:input {:type "checkbox" :value "Instagram Reel @soul.globe" :checked true}] " Reel · @soul.globe"]
+ [:label [:input {:type "checkbox" :value "Instagram Story @soul.globe"}] " Story · @soul.globe (60 s at most)"]
+ [:strong "TikTok"]
+ [:label [:input {:type "checkbox" :value "TikTok storrito.com" :checked true}] " storrito.com"]
+ [:strong "YouTube"]
+ [:label [:input {:type "checkbox" :value "YouTube Short Audiocado"}] " Short · Audiocado"]
+ [:button {:send "Post the shorts on: {checked}"} "Take these accounts"]]
 ```
 
 ## Directing a short
