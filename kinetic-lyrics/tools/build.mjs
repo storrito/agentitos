@@ -437,7 +437,7 @@ const index = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=${W}, height=${H}" />
-    <title>${(plan.title || "Kinetic transcript").replace(/</g, "&lt;")}</title>
+    <title>${(plan.hook || plan.title || "Kinetic transcript").replace(/</g, "&lt;")}</title>
     <script src="${GSAP}"></script>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }

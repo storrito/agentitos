@@ -27,9 +27,23 @@ node tools/short.mjs brief shorts/ep12 --speakers 2             # who speaks whe
 # the agent reads brief.md and writes source/staging.json
 node tools/short.mjs build shorts/ep12 --names "A=Anna,B=Ben"    # HyperFrames project in composition/
 node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.png, stills/15.png
+node tools/short.mjs render shorts/ep12 ep12.mp4                # the video
 ```
 
 It always uses the `podcast` preset, 9:16 by default, every word big; options: `--speakers`, `--names`, `--colors "A=#ff5a36,B=#4fc3f7"` (each speaker's colour: accent words and name chip), `--title`, `--subtitle`, `--hook`, `--world`, `--aspect`, `--cta`, `--handle`. `<dir>` may already exist (e.g. made by a harness); `new` replaces `<dir>/composition/`.
+
+### A YouTube episode, several shorts (`tools/episode.mjs`)
+
+```bash
+node tools/episode.mjs fetch https://www.youtube.com/watch?v=… work/episode   # the words of the whole episode
+# read work/episode/sentences.txt: `991 [1:06:44–1:06:49] A: …`, pick the moments
+node tools/episode.mjs cut work/episode 991-1004 work/01.mp4                 # sentences 991..1004 as a video
+node tools/short.mjs new work/01 work/01.mp4 && node tools/short.mjs brief work/01
+node tools/short.mjs build work/01 --out artifacts/shorts/composition/01-kuchen  # into a series
+node tools/short.mjs render work/01 work/out/01.mp4
+```
+
+`fetch` reads the video's facts with yt-dlp (from the PATH, else downloaded once into `~/.cache/kinetic-lyrics/`), takes its sound and writes down every word with its time and speaker through OpenRouter (Gemini 3.5 Transcribe, in 20-minute pieces); without `OPENROUTER_API_KEY` it takes YouTube's automatic captions in the spoken language, word-timed, without speakers. `sentences.txt` numbers the sentences (they end at . ! ? and where the voice changes). `cut` downloads only the stretch, the sentences `first-last` with a breath of air around them (or `from to` in seconds), as an H.264 MP4 of at most 1080p. `short.mjs build --out` puts a short's HyperFrames project wherever it belongs, e.g. into a series of several shorts shown side by side (pchat's HyperFrames project does that for `composition/<name>/`), and `short.mjs render` makes the video with HyperFrames at 6 Mbit/s.
 
 ### Settings as HyperFrames variables
 

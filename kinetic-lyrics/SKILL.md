@@ -1,16 +1,16 @@
 ---
 name: kinetic-lyrics
-description: Turn a clip of people talking (podcast, interview, talk; video or audio) or any spoken audio into a kinetic-typography video where every word appears big as it is said, animated by meaning over a world of light; renders on the CPU, no graphics card needed. Use for vertical shorts for Reels, TikTok, Stories or Shorts from podcast clips, lyric videos, podcast audiograms, or cutting the best highlight out of a long episode.
+description: Turn a YouTube episode (podcast, interview, talk) or any clip of people talking into vertical kinetic-typography shorts, every word big as it is said over the speakers' own footage, with effects and the speakers' names; find the moments under a minute that work as shorts, set them up with the person in the chat, render them on the CPU and schedule them on their social accounts through Storrito. Use for Reels, TikTok and YouTube Shorts from podcast or interview videos, lyric videos and podcast audiograms.
 license: MIT
 metadata:
   title: "Kinetic shorts"
   title-de: "Kinetic Shorts"
-  summary: "A vertical short from a podcast or interview clip: every spoken word big on screen, with effects and the speakers' names."
-  summary-de: "Ein Hochkant-Short aus einem Podcast- oder Interview-Clip: jedes gesprochene Wort groß im Bild, mit Effekten und den Namen der Sprecher."
-  ask: "Attach a clip of people talking (a podcast, an interview or a talk, as a video or just the sound) or paste a link. You get a first version in a few minutes and set the rest beside it."
-  ask-de: "Hänge einen Clip an, in dem Menschen sprechen (Podcast, Interview oder Vortrag, als Video oder nur den Ton), oder füge einen Link ein. In ein paar Minuten steht eine erste Version, den Rest stellst du daneben ein."
-  placeholder: "Attach a clip or paste a link"
-  placeholder-de: "Clip anhängen oder Link einfügen"
+  summary: "Shorts from a YouTube episode: the best moments found, every spoken word big on screen, rendered and scheduled on your accounts."
+  summary-de: "Shorts aus einer YouTube-Folge: die besten Stellen gefunden, jedes gesprochene Wort groß im Bild, gerendert und auf deinen Konten eingeplant."
+  ask: "Paste the link of a YouTube video with people talking (a podcast, an interview, a talk). I find the moments that work as shorts, we set them up together here, and I schedule them on your accounts."
+  ask-de: "Füge den Link eines YouTube-Videos ein, in dem Menschen sprechen (Podcast, Interview, Vortrag). Ich finde die Stellen, die als Short funktionieren, wir richten sie hier gemeinsam ein, und ich plane sie auf deinen Konten ein."
+  placeholder: "Paste a YouTube link"
+  placeholder-de: "YouTube-Link einfügen"
   inputs: "video,audio"
 ---
 
@@ -24,46 +24,156 @@ metadata:
 cd <skill> && npm install                     # node 20+, ffmpeg on the PATH
 ```
 
-With `OPENROUTER_API_KEY` in the environment, the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. Without it, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx and the models in `<skill>/models/diarize/`, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself, unless you are the operator's setup agent.
+With `OPENROUTER_API_KEY` in the environment, the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. yt-dlp is taken from the PATH or downloaded once by `tools/episode.mjs`. Without the key, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself.
 
-## Settings beside the video (when the chat shows artifacts)
+## The main use: shorts from a YouTube episode, all in the chat
 
-When your harness shows a HyperFrames project beside the chat with the composition's variables as controls (pchat does: `bin/new <name> hyperframes`), the person sets the short there, not in the chat. Every build declares its settings as variables (`tools/variables.mjs`): the world, the title and subtitle, each voice's name and colour, the end card and handle. The person changes them beside the player, the preview shows the change, and the values go into `artifacts/<name>/variables.json`, which the render uses too. You build nothing for that.
+The person pastes a YouTube link. You find the moments that work as shorts, agree with them on how many, where they go and how they look, show all of them side by side beside the chat, agree on which account gets which short when, and only then render and schedule everything. The conversation happens in the chat, with buttons and pictures you write as hiccup (see "UI in the chat"). The pane beside the chat shows one thing only: the HyperFrames previews of the shorts.
 
-- **Show first.** Make the project with `bin/new <name> hyperframes` (`<name>` a short slug of the topic), get the clip into it (`short.mjs new artifacts/<name> <clip>`), direct it and build with what you know or guess well (a world that fits, the show's name if you know it). Then say in one or two sentences that the short is there and that the settings are beside it. Do not render: the person renders with the harness's button once it is right.
-- **Ask only what the controls cannot do:** the format (`--aspect`) and, over footage, the step from a dark world to a light one (`editorial`, `geometry` frame the clip) need a build. Ask for the format before the first build when it is not 9:16.
-- **The person's values win.** `variables.json` overrides what a build declares; when you build again (a new staging, another format), it stays. To change a value yourself, write `variables.json` (the controls follow); to let a build's value show, take its key out.
-- Over video the dark worlds (`cosmos`, `aurora`, `bokeh`, `neon`, `noir`) lay their light on the footage; the light ones put it into a frame on paper or in the studio, with dark type below it. The fonts are the engine's own (League Gothic, Instrument Serif): when someone asks for other fonts, say so in one sentence. Post only after the person has seen the rendered video and asked for it.
+**Keep the pane clean.** Everything you work on lives in `work/` (the episode, the cut clips, the shorts' sources, the videos, the plan). The only artifact is `artifacts/shorts/`, a HyperFrames project that shows every short side by side. Never write anything else into `artifacts/`.
 
-## A short from a clip (the main use)
+Go through the steps in order; each ends with a question in the chat, and the person's answer starts the next. Keep every message short: one or two sentences and a hiccup block. Speak the person's language. Decide small things yourself and say what you decided.
 
-The person brings a clip of people talking and gets a vertical short: every spoken word appears big the moment it is said, over the clip's own footage (or a world of light for audio only), with effects on the words that carry the point and the speakers' names. Work in one folder per short, `<dir>`; it may already exist (made by your harness).
+### 1. The episode
 
-1. `node <skill>/tools/short.mjs new <dir> <clip>` writes down every word with its timing into `<dir>/source/`. It takes a minute or two; say so before you start.
-2. Read the words (`<dir>/source/transcript.json`). Through OpenRouter they already say who speaks (`speaker` A, B, …): run `node <skill>/tools/short.mjs brief <dir>`. Without speakers, decide how many people speak and run `node <skill>/tools/short.mjs brief <dir> --speakers <n>`, which works out who speaks when. The brief goes to `<dir>/source/brief.md`. Read the whole brief: it is your direction for this one video, with the vocabulary of the engine, the rules and the numbered words.
-3. Direct the video: write the staging the brief asks for into `<dir>/source/staging.json`, all words, as one JSON file. You choose the world, the hook (a short headline in the language of the clip), the phrases, the words that get an effect and the marks. Respell words the speech recognition clearly misheard, under `fixes`.
-4. `node <skill>/tools/short.mjs build <dir>` builds the HyperFrames project into `<dir>/composition/`. If the staging has a mistake, the message names the field; fix the file and build again.
-5. `node <skill>/tools/short.mjs check <dir> 4,15` plays it through and lists what a viewer would notice. Fix the errors (✗) in the staging; the warnings (⚠) are mostly words read quickly. The seconds you name become pictures in `<dir>/stills/<t>.png`, which you can show.
-6. The video file: `npx hyperframes render` in `<dir>/composition/` (or your harness's render command). It takes a few minutes for a minute of clip; say so.
+When the link comes, say in one sentence that you are listening to the whole episode now and that it takes a few minutes. Then
 
-Without the interview, show the first version before you ask anything. Then ask what you could not know: the speakers' names as they should appear (`--names "A=Anna,B=Ben"`; A is who speaks first) and the show's name for the top line (`--title`). Settings stay with the short, so the next step keeps them: `--title`, `--subtitle`, `--hook`, `--world`, `--names`, `--colors "A=#ff5a36"`, `--aspect 9:16` (the default, or `1:1`, `4:5`, `16:9`), `--cta "…" --handle @name` for an end card.
+```bash
+node <skill>/tools/episode.mjs fetch <url> work/episode
+```
 
-Offer a different world as a choice, with the reason: `bokeh` (warm lights, for people, health, comedy), `neon` (a glowing grid, for tech, sport, speed), `noir` (light through blinds, for crime, secrets, psychology), `cosmos` (night sky, for big ideas), `aurora` (colour fields, for motivation), `editorial` (paper, for business, education) and `geometry` (a studio, for products, explainers), these two with the clip in a frame.
+writes `work/episode/episode.json` (title, channel, length, the voices), `words.json` (every word with its time and speaker) and `sentences.txt`, one numbered sentence a line: `991 [1:06:44–1:06:49] A: Du hast morgens einen Kuchen gebacken …`.
 
-For a change to a word, an effect or a phrase, change the staging and build again; never edit the files in `composition/` by hand, the next build replaces them. When a wish needs an effect the brief does not offer, say so in one sentence. Only clips the person may use: when they say it is someone else's material, say once that publishing needs the rights holder's permission.
+### 2. The moments, and how many
+
+Read the whole `sentences.txt` and pick the moments that work as a short: **at most 59 seconds**, best 25–50. A good moment
+
+- is understandable without the rest of the episode: no "as I said", no unexplained "he" or "that thing";
+- opens with a hook in its first sentence (a question, a surprising claim, a vivid image), not with "and", "so", "yeah" or small talk;
+- builds to a payoff (a punchline, an insight, a striking number, an emotional turn) and ends right after it;
+- is concrete and visual rather than abstract; a host's question followed by the answer is fine.
+
+Pick more than you recommend: roughly one strong moment per 8–10 minutes of episode, at most 10. Note each as a sentence range `first-last`, a title of 3–7 words in the episode's language and one sentence on why it works. Then show them as cards and recommend a number, with your reason ("the first four are the strongest, the rest are good fillers"). Each card has the title, the time and length, the first line as a quote, why, and a link to that moment on YouTube (`https://youtu.be/<id>?t=<seconds>`). Ask how many it should be, with buttons for your recommendation, all and fewer, and say they can also name the ones they want.
+
+In the same message, or right after, ask where the shorts go: Instagram Reels, TikTok, YouTube Shorts, or several. Buttons for the usual combinations; they can type others.
+
+### 3. The look
+
+Ask one thing per message, each with buttons, and offer to take your proposal for everything at once ("Take your suggestions"):
+
+- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show each as a card with its colours as the card's background, what it fits, and a button. Recommend one by the episode's mood.
+
+  | world | the card's `:background` | fits |
+  | --- | --- | --- |
+  | `bokeh` | `radial-gradient(circle at 25% 25%, #ffcf8a 0 8%, transparent 9%), radial-gradient(circle at 70% 35%, #ff9a5a 0 10%, transparent 11%), linear-gradient(#2a1208, #120806)` | people, comedy, health |
+  | `noir` | `repeating-linear-gradient(160deg, rgba(255,255,255,.10) 0 9px, transparent 9px 18px), linear-gradient(#0c0c0c, #262626)` | crime, secrets, psychology |
+  | `neon` | `repeating-linear-gradient(90deg, rgba(0,240,255,.35) 0 1px, transparent 1px 22px), linear-gradient(170deg, #0b0b2a, #3a0ca3 60%, #f72585)` | tech, sport, speed |
+  | `cosmos` | `radial-gradient(ellipse at 40% 35%, #5b2a86, transparent 60%), linear-gradient(#070720, #1b1446)` | big ideas, dreams |
+  | `aurora` | `linear-gradient(150deg, #00c9a7, #845ec2 50%, #ff6f91)` | motivation, lifestyle |
+  | `editorial` | `linear-gradient(#f3eee2, #e6dfcf)` (dark text on it) | business, education; footage in a frame |
+  | `geometry` | `radial-gradient(circle at 30% 35%, #f6b26b 0 12%, transparent 13%), linear-gradient(#f4f4f2, #dcdcd8)` | products, explainers; footage in a frame |
+
+- **The speakers' names** as they should appear on the name tag: tell who is who with one line each said (A is who speaks first in a short), buttons "No names" and, when the episode's title or description names them, the names you found. They type others.
+- **The speakers' colours**: per voice a row of swatches (a button with that colour as its background) and "The world's colours". On the dark worlds light colours: `#7fe3ff #ffb36b #c9a7ff #9dffb0 #ff8fb1 #ffe066`; on `editorial` and `geometry` dark ones: `#08609c #b0400a #5d33c4 #11703e #ad1452 #7a5c00`. A colour the other kind of world would hide is unreadable: say so if they pick one.
+- **The top line**: the show's name (from the channel or the episode title, as a button), "No title", or typed.
+- **An end card**: "Follow @<handle>" with the handles of their connected accounts as buttons (step 5 lists them; you may look them up now), or "No end card".
+
+The same look goes for every short unless they ask for one to differ. Format is 9:16 for Reels, TikTok and Shorts; ask only when a platform needs another.
+
+### 4. The previews beside the chat
+
+Say in one sentence that you are preparing the shorts and that the previews appear on the right one by one. Then, for the series once:
+
+```bash
+bin/new shorts hyperframes && rm artifacts/shorts/composition/index.html
+```
+
+and for every chosen moment `<k>` (`01`, `02`, … in the order you showed them; `<slug>` a short name):
+
+```bash
+node <skill>/tools/episode.mjs cut work/episode <first>-<last> work/<k>.mp4
+node <skill>/tools/short.mjs new work/<k> work/<k>.mp4
+node <skill>/tools/short.mjs brief work/<k>
+# read work/<k>/source/brief.md, write work/<k>/source/staging.json (see "Directing a short")
+node <skill>/tools/short.mjs build work/<k> --out artifacts/shorts/composition/<k>-<slug> \
+  --world … --title "…" --names "A=…,B=…" --colors "A=#…,B=#…" --cta "…" --handle @…
+node <skill>/tools/short.mjs check work/<k>
+```
+
+Without composition/index.html the project shows every `composition/<name>/` side by side, a player each, titled by the short's hook. Fix the check's errors (✗) before you go on. A short's names follow its own voices (A is who speaks first in that short): map them from the episode's speakers.
+
+Then show the list in the chat (title and length per short) with buttons "They are good" and "Change something", and `[:button {:open "artifacts/shorts"} "Show the previews"]` in case the pane shows something else. For a change, build the short again with the new settings (`short.mjs build work/<k>` keeps the others); for the staging (a word, an effect), change `staging.json` and build again.
+
+### 5. Which account gets which short
+
+List the accounts through the Storrito connection (its tools are `mcp__storrito__…`; find them with tool_search): `list-social-accounts` (every platform, with the `postTypes` each takes and the procedure that schedules them), `list-instagram-users` and `list-tiktok-accounts`. Show them grouped by platform and ask which of them the shorts go to, as buttons: each account, "All of them", and for a platform without an account a way to connect one (`create-connect-link` makes a link for Instagram; show it as `[:a {:href …} "Connect Instagram"]` and ask them to say when they are done). A short may go to several accounts. Propose the simple rule first ("every short on all chosen accounts") and offer per-short choices only when they want them.
+
+### 6. When
+
+Propose a plan and show it as a table: per short the date and time, the accounts, and the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language). A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Buttons: "Take the plan", "One every two days", "All today", "Change the captions", and they can type anything else. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
+
+Write the plan into `work/plan.json` as you agree on it: per short its folder, file, caption, and per account its platform, id, procedure, `postType`, time (ISO 8601 with offset) and a UUID made now (`uuidgen` or the tool `generate-uuid`), so that a retry never posts twice.
+
+### 7. Render and schedule
+
+When everything is agreed, show the whole plan once more and ask: "Shall I render all shorts and schedule them?" with the buttons "Render and schedule" and "Not yet". Only after "Render and schedule":
+
+1. Tell them in one or two sentences that you are rendering N shorts now (a few minutes each) and scheduling them, that **they can close this window**, and that everything finishes by itself; the result will be here in the chat.
+2. Per short: `node <skill>/tools/short.mjs render work/<k> work/out/<k>.mp4`.
+3. Upload it: `create-temp-blob-upload-url` with a new UUID, `contentType` `video/mp4` and the file's exact size, then `curl -sS -T work/out/<k>.mp4 -H 'Content-Type: video/mp4' '<uploadUrl>'`. Its `url` is the video for every post of this short (at most 100 MB; a minute is about 45).
+4. Per account of the short, the procedure the plan names, with `html` `<insta-story src="<url>"></insta-story>`, the time as `date` and the UUID of the plan: `schedule-instagram-reel` (`instagramUsername`, `caption`, `shareToFeed: true`), `schedule-tiktok-post` (`tiktokAccountId`, `title`, `privacyLevel`), `schedule-social-post` (`socialAccountId`, `postType`, `text`, `name` as the title of a YouTube Short) for the others. Read a tool's schema before its first use. Note each answer in `work/plan.json`.
+5. Check with the status tools that each post is scheduled, then write the result into the chat: a table of short, account, time and status, and the videos as `[:video {:src "…" :controls true}]` only when they ask for them.
+
+If something fails, retry it with the same UUID; if it keeps failing, say which and why in one sentence and go on with the rest.
+
+## UI in the chat
+
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/shorts"` shows the previews. Links and pictures point at `https://…`, at `artifacts/…` or at `uploads/…` (a file of yours there shows in the chat without taking the pane). There are no text fields: for a name or a time they type, so say what to type.
+
+- One question per block, with buttons for the likely answers and a hint that they can type anything else.
+- Make a button's text say what happens, and its `:send` text read as the person's answer ("Take 4 shorts", "Colour of Dominik: #ff9a5a").
+- Cards: a `div` with `:style {:display "flex" :flex-wrap "wrap" :gap "10px"}` around `div`s with a border, a radius and padding; a swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`.
+- Never put a token, an id the person does not need or a raw error into the chat.
+
+For example, the moments:
+
+```hiccup
+[:div
+ [:div {:style {:display "flex" :flex-direction "column" :gap "8px"}}
+  [:div {:style {:border "1px solid #ddd" :border-radius "12px" :padding "10px 12px"}}
+   [:strong "1 · Der verschwundene Kuchen"] [:small " · 1:06:44 · 38 s"]
+   [:p [:em "„Du hast morgens einen Kuchen gebacken …“"]]
+   [:small "A riddle with a surprising answer, the punchline at the end."] " "
+   [:a {:href "https://youtu.be/STqnETZ9kRc?t=4004"} "▶ watch on YouTube"]]]
+ [:p "I recommend 4 shorts. How many should it be?"]
+ [:button {:send "Take 4 shorts"} "4 (recommended)"] " "
+ [:button {:send "Take all 6 shorts"} "All 6"] " "
+ [:button {:send "Take only the best 2"} "2"]]
+```
+
+## Directing a short
+
+Every short is directed by you, from its brief:
+
+1. `short.mjs new <dir> <clip>` writes down every word with its timing and speaker into `<dir>/source/` (a minute or so).
+2. `short.mjs brief <dir>` writes `<dir>/source/brief.md`: the vocabulary of the engine, the rules and the numbered words. Read all of it.
+3. Write the staging it asks for into `<dir>/source/staging.json`, all words, one JSON file: the hook (a short headline in the clip's language), the phrases, the words that get an effect and the marks; respell words the recognition clearly misheard under `fixes`.
+4. `short.mjs build <dir> [--out …]` builds the HyperFrames project; a staging mistake names its field: fix it and build again.
+5. `short.mjs check <dir> [4,15]` lists what a viewer would notice; fix the errors (✗); the warnings (⚠) are mostly words read quickly. The seconds named become pictures in `<dir>/stills/<t>.png`.
+
+Settings stay with the short: `--title`, `--subtitle`, `--hook`, `--world`, `--names "A=Anna,B=Ben"`, `--colors "A=#ff5a36"`, `--aspect 9:16` (or `1:1`, `4:5`, `16:9`), `--cta "…" --handle @name`, `--out`. For a change to a word, an effect or a phrase, change the staging and build again; never edit the built files by hand. When a wish needs an effect the brief does not offer, say so in one sentence. The fonts are the engine's own (League Gothic, Instrument Serif).
+
+## A single clip
+
+When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 3 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording without a link: `episode.mjs` needs a URL, so cut the best stretch with `node <skill>/tools/highlight.mjs <file> --out work/01-source` or ask which minute.
+
+## Rights
+
+Only material the person may use: when the episode is someone else's, say once, before scheduling, that publishing needs the rights holder's permission.
 
 ## Other uses
 
-`tools/build.mjs` takes any word-timed transcript directly, with presets `lyric` (music, big gestures, 16:9), `podcast` and `social` (9:16, hook card, CTA):
-
-```bash
-node <skill>/tools/build.mjs transcript.json --audio voice.wav --preset lyric|podcast|social \
-  [--aspect 9:16] [--world …] [--title "…"] [--staging-brief brief.md --staging staging.json] --out <project>
-```
-
-- A long episode, best 40–75 s: `node <skill>/tools/highlight.mjs <episode> --out <dir> [--hint "…"]`, then build.
-- Audio only, no transcript: `npx hyperframes transcribe audio.wav -e parakeet`.
-- Check any built project: `node <skill>/tools/qa.mjs <project> [--frames 5,12.5]` (exit 1 on errors).
+`tools/build.mjs` takes any word-timed transcript directly, with presets `lyric` (music, big gestures, 16:9), `podcast` and `social` (9:16, hook card, CTA): `node <skill>/tools/build.mjs transcript.json --audio voice.wav --preset lyric|podcast|social [--world …] --out <project>`. Check any built project with `node <skill>/tools/qa.mjs <project>`.
 
 ## Rules
 
