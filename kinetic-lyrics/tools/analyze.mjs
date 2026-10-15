@@ -407,9 +407,9 @@ export function analyze(rawWords, opts = {}) {
     return {
       id: `p${pi}`, index: pi, start: +start.toFixed(3), end: +end.toFixed(3),
       tIn: +tIn.toFixed(3), tOut: +tOut.toFixed(3),
-      layout, align: pick(["center", "left", "center", "right"], h >> 3),
-      tilt: +((((h >> 7) % 9) - 4) * 0.6 * P.tilt).toFixed(2),
-      enter: pick(P.enter, h >> 11),
+      layout, align: pick(["center", "left", "center", "right"], h >>> 3),
+      tilt: +((((h >>> 7) % 9) - 4) * 0.6 * P.tilt).toFixed(2),
+      enter: pick(P.enter, h >>> 11),
       exit: ap ? ap.exit : exitFor(pw) ?? pick(P.exits, h >>> 13),
       speaker: pw[0].speaker,
       hero: hero ? hero.i : null, mood, concepts,
