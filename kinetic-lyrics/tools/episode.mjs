@@ -5,6 +5,9 @@
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
+//   node tools/episode.mjs moments <dir> [--count N]
+//        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (about ten
+//        cents an hour), best first, at most 59 s each: <dir>/moments.json and a short list to read
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
 //        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
@@ -170,7 +173,7 @@ async function fetchEpisode(url, dir) {
   fs.writeFileSync(path.join(dir, "sentences.txt"), sentences.map((s, k) =>
     `${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`).join("\n") + "\n");
   console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
-    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. Read ${path.join(dir, "sentences.txt")} and pick the moments; `
+    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. episode.mjs moments ${dir} picks the moments; `
     + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
 }
 
@@ -208,7 +211,85 @@ function cut(dir, a, b, c) {
   console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: short.mjs new <short> ${base}.mp4`);
 }
 
+// ---------------------------------------------------------------- moments
+// The candidates for shorts, picked by a model that reads the whole episode once (Gemini through
+// OpenRouter, some ten cents and a minute or two for an hour), so that the agent does not: what it reads stays in every later step
+// of its chat and makes each of them slower and dearer.
+export const MOMENTS_MODEL = "google/gemini-3.8-flash";
+const MOMENTS_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["moments"],
+  properties: { moments: { type: "array", items: {
+    type: "object", additionalProperties: false,
+    required: ["first", "last", "title", "why", "score", "crosstalk"],
+    properties: {
+      first: { type: "integer" }, last: { type: "integer" },
+      title: { type: "string" }, why: { type: "string" },
+      score: { type: "integer" }, crosstalk: { type: "boolean" },
+    },
+  } } },
+};
+
+async function moments(dir, ...rest) {
+  if (!dir) fail("episode.mjs moments <dir> [--count N]");
+  if (!process.env.OPENROUTER_API_KEY) fail("No OPENROUTER_API_KEY: read sentences.txt yourself and pick the moments.");
+  const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
+  const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
+  const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
+  const i = rest.indexOf("--count");
+  const count = i >= 0 ? Number(rest[i + 1]) : Math.max(3, Math.min(10, Math.round((episode.duration || 600) / 540)));
+  const prompt = `This is the transcript of "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line:
+\`<number> [<from>–<to>] <voice>: <words>\`. Pick the ${count} best moments for vertical shorts (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers, best first.
+
+A moment is a range of whole sentences, first..last, **at most 59 seconds** from the start of the first to the end of the last, best 25–50. A good moment
+- is understandable without the rest of the episode: no "as I said", no unexplained "he" or "that thing";
+- opens with a hook in its first sentence (a question, a surprising claim, a vivid image), not with "and", "so", "yeah" or small talk;
+- builds to a payoff (a punchline, an insight, a striking number, an emotional turn) and ends right after it;
+- is concrete and visual rather than abstract; a host's question followed by the answer is fine;
+- is spoken by one voice at a time: a stretch of one- and two-word sentences flipping between voices is people talking at once. Prefer moments without it; where a moment has a few seconds of it, set crosstalk true.
+Moments do not overlap. For each: first and last sentence number, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, a score from 1 to 10.
+
+${text}`;
+  log(`episode: picking moments (${MOMENTS_MODEL}) …`);
+  let j;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: MOMENTS_MODEL, messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_schema", json_schema: { name: "moments", strict: true, schema: MOMENTS_SCHEMA } } }),
+        signal: AbortSignal.timeout(300e3),
+      });
+      j = await res.json();
+      if (res.ok && j.choices) break;
+      throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(j).slice(0, 300)}`);
+    } catch (e) {
+      if (attempt >= 3) fail(`Picking the moments failed (${e.message}): read sentences.txt yourself.`);
+      log(`episode: ${e.message}, again …`);
+      await new Promise((r) => setTimeout(r, attempt * 5000));
+    }
+  }
+  let picked = JSON.parse(String(j.choices[0].message.content).replace(/^```(json)?\s*|\s*```$/g, "")).moments || [];
+  // whole sentences that exist, at most 59 seconds (the end trimmed sentence by sentence), no overlap
+  const taken = new Set();
+  picked = picked.flatMap((m) => {
+    let first = Math.max(0, m.first), last = Math.min(sentences.length - 1, m.last);
+    while (last > first && sentences[last].end - sentences[first].start > 59) last--;
+    if (!(first <= last) || sentences[last].end - sentences[first].start > 59) return [];
+    for (let k = first; k <= last; k++) if (taken.has(k)) return [];
+    for (let k = first; k <= last; k++) taken.add(k);
+    const s0 = sentences[first], s1 = sentences[last];
+    return [{ ...m, first, last, start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds: Math.round(s1.end - s0.start),
+      opening: s0.text, link: episode.id ? `https://youtu.be/${episode.id}?t=${Math.floor(s0.start)}` : null }];
+  });
+  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify(picked, null, 1));
+  console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] score ${m.score}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}\n   „${m.opening}“\n   ${m.why}`).join("\n"));
+  console.log(`${picked.length} moments in ${path.join(dir, "moments.json")} (with their YouTube links), $${(j.usage?.cost ?? 0).toFixed(4)}. `
+    + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
+}
+
 const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
-else fail("episode.mjs fetch <url> <dir> | cut <dir> <first>-<last> <clip.mp4>");
+else if (command === "moments") await moments(...args);
+else fail("episode.mjs fetch <url> <dir> | moments <dir> [--count N] | cut <dir> <first>-<last> <clip.mp4>");
