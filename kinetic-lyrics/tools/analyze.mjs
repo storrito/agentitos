@@ -380,9 +380,10 @@ export function analyze(rawWords, opts = {}) {
     if (layout === lastLayout && layout !== "hero") layout = layout === "block" ? "cascade" : "block";
     if (ap) layout = hero || ap.layout !== "hero" ? ap.layout : "block";
     if (layout === "split" && content.length < 2) layout = "block";
-    // enumerations become a checklist (Claude may ask for it, or it is detected)
+    // enumerations become a checklist: when the staging asks for it, or, without a staging, when
+    // one is detected (a staging that chose another layout knows better: "sag ich, okay, stopp")
     const items = listItems(pw);
-    if (items && (!ap || ap.layout === "list" || pw.every((w) => listRun.has(w.i)))) layout = "list";
+    if (items && (ap ? ap.layout === "list" : pw.every((w) => listRun.has(w.i)))) layout = "list";
     else if (layout === "list") layout = "block";
     // tall frames: a sentence-long phrase in one or two lines ends up small – stacked, it fills the frame
     if (portrait && layout === "inline" && pw.length >= 5) layout = "block";

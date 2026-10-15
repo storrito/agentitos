@@ -29,7 +29,7 @@ export function worldChoices(plan) {
 export function declarations(plan) {
   const named = (plan.turns || []).length > 0;
   const out = [
-    { id: "world", type: "string", label: "World", default: plan.world,
+    { id: "world", type: "enum", label: "World", default: plan.world,
       options: worldChoices(plan).map((w) => ({ value: w, label: cap(w) })) },
     { id: "title", type: "string", label: "Title", default: plan.title || "" },
     { id: "subtitle", type: "string", label: "Subtitle", default: plan.subtitle || "" },

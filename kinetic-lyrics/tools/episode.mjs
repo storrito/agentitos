@@ -7,7 +7,7 @@
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
-//        the stretch as a video file: the sentences first..last (a little air around them),
+//        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
 //        or from/to in seconds (or m:ss, h:mm:ss); then `short.mjs new <short> <clip.mp4>`
 //
 // The words come from Gemini 3.5 Transcribe through OpenRouter (OPENROUTER_API_KEY, with
@@ -124,19 +124,26 @@ async function fetchEpisode(url, dir) {
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
   let words, source;
+  // the sound and words of an episode fetched into this folder before are not this one's
+  for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
   if (process.env.OPENROUTER_API_KEY) {
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
+    let audio = null;
     try {
       download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
+      audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {
       // the captions still give every word and its time; the speakers come with each cut clip
       log(`episode: YouTube gave no sound (${String(e.stderr || e.message).trim().split("\n").pop()}), the captions instead …`);
     }
-    const audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     if (audio) {
       log("episode: writing down every word and who speaks it, a few minutes …");
-      words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
-      source = "openrouter";
+      try {
+        words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
+        source = "openrouter";
+      } catch (e) {
+        log(`episode: the transcription failed (${e.message}), the captions instead …`);
+      }
     }
   } else {
     log("episode: no OPENROUTER_API_KEY, the captions on YouTube (no speakers) …");
@@ -186,8 +193,14 @@ function cut(dir, a, b, c) {
   if (to - from > 180) fail(`That is ${Math.round(to - from)} s; a short takes at most a minute or so.`);
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   const base = out.replace(/\.mp4$/, "");
+  // yt-dlp leaves a file that exists alone: a cut onto a name used before is cut again
+  for (const f of fs.readdirSync(path.dirname(path.resolve(out)))) {
+    if (f.startsWith(path.basename(base) + ".")) fs.rmSync(path.join(path.dirname(path.resolve(out)), f), { force: true });
+  }
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
-  download(["-f", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
+  // up to 4K: the short shows a third of the wide shot's width, cut closer still in a wide shot
+  // (tools/frame.mjs); from 1080p that third is 608 pixels wide and comes out soft
+  download(["-f", "bv*[height<=2160]+ba[ext=m4a]/bv*[height<=2160]+ba/b[height<=2160]/b",
     "--download-sections", `*${from.toFixed(2)}-${to.toFixed(2)}`, "--force-keyframes-at-cuts",
     "--merge-output-format", "mp4", "--no-playlist", "-o", `${base}.%(ext)s`, episode.url]);
   if (!fs.existsSync(`${base}.mp4`)) fail("The cut did not come out, see above.");

@@ -139,10 +139,23 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
     if (!letters.has(v)) letters.set(v, String.fromCharCode(65 + letters.size));
     return letters.get(v);
   };
+  // where one piece hands over to the next: the longest pause in their overlap, as the earlier
+  // piece heard it. Both pieces time a word on their own, a tenth of a second apart; cut at a
+  // fixed second, a word near it would be kept twice or by neither.
+  const cuts = pieces.map((_, k) => {
+    if (!k) return -1;
+    const at = k * CH, heard = pieces[k - 1].filter((w) => w.start >= at && w.start < at + OV).sort((a, b) => a.start - b.start);
+    let cut = at + OV / 2, gap = 0;
+    for (let i = 1; i < heard.length; i++) {
+      const g = heard[i].start - heard[i - 1].end;
+      if (g > gap) { gap = g; cut = (heard[i - 1].end + heard[i].start) / 2; }
+    }
+    return cut;
+  });
   const all = [];
   pieces.forEach((words, k) => {
-    // keep each word once: a piece owns [k*CH + OV/2, (k+1)*CH + OV/2)
-    const lo = k ? k * CH + OV / 2 : -1, hi = (k + 1) * CH + OV / 2;
+    // keep each word once: a piece owns the time from its cut to the next one's
+    const lo = cuts[k], hi = k + 1 < pieces.length ? cuts[k + 1] : Infinity;
     for (const w of words) {
       if (!(w.start >= lo && w.start < hi)) continue;
       const sp = letter(voiceOf(k, w.speaker));
