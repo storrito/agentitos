@@ -361,8 +361,18 @@ transcript.json ──► tools/analyze.mjs ──► plan.json ──► compos
 | dark | big letters loom one by one out of drifting mist | fog, desaturated |
 | quiet | small hushed serif, breathed in letter by letter | fog, desaturated |
 | growth | grows from a seedling at the baseline and keeps growing | rising curve |
+| cold | frost creeps over the word, crystals at its edges, a short crack | fog |
+| fear | the letters keep trembling | fog |
+| message | typed out behind a blinking caret | network |
+| code | random characters rattle through each letter until it locks | network |
+| together | the letters fly in from all around and snap together | network |
+| echo | pale copies of the word ring out and fade, again and again | gyroscope rings |
+| less | appears full size, then deflates in two steps | rising curve |
+| open | splits and swings open like casements, light through the gap | sun with rays |
+| depth | rises out of the depth and stands up | fog |
+| focus | comes into focus out of a heavy blur | sun with rays |
 
-Word effects without a concept of their own, for the direction to pick: `shrink` (appears full size, deflates in two steps), `type` (typed out behind a blinking caret), `scramble` (random characters rattle through each letter until it locks), `tremble` (the letters keep trembling), `assemble` (the letters fly in from all around and snap together), `freeze` (frost creeps over the word, crystals at its edges, a short crack), `echo` (pale copies of the word ring out and fade, again and again). Exits besides `lift`, `zoom`, `blur`, `scatter` and `mow`: `burn` (a fuse runs through the letters, they char and crumble to ash, embers rise) and `fall` (the letters drop away one by one, tumbling); both need about 0.65 s, without that time the phrase fades.
+Exits besides `lift`, `zoom`, `blur`, `scatter` and `mow`: `burn` (a fuse runs through the letters, they char and crumble to ash, embers rise) and `fall` (the letters drop away one by one, tumbling); both need about 0.65 s, without that time the phrase fades. Without a staging, the lexicon picks them from the words too, each at most once per video: `burn` for burnt down, burned out ("verbrannt", "Burnout"), `fall` for collapse, crash, failure ("eingestürzt", "gescheitert", "pleite"), `mow` for a lawn ("Rasen mähen").
 
 The soft ripple ring behind a hero word only comes with an effect that lands with a hit or a burst (`slam`, `shatter`, `drop`, `pulse`, `glow`); concept rings (love, loud) stay. Before a real pause (over 0.9 s) an exit may take up to 0.5 s instead of 0.36 s, so it can be seen; when the last word has no time to be read, the exit is a plain fade.
 

@@ -4,7 +4,7 @@
 // (typography + world). Everything "semantic" is decided here so the
 // browser only has to draw.
 
-import { CONCEPTS, STOPWORDS, MEANINGFUL_STOP, CLAUSE_OPENERS, keyOf, conceptOf, numberOf } from "./lexicon.mjs";
+import { CONCEPTS, STOPWORDS, MEANINGFUL_STOP, CLAUSE_OPENERS, keyOf, conceptOf, exitOf, numberOf } from "./lexicon.mjs";
 import { detectViz, detectNotes, detectLists, listItems } from "./viz.mjs";
 import { TEXT_GRAPHICS } from "../engine/graphics.js";
 
@@ -159,6 +159,8 @@ export function analyze(rawWords, opts = {}) {
     if (!isStop) emphasis += 0.25;
     emphasis += Math.min(0.35, Math.max(0, (dur / medianDur - 1) * 0.18));
     if (concept) emphasis += 0.3;
+    // "up", "auf", "nie" …: carry an image, but a content word beside them says more ("das Fenster auf")
+    if (concept && MEANINGFUL_STOP.has(key)) emphasis -= 0.1;
     if (/[!]/.test(punct)) emphasis += 0.25;
     if (/[.?]/.test(punct)) emphasis += 0.1;
     if (key === prevKey && key) emphasis += 0.2; // repetition ("higher, higher")
@@ -344,6 +346,15 @@ export function analyze(rawWords, opts = {}) {
 
   // 4. phrase descriptors
   let lastLayout = "";
+  // without a staging, a phrase whose words say burning, collapsing or mowing exits that way,
+  // each of these at most once per video
+  const usedExit = new Set();
+  const exitFor = (pw) => {
+    const e = pw.map((w) => exitOf(w.key)).find(Boolean);
+    if (!e || usedExit.has(e)) return null;
+    usedExit.add(e);
+    return e;
+  };
   const out = phrases.map((pw, pi) => {
     const next = phrases[pi + 1];
     const start = pw[0].start;
@@ -398,7 +409,7 @@ export function analyze(rawWords, opts = {}) {
       layout, align: pick(["center", "left", "center", "right"], h >> 3),
       tilt: +((((h >> 7) % 9) - 4) * 0.6 * P.tilt).toFixed(2),
       enter: pick(P.enter, h >> 11),
-      exit: ap ? ap.exit : pick(P.exits, h >> 13),
+      exit: ap ? ap.exit : exitFor(pw) ?? pick(P.exits, h >>> 13),
       speaker: pw[0].speaker,
       hero: hero ? hero.i : null, mood, concepts,
       viz: vizWord ? vizWord.i : null, items: layout === "list" ? items : null, ...(calm && { calm: true }),
