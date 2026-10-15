@@ -51,6 +51,21 @@ function ytdlp() {
 }
 const run = (args, opts = {}) => execFileSync(ytdlp(), args, { encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"], ...opts });
 
+// YouTube turns a server away now and then (403, 429, "reload the page") and lets it in a
+// little later: such a refusal is tried twice more, after a pause
+const refused = (e) => /HTTP Error 40[34]|HTTP Error 429|Forbidden|needs to be reloaded|Sign in to confirm/i.test(String(e.stderr || e.message));
+function download(args) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return run(args);
+    } catch (e) {
+      if (attempt >= 3 || !refused(e)) throw e;
+      log(`episode: YouTube refused (${String(e.stderr || "").trim().split("\n").pop()}), again in ${attempt * 20} s …`);
+      execFileSync("sleep", [String(attempt * 20)]);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- sentences
 // sentences end at . ! ? … and where the speaker changes
 function sentencesOf(words) {
@@ -105,25 +120,34 @@ async function fetchEpisode(url, dir) {
   if (!url || !dir) fail("episode.mjs fetch <url> <dir>");
   fs.mkdirSync(dir, { recursive: true });
   log("episode: reading the video's facts …");
-  const info = JSON.parse(run(["-J", "--skip-download", "--no-playlist", url]));
+  const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
   let words, source;
   if (process.env.OPENROUTER_API_KEY) {
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
-    run(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
-    const audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f));
-    log("episode: writing down every word and who speaks it, a few minutes …");
-    words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
-    source = "openrouter";
+    try {
+      download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
+    } catch (e) {
+      // the captions still give every word and its time; the speakers come with each cut clip
+      log(`episode: YouTube gave no sound (${String(e.stderr || e.message).trim().split("\n").pop()}), the captions instead …`);
+    }
+    const audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
+    if (audio) {
+      log("episode: writing down every word and who speaks it, a few minutes …");
+      words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
+      source = "openrouter";
+    }
   } else {
     log("episode: no OPENROUTER_API_KEY, the captions on YouTube (no speakers) …");
+  }
+  if (!words) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-"));
-    if (!track) fail("This video has no captions, and without OPENROUTER_API_KEY nothing writes the words down.");
+    if (!track) fail("No sound from YouTube and no captions: nothing to write the words down from. Try again in a while.");
     // one track only: YouTube answers a second one with 429 now and then
-    run(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "subs"), url]);
+    download(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "subs"), url]);
     const file = fs.readdirSync(tmp).find((f) => f.endsWith(".json3"));
-    if (!file) fail("This video has no captions, and without OPENROUTER_API_KEY nothing writes the words down.");
+    if (!file) fail("No sound from YouTube and no captions: nothing to write the words down from. Try again in a while.");
     words = captionWords(path.join(tmp, file));
     source = "captions";
   }
@@ -163,7 +187,7 @@ function cut(dir, a, b, c) {
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   const base = out.replace(/\.mp4$/, "");
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
-  run(["-f", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
+  download(["-f", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
     "--download-sections", `*${from.toFixed(2)}-${to.toFixed(2)}`, "--force-keyframes-at-cuts",
     "--merge-output-format", "mp4", "--no-playlist", "-o", `${base}.%(ext)s`, episode.url]);
   if (!fs.existsSync(`${base}.mp4`)) fail("The cut did not come out, see above.");
