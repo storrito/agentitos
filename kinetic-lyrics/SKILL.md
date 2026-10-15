@@ -7,16 +7,16 @@ metadata:
   title-de: "Kinetic Shorts"
   summary: "A vertical short from a podcast or interview clip: every spoken word big on screen, with effects and the speakers' names."
   summary-de: "Ein Hochkant-Short aus einem Podcast- oder Interview-Clip: jedes gesprochene Wort groß im Bild, mit Effekten und den Namen der Sprecher."
-  ask: "Let's set up your short together: say hi and I'll ask you step by step, while your settings take shape on the right. Or attach a clip of people talking right away (a podcast, an interview or a talk, as a video or just the sound)."
-  ask-de: "Lass uns deinen Short gemeinsam einrichten: Schreib „Los“, dann frage ich dich Schritt für Schritt, und rechts entstehen deine Einstellungen. Oder hänge gleich einen Clip an, in dem Menschen sprechen (Podcast, Interview oder Vortrag, als Video oder nur den Ton)."
-  placeholder: "Say “go”, attach a clip, or tell me about it"
-  placeholder-de: "Schreib „Los“, hänge einen Clip an oder erzähl mir davon"
+  ask: "Attach a clip of people talking (a podcast, an interview or a talk, as a video or just the sound) or paste a link. You get a first version in a few minutes and set the rest beside it."
+  ask-de: "Hänge einen Clip an, in dem Menschen sprechen (Podcast, Interview oder Vortrag, als Video oder nur den Ton), oder füge einen Link ein. In ein paar Minuten steht eine erste Version, den Rest stellst du daneben ein."
+  placeholder: "Attach a clip or paste a link"
+  placeholder-de: "Clip anhängen oder Link einfügen"
   inputs: "video,audio"
 ---
 
 # kinetic-lyrics
 
-`<skill>` below is the folder this file is in. Run the tools as `node <skill>/tools/…` from your own working directory; every path you pass is yours. Never change or patch the files in `<skill>`: they are shared by every video. The one file you copy out is the interview page (below). Full reference: [README.md](README.md).
+`<skill>` below is the folder this file is in. Run the tools as `node <skill>/tools/…` from your own working directory; every path you pass is yours. Never change or patch the files in `<skill>`: they are shared by every video. Full reference: [README.md](README.md).
 
 ## Setup (once per machine)
 
@@ -26,49 +26,14 @@ cd <skill> && npm install                     # node 20+, ffmpeg on the PATH
 
 With `OPENROUTER_API_KEY` in the environment, the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. Without it, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx and the models in `<skill>/models/diarize/`, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself, unless you are the operator's setup agent.
 
-## Setting it up together (when the chat shows artifacts)
+## Settings beside the video (when the chat shows artifacts)
 
-When your harness shows the files of `artifacts/` beside the chat (pchat does), a short is set up on a page there, not in the chat. The page does the asking: the person chooses everything on it at once, in any order, and changes anything instantly, without you. You get only real work, as messages from the page: the clip as soon as a source is picked, then one "build the preview" with all settings. Keep the chat short: never ask there what the page asks.
+When your harness shows a HyperFrames project beside the chat with the composition's variables as controls (pchat does: `bin/new <name> hyperframes`), the person sets the short there, not in the chat. Every build declares its settings as variables (`tools/variables.mjs`): the world, the title and subtitle, each voice's name and colour, the end card and handle. The person changes them beside the player, the preview shows the change, and the values go into `artifacts/<name>/variables.json`, which the render uses too. You build nothing for that.
 
-**The page.** On your first answer, copy `<skill>/interview/setup.html` to `artifacts/<name>-setup.html`, `<name>` a short slug of the topic (or `short-1`). It draws itself from the JSON in its `<script type="application/json" id="state">`; change only that JSON, always the whole block, never the rest of the page:
-
-```json
-{"lang": "de", "phase": "setup", "answers": {"quelle": null, "welt": null, "format": null, "titel": null, "sprecher": null, "farben": null, "abspann": null, "posten": null},
- "video": null, "speakers": null, "accounts": [], "project": null, "note": ""}
-```
-
-- `lang`: the language of the chat, `de` or `en`.
-- `accounts`: before your first answer, look up the accounts the person can post to through the connections your harness gives you, as `[{"id": "…", "label": "Instagram @name"}]`; none, `[]`.
-- `note`: what you are doing right now, a few words ("Ich transkribiere den Clip"), shown while you work; `""` at the end of every turn.
-- `answers.quelle`: you write it once the clip is there: a short label ("EDELTALK · Kuchen-Krimi, 63 s"); `video`: `true` for a video, `false` for sound only; `speakers`: how many voices the transcript has (the page offers a colour for each).
-- `phase`: `setup`, then `building` while you build, `preview` once the preview is built; `project`: `<name>` once `artifacts/<name>/` holds the built short.
-- The other answers the page sends you with "build the preview"; write them in (see below). Once the short is built, the page reads what it has from the short itself (`composition/settings.json`, written by every build): you no longer keep those answers.
-
-The page polls whether you work and keeps everything not yet sent in the browser, so your writes (which reload it) lose nothing.
-
-**Keep the page in front.** The right side shows the artifact changed last, and the short's folder is an artifact too. So until the preview is built, work outside `artifacts/`: the clip, the transcript, the brief and the staging go to `shorts/<name>/` (`short.mjs new shorts/<name> <clip>` etc.). And in every turn, write the page last, as a command of its own.
-
-**The messages and what you do:**
-
-1. `Quelle: <link>` / `Quelle: Google Drive` / a clip attached in the chat: get the clip (a link with the tools at hand, Google Drive through the person's connection; for a long episode cut the best minute with `highlight.mjs`, say which in `answers.quelle`), then `short.mjs new shorts/<name> <clip>`, read the words, the brief, and write the staging, all right away: the person goes on choosing meanwhile, and the preview is quick once they are done. Write `answers.quelle` and `video` into the page.
-2. `Vorschau bauen – Welt: … · Format: … · Titel: … · Sprecher: … · Abspann: … · Posten: …`: write the answers into the page with `phase: "building"`. Then `bin/new <name> hyperframes`, move `shorts/<name>/source` into `artifacts/<name>/`, and build there with the settings (`short.mjs build artifacts/<name> --world … --aspect … --title … --subtitle … --names … --cta … --handle …`), check it (`short.mjs check`), fix errors. Then `phase: "preview"`, `project: "<name>"`, `note: ""`. Do not render: the page shows the preview in the HyperFrames player and has its own "render" button. If this message comes while the clip is still on its way, finish the clip first. Say in one sentence that the preview is there.
-3. After the preview the page changes the short itself: the player shows a change at once, and the skill's action `apply` (`actions.json`, `tools/apply.mjs`: build with the settings, check, remove the outdated video) builds it in, run by pchat without you. A line `(Action on the page: apply on <name>, done: …)` above the person's next message tells you; the settings are in `artifacts/<name>/source/settings.json`, so do not build again for it. To apply settings yourself the same way: `bin/action kinetic-lyrics apply <name> '{"settings": {"world": "noir", "title": "…"}}'`.
-4. `Das Video ist gut, bitte posten auf: …`: the person has rendered and watched the video (`artifacts/<name>.mp4`); post it there.
-5. `Ich möchte ein Konto zum Posten verbinden.`: help in the chat, then put the account into `accounts`.
-
-How the answers become settings (the page sends them in the chat's language):
-
-| answer | as the page sends it | becomes |
-| --- | --- | --- |
-| `welt` | a world, or "passend gewählt" / "picked to fit" (write `"auto"`, choose one in the staging and write its name back) | `--world` |
-| `format` | `9:16`, `4:5`, `1:1`, `16:9` | `--aspect` |
-| `titel` | `Show` or `Show · Untertitel`, or "keiner" / "none" (write `""`) | `--title`, `--subtitle` |
-| `sprecher` | `Anna, Ben` in the order they first speak (A, B, …), "ohne Namen" (write `""`), "nach dem Transkript" (write `"später"`: ask in the chat once you know who speaks) | `--names "A=Anna,B=Ben"` |
-| `farben` | `A=#ff5a36,B=#4fc3f7`, or "passend zur Welt" / "the world's" (write `"auto"`) | `--colors "A=#ff5a36,B=#4fc3f7"`, for `auto` `--colors ""` |
-| `abspann` | `Folge uns · @handle`, or "keiner" (write `""`) | `--cta`, `--handle` |
-| `posten` | account labels, or "nur herunterladen" (write `"download"`) | where it goes after the person has seen it |
-
-Over video the dark worlds (`cosmos`, `aurora`, `bokeh`, `neon`, `noir`) lay their light on the footage; the light ones (`editorial`, `geometry`) put it into a frame on paper or in the studio, with dark type below it. The colour scheme comes with the world, each speaker's colour can be chosen (`--colors`), and the fonts are the engine's own (League Gothic, Instrument Serif): when someone asks for other fonts, say so in one sentence. Post only after the person has seen the rendered video and asked for it.
+- **Show first.** Make the project with `bin/new <name> hyperframes` (`<name>` a short slug of the topic), get the clip into it (`short.mjs new artifacts/<name> <clip>`), direct it and build with what you know or guess well (a world that fits, the show's name if you know it). Then say in one or two sentences that the short is there and that the settings are beside it. Do not render: the person renders with the harness's button once it is right.
+- **Ask only what the controls cannot do:** the format (`--aspect`) and, over footage, the step from a dark world to a light one (`editorial`, `geometry` frame the clip) need a build. Ask for the format before the first build when it is not 9:16.
+- **The person's values win.** `variables.json` overrides what a build declares; when you build again (a new staging, another format), it stays. To change a value yourself, write `variables.json` (the controls follow); to let a build's value show, take its key out.
+- Over video the dark worlds (`cosmos`, `aurora`, `bokeh`, `neon`, `noir`) lay their light on the footage; the light ones put it into a frame on paper or in the studio, with dark type below it. The fonts are the engine's own (League Gothic, Instrument Serif): when someone asks for other fonts, say so in one sentence. Post only after the person has seen the rendered video and asked for it.
 
 ## A short from a clip (the main use)
 

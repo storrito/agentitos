@@ -1,7 +1,0 @@
-{
-  "apply": {
-    "run": ["node", "{skill}/tools/apply.mjs"],
-    "label": "Apply the settings",
-    "timeout": 420
-  }
-}

@@ -31,13 +31,9 @@ node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.p
 
 It always uses the `podcast` preset, 9:16 by default, every word big; options: `--speakers`, `--names`, `--colors "A=#ff5a36,B=#4fc3f7"` (each speaker's colour: accent words and name chip), `--title`, `--subtitle`, `--hook`, `--world`, `--aspect`, `--cta`, `--handle`. `<dir>` may already exist (e.g. made by a harness); `new` replaces `<dir>/composition/`.
 
-### Actions for a page (`actions.json`)
+### Settings as HyperFrames variables
 
-`actions.json` declares what a page beside the short may run without the agent, for a harness that supports skill actions (pchat runs them: the command in the workspace, `{"artifact": "<name>", "input": {...}}` on stdin, the last JSON line as the result). `apply` is `tools/apply.mjs`: it checks every setting (`world`, `aspect`, `title`, `subtitle`, `names`, `colors`, `cta`, `handle`), builds `artifacts/<name>` with them, checks it, removes the outdated `artifacts/<name>.mp4` and answers `{"ok": true, "note": "Built, 0 errors, 12 warnings"}`. Every build writes `composition/settings.json` (the settings, the world, the voices), from which the interview page reads what the short has.
-
-### Live settings in the player
-
-A built composition takes settings without a build, for a page around the player (the interview page, `interview/setup.html`): a `kinetic-settings` event on the composition's window, `{world, title, subtitle, names: {A: "Anna"}, colors: {A: "#ff5a36"}, cta, handle}`, each optional, also kept as `window.__kineticSettings` for layers that load later. The world, the words' colours, the show's name, the speaker chips and an existing end card draw themselves again at once; `{}` goes back to what is built. The length stays: an end card can change or go, not come, and the format needs a build. Only a build makes them stay for the render, which reads the files.
+Every build declares the settings a person may change on the finished short as composition variables on `index.html` (`data-composition-variables`, see `tools/variables.mjs`): `world` (over footage only the worlds of the built kind), `title`, `subtitle`, `name_A`, `color_A`, … per voice, and `cta`, `handle` when the short has an end card. Their values come as `window.__hfVariables`, from `hyperframes render --variables-file variables.json` or from a harness that shows the composition with controls (pchat's HyperFrames project keeps them in the project's `variables.json`); every layer applies them to the built plan when it loads, and `qa.mjs` reads the same file, so the preview, the check and the video agree. A build keeps `variables.json`, and its values win over the build's. The format, an end card that was not built and, over footage, the step between a dark and a light world need a build.
 
 Played in a player (an iframe, not the renderer's capture), the world is drawn at 40 % of its size, so the words stay smooth; the render keeps every pixel.
 

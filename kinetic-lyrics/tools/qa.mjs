@@ -26,6 +26,7 @@ import puppeteer from "puppeteer-core";
 import { PNG } from "pngjs";
 import { CSS as TYPE_CSS } from "../engine/type.js";
 import { CSS as OVERLAY_CSS } from "../engine/overlay.js";
+import { applyVariables, readVariables } from "./variables.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -34,7 +35,8 @@ if (!dir) { console.error("usage: node tools/qa.mjs <project dir> [--no-contrast
 const NO_CONTRAST = argv.includes("--no-contrast");
 const MAX_SHOTS = Number(argv[argv.indexOf("--max-shots") + 1]) || 20;
 
-const plan = JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8"));
+// the plan as the video shows it: with the values the person set (variables.json of the project)
+const plan = applyVariables(JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8")), readVariables(dir));
 const W = plan.width, H = plan.height;
 const mmss = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 const findings = [];

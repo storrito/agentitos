@@ -136,12 +136,6 @@ function build(dir, opts) {
   const exit = node("build.mjs", ...buildArgs(dir, s), ...(has ? ["--staging", staging] : []), "--out", path.join(dir, "composition"));
   if (exit === 2) fail("Fix the staging as the message above says, then build again.");
   if (exit !== 0) fail("The build failed, see above.");
-  // what the built short has, for a page beside it (the interview page reads it from the
-  // project, which serves composition/): the settings and the voices
-  const plan = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
-  fs.writeFileSync(path.join(dir, "composition", "settings.json"), JSON.stringify({
-    settings: s, world: plan.world, speakers: (plan.speakers || []).map((sp) => sp.id),
-  }, null, 2) + "\n");
   console.log(`${dir}/composition is built. short.mjs check ${dir} finds what a viewer would notice.`);
 }
 
