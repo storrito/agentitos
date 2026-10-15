@@ -31,7 +31,7 @@ const PARTS = { timeline: [2, 5], route: [2, 2], versus: [2, 2], cause: [2, 2], 
 // the graphics that show nothing without their label
 const LABELLED = new Set(["said", "notify", "search", "place"]);
 
-const WORLDS = ["cosmos", "aurora", "editorial", "geometry", "bokeh", "neon", "noir"];
+const WORLDS = ["cosmos", "aurora", "editorial", "geometry", "bokeh", "neon", "noir", "slate", "dusk", "canopy", "chalk", "linen", "mist"];
 const Annotation = z.object({
   hook: z.string(),
   world: z.enum(WORLDS),
@@ -107,6 +107,13 @@ WORLDS (the stage the whole video plays on – pick the one that fits the subjec
   bokeh = warm out-of-focus lights drifting in the dark, cinematic – people, relationships, lifestyle, health, animals, film, comedy
   neon = a glowing perspective grid with light streaks – tech, gaming, sport, racing, speed, machines, the future
   noir = a dark room cut by slanted light through blinds, dust in the beams – crime, spies, secrets, mystery, history, politics, psychology
+  The calm ones (little motion, muted light, motifs at half strength) – for talk that should not be outshone, most podcasts:
+  slate = a dark studio backdrop under one soft light – news, politics, business, finance, law, serious interviews
+  dusk = the sky after sunset, a warm band on the horizon, clouds passing – reflection, relationships, wellbeing, grief, spirituality, sleep
+  canopy = shade under trees, sunlight falling through leaves – nature, health, food, sustainability, outdoors, sport and body
+  chalk = a wiped blackboard with chalk dust – science, education, explainers, history, how things work
+  linen = light cloth with the sun through a window on it, dark type – lifestyle, home, parenting, food, slow living, conversations
+  mist = a light ground with drifting pastel veils, dark type – coaching, mental health, self-care, mindfulness, women's health
 
 LAYOUTS: hero (one giant word, the rest small around it) · block (justified stacked lines) ·
   cascade (stair-stepped lines) · inline (one or two lines, for longer phrases) · split (two halves at opposite corners) ·
@@ -159,7 +166,7 @@ Every word appears on screen exactly when it is spoken, over an illustrative 3D 
 
 ${VOCAB}
 
-${opts.video ? `The type sits over the speakers' own camera footage (it fills the frame; the type is in the darkened lower part). Over footage a world only adds light, so pick one of cosmos, aurora, bokeh, neon or noir – editorial and geometry are not available.
+${opts.video ? `The type sits over the speakers' own camera footage (it fills the frame; the type is in the darkened lower part). Over footage a world only adds light, so pick one of cosmos, aurora, bokeh, neon, noir, slate, dusk, canopy or chalk – editorial, geometry, linen and mist are not available.
 
 ` : ""}The frame is ${opts.width}x${opts.height} (${opts.portrait ? "portrait – keep phrases short, usually 2–4 words, 5 when the clause has no better break" : "landscape – phrases of up to 6 words"}).
 

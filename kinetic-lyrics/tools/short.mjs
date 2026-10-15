@@ -15,7 +15,7 @@
 // <dir> may already exist (e.g. made by the harness the agent runs in); `new` only needs
 // <dir>/source/ to be free. Options are kept in source/settings.json for the next steps:
 //   --speakers N  --names "A=Anna,B=Ben"  --title "…"  --subtitle "…"  --hook "…"
-//   --world cosmos|aurora|bokeh|neon|noir|editorial|geometry  --aspect 9:16|1:1|4:5|16:9
+//   --world cosmos|aurora|bokeh|neon|noir|editorial|geometry|slate|dusk|canopy|chalk|linen|mist  --aspect 9:16|1:1|4:5|16:9
 //   --colors "A=#ff5a36,B=#4fc3f7" (each speaker's colour; "" = the world's)  --cta "…"  --handle @name
 //   --out <folder>  where the HyperFrames project goes instead of <dir>/composition/, e.g. a
 //                   folder of a series that shows several shorts side by side

@@ -84,6 +84,12 @@ export function mount(canvas, plan) {
   const WORLD = plan.world || "cosmos";
   const INK = WORLD === "editorial", STUDIO = WORLD === "geometry", AURORA = WORLD === "aurora";
   const BOKEH = WORLD === "bokeh", NEON = WORLD === "neon", NOIR = WORLD === "noir";
+  // the calm worlds: little motion, muted light, the motifs at half strength (podcasts)
+  const SLATE = WORLD === "slate", DUSK = WORLD === "dusk", CANOPY = WORLD === "canopy", CHALK = WORLD === "chalk";
+  const LINEN = WORLD === "linen", MIST = WORLD === "mist";
+  const PAPER = INK || LINEN || MIST; // light grounds: the motifs' light turns into ink on them
+  const CALM = SLATE || DUSK || CANOPY || CHALK || LINEN || MIST;
+  const CALM_K = CALM ? 0.55 : 1;
   const VIDEO = !!plan.video && !plan.video.frame; // framed footage sits on the world, not under it
   const CAM_MOVE = plan.style?.drift ?? 1;
 
@@ -114,7 +120,7 @@ export function mount(canvas, plan) {
   B.imageSmoothingQuality = "low";
   const [fx, fg] = canvasOf(W, H); // additive light (motifs), black = nothing
   const BL = [4, 8, 16].map((k) => canvasOf(W / k, H / k)); // bloom pyramid
-  const [inv, ig] = INK ? canvasOf(W, H) : [null, null];
+  const [inv, ig] = PAPER ? canvasOf(W, H) : [null, null];
 
   // tinted sprites, cached by quantised colour
   const spriteCache = new Map();
@@ -159,8 +165,34 @@ export function mount(canvas, plan) {
     tex.mid = alphaTexture(TW, TH, (u, v) => smooth(0.25, 0.95, at(u, v)));
     tex.hi = alphaTexture(TW, TH, (u, v) => Math.pow(smooth(0.55, 1, at(u, v)), 3));
   }
-  if (WORLD === "cosmos" || NOIR || AURORA) tex.cloud = alphaTexture(TW * 2, TH * 2, (u, v) => { const [x, y] = asp(u, v); return smooth(0.42, 0.9, fbm(x * 2.2, y * 2.2)); });
+  if (WORLD === "cosmos" || NOIR || AURORA || DUSK) tex.cloud = alphaTexture(TW * 2, TH * 2, (u, v) => { const [x, y] = asp(u, v); return smooth(0.42, 0.9, fbm(x * 2.2, y * 2.2)); });
   if (NOIR) tex.haze = alphaTexture(TW, TH, (u, v) => { const [x, y] = asp(u, v); return 0.6 + 0.4 * fbm(x * 2, y * 2); });
+  // canopy: sunlight through leaves, soft separate patches
+  // round spots, as the gaps between leaves image the sun, gathered where the crown is thin
+  const DAP = [];
+  if (CANOPY) for (let i = 0; DAP.length < 70 && i < 2000; i++) {
+    const u = rnd(), v = rnd(), [x, y] = asp(u, v);
+    if (fbm(x * 1.6 + 3, y * 1.6 + 1) < 0.5 + rnd() * 0.08) continue;
+    DAP.push({ u, v, r: 0.018 + rnd() ** 2 * 0.05, ph: rnd() * 6.3, sp: 0.5 + rnd() * 0.7, k: 0.5 + rnd() * 0.5 });
+  }
+  // chalk: where the sponge went, wide horizontal smears of dust
+  if (CHALK) tex.smudge = alphaTexture(TW, TH, (u, v) => { const [x, y] = asp(u, v); return smooth(0.42, 0.8, fbm(x * 1.4, y * 6.5)) * (0.6 + 0.4 * vnoise(x * 60, y * 20)); });
+  if (LINEN) {
+    // woven cloth: threads in both directions with slubs, as a grey to multiply with
+    const pw = Math.round(W / 2), ph = Math.round(H / 2);
+    const [c, g] = canvasOf(pw, ph);
+    const img = g.createImageData(pw, ph);
+    for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+      const u = (x / pw) * aspect, v = y / ph;
+      const warp = vnoise(u * 900, v * 22) * 0.6 + vnoise(u * 300, v * 6) * 0.4;
+      const weft = vnoise(u * 22, v * 900 / aspect) * 0.6 + vnoise(u * 6, v * 300 / aspect) * 0.4;
+      const k = Math.round(255 * (1 - Math.abs(warp - weft) * 0.07 - (1 - Math.min(warp, weft)) * 0.03));
+      const i = (y * pw + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.min(255, k); img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    tex.fibre = c;
+  }
   if (INK) {
     const pw = Math.round(W / 2), ph = Math.round(H / 2);
     tex.mottle = alphaTexture(TW, TH, (u, v) => { const x = u * aspect, y = v; return clamp01(0.55 + (fbm(x * 3.2, y * 3.2) * 0.5 + fbm(x * 11, y * 11) * 0.25) * 0.6); });
@@ -199,8 +231,9 @@ export function mount(canvas, plan) {
     for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 2);
     SCAN = c;
   }
-  const VIG = vignette(STUDIO ? 0.16 : AURORA ? 0.35 : BOKEH ? 0.5 : NEON ? 0.4 : NOIR ? 0.6 : INK ? 0.07 : 0.55, 0.45, 1.25);
-  if (INK) tex.fibre.getContext("2d").drawImage(VIG, 0, 0, tex.fibre.width, tex.fibre.height);
+  const VIG = vignette(STUDIO ? 0.16 : AURORA ? 0.35 : BOKEH ? 0.5 : NEON ? 0.4 : NOIR ? 0.6 : INK || LINEN ? 0.07 : MIST ? 0.05
+    : SLATE || CHALK ? 0.5 : DUSK ? 0.45 : CANOPY ? 0.55 : 0.55, 0.45, 1.25);
+  if (INK || LINEN) tex.fibre.getContext("2d").drawImage(VIG, 0, 0, tex.fibre.width, tex.fibre.height);
 
   // ------------------------------------------------ motif data (seeded once)
   // particles: dust / embers / rising / rain / warp / stars
@@ -431,6 +464,60 @@ export function mount(canvas, plan) {
       radial(B, px(0), py(sunY), SPX * 0.8, c3, L.sun * 0.16 * fade);
       if (L.flash > 0.01) { B.fillStyle = rgba(c3, L.flash * 0.15); B.fillRect(0, 0, W, H); }
       if (L.fog > 0.01) { B.globalCompositeOperation = "source-over"; B.fillStyle = rgba(c0, L.fog * 0.4); B.fillRect(0, 0, W, H); }
+    } else if (SLATE) {
+      // a dark backdrop in a studio: one soft key light from above, breathing slowly across it
+      B.globalCompositeOperation = "source-over";
+      const g = B.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, rgba(c1)); g.addColorStop(0.65, rgba(mixc(c0, c1, 0.3))); g.addColorStop(1, rgba(c0));
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+      B.globalCompositeOperation = "lighter";
+      const tt = t * 0.025;
+      radial(B, px(Math.sin(tt) * 0.22), py(0.42), SPX * 1.15, mixc(c1, c2, 0.3), 0.2 * fade, [[0, 1], [0.5, 0.4], [1, 0]]);
+      radial(B, px(0), py(sunY), SPX * 0.8, c3, L.sun * 0.08 * fade);
+    } else if (DUSK) {
+      // the sky after sunset: deep above, a warm band low on the horizon, thin clouds passing
+      B.globalCompositeOperation = "source-over";
+      const g = B.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, rgba(c0)); g.addColorStop(0.5, rgba(c1)); g.addColorStop(0.72, rgba(mixc(c1, c2, 0.5)));
+      g.addColorStop(0.78, rgba(mixc(c2, c3, 0.25))); g.addColorStop(0.815, rgba(mulc(c1, 0.6))); g.addColorStop(1, rgba(c0));
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+      B.globalCompositeOperation = "lighter";
+      radial(B, W * (0.5 + 0.12 * Math.sin(t * 0.01)), H * 0.78, SPX * 0.9, c3, (0.1 + L.sun * 0.12) * fade, [[0, 1], [0.3, 0.35], [1, 0]]);
+      tinted(B, tex.cloud, mixc(c1, c2, 0.45), 0.13 * fade, ((t * 0.012 * SPX) % (W * 0.3)) - W * 0.15, -H * 0.1, 1.4);
+    } else if (CANOPY) {
+      // the shade under trees: sunlight falls through the leaves in soft patches that sway in the wind
+      B.globalCompositeOperation = "source-over";
+      const g = B.createLinearGradient(0, 0, W * 0.4, H);
+      g.addColorStop(0, rgba(c1)); g.addColorStop(1, rgba(c0));
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+      B.globalCompositeOperation = "lighter";
+      const sway = Math.sin(t * 0.35) * 0.6 + Math.sin(t * 0.13 + 1) * 0.4;
+      const spot = mixc(c2, c3, 0.35);
+      for (const d of DAP) {
+        // each spot sways with its branch and dims as leaves pass in front of it
+        const x = d.u * W + (sway * 0.7 + Math.sin(t * 0.5 * d.sp + d.ph) * 0.3) * SPX * 0.012;
+        const y = d.v * H + Math.cos(t * 0.4 * d.sp + d.ph) * SPX * 0.005;
+        const a = (0.2 + L.sun * 0.1) * d.k * (0.55 + 0.45 * Math.sin(t * 0.45 * d.sp + d.ph * 2)) * fade;
+        B.save(); B.translate(x, y); B.scale(1, 0.8);
+        radial(B, 0, 0, d.r * SPX, spot, a, [[0, 1], [0.72, 0.9], [1, 0]]);
+        B.restore();
+      }
+      // a shaft of light from the upper left
+      B.save(); B.translate(W * 0.28, 0); B.rotate(0.38);
+      const bw = SPX * 0.32, lg = B.createLinearGradient(-bw, 0, bw, 0);
+      lg.addColorStop(0, rgba(c3, 0)); lg.addColorStop(0.5, rgba(c3, (0.05 + 0.015 * Math.sin(t * 0.3)) * fade)); lg.addColorStop(1, rgba(c3, 0));
+      B.fillStyle = lg; B.fillRect(-bw, -H * 0.2, bw * 2, H * 1.6);
+      B.restore();
+    } else if (CHALK) {
+      // a wiped blackboard: pale smears of chalk dust, the light from above
+      B.globalCompositeOperation = "source-over";
+      const g = B.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, rgba(c1)); g.addColorStop(1, rgba(c0));
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+      B.globalCompositeOperation = "lighter";
+      tinted(B, tex.smudge, mixc(c1, c3, 0.45), 0.24 * fade, Math.sin(t * 0.01) * W * 0.004, 0, 1.08);
+      radial(B, px(0), py(0.45), SPX * 1.2, c1, 0.22 * fade);
+      radial(B, px(0), py(sunY), SPX * 0.8, c3, L.sun * 0.07 * fade);
     } else if (!INK) {
       // cosmos: the nebula drifts, highlights breathe, clouds pass, a light source rises
       const tt = t * 0.035, cy = L.camY;
@@ -483,7 +570,8 @@ export function mount(canvas, plan) {
     g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = "lighter";
     const ph = { t, rain: S.phase("rain", t), rise: S.phase("rise", t), warp: S.phase("warp", t), swirl: S.phase("swirl", t), shock: L.shock };
-    const presence = STUDIO ? 0 : AURORA ? 0.3 : INK ? 0.55 : NOIR ? 0.45 : 1;
+    const presence = STUDIO ? 0 : AURORA ? 0.3 : INK ? 0.55 : NOIR ? 0.45 : CANOPY ? 0.3 : CHALK || LINEN ? 0.25
+      : SLATE || DUSK || MIST ? 0.18 : 1;
 
     // sun: core, halo and slowly turning rays behind the type
     if (L.sun > 0.002) {
@@ -528,7 +616,7 @@ export function mount(canvas, plan) {
 
     // particles
     if (presence > 0) {
-      const stars = AURORA ? L.stars * 0.3 : Math.max(L.stars, 0.25);
+      const stars = AURORA ? L.stars * 0.3 : CALM ? L.stars * 0.5 : Math.max(L.stars, 0.25);
       const pf = H / 1080;
       for (const s of P) {
         const q = particlePos(s, ph, tmp);
@@ -914,12 +1002,12 @@ export function mount(canvas, plan) {
     })();
     const BG = { ...L, sunY, sun: L.sun * 0.7, cloud: Math.max(L.clouds, L.ascend * 0.5), horizon: Math.max(L.grid, L.waves * 0.8), camY: S.phase("ascend", t), warpBg: L.warp };
     // the studio backdrop never goes black; over footage only aurora and noir keep half their ground
-    const bgFade = VIDEO ? (AURORA || NOIR ? fade * 0.5 : 0) : STUDIO ? 1 : fade;
+    const bgFade = VIDEO ? (AURORA || NOIR || DUSK || CANOPY ? fade * 0.5 : 0) : STUDIO ? 1 : fade;
 
-    if (INK) {
+    if (PAPER) {
       // the paper from the ground colours, then light becomes ink: the motif colours turn into
       // their complement against the paper, so that paper × (1 − colour) lands on the accent ink
-      paper(pal);
+      if (LINEN) linen(t, pal); else if (MIST) mist(t, pal); else paper(pal);
       const p0 = pal[0];
       pal = [pal[0], ...pal.slice(1, 4).map((c) => c.map((v, i) => clamp01(1 - v / Math.max(p0[i], 0.05)))), pal[4]];
       motifs(t, pal, L, fade);
@@ -928,7 +1016,7 @@ export function mount(canvas, plan) {
       fg.globalAlpha = 1; fg.globalCompositeOperation = "source-over";
       // paper × (1 − 0.93 · light): white minus the light, multiplied onto the paper
       ig.globalCompositeOperation = "source-over"; ig.fillStyle = "#fff"; ig.fillRect(0, 0, W, H);
-      ig.globalCompositeOperation = "difference"; ig.globalAlpha = 0.93 * fade;
+      ig.globalCompositeOperation = "difference"; ig.globalAlpha = 0.93 * fade * CALM_K;
       ig.drawImage(fx, 0, 0); ig.globalAlpha = 1;
       ctx.globalCompositeOperation = "multiply"; ctx.drawImage(inv, 0, 0);
       ctx.globalCompositeOperation = "source-over";
@@ -942,14 +1030,16 @@ export function mount(canvas, plan) {
       if (STUDIO) studio(t, pal, L, fade);
       else {
         motifs(t, pal, L, fade);
-        ctx.globalCompositeOperation = "lighter"; ctx.drawImage(fx, 0, 0); ctx.globalCompositeOperation = "source-over";
+        ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = CALM_K; ctx.drawImage(fx, 0, 0);
+        ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
         let st = 0.55 + L.pulse * 0.15 + L.sun * 0.25 + L.shock * 0.25 + L.lightning * 0.2;
         if (AURORA) st *= 0.8;
+        st *= CALM_K;
         bloom(ctx, st, 0.5 + L.sun * 0.15);
       }
     }
     // glitch: horizontal bands slip sideways on "electric" words
-    const gl = Math.min(1, L.glitch);
+    const gl = Math.min(1, L.glitch) * CALM_K;
     if (gl > 0.02) {
       const f = Math.floor(t * 18), bands = 28, bh = H / bands;
       for (let b = 0; b < bands; b++) {
@@ -970,6 +1060,41 @@ export function mount(canvas, plan) {
     tinted(B, tex.mottle, pal[0], 1, 0, 0, 1);
     ctx.globalCompositeOperation = "copy"; ctx.drawImage(bgc, 0, 0, W, H);
     ctx.globalCompositeOperation = "multiply"; ctx.drawImage(tex.fibre, 0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function linen(t, pal) {
+    // cloth in the shade of a room, the sun through a window lying on it in four soft panes
+    // that wander slowly; the panes are drawn small and scaled up, so their edges are soft
+    B.setTransform(1 / BKS, 0, 0, 1 / BKS, 0, 0); B.globalAlpha = 1;
+    B.globalCompositeOperation = "source-over";
+    B.fillStyle = rgba(pal[1]); B.fillRect(0, 0, W, H);
+    const [lc, lg] = BL[2], k = W / lc.width;
+    lg.setTransform(1, 0, 0, 1, 0, 0); lg.globalCompositeOperation = "copy"; lg.fillStyle = "rgba(0,0,0,0)"; lg.fillRect(0, 0, lc.width, lc.height);
+    lg.globalCompositeOperation = "source-over";
+    const sx = Math.sin(t * 0.018) * SPX * 0.05, pw = SPX * 0.24, phh = SPX * 0.34, bar = SPX * 0.04;
+    lg.setTransform(1 / k, 0, -0.32 / k, 1 / k, (W * 0.62 + sx) / k, (H * 0.5 - SPX * 0.55) / k);
+    lg.fillStyle = rgba(mixc(pal[0], [1, 1, 1], 0.4));
+    for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) lg.fillRect(-pw + i * (pw + bar), j * (phh + bar), pw, phh);
+    lg.setTransform(1, 0, 0, 1, 0, 0);
+    B.globalAlpha = 0.6; B.drawImage(lc, 0, 0, W, H); B.globalAlpha = 1;
+    ctx.globalCompositeOperation = "copy"; ctx.drawImage(bgc, 0, 0, W, H);
+    ctx.globalCompositeOperation = "multiply"; ctx.drawImage(tex.fibre, 0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function mist(t, pal) {
+    // a light ground with pastel veils drifting very slowly
+    B.setTransform(1 / BKS, 0, 0, 1 / BKS, 0, 0); B.globalAlpha = 1;
+    B.globalCompositeOperation = "source-over";
+    B.fillStyle = rgba(pal[0]); B.fillRect(0, 0, W, H);
+    const tt = t * 0.03;
+    const field = (x, y, r, col, a) => radial(B, px(x), py(y), SPX * r, col, a, [[0, 1], [0.5, 0.6], [1, 0]]);
+    field(Math.sin(tt * 1.1) * 0.4, Math.cos(tt * 0.9) * 0.3 + 0.2, 1.2, pal[1], 0.9);
+    field(Math.cos(tt * 0.8 + 2) * 0.45, Math.sin(tt * 1.0 + 1) * 0.35 - 0.25, 1.05, mixc(pal[1], pal[3], 0.6), 0.55);
+    field(Math.sin(tt * 0.6 + 4) * 0.4, Math.cos(tt * 0.7 + 3) * 0.4, 0.9, mixc(pal[0], pal[3], 0.5), 0.35);
+    B.drawImage(VIG, 0, 0, W, H);
+    ctx.globalCompositeOperation = "copy"; ctx.drawImage(bgc, 0, 0, W, H);
     ctx.globalCompositeOperation = "source-over";
   }
 

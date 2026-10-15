@@ -18,7 +18,7 @@ export const PALETTES = {
 
 // Each world has its own palette per mood – same keys, same 5 slots:
 // [ground, ground shade, accent, glow / light accent, ink (text)].
-// Light worlds (editorial, geometry) use a light ground and dark ink.
+// Light worlds (editorial, geometry, linen, mist) use a light ground and dark ink.
 export const WORLDS = {
   cosmos: { light: false, palettes: PALETTES },
   aurora: {
@@ -113,6 +113,103 @@ WORLDS.noir = {
     rose:     ["#060304", "#33202a", "#e29aac", "#f4dde3", "#f8f0f2"],
     ember:    ["#060302", "#36231a", "#e8a070", "#f6dcc4", "#f8f1ea"],
     gold:     ["#050403", "#332c1c", "#e6c47a", "#f6ecd0", "#f9f6ee"],
+  },
+};
+// The calm worlds for podcasts: muted grounds, soft light, little motion.
+// slate: a dark studio backdrop – news, politics, business, finance, interviews
+WORLDS.slate = {
+  light: false,
+  palettes: {
+    night:    ["#07090d", "#1c2330", "#8fa6c8", "#d4dded", "#eef1f5"],
+    dark:     ["#070708", "#1e1e22", "#b5b3bb", "#8a8892", "#ececee"],
+    dawn:     ["#0b0909", "#2a2223", "#e0b08f", "#f2dccb", "#f7f1ec"],
+    electric: ["#06080e", "#1a2236", "#7fc4e8", "#cfe8f5", "#eef5fa"],
+    cool:     ["#06090c", "#18242d", "#8bbbd2", "#d6eaf2", "#edf4f7"],
+    ocean:    ["#050a0a", "#162827", "#7fc6b8", "#d2eee7", "#edf6f3"],
+    violet:   ["#08070c", "#221f2f", "#ad9fd6", "#e3dcf2", "#f3f0f8"],
+    rose:     ["#0b0808", "#2a1f22", "#d99aa6", "#f1dbe0", "#f7f0f1"],
+    ember:    ["#0b0806", "#2b2019", "#dca07a", "#f2dcc8", "#f7f1eb"],
+    gold:     ["#0a0907", "#29241a", "#d8bd82", "#f1e6cc", "#f8f5ee"],
+  },
+};
+// dusk: the sky after sunset, a warm band on the horizon – reflection, relationships, wellbeing
+WORLDS.dusk = {
+  light: false,
+  palettes: {
+    night:    ["#060a1a", "#1d2550", "#e09a7a", "#ffd2b0", "#f6f2ee"],
+    dark:     ["#08080c", "#25232f", "#b39a8e", "#e2cfc2", "#efebe8"],
+    dawn:     ["#0d0a1e", "#3a2a5a", "#ff9e78", "#ffd9b8", "#fff4ec"],
+    electric: ["#070722", "#26236a", "#ff8fa8", "#ffd0dc", "#f6f4ff"],
+    cool:     ["#050b18", "#17304f", "#9ec4e0", "#e2f0fa", "#eef5fa"],
+    ocean:    ["#041014", "#123c48", "#f0b28a", "#ffe0c4", "#eef8f6"],
+    violet:   ["#0c0820", "#33245e", "#f2a0c0", "#ffd8e8", "#f8f2ff"],
+    rose:     ["#120a1a", "#432245", "#ff9a8a", "#ffd6c8", "#fff1f2"],
+    ember:    ["#120806", "#4a2416", "#ff8a4a", "#ffd09a", "#fff3e8"],
+    gold:     ["#0e0b12", "#3c2c3a", "#ffbf6a", "#ffe6b8", "#fffaf0"],
+  },
+};
+// canopy: shade under trees, sunlight through leaves – nature, health, sustainability, outdoors
+WORLDS.canopy = {
+  light: false,
+  palettes: {
+    night:    ["#040807", "#11241f", "#8fc4b0", "#d6efe4", "#eef6f2"],
+    dark:     ["#050606", "#181d1b", "#a9b5ad", "#d9e0db", "#eceeed"],
+    dawn:     ["#070906", "#1f2a1a", "#e8c48a", "#f8e6c4", "#f8f5ec"],
+    electric: ["#03090a", "#0f2a2a", "#7fe0c8", "#d0fff0", "#effcf8"],
+    cool:     ["#040809", "#122426", "#8fcac4", "#d8f2ee", "#eef7f6"],
+    ocean:    ["#030907", "#0e2a22", "#79d0ae", "#ccf5e2", "#edf9f3"],
+    violet:   ["#06070a", "#1b2026", "#b6c49c", "#e6eed6", "#f3f5ee"],
+    rose:     ["#08070a", "#22201f", "#e6b4a4", "#f6e0d8", "#f8f1ee"],
+    ember:    ["#080704", "#262214", "#f0b46a", "#fbe2b8", "#fbf5ea"],
+    gold:     ["#070803", "#20260f", "#e8d27a", "#f8f0c4", "#fbf9ee"],
+  },
+};
+// chalk: a wiped blackboard – science, education, explainers, history
+WORLDS.chalk = {
+  light: false,
+  palettes: {
+    night:    ["#0a0e12", "#1f2a33", "#a8c4e0", "#e6eef6", "#f2f4f6"],
+    dark:     ["#0b0c0c", "#222525", "#c4c6c2", "#e6e6e2", "#efefec"],
+    dawn:     ["#0e0d0c", "#2a2724", "#f0c4a0", "#f6e6d8", "#f8f4ef"],
+    electric: ["#080c12", "#1a2836", "#9fe0ff", "#e0f6ff", "#f0f8fc"],
+    cool:     ["#090d10", "#1c2a30", "#a8d4e6", "#e2f2f8", "#eff6f8"],
+    ocean:    ["#0a110f", "#1e302a", "#a4e0c8", "#e0f6ec", "#eff8f4"],
+    violet:   ["#0c0b10", "#25222f", "#c8b8f0", "#ece6fa", "#f4f2f8"],
+    rose:     ["#0f0c0d", "#2b2427", "#f2b8c6", "#f8e4ea", "#f8f2f4"],
+    ember:    ["#0f0c0a", "#2c2620", "#f2c08f", "#f8e6d2", "#f8f4ee"],
+    gold:     ["#0e0d09", "#2a2819", "#f0dc96", "#f8f2d6", "#f8f7ee"],
+  },
+};
+// linen: light cloth, the sun through a window on it – lifestyle, home, food, parenting, slow living
+WORLDS.linen = {
+  light: true,
+  palettes: {
+    night:    ["#f1eee8", "#dcd8d0", "#2f4f8f", "#a9b8d8", "#1a1c22"],
+    dark:     ["#efedea", "#d9d6d1", "#3a3a40", "#9c9aa2", "#18181b"],
+    dawn:     ["#f5eee6", "#e2d5c8", "#b8552e", "#e8b9a0", "#211814"],
+    electric: ["#eef0f1", "#d6dbde", "#1f5fae", "#9cc0e6", "#121820"],
+    cool:     ["#eef1f2", "#d6dde0", "#2f6f8f", "#a8cadb", "#121c22"],
+    ocean:    ["#eef1ec", "#d6dfd6", "#2f7a62", "#a6d0be", "#121e19"],
+    violet:   ["#f1eef2", "#dcd6df", "#6a4fa6", "#c4b4e2", "#1a1620"],
+    rose:     ["#f5eeec", "#e4d6d3", "#b0405a", "#e8b0bc", "#211517"],
+    ember:    ["#f5efe8", "#e4d6c6", "#b4501c", "#eab894", "#22170f"],
+    gold:     ["#f4f0e4", "#e2dbc6", "#94701a", "#e0cc92", "#1f1a0c"],
+  },
+};
+// mist: a light ground with pastel veils – coaching, mental health, self-care, spirituality
+WORLDS.mist = {
+  light: true,
+  palettes: {
+    night:    ["#eef1f8", "#d6def2", "#3a56b8", "#b8c8f0", "#161a28"],
+    dark:     ["#f0f0f2", "#dcdce2", "#45454f", "#c6c6d0", "#18181c"],
+    dawn:     ["#fbf1ec", "#f6d8cc", "#c4583a", "#f4c4b4", "#24171a"],
+    electric: ["#eef2fb", "#d8e0fa", "#3a4fd8", "#f0c4ec", "#121528"],
+    cool:     ["#edf4f8", "#d2e6f0", "#2a72a0", "#bfe0f0", "#10202a"],
+    ocean:    ["#edf6f3", "#cfeee4", "#1f8068", "#bcebdc", "#0f211c"],
+    violet:   ["#f4f0fa", "#e2d6f6", "#6a3fc4", "#f2d0ee", "#1b1428"],
+    rose:     ["#fbf0f2", "#f6d6de", "#c43a62", "#f8c8d4", "#26141a"],
+    ember:    ["#fbf2ea", "#f6dcc6", "#c05420", "#f6cca8", "#26180e"],
+    gold:     ["#faf5e6", "#f2e6c0", "#9c7410", "#f0dca0", "#211a08"],
   },
 };
 export const worldOf = (plan) => WORLDS[plan.world] || WORLDS.cosmos;

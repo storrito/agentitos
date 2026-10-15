@@ -35,8 +35,8 @@ export const PRESETS = {
 const SPEAKER_COLORS = ["#7fe3ff", "#ffb36b", "#c9a7ff", "#9dffb0", "#ff8fb1"];
 // on light worlds (paper / studio) the speaker colours must carry dark-on-light text
 const SPEAKER_COLORS_LIGHT = ["#08609c", "#b0400a", "#5d33c4", "#11703e", "#ad1452"]; // ≥ 4:1 on paper
-export const LIGHT_WORLDS = new Set(["editorial", "geometry"]);
-export const WORLD_NAMES = ["cosmos", "aurora", "editorial", "geometry", "bokeh", "neon", "noir"];
+export const LIGHT_WORLDS = new Set(["editorial", "geometry", "linen", "mist"]);
+export const WORLD_NAMES = ["cosmos", "aurora", "editorial", "geometry", "bokeh", "neon", "noir", "slate", "dusk", "canopy", "chalk", "linen", "mist"];
 const DEFAULT_WORLD = { lyric: "cosmos", podcast: "editorial", social: "aurora" };
 
 // ---------- input normalisation ----------

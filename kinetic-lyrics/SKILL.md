@@ -62,7 +62,7 @@ In the same message, or right after, ask where the shorts go: Instagram Reels, T
 
 Ask one thing per message, each with buttons, and offer to take your proposal for everything at once ("Take your suggestions"):
 
-- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show each as a card with its colours as the card's background, what it fits, and a button. Recommend one by the episode's mood.
+- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show each as a card with its colours as the card's background, what it fits, and a button. Recommend one by the episode's mood; for most talk a calm one, which moves little and keeps its motifs quiet.
 
   | world | the card's `:background` | fits |
   | --- | --- | --- |
@@ -73,9 +73,15 @@ Ask one thing per message, each with buttons, and offer to take your proposal fo
   | `aurora` | `linear-gradient(150deg, #00c9a7, #845ec2 50%, #ff6f91)` | motivation, lifestyle |
   | `editorial` | `linear-gradient(#f3eee2, #e6dfcf)` (dark text on it) | business, education; footage in a frame |
   | `geometry` | `radial-gradient(circle at 30% 35%, #f6b26b 0 12%, transparent 13%), linear-gradient(#f4f4f2, #dcdcd8)` | products, explainers; footage in a frame |
+  | `slate` (calm) | `radial-gradient(ellipse at 50% 15%, #2a3242, transparent 65%), linear-gradient(#141922, #07090d)` | news, politics, business, finance |
+  | `dusk` (calm) | `linear-gradient(#0d1230, #2a2f6a 45%, #e8a07c 74%, #3a2a40 80%, #0d0a18)` | reflection, relationships, wellbeing |
+  | `canopy` (calm) | `radial-gradient(circle at 30% 30%, rgba(232,210,140,.45) 0 5%, transparent 6%), radial-gradient(circle at 65% 55%, rgba(232,210,140,.35) 0 7%, transparent 8%), linear-gradient(160deg, #1d3328, #07100c)` | nature, health, food, sport |
+  | `chalk` (calm) | `repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 6px, transparent 6px 14px), linear-gradient(#26343a, #0f1518)` | science, education, explainers |
+  | `linen` (calm) | `linear-gradient(115deg, transparent 45%, rgba(255,255,255,.7) 46% 58%, transparent 59%), linear-gradient(#e6e1d8, #d6d0c4)` (dark text on it) | lifestyle, home, family; footage in a frame |
+  | `mist` (calm) | `radial-gradient(circle at 30% 30%, #f6d8e4, transparent 55%), radial-gradient(circle at 75% 70%, #d6e4f6, transparent 55%), #f4f2f6` (dark text on it) | coaching, mental health, self-care; footage in a frame |
 
 - **The speakers' names** as they should appear on the name tag: tell who is who with one line each said (A is who speaks first in a short), buttons "No names" and, when the episode's title or description names them, the names you found. They type others.
-- **The speakers' colours**: per voice a row of swatches (a button with that colour as its background) and "The world's colours". On the dark worlds light colours: `#7fe3ff #ffb36b #c9a7ff #9dffb0 #ff8fb1 #ffe066`; on `editorial` and `geometry` dark ones: `#08609c #b0400a #5d33c4 #11703e #ad1452 #7a5c00`. A colour the other kind of world would hide is unreadable: say so if they pick one.
+- **The speakers' colours**: per voice a row of swatches (a button with that colour as its background) and "The world's colours". On the dark worlds light colours: `#7fe3ff #ffb36b #c9a7ff #9dffb0 #ff8fb1 #ffe066`; on the light ones (`editorial`, `geometry`, `linen`, `mist`) dark ones: `#08609c #b0400a #5d33c4 #11703e #ad1452 #7a5c00`. A colour the other kind of world would hide is unreadable: say so if they pick one.
 - **The top line**: the show's name (from the channel or the episode title, as a button), "No title", or typed.
 - **An end card**: "Follow @<handle>" with the handles of their connected accounts as buttons (step 5 lists them; you may look them up now), or "No end card".
 

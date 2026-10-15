@@ -100,12 +100,19 @@ Every video plays in a **world** that fits its topic. Each world has its own pal
 | `bokeh` | warm, blurred circles of light in the dark, cinematic | people, lifestyle, health, animals, film, comedy | – |
 | `neon` | glowing perspective grid, light streaks in the slipstream | tech, gaming, sports, racing, machines | – |
 | `noir` | dark room, slanted light through blinds, dust in the beam | crime, espionage, secrets, history, psychology | – |
+| `slate` | calm: a dark studio backdrop under one soft light | news, politics, business, finance, serious interviews | – |
+| `dusk` | calm: the sky after sunset, a warm band on the horizon, clouds passing | reflection, relationships, wellbeing, spirituality | – |
+| `canopy` | calm: shade under trees, round spots of sun swaying through the leaves | nature, health, food, sustainability, sport | – |
+| `chalk` | calm: a wiped blackboard with smears of chalk dust | science, education, explainers, history | – |
+| `linen` | calm, light: cloth with the sun through a window on it, dark type | lifestyle, home, parenting, food, conversations | – |
+| `mist` | calm, light: pale ground with drifting pastel veils, dark type | coaching, mental health, self-care, mindfulness | – |
 
 Select with `--world <name>`. If omitted, Claude picks one to fit the content with `--llm`, otherwise the preset's default applies.
 
 - **Editorial** keeps using all motifs: the glowing scene is put onto paper subtractively, so light becomes ink.
 - **Geometry** expresses the concepts through its objects: they orbit (time), rise and fall (rise/fall), get pushed away (impact), grow (growth, numbers) and pulse (love). The key light brightens for light and idea.
-- **Light worlds** switch typography and HUD to dark type and use darker speaker colours.
+- **Light worlds** (`editorial`, `geometry`, `linen`, `mist`) switch typography and HUD to dark type and use darker speaker colours.
+- **Calm worlds** (`slate`, `dusk`, `canopy`, `chalk`, `linen`, `mist`) are for talk that should not be outshone: their ground moves slowly, the dust is sparse, and every motif, its bloom and the glitch come at a little over half strength.
 
 ## Video as background
 
@@ -120,12 +127,12 @@ node tools/build.mjs examples/my-clip/transcript.json --video examples/my-clip/v
 
 - **Layout:** The video fills the frame. A gradient darkens the lower half of the frame, where the typography sits. The face at the top stays clear.
 - **The world** is laid over the video with `screen` blending, so only its light is visible (stars, sparks, rings). Over the face it is barely visible, in the dark area it is at full strength, and the type is light.
-- **Light worlds** (`editorial`, `geometry`) frame the video instead: it sits as a picture with rounded corners on the paper or in the studio (on top in portrait and square, on the left in landscape, cut to fit, `plan.video.frame`), the dark type below or beside it, the world drawn as without footage.
+- **Light worlds** (`editorial`, `geometry`, `linen`, `mist`) frame the video instead: it sits as a picture with rounded corners on the paper or in the studio (on top in portrait and square, on the left in landscape, cut to fit, `plan.video.frame`), the dark type below or beside it, the world drawn as without footage.
 - **Motion:** The image slowly zooms in by 6 % and gives a small push (2.5 %) on hero lockups.
 - **Burned-in captions** are found automatically by `tools/burnin.mjs`. It looks for bright, sharp-edged text that changes every few tenths of a second and sits in a fixed band. Temporary overlays such as name tags or title cards are detected as well. The gradient is fully dark just above them, never higher than 50 % (the face stays clear) and never lower than 60 % (the type needs room). Without burned-in text it is a little lighter (`dim` 0.85). Result on 7 shorts: 6 caption bands and 4 overlays found, and correctly none for the clip without captions.
 - **`--video-shade a:b` / `--video-dim x`** override the detection: at frame height `a` the gradient is still transparent, from `b` on it is dark, and `x` sets how dark. The values are stored in `plan.json` under `video`.
 - **Short-form layout:** The type ends at 78 % of the frame height and keeps 12 % clear on the right, so it stays free of the platform UI (title, channel, buttons). The name tag sits directly above the type, and the audio waveform is dropped. Speakers without names only get their colour, no "A"/"B" tag.
-- **Worlds over video:** `cosmos`, `aurora` (keeps colour veils at half strength), `bokeh`, `neon` and `noir`. With `--llm` Claude only picks from these. Light worlds are replaced: `editorial` by `bokeh`, `geometry` by `neon`. Centred motifs (rings, network, chart, pulse rings, sun) move into the dark zone and get smaller.
+- **Worlds over video:** `cosmos`, `aurora` (keeps colour veils at half strength), `bokeh`, `neon`, `noir`, and the calm `slate`, `dusk`, `canopy` and `chalk` (dusk and canopy keep their ground at half strength). With `--llm` Claude only picks from these. Light worlds are replaced: `editorial` by `bokeh`, `geometry` by `neon`. Centred motifs (rings, network, chart, pulse rings, sun) move into the dark zone and get smaller.
 - **Sound:** Without `--audio` the audio track is read from the video, and the video itself plays muted.
 - **QA** (`tools/qa.mjs`) measures contrast and collisions on real video frames (ffmpeg, 8 fps).
 
