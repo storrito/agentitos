@@ -119,13 +119,21 @@ Write the plan into `work/plan.json` as you agree on it: per short its folder, f
 
 ### 7. Render and schedule
 
-When everything is agreed, show the whole plan once more and ask: "Shall I render all shorts and schedule them?" with the buttons "Render and schedule" and "Not yet". Only after "Render and schedule":
+When everything is agreed, show the whole plan once more and ask: "Shall I render all shorts and schedule them?" In the same block ask whether they want a message when everything is done, and how: radio buttons (one `:name`) for "No message" (ticked), E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp, then the buttons "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`) and "Not yet".
 
-1. Tell them in one or two sentences that you are rendering N shorts now (a few minutes each) and scheduling them, that **they can close this window**, and that everything finishes by itself; the result will be here in the chat.
+A message goes out through the agent's own Storrito connection (`mcp__storrito-agent__…`, Composio; find its tools with tool_search). When they chose one, before anything else:
+
+- `COMPOSIO_SEARCH_TOOLS` for the use case ("send an email", "send a Telegram message", …) names the tool and whether the service is connected. Not connected: `COMPOSIO_MANAGE_CONNECTIONS` with the toolkit gives a sign-in link; show it as `[:a {:href …} "Connect Gmail"]` and ask them to say when they are done.
+- Ask for what the service needs to reach them and you cannot know: the e-mail address, the phone number, the Slack name. Write it into `work/plan.json` under `notify`.
+
+Only after "Render and schedule" (and, with a message, the connection and the address):
+
+1. Tell them in one or two sentences that you are rendering N shorts now (a few minutes each) and scheduling them, that **they can close this window**, and that everything finishes by itself; the result will be here in the chat, and with a message also there.
 2. Per short: `node <skill>/tools/short.mjs render work/<k> work/out/<k>.mp4`.
 3. Upload it: `create-temp-blob-upload-url` with a new UUID, `contentType` `video/mp4` and the file's exact size, then `curl -sS -T work/out/<k>.mp4 -H 'Content-Type: video/mp4' '<uploadUrl>'`. Its `url` is the video for every post of this short (at most 100 MB; a minute is about 45).
 4. Per account of the short, the procedure the plan names, with `html` `<insta-story src="<url>"></insta-story>`, the time as `date` and the UUID of the plan: `schedule-instagram-reel` (`instagramUsername`, `caption`, `shareToFeed: true`), `schedule-tiktok-post` (`tiktokAccountId`, `title`, `privacyLevel`), `schedule-social-post` (`socialAccountId`, `postType`, `text`, `name` as the title of a YouTube Short) for the others. Read a tool's schema before its first use. Note each answer in `work/plan.json`.
 5. Check with the status tools that each post is scheduled, then write the result into the chat: a table of short, account, time and status, and the videos as `[:video {:src "…" :controls true}]` only when they ask for them.
+6. With a message chosen, send it last, once, in their language: the episode's title, how many shorts are scheduled on which accounts, the first and the last date, what failed if anything, and that the details are in the chat (no tokens, no ids). E-mail with the subject "Your shorts are scheduled" (in their language). If it cannot be sent, say so in the chat; the chat holds the result either way.
 
 If something fails, retry it with the same UUID; if it keeps failing, say which and why in one sentence and go on with the rest.
 
