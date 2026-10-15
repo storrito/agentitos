@@ -8,7 +8,7 @@
 //                    <name>.staging.json; falls back to the keyword lexicon on failure)
 //   --llm-refresh    ignore the cached staging and ask Claude again
 //   --preset         lyric (default) | podcast | social – pacing, layouts, HUD, world presence
-//   --world          cosmos | aurora | editorial | geometry | bokeh | neon | noir (default: by preset; with --llm Claude picks)
+//   --world          cosmos | aurora | editorial | geometry | bokeh | neon | noir, calm: slate | dusk | canopy | chalk | linen | mist (default: by preset; with --llm Claude picks)
 //   --hook "…"       headline (social/podcast); with --llm Claude writes one if omitted
 //   --cta "…" --handle @name   end card (social)
 //   --subtitle "…"   e.g. episode / guest line (podcast)

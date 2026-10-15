@@ -15,8 +15,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const WORLD_NAMES = ["cosmos", "aurora", "bokeh", "neon", "noir", "editorial", "geometry"];
-const LIGHT = new Set(["editorial", "geometry"]);
+export const WORLD_NAMES = ["cosmos", "aurora", "bokeh", "neon", "noir", "slate", "dusk", "canopy", "chalk", "editorial", "geometry", "linen", "mist"];
+const LIGHT = new Set(["editorial", "geometry", "linen", "mist"]);
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // The worlds a variable may pick: over footage only those of the built kind.
@@ -54,8 +54,8 @@ export function declarationsAttribute(plan) {
 // its source into the compositions; values that do not fit are left out.
 export function applyVariables(plan, values) {
   if (!values || typeof values !== "object") return plan;
-  var v = values, p = Object.assign({}, plan), light = { editorial: 1, geometry: 1 };
-  var worlds = ["cosmos", "aurora", "bokeh", "neon", "noir", "editorial", "geometry"];
+  var v = values, p = Object.assign({}, plan), light = { editorial: 1, geometry: 1, linen: 1, mist: 1 };
+  var worlds = ["cosmos", "aurora", "bokeh", "neon", "noir", "slate", "dusk", "canopy", "chalk", "editorial", "geometry", "linen", "mist"];
   if (typeof v.world === "string" && worlds.indexOf(v.world) >= 0 && (!plan.video || !light[v.world] === !light[plan.world])) p.world = v.world;
   if (typeof v.title === "string") p.title = v.title;
   if (typeof v.subtitle === "string") p.subtitle = v.subtitle;

@@ -87,6 +87,12 @@ const WORLDS = [
   world("bokeh", "Warme, unscharfe Lichter im Dunkeln, filmisch: Menschen, Beziehungen, Gesundheit, Comedy", "Ein Abend mit [Freunden]"),
   world("neon", "Leuchtendes Perspektivraster mit Lichtstreifen: Tech, Gaming, Sport, Geschwindigkeit, Zukunft", "Volle Kraft [voraus]"),
   world("noir", "Dunkler Raum, schräges Licht durch Jalousien, Staub im Licht: Krimi, Geheimnisse, Geschichte, Psychologie", "Niemand kannte die [Wahrheit]"),
+  world("slate", "Ruhig: dunkler Studiohintergrund unter einem weichen Licht: Nachrichten, Politik, Wirtschaft, Finanzen, ernste Interviews", "Die Zinsen bleiben [hoch]"),
+  world("dusk", "Ruhig: Himmel nach Sonnenuntergang, warmes Band am Horizont, ziehende Wolken: Reflexion, Beziehungen, Wohlbefinden, Spiritualität", "Was mir wirklich [wichtig] ist"),
+  world("canopy", "Ruhig: Schatten unter Bäumen, Sonnenflecken durch die Blätter: Natur, Gesundheit, Ernährung, Nachhaltigkeit, Sport", "Raus in die [Natur]"),
+  world("chalk", "Ruhig: gewischte Tafel mit Kreidestaub: Wissenschaft, Bildung, Erklärungen, Geschichte", "So funktioniert [Photosynthese]"),
+  world("linen", "Ruhig, hell: Leinen, Sonne fällt durchs Fenster, dunkle Schrift: Lifestyle, Zuhause, Familie, Essen, Gespräche", "Sonntags kochen wir [zusammen]"),
+  world("mist", "Ruhig, hell: zarte Pastellschleier, dunkle Schrift: Coaching, mentale Gesundheit, Selbstfürsorge, Achtsamkeit", "Atme einmal tief [durch]"),
 ];
 const mood = (name, what, text) => [`mood-${name}`, name, what, text, { mood: name }];
 const MOODS = [
@@ -206,7 +212,7 @@ const PAGES = [
     { title: "Abgänge", note: "Wie eine ganze Phrase geht: exit im Staging.", demos: EXITS },
   ] },
   { file: "welten.html", nav: "Hintergründe", title: "Welten und Stimmungen", sections: [
-    { title: "Welten", note: "Die Bühne des ganzen Videos: world im Staging, eine pro Video. Über Footage werden helle Welten ersetzt (editorial durch bokeh, geometry durch neon).", demos: WORLDS },
+    { title: "Welten", note: "Die Bühne des ganzen Videos: world im Staging, eine pro Video. Die ruhigen Welten (slate, dusk, canopy, chalk, linen, mist) bewegen sich kaum und zeigen die Motive halb so stark: für Podcasts. Über Footage rahmen die hellen Welten das Bild ein.", demos: WORLDS },
     { title: "Stimmungen", note: "Die Farbpalette einer Phrase: mood im Staging. Hier alle in der Welt aurora.", demos: MOODS },
   ] },
   { file: "akzente.html", nav: "Akzente", title: "Anmerkungen, Grafiken, Layouts, Konzepte", sections: [
