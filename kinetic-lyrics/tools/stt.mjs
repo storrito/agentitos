@@ -1,13 +1,15 @@
 // Speech to word timings and speakers through OpenRouter (Gemini 3.5 Transcribe): nothing to
-// install but ffmpeg, OPENROUTER_API_KEY in the environment. In 20-minute chunks (with
-// speakers, the model takes at most 30 minutes at a time).
+// install but ffmpeg, OPENROUTER_API_KEY in the environment. A long recording goes in 5-minute
+// pieces, eight at a time: an hour takes about as long as a few minutes would.
 //
 //   transcribeRemote(file, { lang, speakers }) → [{ text, start, end, speaker }]
 //
 // The model gives times in tenths of a second; build.mjs snaps every word onset to the voice
 // in the audio (tools/align.mjs), as it does for Parakeet. Speakers are A, B, … in the order
-// they first speak. Over more than one chunk they are labelled per chunk: the same voice may
-// get another letter after 20 minutes.
+// they first speak. The model names them per piece; the pieces overlap by 20 seconds, and a
+// voice heard in the overlap keeps its letter in the next piece, as does a single one left
+// over when a single known voice is missing. A voice that is new to the recording, or one of
+// several silent in the overlap, may get a letter of its own.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -17,16 +19,27 @@ import { duration } from "./asr.mjs";
 
 export const STT_MODEL = "google/gemini-3.5-transcribe";
 const URL = "https://openrouter.ai/api/v1/audio/transcriptions";
-const CH = 1200, OV = 10;
+const CH = 300, OV = 20, AT_ONCE = 8;
+// a piece answers in well under a minute; one that has not after five is asked again (and may
+// be paid twice, a cent or two)
+const WAIT = 5 * 60e3;
 
 async function request(body, log) {
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch(URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
+    let res, text;
+    try {
+      res = await fetch(URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(WAIT),
+      });
+      text = await res.text();
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      log(`  transcribe: ${e.name === "TimeoutError" ? `no answer in ${WAIT / 60e3} min` : e.message}, again …`);
+      continue;
+    }
     if (res.ok) return JSON.parse(text);
     if (attempt < 3 && (res.status === 429 || res.status >= 500)) {
       log(`  transcribe: OpenRouter ${res.status}, again in ${attempt * 5} s …`);
@@ -37,23 +50,68 @@ async function request(body, log) {
   }
 }
 
+// fn over the items, n at a time, the results in order
+async function inTurns(items, n, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const k = next++; out[k] = await fn(items[k], k); }
+  }));
+  return out;
+}
+
+const plain = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+
+// the model's speakers of every piece as voices across the recording: a speaker of piece k is
+// the voice of piece k-1 that says the same words at the same time in their overlap
+function voicesOf(pieces) {
+  const voice = new Map();
+  let voices = 0;
+  pieces.forEach((words, k) => {
+    const at = k * CH, prev = k ? pieces[k - 1] : [];
+    const pairs = new Map();
+    for (const w of words) {
+      if (w.speaker == null || w.start >= at + OV) continue;
+      const p = prev.find((q) => q.speaker != null && Math.abs(q.start - w.start) < 0.6 && plain(q.text) === plain(w.text));
+      if (p) { const key = `${p.speaker}\n${w.speaker}`; pairs.set(key, (pairs.get(key) || 0) + 1); }
+    }
+    const linked = new Map(), taken = new Set();
+    for (const [key] of [...pairs].sort((a, b) => b[1] - a[1])) {
+      const [a, b] = key.split("\n"), v = voice.get(`${k - 1}:${a}`);
+      if (linked.has(b) || taken.has(v)) continue;
+      linked.set(b, v); taken.add(v);
+    }
+    // one speaker left over and one voice of the recording not heard in this piece's overlap:
+    // the same (a host who was silent there, more likely than a new voice)
+    const left = [...new Set(words.map((w) => w.speaker).filter((s) => s != null && !linked.has(s)))];
+    const free = [...new Set(voice.values())].filter((v) => !taken.has(v));
+    if (left.length === 1 && free.length === 1) linked.set(left[0], free[0]);
+    for (const w of words) {
+      const key = `${k}:${w.speaker}`;
+      if (w.speaker != null && !voice.has(key)) voice.set(key, linked.has(w.speaker) ? linked.get(w.speaker) : voices++);
+    }
+  });
+  return (k, speaker) => voice.get(`${k}:${speaker}`);
+}
+
 export async function transcribeRemote(file, { lang = "auto", speakers = true, log = () => {} } = {}) {
   if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set");
   const total = duration(file);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-stt-"));
-  const all = [];
-  let cost = 0;
+  let cost = 0, done = 0;
+  const starts = Array.from({ length: Math.ceil(total / CH) }, (_, k) => k * CH);
+  if (starts.length > 1) log(`  transcribe: ${starts.length} pieces of ${CH / 60} min, ${Math.min(AT_ONCE, starts.length)} at a time …`);
+  let pieces;
   try {
-    for (let k = 0; k * CH < total; k++) {
-      // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64): 20 minutes
-      // of FLAC are some 56 MB, then MP3 at 48 kbit/s (7 MB), which it transcribes as well
+    pieces = await inTurns(starts, AT_ONCE, async (at, k) => {
+      // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64), then MP3 at
+      // 48 kbit/s, which it transcribes as well
       let format = "flac", chunk = path.join(tmp, `c${k}.flac`);
-      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(k * CH), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
       if ((fs.statSync(chunk).size * 4) / 3 > 40e6) {
         format = "mp3"; chunk = path.join(tmp, `c${k}.mp3`);
-        execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(k * CH), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
+        execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
       }
-      if (total > CH) log(`  transcribe: ${Math.round((k * CH) / 60)}–${Math.round(Math.min(total, (k + 1) * CH) / 60)} min …`);
       const j = await request({
         model: STT_MODEL,
         input_audio: { data: fs.readFileSync(chunk).toString("base64"), format },
@@ -64,25 +122,33 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
         ...(speakers ? { provider: { options: { "google-ai-studio": { diarization_mode: "speaker" } } } } : {}),
       }, log);
       cost += j.usage?.cost ?? 0;
-      // speakers by first appearance in the chunk: A, B, …
-      const letters = new Map();
-      const letter = (s) => {
-        if (s == null) return undefined;
-        if (!letters.has(s)) letters.set(s, String.fromCharCode(65 + letters.size));
-        return letters.get(s);
-      };
-      // keep each word once: a chunk owns [k*CH + OV/2, (k+1)*CH + OV/2)
-      const lo = k ? OV / 2 : -1, hi = CH + OV / 2;
-      for (const w of j.words || []) {
+      if (starts.length > 1) log(`  transcribe: ${++done}/${starts.length}`);
+      return (j.words || []).flatMap((w) => {
         const text = String(w.word ?? "").trim();
-        if (!text || !(w.start >= lo && w.start < hi)) continue;
-        const sp = letter(w.speaker);
-        all.push({ text, start: +(w.start + k * CH).toFixed(3), end: +(Math.max(w.end, w.start + 0.05) + k * CH).toFixed(3), ...(sp ? { speaker: sp } : {}) });
-      }
-    }
+        return text ? [{ text, start: w.start + at, end: Math.max(w.end, w.start + 0.05) + at, speaker: w.speaker == null ? null : String(w.speaker) }] : [];
+      });
+    });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+  const voiceOf = voicesOf(pieces);
+  // speakers by first appearance: A, B, …
+  const letters = new Map();
+  const letter = (v) => {
+    if (v == null) return undefined;
+    if (!letters.has(v)) letters.set(v, String.fromCharCode(65 + letters.size));
+    return letters.get(v);
+  };
+  const all = [];
+  pieces.forEach((words, k) => {
+    // keep each word once: a piece owns [k*CH + OV/2, (k+1)*CH + OV/2)
+    const lo = k ? k * CH + OV / 2 : -1, hi = (k + 1) * CH + OV / 2;
+    for (const w of words) {
+      if (!(w.start >= lo && w.start < hi)) continue;
+      const sp = letter(voiceOf(k, w.speaker));
+      all.push({ text: w.text, start: +w.start.toFixed(3), end: +w.end.toFixed(3), ...(sp ? { speaker: sp } : {}) });
+    }
+  });
   log(`  transcribe: ${all.length} words, $${cost.toFixed(4)}`);
   return all;
 }
