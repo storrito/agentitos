@@ -132,7 +132,7 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 
 - One question per block, with buttons for the likely answers and a hint that they can type anything else.
 - Make a button's text say what happens, and its `:send` text read as the person's answer ("Take 4 shorts", "Colour of Dominik: #ff9a5a").
-- Cards: a `div` with `:style {:display "flex" :flex-wrap "wrap" :gap "10px"}` around `div`s with a border, a radius and padding; a swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`.
+- Cards: a `div` with `:style {:display "flex" :flex-wrap "wrap" :gap "10px"}` around `div`s with a border, a radius and padding; a swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`. A button keeps its light look on a dark card; one you give a `:background` with text on it needs a `:color` that reads on it.
 - Never put a token, an id the person does not need or a raw error into the chat.
 
 For example, the moments:
