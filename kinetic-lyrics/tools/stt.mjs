@@ -45,12 +45,18 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
   let cost = 0;
   try {
     for (let k = 0; k * CH < total; k++) {
-      const flac = path.join(tmp, `c${k}.flac`);
-      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(k * CH), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", flac]);
+      // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64): 20 minutes
+      // of FLAC are some 56 MB, then MP3 at 48 kbit/s (7 MB), which it transcribes as well
+      let format = "flac", chunk = path.join(tmp, `c${k}.flac`);
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(k * CH), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
+      if ((fs.statSync(chunk).size * 4) / 3 > 40e6) {
+        format = "mp3"; chunk = path.join(tmp, `c${k}.mp3`);
+        execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(k * CH), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
+      }
       if (total > CH) log(`  transcribe: ${Math.round((k * CH) / 60)}–${Math.round(Math.min(total, (k + 1) * CH) / 60)} min …`);
       const j = await request({
         model: STT_MODEL,
-        input_audio: { data: fs.readFileSync(flac).toString("base64"), format: "flac" },
+        input_audio: { data: fs.readFileSync(chunk).toString("base64"), format },
         ...(lang && lang !== "auto" ? { language: lang } : {}),
         response_format: "verbose_json",
         timestamp_granularities: ["word"],
