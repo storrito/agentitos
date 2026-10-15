@@ -7,7 +7,7 @@
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
-//        the stretch as a video file: the sentences first..last (a little air around them),
+//        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
 //        or from/to in seconds (or m:ss, h:mm:ss); then `short.mjs new <short> <clip.mp4>`
 //
 // The words come from Gemini 3.5 Transcribe through OpenRouter (OPENROUTER_API_KEY, with
@@ -187,7 +187,9 @@ function cut(dir, a, b, c) {
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   const base = out.replace(/\.mp4$/, "");
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
-  download(["-f", "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b",
+  // up to 4K: the short shows a third of the wide shot's width, cut closer still in a wide shot
+  // (tools/frame.mjs); from 1080p that third is 608 pixels wide and comes out soft
+  download(["-f", "bv*[height<=2160]+ba[ext=m4a]/bv*[height<=2160]+ba/b[height<=2160]/b",
     "--download-sections", `*${from.toFixed(2)}-${to.toFixed(2)}`, "--force-keyframes-at-cuts",
     "--merge-output-format", "mp4", "--no-playlist", "-o", `${base}.%(ext)s`, episode.url]);
   if (!fs.existsSync(`${base}.mp4`)) fail("The cut did not come out, see above.");

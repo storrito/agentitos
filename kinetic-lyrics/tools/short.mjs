@@ -7,7 +7,8 @@
 //                                             footage (video.*) and its words (transcript.json)
 //   node tools/short.mjs brief <dir>          who speaks when; writes source/brief.md, the
 //                                             direction to read before writing source/staging.json
-//   node tools/short.mjs build <dir>          the HyperFrames project in <dir>/composition/
+//   node tools/short.mjs build <dir>          the HyperFrames project in <dir>/composition/; footage
+//                                             wider than the frame follows who speaks (tools/frame.mjs)
 //   node tools/short.mjs check <dir> [t,…]    plays it and lists what a viewer would notice;
 //                                             pictures at the seconds named go to <dir>/stills/<t>.png
 //   node tools/short.mjs render <dir> <file.mp4>   the video, with HyperFrames
@@ -67,14 +68,25 @@ function project(dir) {
 }
 
 function footage(dir) {
-  const f = fs.readdirSync(source(dir)).find((f) => /^video\./.test(f));
+  const f = fs.readdirSync(source(dir)).find((f) => /^video\.(?!.*\.(json|wav)$)/.test(f) && !/\.(people|small)\./.test(f));
   return f ? source(dir, f) : null;
+}
+
+// the footage cut to the short's frame, following who speaks (tools/frame.mjs): made when the
+// clip is wider than the frame, again when the clip or its words changed
+const framedOf = (dir, s) => source(dir, `framed-${s.aspect.replace(":", "x")}.mp4`);
+function frameFootage(dir, s) {
+  const video = footage(dir), out = framedOf(dir, s), words = source(dir, "transcript.json");
+  if (!video) return;
+  const newer = (a, b) => fs.existsSync(a) && fs.statSync(a).mtimeMs >= fs.statSync(b).mtimeMs;
+  if (newer(out, video) && newer(out, words)) return;
+  node("frame.mjs", video, words, "--aspect", s.aspect, "--out", out);
 }
 
 function buildArgs(dir, s) {
   const args = [source(dir, "transcript.json"), "--preset", "podcast", "--aspect", s.aspect,
     "--audio", source(dir, "audio.wav"), "--diarize", s.speakers || "0"];
-  const video = footage(dir);
+  const framed = framedOf(dir, s), video = fs.existsSync(framed) ? framed : footage(dir);
   if (video) args.push("--video", video);
   for (const [k, flag] of [["names", "--speakers"], ["colors", "--colors"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
     ["world", "--world"], ["cta", "--cta"], ["handle", "--handle"]]) if (s[k]) args.push(flag, s[k]);
@@ -90,6 +102,8 @@ What \`tools/short.mjs\` of kinetic-lyrics keeps for this short:
 - \`video.*\`, \`audio.wav\`: the clip; \`transcript.json\`: its words with their timings and,
   transcribed through OpenRouter, who speaks them
 - \`transcript.speakers*.json\`: who speaks when, found on this machine when the transcript has no speakers
+- \`video.people.json\`: who sits where in the footage (Gemini, asked once), and
+  \`framed-9x16.mp4\`: the footage cut to the short's frame, following who speaks
 - \`settings.json\`: the options of the builds
 - \`brief.md\`: the direction to read; \`staging.json\`: the staging written from it
 
@@ -142,6 +156,7 @@ function build(dir, opts) {
   const has = fs.existsSync(staging);
   if (!has) console.log("No staging yet: the words are set by the keyword lexicon. Better: short.mjs brief first.");
   const out = compositionOf(dir, s);
+  frameFootage(dir, s);
   const exit = node("build.mjs", ...buildArgs(dir, s), ...(has ? ["--staging", staging] : []), "--out", out);
   if (exit === 2) fail("Fix the staging as the message above says, then build again.");
   if (exit !== 0) fail("The build failed, see above.");
