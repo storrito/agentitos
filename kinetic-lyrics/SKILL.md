@@ -51,7 +51,8 @@ Read the whole `sentences.txt` and pick the moments that work as a short: **at m
 - is understandable without the rest of the episode: no "as I said", no unexplained "he" or "that thing";
 - opens with a hook in its first sentence (a question, a surprising claim, a vivid image), not with "and", "so", "yeah" or small talk;
 - builds to a payoff (a punchline, an insight, a striking number, an emotional turn) and ends right after it;
-- is concrete and visual rather than abstract; a host's question followed by the answer is fine.
+- is concrete and visual rather than abstract; a host's question followed by the answer is fine;
+- is spoken by one voice at a time: in `sentences.txt` a stretch of one- and two-word sentences flipping between voices is people talking at once, which the type can only follow by leaving one of them out. Prefer a moment without it, or say on its card that a few seconds are crosstalk.
 
 Pick more than you recommend: roughly one strong moment per 8–10 minutes of episode, at most 10. Note each as a sentence range `first-last`, a title of 3–7 words in the episode's language and one sentence on why it works. Then show them as cards and recommend a number, with your reason ("the first four are the strongest, the rest are good fillers"). Each card has the title, the time and length, the first line as a quote, why, and a link to that moment on YouTube (`https://youtu.be/<id>?t=<seconds>`). Ask how many it should be, with buttons for your recommendation, all and fewer, and say they can also name the ones they want.
 
@@ -157,9 +158,9 @@ Every short is directed by you, from its brief:
 
 1. `short.mjs new <dir> <clip>` writes down every word with its timing and speaker into `<dir>/source/` (a minute or so).
 2. `short.mjs brief <dir>` writes `<dir>/source/brief.md`: the vocabulary of the engine, the rules and the numbered words. Read all of it.
-3. Write the staging it asks for into `<dir>/source/staging.json`, all words, one JSON file: the hook (a short headline in the clip's language), the phrases, the words that get an effect and the marks; respell words the recognition clearly misheard under `fixes`.
+3. Write the staging it asks for into `<dir>/source/staging.json`, all words, one JSON file: the hook (a short headline in the clip's language), the phrases, the words that get an effect and the marks; respell words the recognition clearly misheard under `fixes`, and give a word heard from the wrong voice its speaker there (`{"i": 40, "speaker": "B"}`). Phrases follow the sentences; at fast speech (four words a second and more) longer ones, 5–8 words in two lines, each on screen for 1.5 s or more. Where two voices talk at once, list the interjecting voice's words under `drop` (they are still heard, not shown), so the other reads in whole phrases.
 4. `short.mjs build <dir> [--out …]` builds the HyperFrames project; a staging mistake names its field: fix it and build again.
-5. `short.mjs check <dir> [4,15]` lists what a viewer would notice; fix the errors (✗); the warnings (⚠) are mostly words read quickly. The seconds named become pictures in `<dir>/stills/<t>.png`.
+5. `short.mjs check <dir> [4,15]` lists what a viewer would notice; fix the errors (✗); the warnings (⚠) are mostly words read quickly. A `crosstalk` warning means a run of flashes: drop the interjections there. The seconds named become pictures in `<dir>/stills/<t>.png`.
 
 Settings stay with the short: `--title`, `--subtitle`, `--hook`, `--world`, `--names "A=Anna,B=Ben"`, `--colors "A=#ff5a36"`, `--aspect 9:16` (or `1:1`, `4:5`, `16:9`), `--cta "…" --handle @name`, `--out`. For a change to a word, an effect or a phrase, change the staging and build again; never edit the built files by hand. When a wish needs an effect the brief does not offer, say so in one sentence. The fonts are the engine's own (League Gothic, Instrument Serif).
 

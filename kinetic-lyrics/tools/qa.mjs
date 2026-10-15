@@ -13,6 +13,7 @@
 //   ⚠ contrast     text vs. the world right behind it (WCAG ratio from two screenshots:
 //                  with and without the text layer) is below 3:1 – ✗ below 1.8:1
 //   ⚠ transcript   the audio has speech where the transcript has no words (missed passage)
+//   ⚠ crosstalk    short phrases of two voices taking turns: they talk at once (staging `drop`)
 // Writes <project>/qa/report.json and a frame for every finding; exits 1 if there are ✗.
 
 import { voicedGaps } from "./gaps.mjs";
@@ -131,6 +132,19 @@ for (const w of qa.words) {
   const p = sched.get(w.phrase);
   const readable = p.xs - w.ready;
   if (word.role === "content" && w.fx !== "shatter" && readable < 0.3) add("warn", w.ready, "read time", `"${word.display}" fully readable for only ${Math.max(0, readable).toFixed(2)} s`);
+}
+// two voices at once: their words alternate, and every change of voice starts a phrase, a run of
+// flashes; the staging's `drop` leaves the interjecting voice out of the picture
+for (let k = 0; k < plan.phrases.length;) {
+  let j = k;
+  while (plan.phrases[j + 1]?.speaker != null && plan.phrases[j + 1].speaker !== plan.phrases[j].speaker
+    && plan.phrases[j + 1].start - plan.phrases[j].end < 0.3) j++;
+  const run = plan.phrases.slice(k, j + 1);
+  if (run.length >= 4 && run.filter((p) => p.end - p.start < 0.6).length >= 2) {
+    add("warn", run[0].start, "crosstalk", `${run.length} short phrases of ${[...new Set(run.map((p) => p.speaker))].join(" and ")} taking turns until ${mmss(run[run.length - 1].end)}: `
+      + `two voices at once? "drop" in the staging leaves the interjecting one out of the picture`);
+  }
+  k = j + 1;
 }
 
 // ---------------------------------------------------------------- geometry + contrast (in the scene)

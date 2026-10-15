@@ -45,7 +45,7 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { normalizeTranscript, analyze, LIGHT_WORLDS } from "./analyze.mjs";
 import { applyVariables, declarationsAttribute } from "./variables.mjs";
-import { annotate, validate, brief, readStaging } from "./llm-annotate.mjs";
+import { annotate, validate, brief, readStaging, dropWords } from "./llm-annotate.mjs";
 import { alignToAudio } from "./align.mjs";
 import { audioBands } from "./audio.mjs";
 import { footageLayer } from "./footage.mjs";
@@ -159,8 +159,12 @@ if (opt.plan) {
       process.exit(2);
     }
     annotations.preset = preset0;
-    for (const f of annotations.fixes) words[f.i] = { ...words[f.i], text: f.text.trim(), fixed: true };
-    console.error(`staging: ${path.basename(opt.staging)} (${annotations.phrases.length} phrases, ${annotations.fixes.length} fixes)`);
+    for (const f of annotations.fixes) {
+      words[f.i] = { ...words[f.i], ...(f.text != null ? { text: f.text.trim(), fixed: true } : {}), ...(f.speaker != null ? { speaker: f.speaker } : {}) };
+    }
+    const dropped = annotations.drop.length;
+    ({ words, annotations } = dropWords(words, annotations));
+    console.error(`staging: ${path.basename(opt.staging)} (${annotations.phrases.length} phrases, ${annotations.fixes.length} fixes${dropped ? `, ${dropped} words dropped` : ""})`);
   } else if (opt.llm || opt["llm-refresh"]) {
     // staging depends on the frame orientation (phrase length), so cache per orientation
     const preset = typeof opt.preset === "string" ? opt.preset : "lyric";
