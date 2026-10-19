@@ -201,7 +201,7 @@ Settings stay with the short: `--title`, `--subtitle`, `--hook`, `--world`, `--n
 
 ## A single clip
 
-When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 3 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording without a link: `episode.mjs` needs a URL, so cut the best stretch with `node <skill>/tools/highlight.mjs <file> --out work/01-source` or ask which minute.
+When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 3 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording (an episode, a talk, more than a few minutes) is the main use with the file in place of the link: `node <skill>/tools/episode.mjs fetch uploads/<file> work/episode` writes down its words the same way (it needs `OPENROUTER_API_KEY`, a file has no captions), and `cut` cuts the moments from the file.
 
 ## Rights
 

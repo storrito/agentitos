@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A long video (a YouTube episode, a talk) as the source of several shorts.
 //
-//   node tools/episode.mjs fetch <url> <dir>
+//   node tools/episode.mjs fetch <url|file> <dir>
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
@@ -13,6 +13,9 @@
 //        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
 //        or from/to in seconds (or m:ss, h:mm:ss); then `short.mjs new <short> <clip.mp4>`
 //
+// A file instead of a link (an upload, a recording of the person's own) goes the same way: its
+// sound is written down as it is, its stretches are cut from it with ffmpeg.
+//
 // The words come from Gemini 3.5 Transcribe through OpenRouter (OPENROUTER_API_KEY, with
 // speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
 // (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
@@ -23,6 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { transcribeRemote } from "./stt.mjs";
+import { duration } from "./asr.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -119,9 +123,37 @@ function captionTrack(info) {
 }
 
 // ---------------------------------------------------------------- fetch
+// a path that exists, not a link
+const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
+
+function writeEpisode(dir, facts, words) {
+  if (!words.length) fail("No words found: is there speech in it?");
+  const sentences = sentencesOf(words);
+  const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };
+  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify(episode, null, 1));
+  fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(words));
+  fs.writeFileSync(path.join(dir, "sentences.json"), JSON.stringify(sentences));
+  fs.writeFileSync(path.join(dir, "sentences.txt"), sentences.map((s, k) =>
+    `${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`).join("\n") + "\n");
+  console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
+    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. episode.mjs moments ${dir} picks the moments; `
+    + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
+}
+
+// the person's own file: no captions to fall back on, so the words need the key
+async function fetchFile(file, dir) {
+  if (!process.env.OPENROUTER_API_KEY) fail("No OPENROUTER_API_KEY: a file has no captions to take the words from.");
+  const title = path.basename(file).replace(/\.[^.]+$/, "");
+  const length = duration(file);
+  log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
+  const words = await transcribeRemote(file, { lang: "auto", speakers: true, log });
+  writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words);
+}
+
 async function fetchEpisode(url, dir) {
-  if (!url || !dir) fail("episode.mjs fetch <url> <dir>");
+  if (!url || !dir) fail("episode.mjs fetch <url|file> <dir>");
   fs.mkdirSync(dir, { recursive: true });
+  if (isFile(url)) return fetchFile(path.resolve(url), dir);
   log("episode: reading the video's facts …");
   const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
   const track = captionTrack(info);
@@ -164,20 +196,10 @@ async function fetchEpisode(url, dir) {
     words = captionWords(path.join(tmp, file));
     source = "captions";
   }
-  if (!words.length) fail("No words found: is there speech in it?");
-  const sentences = sentencesOf(words);
-  const episode = {
+  writeEpisode(dir, {
     url: info.webpage_url || url, id: info.id, title: info.title, channel: info.channel || info.uploader,
-    duration: info.duration, lang, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))], source,
-  };
-  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify(episode, null, 1));
-  fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(words));
-  fs.writeFileSync(path.join(dir, "sentences.json"), JSON.stringify(sentences));
-  fs.writeFileSync(path.join(dir, "sentences.txt"), sentences.map((s, k) =>
-    `${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`).join("\n") + "\n");
-  console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
-    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. episode.mjs moments ${dir} picks the moments; `
-    + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
+    duration: info.duration, lang, source,
+  }, words);
 }
 
 // ---------------------------------------------------------------- cut
@@ -204,6 +226,15 @@ function cut(dir, a, b, c) {
     if (f.startsWith(path.basename(base) + ".")) fs.rmSync(path.join(path.dirname(path.resolve(out)), f), { force: true });
   }
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
+  if (episode.file) {
+    // from the person's file, up to 4K like a download; cut anew, not copied, so it starts on the word
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", from.toFixed(2), "-i", episode.file, "-t", (to - from).toFixed(2),
+      "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+      "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", `${base}.mp4`], { stdio: ["ignore", "inherit", "inherit"] });
+    fs.writeFileSync(`${base}.json`, JSON.stringify({ file: episode.file, from: +from.toFixed(2), to: +to.toFixed(2) }));
+    console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: short.mjs new <short> ${base}.mp4`);
+    return;
+  }
   // up to 4K: the short shows a third of the wide shot's width, cut closer still in a wide shot
   // (tools/frame.mjs); from 1080p that third is 608 pixels wide and comes out soft
   download(["-f", "bv*[height<=2160]+ba[ext=m4a]/bv*[height<=2160]+ba/b[height<=2160]/b",
@@ -287,7 +318,7 @@ ${text}`;
   });
   fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify(picked, null, 1));
   console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] score ${m.score}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}\n   „${m.opening}“\n   ${m.why}`).join("\n"));
-  console.log(`${picked.length} moments in ${path.join(dir, "moments.json")} (with their YouTube links), $${(j.usage?.cost ?? 0).toFixed(4)}. `
+  console.log(`${picked.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${(j.usage?.cost ?? 0).toFixed(4)}. `
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
 }
 
@@ -295,4 +326,4 @@ const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
 else if (command === "moments") await moments(...args);
-else fail("episode.mjs fetch <url> <dir> | moments <dir> [--count N] | cut <dir> <first>-<last> <clip.mp4>");
+else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] | cut <dir> <first>-<last> <clip.mp4>");
