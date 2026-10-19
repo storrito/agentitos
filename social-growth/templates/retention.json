@@ -1,0 +1,7 @@
+{
+ "how": "TikTok Studio or Instagram Insights -> post -> analytics; screenshots from the person, transcribed. null when a value is not on the screen.",
+ "entries": [
+  {"id": "2026-03-02-example-a", "read": "2026-03-09", "platform": "tiktok", "avg_watch_s": null, "full_watch_pct": null,
+   "traffic": {"for_you": null, "search": null, "profile": null, "following": null}, "new_followers": null, "notes": ""}
+ ]
+}

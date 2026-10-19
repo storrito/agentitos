@@ -36,6 +36,7 @@ Paths in a `SKILL.md` are written as `<skill>/…`, relative to the skill's fold
 | Agent | Description |
 |-------|-------------|
 | [kinetic-lyrics](kinetic-lyrics/) | Spoken audio, podcasts or talking-head clips → kinetic-typography video (lyric-video style) over an illustrated world of light that renders on the CPU, for 16:9, 9:16 and more. Includes highlight finding, speaker detection, ASR repair and automatic QA. |
+| [social-growth](social-growth/) | **Draft.** A measured growth loop for short-video accounts: strategy with the person, topics picked by how new their "aha" is, hooks whose first frame proves the first sentence, breakouts read against the account's own median, one experiment at a time, a weekly review. Plans, briefs, schedules through Storrito and measures; videos come from a production skill. |
 
 ## Contributing
 
