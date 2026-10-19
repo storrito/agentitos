@@ -133,6 +133,9 @@ async function fetchEpisode(url, dir) {
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
     let audio = null;
     try {
+      // the full-rate m4a (about 130 kbit/s): at about 50 kbit/s the download is a few seconds
+      // shorter, but the model's speakers fall apart, nine to thirteen voices where the full rate
+      // hears four (measured 2026-10-19)
       download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
       audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {

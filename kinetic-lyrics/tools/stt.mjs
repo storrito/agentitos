@@ -1,6 +1,6 @@
 // Speech to word timings and speakers through OpenRouter (Gemini 3.5 Transcribe): nothing to
 // install but ffmpeg, OPENROUTER_API_KEY in the environment. A long recording goes in 5-minute
-// pieces, eight at a time: an hour takes about as long as a few minutes would.
+// pieces, all at once: an hour or two take about as long as the slowest piece, under a minute.
 //
 //   transcribeRemote(file, { lang, speakers }) → [{ text, start, end, speaker }]
 //
@@ -11,18 +11,22 @@
 // over when a single known voice is missing. A voice that is new to the recording, or one of
 // several silent in the overlap, may get a letter of its own.
 
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { duration } from "./asr.mjs";
 
 export const STT_MODEL = "google/gemini-3.5-transcribe";
 const URL = "https://openrouter.ai/api/v1/audio/transcriptions";
-const CH = 300, OV = 20, AT_ONCE = 8;
+// every piece of a recording up to five hours at once: the slowest piece is the wait
+const CH = 300, OV = 20, AT_ONCE = 64;
 // a piece answers in well under a minute; one that has not after five is asked again (and may
 // be paid twice, a cent or two)
 const WAIT = 5 * 60e3;
+// ffmpeg in the background, so that the pieces are cut side by side, not one after the other
+const ffmpeg = (args) => promisify(execFile)("ffmpeg", args);
 
 async function request(body, log) {
   for (let attempt = 1; ; attempt++) {
@@ -107,10 +111,10 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
       // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64), then MP3 at
       // 48 kbit/s, which it transcribes as well
       let format = "flac", chunk = path.join(tmp, `c${k}.flac`);
-      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
+      await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
       if ((fs.statSync(chunk).size * 4) / 3 > 40e6) {
         format = "mp3"; chunk = path.join(tmp, `c${k}.mp3`);
-        execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
+        await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
       }
       const j = await request({
         model: STT_MODEL,
