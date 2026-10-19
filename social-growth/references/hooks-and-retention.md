@@ -31,7 +31,8 @@ The pilot now runs these rules as one package; until its before/after verdict th
 - An own graphic layer makes a faceless account recognisable *and* original. Example: a **SIZE CHECK** card, bars
   comparing the subject with things everyone knows (a Boeing 747, a blue whale, a football pitch), whenever size,
   mass, speed or power is the aha. Every reference value is sourced like any fact.
-- Short chips (≲ 25 characters), nothing in the platforms' UI zones (bottom ~320 px on Reels).
+- Short chips (≲ 25 characters), and all text inside the area no app covers: x 120–960, from y 840 x 120–888,
+  y 288–1248 (`safe-zones.md`). TikTok covers far more than Instagram.
 
 ## Not the lever (pilot, measured)
 

@@ -91,6 +91,8 @@ One `briefs/<date>-<slug>.md` per post from the template, then hand it to the pr
 - a **text hook** of 2–5 words on screen from frame 0, the same words as the cover;
 - **no end card**: end on action shortly after the last word; the second-to-last sentence leads back to the hook;
 - a **size check** graphic whenever size, mass, speed or power is the aha, every reference value sourced;
+- all on-screen text inside the area no app covers (x 120–960, from y 840 x 120–888, y 288–1248;
+  `references/safe-zones.md`), picture may run under the UI;
 - every fact traces to a source written in the brief.
 
 Caption and cover rules: `references/followers.md`, `references/covers.md`, `references/platform-rules.md`.

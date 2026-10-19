@@ -35,6 +35,7 @@ strategy ──► topics ──► brief ──► produce ──► schedule �
 | `references/topics-and-mechanisms.md` | lanes, the mechanism registry and its rules, picking topics |
 | `references/hooks-and-retention.md` | first frame, text hook, endings, own graphics, length |
 | `references/followers.md` | profile, series, formats, endings, captions, tagging |
+| `references/safe-zones.md` | what TikTok / Reels / Shorts / Stories cover, and the text-safe layout |
 | `references/covers.md` | cover rules for feed and profile grid |
 | `references/platform-rules.md` | TikTok / Instagram ranking and originality rules, what grows — with sources |
 | `templates/` | `strategy.md`, `brief.md`, `weekly-review.md`, `posts.json`, `mechanisms.json`, `retention.json` |
