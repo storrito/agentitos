@@ -1,0 +1,8 @@
+{
+ "rules": {"cap": 3, "window_days": 14, "closed_after": 4},
+ "mechanisms": {
+  "scale-shock": {"label": "something enormous next to a person for scale"},
+  "odd-pairing": {"label": "two things combined that never belong together"},
+  "example-reopened": {"label": "a closed mechanism reopened for one test", "force": "open", "note": "weekly review: one more try with a stronger hook"}
+ }
+}

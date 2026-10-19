@@ -1,0 +1,815 @@
+{
+ "note": "SYNTHETIC example data \u2014 not a real account. Shape: templates/posts.json.",
+ "measured_at": "2026-03-15T12:00:00Z",
+ "posts": [
+  {
+   "id": "2026-03-01-on-the-move-1",
+   "posted_at": "2026-03-01T09:00:00Z",
+   "lane": "big",
+   "mechanism": "on-the-move",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 939,
+     "likes": 68,
+     "comments": 0,
+     "shares": 1,
+     "saves": 3
+    }
+   }
+  },
+  {
+   "id": "2026-03-01-odd-pairing-2",
+   "posted_at": "2026-03-01T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "odd-pairing",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 585,
+     "likes": 25,
+     "comments": 0,
+     "shares": 1,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-01-impossible-stunt-3",
+   "posted_at": "2026-03-01T15:00:00Z",
+   "lane": "test",
+   "mechanism": "impossible-stunt",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 353,
+     "likes": 14,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-02-carrier-carried-1",
+   "posted_at": "2026-03-02T09:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 747,
+     "likes": 39,
+     "comments": 0,
+     "shares": 0,
+     "saves": 2
+    }
+   }
+  },
+  {
+   "id": "2026-03-02-extreme-everyday-2",
+   "posted_at": "2026-03-02T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "extreme-everyday",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1335,
+     "likes": 83,
+     "comments": 0,
+     "shares": 1,
+     "saves": 3
+    }
+   }
+  },
+  {
+   "id": "2026-03-02-on-the-move-3",
+   "posted_at": "2026-03-02T15:00:00Z",
+   "lane": "big",
+   "mechanism": "on-the-move",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 323,
+     "likes": 17,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-03-scale-shock-1",
+   "posted_at": "2026-03-03T09:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 343,
+     "likes": 25,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-03-odd-pairing-2",
+   "posted_at": "2026-03-03T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "odd-pairing",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1140,
+     "likes": 88,
+     "comments": 0,
+     "shares": 2,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-03-on-the-move-3",
+   "posted_at": "2026-03-03T15:00:00Z",
+   "lane": "big",
+   "mechanism": "on-the-move",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1216,
+     "likes": 87,
+     "comments": 0,
+     "shares": 0,
+     "saves": 2
+    }
+   }
+  },
+  {
+   "id": "2026-03-04-scale-shock-1",
+   "posted_at": "2026-03-04T09:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 250,
+     "likes": 16,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-04-wrong-power-2",
+   "posted_at": "2026-03-04T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "wrong-power",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 2305,
+     "likes": 124,
+     "comments": 1,
+     "shares": 2,
+     "saves": 3
+    }
+   }
+  },
+  {
+   "id": "2026-03-04-impossible-stunt-3",
+   "posted_at": "2026-03-04T15:00:00Z",
+   "lane": "test",
+   "mechanism": "impossible-stunt",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 954,
+     "likes": 71,
+     "comments": 0,
+     "shares": 1,
+     "saves": 2
+    }
+   }
+  },
+  {
+   "id": "2026-03-05-carrier-carried-1",
+   "posted_at": "2026-03-05T09:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 387,
+     "likes": 19,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-05-odd-pairing-2",
+   "posted_at": "2026-03-05T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "odd-pairing",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 9400,
+     "likes": 463,
+     "comments": 5,
+     "shares": 12,
+     "saves": 16
+    }
+   }
+  },
+  {
+   "id": "2026-03-05-scale-shock-3",
+   "posted_at": "2026-03-05T15:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 266,
+     "likes": 17,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-06-scale-shock-1",
+   "posted_at": "2026-03-06T09:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 322,
+     "likes": 25,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-06-wrong-power-2",
+   "posted_at": "2026-03-06T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "wrong-power",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 258,
+     "likes": 10,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-06-on-the-move-3",
+   "posted_at": "2026-03-06T15:00:00Z",
+   "lane": "big",
+   "mechanism": "on-the-move",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1500,
+     "likes": 92,
+     "comments": 1,
+     "shares": 2,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-07-carrier-carried-1",
+   "posted_at": "2026-03-07T09:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1080,
+     "likes": 58,
+     "comments": 0,
+     "shares": 0,
+     "saves": 3
+    }
+   }
+  },
+  {
+   "id": "2026-03-07-wrong-power-2",
+   "posted_at": "2026-03-07T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "wrong-power",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 869,
+     "likes": 60,
+     "comments": 0,
+     "shares": 1,
+     "saves": 2
+    }
+   }
+  },
+  {
+   "id": "2026-03-07-impossible-stunt-3",
+   "posted_at": "2026-03-07T15:00:00Z",
+   "lane": "test",
+   "mechanism": "impossible-stunt",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 276,
+     "likes": 15,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-08-on-the-move-1",
+   "posted_at": "2026-03-08T09:00:00Z",
+   "lane": "big",
+   "mechanism": "on-the-move",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 416,
+     "likes": 28,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-08-odd-pairing-2",
+   "posted_at": "2026-03-08T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "odd-pairing",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 335,
+     "likes": 17,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-08-carrier-carried-3",
+   "posted_at": "2026-03-08T15:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 385,
+     "likes": 26,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-09-scale-shock-1",
+   "posted_at": "2026-03-09T09:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 418,
+     "likes": 24,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-09-extreme-everyday-2",
+   "posted_at": "2026-03-09T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "extreme-everyday",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 417,
+     "likes": 22,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-09-carrier-carried-3",
+   "posted_at": "2026-03-09T15:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 326,
+     "likes": 20,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-10-scale-shock-1",
+   "posted_at": "2026-03-10T09:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1410,
+     "likes": 96,
+     "comments": 0,
+     "shares": 2,
+     "saves": 3
+    }
+   }
+  },
+  {
+   "id": "2026-03-10-extreme-everyday-2",
+   "posted_at": "2026-03-10T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "extreme-everyday",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 299,
+     "likes": 23,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-10-impossible-stunt-3",
+   "posted_at": "2026-03-10T15:00:00Z",
+   "lane": "test",
+   "mechanism": "impossible-stunt",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 727,
+     "likes": 55,
+     "comments": 0,
+     "shares": 0,
+     "saves": 2
+    }
+   }
+  },
+  {
+   "id": "2026-03-11-absurd-length-1",
+   "posted_at": "2026-03-11T09:00:00Z",
+   "lane": "big",
+   "mechanism": "absurd-length",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 358,
+     "likes": 22,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-11-extreme-everyday-2",
+   "posted_at": "2026-03-11T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "extreme-everyday",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 258,
+     "likes": 11,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-11-scale-shock-3",
+   "posted_at": "2026-03-11T15:00:00Z",
+   "lane": "big",
+   "mechanism": "scale-shock",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 285,
+     "likes": 14,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-12-carrier-carried-1",
+   "posted_at": "2026-03-12T09:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 250,
+     "likes": 18,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-12-extreme-everyday-2",
+   "posted_at": "2026-03-12T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "extreme-everyday",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1078,
+     "likes": 80,
+     "comments": 1,
+     "shares": 1,
+     "saves": 3
+    }
+   }
+  },
+  {
+   "id": "2026-03-12-carrier-carried-3",
+   "posted_at": "2026-03-12T15:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 271,
+     "likes": 18,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-13-absurd-length-1",
+   "posted_at": "2026-03-13T09:00:00Z",
+   "lane": "big",
+   "mechanism": "absurd-length",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 1633,
+     "likes": 81,
+     "comments": 0,
+     "shares": 2,
+     "saves": 4
+    }
+   }
+  },
+  {
+   "id": "2026-03-13-extreme-everyday-2",
+   "posted_at": "2026-03-13T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "extreme-everyday",
+   "tags": {
+    "cta": "teaser",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 245,
+     "likes": 10,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-13-impossible-stunt-3",
+   "posted_at": "2026-03-13T15:00:00Z",
+   "lane": "test",
+   "mechanism": "impossible-stunt",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 364,
+     "likes": 22,
+     "comments": 0,
+     "shares": 0,
+     "saves": 1
+    }
+   }
+  },
+  {
+   "id": "2026-03-14-on-the-move-1",
+   "posted_at": "2026-03-14T09:00:00Z",
+   "lane": "big",
+   "mechanism": "on-the-move",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 406,
+     "likes": 19,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-14-wrong-power-2",
+   "posted_at": "2026-03-14T12:00:00Z",
+   "lane": "mix",
+   "mechanism": "wrong-power",
+   "tags": {
+    "cta": "question",
+    "cut": "main"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 253,
+     "likes": 10,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-14-carrier-carried-3",
+   "posted_at": "2026-03-14T15:00:00Z",
+   "lane": "big",
+   "mechanism": "carrier-carried",
+   "tags": {
+    "cta": "question",
+    "cut": "short"
+   },
+   "metrics": {
+    "tiktok": {
+     "views": 409,
+     "likes": 22,
+     "comments": 0,
+     "shares": 0,
+     "saves": 0
+    }
+   }
+  },
+  {
+   "id": "2026-03-15-hidden-inside-1",
+   "posted_at": "2026-03-15T09:00:00Z",
+   "lane": "big",
+   "mechanism": "hidden-inside",
+   "tags": {
+    "cta": "teaser",
+    "cut": "main"
+   },
+   "metrics": {}
+  }
+ ]
+}

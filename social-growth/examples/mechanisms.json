@@ -1,0 +1,36 @@
+{
+ "rules": {
+  "cap": 3,
+  "window_days": 14,
+  "closed_after": 4
+ },
+ "mechanisms": {
+  "scale-shock": {
+   "label": "something enormous next to a person for scale"
+  },
+  "carrier-carried": {
+   "label": "a huge thing carrying another huge thing"
+  },
+  "on-the-move": {
+   "label": "something that should not move, moving"
+  },
+  "absurd-length": {
+   "label": "absurdly long versions of ordinary things"
+  },
+  "odd-pairing": {
+   "label": "two things combined that never belong together"
+  },
+  "wrong-power": {
+   "label": "the wrong power source in an ordinary object"
+  },
+  "extreme-everyday": {
+   "label": "an everyday object pushed to an absurd extreme"
+  },
+  "impossible-stunt": {
+   "label": "stunts that look impossible"
+  },
+  "hidden-inside": {
+   "label": "what hides inside something familiar"
+  }
+ }
+}
