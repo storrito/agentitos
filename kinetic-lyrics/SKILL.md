@@ -58,13 +58,21 @@ Do not read `sentences.txt` yourself: an hour of talk is some 30,000 tokens, and
 
 Keep more than you recommend: roughly one strong moment per 8–10 minutes of episode, at most 10; drop one that the list's title or first line show to be weak. Then show them as cards and recommend a number, with your reason ("the first four are the strongest, the rest are good fillers"). Each card has the title, the time and length, the first line as a quote, why, and a link to that moment on YouTube (`https://youtu.be/<id>?t=<seconds>`). Ask how many it should be, with buttons for your recommendation, all and fewer, and say they can also name the ones they want.
 
-In the same message ask where the shorts go, from what is connected: call `list-social-accounts` of the Storrito connection first. How you reach Storrito's procedures depends on the harness:
+### 3. Where the shorts go
+
+Once they chose the moments, ask where the shorts go, **one question per message**, each with a sensible choice already ticked so that one click goes on; a question with only one possible answer is not asked. First call `list-social-accounts` of the Storrito connection. How you reach Storrito's procedures depends on the harness:
 - **rragent:** they are functions of your REPL, through the organization's Storrito connector (its key never reaches you): one `eval` with `(storrito/list-social-accounts {})`; `(doc storrito/schedule-instagram-reel)` shows a procedure's input. Nothing to load first, and no `tool_search`.
 - **pchat:** they are the tools `mcp__storrito__…`, loaded on demand, and each load makes the model read this whole chat again without its cache, slower and dearer the longer the chat is: load every one you will need now, while the chat is short, in **one answer with two tool_search calls**, `{"query": "returns the current posting status", "limit": 4}` and `{"query": "schedule reel story tiktok post social post list social accounts presigned upload url connect-link", "limit": 8}`. That loads `list-social-accounts`, `create-temp-blob-upload-url`, `create-connect-link`, the four `schedule-…` and the four `status-…` at once; one still missing, load it by its name right away, not at the end.
 
-`list-social-accounts` lists every connected account (Instagram, TikTok, YouTube, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X …) with its `postTypes`: what it takes, the `procedure` that schedules it, `minDurationSeconds` and `maxDurationSeconds`, `maxCaptionLength`, whether the caption is published, its `options`. Show them as checkboxes grouped by platform, one per account and post type that takes a video, labelled "Instagram Reel · @name", "TikTok · name", "YouTube Short · channel"; tick the ones made for shorts (Instagram Reel, TikTok, YouTube Short, Facebook Reel, Snapchat Spotlight) when there are few, and end with a button whose text holds `{checked}` (see "UI in the chat"). An account with `disconnected: true` is shown without a box, with "reconnect it in Storrito". A platform they name that has no account: for Instagram `create-connect-link` makes a link (`[:a {:href …} "Connect Instagram"]`, ask them to say when they are done), for the others they connect it in the Storrito app. Never offer an account the list does not have.
+`list-social-accounts` lists every connected account (Instagram, TikTok, YouTube, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X …) with its `postTypes`: what it takes, the `procedure` that schedules it, `minDurationSeconds` and `maxDurationSeconds`, `maxCaptionLength`, whether the caption is published, its `options`. An account with `disconnected: true` counts as not there ("reconnect it in Storrito"). Never offer what the list does not have.
 
-### 3. The look
+1. **The platforms.** Checkboxes, one per platform and post type that takes a video and has a connected account, labelled "Instagram Reel", "TikTok", "YouTube Short", "Facebook Reel", "Snapchat Spotlight", "LinkedIn video" …; the ones made for shorts ticked; a button whose text holds `{checked}` (see "UI in the chat"). No accounts yet. A platform they name that has no account: for Instagram `create-connect-link` makes a link (`[:a {:href …} "Connect Instagram"]`, ask them to say when they are done), for the others they connect it in the Storrito app.
+2. **One video for all, or adapted?** Radio buttons (one `:name`): "One video for all" (ticked), "Adapted per platform", "Adapted per account". Offer only what differs: one platform with one account, no question; one platform with several accounts, "One video for all" or "Adapted per account"; several platforms with one account each, "One video for all" or "Adapted per platform". An adapted short is one video per platform or account, each rendered on its own, so it takes that many times as long: say so in one line.
+3. **What is adapted?** Only when they chose to adapt: checkboxes "Hook and wording" (the top line and the hook in the platform's tone) and "End card" (the account's handle, the platform's call to action: "Follow" on Instagram and TikTok, "Subscribe" on YouTube). The language of the words on screen stays the language spoken.
+
+Write the answers into `work/plan.json` as `platforms` and `variants` (`"one"`, `"platform"` or `"account"`, and what is adapted).
+
+### 4. The look
 
 Ask one thing per message, each with buttons, and offer to take your proposal for everything at once ("Take your suggestions"):
 
@@ -89,11 +97,12 @@ Ask one thing per message, each with buttons, and offer to take your proposal fo
 - **The speakers' names** as they should appear on the name tag: tell who is who with one line each said (A is who speaks first in a short), buttons "No names" and, when the episode's title or description names them, the names you found. They type others.
 - **The speakers' colours**: per voice a row of swatches (a button with that colour as its background) and "The world's colours". On the dark worlds light colours: `#7fe3ff #ffb36b #c9a7ff #9dffb0 #ff8fb1 #ffe066`; on the light ones (`editorial`, `geometry`, `linen`, `mist`) dark ones: `#08609c #b0400a #5d33c4 #11703e #ad1452 #7a5c00`. A colour the other kind of world would hide is unreadable: say so if they pick one.
 - **The top line**: the show's name (from the channel or the episode title, as a button), "No title", or typed.
-- **An end card**: "Follow @<handle>" with the handles of their connected accounts as buttons (step 5 lists them; you may look them up now), or "No end card".
+- **An end card**: "Follow @<handle>" with the handles of the accounts of the chosen platforms as buttons, or "No end card". With the end card adapted (step 3), propose per platform or account its call to action and handle in one table and ask once.
+- **Hook and wording**, only when adapted: per platform (or account) the top line and the hook in its tone, proposed in one table, "Take these" or they change one.
 
-The same look goes for every short unless they ask for one to differ. Format is 9:16 for Reels, TikTok and Shorts; ask only when a platform needs another.
+The same look goes for every short unless they ask for one to differ; an adapted variant differs only in what step 3 adapts. Format is 9:16 for Reels, TikTok and Shorts; ask only when a platform needs another.
 
-### 4. The previews beside the chat
+### 5. The previews beside the chat
 
 Say in one sentence that you are preparing the shorts and that the previews appear on the right one by one. Then, for the series once:
 
@@ -113,25 +122,30 @@ node <skill>/tools/short.mjs build work/<k> --out artifacts/shorts/composition/<
 node <skill>/tools/short.mjs check work/<k>
 ```
 
+An adapted short has a variant per platform or account `<v>` (`ig`, `tiktok`, `yt`, or the account's handle): build the short first as above, then per variant a copy of its folder built with the variant's settings into a composition of its own, rendered later on its own:
+
+```bash
+cp -r work/<k> work/<k>-<v>
+node <skill>/tools/short.mjs build work/<k>-<v> --out artifacts/shorts/composition/<k>-<slug>-<v> --title "…" --cta "…" --handle @…
+```
+
 Without composition/index.html the project shows every `composition/<name>/` side by side, a player each, titled by the short's hook. Fix the check's errors (✗) before you go on. A short's names follow its own voices (A is who speaks first in that short): map them from the episode's speakers.
 
 Then show the list in the chat (title and length per short) with buttons "They are good" and "Change something", and `[:button {:open "artifacts/shorts"} "Show the previews"]` in case the pane shows something else. For a change, build the short again with the new settings (`short.mjs build work/<k>` keeps the others); for the staging (a word, an effect), change `staging.json` and build again.
 
-### 5. Which account gets which short
+### 6. The accounts
 
-The accounts are the ones ticked in step 2. Propose the simple rule first ("every short on all chosen accounts"); a short may go to several accounts. Offer a choice per short only when they want one: per short a row of checkboxes of the chosen accounts and one button.
+Only now the accounts, and only where there is a choice: per chosen platform with several connected accounts a row of checkboxes of its accounts ("@carfunnews", "@soul.globe" …), the ones adapted for already set by step 3, and one button. A platform with one account takes it without a question. Propose the simple rule ("every short on all chosen accounts"); offer a choice per short only when they want one: per short a row of checkboxes of the chosen accounts and one button.
 
 The limits are Storrito's, from `list-social-accounts`, never from memory: before the plan, hold every short's length (the built composition's duration, the end card included) against `minDurationSeconds` and `maxDurationSeconds` of each post type it goes to. A short that does not fit one of them: say which and why in one sentence and offer to shorten it, or to leave that account out for it.
 
-### 6. When
+### 7. The plan, the message, and go
 
-Propose a plan and show it as a table: per short the date and time, the accounts, and the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Buttons: "Take the plan", "One every two days", "All today", "Change the captions", and they can type anything else. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
+Then one last message holds everything still to decide, so that nothing is asked once the rendering runs (they may close the window then). Propose a plan and show it as a table: per short the date and time, the accounts, and per account the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language unless the person says an account posts in another, in the platform's tone). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Below the plan, in the same block, ask whether they want a message when everything is done, and how: radio buttons (one `:name`) for "No message" (ticked), E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp. Buttons: "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`), "One every two days", "All today", "Change the captions", and they can type anything else; a change shows the block again. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
 
-Write the plan into `work/plan.json` as you agree on it: per short its folder, file, caption, and per account its platform, id, procedure, `postType`, time (ISO 8601 with offset) and a UUID made now with `uuidgen` (or `node -e 'console.log(crypto.randomUUID())'`), never with a tool, so that a retry never posts twice.
+Write the plan into `work/plan.json` as you agree on it: per short its folder and file (an adapted short: per variant), and per account the video it gets, its caption, its platform, id, procedure, `postType`, time (ISO 8601 with offset) and a UUID made now with `uuidgen` (or `node -e 'console.log(crypto.randomUUID())'`), never with a tool, so that a retry never posts twice.
 
-### 7. Render and schedule
-
-When everything is agreed, show the whole plan once more and ask: "Shall I render all shorts and schedule them?" In the same block ask whether they want a message when everything is done, and how: radio buttons (one `:name`) for "No message" (ticked), E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp, then the buttons "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`) and "Not yet".
+### 8. Render and schedule
 
 A message goes out through Composio: in rragent `composio/search` and `composio/execute` of the REPL (`(doc composio/search)`; without a Composio connector `(connectors)` lists none, then offer no message), in pchat the agent's own connection `mcp__storrito-agent__…`, its tools there from the start. When they chose one, before anything else:
 
@@ -141,10 +155,10 @@ A message goes out through Composio: in rragent `composio/search` and `composio/
 Only after "Render and schedule" (and, with a message, the connection and the address):
 
 1. Tell them in one or two sentences that you are rendering N shorts now (a few minutes each) and scheduling them, that **they can close this window**, and that everything finishes by itself; the result will be here in the chat, and with a message also there.
-2. Render every short: `node <skill>/tools/short.mjs render work/<k> work/out/<k>.mp4`. Never with `&` or `nohup`: a process left running after your turn is no work the machine knows of, it may be paused, and nobody goes on with the uploads when it ends.
+2. Render every short: `node <skill>/tools/short.mjs render work/<k> work/out/<k>.mp4`, and every variant of an adapted one: `node <skill>/tools/short.mjs render work/<k>-<v> work/out/<k>-<v>.mp4`. Never with `&` or `nohup`: a process left running after your turn is no work the machine knows of, it may be paused, and nobody goes on with the uploads when it ends.
    - With `bin/background` (pchat): all of them as one background task, `bin/background 'for k in 01 02 03; do node <skill>/tools/short.mjs render work/$k work/out/$k.mp4 || exit 1; done'`, and end your turn. pchat keeps the machine awake while it runs and writes to you when it has ended; then check the videos and go on with step 3 (a failed render: its log is in the task's folder (`.background/<n>/log`), fix and render that one again).
    - Without it: one short per command, in the foreground, with a timeout of 15 minutes each, all in this turn.
-3. Upload it: `create-temp-blob-upload-url` with a new UUID from `uuidgen`, `contentType` `video/mp4` and the file's exact size, then `curl -sS -T work/out/<k>.mp4 -H 'Content-Type: video/mp4' '<uploadUrl>'`. Its `url` is the video for every post of this short (at most 100 MB; a minute is about 45).
+3. Upload it: `create-temp-blob-upload-url` with a new UUID from `uuidgen`, `contentType` `video/mp4` and the file's exact size, then `curl -sS -T work/out/<k>.mp4 -H 'Content-Type: video/mp4' '<uploadUrl>'`. Its `url` is the video for every post of this short, or of this variant (at most 100 MB; a minute is about 45).
 4. Per account of the short, the procedure the plan names, with `html` `<insta-story src="<url>"></insta-story>`, the time as `date` and the UUID of the plan: `schedule-instagram-reel` (`instagramUsername`, `caption`, `shareToFeed: true`), `schedule-tiktok-post` (`tiktokAccountId`, `title`, `privacyLevel`), `schedule-social-post` (`socialAccountId`, `postType`, `text`, `name` as the title of a YouTube Short) for the others. Read a procedure's schema before its first use (rragent: `(doc storrito/<name>)`). Note each answer in `work/plan.json`.
 5. Check with the status tools that each post is scheduled, then write the result into the chat: a table of short, account, time and status, and the videos as `[:video {:src "…" :controls true}]` only when they ask for them.
 6. With a message chosen, send it last, once, in their language: the episode's title, how many shorts are scheduled on which accounts, the first and the last date, what failed if anything, and that the details are in the chat (no tokens, no ids). E-mail with the subject "Your shorts are scheduled" (in their language). If it cannot be sent, say so in the chat; the chat holds the result either way.
@@ -205,7 +219,7 @@ Settings stay with the short: `--title`, `--subtitle`, `--hook`, `--world`, `--n
 
 ## A single clip
 
-When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 3 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording (an episode, a talk, more than a few minutes) is the main use with the file in place of the link: `node <skill>/tools/episode.mjs fetch uploads/<file> work/episode` writes down its words the same way (it needs `OPENROUTER_API_KEY`, a file has no captions), and `cut` cuts the moments from the file.
+When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 4 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording (an episode, a talk, more than a few minutes) is the main use with the file in place of the link: `node <skill>/tools/episode.mjs fetch uploads/<file> work/episode` writes down its words the same way (it needs `OPENROUTER_API_KEY`, a file has no captions), and `cut` cuts the moments from the file.
 
 ## Rights
 
