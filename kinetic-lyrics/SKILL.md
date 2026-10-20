@@ -56,18 +56,18 @@ Do not read `sentences.txt` yourself: an hour of talk is some 30,000 tokens, and
 - is concrete and visual rather than abstract; a host's question followed by the answer is fine;
 - is spoken by one voice at a time: in `sentences.txt` a stretch of one- and two-word sentences flipping between voices is people talking at once, which the type can only follow by leaving one of them out. Prefer a moment without it (the list marks one with "crosstalk"), or say on its card that a few seconds are crosstalk.
 
-Keep more than you recommend: roughly one strong moment per 8–10 minutes of episode, at most 10; drop one that the list's title or first line show to be weak. Then show them as cards and recommend a number, with your reason ("the first four are the strongest, the rest are good fillers"). Each card has the title, the time and length, the first line as a quote, why, and a link to that moment on YouTube (`https://youtu.be/<id>?t=<seconds>`). Ask how many it should be, with buttons for your recommendation, all and fewer, and say they can also name the ones they want.
+Keep more than the strongest: roughly one strong moment per 8–10 minutes of episode, at most 10; drop one that the list's title or first line show to be weak. Then show them as cards and say in a sentence how they compare ("the first four are the strongest, the rest are good fillers"). Each card has the title, the time and length, the first line as a quote, why, and a link to that moment on YouTube (`https://youtu.be/<id>?t=<seconds>`). Ask how many it should be, with buttons for the numbers that make sense (the strong ones, all, fewer), none marked as recommended, and say they can also name the ones they want.
 
 ### 3. Where the shorts go
 
-Once they chose the moments, ask where the shorts go, **one question per message**, each with a sensible choice already ticked so that one click goes on; a question with only one possible answer is not asked. First call `list-social-accounts` of the Storrito connection. How you reach Storrito's procedures depends on the harness:
+Once they chose the moments, ask where the shorts go, **one question per message**; checkboxes may come with the likely ones ticked, radio buttons with none (the person decides), and an answer that comes without a choice is asked again; a question with only one possible answer is not asked. First call `list-social-accounts` of the Storrito connection. How you reach Storrito's procedures depends on the harness:
 - **rragent:** they are functions of your REPL, through the organization's Storrito connector (its key never reaches you): one `eval` with `(storrito/list-social-accounts {})`; `(doc storrito/schedule-instagram-reel)` shows a procedure's input. Nothing to load first, and no `tool_search`.
 - **pchat:** they are the tools `mcp__storrito__…`, loaded on demand, and each load makes the model read this whole chat again without its cache, slower and dearer the longer the chat is: load every one you will need now, while the chat is short, in **one answer with two tool_search calls**, `{"query": "returns the current posting status", "limit": 4}` and `{"query": "schedule reel story tiktok post social post list social accounts presigned upload url connect-link", "limit": 8}`. That loads `list-social-accounts`, `create-temp-blob-upload-url`, `create-connect-link`, the four `schedule-…` and the four `status-…` at once; one still missing, load it by its name right away, not at the end.
 
 `list-social-accounts` lists every connected account (Instagram, TikTok, YouTube, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X …) with its `postTypes`: what it takes, the `procedure` that schedules it, `minDurationSeconds` and `maxDurationSeconds`, `maxCaptionLength`, whether the caption is published, its `options`. An account with `disconnected: true` counts as not there ("reconnect it in Storrito"). Never offer what the list does not have.
 
 1. **The platforms.** Checkboxes, one per platform and post type that takes a video and has a connected account, labelled "Instagram Reel", "TikTok", "YouTube Short", "Facebook Reel", "Snapchat Spotlight", "LinkedIn video" …; the ones made for shorts ticked; a button whose text holds `{checked}` (see "UI in the chat"). No accounts yet. A platform they name that has no account: for Instagram `create-connect-link` makes a link (`[:a {:href …} "Connect Instagram"]`, ask them to say when they are done), for the others they connect it in the Storrito app.
-2. **One video for all, or adapted?** Radio buttons (one `:name`): "One video for all" (ticked), "Adapted per platform", "Adapted per account". Offer only what differs: one platform with one account, no question; one platform with several accounts, "One video for all" or "Adapted per account"; several platforms with one account each, "One video for all" or "Adapted per platform". An adapted short is one video per platform or account, each rendered on its own, so it takes that many times as long: say so in one line.
+2. **One video for all, or adapted?** Radio buttons (one `:name`): "One video for all", "Adapted per platform", "Adapted per account". Offer only what differs: one platform with one account, no question; one platform with several accounts, "One video for all" or "Adapted per account"; several platforms with one account each, "One video for all" or "Adapted per platform". An adapted short is one video per platform or account, each rendered on its own, so it takes that many times as long: say so in one line.
 3. **What is adapted?** Only when they chose to adapt: checkboxes "Hook and wording" (the top line and the hook in the platform's tone) and "End card" (the account's handle, the platform's call to action: "Follow" on Instagram and TikTok, "Subscribe" on YouTube). The language of the words on screen stays the language spoken.
 
 Write the answers into `work/plan.json` as `platforms` and `variants` (`"one"`, `"platform"` or `"account"`, and what is adapted).
@@ -76,7 +76,7 @@ Write the answers into `work/plan.json` as `platforms` and `variants` (`"one"`, 
 
 Ask one thing per message, each with buttons, and offer to take your proposal for everything at once ("Take your suggestions"):
 
-- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show each as a card with its colours as the card's background, what it fits, and a button. Recommend one by the episode's mood; for most talk a calm one, which moves little and keeps its motifs quiet.
+- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show each as a card with its colours as the card's background, what it fits, and a button. You may say in a sentence which fit the episode's mood (for most talk a calm one, which moves little and keeps its motifs quiet), but mark none as recommended.
 
   | world | the card's `:background` | fits |
   | --- | --- | --- |
@@ -141,7 +141,7 @@ The limits are Storrito's, from `list-social-accounts`, never from memory: befor
 
 ### 7. The plan, the message, and go
 
-Then one last message holds everything still to decide, so that nothing is asked once the rendering runs (they may close the window then). Propose a plan and show it as a table: per short the date and time, the accounts, and per account the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language unless the person says an account posts in another, in the platform's tone). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Below the plan, in the same block, ask whether they want a message when everything is done, and how: radio buttons (one `:name`) for "No message" (ticked), E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp. Buttons: "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`), "One every two days", "All today", "Change the captions", and they can type anything else; a change shows the block again. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
+Then one last message holds everything still to decide, so that nothing is asked once the rendering runs (they may close the window then). Propose a plan and show it as a table: per short the date and time, the accounts, and per account the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language unless the person says an account posts in another, in the platform's tone). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Below the plan, in the same block, ask whether they want a message when everything is done, and how: radio buttons (one `:name`, none ticked) for "No message", E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp. Buttons: "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`), "One every two days", "All today", "Change the captions", and they can type anything else; a change shows the block again. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
 
 Write the plan into `work/plan.json` as you agree on it: per short its folder and file (an adapted short: per variant), and per account the video it gets, its caption, its platform, id, procedure, `postType`, time (ISO 8601 with offset) and a UUID made now with `uuidgen` (or `node -e 'console.log(crypto.randomUUID())'`), never with a tool, so that a retry never posts twice.
 
@@ -169,7 +169,8 @@ If something fails, retry it with the same UUID; if it keeps failing, say which 
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/shorts"` shows the previews. Links and pictures point at `https://…`, at `artifacts/…` or at `uploads/…` (a file of yours there shows in the chat without taking the pane). An `input` is a checkbox or a radio button (`:type "checkbox"` / `"radio"`, nothing else is shown); `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated, when it is clicked. There are no text fields: for a name or a time they type, so say what to type.
 
-- One question per block, with buttons for the likely answers and a hint that they can type anything else; a choice of several (accounts, shorts) as checkboxes with one button.
+- One question per block, with buttons for the likely answers and a hint that they can type anything else; a choice of several (platforms, accounts, shorts) as checkboxes with one button.
+- In the main use, from the link to "Render and schedule", the person decides: no button or option marked "(recommended)", and radio buttons with none ticked. Elsewhere use your judgment.
 - Make a button's text say what happens, and its `:send` text read as the person's answer ("Take 4 shorts", "Colour of Dominik: #ff9a5a").
 - Cards: a `div` with `:style {:display "flex" :flex-wrap "wrap" :gap "10px"}` around `div`s with a border, a radius and padding; a swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`. A button keeps its light look on a dark card; one you give a `:background` with text on it needs a `:color` that reads on it.
 - Never put a token, an id the person does not need or a raw error into the chat.
@@ -184,25 +185,32 @@ For example, the moments:
    [:p [:em "„Du hast morgens einen Kuchen gebacken …“"]]
    [:small "A riddle with a surprising answer, the punchline at the end."] " "
    [:a {:href "https://youtu.be/STqnETZ9kRc?t=4004"} "▶ watch on YouTube"]]]
- [:p "I recommend 4 shorts. How many should it be?"]
- [:button {:send "Take 4 shorts"} "4 (recommended)"] " "
+ [:p "The first four are the strongest. How many should it be?"]
+ [:button {:send "Take 4 shorts"} "4"] " "
  [:button {:send "Take all 6 shorts"} "All 6"] " "
  [:button {:send "Take only the best 2"} "2"]]
 ```
 
-and where they go, from `list-social-accounts`:
+the platforms, from `list-social-accounts`:
 
 ```hiccup
 [:div
- [:p "Where should the shorts go? These accounts are connected to Storrito:"]
- [:strong "Instagram"]
- [:label [:input {:type "checkbox" :value "Instagram Reel @soul.globe" :checked true}] " Reel · @soul.globe"]
- [:label [:input {:type "checkbox" :value "Instagram Story @soul.globe"}] " Story · @soul.globe (60 s at most)"]
- [:strong "TikTok"]
- [:label [:input {:type "checkbox" :value "TikTok storrito.com" :checked true}] " storrito.com"]
- [:strong "YouTube"]
- [:label [:input {:type "checkbox" :value "YouTube Short Audiocado"}] " Short · Audiocado"]
- [:button {:send "Post the shorts on: {checked}"} "Take these accounts"]]
+ [:p "On which platforms should the shorts appear? These are connected to Storrito:"]
+ [:label [:input {:type "checkbox" :value "Instagram Reel" :checked true}] " Instagram Reel"]
+ [:label [:input {:type "checkbox" :value "TikTok" :checked true}] " TikTok"]
+ [:label [:input {:type "checkbox" :value "YouTube Short" :checked true}] " YouTube Short"]
+ [:label [:input {:type "checkbox" :value "LinkedIn video"}] " LinkedIn video"]
+ [:button {:send "The shorts go to: {checked}"} "Take these platforms"]]
+```
+
+and one video or adapted, the radio buttons with none ticked:
+
+```hiccup
+[:div
+ [:p "One video for all platforms, or adapted to each? Adapted means one video per platform, rendered each on its own."]
+ [:label [:input {:type "radio" :name "variants" :value "one video for all"}] " One video for all"]
+ [:label [:input {:type "radio" :name "variants" :value "adapted per platform"}] " Adapted per platform"]
+ [:button {:send "Make it {checked}"} "Go on"]]
 ```
 
 ## Directing a short
