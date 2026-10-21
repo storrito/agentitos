@@ -141,7 +141,7 @@ The limits are Storrito's, from `list-social-accounts`, never from memory: befor
 
 ### 7. The plan, the message, and go
 
-Then one last message holds everything still to decide, so that nothing is asked once the rendering runs (they may close the window then). Propose a plan and show it as a table: per short the date and time, the accounts, and per account the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language unless the person says an account posts in another, in the platform's tone). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Below the plan, in the same block, ask whether they want a message when everything is done, and how: radio buttons (one `:name`, none ticked) for "No message", E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp. Buttons: "Render and schedule" (`:send "Render and schedule; tell me when done: {checked}"`), "One every two days", "All today", "Change the captions", and they can type anything else; a change shows the block again. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
+Then one last message holds everything still to decide, so that nothing is asked once the rendering runs (they may close the window then). Propose a plan and show it as a table: per short the date and time, the accounts, and per account the caption you wrote (the hook, one or two sentences, a few fitting hashtags, in the episode's language unless the person says an account posts in another, in the platform's tone). A caption keeps to the shortest `maxCaptionLength` of its post types (X 280, Snapchat Spotlight 160 …) or gets a shorter version for those; post types whose `captionPublished` is false get none; a post type with `captionRequired` must get one. Options of a post type (`options`, e.g. the title and privacy of a YouTube Short) go into the plan too. A good default: one short a day at 18:00 in the person's time zone, the strongest first, the same short on all its accounts at the same time. Below the plan, in the same block, ask whether they want a message when everything is done, and how: radio buttons (one `:name`, none ticked) for "No message", E-mail, Slack, Telegram, a push message to the phone (Pushover), SMS and WhatsApp. Buttons: "Render and schedule" (`:class "primary"`, `:send "Render and schedule; tell me when done: {checked}"`), "One every two days", "All today", "Change the captions", and they can type anything else; a change shows the block again. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin). TikTok posts are private unless you set `privacyLevel` to `PUBLIC_TO_EVERYONE`: ask once whether they should be public.
 
 Write the plan into `work/plan.json` as you agree on it: per short its folder and file (an adapted short: per variant), and per account the video it gets, its caption, its platform, id, procedure, `postType`, time (ISO 8601 with offset) and a UUID made now with `uuidgen` (or `node -e 'console.log(crypto.randomUUID())'`), never with a tool, so that a retry never posts twice.
 
@@ -172,6 +172,7 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - One question per block, with buttons for the likely answers and a hint that they can type anything else; a choice of several (platforms, accounts, shorts) as checkboxes with one button.
 - In the main use, from the link to "Render and schedule", the person decides: no button or option marked "(recommended)", and radio buttons with none ticked. Elsewhere use your judgment.
 - Make a button's text say what happens, and its `:send` text read as the person's answer ("Take 4 shorts", "Colour of Dominik: #ff9a5a").
+- `:class "primary"` fills a button with the accent: give it to the one button that sends the block's ticked choices or starts the work ("Take these platforms", "Render and schedule"). Buttons that are alternative answers stay plain, none of them primary: the person decides.
 - Tiles, for a choice of looks: a grid, `:style {:display "grid" :grid-template-columns "repeat(auto-fill, minmax(150px, 1fr))" :gap "8px"}`, around tiles of the same build, each a column with a border, a radius and padding, `:style {:display "flex" :flex-direction "column" :gap "4px" :border "1px solid rgba(127,127,127,.35)" :border-radius "10px" :padding "8px"}`: the picture first (`[:img {:src "uploads/worlds/slate.jpg" :style {:width "100%" :aspect-ratio "3 / 4" :object-fit "cover" :border-radius "6px"}}]`), the name in `strong`, what it fits in `small`, the button last. Text stays on the page's background, never on a picture or a colour: what reads on one does not on the other.
 - A swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`.
 - Never put a token, an id the person does not need or a raw error into the chat.
@@ -201,7 +202,7 @@ the platforms, from `list-social-accounts`:
  [:label [:input {:type "checkbox" :value "TikTok" :checked true}] " TikTok"]
  [:label [:input {:type "checkbox" :value "YouTube Short" :checked true}] " YouTube Short"]
  [:label [:input {:type "checkbox" :value "LinkedIn video"}] " LinkedIn video"]
- [:button {:send "The shorts go to: {checked}"} "Take these platforms"]]
+ [:button {:class "primary" :send "The shorts go to: {checked}"} "Take these platforms"]]
 ```
 
 and one video or adapted, the radio buttons with none ticked:
@@ -211,7 +212,7 @@ and one video or adapted, the radio buttons with none ticked:
  [:p "One video for all platforms, or adapted to each? Adapted means one video per platform, rendered each on its own."]
  [:label [:input {:type "radio" :name "variants" :value "one video for all"}] " One video for all"]
  [:label [:input {:type "radio" :name "variants" :value "adapted per platform"}] " Adapted per platform"]
- [:button {:send "Make it {checked}"} "Go on"]]
+ [:button {:class "primary" :send "Make it {checked}"} "Go on"]]
 ```
 
 ## Directing a short
