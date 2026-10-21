@@ -31,11 +31,17 @@ Each `SKILL.md` follows the [Agent Skills](https://agentskills.io/specification)
 
 Paths in a `SKILL.md` are written as `<skill>/…`, relative to the skill's folder; outputs always go to the caller's working directory, never into the skill.
 
+## The brand kit
+
+A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md` in Google's open [DESIGN.md format](https://github.com/google-labs-code/design.md) (colours, typography and corner radii as tokens in its front matter, the brand's character, voice and audience as prose) with the logo and font files beside it, plus four keys of our own (`logo`, `fonts`, `uppercase`, `social`; see [brand-kit](brand-kit/README.md#the-kit)). [brand-kit](brand-kit/) makes a full one with the person; an agent that needs a look and finds none drafts one from the brand's website, as [story-from-link](story-from-link/) does. It is a file format, not a dependency: folders still never import from each other.
+
 ## Agents
 
 | Agent | Description |
 |-------|-------------|
+| [brand-kit](brand-kit/) | A company's website → its brand kit, agreed in the chat: logo, colours, fonts, voice, audience and social profiles as a [DESIGN.md](https://github.com/google-labs-code/design.md) with its files, and a brand board. |
 | [kinetic-lyrics](kinetic-lyrics/) | Spoken audio, podcasts or talking-head clips → kinetic-typography video (lyric-video style) over an illustrated world of light that renders on the CPU, for 16:9, 9:16 and more. Includes highlight finding, speaker detection, ASR repair and automatic QA. |
+| [story-from-link](story-from-link/) | A link (blog post, product, event) → an Instagram Story of a few frames in the brand's look, with a link sticker and Storrito's interactive stickers, checked and scheduled through Storrito. |
 
 ## Contributing
 
