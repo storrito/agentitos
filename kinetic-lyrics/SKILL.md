@@ -76,23 +76,23 @@ Write the answers into `work/plan.json` as `platforms` and `variants` (`"one"`, 
 
 Ask one thing per message, each with buttons, and offer to take your proposal for everything at once ("Take your suggestions"):
 
-- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show each as a card with its colours as the card's background, what it fits, and a button. You may say in a sentence which fit the episode's mood (for most talk a calm one, which moves little and keeps its motifs quiet), but mark none as recommended.
+- **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show them as tiles (see "UI in the chat"), each with its picture, its name, what it fits and a button. The pictures are stills of each world, `<skill>/assets/worlds/<world>.jpg`: copy the folder once to your uploads (`cp -r <skill>/assets/worlds uploads/`), so that `uploads/worlds/<world>.jpg` shows in the chat. You may say in a sentence which fit the episode's mood (for most talk a calm one, which moves little and keeps its motifs quiet), but mark none as recommended.
 
-  | world | the card's `:background` | fits |
-  | --- | --- | --- |
-  | `bokeh` | `radial-gradient(circle at 25% 25%, #ffcf8a 0 8%, transparent 9%), radial-gradient(circle at 70% 35%, #ff9a5a 0 10%, transparent 11%), linear-gradient(#2a1208, #120806)` | people, comedy, health |
-  | `noir` | `repeating-linear-gradient(160deg, rgba(255,255,255,.10) 0 9px, transparent 9px 18px), linear-gradient(#0c0c0c, #262626)` | crime, secrets, psychology |
-  | `neon` | `repeating-linear-gradient(90deg, rgba(0,240,255,.35) 0 1px, transparent 1px 22px), linear-gradient(170deg, #0b0b2a, #3a0ca3 60%, #f72585)` | tech, sport, speed |
-  | `cosmos` | `radial-gradient(ellipse at 40% 35%, #5b2a86, transparent 60%), linear-gradient(#070720, #1b1446)` | big ideas, dreams |
-  | `aurora` | `linear-gradient(150deg, #00c9a7, #845ec2 50%, #ff6f91)` | motivation, lifestyle |
-  | `editorial` | `linear-gradient(#f3eee2, #e6dfcf)` (dark text on it) | business, education; footage in a frame |
-  | `geometry` | `radial-gradient(circle at 30% 35%, #f6b26b 0 12%, transparent 13%), linear-gradient(#f4f4f2, #dcdcd8)` | products, explainers; footage in a frame |
-  | `slate` (calm) | `radial-gradient(ellipse at 50% 15%, #2a3242, transparent 65%), linear-gradient(#141922, #07090d)` | news, politics, business, finance |
-  | `dusk` (calm) | `linear-gradient(#0d1230, #2a2f6a 45%, #e8a07c 74%, #3a2a40 80%, #0d0a18)` | reflection, relationships, wellbeing |
-  | `canopy` (calm) | `radial-gradient(circle at 30% 30%, rgba(232,210,140,.45) 0 5%, transparent 6%), radial-gradient(circle at 65% 55%, rgba(232,210,140,.35) 0 7%, transparent 8%), linear-gradient(160deg, #1d3328, #07100c)` | nature, health, food, sport |
-  | `chalk` (calm) | `repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 6px, transparent 6px 14px), linear-gradient(#26343a, #0f1518)` | science, education, explainers |
-  | `linen` (calm) | `linear-gradient(115deg, transparent 45%, rgba(255,255,255,.7) 46% 58%, transparent 59%), linear-gradient(#e6e1d8, #d6d0c4)` (dark text on it) | lifestyle, home, family; footage in a frame |
-  | `mist` (calm) | `radial-gradient(circle at 30% 30%, #f6d8e4, transparent 55%), radial-gradient(circle at 75% 70%, #d6e4f6, transparent 55%), #f4f2f6` (dark text on it) | coaching, mental health, self-care; footage in a frame |
+  | world | fits |
+  | --- | --- |
+  | `bokeh` | people, comedy, health |
+  | `noir` | crime, secrets, psychology |
+  | `neon` | tech, sport, speed |
+  | `cosmos` | big ideas, dreams |
+  | `aurora` | motivation, lifestyle |
+  | `editorial` (light) | business, education; footage in a frame |
+  | `geometry` (light) | products, explainers; footage in a frame |
+  | `slate` (calm) | news, politics, business, finance |
+  | `dusk` (calm) | reflection, relationships, wellbeing |
+  | `canopy` (calm) | nature, health, food, sport |
+  | `chalk` (calm) | science, education, explainers |
+  | `linen` (calm, light) | lifestyle, home, family; footage in a frame |
+  | `mist` (calm, light) | coaching, mental health, self-care; footage in a frame |
 
 - **The speakers' names** as they should appear on the name tag: tell who is who with one line each said (A is who speaks first in a short), buttons "No names" and, when the episode's title or description names them, the names you found. They type others.
 - **The speakers' colours**: per voice a row of swatches (a button with that colour as its background) and "The world's colours". On the dark worlds light colours: `#7fe3ff #ffb36b #c9a7ff #9dffb0 #ff8fb1 #ffe066`; on the light ones (`editorial`, `geometry`, `linen`, `mist`) dark ones: `#08609c #b0400a #5d33c4 #11703e #ad1452 #7a5c00`. A colour the other kind of world would hide is unreadable: say so if they pick one.
@@ -172,7 +172,8 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - One question per block, with buttons for the likely answers and a hint that they can type anything else; a choice of several (platforms, accounts, shorts) as checkboxes with one button.
 - In the main use, from the link to "Render and schedule", the person decides: no button or option marked "(recommended)", and radio buttons with none ticked. Elsewhere use your judgment.
 - Make a button's text say what happens, and its `:send` text read as the person's answer ("Take 4 shorts", "Colour of Dominik: #ff9a5a").
-- Cards: a `div` with `:style {:display "flex" :flex-wrap "wrap" :gap "10px"}` around `div`s with a border, a radius and padding; a swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`. A button keeps its light look on a dark card; one you give a `:background` with text on it needs a `:color` that reads on it.
+- Tiles, for a choice of looks: a grid, `:style {:display "grid" :grid-template-columns "repeat(auto-fill, minmax(150px, 1fr))" :gap "8px"}`, around tiles of the same build, each a column with a border, a radius and padding, `:style {:display "flex" :flex-direction "column" :gap "4px" :border "1px solid rgba(127,127,127,.35)" :border-radius "10px" :padding "8px"}`: the picture first (`[:img {:src "uploads/worlds/slate.jpg" :style {:width "100%" :aspect-ratio "3 / 4" :object-fit "cover" :border-radius "6px"}}]`), the name in `strong`, what it fits in `small`, the button last. Text stays on the page's background, never on a picture or a colour: what reads on one does not on the other.
+- A swatch is a `button` with `:style {:background "#ffb36b" :width "34px" :height "34px" :border-radius "50%"}`.
 - Never put a token, an id the person does not need or a raw error into the chat.
 
 For example, the moments:
