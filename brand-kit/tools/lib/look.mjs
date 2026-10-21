@@ -102,14 +102,17 @@ function inPage() {
     const names = stack.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
     const own = names.filter((n) => !generic.test(n));
     const loaded = own.find((n) => { try { return document.fonts.check(`16px "${n}"`); } catch { return false; } });
-    return loaded || own[0] || names[0] || null;
+    return loaded || own[0] || null;
   };
+  // a stack of the system's fonts only (system-ui, Helvetica, Arial …): its kind
+  const kind = (stack) => (/monospace/i.test(stack) ? "monospace" : /(^|,)\s*["']?(ui-)?serif\b/i.test(stack) && !/sans-serif/i.test(stack) ? "serif" : "sans-serif");
   const fontOf = (el) => {
     if (!el) return null;
     const cs = getComputedStyle(el);
     const size = parseFloat(cs.fontSize);
+    const own = family(cs.fontFamily);
     return {
-      family: family(cs.fontFamily), stack: cs.fontFamily, weight: +cs.fontWeight || 400, size,
+      family: own, system: own ? null : kind(cs.fontFamily), stack: cs.fontFamily, weight: +cs.fontWeight || 400, size,
       uppercase: cs.textTransform === "uppercase", letterSpacing: cs.letterSpacing === "normal" ? 0 : +(parseFloat(cs.letterSpacing) / size).toFixed(3),
       lineHeight: cs.lineHeight === "normal" ? null : +(parseFloat(cs.lineHeight) / size).toFixed(2), sample: (el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 80),
     };
@@ -415,10 +418,13 @@ export async function readLook(page, dir) {
   }
   const logoColors = (logos[0]?.colors || []).map((h) => ({ hex: h, weight: 1 / (logos[0].colors.length || 1) }));
   const { palette, ranked } = proposePalette(raw.colors, logoColors, raw.themeColor);
+  // a site set in the system's fonts gets the Google font closest to them, so that a picture shows
+  // the same on every machine
+  const SYSTEM = { "sans-serif": "Inter", serif: "Source Serif 4", monospace: "JetBrains Mono" };
   const fonts = {};
   for (const [role, f] of Object.entries(raw.fonts)) {
-    if (!f || !f.family) continue;
-    fonts[role] = { family: f.family, weight: f.weight, uppercase: f.uppercase, letterSpacing: f.letterSpacing, lineHeight: f.lineHeight, size: f.size, sample: f.sample };
+    if (!f || (!f.family && !f.system)) continue;
+    fonts[role] = { family: f.family || SYSTEM[f.system], weight: f.weight, uppercase: f.uppercase, letterSpacing: f.letterSpacing, lineHeight: f.lineHeight, size: f.size, sample: f.sample, ...(f.family ? {} : { system: f.stack }) };
   }
   // where each family comes from: Google Fonts, or the site's own files
   const families = [...new Set(Object.values(fonts).map((f) => f.family))];

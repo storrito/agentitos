@@ -165,7 +165,7 @@ try {
   const p = look.palette;
   lines.push(`Look: primary ${p.primary}${p.secondary ? ` · secondary ${p.secondary}` : ""}${p.tertiary ? ` · tertiary ${p.tertiary}` : ""} · surface ${p.surface} · on-surface ${p["on-surface"]}`);
   const f = look.fonts;
-  const fam = (x) => (x ? `"${x.family}" ${x.weight}${x.uppercase ? " caps" : ""}${look.fontSources[x.family] === "google" ? " (Google)" : look.fontSources[x.family] ? " (site files)" : ""}` : "?");
+  const fam = (x) => (x ? `"${x.family}" ${x.weight}${x.uppercase ? " caps" : ""}${x.system ? " for the system font" : ""}${look.fontSources[x.family] === "google" ? " (Google)" : look.fontSources[x.family] ? " (site files)" : ""}` : "?");
   lines.push(`Fonts: display ${fam(f.display)} · body ${fam(f.body)}`);
   lines.push(`Logos: ${look.logos.map((l) => `${l.file || "?"} (${l.source}${l.colors?.length ? " " + l.colors.slice(0, 3).join(" ") : ""})`).join(", ") || "none found"}`);
   if (Object.keys(look.social).length) lines.push(`Social: ${Object.entries(look.social).map(([k, v]) => `${k} ${v}`).join(" · ")}`);

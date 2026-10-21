@@ -48,12 +48,14 @@ async function draft(pageDir, dir) {
   const name = opts.name || page.siteName || new URL(page.url).hostname.replace(/^www\./, "");
   const typography = {};
   const uppercase = [];
+  const system = [];
   const typo = (token, f, fallbackWeight) => {
     if (!f?.family) return;
     typography[token] = { fontFamily: f.family, fontWeight: f.weight || fallbackWeight };
     if (f.lineHeight) typography[token].lineHeight = f.lineHeight;
     if (f.letterSpacing) typography[token].letterSpacing = `${f.letterSpacing}em`;
     if (f.uppercase) uppercase.push(token);
+    if (f.system) system.push(token);
   };
   typo("headline-display", look.fonts.display || look.fonts.heading, 800);
   typo("headline-lg", look.fonts.heading, 700);
@@ -82,7 +84,7 @@ async function draft(pageDir, dir) {
       `- **Surface (${p.surface}):** the light ground.`,
       `- **On-surface (${p["on-surface"]}):** the text on the light ground.`,
     ].filter(Boolean).join("\n"),
-    Typography: Object.entries(typography).map(([k, v]) => `- **${k}:** ${v.fontFamily} ${v.fontWeight}${uppercase.includes(k) ? ", in capitals" : ""}`).join("\n") || "System fonts.",
+    Typography: Object.entries(typography).map(([k, v]) => `- **${k}:** ${v.fontFamily} ${v.fontWeight}${uppercase.includes(k) ? ", in capitals" : ""}${system.includes(k) ? ", for the system font the site uses" : ""}`).join("\n") || "System fonts.",
     Logo: logo ? `\`${logo}\`, as the site shows it in its header.` : "No logo found on the site: ask the person for one.",
     Social: Object.entries(tokens.social).map(([k, v]) => `- ${k}: ${v}`).join("\n"),
   };

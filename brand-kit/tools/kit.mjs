@@ -73,12 +73,14 @@ async function draft(siteDir, dir) {
   const fonts = await downloadFonts(look.fontSources || {}, dir);
   const typography = {};
   const uppercase = [];
+  const system = [];
   const typo = (token, f, weight) => {
     if (!f?.family) return;
     typography[token] = { fontFamily: f.family, fontWeight: f.weight || weight };
     if (f.lineHeight) typography[token].lineHeight = f.lineHeight;
     if (f.letterSpacing) typography[token].letterSpacing = `${f.letterSpacing}em`;
     if (f.uppercase) uppercase.push(token);
+    if (f.system) system.push(token);
   };
   typo("headline-display", look.fonts.display || look.fonts.heading, 800);
   typo("headline-lg", look.fonts.heading, 700);
@@ -108,7 +110,7 @@ async function draft(siteDir, dir) {
       `- **On-surface (${p["on-surface"]}):** the text on the light ground.`,
       `- **On-primary (${p["on-primary"]}):** the text on the brand colour.`,
     ].filter(Boolean).join("\n"),
-    Typography: Object.entries(typography).map(([k, v]) => `- **${k}:** ${v.fontFamily} ${v.fontWeight}${uppercase.includes(k) ? ", in capitals" : ""}`).join("\n") || "System fonts.",
+    Typography: Object.entries(typography).map(([k, v]) => `- **${k}:** ${v.fontFamily} ${v.fontWeight}${uppercase.includes(k) ? ", in capitals" : ""}${system.includes(k) ? ", for the system font the site uses" : ""}`).join("\n") || "System fonts.",
     Shapes: "Rounded corners of 16 px on cards and pictures; pills for labels.",
     Logo: logo ? `\`${logo}\`, as the site shows it in its header.` : `${TO_AGREE}: no logo found on the site.`,
     Imagery: `${TO_AGREE}: what the brand's pictures show and how (people, products, places; light, colourful, calm …).`,

@@ -99,7 +99,7 @@ try {
   fs.writeFileSync(path.join(dir, "site.json"), JSON.stringify(site, null, 2) + "\n");
 
   const p = look.palette;
-  const fam = (x) => (x ? `"${x.family}" ${x.weight}${x.uppercase ? " caps" : ""}${look.fontSources[x.family] === "google" ? " (Google)" : look.fontSources[x.family] ? " (site files)" : " (no files found)"}` : "?");
+  const fam = (x) => (x ? `"${x.family}" ${x.weight}${x.uppercase ? " caps" : ""}${x.system ? " for the system font" : ""}${look.fontSources[x.family] === "google" ? " (Google)" : look.fontSources[x.family] ? " (site files)" : " (no files found)"}` : "?");
   console.log([
     `${site.name} — ${look.title || ""} (${look.lang || "language unknown"})`,
     `Colours: primary ${p.primary}${p.secondary ? ` · secondary ${p.secondary}` : ""}${p.tertiary ? ` · tertiary ${p.tertiary}` : ""} · surface ${p.surface} · on-surface ${p["on-surface"]}`,
