@@ -1,0 +1,11 @@
+{
+  "name": "thumbnail-and-intro",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Brand-token-driven matching thumbnail and HyperFrames intro packaging; local-only exports.",
+  "engines": { "node": ">=22.12.0" },
+  "bin": { "thumbnail-and-intro": "tools/package.mjs" },
+  "scripts": { "test": "node --test tools/test.mjs" },
+  "dependencies": { "puppeteer-core": "^25.15.0", "yaml": "^2.8.0" }
+}
