@@ -40,6 +40,7 @@ A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md
 | Agent | Description |
 |-------|-------------|
 | [auto-reframe](auto-reframe/) | A wide video → a 9:16 or square crop that follows one chosen subject, on the CPU alone: a box picked on the first frame, CSRT tracking, optional car re-detection, cut-aware smoothing and a diagnostic video to check the tracking before delivery. |
+| [best-takes](best-takes/) | Raw talking-to-camera recordings → the best take of every part, without slips, repeats, "äh"s or talk about the recording, every take equally loud; shown as a HyperFrames preview and agreed in the chat, then rendered with subtitles. |
 | [brand-kit](brand-kit/) | A company's website → its brand kit, agreed in the chat: logo, colours, fonts, voice, audience and social profiles as a [DESIGN.md](https://github.com/google-labs-code/design.md) with its files, and a brand board. |
 | [kinetic-lyrics](kinetic-lyrics/) | Spoken audio, podcasts or talking-head clips → kinetic-typography video (lyric-video style) over an illustrated world of light that renders on the CPU, for 16:9, 9:16 and more. Includes highlight finding, speaker detection, ASR repair and automatic QA. |
 | [story-from-link](story-from-link/) | A link (blog post, product, event) → an Instagram Story of a few frames in the brand's look, with a link sticker and Storrito's interactive stickers, checked and scheduled through Storrito. |
