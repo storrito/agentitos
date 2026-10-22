@@ -58,7 +58,7 @@ node <skill>/tools/takes.mjs build takes/<name> --out artifacts/<name>/compositi
 node <skill>/tools/takes.mjs check takes/<name>
 ```
 
-`build` turns `cut.json` into the project's composition: every kept piece a clip of the original video, cut in the quiet between two words, each take's level brought to the others', short fades against clicks. Every pause over a second follows the picture: where it stands still the pause is cut (a jump cut), where it moves (a click, a page loading, scrolling) that part stays, muted, and a long one plays faster (a timelapse, up to ×10); `check` lists both. Nothing is rendered: the player beside the chat plays the pieces straight from the videos and loads again by itself after every build. The title is the topic in the person's words. `check` prints the cut as it plays (piece by piece, with the words), what it leaves out, the levels, and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason not to (a short piece that is a whole keep, like "Tschüss.", is fine).
+`build` turns `cut.json` into the project's composition: every kept piece a clip of the original video, cut in the quiet between two words, each take's level brought to the others', short fades against clicks. Every pause over a second follows the picture: where it stands still the pause is cut (a jump cut), where it moves (a click, a page loading, scrolling) that part stays, muted, and a long one plays faster (a timelapse, up to ×10); `check` lists both. A wait the speaker announces ("let's wait until then", in any language) never goes: the proposal lists it in `"waits"` (check that it did, and add the sentence's last word yourself when it did not), and the build plays it as a timelapse when the picture moves, else holds 3 s before the cut, so the viewer feels the time pass. Nothing is rendered: the player beside the chat plays the pieces straight from the videos and loads again by itself after every build. The title is the topic in the person's words. `check` prints the cut as it plays (piece by piece, with the words), what it leaves out, the levels, and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason not to (a short piece that is a whole keep, like "Tschüss.", is fine).
 
 ### 4. Ask whether it is right
 
@@ -75,6 +75,7 @@ They say what is wrong; change `cut.json` (or a setting) and build again with th
 | "Shorter" / "at most 30 s" | `build … --target 30`, drop the weakest parts first, keep the opening and the end |
 | "Start with …" | move that keep to the top |
 | "The pauses are too short / too long" | `--pause 1.5` (only pauses over 1.5 s are touched), or `"pauses": "keep"` on that keep (its pauses play as they are) |
+| "It looks as if no time passed" / "the wait is gone" | add the last word of the sentence that announces the wait to `"waits"` |
 | "That wait / that silence is too long" | it is a pause whose picture moves a little: look at it in `check`; drop it from its keep by ending the keep before it and starting the next after it |
 | "That part is too quiet / loud" | `"gain": 3` / `"gain": -3` on its keep |
 | "Vertical" / "square" | `--aspect 9:16` / `--aspect 1:1` (with `--fit contain` the whole picture stays, with bars) |

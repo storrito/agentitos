@@ -2,10 +2,24 @@
 // starts and ends in its video, where it sits in the cut, and how much louder or quieter it
 // has to be so that every take sounds equally loud. A pause inside a keep becomes what its
 // picture shows: where the picture stands still it goes (a jump cut), where it moves it stays,
-// muted, and a long stretch of it plays faster (a timelapse).
+// muted, and a long stretch of it plays faster (a timelapse). A wait the speaker announced
+// ("let's wait until then", cut.json "waits") never goes: it plays as a timelapse when its
+// picture moves, else it holds a few seconds before the cut, so that the viewer feels the time
+// pass.
 
 import { cutBefore, cutAfter, loudness } from "./voice.mjs";
-import { speed } from "./motion.mjs";
+import { speed, waitSpeed, WAIT_MOVING, WAIT_HOLD } from "./motion.mjs";
+
+// The spans of a wait from–to, as groups of the cut: the whole of it faster when its picture
+// moves; else the first WAIT_HOLD seconds as they are, then what moves.
+function waitGroups(clip, from, to, moves) {
+  const shown = moves(clip, from, to);
+  const moved = shown.reduce((t, s) => t + s.to - s.from, 0);
+  if (moved >= WAIT_MOVING * (to - from)) return [{ clip, from, to, rate: waitSpeed(to - from), wait: true }];
+  const hold = Math.min(to, from + WAIT_HOLD);
+  return [{ clip, from, to: hold, rate: 1, wait: true },
+    ...shown.filter((s) => s.to > hold + 0.4).map((s) => ({ clip, from: Math.max(s.from, hold), to: s.to }))];
+}
 
 // "12-40", "12–40", 12 → [12, 40]
 export function range(r) {
@@ -22,8 +36,10 @@ export function plan(words, cut, settings, voices, moves = () => []) {
   const errors = [], warnings = [], removed = [];
   const fps = settings.fps, maxPause = settings.pause, target = settings.loudness;
   const used = new Map();
+  const waits = new Set((cut.waits || []).map(Number));
   let pieces = [];
   if (!Array.isArray(cut.keep) || !cut.keep.length) errors.push('cut.json has no "keep": list the word ranges to keep, in the order they play.');
+  for (const i of waits) if (!(i >= 0 && i < words.length)) errors.push(`"waits": ${i} is no word number (0–${words.length - 1})`);
 
   // the sound before and after a word in its own video, whether kept or not
   const before = (w) => (w.i > 0 && words[w.i - 1].clip === w.clip ? words[w.i - 1].end : 0);
@@ -57,7 +73,13 @@ export function plan(words, cut, settings, voices, moves = () => []) {
         continue;
       }
       const last = cur.at(-1);
-      if (last && keep.pauses !== "keep" && w.start - last.end > maxPause) {
+      if (last && waits.has(last.i) && w.start > last.end) {
+        const parts = waitGroups(w.clip, last.end, w.start, moves);
+        removed.push({ kind: "pause", wait: true, clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
+          moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
+        close();
+        groups.push(...parts);
+      } else if (last && keep.pauses !== "keep" && w.start - last.end > maxPause) {
         const shown = moves(w.clip, last.end, w.start);
         removed.push({ kind: "pause", clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
           moving: shown.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +speed(s.to - s.from).toFixed(2) })) });
@@ -67,6 +89,17 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       cur.push(w);
     }
     close();
+    // a wait after the keep's last word: the pause up to the next keep's first word, when that
+    // follows in the same video
+    const lastWord = items.filter((w) => w.kind === "word").at(-1);
+    const nextRange = range(cut.keep[k + 1]?.words);
+    const next = nextRange && words[nextRange[0]];
+    if (lastWord && waits.has(lastWord.i) && next && next.clip === lastWord.clip && next.start > lastWord.end + 0.5) {
+      const parts = waitGroups(lastWord.clip, lastWord.end, next.start - 0.3, moves);
+      removed.push({ kind: "pause", wait: true, clip: lastWord.clip, from: lastWord.end, to: next.start, words: [lastWord.i, next.i],
+        moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
+      groups.push(...parts);
+    }
     groups.forEach((g, n) => {
       if (!Array.isArray(g)) {
         // what the picture shows in a pause, after the words before it and before the ones after
@@ -74,7 +107,7 @@ export function plan(words, cut, settings, voices, moves = () => []) {
         const prev = pieces.at(-1);
         const from = Math.max(g.from, prev && prev.keep === k ? prev.out : -Infinity, before ? before.at(-1).end : -Infinity);
         const to = Math.min(g.to, after ? after[0].start : Infinity);
-        if (to - from >= 0.4) pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: speed(to - from), mute: true });
+        if (to - from >= 0.4) pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: g.rate ?? speed(to - from), mute: true, wait: !!g.wait });
         return;
       }
       const v = voices[g[0].clip], first = g[0], last = g.at(-1);

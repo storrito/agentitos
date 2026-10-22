@@ -45,3 +45,15 @@ export function speed(seconds) {
   if (seconds <= 2.5) return 1;
   return Math.min(10, seconds / Math.min(6, Math.max(2, seconds / 3)));
 }
+
+// How fast a wait plays when its picture moves (a clock, a progress bar): in 3 to 5 s, at most
+// ten times as fast, so that the viewer sees the time pass.
+export function waitSpeed(seconds) {
+  const span = Math.min(5, Math.max(3, seconds / 6));
+  return Math.max(1, Math.min(10, seconds / span));
+}
+
+// The picture of a wait moves enough to play as a timelapse from this share of its time on.
+export const WAIT_MOVING = 0.15;
+// A wait whose picture stands still holds this long before the cut.
+export const WAIT_HOLD = 3;

@@ -26,7 +26,7 @@ Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, 
 2. **`propose`** sends the videos (360p, 4 fps, small) and the numbered words to **Gemini 4 Argon** through OpenRouter and asks for the keeps, the retries it left out and why, and where something is shown in silence. The words alone cannot say which of two attempts is *said* better, or that a silence is someone holding a camera into the picture; a model that watches can. About 1.8 ¢ a minute. The agent checks the proposal against the brief and writes `cut.json`.
 3. **`build`** turns the word ranges into pieces of the source videos:
    - a cut goes into the quiet between two words: just before the voice sets in, never more than half the pause back; between words that touch, at the quietest 10 ms;
-   - fillers inside a kept range are cut out; a pause over `--pause` (1 s) follows the picture (`tools/lib/motion.mjs`: the share of pixels that change, four times a second): where it stands still it is shortened to about 0.3 s, a jump cut; where it moves (over 0.2 % of the pixels, runs under 2 s apart joined) that part stays, muted, up to 2.5 s as it is, longer ones in a third of their time (2–6 s, at most ×10, `data-playback-rate`), a timelapse; a keep with `"pauses": "keep"` plays its pauses as they are;
+   - fillers inside a kept range are cut out; a pause over `--pause` (1 s) follows the picture (`tools/lib/motion.mjs`: the share of pixels that change, four times a second): where it stands still it is shortened to about 0.3 s, a jump cut; where it moves (over 0.2 % of the pixels, runs under 2 s apart joined) that part stays, muted, up to 2.5 s as it is, longer ones in a third of their time (2–6 s, at most ×10, `data-playback-rate`), a timelapse; a keep with `"pauses": "keep"` plays its pauses as they are; a wait listed in `"waits"` is never cut away (see cut.json);
    - pieces that follow each other in their video play as one; all lengths are whole frames;
    - **the loudness**: the pieces of one take (same video, forward, of one keep or under 5 s apart) are measured together (gated like EBU R128 integrated loudness) and get one gain to −16 LUFS, so the level evens out between takes and videos without jumping inside a take.
 
@@ -56,6 +56,7 @@ Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, 
 | `keep[].gain` | dB on top of the evened-out level |
 | `keep[].why` | for the agent and the person |
 | `fixes` | the subtitles' spelling by word number; `""` drops a word from the text, not from the cut |
+| `waits` | word numbers that end a sentence announcing a wait ("let's wait until then"): the pause after it, inside a keep or up to the next keep, plays as a wait (a timelapse of 3–5 s when the picture moves, else 3 s held before the cut) instead of being cut away |
 
 The keeps play in their order.
 

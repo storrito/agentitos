@@ -54,8 +54,14 @@ should see: **the best take of every part, in the order of the story, without sl
    it cuts (a jump cut), where it moves (a click, a page that loads, scrolling) it keeps that
    part, muted, and a long one plays faster (a timelapse). Leave pauses to it. Only when a
    silence must play at its own speed although it is long (a camera held into the picture and
-   turned slowly, a reaction) does that keep get \`"pauses": "keep"\`.${settings.target ? `
-7. **The length.** It should be at most ${settings.target} s. First drop what repeats, then the
+   turned slowly, a reaction) does that keep get \`"pauses": "keep"\`.
+7. **A wait the speaker announces stays a wait.** "Let's wait until then", "wir warten kurz",
+   "un momento", in any language: what follows is the time passing, and the viewer should feel
+   it. Put the number of the announcing sentence's last word into \`"waits"\`; the tool then
+   never cuts that pause away: a picture that moves (a clock, a progress bar) plays as a
+   timelapse of 3–5 s, a still one holds 3 s before the cut. This works inside a keep and
+   between two keeps (the pause up to the next keep's first word).${settings.target ? `
+8. **The length.** It should be at most ${settings.target} s. First drop what repeats, then the
    weakest parts; keep the opening and the ending.` : ""}
 
 The order of the keeps is the order they play: normally the order they were said. Put a part
@@ -97,7 +103,8 @@ ${rules(several, settings)}
     {"words": "173-194", "why": "the retry of the lens; the first breaks off at 'Brenn'"},
     {"words": "208", "why": "goodbye"}
   ],
-  "fixes": {"105": "X-700", "106": ""}
+  "fixes": {"105": "X-700", "106": ""},
+  "waits": [189]
 }
 \`\`\`
 
@@ -106,6 +113,8 @@ ${rules(several, settings)}
 - \`why\` is for you and the person; say it for every keep that leaves a retry behind.
 - \`fixes\` (optional): the spelling the subtitles should show, by number; "" drops a word from
   the text. It changes the subtitles, not the cut.
+- \`waits\` (optional): the numbers of the last words of sentences that announce a wait; the
+  pause after each plays as a wait (rule 7).
 
 ## The words
 ${takesText(clips, words)}

@@ -16,7 +16,7 @@ const MAX_MINUTES = 60;
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["keep", "retries", "visual"],
+  required: ["keep", "retries", "visual", "waits"],
   properties: {
     keep: { type: "array", items: { type: "object", additionalProperties: false, required: ["words", "why", "pauses"], properties: {
       words: { type: "string", description: "first-last word number, both included, e.g. 12-40, or one number" },
@@ -29,6 +29,7 @@ const SCHEMA = {
     visual: { type: "array", items: { type: "object", additionalProperties: false, required: ["words", "what"], properties: {
       words: { type: "string" }, what: { type: "string" },
     } } },
+    waits: { type: "array", items: { type: "integer" }, description: "the number of the last word of every kept sentence in which the speaker announces waiting for something to happen, in any language ('let's wait until then', 'wir warten kurz', 'un momento'); the pause after it then plays as a wait instead of being cut away. Empty when there is none" },
   },
 };
 
@@ -49,7 +50,7 @@ ${rules(several, settings)}
 
 Judge the delivery you hear and see, not only the words: which attempt is fluent, which one stumbles, where the speaker laughs or looks away. Fillers appear as (äh), noises as [ … ].
 
-For every retry you leave out, say which range it was, which range replaces it and why. List where the speaker shows something visually.
+For every retry you leave out, say which range it was, which range replaces it and why. List where the speaker shows something visually, and in "waits" every kept sentence that announces waiting.
 
 All words, numbered:
 ${numbered}` });
@@ -87,6 +88,7 @@ ${numbered}` });
     model,
     cost: j.usage?.cost ?? 0,
     keep: ans.keep.map((k) => ({ words: k.words, why: k.why, ...(k.pauses ? { pauses: "keep" } : {}) })),
+    ...(ans.waits?.length ? { waits: ans.waits } : {}),
     retries: ans.retries,
     visual: ans.visual,
   };

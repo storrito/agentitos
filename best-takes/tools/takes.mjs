@@ -187,7 +187,7 @@ function cmdBuild(dir, opts) {
     out: rel(out), width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
     pieces: r.pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
-      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2) }), keep: p.keep })),
+      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}) }), keep: p.keep })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   }, null, 1));
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
@@ -212,7 +212,8 @@ function cmdCheck(dir) {
   console.log("As it plays:");
   e.pieces.forEach((p, k) => {
     if (p.shows) {
-      console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: the picture moves, ${(p.out - p.in).toFixed(1)} s ${p.rate > 1 ? `×${p.rate} in ${p.duration.toFixed(1)} s` : "as it is"}, muted)   (${where(p.clip, p.in)})`);
+      const what = p.wait ? (p.rate > 1 ? "the wait, as a timelapse" : "the wait, held before the cut") : "the picture moves";
+      console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${what}, ${(p.out - p.in).toFixed(1)} s ${p.rate > 1 ? `×${p.rate} in ${p.duration.toFixed(1)} s` : "as it is"}, muted)   (${where(p.clip, p.in)})`);
       return;
     }
     console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  [${p.words[0]}–${p.words[1]}] ${text(p.words[0], p.words[1])}   (${where(p.clip, p.in)}, ${p.gain >= 0 ? "+" : ""}${p.gain} dB)`);
