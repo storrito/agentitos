@@ -32,7 +32,7 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { probe, playable, samples, hyperframes, clock } from "./lib/media.mjs";
 import { scribe, SCRIBE_MODEL } from "./lib/asr.mjs";
-import { envelope, threshold, retime, loudnessBlocks, loudness } from "./lib/voice.mjs";
+import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { activity, moving } from "./lib/motion.mjs";
 import { writeComposition } from "./lib/composition.mjs";
@@ -97,9 +97,11 @@ async function cmdNew(dir, files, opts) {
     console.log(`video ${n}: ${c.from} (${clock(p.duration, false)}, ${p.width}×${p.height}${how.startsWith("transcoded") ? `, ${how} to H.264` : ""}) – listening …`);
     const env = envelope(samples(file));
     fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.env`), Buffer.from(env.buffer));
-    const said = await scribe(file, p.duration, { log: console.log });
-    const moved = retime(said, env, threshold(env));
+    const heard = await scribe(file, p.duration, { log: console.log });
+    const moved = retime(heard, env, threshold(env));
     if (moved) console.log(`  ${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
+    const { kept: said, runs } = ghosts(heard);
+    for (const r of runs) console.log(`  left out, the voice has no time for them (the recognizer wrote them twice): ${r}`);
     const blocks = loudnessBlocks(file);
     fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.loudness.json`), JSON.stringify(blocks));
     const speech = said.filter((w) => w.kind === "word");
@@ -203,6 +205,7 @@ function cmdCheck(dir) {
   const { clips, words } = read(source(dir, "words.json"));
   const s = settings(dir, {});
   const cut = read(path.join(dir, "cut.json"));
+  const voices = voicesOf(dir, clips);
   const text = (a, b) => words.slice(a, b + 1).filter((w) => w.kind === "word").map((w) => cut.fixes?.[w.i] ?? w.text).filter(Boolean).join(" ");
   const several = Object.keys(clips).length > 1;
   const where = (c, t) => `${several ? `video ${c} ` : ""}${clock(t)}`;
@@ -217,6 +220,15 @@ function cmdCheck(dir) {
       return;
     }
     console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  [${p.words[0]}–${p.words[1]}] ${text(p.words[0], p.words[1])}   (${where(p.clip, p.in)}, ${p.gain >= 0 ? "+" : ""}${p.gain} dB)`);
+    // a piece that starts on its first word without any quiet before it, while the voice is on,
+    // starts in the middle of a word or a sentence (a breath before a word is no voice; a cut
+    // right after a filler that went is meant: the two touch)
+    const v = voices[p.clip], at = (t) => v.env[Math.round(t / HOP)] ?? 0;
+    const first = words[p.words[0]], prior = words[p.words[0] - 1];
+    const afterFiller = prior && prior.clip === p.clip && prior.kind !== "word" && first.start - prior.end < 0.15;
+    if (!afterFiller && p.in >= first.start - 0.03 && [-0.03, -0.02, -0.01, 0].every((d) => at(p.in + d) > v.thr)) {
+      warnings.push(`piece ${k + 1} ("${text(p.words[0], p.words[1])}") starts while the voice is on (${where(p.clip, p.in)}): the sentence likely begins earlier; look at the words before ${p.words[0]} in the brief (squeezed or doubled words are the recognizer's) and start the keep where the sentence starts`);
+    }
     // a short piece that is a whole keep ("Tschüss.") is meant; one left over by a cut is not
     const whole = (range(cut.keep[p.keep]?.words) || []).join() === p.words.join();
     if (p.duration < 0.6 && p.words[1] - p.words[0] < 2 && !whole) warnings.push(`piece ${k + 1} ("${text(p.words[0], p.words[1])}") is ${p.duration.toFixed(2)} s long: that sounds chopped; keep the whole phrase, or start or end the keep beside it`);

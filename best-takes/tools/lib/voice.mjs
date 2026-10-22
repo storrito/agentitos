@@ -130,3 +130,25 @@ export function loudness(blocks, spans) {
   const abs = mean(inside), gated = inside.filter((k) => k.m > abs - 10);
   return +mean(gated.length ? gated : inside).toFixed(1);
 }
+
+// Words the voice has no time for: after retime, a run of three or more words still squeezed
+// into under 60 ms each. Scribe now and then writes a sentence twice, and the copy lands in such
+// a run ("Now let's imagine that your Instagram [connection drops. Now let's imagine that your
+// Instagram] connection drops."); kept, it looks like a second attempt, and a keep that starts
+// in it starts in the middle of the sentence. Returns the words without such runs, and the runs.
+export function ghosts(words) {
+  const speech = (w) => w.kind === "word" || w.kind === "filler";
+  const squeezed = (w) => speech(w) && w.end - w.start < 0.06 && w.text.replace(/[^\p{L}\p{N}]/gu, "").length >= 2;
+  const drop = new Set(), runs = [];
+  for (let i = 0; i < words.length; i++) {
+    if (!squeezed(words[i])) continue;
+    let j = i;
+    while (j + 1 < words.length && squeezed(words[j + 1])) j++;
+    if (j - i + 1 >= 3) {
+      for (let k = i; k <= j; k++) drop.add(k);
+      runs.push(words.slice(i, j + 1).map((w) => w.text).join(" "));
+    }
+    i = j;
+  }
+  return { kept: words.filter((_, k) => !drop.has(k)), runs };
+}

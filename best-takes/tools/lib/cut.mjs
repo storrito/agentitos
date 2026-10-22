@@ -103,10 +103,13 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     groups.forEach((g, n) => {
       if (!Array.isArray(g)) {
         // what the picture shows in a pause, after the words before it and before the ones after
-        const before = groups.slice(0, n).reverse().find(Array.isArray), after = groups.slice(n + 1).find(Array.isArray);
+        const spokenBefore = groups.slice(0, n).reverse().find(Array.isArray), spokenAfter = groups.slice(n + 1).find(Array.isArray);
         const prev = pieces.at(-1);
-        const from = Math.max(g.from, prev && prev.keep === k ? prev.out : -Infinity, before ? before.at(-1).end : -Infinity);
-        const to = Math.min(g.to, after ? after[0].start : Infinity);
+        const from = Math.max(g.from, prev && prev.keep === k ? prev.out : -Infinity, spokenBefore ? spokenBefore.at(-1).end : -Infinity);
+        // up to the quiet before the next words, where their own piece starts: a muted picture
+        // must not take the breath and the first sound of a sentence
+        const v = voices[g.clip];
+        const to = Math.min(g.to, spokenAfter ? cutBefore(v.env, v.thr, spokenAfter[0].start, Math.max(from, before(spokenAfter[0]))) : Infinity);
         if (to - from >= 0.4) pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: g.rate ?? speed(to - from), mute: true, wait: !!g.wait });
         return;
       }
