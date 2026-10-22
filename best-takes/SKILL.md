@@ -80,6 +80,17 @@ They say what is wrong; change `cut.json` (or a setting) and build again with th
 | "That part is too quiet / loud" | `"gain": 3` / `"gain": -3` on its keep |
 | "Vertical" / "square" | `--aspect 9:16` / `--aspect 1:1` (with `--fit contain` the whole picture stays, with bars) |
 | a word in the subtitles is wrong | `"fixes": {"57": "Pentax"}` |
+| "Captions in the picture" / "another caption style" | `takes.mjs captions takes/<name> --style hormozi` (see "Captions in the picture") |
+
+### Captions in the picture
+
+When they ask for captions in the picture ("Untertitel ins Bild", "captions like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, with the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for explainers). Then
+
+```bash
+node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<name>"] [--brand brand/DESIGN.md]
+```
+
+marks the key words with a model, keeps style and marks in `cut.json` (`"captions"`) and builds again: the preview shows them, on the cut's own words, placed for the frame (16:9 to 9:16). Another style: the same command with another `--style`; a key word too many or too few: edit `cut.json` `captions.highlight` (word numbers) and build; out again: `--off`. It uses agentitos' captions skill beside this one; when it is missing, say so.
 
 ### 6. The video
 

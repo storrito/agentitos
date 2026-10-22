@@ -12,6 +12,10 @@
 //   node tools/takes.mjs check <dir>      the cut as text, what it leaves out, the levels, problems
 //   node tools/takes.mjs finish <dir> <video.mp4>  the rendered video (rragent's render tool) brought
 //                                         to the final loudness; subtitles beside it (<video>.srt)
+//   node tools/takes.mjs captions <dir> --style hormozi   captions in the picture (agentitos'
+//                                         captions skill): a model marks the key words, cut.json
+//                                         keeps the style and the marks, every build mounts them;
+//                                         --off takes them out again
 //
 // Options, kept in source/settings.json for the next steps:
 //   --out <folder>     the composition/ folder of the HyperFrames project the preview shows
@@ -30,6 +34,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { probe, playable, samples, hyperframes, clock } from "./lib/media.mjs";
 import { scribe, SCRIBE_MODEL } from "./lib/asr.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
@@ -39,7 +44,8 @@ import { writeComposition } from "./lib/composition.mjs";
 import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { brief, shown } from "./brief.mjs";
 
-const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model"];
+const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model", "style", "product", "brand"];
+const FLAGS = ["off"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 
@@ -54,7 +60,8 @@ function parse(args) {
     const a = args[i];
     if (!a.startsWith("--")) { pos.push(a); continue; }
     const k = a.slice(2);
-    if (!VALUED.includes(k)) fail(`Unknown option ${a}. Options: ${VALUED.map((o) => "--" + o).join(" ")}`);
+    if (FLAGS.includes(k)) { opts[k] = true; continue; }
+    if (!VALUED.includes(k)) fail(`Unknown option ${a}. Options: ${[...VALUED, ...FLAGS].map((o) => "--" + o).join(" ")}`);
     if (i + 1 >= args.length) fail(`${a} needs a value.`);
     opts[k] = NUMBERS.includes(k) ? Number(args[++i]) : String(args[++i]);
     if (NUMBERS.includes(k) && !Number.isFinite(opts[k])) fail(`${a} needs a number.`);
@@ -167,6 +174,31 @@ function voicesOf(dir, clips) {
   return voices;
 }
 
+// The captions skill of agentitos: CAPTIONS_TOOL, else beside this skill (a checkout of the
+// collection), else in the machine's clone of the skills.
+function captionsTool() {
+  const skill = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const candidates = [process.env.CAPTIONS_TOOL, path.join(skill, "..", "captions", "tools", "captions.mjs"), "/home/sprite/skills/captions/tools/captions.mjs"];
+  return candidates.find((p) => p && fs.existsSync(p)) || null;
+}
+
+// The cut's words for the captions skill, timed in the cut, the marked ones standing out.
+function captionWords(dir, words, captions, { width, height, duration }) {
+  const keys = new Set(captions.highlight || []);
+  const file = path.join(dir, "captions.json");
+  fs.writeFileSync(file, JSON.stringify({ width, height, duration,
+    words: words.map((w) => ({ i: w.i, text: w.text, start: w.start, end: w.end, ...(keys.has(w.i) ? { highlight: true } : {}) })) }, null, 1));
+  return file;
+}
+
+function runCaptions(args) {
+  const tool = captionsTool();
+  if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
+  const r = spawnSync(process.execPath, [tool, ...args], { encoding: "utf8" });
+  if (r.status) fail(`✗ captions: ${(r.stderr || r.stdout).trim()}`);
+  return r.stdout;
+}
+
 function cmdBuild(dir, opts) {
   if (!fs.existsSync(source(dir, "words.json"))) fail(`Run first: takes.mjs new ${rel(dir)} <video>`);
   const cutFile = path.join(dir, "cut.json");
@@ -184,7 +216,15 @@ function cmdBuild(dir, opts) {
   const out = path.resolve(s.out || path.join(dir, "composition"));
   const [width, height] = size(s, clips[r.pieces[0].clip]);
   const title = s.title || cut.title || path.basename(path.resolve(dir));
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir });
+  // the captions (cut.json "captions", see the captions command), on the cut's own words
+  let captions = null;
+  fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
+  if (cut.captions) {
+    const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
+    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi", ...(cut.captions.brand ? ["--brand", cut.captions.brand] : [])]);
+    captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
+  }
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions });
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
     out: rel(out), width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
@@ -194,7 +234,27 @@ function cmdBuild(dir, opts) {
   }, null, 1));
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
+  if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
+}
+
+// --------------------------------------------------------------------------------- captions
+function cmdCaptions(dir, opts) {
+  const cutFile = path.join(dir, "cut.json"), editFile = path.join(dir, "edit.json");
+  if (!fs.existsSync(editFile)) fail(`Build first: takes.mjs build ${rel(dir)}`);
+  const cut = read(cutFile);
+  if (opts.off) {
+    delete cut.captions;
+  } else {
+    const e = read(editFile);
+    const file = captionWords(dir, e.words, {}, e);
+    runCaptions(["mark", file, ...(opts.product ? ["--product", opts.product] : [])]);
+    const highlight = read(file).words.filter((w) => w.highlight).map((w) => w.i);
+    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}) };
+    console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
+  }
+  fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
+  cmdBuild(dir, {});
 }
 
 // ----------------------------------------------------------------------------------- check
@@ -337,4 +397,5 @@ else if (command === "propose") await cmdPropose(pos[0], opts);
 else if (command === "build") cmdBuild(pos[0], opts);
 else if (command === "check") cmdCheck(pos[0]);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
+else if (command === "captions") cmdCaptions(pos[0], opts);
 else fail("Usage: takes.mjs new <dir> <video> [<video> …] | propose <dir> | build <dir> | check <dir> | finish <dir> <video.mp4>   (options: see the head of this file)");

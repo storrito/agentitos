@@ -60,6 +60,10 @@ Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, 
 
 The keeps play in their order.
 
+## Captions in the picture
+
+`takes.mjs captions <dir> --style hormozi|karaoke|wipe|clean [--product …] [--brand brand/DESIGN.md]` hands the cut's own words (timed in the cut, `fixes` applied) to agentitos' [captions](../captions/) skill: its `mark` lets a model pick the key words, which `cut.json` keeps as `"captions": {"style": "hormozi", "highlight": [word numbers]}`; from then on every `build` writes `captions.json` beside `cut.json`, runs the captions skill's `build` into `<out>/captions/` and mounts the sub-composition on top of the cut. `--off` takes them out. The tool looks for the captions skill at `CAPTIONS_TOOL`, beside this skill (`../captions`, a checkout of the collection), and in the machine's clone of the skills (`/home/sprite/skills/captions`).
+
 ## Settings
 
 Given to `new` or `build`, kept in `source/settings.json`: `--out`, `--title`, `--lang`, `--aspect source|9:16|16:9|1:1|4:5`, `--fit cover|contain`, `--target <s>`, `--pause <s>`, `--loudness <LUFS>`, `--fps`, `--order recorded|given`, `--model <OpenRouter id>`.
