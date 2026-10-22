@@ -24,6 +24,8 @@ export async function mark(words, { model = MARK_MODEL, product } = {}) {
   const j = await res.json();
   if (!res.ok || !j.choices?.[0]?.message?.content) throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(j).slice(0, 300)}`);
   const picked = new Set(JSON.parse(j.choices[0].message.content.replace(/^```(json)?\s*|\s*```$/g, "")).highlight.filter((i) => i >= 0 && i < words.length));
+  // never a word of two letters or less without a digit ("a", "to", "it": the model sometimes takes one)
+  for (const i of [...picked]) if (!/\d/.test(words[i].text) && words[i].text.replace(/[^\p{L}]/gu, "").length <= 2) picked.delete(i);
   // never two neighbours: of two, the later goes
   for (const i of [...picked].sort((a, b) => a - b)) if (picked.has(i - 1)) picked.delete(i);
   return { highlight: [...picked].sort((a, b) => a - b), cost: j.usage?.cost ?? 0, model };
