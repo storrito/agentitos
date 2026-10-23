@@ -16,6 +16,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | a thumbnail and a short intro for a video | [thumbnail-and-intro](thumbnail-and-intro/) | its `job.json` and tools |
 | what an rragent bot did meanwhile (its messages, tools, waits) | [agent-timeline](agent-timeline/) | `tools/timeline.mjs` |
 | an Instagram Story, scheduled through Storrito | [story-from-link](story-from-link/) | its tools |
+| the texts for a video on each platform (captions, titles, descriptions, tags, hashtags, mentions) within the platforms' limits | [video-descriptions](video-descriptions/) | `tools/descriptions.mjs read`, then `check` and `overview` on the agent's `descriptions.json` |
 
 A new skill that needs one of these says so in its SKILL.md and README ("needs agentitos' captions skill beside this one"), and fails with that sentence when it is missing.
 
