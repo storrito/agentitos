@@ -16,7 +16,8 @@
 // A file instead of a link (an upload, a recording of the person's own) goes the same way: its
 // sound is written down as it is, its stretches are cut from it with ffmpeg.
 //
-// The words come from Gemini 3.5 Transcribe through OpenRouter (OPENROUTER_API_KEY, with
+// The words come from Gemini 3.5 Transcribe through OpenRouter (OPENROUTER_API_KEY or the Sprites
+// gateway's OpenRouter connection, with
 // speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
 // (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
 // ~/.cache/kinetic-lyrics/.
@@ -27,6 +28,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { transcribeRemote } from "./stt.mjs";
 import { duration } from "./asr.mjs";
+import { openrouter } from "./openrouter.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -142,7 +144,7 @@ function writeEpisode(dir, facts, words) {
 
 // the person's own file: no captions to fall back on, so the words need the key
 async function fetchFile(file, dir) {
-  if (!process.env.OPENROUTER_API_KEY) fail("No OPENROUTER_API_KEY: a file has no captions to take the words from.");
+  if (!(await openrouter())) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
   const title = path.basename(file).replace(/\.[^.]+$/, "");
   const length = duration(file);
   log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
@@ -161,7 +163,7 @@ async function fetchEpisode(url, dir) {
   let words, source;
   // the sound and words of an episode fetched into this folder before are not this one's
   for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
-  if (process.env.OPENROUTER_API_KEY) {
+  if (await openrouter()) {
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
     let audio = null;
     try {
@@ -184,7 +186,7 @@ async function fetchEpisode(url, dir) {
       }
     }
   } else {
-    log("episode: no OPENROUTER_API_KEY, the captions on YouTube (no speakers) …");
+    log("episode: no OpenRouter, the captions on YouTube (no speakers) …");
   }
   if (!words) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-"));
@@ -265,7 +267,8 @@ const MOMENTS_SCHEMA = {
 
 async function moments(dir, ...rest) {
   if (!dir) fail("episode.mjs moments <dir> [--count N]");
-  if (!process.env.OPENROUTER_API_KEY) fail("No OPENROUTER_API_KEY: read sentences.txt yourself and pick the moments.");
+  const or = await openrouter();
+  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): read sentences.txt yourself and pick the moments.");
   const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
   const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
   const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
@@ -287,9 +290,9 @@ ${text}`;
   let j;
   for (let attempt = 1; ; attempt++) {
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch(`${or.base}/chat/completions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        headers: { ...or.headers, "Content-Type": "application/json" },
         body: JSON.stringify({ model: MOMENTS_MODEL, messages: [{ role: "user", content: prompt }],
           response_format: { type: "json_schema", json_schema: { name: "moments", strict: true, schema: MOMENTS_SCHEMA } } }),
         signal: AbortSignal.timeout(300e3),

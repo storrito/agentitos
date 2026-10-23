@@ -8,7 +8,8 @@
 // speaks when after the transcript): the camera shots and, in each, every face with the voice it
 // speaks with. A cent a clip, asked once: the answer is kept next to the video
 // (<video>.people.json). The shots start where the footage really cuts (ffmpeg's scene change
-// near the time Gemini named). Without OPENROUTER_API_KEY nothing is cut: the footage stays
+// near the time Gemini named). Without OpenRouter (OPENROUTER_API_KEY, or the Sprites gateway's
+// OpenRouter connection) nothing is cut: the footage stays
 // centred.
 //
 // The window: in a shot the face of the voice speaking, a third from the top (the type is below);
@@ -23,7 +24,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const FRAME_MODEL = "google/gemini-3.8-flash";
-const API = "https://openrouter.ai/api/v1/chat/completions";
+import { openrouter, GATEWAY_MAX } from "./openrouter.mjs";
 const SHORT_TURN = 1.5, PAN = 0.4, FACE_Y = 0.32;
 
 const probe = (file) => {
@@ -75,7 +76,8 @@ const SCHEMA = {
 export async function locate(video, words, { log = () => {} } = {}) {
   const cache = video.replace(/\.[^.]+$/, "") + ".people.json";
   if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return JSON.parse(fs.readFileSync(cache, "utf8"));
-  if (!process.env.OPENROUTER_API_KEY) return null;
+  const or = await openrouter();
+  if (!or) return null;
   const lines = turnsOf(words).map((t) => `[${t.start.toFixed(1)}–${t.end.toFixed(1)} s] ${t.speaker}: ${t.text}`).join("\n");
   const small = video.replace(/\.[^.]+$/, "") + ".small.mp4";
   execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", "scale=640:-2", "-r", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-c:a", "aac", "-b:a", "48k", "-ac", "1", small]);
@@ -87,14 +89,19 @@ Watch the video and listen. Find out which person in the picture each voice labe
 Then list the camera shots of the clip (a new shot starts at every cut; a clip without cuts is one shot), and for each shot every person visible in it:
 their face, as its left, top, right and bottom edge in thousandths of the frame (0–1000; left and right from the left edge, top and bottom from the top edge),
 and the voice label that person speaks with (null if they do not speak in the clip).`;
+  if (or.gateway && (fs.statSync(small).size * 4) / 3 > GATEWAY_MAX) {
+    fs.rmSync(small, { force: true });
+    log(`frame: the clip is too large for the Sprites gateway (${GATEWAY_MAX / 1e6} MB a request): the footage stays as it is`);
+    return null;
+  }
   log(`frame: who sits where (${FRAME_MODEL}) …`);
   let j;
   try {
     for (let attempt = 1; ; attempt++) {
       try {
-        const res = await fetch(API, {
+        const res = await fetch(`${or.base}/chat/completions`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+          headers: { ...or.headers, "Content-Type": "application/json" },
           body: JSON.stringify({
             model: FRAME_MODEL,
             messages: [{ role: "user", content: [
@@ -258,5 +265,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4>"); process.exit(1); }
   const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
   const r = await frame(video, Array.isArray(raw) ? raw : raw.words, { aspect: (opt("aspect") || "9:16").split(":").map(Number), out: opt("out"), log: console.error });
-  console.log(r ? `${opt("out")}: the footage follows who speaks.` : "Nothing to cut: the footage has the frame's shape, or no OPENROUTER_API_KEY.");
+  console.log(r ? `${opt("out")}: the footage follows who speaks.` : "Nothing to cut: the footage has the frame's shape, there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above).");
 }

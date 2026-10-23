@@ -24,7 +24,7 @@ metadata:
 cd <skill> && npm install                     # node 20+, ffmpeg on the PATH
 ```
 
-With `OPENROUTER_API_KEY` in the environment, the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. yt-dlp is taken from the PATH or downloaded once by `tools/episode.mjs`. Without the key, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself.
+With OpenRouter (`OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own)), the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. yt-dlp is taken from the PATH or downloaded once by `tools/episode.mjs`. Without OpenRouter, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself.
 
 ## The main use: shorts from a YouTube episode, all in the chat
 
@@ -46,7 +46,7 @@ writes `work/episode/episode.json` (title, channel, length, the voices), `words.
 
 ### 2. The moments, and how many
 
-Do not read `sentences.txt` yourself: an hour of talk is some 30,000 tokens, and what you read stays in every later step of this chat and makes each of them slower and dearer. `node <skill>/tools/episode.mjs moments work/episode` has a model read it once (a minute or two, about ten cents an hour) and lists the candidates, best first, each with its sentence range, time, length, title, the first line and why it works, and a score; `work/episode/moments.json` holds them with their YouTube links. Read that list; when you need a candidate's words, `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt` prints just them. Without `OPENROUTER_API_KEY` read `sentences.txt` yourself. The moments it looks for, and you too when you choose among them:
+Do not read `sentences.txt` yourself: an hour of talk is some 30,000 tokens, and what you read stays in every later step of this chat and makes each of them slower and dearer. `node <skill>/tools/episode.mjs moments work/episode` has a model read it once (a minute or two, about ten cents an hour) and lists the candidates, best first, each with its sentence range, time, length, title, the first line and why it works, and a score; `work/episode/moments.json` holds them with their YouTube links. Read that list; when you need a candidate's words, `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt` prints just them. Without OpenRouter read `sentences.txt` yourself. The moments it looks for, and you too when you choose among them:
 
 **at most 59 seconds** (it fits every post type Storrito offers, the 60-second stories too), best 25–50. A good moment
 
@@ -229,7 +229,7 @@ Settings stay with the short: `--title`, `--subtitle`, `--hook`, `--world`, `--n
 
 ## A single clip
 
-When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 4 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording (an episode, a talk, more than a few minutes) is the main use with the file in place of the link: `node <skill>/tools/episode.mjs fetch uploads/<file> work/episode` writes down its words the same way (it needs `OPENROUTER_API_KEY`, a file has no captions), and `cut` cuts the moments from the file.
+When the person attaches a clip instead of a link, it is one short: `short.mjs new work/01 uploads/<clip>` and on from step 4 of the main use (the look), with the series of one in `artifacts/shorts/`. A long recording (an episode, a talk, more than a few minutes) is the main use with the file in place of the link: `node <skill>/tools/episode.mjs fetch uploads/<file> work/episode` writes down its words the same way (it needs OpenRouter, a file has no captions), and `cut` cuts the moments from the file.
 
 ## Rights
 

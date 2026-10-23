@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { rules, shown } from "../brief.mjs";
+import { need, GATEWAY_MAX } from "./openrouter.mjs";
 
 export const PROPOSE_MODEL = "google/gemini-4-argon";
 // OpenRouter takes requests up to about 50 MB as base64: the small videos stay well under that
@@ -34,7 +35,7 @@ const SCHEMA = {
 };
 
 export async function propose(dir, clips, words, settings, { model = PROPOSE_MODEL, log = () => {} } = {}) {
-  if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set");
+  const or = await need("The proposal");
   const list = Object.values(clips);
   const minutes = list.reduce((t, c) => t + c.duration, 0) / 60;
   if (minutes > MAX_MINUTES) throw new Error(`${Math.round(minutes)} minutes of video: the model takes ${MAX_MINUTES} at most; read the brief and cut yourself`);
@@ -64,14 +65,17 @@ ${numbered}` });
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
+  const body = JSON.stringify({ model, messages: [{ role: "user", content }], response_format: { type: "json_schema", json_schema: { name: "cut", strict: true, schema: SCHEMA } } });
+  const size = Buffer.byteLength(body);
+  if (or.gateway && size > GATEWAY_MAX) throw new Error(`the request with the small videos takes ${(size / 1e6).toFixed(1)} MB, more than the Sprites gateway takes (${GATEWAY_MAX / 1e6} MB): read the brief and cut yourself, or set OPENROUTER_API_KEY`);
   log(`proposing a cut (${model}, ${Math.max(1, Math.round(minutes))} min of video) …`);
   let j;
   for (let attempt = 1; ; attempt++) {
     try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch(`${or.base}/chat/completions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content }], response_format: { type: "json_schema", json_schema: { name: "cut", strict: true, schema: SCHEMA } } }),
+        headers: { ...or.headers, "Content-Type": "application/json" },
+        body,
         signal: AbortSignal.timeout(600e3),
       });
       j = await res.json();
