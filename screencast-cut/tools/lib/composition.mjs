@@ -171,7 +171,12 @@ export function writeComposition(out, o) {
       at = s.to;
     }
     if (total - at > 1.2) lane.push({ t: n(at + 0.3), v: base });
-    const auto = { version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: under }, ...lane.filter((x) => x.t > 0 && x.t < total), { t: n(Math.max(0, total - 1.5)), v: base }, { t: n(total), v: 0 }] }] };
+    // the end: up over the last 1.5 s (unless someone still speaks there), out at the end; every
+    // point in time order
+    const rise = n(Math.max(0, total - 1.5, at + 0.3));
+    const points = [{ t: 0, v: under }, ...lane.filter((x) => x.t > 0 && x.t < rise), { t: rise, v: base }, { t: n(total), v: 0 }]
+      .sort((a, b) => a.t - b.t).filter((x, i, all) => i === 0 || x.t > all[i - 1].t);
+    const auto = { version: 1, lanes: [{ target: "volume", points }] };
     musicHtml = `      <audio id="music" class="clip" src="assets/music${path.extname(music.file)}" ${timing(0, total)} data-media-start="${n(music.from || 0)}"
         data-track-index="8" data-has-audio="true" data-automation="${attr(auto)}"></audio>`;
   }

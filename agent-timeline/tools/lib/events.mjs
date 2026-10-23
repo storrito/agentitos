@@ -8,7 +8,9 @@
 //   where({ folder, home, bot }) → { home, db, bot } or null
 //   events(db, bot, from, to)    → [{ at, kind, text | name, what, took, result, error }]
 //                                   at in ms; kinds "sent", "tool", "answer"
-//   working(events)              → [{ from, to, message }]   (ms)
+//   working(events, from, to)    → [{ from, to, message }]   (ms), within from–to: give it the
+//                                   events from a while before the span too, so that work
+//                                   asked for before the span starts counts
 
 import fs from "node:fs";
 import path from "node:path";
@@ -21,10 +23,22 @@ const short = (s, n = 160) => {
 const textOf = (content) => (typeof content === "string" ? content
   : (content || []).filter((p) => p.type === "text").map((p) => p.text).join("\n"));
 
-// the agent's home and the bot: from a path inside a bot's folder (a recording of rragent's
-// recorder lies in <home>/bots/<id>/work/artifacts/recordings/), else the working directory
-// (a bot's bash runs in <home>/bots/<id>/work), else RRAGENT_HOME and `bot`
+// the bot of a path inside a bot's folder, or null
+const botOf = (p) => {
+  const parts = path.resolve(p).split(path.sep);
+  const k = parts.lastIndexOf("bots");
+  return k >= 1 && /^\d+$/.test(parts[k + 1] || "") ? Number(parts[k + 1]) : null;
+};
+
+// the agent's home and the bot: `home` when given (the bot `bot`, else the one of the folder or
+// the working directory); else from a path inside a bot's folder (a recording of rragent's
+// recorder lies in <home>/bots/<id>/work/artifacts/recordings/), else the working directory (a
+// bot's bash runs in <home>/bots/<id>/work), else RRAGENT_HOME and `bot`
 export function where({ folder, home, bot } = {}) {
+  if (home) {
+    const id = bot ?? [folder, process.cwd()].filter(Boolean).map(botOf).find((x) => x != null);
+    return id != null && fs.existsSync(path.join(home, "agent.sqlite")) ? { home, db: path.join(home, "agent.sqlite"), bot: Number(id) } : null;
+  }
   for (const p of [folder, process.cwd()].filter(Boolean)) {
     const parts = path.resolve(p).split(path.sep);
     const k = parts.lastIndexOf("bots");
@@ -33,7 +47,7 @@ export function where({ folder, home, bot } = {}) {
       if (fs.existsSync(path.join(h, "agent.sqlite"))) return { home: h, db: path.join(h, "agent.sqlite"), bot: Number(bot ?? parts[k + 1]) };
     }
   }
-  const h = home || process.env.RRAGENT_HOME;
+  const h = process.env.RRAGENT_HOME;
   if (h && bot != null && fs.existsSync(path.join(h, "agent.sqlite"))) return { home: h, db: path.join(h, "agent.sqlite"), bot: Number(bot) };
   return null;
 }
@@ -81,14 +95,15 @@ export async function events(file, bot, from, to) {
   }
 }
 
-// From each message of the person to the agent's last answer or call before the next message.
-export function working(list) {
+// From each message of the person to the agent's last answer or call before the next message,
+// cut to from–to.
+export function working(list, from = -Infinity, to = Infinity) {
   const spans = [];
   for (const e of list) {
     if (e.kind === "sent") spans.push({ from: e.at, to: e.at, message: e.text });
     else if (spans.length) spans.at(-1).to = Math.max(spans.at(-1).to, e.at + (e.took || 0) * 1000);
   }
-  return spans.filter((s) => s.to - s.from > 1000);
+  return spans.map((s) => ({ ...s, from: Math.max(from, s.from), to: Math.min(to, s.to) })).filter((s) => s.to - s.from > 1000);
 }
 
 // a service's word for "it is out": published, posted, executed, live

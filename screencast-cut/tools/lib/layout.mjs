@@ -24,13 +24,16 @@ export function areas(width, height) {
     return { content: [0.037 * width, 0.115 * height, 0.926 * width, 0.465 * height], tall: [0.2 * width, 0.095 * height, 0.6 * width, 0.49 * height],
       pip: [0.06 * width, 0.725 * height, 0.27 * width], label: [0.06 * width, 0.045 * height] };
   }
+  // 4:5 and 1:1: the captions sit 14 % above the bottom and take about a quarter of the height
+  // above it, so the circle goes to the top right, beside the label, and the content stops
+  // above them
   if (r >= 1.1) { // 4:5
-    return { content: [0.04 * width, 0.11 * height, 0.92 * width, 0.55 * height], tall: [0.3 * width, 0.03 * height, 0.6 * width, 0.64 * height],
-      pip: [0.05 * width, 0.70 * height, 0.22 * width], label: [0.05 * width, 0.035 * height] };
+    return { content: [0.04 * width, 0.155 * height, 0.92 * width, 0.5 * height], tall: [0.25 * width, 0.105 * height, 0.5 * width, 0.545 * height],
+      pip: [0.82 * width, 0.02 * height, 0.15 * width], label: [0.05 * width, 0.035 * height] };
   }
   if (r >= 0.9) { // 1:1
-    return { content: [0.04 * width, 0.1 * height, 0.92 * width, 0.62 * height], tall: [0.3 * width, 0.03 * height, 0.6 * width, 0.69 * height],
-      pip: [0.05 * width, 0.735 * height, 0.2 * width], label: [0.05 * width, 0.03 * height] };
+    return { content: [0.04 * width, 0.175 * height, 0.92 * width, 0.415 * height], tall: [0.25 * width, 0.115 * height, 0.5 * width, 0.475 * height],
+      pip: [0.84 * width, 0.02 * height, 0.14 * width], label: [0.05 * width, 0.03 * height] };
   }
   // 16:9: the content above the captions, the circle at the top right, beside it
   return { content: [0.13 * width, 0.09 * height, 0.74 * width, 0.72 * height], tall: [0.3 * width, 0.03 * height, 0.4 * width, 0.78 * height],

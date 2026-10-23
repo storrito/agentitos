@@ -47,7 +47,7 @@ The names a speech model mishears are the ones that matter in a demo (the produc
 node <skill>/tools/screencast.mjs words screencast/<name> artifacts/notes/screencast-<name>/voice.words.json
 ```
 
-(When your `transcribe` tool has no `words` yet: `node <skill>/tools/screencast.mjs transcribe screencast/<name>` instead, ElevenLabs Scribe without the names; fix a misheard name with `"fixes"` in cut.json.) It writes `screencast/<name>/source/brief.md`: the rules of a good screencast cut, what the agent did when, every sentence with how much each source moves, and every word, numbered.
+(When your `transcribe` tool has no `words` yet: `node <skill>/tools/screencast.mjs transcribe screencast/<name>` instead, ElevenLabs Scribe without the names; fix a misheard name with `"fixes"` in cut.json.) It writes `screencast/<name>/source/brief.md`: the rules of a good screencast cut, every sentence with how much each source moves, and every word, numbered.
 
 ### 3. The cut
 

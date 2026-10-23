@@ -10,7 +10,7 @@ node tools/timeline.mjs --from -20m
 node tools/timeline.mjs --from 2026-10-23T11:05:00+02:00 --to 2026-10-23T11:10:00+02:00 --bot 333 --home /home/sprite/rragent/agent
 ```
 
-Requirements: Node 22.5+ (`node:sqlite`). No dependencies, no model, nothing leaves the machine.
+Requirements: Node 22.13+ (`node:sqlite`). No dependencies, no model, nothing leaves the machine.
 
 ## Where the record is
 

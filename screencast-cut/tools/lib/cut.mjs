@@ -50,6 +50,8 @@ export function plan(words, cut, settings, voices, moves = () => []) {
   let pieces = [];
   if (!Array.isArray(cut.keep) || !cut.keep.length) errors.push('cut.json has no "keep": list the word ranges to keep, in the order they play.');
   for (const i of waits) if (!(i >= 0 && i < words.length)) errors.push(`"waits": ${i} is no word number (0–${words.length - 1})`);
+  for (const i of waits) if (words[i] && words[i].kind !== "word") warnings.push(`"waits": ${i} is "${words[i].text}", no word said: a wait goes after the last word said before it`);
+  const usedWaits = new Set();
 
   // the sound before and after a word in its own video, whether kept or not
   const before = (w) => (w.i > 0 && words[w.i - 1].clip === w.clip ? words[w.i - 1].end : 0);
@@ -84,6 +86,7 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       }
       const last = cur.at(-1);
       if (last && waits.has(last.i) && w.start > last.end) {
+        usedWaits.add(last.i);
         const parts = waitGroups(w.clip, last.end, w.start, moves);
         removed.push({ kind: "pause", wait: true, clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
           moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
@@ -105,6 +108,7 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     const nextRange = range(cut.keep[k + 1]?.words);
     const next = nextRange && words[nextRange[0]];
     if (lastWord && waits.has(lastWord.i) && next && next.clip === lastWord.clip && next.start > lastWord.end + 0.5) {
+      usedWaits.add(lastWord.i);
       const parts = waitGroups(lastWord.clip, lastWord.end, next.start - 0.3, moves);
       removed.push({ kind: "pause", wait: true, clip: lastWord.clip, from: lastWord.end, to: next.start, words: [lastWord.i, next.i],
         moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
@@ -143,6 +147,10 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       if (held) pieces.push(held);
     });
   });
+
+  for (const i of waits) {
+    if (words[i]?.kind === "word" && !usedWaits.has(i)) warnings.push(`"waits": ${i} ("${words[i].text}") plays no wait: it must be the last word of a keep with a later keep after it, or a word inside a keep followed by a pause`);
+  }
 
   // words in no keep: what the cut leaves out, in runs
   let run = null;

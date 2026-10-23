@@ -357,7 +357,10 @@ function cmdPropose(dir) {
     const a = keep[k].end, b = keep[k + 1].start;
     if (b - a < 3) continue;
     const moves = Object.keys(activity).some((x) => x !== "webcam" && busy(activity[x], a, b, MOVING) > 0.15);
-    if (moves) waits.push(range(keep[k].words)[1]);
+    // the last word said, not an "äh" after it: plan() looks for a wait after a word
+    const [first, last] = range(keep[k].words);
+    const said = words.slice(first, last + 1).filter((w) => w.kind === "word").at(-1);
+    if (moves && said) waits.push(said.i);
   }
   const proposal = { keep: keep.map(({ start, end, text, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
   write(path.join(dir, "proposal.json"), proposal);
@@ -388,6 +391,11 @@ function runCaptions(args) {
   const r = spawnSync(process.execPath, [tool, ...args], { encoding: "utf8" });
   if (r.status) fail(`✗ captions: ${(r.stderr || r.stdout).trim()}`);
   return r.stdout;
+}
+
+// what to do to find a zoom box for keep k
+function screencastFrameHint(dir, k) {
+  return `look at a moment of keep ${k + 1} with: ${cmd(`frame ${rel(dir)} <m:ss>`)}`;
 }
 
 // the source a view shows; the phone's screen stands in for "phone" and the other way round
@@ -454,6 +462,12 @@ function cmdBuild(dir, opts) {
     const view = !keep.view || keep.view === "auto" ? (sp ? viewOf(activity, sources, sp[0], sp[1]) : "face") : keep.view;
     const src = sourceOf(view, sources);
     const zoom = keep.zoom ?? "auto";
+    if (Array.isArray(zoom)) {
+      const [x0, y0, x1, y1] = zoom.map(Number);
+      if (zoom.length !== 4 || ![x0, y0, x1, y1].every((v) => v >= 0 && v <= 1) || x1 - x0 < 0.02 || y1 - y0 < 0.02) {
+        fail(`✗ keep ${k + 1}: "zoom" is [x0, y0, x1, y1], each 0–1, left top right bottom, x1 > x0 and y1 > y0 (${screencastFrameHint(dir, k)})`);
+      }
+    }
     const c = view === "face" ? null
       : Array.isArray(zoom) ? zoom.map(Number)
       : zoom === "off" || !sp || !activity[src] ? [0, 0, 1, 1]
@@ -466,7 +480,11 @@ function cmdBuild(dir, opts) {
       const view = viewOf(activity, sources, p.in, p.out);
       p.view = view === "face" ? kv.view : view;
       p.source = sourceOf(p.view, sources);
-      p.crop = p.view === "face" ? null : (cut.keep[p.keep].zoom === "off" ? [0, 0, 1, 1] : zoomOf(p.source, p.in, p.out));
+      const zoom = cut.keep[p.keep].zoom;
+      p.crop = p.view === "face" ? null
+        : zoom === "off" ? [0, 0, 1, 1]
+        : Array.isArray(zoom) && p.source === kv.source ? kv.crop
+        : zoomOf(p.source, p.in, p.out);
     } else {
       Object.assign(p, kv);
     }
@@ -593,11 +611,21 @@ async function cmdPrivacy(dir, opts) {
     else found.push(f);
   }
   const old = fs.existsSync(path.join(dir, "privacy.json")) ? read(path.join(dir, "privacy.json")) : null;
+  // the same thing found again: the same source, overlapping in time, its box mostly the same
+  const overlap = (a, b) => {
+    const w = Math.min(a.box[2], b.box[2]) - Math.max(a.box[0], b.box[0]), h = Math.min(a.box[3], b.box[3]) - Math.max(a.box[1], b.box[1]);
+    const area = (x) => (x.box[2] - x.box[0]) * (x.box[3] - x.box[1]);
+    return a.source === b.source && a.from < b.to && b.from < a.to && w > 0 && h > 0 && (w * h) / Math.min(area(a), area(b)) > 0.5;
+  };
   for (const f of found) {
+    f.model = true;
     // a box the person kept readable stays so
-    if (old?.found.some((o) => o.off && o.source === f.source && o.what === f.what)) f.off = true;
+    if (old?.found?.some((o) => o.off && overlap(o, f))) f.off = true;
   }
-  write(path.join(dir, "privacy.json"), { model: opts.model || PRIVACY_MODEL, at: new Date().toISOString(), shots: shots.map((x) => ({ source: x.source, from: x.from, to: x.to })), found });
+  // a box the person added by hand stays
+  const manual = (old?.found || []).filter((o) => !o.model);
+  write(path.join(dir, "privacy.json"), { model: opts.model || PRIVACY_MODEL, at: new Date().toISOString(), shots: shots.map((x) => ({ source: x.source, from: x.from, to: x.to })), found: [...found, ...manual] });
+  if (manual.length) console.log(`${manual.length} box${manual.length > 1 ? "es" : ""} added by hand kept.`);
   console.log(`${r.frames} frames, $${r.cost.toFixed(4)}: ${found.length ? found.map((f) => `${f.what} (${f.source} ${clock(f.from)}–${clock(f.to)})`).join("; ") : "nothing to hide"}`);
   if (found.length) console.log(`A blur covers each in every shot that shows it; one that may stay readable: "off": true on it in ${rel(path.join(dir, "privacy.json"))}.`);
   cmdBuild(dir, {});
@@ -662,7 +690,7 @@ function cmdCheck(dir) {
   if (!fs.existsSync(pf)) warnings.push(`not looked at for secrets yet (a token in a link, keys, e-mail addresses, chats): ${cmd(`privacy ${rel(dir)}`)}`);
   else {
     const pv = read(pf);
-    const seen = (p) => pv.shots.some((x) => x.source === p.source && x.from <= p.in + 0.05 && x.to >= p.out - 0.05);
+    const seen = (p) => (pv.shots || []).some((x) => x.source === p.source && x.from <= p.in + 0.05 && x.to >= p.out - 0.05);
     const unseen = e.pieces.filter((p) => p.source && p.source !== "webcam" && !seen(p));
     if (unseen.length) warnings.push(`${unseen.length} shots changed since the look for secrets: ${cmd(`privacy ${rel(dir)}`)} again`);
     if (e.blurs?.length) console.log(`\nBlurred: ${[...new Set(e.blurs.map((b) => b.what))].join("; ")}`);
@@ -693,13 +721,13 @@ function cmdAt(dir, when) {
   const cut = read(path.join(dir, "cut.json"));
   const k = e.pieces.findIndex((p) => t >= p.start && t < p.start + p.duration);
   if (k < 0) fail(`The cut is ${clock(e.duration)} long.`);
-  const p = e.pieces[k], keep = cut.keep[p.keep];
+  const p = e.pieces[k], keep = cut.keep[p.keep] || { words: "?", why: "cut.json changed since the last build: build again" };
   const said = e.words.filter((w) => Math.abs((w.start + w.end) / 2 - t) < 2.5).map((w) => w.text).join(" ");
   console.log(`${clock(t)} of the cut: piece ${k + 1} of keep ${p.keep + 1} ([${keep.words}]${keep.why ? `, ${keep.why}` : ""})`);
   console.log(`  plays ${clock(p.in)}–${clock(p.out)} of the recording${p.rate > 1 ? ` at ×${p.rate}` : ""}, from ${clock(p.start)} to ${clock(p.start + p.duration)} of the cut`);
   console.log(`  view ${p.view}${p.crop ? `, zoomed to [${p.crop.join(", ")}]` : ""}`);
   if (p.words) console.log(`  words ${p.words[0]}–${p.words[1]}: ${words.slice(p.words[0], p.words[1] + 1).filter((w) => w.kind === "word").map((w) => w.text).join(" ")}`);
-  else console.log(`  no words: ${p.wait ? "a wait" : "the picture moving in a pause"}`);
+  else console.log(`  no words: ${p.hold ? "held after the keep's words, the voice faded" : p.wait ? "a wait" : "the picture moving in a pause"}`);
   if (said) console.log(`  heard around it: …${said}…`);
   const prev = e.pieces[k - 1], next = e.pieces[k + 1];
   console.log(`  before: ${prev ? `keep ${prev.keep + 1}, ${prev.view}` : "the start"} · after: ${next ? `keep ${next.keep + 1}, ${next.view}` : "the end"}`);

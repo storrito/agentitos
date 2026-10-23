@@ -68,9 +68,12 @@ const span = folder ? recordingSpan(folder) : { from: time(opts.from), to: time(
 if (span.from == null) fail("Usage: timeline.mjs <recording-folder> | --from <time> [--to <time>] [--bot <id>] [--json <file>]");
 const w = where({ folder, home: opts.home, bot: opts.bot });
 if (!w) fail("No agent here: run it inside a bot's folder (its bash does), give a recording folder of one, or --home and --bot.");
-let list;
-try { list = await events(w.db, w.bot, span.from, span.to); } catch (e) { fail(`✗ ${e.message} (node:sqlite needs Node 22.5 or later)`); }
-const busy = working(list);
+// ten minutes before the span too: the agent may be at work on a message sent before it
+const BEFORE = 10 * 60e3;
+let all;
+try { all = await events(w.db, w.bot, span.from - BEFORE, span.to); } catch (e) { fail(`✗ ${e.message} (node:sqlite needs Node 22.13 or later)`); }
+const list = all.filter((e) => e.at >= span.from);
+const busy = working(all, span.from, span.to);
 const rel = (ms) => (ms - span.from) / 1000;
 
 console.log(`Bot ${w.bot}, ${wall(span.from)}–${wall(span.to)} (${clock(rel(span.to))}); times from the start${folder ? " of the recording" : ""}:\n`);

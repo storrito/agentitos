@@ -20,7 +20,7 @@ You run in rragent. `<skill>` below is the folder this file is in. Run the tool 
 
 ## What it needs
 
-Node 22.5+ (it reads the agent's record with `node:sqlite`, read-only). Nothing else, no model, no cost.
+Node 22.13+ (it reads the agent's record with `node:sqlite`, read-only). Nothing else, no model, no cost.
 
 ## The timeline
 
