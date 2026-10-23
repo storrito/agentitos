@@ -30,7 +30,7 @@ Needs Node 20+, and ffmpeg for `draw` and `--of`. No model, no key, no npm packa
 
 The text output adds where captions' lowest line ends (the safe box's bottom) and how wide they may be.
 
-`check` takes a box and says what of it leaves the safe box (px per side), what share of it each app covers, and what share a crop cuts away. `draw` lays the zones over a frame (the first, or `--at`): covers red, each app's on top of the others' (darker where several apps cover), the safe box green, the crops yellow.
+`check` takes a box and says what of it leaves the frame, what leaves the safe box (px per side; a box inside the wide stretch counts as clear), what share of it each app covers, and what share a crop cuts away. `draw` lays the zones over a frame (the first, or `--at`): covers red, each app's on top of the others' (darker where several apps cover), the safe box green, the crops yellow.
 
 ## Several platforms, and none
 
@@ -46,8 +46,8 @@ The text output adds where captions' lowest line ends (the safe box's bottom) an
 
   Pinterest (790 px of the bottom), Snapchat and the full-screen views of LinkedIn and X stay out: they would take a large part of every vertical video for places it seldom goes. Named, they are in.
 - A frame near one of these (within 15 %) takes its numbers: 3:4 those of 4:5, a phone's 9:19.5 those of 9:16. Any other frame (2:3, 21:9) gets the broadcast title-safe border, 5 % each side, with 10 % at the bottom for a player's controls.
-- A platform named for a frame it has no numbers for (TikTok at 16:9) is replaced by the frame's usual platforms, with a note.
-- On a frame of another ratio than the measured one the zones keep their size and stick to their edge, as the apps size their buttons by the phone's width and pin them to the edges.
+- A platform named for a frame it has no numbers for is replaced by the same app's view of that frame (Instagram's feed for Reels at 4:5, Shorts for YouTube at 9:16), else by the frame's usual platforms (TikTok at 16:9), with a note.
+- On a frame of another ratio than the measured one the zones keep their size and stick to their edge, as the apps size their buttons by the phone's width (a player its controls by its height) and pin them to the edges: on a phone's 1080×2340 the buttons' column moves down with the bottom, and the wide stretch above it grows.
 
 ## The numbers
 

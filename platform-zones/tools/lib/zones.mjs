@@ -1,13 +1,15 @@
 // The zones of one or several platforms on a frame of a given size, in px of that frame.
 //
-//   zonesFor(ids, width, height)  → { frame, size, platforms, fallback, safe, covers, crops, notes, bases, sources }
-//   check(zones, box)             → what of the box a platform covers, leaves the safe box, or a crop cuts
+//   zonesFor(ids, width, height)  → { frame, size, fallback, platforms, safe, wide, margins, covers, crops, notes, sources }
+//   check(zones, box)             → what of the box leaves the safe box or the frame, an app covers, a crop cuts
 //   resolve(name)                 → the platform an id or alias names
 //
 // A frame takes the numbers of the nearest frame a platform has measured (9:16, 4:5, 1:1, 16:9);
 // one taller than 9:16 (a phone's 9:19.5) counts as 9:16. The apps size their buttons by the
 // phone's width and pin them to the edges, so on a frame of another ratio than the measured one
-// the zones keep their size and stick to their edge instead of stretching.
+// the zones keep their size and stick to their edge instead of stretching. A platform named for a
+// frame it has no numbers for is replaced by the same app's view of that frame (Instagram's feed
+// for Reels at 4:5), else by the frame's usual platforms.
 
 import { PLATFORMS, DEFAULTS, GENERIC } from "./platforms.mjs";
 
@@ -32,27 +34,39 @@ export function resolve(name) {
   return PLATFORMS.find((p) => p.id === k || p.aliases?.includes(k)) || null;
 }
 
-// a coordinate of the canvas onto the frame: kept at its distance from the nearer edge
-const along = (v, from, to, s) => (v <= from / 2 ? v * s : to - (from - v) * s);
+// A box of the canvas onto the frame, along one axis: one that spans the canvas spans the frame;
+// one at an edge stays at that edge; one in between stays at its distance from the edge its
+// middle is nearer to. Its size is kept (times s) in every case.
+function along(v, len, from, to, s) {
+  if (v <= 0 && v + len >= from) return [0, to];
+  const near = v <= 0 || (v + len < from && v + len / 2 <= from / 2);
+  const a = near ? v * s : to - (from - v) * s;
+  return [a, a + len * s];
+}
 
 function place(entry, width, height) {
   const [cw, ch] = entry.canvas;
-  const s = Math.min(width / cw, height / ch);
+  // the apps size their buttons by the phone's width (by the player's height in a wide frame)
+  const s = cw < ch ? width / cw : height / ch;
   const m = entry.margins;
   // an entry of margins alone: the bottom is the app's (controls, caption), the top only when it
-  // is more than a border, the right when it is wider than the left (the buttons' column)
+  // is more than a border, the right, when it is wider than the left, a column of buttons in the
+  // lower half (where the apps that have one put it)
   const covers = entry.covers || [
     ...(m.top > 0.06 * ch ? [{ what: "the app's top bar", box: [0, 0, cw, m.top] }] : []),
     { what: "the app's controls and caption", box: [0, ch - m.bottom, cw, m.bottom] },
-    ...(m.right > m.left + 40 ? [{ what: "the app's buttons on the right", box: [cw - m.right, m.top, m.right, ch - m.top - m.bottom] }] : []),
+    ...(m.right > m.left + 40 ? [{ what: "the app's buttons on the right", box: [cw - m.right, ch / 2, m.right, ch / 2 - m.bottom] }] : []),
   ];
+  const clip = ([x, y, w, h]) => {
+    const x0 = Math.max(0, x), y0 = Math.max(0, y);
+    return [x0, y0, Math.min(width, x + w) - x0, Math.min(height, y + h) - y0];
+  };
   return {
     margins: { top: m.top * s, bottom: m.bottom * s, left: m.left * s, right: m.right * s },
     covers: covers.map((c) => {
       const [x, y, w, h] = c.box;
-      const x0 = along(x, cw, width, s), x1 = along(x + w, cw, width, s);
-      const y0 = along(y, ch, height, s), y1 = along(y + h, ch, height, s);
-      return { what: c.what, box: [x0, y0, x1 - x0, y1 - y0] };
+      const [x0, x1] = along(x, w, cw, width, s), [y0, y1] = along(y, h, ch, height, s);
+      return { what: c.what, box: clip([x0, y0, x1 - x0, y1 - y0]) };
     }),
   };
 }
@@ -67,17 +81,18 @@ function crop(r, width, height) {
 
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 const reduced = (w, h) => `${w / gcd(w, h)}:${h / gcd(w, h)}`;
+const family = (p) => p.id.split("-")[0];
 const round = (b) => b.map((v) => Math.round(v));
 
 export function zonesFor(ids, width, height) {
   const frame = frameOf(width, height);
   const notes = [];
   let fallback = false;
-  let platforms = ids.map((id) => {
+  let platforms = [...new Set(ids.map((id) => {
     const p = resolve(id);
     if (!p) throw new Error(`There is no platform "${id}": ${PLATFORMS.map((q) => q.id).join(", ")}.`);
     return p;
-  });
+  }))];
   if (!platforms.length) {
     fallback = true;
     platforms = (DEFAULTS[frame] || []).map(resolve);
@@ -87,8 +102,12 @@ export function zonesFor(ids, width, height) {
     const entry = frame && p.frames[frame];
     if (entry) { parts.push({ p, entry }); continue; }
     const has = Object.keys(p.frames).join(", ");
-    notes.push(`${p.name} has numbers for ${has} only, not for this frame${frame ? ` (${frame})` : ""}: ${frame ? "the frame's usual platforms stand in for it" : "the broadcast border stands in for it"}.`);
-    if (frame) for (const q of DEFAULTS[frame].map(resolve)) if (!parts.some((x) => x.p === q) && !platforms.includes(q)) parts.push({ p: q, entry: q.frames[frame], standIn: true });
+    // the same app's view of this frame (Instagram's feed for a reel at 4:5, Shorts for YouTube at
+    // 9:16), else the frame's usual platforms
+    const sibling = frame && PLATFORMS.find((q) => q !== p && q.frames[frame] && family(q) === family(p));
+    const stand = sibling ? [sibling] : frame ? DEFAULTS[frame].map(resolve) : [];
+    notes.push(`${p.name} has numbers for ${has} only, not for this frame${frame ? ` (${frame})` : ""}: ${sibling ? `${sibling.name} stands in for it` : frame ? "the frame's usual platforms stand in for it" : "the broadcast border stands in for it"}.`);
+    for (const q of stand) if (!parts.some((x) => x.p === q) && !platforms.includes(q)) parts.push({ p: q, entry: q.frames[frame], standIn: true });
   }
   const placed = parts.map(({ p, entry, standIn }) => ({ p, entry, standIn, ...place(entry, width, height) }));
   if (!placed.length) {
@@ -103,7 +122,9 @@ export function zonesFor(ids, width, height) {
   for (const z of placed) for (const k in m) m[k] = Math.max(m[k], z.margins[k]);
   const crops = [];
   for (const { p, entry } of placed) for (const c of entry.crops || []) {
-    if (!crops.some((x) => x.ratio === c.ratio && x.where === c.where)) crops.push({ platform: p.id, where: c.where, ratio: c.ratio, box: round(crop(c.ratio, width, height)) });
+    const same = crops.find((x) => x.ratio === c.ratio && x.where === c.where);
+    if (same) same.platform += `, ${p.id}`;
+    else crops.push({ platform: p.id, where: c.where, ratio: c.ratio, box: round(crop(c.ratio, width, height)) });
   }
   for (const { p, entry } of placed) if (entry.note) notes.push(p.id === "generic" ? entry.note : `${p.name}: ${entry.note}`);
   // above the buttons' column on the right the frame is clear from the left margin to the right
@@ -131,18 +152,27 @@ const overlap = (a, b) => {
   return w > 0 && h > 0 ? w * h : 0;
 };
 
+// What of a box (x, y, w, h in px) is clear: inside the safe box, or inside the wide stretch
+// above the buttons' column; what leaves the frame, what an app covers, what a crop cuts away.
 export function check(z, box) {
+  const [W, H] = z.size;
   const area = box[2] * box[3];
-  const [sx, sy, sw, sh] = z.safe;
-  const out = {
-    left: Math.max(0, sx - box[0]), top: Math.max(0, sy - box[1]),
-    right: Math.max(0, box[0] + box[2] - (sx + sw)), bottom: Math.max(0, box[1] + box[3] - (sy + sh)),
-  };
+  const inFrame = overlap(box, [0, 0, W, H]);
+  const past = (b) => ({
+    left: Math.max(0, b[0] - box[0]), top: Math.max(0, b[1] - box[1]),
+    right: Math.max(0, box[0] + box[2] - (b[0] + b[2])), bottom: Math.max(0, box[1] + box[3] - (b[1] + b[3])),
+  });
+  const out = past(z.safe);
+  const clear = (o) => Object.values(o).every((v) => v === 0);
+  const inWide = !!z.wide && clear(past(z.wide));
   return {
     box,
-    inside: Object.values(out).every((v) => v === 0),
+    inside: clear(out) || inWide,
+    inWide,
     outside: Object.fromEntries(Object.entries(out).filter(([, v]) => v > 0)),
+    offFrame: 1 - inFrame / area,
     covered: z.covers.map((c) => ({ ...c, share: overlap(box, c.box) / area })).filter((c) => c.share > 0),
-    cut: z.crops.map((c) => ({ ...c, share: 1 - overlap(box, c.box) / area })).filter((c) => c.share > 0.001),
+    // the share of the box, inside the frame, that the crop does not show
+    cut: inFrame ? z.crops.map((c) => ({ ...c, share: 1 - overlap(box, c.box) / inFrame })).filter((c) => c.share > 0.001) : [],
   };
 }

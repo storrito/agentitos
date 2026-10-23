@@ -14,7 +14,7 @@
 //   node tools/zones.mjs draw <image|video> <out.png> [platform…]   a frame with the zones drawn on
 //
 // The frame: --size 1080x1920, --frame 9:16 (1080 px on the short side) or --of <video|image> (its
-// size); one named platform alone brings its first frame. --at <s>: draw's moment in a video.
+// size); without them the first platform named brings its first frame. --at <s>: draw's moment in a video.
 // --json: everything as JSON, in px of the frame.
 
 import fs from "node:fs";
@@ -27,10 +27,14 @@ const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
 
+// options that take no value: a platform or a box after them stays a platform or a box
+const FLAGS = ["json"];
+
 function parse(args) {
   const pos = [], opts = {};
   for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("--")) opts[args[i].slice(2)] = args[i + 1]?.startsWith("--") || args[i + 1] === undefined ? true : args[++i];
+    const key = args[i].slice(2);
+    if (args[i].startsWith("--")) opts[key] = FLAGS.includes(key) || args[i + 1]?.startsWith("--") || args[i + 1] === undefined ? true : args[++i];
     else pos.push(args[i]);
   }
   return [pos, opts];
@@ -38,26 +42,29 @@ function parse(args) {
 
 function probe(file) {
   if (!fs.existsSync(file)) fail(`There is no ${file}.`);
-  const out = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", file]).toString());
+  let out;
+  try { out = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", file], { stdio: ["ignore", "pipe", "pipe"] }).toString()); }
+  catch { fail(`${file} is no video or image ffprobe can read.`); }
   const v = out.streams.find((s) => s.codec_type === "video");
   if (!v) fail(`${file} has no picture.`);
   const turned = Math.abs(Number(v.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? v.tags?.rotate ?? 0)) % 180 === 90;
   return turned ? [v.height, v.width] : [v.width, v.height];
 }
 
-// the frame's size from the options, else from the one platform named
+// the frame's size from the options, else from the first platform named
 function sizeOf(opts, ids) {
+  for (const id of ids) if (!resolve(id)) fail(`There is no platform "${id}": ${PLATFORMS.map((q) => q.id).join(", ")} (${self()} list).`);
   if (opts.of) return probe(opts.of);
   if (opts.size) {
     const m = String(opts.size).match(/^(\d+)x(\d+)$/);
-    if (!m) fail(`--size is width x height, as 1080x1920.`);
+    if (!m || !+m[1] || !+m[2]) fail(`--size is width x height, as 1080x1920.`);
     return [+m[1], +m[2]];
   }
   let frame = opts.frame;
   if (!frame && ids.length) frame = Object.keys(resolve(ids[0])?.frames || {})[0];
   if (!frame) fail(`Which frame? --size 1080x1920, --frame 9:16 or --of <video>; or name a platform (${self()} list).`);
   const m = String(frame).match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
-  if (!m) fail(`--frame is a ratio, as 9:16.`);
+  if (!m || !+m[1] || !+m[2]) fail(`--frame is a ratio, as 9:16.`);
   const r = m[1] / m[2];
   return r < 1 ? [1080, Math.round(1080 / r)] : [Math.round(1080 * r), 1080];
 }
@@ -112,11 +119,13 @@ function cmdCheck([spec, ...ids], opts) {
   if (b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[2] <= 0 || b[3] <= 0) fail(`The box is x,y,w,h in px of the frame, as 60,300,960,540.`);
   const z = zonesOf(ids, opts);
   const r = check(z, b);
-  if (opts.json) return console.log(JSON.stringify({ ...r, safe: z.safe, frame: z.frame, size: z.size, platforms: z.platforms }, null, 2));
+  if (opts.json) return console.log(JSON.stringify({ ...r, safe: z.safe, wide: z.wide, frame: z.frame, size: z.size, fallback: z.fallback, platforms: z.platforms, notes: z.notes }, null, 2));
   console.log(`${box(b)} on ${z.frame} ${z.size.join("×")} (${z.platforms.map((p) => p.name).join(", ")}):`);
-  if (r.inside && !r.covered.length && !r.cut.length) return console.log(`  ✓ clear: inside the safe box ${box(z.safe)}`);
+  if (r.inside && !r.covered.length && !r.cut.length && !r.offFrame) return console.log(`  ✓ clear: inside ${r.inWide ? `the wide stretch ${box(z.wide)}` : `the safe box ${box(z.safe)}`}`);
+  if (r.offFrame > 0.001) console.log(`  ✗ ${pct(r.offFrame)} outside the frame`);
   const out = Object.entries(r.outside).map(([k, v]) => `${v} px past the ${k}`).join(", ");
-  if (out) console.log(`  ✗ leaves the safe box ${box(z.safe)}: ${out}`);
+  if (r.inWide) console.log(`  ✓ inside the wide stretch ${box(z.wide)}, above the buttons on the right`);
+  else if (out) console.log(`  ✗ leaves the safe box ${box(z.safe)}: ${out}`);
   for (const c of r.covered) console.log(`  ✗ ${pct(c.share)} under ${c.what} (${c.platform})`);
   for (const c of r.cut) console.log(`  ! ${pct(c.share)} cut away where ${c.where} shows ${c.ratio} (${c.platform})`);
 }
@@ -132,8 +141,10 @@ function cmdDraw([input, out, ...ids], opts) {
     `drawbox=x=${z.safe[0]}:y=${z.safe[1]}:w=${z.safe[2]}:h=${z.safe[3]}:color=lime@0.95:t=${t}`,
   ];
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+  // no picture of an earlier run passes for this one's
+  fs.rmSync(out, { force: true });
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...(opts.at ? ["-ss", String(opts.at)] : []), "-i", input, "-frames:v", "1", "-vf", boxes.join(","), "-update", "1", out], { encoding: "utf8" });
-  if (r.status !== 0 || !fs.existsSync(out)) fail(`ffmpeg could not draw the zones: ${(r.stderr || "").trim().split("\n").slice(-2).join(" ")}`);
+  if (r.status !== 0 || !fs.existsSync(out)) fail(`ffmpeg could not draw the zones: ${(r.stderr || "").trim().split("\n").slice(-2).join(" ") || (opts.at ? `there is no picture at ${opts.at} s` : "it wrote no picture")}`);
   console.log(`${out}: red what the apps cover, green the safe box${z.crops.length ? ", yellow where a feed or grid cuts the video" : ""}. Look at it.`);
   print(z);
 }
