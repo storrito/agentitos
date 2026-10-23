@@ -108,6 +108,8 @@ node <skill>/tools/story.mjs build work/<name>
 
 renders every frame in Chrome with the brand's fonts and Storrito's own stickers (a few seconds), prints a line per frame with its picture for the chat (`uploads/story-<name>/<build>/NN.jpg`, a new folder per build) and what a viewer would notice: fix every ✗ in `story.json` and build again; fix a ⚠ unless you have a reason not to. The preview beside the chat shows the frames side by side. Look at one or two of the pictures yourself for what no check sees (a face cut off, a picture that does not fit the words). Then show them in the chat as a row of pictures with "Looks good" and "Change something". A change: edit `story.json`, build again.
 
+**Other platforms.** The frames are laid out for Instagram Stories. When the person says the story goes elsewhere too (TikTok, Reels, Shorts, a Facebook or Snapchat story …), build with all of them: `node <skill>/tools/story.mjs build work/<name> --platform instagram-story,tiktok,shorts` (platform-zones' names; `node <platform-zones>/tools/zones.mjs list` names them all), or put them into `story.json` as `"platforms"`. Text and stickers then keep clear of what every one of those apps lays over the frame, which leaves less room: shorten the text where the build says it does not fit. Outside Instagram the stickers are only part of the picture, nobody can tap them: the build writes `work/<name>/frames/NN.full.png`, each frame with its stickers in the picture, for those platforms, and says to put the link into the post's text there. `publish` puts the story on Instagram only; for the others, give the person the pictures (`NN.full.png`) and say so in one sentence.
+
 ### 5. Where and when
 
 Ask one thing per message, and only what has more than one answer:

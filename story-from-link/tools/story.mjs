@@ -4,6 +4,10 @@
 // Made for agents: each command prints what it found and what to do next.
 //
 //   node tools/story.mjs build <dir> [--brand brand] [--preview artifacts/story-<name>.html]
+//        [--platform instagram-story,tiktok,…]   where the story goes (else story.json's
+//        "platforms", else Instagram Story): text and stickers keep clear of what each of those
+//        apps lays over it (agentitos' platform-zones); for one outside Instagram also
+//        <dir>/frames/NN.full.png, the frame with its stickers in the picture
 //        <dir>/frames/NN.png: each frame's picture without its stickers (what is uploaded), the
 //        stickers' places in <dir>/frames.json; uploads/story-<name>/<build>/NN.jpg: the frames as a
 //        viewer sees them, small, for the chat; the preview page beside the chat shows them side by side
@@ -23,7 +27,7 @@ import { PNG } from "pngjs";
 import { launch, sleep } from "./lib/chrome.mjs";
 import * as design from "./lib/design-md.mjs";
 import { contrast, luminance, parse } from "./lib/colors.mjs";
-import { KINDS, STICKERS, safeZone, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
+import { KINDS, STICKERS, safeZone, HOME, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
 import { connect, call, componentsHost } from "./lib/storrito.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -53,6 +57,7 @@ const words = (s) => String(s || "").replace(/\*/g, "").trim().split(/\s+/).filt
 function validate(story) {
   const errors = [];
   if (!Array.isArray(story.frames) || !story.frames.length) errors.push("story.json has no frames");
+  if (story.platforms !== undefined && (!Array.isArray(story.platforms) || !story.platforms.every((x) => typeof x === "string"))) errors.push(`story.json's "platforms" is a list of platform-zones' names, as ["instagram-story", "tiktok"]`);
   (story.frames || []).forEach((f, i) => {
     const at = `frame ${i + 1}`;
     if (!KINDS.includes(f.kind)) errors.push(`${at}: kind "${f.kind}" is none of ${KINDS.join(", ")}`);
@@ -106,6 +111,10 @@ async function build(dir) {
   if (checked.errors.length) fail(checked.errors.map((e) => `✗ brand: ${e}`).join("\n"));
   const brand = checked.brand;
   const name = nameOf(dir);
+  // where the story goes: Instagram draws the stickers itself; elsewhere they are part of the picture
+  const platforms = opts.platform ? String(opts.platform).split(",").map((x) => x.trim()).filter(Boolean) : story.platforms || HOME;
+  const SAFE = safeZone(platforms);
+  const elsewhere = SAFE.names.filter((x) => !x.startsWith("Instagram"));
   const framesDir = path.join(dir, "frames");
   // the chat's pictures get a folder per build: an earlier message keeps showing the frames it showed
   const thumbs = path.join(opts.uploads || path.join("uploads", `story-${name}`), Date.now().toString(36));
@@ -125,7 +134,7 @@ async function build(dir) {
       const frame = story.frames[i];
       const theme = defaultTheme(frame, i, n);
       const image = resolveImage(frame.image, dir);
-      const html = framePage({ brand, frame, index: i, count: n, theme, image, link: story.link, lang: story.lang, fonts, host });
+      const html = framePage({ brand, frame, index: i, count: n, theme, image, link: story.link, lang: story.lang, fonts, host, platforms });
       const htmlFile = path.resolve(framesDir, `${nn(i)}.html`);
       fs.writeFileSync(htmlFile, html);
       await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
@@ -144,6 +153,9 @@ async function build(dir) {
       const thumb = path.join(thumbs, `${nn(i)}.jpg`);
       await page.screenshot({ path: thumb, type: "jpeg", quality: 82 });
       await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
+      // for the platforms outside Instagram: the frame whole, its stickers in the picture
+      const full = elsewhere.length ? path.join(framesDir, `${nn(i)}.full.png`) : null;
+      if (full) await page.screenshot({ path: full, type: "png" });
       // the picture Storrito gets: everything but the stickers, which Instagram draws itself
       await page.evaluate(() => document.querySelectorAll("insta-story insta-link, insta-story insta-poll, insta-story insta-question, insta-story insta-quiz, insta-story insta-countdown, insta-story insta-emoji-slider, insta-story insta-mention, insta-story insta-hashtag, insta-story insta-location").forEach((e) => (e.style.visibility = "hidden")));
       const bg = path.join(framesDir, `${nn(i)}.png`);
@@ -175,10 +187,9 @@ async function build(dir) {
         if (!nw) notes.push(["✗", `the picture did not load`]);
         else if (im.scale > 1.7) notes.push(["⚠", `the picture (${nw}×${nh}) is enlarged ${im.scale}×: it will look blurry; take a bigger one, or show it in a card (a cover or image frame with theme "light" or "brand")`]);
       }
-      const SAFE = safeZone();
       for (const s of report.stickers) {
         const r = s.rect;
-        if (r.y < SAFE.top || r.y + r.h > SAFE.bottom || r.x < SAFE.left || r.x + r.w > SAFE.right) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker leaves Instagram's safe zone (y ${r.y}–${r.y + r.h}): shorten the text above it`]);
+        if (r.y < SAFE.top || r.y + r.h > SAFE.bottom || r.x < SAFE.left || r.x + r.w > SAFE.right) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker leaves the safe zone of ${SAFE.names.join(", ")} (x ${r.x}–${r.x + r.w}, y ${r.y}–${r.y + r.h}): shorten the text above it`]);
         if (!s.width || !s.height) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker has no size: it would not be tappable`]);
       }
       for (let a = 0; a < report.stickers.length; a++) for (let b = a + 1; b < report.stickers.length; b++) {
@@ -187,7 +198,7 @@ async function build(dir) {
       }
       if (report.logo && report.logo.treatment === "could not be loaded") notes.push(["⚠", "the logo could not be loaded"]);
       out.push({
-        n: i + 1, kind: frame.kind, theme, file: path.relative(dir, bg), thumb, bytes: fs.statSync(bg).size,
+        n: i + 1, kind: frame.kind, theme, file: path.relative(dir, bg), ...(full ? { full: path.relative(dir, full) } : {}), thumb, bytes: fs.statSync(bg).size,
         aiGenerated: !!frame.aiImage, html: scheduleHtml(report.stickers), stickers: report.stickers.map(({ tag, attrs, left, top, width, height }) => ({ tag, attrs, left, top, width, height })),
         words: wc, logo: report.logo?.treatment, notes: notes.map(([level, text]) => `${level} ${text}`),
       });
@@ -199,7 +210,9 @@ async function build(dir) {
   const storyNotes = [];
   if (!hasLink) storyNotes.push("⚠ no link sticker: the story links nowhere; the last frame usually carries it");
   if (n > 7) storyNotes.push(`⚠ ${n} frames: most viewers leave before the end of a story longer than 7`);
-  writeJson(path.join(dir, "frames.json"), { name, link: story.link || null, built: new Date().toISOString(), brand: path.resolve(brandDir), host, frames: out, notes: storyNotes });
+  if (elsewhere.length && out.some((f) => f.stickers.length)) storyNotes.push(`⚠ on ${elsewhere.join(", ")} the stickers are only pictures: nobody can tap them there; put the link into the post's text`);
+  for (const x of SAFE.notes.filter((x) => x.includes("stand"))) storyNotes.push(`  ${x}`);
+  writeJson(path.join(dir, "frames.json"), { name, link: story.link || null, built: new Date().toISOString(), brand: path.resolve(brandDir), host, platforms, frames: out, notes: storyNotes });
   const preview = opts.preview || path.join("artifacts", `story-${name}.html`);
   writePreview(preview, story, out);
 
@@ -211,6 +224,7 @@ async function build(dir) {
     for (const note of f.notes) console.log(`   ${note}`);
   }
   for (const note of storyNotes) console.log(note);
+  console.log(`\nLaid out clear of ${SAFE.names.join(", ")}.${elsewhere.length ? ` For ${elsewhere.join(", ")}: ${dir}/frames/NN.full.png, each frame with its stickers in the picture; publish puts the story on Instagram only.` : ""}`);
   console.log(`\nPreview beside the chat: ${preview}`);
   console.log(bad ? `\nFix the ✗ in story.json and build again.` : `\nShow the frames in the chat (${thumbs}/NN.jpg); once the person agrees: node <skill>/tools/story.mjs publish ${dir} --account <instagram> --at <time>`);
 }

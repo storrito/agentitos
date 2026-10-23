@@ -9,17 +9,21 @@ import { contrast, mix } from "./colors.mjs";
 import { zones } from "./zones.mjs";
 
 export const W = 1080, H = 1920;
-// What Instagram lays over a story (its bar at the top, the reply field at the bottom), from
+// What the platforms the story goes to lay over it (Instagram: its bar at the top, the reply
+// field at the bottom; TikTok, Reels, Shorts: a column of buttons on the right too), from
 // agentitos' platform-zones skill: stickers must stay inside, text keeps away from the edges too.
 // Asked when a frame is laid out or checked, so that publishing and the status work without it.
-let safe = null;
-export function safeZone() {
-  if (!safe) {
+export const HOME = ["instagram-story"];
+const safes = new Map();
+export function safeZone(platforms = HOME) {
+  const key = platforms.join(",");
+  if (!safes.has(key)) {
     let z;
-    try { z = zones(W, H, ["instagram-story"]).safe; } catch (e) { console.error(`✗ ${e.message}`); process.exit(1); }
-    safe = { top: z[1], bottom: z[1] + z[3], left: z[0], right: z[0] + z[2] };
+    try { z = zones(W, H, platforms); } catch (e) { console.error(`✗ ${e.message}`); process.exit(1); }
+    const [x, y, w, h] = z.safe;
+    safes.set(key, { top: y, bottom: y + h, left: x, right: x + w, names: z.platforms.map((p) => p.name), notes: z.notes });
   }
-  return safe;
+  return safes.get(key);
 }
 
 export const KINDS = ["cover", "text", "list", "quote", "stat", "image", "product", "event", "cta"];
@@ -183,8 +187,8 @@ function layout(frame, ctx) {
   }
 }
 
-function css(brand, v, fonts) {
-  const SAFE = safeZone();
+function css(brand, v, fonts, platforms) {
+  const SAFE = safeZone(platforms);
   const d = brand.fonts.display, b = brand.fonts.body, l = brand.fonts.label;
   const radius = brand.radius;
   return `${fonts}
@@ -192,7 +196,7 @@ html,body{margin:0;padding:0;width:${W}px;height:${H}px;overflow:hidden;backgrou
 *{box-sizing:border-box}
 insta-story{display:block;width:${W}px;height:${H}px;overflow:hidden;color:${v.fg};font-family:${stack(b, "sans-serif")};-webkit-font-smoothing:antialiased}
 .ground{position:absolute;inset:0;background:${v.bg}}
-.col{position:absolute;inset:0;padding:${SAFE.top}px 84px ${H - SAFE.bottom}px;display:flex;flex-direction:column;gap:44px}
+.col{position:absolute;inset:0;padding:${SAFE.top}px ${W - SAFE.right + 24}px ${H - SAFE.bottom}px ${SAFE.left + 24}px;display:flex;flex-direction:column;gap:44px}
 .col.center{justify-content:center}.col.bottom{justify-content:flex-end}.col.top{justify-content:flex-start}
 .has-logo .col{padding-top:${SAFE.top + 130}px}
 .grow{flex:1 1 0;min-height:360px}
@@ -241,7 +245,7 @@ ol.items .t{font-size:52px;line-height:1.22;padding-top:6px;font-weight:${Math.m
 
 // the whole page of a frame: the components and their pictures come from the organization's
 // Storrito host (`base`), so stickers look as they will on Instagram
-export function framePage({ brand, frame, index, count, theme, image, link, lang, fonts, host }) {
+export function framePage({ brand, frame, index, count, theme, image, link, lang, fonts, host, platforms }) {
   const v = themeVars(brand, theme);
   const ctx = { theme, image, link, lang };
   const logo = (frame.logo ?? ["cover", "cta"].includes(frame.kind)) && brand.logo.primary && fs.existsSync(brand.logo.primary);
@@ -249,7 +253,7 @@ export function framePage({ brand, frame, index, count, theme, image, link, lang
   const emoji = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=block">';
   return `<!doctype html><html lang="${esc(lang || "en")}"><head><meta charset="utf-8"><base href="${host}/">
 <script src="/js/insta-components.js"></script>${emoji}
-<style>${css(brand, v, fonts)}</style></head>
+<style>${css(brand, v, fonts, platforms)}</style></head>
 <body><insta-story class="kind-${esc(frame.kind)} theme-${theme}${logo ? " has-logo" : ""}" data-index="${index}" data-count="${count}" data-bg="${v.bg}" data-fg="${v.fg}">
 <div class="ground"></div>${layout(frame, ctx)}${logoTag}
 </insta-story></body></html>`;
