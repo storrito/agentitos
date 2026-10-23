@@ -34,10 +34,11 @@ node <skill>/tools/launch.mjs guides
 prints where HyperFrames' guides are on this machine: the ones its CLI carries, of the version that renders. Read, before planning: `hyperframes/SKILL.md` (the contract, the work loop), `references/types/launch.md`, `references/story.md`, `references/spec.md`; for a vertical film `references/types/vertical.md`; while building `references/format.md`, `references/motion.md`, `references/look.md`, `references/sound.md`; before the preview `references/review.md`. Read each when its step comes, not all at once. How to read them here:
 
 - A `/name` in them is the guide `<guides>/<name>/SKILL.md` (`/media-use`, `/hyperframes-cli`). `/hyperframes-registry` is not on the machine: `hyperframes catalog --json` searches the registry, `hyperframes add <name>` installs a block.
-- `npx hyperframes …` is `hyperframes …`, the CLI of this machine.
+- `npx hyperframes …` (and `hyperframes …` here) is the command `guides` prints on its last line: the CLI of this machine, `hyperframes` when it is on the PATH, else `node <its path>`. Always give it the project folder, `artifacts/<name>/composition`: run from elsewhere it finds no `index.html`.
 - **The zones:** every number about where text may sit (vertical.md's 168 and 1330 px, "the 80% title-safe box", "600–700 px from the bottom" for captions) is replaced by this skill's `zones`. HyperFrames' check sees text under the apps' buttons only through `<skill>/tools/launch.mjs check`.
 - **Media:** voice, music and pictures come from this skill, never HeyGen. Sound effects and logos come from media-use, which needs no account: `hyperframes media-use resolve --type sfx --intent "…" --project <composition>` and `--type logo`. No avatar, no HeyGen voice clone, no catalog music: say so when asked, and offer what is here.
 - **Studio, the desktop app, Framey, `publish`, `usage`:** not here. The preview is the player beside the chat, the render is the `render` tool.
+- **Checking and looking:** rragent's template leaves `hyperframes check` to the render; for this skill it runs before the first preview and after a change of layout or timing (step 7), and HyperFrames' `snapshot --review` sheets come with the stills of every beat.
 - **Planning files:** `STORYLINES.md`, `SPEC.md`, `REVIEW.md` go into your work folder, not into the project, so they never show as artifacts.
 
 ## From the link to the video, all in the chat
@@ -49,7 +50,7 @@ The person gives a link (a product, a feature, a launch post), a script or a few
 Tell them in one sentence that you are reading their site, then:
 
 ```bash
-hyperframes capture <url> --json -o launch/<name>/capture
+hyperframes capture <url> --json -o launch/<name>/capture   # --skip-vision when it asks for a key
 ```
 
 It saves the page's screens, text, colours, fonts and pictures. Read what it says, look at the screenshots, and gather the facts: what the product does, real numbers, real labels, the call to action. Real UI only (launch.md): the product's own screens from the capture or their uploads; a screen you cannot get becomes a labelled placeholder, and you say so. A screen behind a sign-in is the one thing worth asking for: ask once, naming the screen per beat.
@@ -64,7 +65,7 @@ The platforms the person named decide the frame: Reels, TikTok, Shorts, Stories 
 node <skill>/tools/launch.mjs zones launch/<name> [reels tiktok …] [--frame 4:5]
 ```
 
-prints the frame's size, the **safe box** (every word, the product, faces and the logo stay inside), the **wide** stretch at the top of a vertical frame, where the captions end, what each app covers, and where a feed crops the film. These numbers go into SPEC.md's OUTPUT line and are the layout's grid: lay titles and cards out in the safe box (its left, top and width), not across the frame and centred, because in a vertical frame the buttons sit on the right. Only ground, texture and the rest of a picture run under what the apps cover. The hook's words and the face also stay inside the feed's crop.
+prints the frame's size, the **safe box** (every word, the product, faces and the logo stay inside), the **wide** stretch at the top of a vertical frame, where the captions end, what each app covers, and where a feed crops the film. Then make the project, once, with the `project` tool (`create`, name `<name>`, kind `hyperframes`): everything the next steps write into `artifacts/<name>/composition/` needs it to exist first. These numbers go into SPEC.md's OUTPUT line and are the layout's grid: lay titles and cards out in the safe box (its left, top and width), not across the frame and centred, because in a vertical frame the buttons sit on the right. Only ground, texture and the rest of a picture run under what the apps cover. The hook's words and the face also stay inside the feed's crop.
 
 ### 3. Three storylines, one pick
 
@@ -85,24 +86,24 @@ A film over about 15 s gets music and sound effects on its visible actions (soun
   ```
 
   speaks every line into `assets/voice/<id>.mp3` and writes each word's time into `launch/<name>/voice.json`: the voice is the film's clock, and each beat starts on the word that says it. A line said wrong: change its text and run it again; only that line is spoken again.
-- **The music.** `node <skill>/tools/launch.mjs music launch/<name> artifacts/<name>/composition --prompt "<feel, tempo, instruments, from the storyline's sound line>" --seconds <the film's length>` composes it with Google's Lyria 3 into `assets/music.mp3`, faded at the end. Then `hyperframes beats assets/music.mp3` in the composition, and the payoff and the mark land on strong beats. The person's own track always comes first.
+- **The music.** `node <skill>/tools/launch.mjs music launch/<name> artifacts/<name>/composition --prompt "<feel, tempo, instruments, from the storyline's sound line>" --seconds <the film's length>` composes it with Google's Lyria 3 into `assets/music.mp3`, faded at the end. Once the film has its `<audio id="music">` (step 6), `hyperframes beats artifacts/<name>/composition` finds its beats, and the payoff and the mark land on strong ones. The person's own track always comes first.
 - **Sound effects:** `hyperframes media-use resolve --type sfx --intent "<soft mouse click>" --project artifacts/<name>/composition` (free, Openverse), only where something happens on screen (sound.md §4).
 
 ### 6. The film
 
-Make the project once with the `project` tool (`create`, name `<name>`, kind `hyperframes`), say in one sentence that the preview is coming, and build `artifacts/<name>/composition/` by the guides: `index.html` as the root, at the frame's size (`data-width`, `data-height`, the viewport, `html` and `body`), id `main`, its timeline `window.__timelines["main"]`; one scene per sub-composition in `compositions/`, the media in `assets/`. Replace the template's example content and its variables, or keep variables only for what the person may want to change (the headline, the call to action). The voice's lines and the music are `<audio>` elements in the root, each with an `id`.
+Say in one sentence that the preview is coming, and build `artifacts/<name>/composition/` by the guides: `index.html` as the root, at the frame's size (`data-width`, `data-height`, the viewport, `html` and `body`), id `main`, its timeline `window.__timelines["main"]`; one scene per sub-composition in `compositions/`, the media in `assets/`. Replace the template's example content and its variables, or keep variables only for what the person may want to change (the headline, the call to action). The voice's lines and the music are `<audio>` elements in the root, each with an `id`.
 
-- **Captions**, when there is a voice (most watch muted): `node <skill>/tools/launch.mjs captions launch/<name> artifacts/<name>/composition --style <hormozi|karaoke|wipe|clean> [--mark --product "<name>"]` puts the voice's words, timed where the root plays them, into `composition/captions/` by agentitos' captions skill, placed for the platforms; mount the line it prints once, as the root's last child. After moving a line of the voice, run it again.
+- **Captions**, when there is a voice (most watch muted): `node <skill>/tools/launch.mjs captions launch/<name> artifacts/<name>/composition --style <hormozi|karaoke|wipe|clean> [--mark --product "<name>"]` puts the voice's words, timed where the root plays them, into `composition/captions/` by agentitos' captions skill, placed for the platforms; mount the line it prints once, as the root's last child. After moving a line of the voice, run it again (the key words marked before stay marked while the words are the same; `--mark` marks anew).
 - **Pictures** the film needs and no source has (a world's ground, an object the story needs): `node <skill>/tools/launch.mjs image artifacts/<name>/composition/assets/<file>.png --prompt "…" --ratio <9:16>` (Gemini; `--ref` passes a picture to follow). Never for the product's screens, its logo or a real person.
 
 ### 7. Check and review, before the preview
 
 ```bash
-hyperframes lint                       # in the composition, while building
+hyperframes lint artifacts/<name>/composition             # while building, seconds
 node <skill>/tools/launch.mjs check launch/<name> artifacts/<name>/composition
 ```
 
-`check` finds every text the apps would cover, with when, where and under which app's buttons: move it into the safe box (a ✗ is always fixed). Then HyperFrames' own gate and review (review.md): `hyperframes check --json` (minutes; once before the first preview and after a change of layout or timing), `hyperframes snapshot --at <every beat's moment> -o launch/<name>/stills`, and
+`check` finds every text the apps would cover, with when, where and under which app's buttons: move it into the safe box (a ✗ is always fixed). Then HyperFrames' own gate and review (review.md), each with the project folder: `hyperframes check artifacts/<name>/composition --json` (minutes), `hyperframes snapshot artifacts/<name>/composition --review`, and the stills of every beat for the zones, `hyperframes snapshot artifacts/<name>/composition --at <every beat's moment> --no-end -o launch/<name>/stills`. Then
 
 ```bash
 node <skill>/tools/launch.mjs draw launch/<name> launch/<name>/stills

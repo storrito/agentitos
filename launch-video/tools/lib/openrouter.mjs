@@ -53,10 +53,9 @@ export async function need(what) {
 
 // Asked again after 5, 10 and 20 s on a network error, a rate limit or a server's error: the
 // Sprites gateway now and then drops out for some 20 s, and three tries in a row would all fall
-// into it. `read` turns a good answer into the result.
-async function send(what, endpoint, body, read, { timeout = 300e3, log = () => {} } = {}) {
+// into it. `read` turns a good answer into the result; `tries` fewer for a long, paid one.
+async function send(what, endpoint, body, read, { timeout = 300e3, log = () => {}, tries = 4 } = {}) {
   const r = await need(what);
-  const tries = 4;
   for (let attempt = 1; ; attempt++) {
     let why;
     try {

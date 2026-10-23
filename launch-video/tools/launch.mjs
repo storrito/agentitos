@@ -97,6 +97,15 @@ function hyperframesCli() {
   return null;
 }
 
+// the CLI as a command to type: `hyperframes` when that is it on the PATH, else its path
+function cliCommand() {
+  const cli = hyperframesCli();
+  if (!cli) return "hyperframes";
+  const onPath = String(process.env.PATH).split(":").map((d) => d && path.join(d, "hyperframes")).find((f) => f && fs.existsSync(f));
+  if (onPath && fs.realpathSync(onPath) === fs.realpathSync(cli)) return "hyperframes";
+  return /\.[cm]?js$/.test(cli) ? `node ${cli}` : cli;
+}
+
 // the package the CLI runs from, and the guides it carries (dist/skills: hyperframes, hyperframes-cli,
 // media-use, the version of this CLI); else the ones `hyperframes init` installs in ~/.agents/skills
 function guides() {
@@ -135,7 +144,7 @@ function cmdGuides() {
   ]) if (fs.existsSync(at("hyperframes", f))) console.log(`  ${at("hyperframes", f)}   ${what}`);
   if (fs.existsSync(at("hyperframes-cli", "SKILL.md"))) console.log(`  ${at("hyperframes-cli", "SKILL.md")}   the CLI: capture, lint, check, snapshot, beats`);
   if (fs.existsSync(at("media-use", "SKILL.md"))) console.log(`  ${at("media-use", "SKILL.md")}   media: sound effects and logos (free); voice, music and pictures come from this skill`);
-  console.log(`Run the CLI as \`${g.cli ? path.basename(g.cli) : "hyperframes"}\` where the guides say \`npx hyperframes\`: the version that renders.`);
+  console.log(`Run the CLI as \`${cliCommand()}\` wherever the guides (and this skill) say \`npx hyperframes\` or \`hyperframes\`: the version that renders.`);
 }
 
 // ------------------------------------------------------------------------------- zones
@@ -243,17 +252,18 @@ function cmdCheck(work, composition) {
   const found = new Map();
   for (const b of bands) {
     const zone = `x0=${(b[0] / W).toFixed(5)};y0=${(b[1] / H).toFixed(5)};x1=${((b[0] + b[2]) / W).toFixed(5)};y1=${((b[1] + b[3]) / H).toFixed(5)};severity=error;seek=${seek}`;
-    const r = spawnSync(...run(cli, ["check", path.resolve(composition), "--json", "--no-contrast", "--samples", "2", "--no-collapse-static", "--max-issues", "100000", "--caption-zone", zone]), { encoding: "utf8", env: hfEnv(), maxBuffer: 64 << 20 });
+    const r = spawnSync(...run(cli, ["check", path.resolve(composition), "--json", "--no-contrast", "--samples", "2", "--no-collapse-static", "--max-issues", "100000", "--caption-zone", zone]), { encoding: "utf8", env: hfEnv(), maxBuffer: 64 << 20, timeout: 900e3 });
+    const why = () => (r.error?.code === "ETIMEDOUT" ? "it ran for 15 minutes" : (r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" "));
     let j;
-    try { j = JSON.parse(r.stdout); } catch { fail(`✗ HyperFrames' check did not finish: ${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" ")}`); }
-    if (j.browserSkipped) fail(`✗ HyperFrames' check found errors before it could look at the film: run \`${path.basename(cli)} lint\` in ${rel(composition)} and fix them, then check again.`);
-    for (const f of j.layout?.findings || []) {
+    try { j = JSON.parse(r.stdout); } catch { fail(`✗ HyperFrames' check did not finish: ${why()}`); }
+    if (j.browserSkipped) fail(`✗ HyperFrames' check found errors before it could look at the film: run \`${cliCommand()} lint ${rel(composition)}\` and fix them, then check again.`);
+    // a check that failed still answers in JSON, without its layout: never a ✓ from it
+    if (j.error || !j.layout) fail(`✗ HyperFrames' check failed: ${j.error || why()}. Nothing was checked.`);
+    for (const f of j.layout.findings || []) {
       if (f.code !== "caption_zone_collision") continue;
       const key = `${f.selector}|${f.sourceFile}`;
-      const rect = f.rect || f.bbox;
-      const e = found.get(key) || { selector: f.selector, file: f.sourceFile, text: f.text, from: f.time, to: f.time, rects: [] };
-      e.from = Math.min(e.from, f.time); e.to = Math.max(e.to, f.time);
-      if (rect) e.rects.push(rect);
+      const e = found.get(key) || { selector: f.selector, file: f.sourceFile, text: f.text, hits: [] };
+      e.hits.push({ time: f.time, band: b, rect: f.rect || f.bbox });
       found.set(key, e);
     }
   }
@@ -264,13 +274,24 @@ function cmdCheck(work, composition) {
     return;
   }
   console.log(`✗ ${found.size} text${found.size > 1 ? "s" : ""} where the apps lay their buttons and bars (${who}):`);
+  const meets = (a, c) => a[0] < c[0] + c[2] && a[0] + a[2] > c[0] && a[1] < c[1] + c[3] && a[1] + a[3] > c[1];
   for (const e of found.values()) {
-    const r = e.rects.at(-1);
-    const b = r ? [Math.round(r.left ?? r.x), Math.round(r.top ?? r.y), Math.round(r.width), Math.round(r.height)] : null;
-    const under = b ? z.covers.filter((c) => b[0] < c.box[0] + c.box[2] && b[0] + b[2] > c.box[0] && b[1] < c.box[1] + c.box[3] && b[1] + b[3] > c.box[1]) : [];
-    const whole = b && b[2] >= W * 0.95 ? " (the box spans the whole width: lay it out in the safe box)" : "";
-    console.log(`  ${e.from.toFixed(2)}–${e.to.toFixed(2)} s  ${e.selector} in ${e.file}: "${e.text}"${b ? ` at ${box(b)}` : ""}${whole}`);
-    console.log(`      ${under.length ? `under ${[...new Set(under.map((c) => `${c.what} (${c.platform})`))].join("; ")}` : "outside the safe box, in the margin the apps keep"}`);
+    e.hits.sort((x, y) => x.time - y.time);
+    // the spans it is there: a gap of more than two samples starts a new one
+    const spans = [];
+    for (const h of e.hits) {
+      const last = spans.at(-1);
+      if (last && h.time - last[1] <= step * 2.5) last[1] = h.time; else spans.push([h.time, h.time]);
+    }
+    // the letters where they reach into a band; HyperFrames measures the element's box, which
+    // can reach into one while its letters stay clear
+    const letters = (h) => (h.rect ? [Math.round(h.rect.left ?? h.rect.x), Math.round(h.rect.top ?? h.rect.y), Math.round(h.rect.width), Math.round(h.rect.height)] : null);
+    const inBand = e.hits.find((h) => letters(h) && meets(letters(h), h.band));
+    const at = letters(inBand || e.hits[0]);
+    const under = inBand ? z.covers.filter((c) => meets(at, c.box)) : [];
+    console.log(`  ${spans.map(([a, b]) => (a === b ? `${a.toFixed(2)}` : `${a.toFixed(2)}–${b.toFixed(2)}`)).join(", ")} s  ${e.selector} in ${e.file}: "${e.text}"${at ? ` at ${box(at)}` : ""}`);
+    if (!inBand) console.log(`      its letters are clear, but its box reaches past the safe box: give the element the safe box's left and width (${z.safe[0]} and ${z.safe[2]} px), not the whole frame`);
+    else console.log(`      ${under.length ? `under ${[...new Set(under.map((c) => `${c.what} (${c.platform})`))].join("; ")}` : "outside the safe box, in the margin the apps keep"}`);
   }
   console.log(`\nMove each into the safe box ${box(z.safe)}${z.wide ? ` (or the wide stretch ${box(z.wide)})` : ""}. Text that is only texture, meant to run under the buttons, gets data-layout-allow-caption-zone. Then check again.`);
   process.exitCode = 1;
@@ -284,6 +305,10 @@ function cmdDraw(work, folder) {
   if (!tool) fail("✗ The zones need agentitos' platform-zones skill beside this one.");
   const stills = fs.existsSync(folder) ? fs.readdirSync(folder).filter((f) => /\.(png|jpe?g)$/i.test(f) && !/^contact-sheet/.test(f)).sort() : [];
   if (!stills.length) fail(`✗ No stills in ${rel(folder)}: snapshot the film first (\`hyperframes snapshot --at …\`).`);
+  for (const s of stills) {
+    const v = probe(path.join(folder, s)).streams.find((x) => x.codec_type === "video");
+    if (v && (v.width !== z.size[0] || v.height !== z.size[1])) fail(`✗ ${s} is ${v.width}×${v.height}, the zones are for ${z.size.join("×")}: snapshot the film these zones are for, or ${cmd(`zones ${rel(work)} … --size ${v.width}x${v.height}`)}.`);
+  }
   const out = path.join(folder, "zones");
   fs.mkdirSync(out, { recursive: true });
   for (const s of stills) {
@@ -381,20 +406,30 @@ async function cmdVoice(work, scriptFile, composition, opts) {
   const metaFile = path.join(work, "voice.json");
   const before = Object.fromEntries((readJson(metaFile, {}).lines || []).map((l) => [l.id, l]));
   let chars = 0, scribeCost = 0;
-  const done = await Promise.all(lines.map(async (l) => {
+  // a line's new sound replaces its old one only once it is heard: a failed line keeps its old
+  // sound and words, so voice.json always tells what the files say
+  const settled = await Promise.allSettled(lines.map(async (l) => {
     const instructions = l.instructions || script.instructions;
     const key = crypto.createHash("sha1").update(JSON.stringify([model, voice, l.text, instructions, speed])).digest("hex").slice(0, 12);
-    const file = path.join(dir, `${l.id}.mp3`);
+    const file = path.join(dir, `${l.id}.mp3`), fresh = path.join(dir, `.${l.id}.new.mp3`);
     if (before[l.id]?.key === key && fs.existsSync(file)) return { ...before[l.id], kept: true };
     chars += l.text.length;
-    fs.writeFileSync(file, await speak({ model, voice, text: l.text, instructions, speed }));
-    const { heard, cost } = await hear(file);
-    scribeCost += cost;
-    return { id: l.id, text: l.text, key, file: `assets/voice/${l.id}.mp3`, duration: +probe(file).duration.toFixed(3), words: align(l.text, heard), heard: heard.map((w) => w.text).join(" ") };
+    try {
+      fs.writeFileSync(fresh, await speak({ model, voice, text: l.text, instructions, speed }));
+      const { heard, cost } = await hear(fresh);
+      scribeCost += cost;
+      const line = { id: l.id, text: l.text, key, file: `assets/voice/${l.id}.mp3`, duration: +probe(fresh).duration.toFixed(3), words: align(l.text, heard), heard: heard.map((w) => w.text).join(" ") };
+      fs.renameSync(fresh, file);
+      return line;
+    } finally {
+      fs.rmSync(fresh, { force: true });
+    }
   }));
+  const failed = settled.map((r, k) => (r.status === "rejected" ? `${lines[k].id}: ${r.reason?.message || r.reason}` : null)).filter(Boolean);
+  const done = settled.map((r, k) => (r.status === "fulfilled" ? r.value : before[lines[k].id] && { ...before[lines[k].id], kept: true, failed: true })).filter(Boolean);
   // a line taken out of the script: its file goes too
   for (const f of fs.readdirSync(dir)) if (f.endsWith(".mp3") && !ids.has(f.slice(0, -4))) fs.rmSync(path.join(dir, f));
-  writeJson(metaFile, { model, voice, ...(speed ? { speed } : {}), lines: done.map(({ kept, ...l }) => l) });
+  writeJson(metaFile, { model, voice, ...(speed ? { speed } : {}), lines: done.map(({ kept, failed, ...l }) => l) });
   let price = 0;
   try { price = perThousand((await speechModels()).find((m) => m.id === model)) * chars / 1000; } catch {}
   console.log(`${model}, voice ${voice || "(the provider's)"}:`);
@@ -402,26 +437,51 @@ async function cmdVoice(work, scriptFile, composition, opts) {
   for (const l of done) {
     total += l.duration;
     const differs = l.heard && l.words.length !== l.heard.split(/\s+/).length ? `   heard: "${l.heard}"` : "";
-    console.log(`  ${l.id.padEnd(12)} ${l.duration.toFixed(2).padStart(6)} s  ${l.kept ? "(kept) " : ""}"${l.text}"${differs}`);
+    console.log(`  ${l.id.padEnd(12)} ${l.duration.toFixed(2).padStart(6)} s  ${l.failed ? "(the old one) " : l.kept ? "(kept) " : ""}"${l.text}"${differs}`);
   }
+  for (const f of failed) console.log(`  ✗ ${f}`);
+  if (failed.length) process.exitCode = 1;
   console.log(`  ${"".padEnd(12)} ${total.toFixed(2).padStart(6)} s spoken in all${chars ? `; ${chars} characters, about $${(price + scribeCost).toFixed(3)}` : ""}`);
   console.log(`→ ${rel(dir)}/<id>.mp3, the words with their times in ${rel(metaFile)}.
 Listen for a word said wrong (a name, a number): write it in "text" as it is said ("Storrito" → "Store-ritto" only if it keeps going wrong) and run voice again; only that line is spoken again.
 Place each line in the root as <audio id="vo-<id>" src="assets/voice/<id>.mp3" data-start="<s>" data-duration="<its seconds>" data-track-index="<n>">, the beat that shows it starting on the word that says it (voice.json has every word's time in its line). Then ${cmd(`captions ${rel(work)} ${rel(composition)} --style <style>`)} when the film has captions.`);
 }
 
-// the voice's words at their times in the film: each line where the root's <audio> plays it
+// every <audio> of the film with its start on the film's clock, as HyperFrames itself resolves it
+// (a start relative to another clip, "intro + 0.5", a clip inside a scene)
+function audioClips(composition) {
+  const cli = hyperframesCli();
+  if (!cli) fail("✗ No HyperFrames CLI on this machine: the operator installs it.");
+  const r = spawnSync(...run(cli, ["timeline", path.resolve(composition), "--json"]), { encoding: "utf8", env: hfEnv(), maxBuffer: 64 << 20, timeout: 300e3 });
+  let j;
+  try { j = JSON.parse(r.stdout); } catch { fail(`✗ HyperFrames' timeline did not answer: ${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" ")}`); }
+  const clips = [];
+  const walk = (x) => {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (!x || typeof x !== "object") return;
+    if (x.kind === "audio" && x.src && Number.isFinite(x.absStart)) clips.push(x);
+    Object.values(x).forEach(walk);
+  };
+  walk(j.timeline);
+  return clips;
+}
+
+// the voice's words at their times in the film: each line where the film's <audio> plays it
 function filmWords(work, composition) {
   const meta = readJson(path.join(work, "voice.json"), null) || fail(`✗ No voice yet: ${cmd(`voice ${rel(work)} <script.json> ${rel(composition)}`)} first.`);
   const root = rootOf(composition);
+  const clips = audioClips(composition);
   const words = [], missing = [];
   for (const l of meta.lines) {
-    const tag = [...root.html.matchAll(/<audio\b[^>]*>/g)].map((m) => m[0]).find((t) => new RegExp(`src="(\\./)?${l.file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(t));
-    if (!tag) { missing.push(l.id); continue; }
-    const attr = (name) => Number(tag.match(new RegExp(`${name}="([^"]*)"`))?.[1]);
-    const start = attr("data-start") || 0, from = attr("data-media-start") || 0;
-    const until = Number.isFinite(attr("data-duration")) ? from + attr("data-duration") : Infinity;
-    for (const w of l.words) if (w.start >= from && w.start < until) words.push({ text: w.text, start: +(start + w.start - from).toFixed(3), end: +(start + Math.min(w.end, until) - from).toFixed(3) });
+    const mine = clips.filter((c) => String(c.src || "").replace(/^\.?\//, "") === l.file);
+    if (!mine.length) { missing.push(l.id); continue; }
+    // every place the line plays (a line may play twice), at its speed
+    for (const c of mine) {
+      const rate = Number(c.playbackRate) || 1, from = Number(c.mediaStart) || 0;
+      const until = Number.isFinite(Number(c.duration)) ? from + Number(c.duration) * rate : Infinity;
+      for (const w of l.words) if (w.start >= from && w.start < until)
+        words.push({ text: w.text, start: +(c.absStart + (w.start - from) / rate).toFixed(3), end: +(c.absStart + (Math.min(w.end, until) - from) / rate).toFixed(3) });
+    }
   }
   words.sort((a, b) => a.start - b.start);
   return { words, missing, root };
@@ -433,6 +493,9 @@ function cmdWords(work, composition) {
   if (missing.length) console.log(`  not in the film (no <audio src="assets/voice/<id>.mp3">): ${missing.join(", ")}`);
   if (!words.length) fail(`✗ No line of the voice is placed in ${rel(root.file)}.`);
   const f = path.join(work, "words.json");
+  // the key words marked before stay marked, as long as the words are the same
+  const old = readJson(f, {}).words || [];
+  if (old.map((w) => w.text).join(" ") === words.map((w) => w.text).join(" ")) old.forEach((w, k) => { if (w.highlight) words[k].highlight = true; });
   writeJson(f, { width: root.width, height: root.height, duration: root.duration, words });
   console.log(`${rel(f)}: ${words.length} words, ${words[0].start.toFixed(2)}–${words.at(-1).end.toFixed(2)} s of the film`);
   return f;
@@ -480,7 +543,7 @@ async function cmdMusic(work, composition, opts) {
   const prompt = `${opts.prompt}. ${opts.vocals ? "" : "Instrumental, no vocals. "}About ${Math.round(seconds)} seconds long, with a clear ending.`;
   console.log(`Composing with ${model} (a minute or two) …`);
   let r;
-  try { r = await streamAudio(`The music (${model})`, { model, modalities: ["text", "audio"], messages: [{ role: "user", content: prompt }] }, { log: console.log, timeout: 600e3 }); }
+  try { r = await streamAudio(`The music (${model})`, { model, modalities: ["text", "audio"], messages: [{ role: "user", content: prompt }] }, { log: console.log, timeout: 600e3, tries: 2 }); }
   catch (e) { fail(`✗ ${e.message}`); }
   const kind = kindOf(r.bytes);
   if (!kind) fail(`✗ ${model} sent ${r.bytes.length} bytes, but no audio${r.text ? `: "${r.text.slice(0, 200)}"` : ""}.`);
@@ -494,7 +557,7 @@ async function cmdMusic(work, composition, opts) {
   const len = Math.min(long, seconds), fade = Math.min(1.5, len / 4);
   ffmpeg(["-i", raw, "-t", String(len), "-af", `afade=t=out:st=${(len - fade).toFixed(3)}:d=${fade.toFixed(3)}`, "-codec:a", "libmp3lame", "-b:a", "192k", out]);
   console.log(`${rel(out)}: ${len.toFixed(1)} s of ${long.toFixed(1)} s made${r.cost ? `, $${r.cost.toFixed(3)}` : ""}${long < seconds - 0.5 ? ` — shorter than the film by ${(seconds - long).toFixed(1)} s: loop it, end the film with it, or make it again` : ""}${r.text ? `\n  the model: "${r.text.slice(0, 200).replace(/\s+/g, " ")}"` : ""}
-The whole take is ${rel(raw)}. Its beats: \`hyperframes beats ${rel(out)}\`; land the payoff and the mark on strong ones. In the root: <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="0.14" data-track-index="<n>"> (0.14 under a voice, as HyperFrames' sound guide says; about 0.6 without one).`);
+The whole take is ${rel(raw)}. In the root: <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="0.14" data-track-index="<n>"> (0.14 under a voice, as HyperFrames' sound guide says; about 0.6 without one). Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`);
 }
 
 // ------------------------------------------------------------------------------- pictures
@@ -538,11 +601,18 @@ function cmdFinish(video) {
   const r = spawnSync("ffmpeg", ["-hide_banner", "-i", video, "-af", "loudnorm=I=-14:TP=-1:LRA=11:print_format=json", "-f", "null", "-"], { encoding: "utf8" });
   const m = JSON.parse(r.stderr.slice(r.stderr.lastIndexOf("{"), r.stderr.lastIndexOf("}") + 1) || "{}");
   if (!m.input_i) fail(`✗ ffmpeg could not measure the loudness of ${rel(video)}.`);
-  const tmp = video.replace(/(\.\w+)?$/, ".levelled.mp4");
-  ffmpeg(["-i", video, "-map", "0", "-c:v", "copy", "-af",
-    `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`,
-    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
-  fs.renameSync(tmp, video);
+  // a silent track (the render mixes silence when the film has no sound) has nothing to level
+  if (!(Number(m.input_i) > -70)) return console.log(`${rel(video)}: its sound is silent, nothing to level.`);
+  // hidden beside it, so a half-written file never shows as an artifact
+  const tmp = path.join(path.dirname(video), `.${path.basename(video, path.extname(video))}.levelled.mp4`);
+  try {
+    ffmpeg(["-i", video, "-map", "0", "-c:v", "copy", "-af",
+      `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`,
+      "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
+    fs.renameSync(tmp, video);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
   console.log(`${rel(video)}: ${Number(m.input_i).toFixed(1)} → −14 LUFS, peaks under −1 dBTP. Measured, not heard: say so.`);
 }
 

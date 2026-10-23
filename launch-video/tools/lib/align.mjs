@@ -29,7 +29,12 @@ function cost(a, b) {
 }
 
 export function align(script, heard) {
-  const words = String(script).split(/\s+/).filter(Boolean);
+  // a dash or a mark alone is no word to time: it goes with the word before it (or after it)
+  const words = [];
+  for (const t of String(script).split(/\s+/).filter(Boolean)) {
+    if (norm(t) || !words.length) words.push(t); else words[words.length - 1] += ` ${t}`;
+  }
+  if (words.length > 1 && !norm(words[0])) words.splice(0, 2, `${words[0]} ${words[1]}`);
   const said = heard.filter((w) => norm(w.text));
   const n = words.length, m = said.length;
   const a = words.map(norm), b = said.map((w) => norm(w.text));
@@ -57,8 +62,9 @@ export function align(script, heard) {
     const S = k1 - k0 - 1, H = h1 - h0 - 1;
     if (H > 0 && S === 0 && k0 >= 0) out[k0].end = Math.max(out[k0].end, said[h1 - 1].end);
     if (S <= 0) continue;
-    const from = H > 0 ? said[h0 + 1].start : k0 >= 0 ? out[k0].end : (said[0]?.start ?? 0);
-    const to = H > 0 ? said[h1 - 1].end : k1 < n ? out[k1].start : Math.max(from + 0.3 * S, said.at(-1)?.end ?? 0);
+    // nothing heard before the first word that was: the words before it end where it starts
+    const to = H > 0 ? said[h1 - 1].end : k1 < n ? out[k1].start : Math.max((k0 >= 0 ? out[k0].end : 0) + 0.3 * S, said.at(-1)?.end ?? 0);
+    const from = H > 0 ? said[h0 + 1].start : k0 >= 0 ? out[k0].end : Math.max(0, to - 0.3 * S);
     const lens = words.slice(k0 + 1, k1).map((w) => Math.max(1, norm(w).length));
     const total = lens.reduce((x, y) => x + y, 0);
     let t = from;
