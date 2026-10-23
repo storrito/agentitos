@@ -15,6 +15,8 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | a wide video cropped to 9:16 or square, following one subject | [auto-reframe](auto-reframe/) | its tools |
 | a thumbnail and a short intro for a video | [thumbnail-and-intro](thumbnail-and-intro/) | its `job.json` and tools |
 | what an rragent bot did meanwhile (its messages, tools, waits) | [agent-timeline](agent-timeline/) | `tools/timeline.mjs` |
+| voice, music or a picture made by a model (a voiceover with every word's time, a music bed, a background) | [launch-video](launch-video/) | `tools/launch.mjs voice`, `music`, `image` (OpenRouter; no HeyGen account) |
+| text checked against the apps' buttons in a HyperFrames film | [launch-video](launch-video/) | `tools/launch.mjs check <work> <composition>` after `zones` |
 | an Instagram Story, scheduled through Storrito | [story-from-link](story-from-link/) | its tools |
 | the texts for a video on each platform (captions, titles, descriptions, tags, hashtags, mentions) within the platforms' limits | [video-descriptions](video-descriptions/) | `tools/descriptions.mjs read`, then `check` and `overview` on the agent's `descriptions.json` |
 
