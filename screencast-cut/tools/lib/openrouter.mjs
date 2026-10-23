@@ -57,12 +57,14 @@ async function post(what, endpoint, body, { timeout = 300e3, log = () => {} } = 
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeout),
       });
-      text = await res.text();
-      if (res.ok) return JSON.parse(text);
-      if (!(res.status === 429 || res.status >= 500)) throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 300)}`);
-      why = `OpenRouter ${res.status}`;
+      try { text = await res.text(); } catch (e) { text = null; why = `the answer broke off (${e.message})`; }
+      if (text != null) {
+        if (res.ok) return JSON.parse(text);
+        if (!(res.status === 429 || res.status >= 500)) throw Object.assign(new Error(`OpenRouter ${res.status}: ${text.slice(0, 300)}`), { final: true });
+        why = `OpenRouter ${res.status}`;
+      }
     } catch (e) {
-      if (res && !(res.status === 429 || res.status >= 500)) throw e;
+      if (e.final) throw e;
       why = e.message;
     }
     if (attempt >= tries) throw new Error(`${what}: ${why} (asked ${tries} times)`);

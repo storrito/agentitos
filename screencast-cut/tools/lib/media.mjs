@@ -48,11 +48,14 @@ export function prepare(file, out, { fps = 30, frames, progress } = {}) {
     let err = "";
     // the browser's recordings make ffmpeg complain about their sound's first packets: said only
     // when it fails
+    let partial = "";
     ff.stderr.on("data", (d) => {
-      for (const line of String(d).split("\n")) {
+      const lines = (partial + d).split("\n");
+      partial = lines.pop();
+      for (const line of lines) {
         const m = line.match(/^out_time_us=(\d+)/);
         if (m) progress?.(Number(m[1]) / 1e6);
-        else if (!/^[a-z_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
+        else if (!/^[a-z0-9_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
       }
     });
     if (p.video && frames) ff.stdout.on("data", (chunk) => frames.push(chunk));

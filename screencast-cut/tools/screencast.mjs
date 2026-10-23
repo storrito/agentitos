@@ -212,7 +212,14 @@ function keepWords(dir, list, asr) {
   for (const r of runs) console.log(`left out, the voice has no time for them (written twice): ${r}`);
   const speech = kept.filter((w) => w.kind === "word");
   if (!speech.length) fail("No speech in the voice: this tool cuts by what is said.");
-  const lufs = loudness(blocks, speech.map((w) => [w.start, w.end]));
+  // the level of the speech over runs of words (a single word is often shorter than the 400 ms
+  // a loudness block needs)
+  const said = [];
+  for (const w of speech) {
+    const last = said.at(-1);
+    if (last && w.start - last[1] < 0.3) last[1] = w.end; else said.push([w.start, w.end]);
+  }
+  const lufs = loudness(blocks, said);
   const words = kept.map((w, i) => ({ i, clip: 1, ...w }));
   write(source(dir, "words.json"), { asr, clips: { 1: { n: 1, file: meta.voice, duration: meta.duration, lufs } }, words });
   duck(dir, words);
@@ -493,13 +500,17 @@ function cmdBuild(dir, opts) {
   const waitSource = (from, to) => {
     const ranked = screens.map((k) => ({ k, b: busy(activity[k], from, to) })).sort((a, b) => b.b - a.b);
     if (ranked[0] && ranked[0].b > 0.02) return ranked[0].k;
-    return sources.screen?.video ? "screen" : ranked[0]?.k || "webcam";
+    return sources.screen?.video ? "screen" : ranked[0]?.k || null;
   };
   for (const p of r.pieces) {
-    const kv = keepView[p.keep], zoom = cut.keep[p.keep].zoom;
+    const kv = keepView[p.keep], keep = cut.keep[p.keep], zoom = keep.zoom;
     if (p.wait) {
-      p.source = waitSource(p.in, p.out);
-      p.view = p.source;
+      // the keep's "waitView" when it names one, else where something happens; a recording
+      // without any screen waits on the face
+      const chosen = keep.waitView && keep.waitView !== "auto" ? sourceOf(keep.waitView, sources) : waitSource(p.in, p.out);
+      p.source = chosen || "webcam";
+      p.view = !chosen || keep.waitView === "face" ? "face" : p.source;
+      if (p.view === "face") { p.crop = null; continue; }
       p.crop = zoom === "off" ? [0, 0, 1, 1] : Array.isArray(zoom) && p.source === kv.source ? kv.crop : zoomOf(p.source, p.in, p.out);
     } else {
       Object.assign(p, kv);
@@ -522,7 +533,11 @@ function cmdBuild(dir, opts) {
     const bounds = [Math.min(sp[0], p.in), ...cuts, Math.max(sp[1], p.out)];
     // the scene a moment is in, and its crop over the scene's part of the keep
     const sceneOf = (t) => { let i = 0; while (i + 1 < bounds.length - 1 && t >= bounds[i + 1]) i++; return i; };
-    const cropOf = (i) => zoomOf(p.source, p.wait ? Math.max(p.in, bounds[i]) : bounds[i], p.wait ? Math.min(p.out, bounds[i + 1]) : bounds[i + 1]);
+    // a scene's crop from its own changes: from its cut on, up to a sample before the next cut
+    const cropOf = (i) => {
+      const from = p.wait ? Math.max(p.in, bounds[i]) : bounds[i], to = p.wait ? Math.min(p.out, bounds[i + 1]) : bounds[i + 1];
+      return zoomOf(p.source, from, i + 2 < bounds.length ? to - 0.3 : to);
+    };
     const inside = cuts.filter((t) => t > p.in + 0.5 && t < p.out - 0.5);
     if (!inside.length) { p.crop = cropOf(sceneOf((p.in + p.out) / 2)); continue; }
     const edges = [p.in, ...inside, p.out];
@@ -566,7 +581,8 @@ function cmdBuild(dir, opts) {
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
-      view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), lufs: p.lufs, gain: p.gain,
+      view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}),
+      ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}) }) })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   });
@@ -665,6 +681,24 @@ function cmdCheck(dir) {
     }
   }
 
+  // a box set by hand that misses where the screen changes during its keep (the typing, the
+  // answer): most of the keep's change outside it
+  for (const [k, keep] of (cut.keep || []).entries()) {
+    if (!Array.isArray(keep.zoom)) continue;
+    const ps = e.pieces.filter((p) => p.keep === k && !p.wait && p.source && p.source !== "webcam");
+    if (!ps.length || !activity[ps[0].source]) continue;
+    const f = focus(activity[ps[0].source], Math.min(...ps.map((p) => p.in)), Math.max(...ps.map((p) => p.out)));
+    if (!f?.heat) continue;
+    const { cells, cols, rows } = f.heat, [x0, y0, x1, y1] = keep.zoom.map(Number);
+    let inside = 0, all = 0;
+    cells.forEach((v, c) => {
+      const cx = ((c % cols) + 0.5) / cols, cy = (Math.floor(c / cols) + 0.5) / rows;
+      all += v;
+      if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) inside += v;
+    });
+    if (all && inside / all < 0.4) warnings.push(`keep ${k + 1}'s "zoom" box holds only ${Math.round((100 * inside) / all)} % of what changes on the screen while it plays (the typing, the answer are elsewhere): set "zoom": "auto", or look with frame at its first and last moment`);
+  }
+
   // a long stretch without words at its own speed is a wait to speed up
   for (const [k, p] of e.pieces.entries()) {
     if (p.shows && !p.hold && p.rate <= 1.05 && p.duration > 6) warnings.push(`piece ${k + 1} shows ${p.duration.toFixed(1)} s without words at their own speed: a wait? list the last word before it in "waits"`);
@@ -699,7 +733,9 @@ function cmdAt(dir, when) {
   const said = e.words.filter((w) => Math.abs((w.start + w.end) / 2 - t) < 2.5).map((w) => w.text).join(" ");
   console.log(`${clock(t)} of the cut: piece ${k + 1} of keep ${p.keep + 1} ([${keep.words}]${keep.why ? `, ${keep.why}` : ""})`);
   console.log(`  plays ${clock(p.in)}–${clock(p.out)} of the recording${p.rate > 1 ? ` at ×${p.rate}` : ""}, from ${clock(p.start)} to ${clock(p.start + p.duration)} of the cut`);
-  console.log(`  view ${p.view}${p.crop ? `, zoomed to [${p.crop.join(", ")}]` : ""}`);
+  const rec = p.in + (t - p.start) * (p.rate || 1);
+  const crop = p.segments?.find((g) => rec >= g.in && rec < g.out)?.crop || p.crop;
+  console.log(`  view ${p.view}${crop ? `, zoomed to [${crop.join(", ")}]` : ""}${p.segments ? ` (the screen changes within it: ${p.segments.length} parts, each zoomed for itself)` : ""}`);
   if (p.words) console.log(`  words ${p.words[0]}–${p.words[1]}: ${words.slice(p.words[0], p.words[1] + 1).filter((w) => w.kind === "word").map((w) => w.text).join(" ")}`);
   else console.log(`  no words: ${p.hold ? "held after the keep's words, the voice faded" : p.wait ? "a wait" : "the picture moving in a pause"}`);
   if (said) console.log(`  heard around it: …${said}…`);
@@ -725,12 +761,21 @@ function cmdFrame(dir, when, opts) {
   const at = p.in + (t - p.start) * (p.rate || 1) - src.offset;
   const out = path.join(dir, "frames", `${String(t.toFixed(1)).replace(".", "_")}-${name}.jpg`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  const c = p.source === name && p.crop ? p.crop : null;
-  const box = c ? `,drawbox=x=iw*${c[0]}:y=ih*${c[1]}:w=iw*${(c[2] - c[0]).toFixed(4)}:h=ih*${(c[3] - c[1]).toFixed(4)}:color=red@0.9:t=6` : "";
+  const rec = at + src.offset;
+  const c = p.source === name ? (p.segments?.find((g) => rec >= g.in && rec < g.out)?.crop || p.crop) : null;
+  // what the automatic zoom picks for this keep's stretch of the screen, to compare with
+  const activity = read(source(dir, "activity.json"));
+  const [fw, fh] = FRAMES[settings(dir, {}).frame];
+  const ps = e.pieces.filter((x) => x.keep === p.keep && x.source === name);
+  const auto = activity[name] && !(src.height > src.width * 1.25)
+    ? cropFor(focus(activity[name], Math.min(...ps.map((x) => x.in)), Math.max(...ps.map((x) => x.out))), src, areas(fw, fh).content, { maxWidth: areas(fw, fh).content[2] / areas(fw, fh).content[3] < 1.3 ? 0.5 : 1 })
+    : null;
+  const rect = (b, color) => `,drawbox=x=iw*${b[0]}:y=ih*${b[1]}:w=iw*${(b[2] - b[0]).toFixed(4)}:h=ih*${(b[3] - b[1]).toFixed(4)}:color=${color}:t=6`;
+  const box = (c ? rect(c, "red@0.9") : "") + (auto && auto.join() !== "0,0,1,1" ? rect(auto, "0x22cc55@0.9") : "");
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, at)), "-i", source(dir, src.file), "-frames:v", "1",
     "-vf", `scale='min(1600,iw)':-2,drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.6${box}`, "-q:v", "3", out], { encoding: "utf8" });
   if (r.status) fail(`✗ ${r.stderr.trim()}`);
-  console.log(`${rel(out)}: ${name} at ${clock(at + src.offset)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}. Look at it, then set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}.`);
+  console.log(`${rel(out)}: ${name} at ${clock(rec)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}${auto && auto.join() !== "0,0,1,1" ? `, the automatic zoom for keep ${p.keep + 1} [${auto.join(", ")}] in green` : ""}. Look at it, and at the keep's first and last moment too: a box set by hand holds for the whole keep. Then set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}, or "auto".`);
 }
 
 // ---------------------------------------------------------------------------------- finish

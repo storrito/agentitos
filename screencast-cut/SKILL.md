@@ -66,7 +66,7 @@ node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-`build` turns `cut.json` into the project: every piece a shot of its source, zoomed in on where the picture changes, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it). Look at two or three moments of the screen shots with `frame` (below): the automatic zoom finds where the screen changed, which is not always what the sentence is about.
+`build` turns `cut.json` into the project: every piece a shot of its source, zoomed in on where the picture changes, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it). Leave the zoom automatic (it follows where the screen changes, scene by scene); look at two or three moments of the screen shots with `frame` (below), and set a box by hand only where the automatic one shows the wrong thing, after looking at the keep's first and last moment.
 
 ### 5. Ask whether it is right
 
@@ -87,9 +87,9 @@ says which piece and keep play there, from where in the recording, in which view
 | "… is cut off" / "too fast at the end" | `"hold": 1.5` (or more) on that keep; when check says the next words follow right after, end the keep a word later |
 | "Longer waits should be time-lapses" | the last word before the wait into `"waits"` |
 | "Show the phone when …" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
-| "Too zoomed in" / "zoom on the chat" / a shot that shows the wrong part | `screencast.mjs frame screencast/<name> 0:23` saves that moment's whole source with a grid every tenth and the shot's crop in red: read it, then `"zoom": [x0, y0, x1, y1]` (0–1) on the keep, or `"zoom": "off"` |
+| "Too zoomed in" / "zoom on the chat" / a shot that shows the wrong part | `screencast.mjs frame screencast/<name> 0:23` saves that moment's whole source with a grid every tenth, the shot's crop in red and the automatic zoom in green: read it, and a frame of the keep's first and last moment too (a box set by hand holds for the whole keep: while the person types at the bottom, a box on the answer above shows an empty page). Then `"zoom": [x0, y0, x1, y1]` (0–1) on the keep, or `"zoom": "auto"` back, or `"zoom": "off"`. Where the screen changes within the keep (another tab), split the keep there and give each part its own box; check says where |
 | "Show that it arrived on the phone" / "the playback was cut away" | keep the words around it ("there it is") in their place, with `"hold"`; when the hook took them, give the hook `"hook": true` and keep them here too; or the last word before it in `"waits"` |
-| "During the wait show the laptop, not the phone" | a wait shows the screen that changes most during it by itself; when it does not, end the keep before the wait and start a keep with `"view": "screen"` after it |
+| "During the wait show the laptop, not the phone" | a wait shows the screen that changes most during it by itself; to choose, `"waitView": "screen"` (or `phone-screen`, `face`) on the keep the wait follows |
 | "Start with …" | move that keep to the top |
 | "Longer than a minute is fine" / "at most 45 s" | keep more / drop the weakest keeps first, keep the hook and the proof |
 | "Vertical" / "wide" / "square" | `build … --frame 9:16` / `--frame 16:9` / `--frame 1:1` (or `4:5`) |

@@ -105,7 +105,8 @@ export function samplesOf(counts, g, offset, ignore = new Set()) {
 // (rragent's recorder shows one) changes when the person moves, so its cells change in step with
 // the webcam's own picture. Each cell that changes in at least 5 % of the frames is compared with
 // the webcam's change over time (Pearson's r, at the same moment of the recording); r over 0.4 is
-// a mirror. Such cells fidget all the time and would pull the zoom to the corner.
+// a mirror, and so are its neighbours. Such cells fidget all the time and would pull the zoom to
+// the corner.
 export function mirrors(counts, offset, webcam) {
   if (!webcam?.length || !counts.length) return new Set();
   const cam = new Map(webcam.map((s) => [Math.round(s.t * RATE), s.c]));
@@ -124,18 +125,34 @@ export function mirrors(counts, offset, webcam) {
     const r = (k * sxy - sx * sy) / Math.sqrt((k * sxx - sx * sx) * (k * syy - sy * sy) || 1);
     if (r > 0.4) out.add(c);
   }
-  return out;
+  // the preview's edge cells hold only part of it and follow the webcam less closely: its
+  // neighbours go with it
+  const cols = COLS, rows = cells / COLS, grown = new Set(out);
+  for (const c of out) {
+    const x = c % cols, y = Math.floor(c / cols);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) grown.add(ny * cols + nx);
+    }
+  }
+  return grown;
 }
 
-// The moments a screen changes almost whole (another tab, a new page, a dialog that dims the
-// page): a share of changed pixels over SCENE, those under a second apart taken as one.
+// The moments a screen changes almost whole and then stays (another tab, a new page, a dialog
+// that dims the page): a share of changed pixels over SCENE, followed by CALM seconds without
+// another. A run of such changes (scrolling, a video) is one change at its end, or none when it
+// does not settle; a scene shorter than MIN_SCENE seconds joins the one before.
 export const SCENE = 0.25;
+const CALM = 1.5, MIN_SCENE = 3;
 export function scenes(samples, from, to) {
+  const big = within(samples, from - CALM, to + CALM).filter((s) => s.c >= SCENE).map((s) => s.t);
+  // the last change of each run: the next one at least CALM later
+  const settled = big.filter((t, i) => !(i + 1 < big.length && big[i + 1] - t < CALM)).filter((t) => t > from + 0.5 && t < to - 0.5);
   const cuts = [];
-  for (const s of within(samples, from, to)) {
-    if (s.c < SCENE) continue;
-    if (cuts.length && s.t - cuts.at(-1) < 1) continue;
-    cuts.push(s.t);
+  for (const t of settled) {
+    // the scene between two changes too short to see: the later change stands for both
+    if (cuts.length && t - cuts.at(-1) < MIN_SCENE) cuts[cuts.length - 1] = t;
+    else cuts.push(t);
   }
   return cuts;
 }
@@ -184,7 +201,8 @@ export function moving(samples, from, to, threshold = MOVING) {
 // The box holds the hottest cells that make up 80 % of it, the centre is its weighted middle.
 // null when nothing changes.
 export function focus(samples, from, to) {
-  const s = within(samples, from, to).filter((x) => x.g?.length);
+  // a change of almost the whole screen (a tab, a page, scrolling) says nothing about where to look
+  const s = within(samples, from, to).filter((x) => x.g?.length && x.c < SCENE);
   if (!s.length) return null;
   const rows = s[0].r, heat = new Float64Array(COLS * rows), times = new Uint32Array(COLS * rows);
   for (const x of s) for (const [c, n] of x.g) { heat[c] += n; times[c]++; }
