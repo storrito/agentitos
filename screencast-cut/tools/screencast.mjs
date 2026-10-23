@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // A screencast of several sources recorded at the same time (rragent's recorder: the screen, the
 // webcam, the phone's camera or screen, the microphone) cut into one video: the sources on one
-// clock, the voice cleaned, the shot switching to where the action is, zoomed in on it, the waits
+// clock, the voice cleaned, each keep shown and zoomed as the agent decides from its words and its
+// frames (sheets), the waits
 // as timelapses, the results held long enough to see them. Step by step, in one folder; made for
 // agents: each step prints what to do next.
 //
@@ -10,8 +11,11 @@
 //   node tools/screencast.mjs words <dir> <words.json>      the words of source/voice.m4a, as
 //                                     rragent's transcribe tool wrote them (`words: true`)
 //   node tools/screencast.mjs transcribe <dir>              or the words by ElevenLabs Scribe
-//   node tools/screencast.mjs propose <dir>   a first cut.json from the words and the pictures:
-//                                     proposal.json
+//   node tools/screencast.mjs propose <dir>   every sentence a keep: proposal.json (no view, no
+//                                     zoom: those the agent decides)
+//   node tools/screencast.mjs sheets <dir> [--proposal] [--keeps 3,5]   one image per keep: every
+//                                     source at its first, middle and last moment, to decide its
+//                                     view and zoom by
 //   node tools/screencast.mjs build <dir>     cut.json → the HyperFrames project (a preview) and
 //                                     <dir>/edit.json
 //   node tools/screencast.mjs check <dir>     the cut as it plays, and what to fix
@@ -50,8 +54,8 @@ import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack } from "./lib/tracks.mjs";
 import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
 
-const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source"];
-const FLAGS = ["off"];
+const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
+const FLAGS = ["off", "proposal"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const VIDEO = ["screen", "phone-screen", "phone", "webcam"];
@@ -318,8 +322,8 @@ ${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources
 ## A good screencast cut
 
 - **Open with the result** (a hook of a few seconds: the post live on the phone, the finished thing; \`"hook": true\` on it, and the same moment kept in its place later too), then how it was done, step by step, then the proof, then a short end.
-- **Show where the action is.** \`view\` of a keep: \`screen\`, \`phone-screen\`, \`phone\` (the phone's camera) or \`face\` (the webcam over the whole frame); \`auto\` picks the source that moves most. In the screen and phone views the webcam sits beside them in a circle. The column "moves" below says which source moves in each sentence.
-- **Zoom in on what changes** (\`zoom\`: \`auto\`, the default, crops to where the picture changes; \`off\`; or a box \`[x0, y0, x1, y1]\` in 0–1 of the source).
+- **Show what the words are about, and decide it yourself.** \`view\` of every keep (required): \`screen\`, \`phone-screen\`, \`phone\` (the phone's camera) or \`face\` (the webcam over the whole frame). In the screen and phone views the webcam sits beside them in a circle. The sheets (\`sheets\`) show every source at each keep's first, middle and last moment; the column "moves" below only says where pixels changed, not what is talked about.
+- **Zoom on what the words are about** (\`zoom\`: a box \`[x0, y0, x1, y1]\` in 0–1 of the source, read off the sheet's grid of tenths: the input field while the question is typed, the answer when it appears; \`off\`, the default, the whole source). A box holds for the whole keep: when what matters moves, split the keep at that word. In a 9:16 frame a laptop's screen whole is hard to read.
 - **Waits are timelapses.** A wait the speaker announces, an agent working, an upload, a post going live: list the last word before it in \`waits\`; the build plays the time up to the next keep's first word fast (×3 to ×10, with a badge) whenever anything on a screen changes in it, its first and last 20 s when it is long. The long silences between the sentences below are where to look.
 - **Every result gets its proof, and time.** When the words say it is there ("posted", "there it is", "live"), the next shot shows it (the phone's screen, the page) and stays: \`"hold": 2.5\` on that keep holds 2.5 s after its last word. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word anyway, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s: no word is cut off.
 - **Whole sentences**, no slip, no sentence said twice (keep the fluent attempt), no talk about the recording itself; "äh"s go by themselves.
@@ -344,7 +348,7 @@ Word numbers in brackets; "moves": how much each source changes during the sente
   "keep": [
     {"words": "212-230", "view": "phone-screen", "hold": 2.5, "label": "The result", "hook": true, "why": "the hook: the reel on the phone, again in its place later"},
     {"words": "12-40", "view": "screen", "why": "the question to the agent"},
-    {"words": "41-58", "view": "auto", "why": "the answer"}
+    {"words": "41-58", "view": "screen", "zoom": [0.1, 0.15, 0.55, 0.5], "why": "the answer"}
   ],
   "waits": [40],
   "fixes": {"57": "storrito_com"}
@@ -360,17 +364,11 @@ function cmdPropose(dir) {
   const meta = read(source(dir, "sources.json"));
   const { words } = read(source(dir, "words.json"));
   const activity = read(source(dir, "activity.json"));
+  // every sentence a keep, with a hold after a result; what each shows is the agent's to decide
+  // (sheets), not a guess of this tool
   const keep = [], waits = [];
   for (const s of sentences(words)) {
-    const view = viewOf(activity, meta.sources, s.start, s.end + 0.5);
-    const last = keep.at(-1);
-    const claim = CLAIM.test(s.text);
-    if (last && last.view === view && s.start - last.end < 1.2 && !last.hold) {
-      last.words = `${range(last.words)[0]}-${s.to}`; last.end = s.end; last.text += ` ${s.text}`;
-      if (claim) last.hold = 2.5;
-    } else {
-      keep.push({ words: `${s.from}-${s.to}`, view, ...(claim ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text });
-    }
+    keep.push({ words: `${s.from}-${s.to}`, ...(CLAIM.test(s.text) ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text });
   }
   // a gap between two keeps in which a picture moves is a wait
   for (let k = 0; k + 1 < keep.length; k++) {
@@ -384,9 +382,113 @@ function cmdPropose(dir) {
   }
   const proposal = { keep: keep.map(({ start, end, text, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
   write(path.join(dir, "proposal.json"), proposal);
-  console.log(`${keep.length} keeps, every sentence, the view by what moves; ${waits.length} waits:\n`);
-  for (const k of keep) console.log(`  [${k.words}] ${k.view}${k.hold ? `, hold ${k.hold} s` : ""}  ${clock(k.start)}  ${k.text.length > 100 ? `${k.text.slice(0, 70)} … ${k.text.slice(-25)}` : k.text}`);
-  console.log(`\n→ ${rel(path.join(dir, "proposal.json"))}. It keeps every sentence and has no hook: read ${rel(source(dir, "brief.md"))}, then write ${rel(path.join(dir, "cut.json"))} from it: the result first as a hook, the slips and the talk about the recording out, the views and waits checked. Then ${cmd(`build ${rel(dir)}`)}`);
+  console.log(`${keep.length} keeps, every sentence; ${waits.length} waits where a screen moves between two:\n`);
+  for (const k of keep) console.log(`  [${k.words}]${k.hold ? ` hold ${k.hold} s` : ""}  ${clock(k.start)}  ${k.text.length > 100 ? `${k.text.slice(0, 70)} … ${k.text.slice(-25)}` : k.text}`);
+  console.log(`\n→ ${rel(path.join(dir, "proposal.json"))}: every sentence, no story, no view, no zoom. Read ${rel(source(dir, "brief.md"))}; then ${cmd(`sheets ${rel(dir)} --proposal`)} shows what each sentence's moment looks like on every source. Write ${rel(path.join(dir, "cut.json"))}: the story (the result first as a hook), and for every keep its "view" and "zoom" as you decide them from its words and its sheet. Then ${cmd(`build ${rel(dir)}`)}`);
+}
+
+// ---------------------------------------------------------------------------------- sheets
+// What each keep shows, to decide by: one image per keep with the frames of every source (rows:
+// the screen, the phone's screen or camera, the webcam) at its first, middle and last moment and
+// where a screen changes almost whole within it (columns), each with its time; the screens with
+// a blue line every tenth, to name a zoom box by. Beside it, printed: the keep's words and times.
+// The agent reads both and decides the keep's view and zoom; the tool decides nothing.
+// the times in the frames when this ffmpeg can write text and the machine has a font; else only
+// in the printed lines
+function labelFont() {
+  const filters = spawnSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" }).stdout || "";
+  if (!/\sdrawtext\s/.test(filters)) return null;
+  const fc = spawnSync("fc-match", ["-f", "%{file}", "sans:bold"], { encoding: "utf8" });
+  const found = fc.status === 0 && fc.stdout.trim();
+  return [found, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"].find((f) => f && fs.existsSync(f)) || null;
+}
+
+function cmdSheets(dir, opts) {
+  const cutFile = fs.existsSync(path.join(dir, "cut.json")) && !opts.proposal ? path.join(dir, "cut.json") : path.join(dir, "proposal.json");
+  if (!fs.existsSync(cutFile)) fail(`Draft the cut first: ${cmd(`propose ${rel(dir)}`)}`);
+  const { keep = [] } = read(cutFile);
+  const meta = read(source(dir, "sources.json"));
+  const { words } = read(source(dir, "words.json"));
+  const activity = read(source(dir, "activity.json"));
+  const order = ["screen", "phone-screen", "phone", "webcam"].filter((k) => meta.sources[k]?.video);
+  if (!order.length) fail("✗ The recording has no picture to make sheets of: decide by the words alone.");
+  // --keeps 3,5 or 3-5,8
+  let only = null;
+  if (opts.keeps) {
+    only = new Set();
+    for (const part of String(opts.keeps).split(",")) {
+      const m = part.trim().match(/^(\d+)(?:-(\d+))?$/);
+      if (!m) fail(`--keeps is a list of keep numbers and ranges, like 3,5 or 3-5,8 (not "${part}")`);
+      for (let k = Number(m[1]); k <= Number(m[2] ?? m[1]); k++) only.add(k - 1);
+    }
+  }
+  const out = path.join(dir, "sheets");
+  fs.mkdirSync(out, { recursive: true });
+  const FONT = labelFont();
+  console.log(`From ${rel(cutFile)}: ${keep.length} keeps. Read each sheet with its words, then decide the keep's "view" and "zoom" in cut.json.\n`);
+  for (const [k, kp] of keep.entries()) {
+    if (only && !only.has(k)) continue;
+    const r = range(kp.words);
+    if (!r) continue;
+    const said = words.slice(r[0], r[1] + 1).filter((w) => w.kind === "word");
+    if (!said.length) continue;
+    const from = said[0].start, to = said.at(-1).end;
+    // the moments: the first and the last always, then where a screen changes almost whole and the
+    // middle, each at least 0.8 s from those taken, five at most
+    const changes = order.filter((x) => x !== "webcam").flatMap((x) => scenes(activity[x] || [], from, to)).map((t) => t + 0.3);
+    const clampT = (t) => +Math.min(Math.max(t, from), to).toFixed(2);
+    const first = clampT(from + 0.2), last = clampT(to - 0.2);
+    const moments = [first];
+    if (last - first > 0.8) moments.push(last);
+    for (const t of [...changes, (from + to) / 2].map(clampT)) {
+      if (moments.length >= 5) break;
+      if (moments.every((m) => Math.abs(m - t) > 0.8)) moments.push(t);
+    }
+    moments.sort((a, b) => a - b);
+    const inputs = [], rows = [];
+    let input = 0;
+    // a cell's size per source: every cell of a row alike, even sides
+    const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+    const sizeOf = (x) => {
+      const src = meta.sources[x], tall = src.height > src.width * 1.25;
+      if (x === "webcam") return [320, even((320 * src.height) / src.width)];
+      return tall ? [even((420 * src.width) / src.height), 420] : [640, even((640 * src.height) / src.width)];
+    };
+    for (const x of order) {
+      const src = meta.sources[x], [cw, ch] = sizeOf(x);
+      const grid = x === "webcam" ? "" : ",drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.55";
+      const cells = moments.map((t) => {
+        const at = t - src.offset;
+        // a moment the source does not cover (it started later, or ended): an empty cell, said so
+        const covered = at >= 0 && at < src.duration - 0.05;
+        if (covered) inputs.push("-ss", at.toFixed(2), "-i", source(dir, src.file));
+        else inputs.push("-f", "lavfi", "-i", `color=c=0x303030:s=${cw}x${ch}:d=0.1`);
+        const text = `${x} ${clock(t).replace(":", "\\:")}${covered ? "" : " (not recorded then)"}`;
+        const label = FONT ? `,drawtext=fontfile=${FONT}:text='${text}':x=6:y=6:fontsize=16:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=4` : "";
+        return `[${input++}:v]trim=end_frame=1,scale=${cw}:${ch}${covered ? grid : ""}${label},setsar=1,format=yuv420p,pad=iw+6:ih+6:3:3:color=0x202020`;
+      });
+      rows.push(cells);
+    }
+    // each row its cells side by side, the rows one under the other, the narrower ones padded
+    const parts = [];
+    rows.forEach((cells, ri) => {
+      cells.forEach((c, ci) => parts.push(`${c}[c${ri}_${ci}]`));
+      parts.push(cells.length > 1 ? `${cells.map((_, ci) => `[c${ri}_${ci}]`).join("")}hstack=inputs=${cells.length}[r${ri}]` : `[c${ri}_0]null[r${ri}]`);
+    });
+    const widths = order.map((x) => (sizeOf(x)[0] + 6) * moments.length);
+    const W = Math.max(...widths);
+    rows.forEach((_, ri) => parts.push(`[r${ri}]pad=${W}:ih:0:0:color=0x202020[p${ri}]`));
+    parts.push(rows.length > 1 ? `${rows.map((_, ri) => `[p${ri}]`).join("")}vstack=inputs=${rows.length}[out]` : "[p0]null[out]");
+    const file = path.join(out, `keep-${String(k + 1).padStart(2, "0")}.jpg`);
+    fs.rmSync(file, { force: true });
+    const res = spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs, "-filter_complex", parts.join(";"), "-map", "[out]", "-frames:v", "1", "-q:v", "4", file], { encoding: "utf8" });
+    if (res.status || !fs.existsSync(file)) fail(`✗ the sheet of keep ${k + 1}: ${(res.stderr || "").trim().split("\n").pop() || "ffmpeg made no image"}`);
+    const text = said.map((w) => w.text).join(" ");
+    console.log(`keep ${k + 1} [${kp.words}] ${clock(from)}–${clock(to)}${kp.view ? ` (now: view ${kp.view}${kp.zoom ? `, zoom ${JSON.stringify(kp.zoom)}` : ""})` : ""} → ${rel(file)}`);
+    console.log(`  rows ${order.join(", ")}; columns at ${moments.map((t) => clock(t)).join(", ")} of the recording`);
+    console.log(`  "${text.length > 220 ? `${text.slice(0, 160)} … ${text.slice(-50)}` : text}"`);
+    if (changes.length) console.log(`  the screen changes almost whole at ${changes.map((t) => clock(t)).join(", ")}: a part before and after may need its own view or zoom (split the keep at the word)`);
+  }
 }
 
 // ----------------------------------------------------------------------------------- build
@@ -477,11 +579,16 @@ function cmdBuild(dir, opts) {
     const ps = r.pieces.filter((p) => p.keep === k && !p.mute);
     return ps.length ? [Math.min(...ps.map((p) => p.in)), Math.max(...ps.map((p) => p.out))] : null;
   };
+  // the view and the zoom are the agent's decision per keep (sheets): no view is an error, no zoom
+  // shows the whole source; "auto" asks this tool for its guess by what moved
+  const unchosen = (cut.keep || []).map((keep, k) => (keep.view ? null : k + 1)).filter(Boolean);
+  if (unchosen.length) fail(`✗ keep ${unchosen.join(", ")}: no "view". Decide what each shows (${VIEWS.join(", ")}), from its words and its sheet: ${cmd(`sheets ${rel(dir)}`)}`);
   const keepView = (cut.keep || []).map((keep, k) => {
     const sp = span(k);
-    const view = !keep.view || keep.view === "auto" ? (sp ? viewOf(activity, sources, sp[0], sp[1]) : "face") : keep.view;
+    const view = keep.view === "auto" ? (sp ? viewOf(activity, sources, sp[0], sp[1]) : "face") : keep.view;
     const src = sourceOf(view, sources);
-    const zoom = keep.zoom ?? "auto";
+    const zoom = keep.zoom ?? "off";
+    if (!Array.isArray(zoom) && zoom !== "off" && zoom !== "auto") fail(`✗ keep ${k + 1}: "zoom" is a box [x0, y0, x1, y1], "off" or "auto", not ${JSON.stringify(zoom)}`);
     if (Array.isArray(zoom)) {
       const [x0, y0, x1, y1] = zoom.map(Number);
       if (zoom.length !== 4 || ![x0, y0, x1, y1].every((v) => v >= 0 && v <= 1) || x1 - x0 < 0.02 || y1 - y0 < 0.02) {
@@ -512,7 +619,7 @@ function cmdBuild(dir, opts) {
       p.source = chosen || "webcam";
       p.view = !chosen || keep.waitView === "face" ? "face" : p.source;
       if (p.view === "face") { p.crop = null; continue; }
-      p.crop = zoom === "off" ? [0, 0, 1, 1] : Array.isArray(zoom) && p.source === kv.source ? kv.crop : zoomOf(p.source, p.in, p.out);
+      p.crop = zoom === "auto" ? zoomOf(p.source, p.in, p.out) : Array.isArray(zoom) && p.source === kv.source ? kv.crop : [0, 0, 1, 1];
     } else {
       Object.assign(p, kv);
     }
@@ -527,7 +634,7 @@ function cmdBuild(dir, opts) {
   };
   for (const p of r.pieces) {
     const zoom = cut.keep[p.keep].zoom;
-    if (p.view === "face" || !p.source || tall(p.source) || zoom === "off" || Array.isArray(zoom)) continue;
+    if (p.view === "face" || !p.source || tall(p.source) || zoom !== "auto") continue;
     const sp = span(p.keep) || [p.in, p.out];
     const cuts = p.wait ? scenes(activity[p.source] || [], p.in, p.out) : sceneCuts(p.keep, p.source);
     if (!cuts.length) continue;
@@ -691,22 +798,13 @@ function cmdCheck(dir) {
     }
   }
 
-  // a box set by hand that misses where the screen changes during its keep (the typing, the
-  // answer): most of the keep's change outside it
+  // a screen shown whole in a narrow frame, without a decision about it: hard to read
+  const settingsNow = settings(dir, {});
+  const [fw, fh] = FRAMES[settingsNow.frame];
   for (const [k, keep] of (cut.keep || []).entries()) {
-    if (!Array.isArray(keep.zoom)) continue;
-    const ps = e.pieces.filter((p) => p.keep === k && !p.wait && p.source && p.source !== "webcam");
-    if (!ps.length || !activity[ps[0].source]) continue;
-    const f = focus(activity[ps[0].source], Math.min(...ps.map((p) => p.in)), Math.max(...ps.map((p) => p.out)));
-    if (!f?.heat) continue;
-    const { cells, cols, rows } = f.heat, [x0, y0, x1, y1] = keep.zoom.map(Number);
-    let inside = 0, all = 0;
-    cells.forEach((v, c) => {
-      const cx = ((c % cols) + 0.5) / cols, cy = (Math.floor(c / cols) + 0.5) / rows;
-      all += v;
-      if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) inside += v;
-    });
-    if (all && inside / all < 0.4) warnings.push(`keep ${k + 1}'s "zoom" box holds only ${Math.round((100 * inside) / all)} % of what changes on the screen while it plays (the typing, the answer are elsewhere): set "zoom": "auto", or look with frame at its first and last moment`);
+    if (keep.zoom !== undefined || !e.pieces.some((p) => p.keep === k && p.source === "screen" && !p.wait)) continue;
+    const src = meta.sources.screen;
+    if (src && fh > fw && src.width > src.height) warnings.push(`keep ${k + 1} shows the whole screen in a ${settingsNow.frame} frame, where its text is small: decide from its sheet whether to zoom ("zoom": [x0, y0, x1, y1]) or keep it whole on purpose ("zoom": "off")`);
   }
 
   // a long stretch without words at its own speed is a wait to speed up
@@ -790,7 +888,7 @@ function cmdFrame(dir, when, opts) {
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, at)), "-i", source(dir, src.file), "-frames:v", "1",
     "-vf", `scale='min(1600,iw)':-2,drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.6${box}`, "-q:v", "3", out], { encoding: "utf8" });
   if (r.status) fail(`✗ ${r.stderr.trim()}`);
-  console.log(`${rel(out)}: ${name} at ${clock(rec)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}${auto && auto.join() !== "0,0,1,1" ? `, the automatic zoom for keep ${p.keep + 1} [${auto.join(", ")}] in green` : ""}. Look at it, and at the keep's first and last moment too: a box set by hand holds for the whole keep. Then set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}, or "auto".`);
+  console.log(`${rel(out)}: ${name} at ${clock(rec)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}${auto && auto.join() !== "0,0,1,1" ? `, where the screen changed most during keep ${p.keep + 1} [${auto.join(", ")}] in green (context, not a choice: what the words are about decides)` : ""}. A box holds for the whole keep: its sheet shows the first and last moment too. Set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}, or "off" for the whole screen.`);
 }
 
 // ---------------------------------------------------------------------------------- finish
@@ -860,4 +958,5 @@ else if (command === "at") cmdAt(pos[0], pos[1]);
 else if (command === "captions") cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
-else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
+else if (command === "sheets") cmdSheets(pos[0], opts);
+else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");

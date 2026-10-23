@@ -49,13 +49,22 @@ node <skill>/tools/screencast.mjs words screencast/<name> artifacts/notes/screen
 
 (When your `transcribe` tool has no `words` yet: `node <skill>/tools/screencast.mjs transcribe screencast/<name>` instead, ElevenLabs Scribe without the names; fix a misheard name with `"fixes"` in cut.json.) It writes `screencast/<name>/source/brief.md`: the rules of a good screencast cut, every sentence with how much each source moves, and every word, numbered.
 
-### 3. The cut
+### 3. The cut: you decide what is shown
 
 ```bash
 node <skill>/tools/screencast.mjs propose screencast/<name>
+node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 ```
 
-drafts `screencast/<name>/proposal.json`: every sentence a keep, its view by what moves, waits where a picture moves between two sentences, a hold after "posted", "there it is". It keeps everything and has no story yet. Read `screencast/<name>/source/brief.md`, all of it, and write `screencast/<name>/cut.json` from the proposal: **the result first as a hook** (a few seconds: the post on the phone, the finished page; mark it `"hook": true`, and keep that same moment in its place later too: the hook repeats it, it does not take it away), then the steps in order, then the proof, then a short end; slips, repeats and talk about the recording out; the views where the action is; every wait in `"waits"`; `"hold": 2.5` after a result; `"label"`s when the steps help the viewer; `"fixes"` for a word still spelled wrong.
+`propose` drafts `screencast/<name>/proposal.json`: every sentence a keep, a hold after "posted", "there it is", and waits where a screen moves between two sentences. It decides nothing about what is shown. `sheets` makes one image per keep, `screencast/<name>/sheets/keep-NN.jpg`: every source (rows: the screen, the phone, the webcam) at the keep's first, middle and last moment and where a screen changes almost whole (columns), the screens with a blue line every tenth; it prints each keep's words and the moments' times.
+
+Read `screencast/<name>/source/brief.md`, all of it, and the sheets, and write `screencast/<name>/cut.json`. **You decide, keep by keep, from what is said and what the sheet shows:**
+
+- **The story:** the result first as a hook (a few seconds: the post on the phone, the finished page; `"hook": true`, and the same moment kept in its place later too), then the steps in order, then the proof, then a short end; slips, repeats and talk about the recording out; `"waits"` where something takes time (the person says so, an agent works: with agentitos' agent-timeline you know when), `"hold": 2.5` after a result, `"label"`s where the steps help.
+- **`"view"`, required:** what the words are about. "I type which accounts are connected" → the screen; "let's look on my phone" → `phone-screen`; an intro or an opinion → `face`. When the subject changes inside a sentence (the screen switches to another tab, the person picks up the phone), split the keep at that word.
+- **`"zoom"`:** on what the words are about, as a box `[x0, y0, x1, y1]` in tenths of the sheet's grid (0–1, left top right bottom): the input field while the question is typed, the answer when it appears, the status that says "posted". A box holds for the whole keep, so look at its first and last column: when what matters moves, split the keep. `"off"` shows the whole source. Without `"zoom"` the whole source is shown, and in a 9:16 frame a laptop's screen is then too small to read, so decide for every screen keep. A phone's screen is shown whole.
+
+Then make the sheets of your cut (`sheets screencast/<name>`, without `--proposal`) and look at them against your decisions once more.
 
 ### 4. The preview
 
@@ -66,7 +75,7 @@ node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-`build` turns `cut.json` into the project: every piece a shot of its source, zoomed in on where the picture changes, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it). Leave the zoom automatic (it follows where the screen changes, scene by scene); look at two or three moments of the screen shots with `frame` (below), and set a box by hand only where the automatic one shows the wrong thing, after looking at the keep's first and last moment.
+`build` turns `cut.json` into the project: every piece a shot of its source as you framed it, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it). Then look at two or three moments of the screen shots with `frame` (below): is each shot what its words are about?
 
 ### 5. Ask whether it is right
 
@@ -87,7 +96,7 @@ says which piece and keep play there, from where in the recording, in which view
 | "… is cut off" / "too fast at the end" | `"hold": 1.5` (or more) on that keep; when check says the next words follow right after, end the keep a word later |
 | "Longer waits should be time-lapses" | the last word before the wait into `"waits"` |
 | "Show the phone when …" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
-| "Too zoomed in" / "zoom on the chat" / a shot that shows the wrong part | `screencast.mjs frame screencast/<name> 0:23` saves that moment's whole source with a grid every tenth, the shot's crop in red and the automatic zoom in green: read it, and a frame of the keep's first and last moment too (a box set by hand holds for the whole keep: while the person types at the bottom, a box on the answer above shows an empty page). Then `"zoom": [x0, y0, x1, y1]` (0–1) on the keep, or `"zoom": "auto"` back, or `"zoom": "off"`. Where the screen changes within the keep (another tab), split the keep there and give each part its own box; check says where |
+| "Too zoomed in" / "zoom on the chat" / a shot that shows the wrong part | `screencast.mjs frame screencast/<name> 0:23` saves that moment's whole source with a grid every tenth and the shot's crop in red (in green, for context, where the screen changed most): read it with the keep's words and its sheet, then a new `"zoom": [x0, y0, x1, y1]` (0–1) on the keep, or `"off"`. A box holds for the whole keep: while the person types at the bottom, a box on the answer above shows an empty page; when what matters moves within the keep, split it at that word; check says where the screen changes whole |
 | "Show that it arrived on the phone" / "the playback was cut away" | keep the words around it ("there it is") in their place, with `"hold"`; when the hook took them, give the hook `"hook": true` and keep them here too; or the last word before it in `"waits"` |
 | "During the wait show the laptop, not the phone" | a wait shows the screen that changes most during it by itself; to choose, `"waitView": "screen"` (or `phone-screen`, `face`) on the keep the wait follows |
 | "Start with …" | move that keep to the top |
