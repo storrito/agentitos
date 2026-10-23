@@ -60,7 +60,7 @@ The sources are `screen`, `webcam`, `phone` (the phone's camera), `phone-screen`
     {"words": "296-301", "view": "phone-screen", "hold": 2.5, "label": "The result", "why": "the hook: the story live on the phone"},
     {"words": "12-31", "view": "screen", "label": "01 · Ask", "why": "the question to the agent"},
     {"words": "60-75", "view": "screen", "zoom": [0.3, 0.55, 0.75, 0.95], "why": "the prompt"},
-    {"words": "190-205", "view": "auto", "hold": 2.5, "why": "the reel is live"}
+    {"words": "190-205", "view": "phone-screen", "hold": 2.5, "why": "the reel is live"}
   ],
   "waits": [75, 205],
   "fixes": {"70": "storrito_com"},
