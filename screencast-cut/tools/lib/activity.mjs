@@ -23,25 +23,54 @@ export const ACTIVE = 0.0004;
 // zoom
 const COLS = 32, NOISY = 0.6, CELL_MIN = 3, WINDOW = 10;
 
-export function measure(file, offset, { width, height }) {
+// The grid a source is measured on: 320 px wide, rows of square cells, and the ffmpeg filter
+// that makes its grey frames.
+export function grid({ width, height }) {
   const h = Math.max(2, Math.round((WIDTH * height) / width / 2) * 2);
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-an", "-vf", `fps=${RATE},scale=${WIDTH}:${h},format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 2 ** 31, stdio: ["ignore", "pipe", "ignore"] });
-  const size = WIDTH * h, frames = Math.floor(raw.length / size);
-  const cw = WIDTH / COLS, rows = Math.max(1, Math.round(h / cw)), ch = h / rows, cells = COLS * rows;
-  // per frame, the changed pixels of each cell
-  const counts = [];
+  const cw = WIDTH / COLS, rows = Math.max(1, Math.round(h / cw));
+  return { h, size: WIDTH * h, rows, cells: COLS * rows, ch: h / rows, cw, filter: `fps=${RATE},scale=${WIDTH}:${h},format=gray` };
+}
 
-  for (let k = 1; k < frames; k++) {
-    const n = new Uint16Array(cells);
-    const a = (k - 1) * size, b = k * size;
-    for (let y = 0; y < h; y++) {
-      const row = Math.min(rows - 1, Math.floor(y / ch)) * COLS;
-      for (let x = 0; x < WIDTH; x++) {
-        if (Math.abs(raw[a + y * WIDTH + x] - raw[b + y * WIDTH + x]) > STEP) n[row + Math.min(COLS - 1, Math.floor(x / cw))]++;
+// Grey frames as they stream from ffmpeg (push the chunks of its output) to the changed pixels of
+// each cell, frame after frame: only the frame before is kept, so a long recording takes no more
+// memory than a short one.
+export function differ(g) {
+  const counts = [];
+  let prev = null, cur = Buffer.alloc(g.size), fill = 0;
+  const frame = () => {
+    if (prev) {
+      const n = new Uint16Array(g.cells);
+      for (let y = 0; y < g.h; y++) {
+        const row = Math.min(g.rows - 1, Math.floor(y / g.ch)) * COLS, o = y * WIDTH;
+        for (let x = 0; x < WIDTH; x++) {
+          if (Math.abs(prev[o + x] - cur[o + x]) > STEP) n[row + Math.min(COLS - 1, Math.floor(x / g.cw))]++;
+        }
       }
+      counts.push(n);
     }
-    counts.push(n);
-  }
+    [prev, cur] = [cur, prev || Buffer.alloc(g.size)];
+    fill = 0;
+  };
+  return {
+    push(chunk) {
+      let at = 0;
+      while (at < chunk.length) {
+        const take = Math.min(g.size - fill, chunk.length - at);
+        chunk.copy(cur, fill, at, at + take);
+        fill += take; at += take;
+        if (fill === g.size) frame();
+      }
+    },
+    counts,
+  };
+}
+
+// The samples of a source from its cells' counts, on the recording's timeline (the source
+// starting at `offset`): what changed, where, and which cells; a cell that changes in most
+// frames around always moves and does not count, nor do the cells in `ignore` (a webcam's
+// preview inside the screen, see mirrors).
+export function samplesOf(counts, g, offset, ignore = new Set()) {
+  const { rows, cells, size } = g;
   // how many of the frames up to each one a cell changed in, to count a window at once
   const sums = [new Uint32Array(cells)];
   for (const n of counts) {
@@ -55,7 +84,7 @@ export function measure(file, offset, { width, height }) {
     let changed = 0, c0 = COLS, r0 = rows, c1 = -1, r1 = -1;
     const g = [];
     for (let c = 0; c < cells; c++) {
-      if (n[c] < CELL_MIN || sums[b][c] - sums[a][c] > NOISY * span) continue;
+      if (n[c] < CELL_MIN || ignore.has(c) || sums[b][c] - sums[a][c] > NOISY * span) continue;
       changed += n[c];
       g.push([c, n[c]]);
       const col = c % COLS, row = Math.floor(c / COLS);
@@ -70,6 +99,54 @@ export function measure(file, offset, { width, height }) {
       b: on ? [c0 / COLS, r0 / rows, (c1 + 1) / COLS, (r1 + 1) / rows].map((v) => +v.toFixed(3)) : null,
       ...(on ? { g, r: rows } : {}) };
   });
+}
+
+// The cells of a screen that show the webcam: a preview of the camera inside the recorded page
+// (rragent's recorder shows one) changes when the person moves, so its cells change in step with
+// the webcam's own picture. Each cell that changes in at least 5 % of the frames is compared with
+// the webcam's change over time (Pearson's r, at the same moment of the recording); r over 0.4 is
+// a mirror. Such cells fidget all the time and would pull the zoom to the corner.
+export function mirrors(counts, offset, webcam) {
+  if (!webcam?.length || !counts.length) return new Set();
+  const cam = new Map(webcam.map((s) => [Math.round(s.t * RATE), s.c]));
+  const at = counts.map((_, i) => cam.get(Math.round((offset + (i + 1) / RATE) * RATE)));
+  const cells = counts[0].length, out = new Set();
+  for (let c = 0; c < cells; c++) {
+    let k = 0, on = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    for (let i = 0; i < counts.length; i++) {
+      const y = at[i];
+      if (y === undefined) continue;
+      const x = counts[i][c];
+      if (x >= CELL_MIN) on++;
+      k++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+    }
+    if (k < 20 || on < 0.05 * k) continue;
+    const r = (k * sxy - sx * sy) / Math.sqrt((k * sxx - sx * sx) * (k * syy - sy * sy) || 1);
+    if (r > 0.4) out.add(c);
+  }
+  return out;
+}
+
+// The moments a screen changes almost whole (another tab, a new page, a dialog that dims the
+// page): a share of changed pixels over SCENE, those under a second apart taken as one.
+export const SCENE = 0.25;
+export function scenes(samples, from, to) {
+  const cuts = [];
+  for (const s of within(samples, from, to)) {
+    if (s.c < SCENE) continue;
+    if (cuts.length && s.t - cuts.at(-1) < 1) continue;
+    cuts.push(s.t);
+  }
+  return cuts;
+}
+
+// a video file measured on its own (prepare measures while it converts)
+export function measure(file, offset, size) {
+  const g = grid(size);
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-an", "-vf", g.filter, "-f", "rawvideo", "-"], { maxBuffer: 2 ** 31, stdio: ["ignore", "pipe", "ignore"] });
+  const d = differ(g);
+  d.push(raw);
+  return samplesOf(d.counts, g, offset);
 }
 
 const within = (samples, from, to) => samples.filter((s) => s.t > from && s.t <= to + 1e-6);

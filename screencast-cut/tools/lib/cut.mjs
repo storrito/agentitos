@@ -45,7 +45,7 @@ export function range(r) {
 export function plan(words, cut, settings, voices, moves = () => []) {
   const errors = [], warnings = [], removed = [];
   const fps = settings.fps, maxPause = settings.pause, target = settings.loudness;
-  const used = new Map();
+  const used = new Map(), hooked = new Set();
   const waits = new Set((cut.waits || []).map(Number));
   let pieces = [];
   if (!Array.isArray(cut.keep) || !cut.keep.length) errors.push('cut.json has no "keep": list the word ranges to keep, in the order they play.');
@@ -66,10 +66,16 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     const items = words.slice(a, b + 1);
     const other = items.find((w) => w.clip !== items[0].clip);
     if (other) return errors.push(`${name} runs from video ${items[0].clip} into video ${other.clip}: end it at ${other.i - 1}, start the next keep at ${other.i}`);
-    for (const w of items) {
-      if (used.has(w.i)) return errors.push(`${name}: word ${w.i} "${w.text}" is in keep ${used.get(w.i) + 1} already`);
+    // a hook ("hook": true) shows a moment ahead that plays again in its place: its words may be
+    // in another keep too; any other word plays once
+    if (!keep.hook) {
+      for (const w of items) {
+        if (used.has(w.i)) return errors.push(`${name}: word ${w.i} "${w.text}" is in keep ${used.get(w.i) + 1} already (a hook that repeats a moment says "hook": true)`);
+      }
+      for (const w of items) used.set(w.i, k);
+    } else {
+      for (const w of items) hooked.add(w.i);
     }
-    for (const w of items) used.set(w.i, k);
 
     // the kept words in groups that play without a cut: a cut where a filler ("äh") is left
     // out, and where a pause is longer than maxPause (unless the keep says "sounds": "keep" or
@@ -155,9 +161,10 @@ export function plan(words, cut, settings, voices, moves = () => []) {
   // words in no keep: what the cut leaves out, in runs
   let run = null;
   for (const w of words) {
-    if (!used.has(w.i) && run && run.clip === w.clip && run.words[1] === w.i - 1) { run.words[1] = w.i; run.to = w.end; run.text.push(w.text); continue; }
+    const kept = used.has(w.i) || hooked.has(w.i);
+    if (!kept && run && run.clip === w.clip && run.words[1] === w.i - 1) { run.words[1] = w.i; run.to = w.end; run.text.push(w.text); continue; }
     if (run) removed.push({ ...run, text: run.text.join(" ") });
-    run = used.has(w.i) ? null : { kind: "dropped", clip: w.clip, from: w.start, to: w.end, words: [w.i, w.i], text: [w.text] };
+    run = kept ? null : { kind: "dropped", clip: w.clip, from: w.start, to: w.end, words: [w.i, w.i], text: [w.text] };
   }
   if (run) removed.push({ ...run, text: run.text.join(" ") });
   removed.sort((x, y) => x.clip - y.clip || x.from - y.from);

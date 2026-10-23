@@ -2,7 +2,7 @@
 // renderer play well, and the HyperFrames CLI. After best-takes' media.mjs.
 
 import fs from "node:fs";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 
 export const SR = 16000;
 
@@ -27,11 +27,14 @@ export function probe(file) {
 
 // The recording as the preview and the renderer play it best: H.264 at a steady 30 frames a
 // second (a phone's screen arrives with a varying rate), a keyframe every second so that every
-// cut seeks at once, at most 2560 px wide, its sound as AAC. A recording of sound alone: AAC.
-export function prepare(file, out, { fps = 30 } = {}) {
+// cut seeks at once, at most 2560 px wide, its sound as AAC; a recording of sound alone: AAC.
+// With `frames` (activity.differ of activity.grid) the same decoding also streams the grey frames
+// the activity is measured on, so the source is read once; `progress` hears how many seconds of
+// it are done. Resolves with what the copy is (probe).
+export function prepare(file, out, { fps = 30, frames, progress } = {}) {
   const p = probe(file);
   fs.rmSync(out, { force: true });
-  const args = ["-v", "error", "-y", "-i", file];
+  const args = ["-v", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", file];
   if (p.video) {
     args.push("-map", "0:v:0", "-map", "0:a:0?", "-vf", `scale='min(2560,iw)':-2,fps=${fps}`, "-fps_mode", "cfr",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", String(fps), "-keyint_min", String(fps));
@@ -39,11 +42,26 @@ export function prepare(file, out, { fps = 30 } = {}) {
     args.push("-map", "0:a:0", "-vn");
   }
   args.push("-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out);
-  // the browser's recordings make ffmpeg complain about their sound's first packets: said only
-  // when it fails
-  const r = spawnSync("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`ffmpeg could not prepare ${file}: ${(r.stderr || "").trim().split("\n").slice(-3).join(" ")}`);
-  return probe(out);
+  if (p.video && frames) args.push("-map", "0:v:0", "-an", "-vf", frames.filter, "-f", "rawvideo", "pipe:1");
+  return new Promise((resolve, reject) => {
+    const ff = spawn("ffmpeg", args, { stdio: ["ignore", p.video && frames ? "pipe" : "ignore", "pipe"] });
+    let err = "";
+    // the browser's recordings make ffmpeg complain about their sound's first packets: said only
+    // when it fails
+    ff.stderr.on("data", (d) => {
+      for (const line of String(d).split("\n")) {
+        const m = line.match(/^out_time_us=(\d+)/);
+        if (m) progress?.(Number(m[1]) / 1e6);
+        else if (!/^[a-z_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
+      }
+    });
+    if (p.video && frames) ff.stdout.on("data", (chunk) => frames.push(chunk));
+    ff.on("error", reject);
+    ff.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`ffmpeg could not prepare ${file}: ${err.trim().split("\n").slice(-3).join(" ")}`));
+      resolve(probe(out));
+    });
+  });
 }
 
 // the sound as mono samples at 16 kHz, from `from` seconds on (silence before 0 when `from` < 0)

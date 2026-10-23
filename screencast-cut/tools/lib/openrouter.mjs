@@ -42,10 +42,14 @@ export async function need(what) {
   return r;
 }
 
+// Asked again after 5, 10 and 20 s on a network error, a rate limit or a server's error: the
+// Sprites gateway now and then drops out for some 20 s (seen 2026-10-23: 502s and refused
+// connections), and three tries in a row would all fall into it.
 async function post(what, endpoint, body, { timeout = 300e3, log = () => {} } = {}) {
   const r = await need(what);
+  const tries = 4;
   for (let attempt = 1; ; attempt++) {
-    let res, text;
+    let res, text, why;
     try {
       res = await fetch(`${r.base}${endpoint}`, {
         method: "POST",
@@ -54,15 +58,17 @@ async function post(what, endpoint, body, { timeout = 300e3, log = () => {} } = 
         signal: AbortSignal.timeout(timeout),
       });
       text = await res.text();
+      if (res.ok) return JSON.parse(text);
+      if (!(res.status === 429 || res.status >= 500)) throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 300)}`);
+      why = `OpenRouter ${res.status}`;
     } catch (e) {
-      if (attempt >= 3) throw e;
-      log(`  ${what}: ${e.message}, again …`);
-      continue;
+      if (res && !(res.status === 429 || res.status >= 500)) throw e;
+      why = e.message;
     }
-    if (res.ok) return JSON.parse(text);
-    if (attempt >= 3 || !(res.status === 429 || res.status >= 500)) throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 300)}`);
-    log(`  ${what}: OpenRouter ${res.status}, again in ${attempt * 5} s …`);
-    await new Promise((ok) => setTimeout(ok, attempt * 5000));
+    if (attempt >= tries) throw new Error(`${what}: ${why} (asked ${tries} times)`);
+    const wait = 5 * 2 ** (attempt - 1);
+    log(`  ${what}: ${why}, again in ${wait} s …`);
+    await new Promise((ok) => setTimeout(ok, wait * 1000));
   }
 }
 

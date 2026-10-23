@@ -2,8 +2,8 @@
 // A screencast of several sources recorded at the same time (rragent's recorder: the screen, the
 // webcam, the phone's camera or screen, the microphone) cut into one video: the sources on one
 // clock, the voice cleaned, the shot switching to where the action is, zoomed in on it, the waits
-// as timelapses, the results held long enough to see them, secrets blurred. Step by step, in one
-// folder; made for agents: each step prints what to do next.
+// as timelapses, the results held long enough to see them. Step by step, in one folder; made for
+// agents: each step prints what to do next.
 //
 //   node tools/screencast.mjs new <dir> <recording-folder>   the sources into <dir>/source/: on
 //                                     one clock, the voice cleaned, where each picture moves
@@ -18,9 +18,6 @@
 //   node tools/screencast.mjs at <dir> <m:ss> what plays at that moment of the cut, and its keep
 //   node tools/screencast.mjs frame <dir> <m:ss>   its source's picture there, whole, with a grid
 //                                     and the shot's crop: to choose a "zoom" box by
-//   node tools/screencast.mjs privacy <dir>   a model looks at every shot for what must not be
-//                                     readable (a token in a link, keys, e-mail addresses, chats);
-//                                     the build blurs it
 //   node tools/screencast.mjs captions <dir> --style hormozi   captions in the picture (agentitos'
 //                                     captions skill); --off takes them out
 //   node tools/screencast.mjs finish <dir> <video.mp4>   the rendered video at the platforms'
@@ -38,7 +35,6 @@
 //   --duck <dB>       the voice's sound between the words lowered by this much (keyboard,
 //                     room; default 10, 0 for none)
 //   --brand <DESIGN.md>   the brand kit's colours and font (default brand/DESIGN.md when there)
-//   --model <id>      the model of privacy (default google/gemini-3.6-flash)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -47,14 +43,13 @@ import { fileURLToPath } from "node:url";
 import { probe, prepare, samples, hyperframes, clock, seconds } from "./lib/media.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from "./lib/voice.mjs";
 import { align, clarity } from "./lib/sync.mjs";
-import { measure, level, busy, moving, focus, MOVING, ACTIVE } from "./lib/activity.mjs";
+import { grid, differ, samplesOf, mirrors, scenes, level, busy, moving, focus, MOVING, ACTIVE } from "./lib/activity.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
-import { scan, PRIVACY_MODEL } from "./lib/privacy.mjs";
 import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
 
-const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "model", "style", "product", "source"];
+const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source"];
 const FLAGS = ["off"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
@@ -119,21 +114,34 @@ async function cmdNew(dir, folder, opts) {
   const t0 = Math.min(...names.map((k) => started[k]).filter(Number.isFinite));
   const s = settings(dir, opts);
 
-  const sources = {};
-  for (const k of names) {
+  // every source converted at once, its activity measured from the same decoding
+  console.log(`${names.length} sources, preparing them all at once …`);
+  const sources = {}, grids = {}, counted = {}, done = {}, lengths = {};
+  // how far each source is, every ten seconds, for the person watching the chat
+  const ticker = setInterval(() => {
+    console.log(`  preparing: ${names.map((k) => `${k} ${Math.min(99, Math.round((100 * (done[k] || 0)) / (lengths[k] || 1)))} %`).join(", ")}`);
+  }, 10000);
+  await Promise.all(names.map(async (k) => {
     const from = path.join(folder, fs.readdirSync(folder).find((f) => f.startsWith(`${k}.`)));
     const p0 = probe(from);
+    lengths[k] = p0.duration;
     const file = p0.video ? `${k}.mp4` : `${k}.m4a`;
-    process.stdout.write(`${k}: ${clock(p0.duration, false)}${p0.video ? `, ${p0.width}×${p0.height}` : ", sound"} – preparing … `);
-    const p = prepare(from, source(dir, file), { fps: s.fps });
+    if (p0.video) grids[k] = grid(p0);
+    const frames = p0.video ? differ(grids[k]) : null;
+    if (frames) frames.filter = grids[k].filter;
+    const p = await prepare(from, source(dir, file), { fps: s.fps, frames, progress: (t) => { done[k] = t; } });
+    if (frames) counted[k] = frames.counts;
     const offset = Number.isFinite(started[k]) && Number.isFinite(t0) ? (started[k] - t0) / 1000 : 0;
     sources[k] = { file, from: rel(from), offset: +offset.toFixed(3), duration: p.duration, width: p.width, height: p.height, video: p.video, audio: p.audio };
+  })).finally(() => clearInterval(ticker));
+  for (const k of names) {
+    const p = sources[k];
     if (p.audio) {
-      const env = envelope(samples(source(dir, file)));
+      const env = envelope(samples(source(dir, p.file)));
       fs.writeFileSync(source(dir, `${k}.env`), Buffer.from(env.buffer));
-      sources[k].clarity = clarity(env);
+      p.clarity = clarity(env);
     }
-    console.log(`starts at ${sources[k].offset.toFixed(2)} s${p.audio ? `, its microphone ${sources[k].clarity} dB over the room` : ""}`);
+    console.log(`${k}: ${clock(p.duration, false)}${p.video ? `, ${p.width}×${p.height}` : ", sound"}, starts at ${p.offset.toFixed(2)} s${p.audio ? `, its microphone ${p.clarity} dB over the room` : ""}`);
   }
 
   // the main microphone: the one asked for, a recording of sound alone, else the clearest
@@ -166,10 +174,14 @@ async function cmdNew(dir, folder, opts) {
   write(source(dir, "voice.loudness.json"), loudnessBlocks(source(dir, voice)));
   console.log(`voice: ${mic}'s microphone, cleaned → ${rel(source(dir, voice))}`);
 
-  // where each picture moves
+  // where each picture moves, from the counts the conversion streamed, on the aligned clock; on a
+  // screen, not where it shows the webcam's own picture (a preview of the camera in the page)
   const activity = {};
+  if (counted.webcam) activity.webcam = samplesOf(counted.webcam, grids.webcam, sources.webcam.offset);
   for (const k of names.filter((x) => sources[x].video)) {
-    activity[k] = measure(source(dir, sources[k].file), sources[k].offset, sources[k]);
+    const mirrored = k === "webcam" ? new Set() : mirrors(counted[k], sources[k].offset, activity.webcam);
+    if (mirrored.size) console.log(`${k}: ${mirrored.size} cells show the webcam's picture (a preview in the page), left out of what moves`);
+    activity[k] = samplesOf(counted[k], grids[k], sources[k].offset, mirrored);
     const moved = activity[k].filter((x) => x.b).length / Math.max(1, activity[k].length);
     console.log(`${k}: moves in ${Math.round(moved * 100)} % of the time`);
   }
@@ -297,7 +309,7 @@ ${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources
 
 ## A good screencast cut
 
-- **Open with the result** (a hook of a few seconds: the post live on the phone, the finished thing), then how it was done, step by step, then the proof, then a short end.
+- **Open with the result** (a hook of a few seconds: the post live on the phone, the finished thing; \`"hook": true\` on it, and the same moment kept in its place later too), then how it was done, step by step, then the proof, then a short end.
 - **Show where the action is.** \`view\` of a keep: \`screen\`, \`phone-screen\`, \`phone\` (the phone's camera) or \`face\` (the webcam over the whole frame); \`auto\` picks the source that moves most. In the screen and phone views the webcam sits beside them in a circle. The column "moves" below says which source moves in each sentence.
 - **Zoom in on what changes** (\`zoom\`: \`auto\`, the default, crops to where the picture changes; \`off\`; or a box \`[x0, y0, x1, y1]\` in 0–1 of the source).
 - **Waits are timelapses.** A wait the speaker announces, an agent working, an upload, a post going live: list the last word before it in \`waits\`; the build plays the time up to the next keep's first word fast (×3 to ×10, with a badge) whenever anything on a screen changes in it, its first and last 20 s when it is long. The long silences between the sentences below are where to look.
@@ -322,7 +334,7 @@ Word numbers in brackets; "moves": how much each source changes during the sente
 \`\`\`json
 {
   "keep": [
-    {"words": "212-230", "view": "phone-screen", "hold": 2.5, "label": "The result", "why": "the hook: the reel on the phone"},
+    {"words": "212-230", "view": "phone-screen", "hold": 2.5, "label": "The result", "hook": true, "why": "the hook: the reel on the phone, again in its place later"},
     {"words": "12-40", "view": "screen", "why": "the question to the agent"},
     {"words": "41-58", "view": "auto", "why": "the answer"}
   ],
@@ -474,23 +486,51 @@ function cmdBuild(dir, opts) {
       : zoomOf(src, sp[0] - 0.5, sp[1] + 0.5);
     return { view, source: src, crop: c };
   });
+  // a wait shows where something happens: the screen that changes most in it, the laptop's when
+  // nothing does; never the face or an idle phone. Every other piece, a pause inside a keep too,
+  // keeps its keep's view, so that the shot does not jump for a moment.
+  const screens = Object.keys(activity).filter((k) => k !== "webcam");
+  const waitSource = (from, to) => {
+    const ranked = screens.map((k) => ({ k, b: busy(activity[k], from, to) })).sort((a, b) => b.b - a.b);
+    if (ranked[0] && ranked[0].b > 0.02) return ranked[0].k;
+    return sources.screen?.video ? "screen" : ranked[0]?.k || "webcam";
+  };
   for (const p of r.pieces) {
-    const kv = keepView[p.keep];
-    if (p.mute && !p.hold && (!cut.keep[p.keep].view || cut.keep[p.keep].view === "auto" || cut.keep[p.keep].view === "face")) {
-      const view = viewOf(activity, sources, p.in, p.out);
-      p.view = view === "face" ? kv.view : view;
-      p.source = sourceOf(p.view, sources);
-      const zoom = cut.keep[p.keep].zoom;
-      p.crop = p.view === "face" ? null
-        : zoom === "off" ? [0, 0, 1, 1]
-        : Array.isArray(zoom) && p.source === kv.source ? kv.crop
-        : zoomOf(p.source, p.in, p.out);
+    const kv = keepView[p.keep], zoom = cut.keep[p.keep].zoom;
+    if (p.wait) {
+      p.source = waitSource(p.in, p.out);
+      p.view = p.source;
+      p.crop = zoom === "off" ? [0, 0, 1, 1] : Array.isArray(zoom) && p.source === kv.source ? kv.crop : zoomOf(p.source, p.in, p.out);
     } else {
       Object.assign(p, kv);
     }
   }
 
-  // the brand, the labels, the blurs, the captions, the music
+  // the zoom per scene: where a screen changes almost whole within a keep (another tab, a page, a
+  // dialog), each part gets its own crop, and a piece across such a change is shown in parts (its
+  // sound runs on). A zoom set by hand stays as it is (check says when it spans a change).
+  const sceneCuts = (k, src) => {
+    const sp = span(k);
+    return sp && activity[src] ? scenes(activity[src], sp[0], sp[1]) : [];
+  };
+  for (const p of r.pieces) {
+    const zoom = cut.keep[p.keep].zoom;
+    if (p.view === "face" || !p.source || tall(p.source) || zoom === "off" || Array.isArray(zoom)) continue;
+    const sp = span(p.keep) || [p.in, p.out];
+    const cuts = p.wait ? scenes(activity[p.source] || [], p.in, p.out) : sceneCuts(p.keep, p.source);
+    if (!cuts.length) continue;
+    const bounds = [Math.min(sp[0], p.in), ...cuts, Math.max(sp[1], p.out)];
+    // the scene a moment is in, and its crop over the scene's part of the keep
+    const sceneOf = (t) => { let i = 0; while (i + 1 < bounds.length - 1 && t >= bounds[i + 1]) i++; return i; };
+    const cropOf = (i) => zoomOf(p.source, p.wait ? Math.max(p.in, bounds[i]) : bounds[i], p.wait ? Math.min(p.out, bounds[i + 1]) : bounds[i + 1]);
+    const inside = cuts.filter((t) => t > p.in + 0.5 && t < p.out - 0.5);
+    if (!inside.length) { p.crop = cropOf(sceneOf((p.in + p.out) / 2)); continue; }
+    const edges = [p.in, ...inside, p.out];
+    p.segments = edges.slice(0, -1).map((from, i) => ({ in: from, out: edges[i + 1], crop: cropOf(sceneOf((from + edges[i + 1]) / 2)) }));
+    p.crop = p.segments[0].crop;
+  }
+
+  // the brand, the labels, the captions, the music
   const brandFile = s.brand || (fs.existsSync("brand/DESIGN.md") ? "brand/DESIGN.md" : null);
   const brand = brandOf(brandFile);
   const labels = [];
@@ -499,8 +539,6 @@ function cmdBuild(dir, opts) {
     const ps = r.pieces.filter((p) => p.keep === k);
     if (ps.length) labels.push({ text: keep.label, start: ps[0].start, duration: ps.at(-1).start + ps.at(-1).duration - ps[0].start });
   }
-  const privacyFile = path.join(dir, "privacy.json");
-  const found = fs.existsSync(privacyFile) ? read(privacyFile).found.filter((f) => !f.off) : [];
   const out = path.resolve(s.out || path.join(dir, "composition"));
   const title = s.title || cut.title || path.basename(path.resolve(dir));
   let captions = null;
@@ -523,40 +561,19 @@ function cmdBuild(dir, opts) {
   }
 
   const voiceFile = fs.existsSync(source(dir, "voice.clean.m4a")) ? "voice.clean.m4a" : meta.voice;
-  // the blurs: a found box over every shot of its source whose span it falls in, where the
-  // shot shows that part of the source
-  const pieceBlurs = (placed) => {
-    const out = [];
-    for (const { piece: p, layers } of placed) {
-      for (const l of layers.filter((x) => x.main)) {
-        for (const f of found.filter((x) => x.source === l.source && x.from < p.out && x.to > p.in)) {
-          const at = place(l.box, l.crop, sources[l.source]);
-          let x0 = at.left + f.box[0] * at.width, y0 = at.top + f.box[1] * at.height;
-          let x1 = at.left + f.box[2] * at.width, y1 = at.top + f.box[3] * at.height;
-          x0 = Math.max(x0, l.box[0]); y0 = Math.max(y0, l.box[1]); x1 = Math.min(x1, l.box[0] + l.box[2]); y1 = Math.min(y1, l.box[1] + l.box[3]);
-          if (x1 - x0 > 2 && y1 - y0 > 2) out.push({ start: p.start, duration: p.duration, left: x0, top: y0, width: x1 - x0, height: y1 - y0, what: f.what });
-        }
-      }
-    }
-    return out;
-  };
-  // the shots first, to place the blurs on them; then the whole
-  let result = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: voiceFile, labels, captions, music, brand });
-  const blurs = pieceBlurs(result.placed);
-  if (blurs.length) result = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: voiceFile, labels, blurs, captions, music, brand });
+  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: voiceFile, labels, captions, music, brand });
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
       view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), lufs: p.lufs, gain: p.gain,
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}) }) })),
-    blurs: blurs.map((b) => ({ start: +b.start.toFixed(2), duration: +b.duration.toFixed(2), what: b.what })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   });
   const views = {};
   for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
-    `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${blurs.length ? `, ${blurs.length} blurs` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
+    `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   console.log(`Next: ${cmd(`check ${rel(dir)}`)}`);
 }
@@ -582,52 +599,6 @@ function cmdCaptions(dir, opts) {
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
-  cmdBuild(dir, {});
-}
-
-// --------------------------------------------------------------------------------- privacy
-async function cmdPrivacy(dir, opts) {
-  const editFile = path.join(dir, "edit.json");
-  if (!fs.existsSync(editFile)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
-  const e = read(editFile);
-  const meta = read(source(dir, "sources.json"));
-  // every stretch of a screen the cut shows, one per source and keep
-  const spans = new Map();
-  for (const p of e.pieces) {
-    if (!p.source || p.source === "webcam") continue;
-    const key = `${p.source}:${p.keep}:${p.shows ? p.in : ""}`;
-    const x = spans.get(key);
-    if (x) { x.from = Math.min(x.from, p.in); x.to = Math.max(x.to, p.out); } else spans.set(key, { source: p.source, from: p.in, to: p.out });
-  }
-  const shots = [...spans.values()].map((x) => ({ ...meta.sources[x.source], ...x, file: source(dir, meta.sources[x.source].file) }));
-  console.log(`Looking at ${shots.length} shots of the screens for what must not be readable …`);
-  let r;
-  try { r = await scan(shots, { model: opts.model || PRIVACY_MODEL, log: console.log }); } catch (err) { fail(`✗ ${err.message}`); }
-  // what was found once in a shot covers the whole shot
-  const found = [];
-  for (const f of r.found) {
-    const same = found.find((x) => x.source === f.source && x.from === f.from && Math.abs(x.box[0] - f.box[0]) < 0.04 && Math.abs(x.box[1] - f.box[1]) < 0.04);
-    if (same) same.box = [Math.min(same.box[0], f.box[0]), Math.min(same.box[1], f.box[1]), Math.max(same.box[2], f.box[2]), Math.max(same.box[3], f.box[3])];
-    else found.push(f);
-  }
-  const old = fs.existsSync(path.join(dir, "privacy.json")) ? read(path.join(dir, "privacy.json")) : null;
-  // the same thing found again: the same source, overlapping in time, its box mostly the same
-  const overlap = (a, b) => {
-    const w = Math.min(a.box[2], b.box[2]) - Math.max(a.box[0], b.box[0]), h = Math.min(a.box[3], b.box[3]) - Math.max(a.box[1], b.box[1]);
-    const area = (x) => (x.box[2] - x.box[0]) * (x.box[3] - x.box[1]);
-    return a.source === b.source && a.from < b.to && b.from < a.to && w > 0 && h > 0 && (w * h) / Math.min(area(a), area(b)) > 0.5;
-  };
-  for (const f of found) {
-    f.model = true;
-    // a box the person kept readable stays so
-    if (old?.found?.some((o) => o.off && overlap(o, f))) f.off = true;
-  }
-  // a box the person added by hand stays
-  const manual = (old?.found || []).filter((o) => !o.model);
-  write(path.join(dir, "privacy.json"), { model: opts.model || PRIVACY_MODEL, at: new Date().toISOString(), shots: shots.map((x) => ({ source: x.source, from: x.from, to: x.to })), found: [...found, ...manual] });
-  if (manual.length) console.log(`${manual.length} box${manual.length > 1 ? "es" : ""} added by hand kept.`);
-  console.log(`${r.frames} frames, $${r.cost.toFixed(4)}: ${found.length ? found.map((f) => `${f.what} (${f.source} ${clock(f.from)}–${clock(f.to)})`).join("; ") : "nothing to hide"}`);
-  if (found.length) console.log(`A blur covers each in every shot that shows it; one that may stay readable: "off": true on it in ${rel(path.join(dir, "privacy.json"))}.`);
   cmdBuild(dir, {});
 }
 
@@ -680,20 +651,23 @@ function cmdCheck(dir) {
     else if (after.every((p) => p.view === "face")) warnings.push(`"${w.text}" at ${clock(w.end)} of the cut: the shot after it is the face; show the proof (the phone's screen, the page): "view" on that keep`);
   }
 
+  // a zoom set by hand is for one scene: when the screen changes almost whole within its keep (a
+  // tab, a page, a dialog), the box shows the wrong part before or after
+  const activity = read(source(dir, "activity.json"));
+  for (const [k, keep] of (cut.keep || []).entries()) {
+    if (!Array.isArray(keep.zoom)) continue;
+    const ps = e.pieces.filter((p) => p.keep === k && !p.wait && p.source && p.source !== "webcam");
+    if (!ps.length || !activity[ps[0].source]) continue;
+    const cuts = scenes(activity[ps[0].source], Math.min(...ps.map((p) => p.in)) + 0.5, Math.max(...ps.map((p) => p.out)) - 0.5);
+    for (const t of cuts) {
+      const near = words.filter((w) => w.kind === "word").reduce((best, w) => (Math.abs(w.start - t) < Math.abs(best.start - t) ? w : best));
+      warnings.push(`keep ${k + 1}'s "zoom" is one box, but its screen changes almost whole at ${clock(t)} of the recording (near word ${near.i} "${near.text}"): the box fits only one part; split the keep there and give each part its own "zoom" (frame shows both)`);
+    }
+  }
+
   // a long stretch without words at its own speed is a wait to speed up
   for (const [k, p] of e.pieces.entries()) {
     if (p.shows && !p.hold && p.rate <= 1.05 && p.duration > 6) warnings.push(`piece ${k + 1} shows ${p.duration.toFixed(1)} s without words at their own speed: a wait? list the last word before it in "waits"`);
-  }
-
-  // what must not be readable
-  const pf = path.join(dir, "privacy.json");
-  if (!fs.existsSync(pf)) warnings.push(`not looked at for secrets yet (a token in a link, keys, e-mail addresses, chats): ${cmd(`privacy ${rel(dir)}`)}`);
-  else {
-    const pv = read(pf);
-    const seen = (p) => (pv.shots || []).some((x) => x.source === p.source && x.from <= p.in + 0.05 && x.to >= p.out - 0.05);
-    const unseen = e.pieces.filter((p) => p.source && p.source !== "webcam" && !seen(p));
-    if (unseen.length) warnings.push(`${unseen.length} shots changed since the look for secrets: ${cmd(`privacy ${rel(dir)}`)} again`);
-    if (e.blurs?.length) console.log(`\nBlurred: ${[...new Set(e.blurs.map((b) => b.what))].join("; ")}`);
   }
 
   // HyperFrames' own check of the project
@@ -823,8 +797,7 @@ else if (command === "propose") cmdPropose(pos[0]);
 else if (command === "build") cmdBuild(pos[0], opts);
 else if (command === "check") cmdCheck(pos[0]);
 else if (command === "at") cmdAt(pos[0], pos[1]);
-else if (command === "privacy") await cmdPrivacy(pos[0], opts);
 else if (command === "captions") cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
-else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | privacy <dir> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
+else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
