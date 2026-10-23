@@ -42,6 +42,7 @@ import { plan, range } from "./lib/cut.mjs";
 import { activity, moving } from "./lib/motion.mjs";
 import { writeComposition } from "./lib/composition.mjs";
 import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
+import { openrouter } from "./lib/openrouter.mjs";
 import { brief, shown } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model", "style", "product", "brand"];
@@ -88,7 +89,7 @@ async function cmdNew(dir, files, opts) {
   if (!dir || !files.length) fail("Usage: takes.mjs new <dir> <video> [<video> …]");
   if (fs.existsSync(source(dir, "words.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
   for (const f of files) if (!fs.existsSync(f)) fail(`There is no ${f}.`);
-  if (!process.env.OPENROUTER_API_KEY) fail("This tool needs OPENROUTER_API_KEY: the words come from ElevenLabs Scribe, the proposal from Gemini, both through OpenRouter.");
+  if (!(await openrouter())) fail("This tool needs OpenRouter (the words come from ElevenLabs Scribe, the proposal from Gemini): OPENROUTER_API_KEY in the environment, or on a Sprite the gateway's OpenRouter connection.");
   fs.mkdirSync(source(dir), { recursive: true });
 
   let list = files.map((f) => ({ from: f, ...probe(f) }));
@@ -132,7 +133,7 @@ async function cmdNew(dir, files, opts) {
 // --------------------------------------------------------------------------------- propose
 async function cmdPropose(dir, opts) {
   if (!fs.existsSync(source(dir, "words.json"))) fail(`Run first: takes.mjs new ${rel(dir)} <video>`);
-  if (!process.env.OPENROUTER_API_KEY) fail("propose needs OPENROUTER_API_KEY.");
+  if (!(await openrouter())) fail("propose needs OpenRouter: OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection.");
   const s = settings(dir, opts);
   const { clips, words } = read(source(dir, "words.json"));
   let p;

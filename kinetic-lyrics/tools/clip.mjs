@@ -5,7 +5,7 @@
 //
 // <dir>/audio.wav     the voice, mono 48 kHz
 // <dir>/video.<ext>   the footage as it came (build.mjs transcodes what the renderer can't play)
-// <dir>/transcript.json   word timings and who speaks (A, B, …). With OPENROUTER_API_KEY set
+// <dir>/transcript.json   word timings and who speaks (A, B, …). With OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway)
 //                     they come from Gemini 3.5 Transcribe through OpenRouter (tools/stt.mjs),
 //                     nothing to install; otherwise, or with --asr parakeet, from Parakeet on
 //                     this machine, without speakers (build.mjs --diarize finds them), and
@@ -19,6 +19,7 @@ import { spawnSync } from "node:child_process";
 import { transcribe, duration } from "./asr.mjs";
 import { repairTranscript } from "./repair.mjs";
 import { transcribeRemote } from "./stt.mjs";
+import { openrouter } from "./openrouter.mjs";
 
 const argv = process.argv.slice(2);
 const opt = {};
@@ -55,7 +56,7 @@ if (v) {
 }
 
 const lang = typeof opt.lang === "string" ? opt.lang : "auto";
-const asr = typeof opt.asr === "string" ? opt.asr : process.env.OPENROUTER_API_KEY ? "openrouter" : "parakeet";
+const asr = typeof opt.asr === "string" ? opt.asr : (await openrouter()) ? "openrouter" : "parakeet";
 if (!["openrouter", "parakeet"].includes(asr)) fail(`--asr ${asr}: openrouter or parakeet`);
 let words;
 if (asr === "openrouter") {

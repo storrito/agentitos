@@ -31,6 +31,10 @@ Each `SKILL.md` follows the [Agent Skills](https://agentskills.io/specification)
 
 Paths in a `SKILL.md` are written as `<skill>/…`, relative to the skill's folder; outputs always go to the caller's working directory, never into the skill.
 
+## Models: OpenRouter, with a key or through the Sprites gateway
+
+Agents that call a model (a transcription, a vision model, a proposal) go through [OpenRouter](https://openrouter.ai): with `OPENROUTER_API_KEY` in the environment, or else, on a [Sprite](https://sprites.dev), through the gateway's OpenRouter connection, which adds the key itself (an [rragent](https://github.com/storrito/rragent) agent there often has none of its own). Each such agent finds it with its own small `openrouter.mjs`: the key first, else the `openrouter` connection that `http://sprite.internal/v1/gateway/list` names, else none. The gateway takes a request of up to about 7 MB, OpenRouter about 50 MB: sound goes through it as MP3 at 48 kbit/s in pieces of five minutes, and a request with a video says so when it is too large.
+
 ## The brand kit
 
 A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md` in Google's open [DESIGN.md format](https://github.com/google-labs-code/design.md) (colours, typography and corner radii as tokens in its front matter, the brand's character, voice and audience as prose) with the logo and font files beside it, plus four keys of our own (`logo`, `fonts`, `uppercase`, `social`; see [brand-kit](brand-kit/README.md#the-kit)). [brand-kit](brand-kit/) makes a full one with the person; an agent that needs a look and finds none drafts one from the brand's website, as [story-from-link](story-from-link/) does; [thumbnail-and-intro](thumbnail-and-intro/) renders from the kit's tokens, logo and fonts. It is a file format, not a dependency: folders still never import from each other.

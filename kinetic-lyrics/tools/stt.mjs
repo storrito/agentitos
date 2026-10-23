@@ -1,5 +1,6 @@
 // Speech to word timings and speakers through OpenRouter (Gemini 3.5 Transcribe): nothing to
-// install but ffmpeg, OPENROUTER_API_KEY in the environment. A long recording goes in 5-minute
+// install but ffmpeg, and OpenRouter (OPENROUTER_API_KEY, or the Sprites gateway's OpenRouter
+// connection, see openrouter.mjs). A long recording goes in 5-minute
 // pieces, all at once: an hour or two take about as long as the slowest piece, under a minute.
 //
 //   transcribeRemote(file, { lang, speakers }) → [{ text, start, end, speaker }]
@@ -17,9 +18,9 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { duration } from "./asr.mjs";
+import { need } from "./openrouter.mjs";
 
 export const STT_MODEL = "google/gemini-3.5-transcribe";
-const URL = "https://openrouter.ai/api/v1/audio/transcriptions";
 // every piece of a recording up to five hours at once: the slowest piece is the wait
 const CH = 300, OV = 20, AT_ONCE = 64;
 // a piece answers in well under a minute; one that has not after five is asked again (and may
@@ -29,12 +30,13 @@ const WAIT = 5 * 60e3;
 const ffmpeg = (args) => promisify(execFile)("ffmpeg", args);
 
 async function request(body, log) {
+  const or = await need("The transcription");
   for (let attempt = 1; ; attempt++) {
     let res, text;
     try {
-      res = await fetch(URL, {
+      res = await fetch(`${or.base}/audio/transcriptions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+        headers: { ...or.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(WAIT),
       });
@@ -99,7 +101,7 @@ function voicesOf(pieces) {
 }
 
 export async function transcribeRemote(file, { lang = "auto", speakers = true, log = () => {} } = {}) {
-  if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set");
+  const or = await need("The transcription");
   const total = duration(file);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-stt-"));
   let cost = 0, done = 0;
@@ -109,10 +111,11 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
   try {
     pieces = await inTurns(starts, AT_ONCE, async (at, k) => {
       // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64), then MP3 at
-      // 48 kbit/s, which it transcribes as well
+      // 48 kbit/s, which it transcribes as well; MP3 always through the Sprites gateway, which
+      // refuses a request of several megabytes
       let format = "flac", chunk = path.join(tmp, `c${k}.flac`);
-      await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
-      if ((fs.statSync(chunk).size * 4) / 3 > 40e6) {
+      if (!or.gateway) await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
+      if (or.gateway || (fs.statSync(chunk).size * 4) / 3 > 40e6) {
         format = "mp3"; chunk = path.join(tmp, `c${k}.mp3`);
         await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
       }
