@@ -8,7 +8,8 @@
 //   ✗ cut off      a word reaches past the frame edge
 //   ✗ overlap      two lockups are on screen at the same time
 //   ⚠ read time    a word is complete for less than ~0.3 s before its phrase leaves
-//   ⚠ safe area    a word leaves the action-safe box (5 % inset)
+//   ⚠ safe area    a word leaves the safe box: the action-safe border (5 %) and what the platforms
+//                  cover (plan.zones, from agentitos' platform-zones)
 //   ⚠ collision    words of one lockup run into each other, or into the HUD (chip, hook, waveform)
 //   ⚠ contrast     text vs. the world right behind it (WCAG ratio from two screenshots:
 //                  with and without the text layer) is below 3:1 – ✗ below 1.8:1
@@ -164,7 +165,11 @@ const frameShot = async (t, tag) => {
   return path.relative(dir, f);
 };
 
+// where words may go: the action-safe border (5 %), inside what the platforms leave clear (their
+// safe box from agentitos' platform-zones, written into the plan by build.mjs)
 const ACTION = 0.05;
+const Z = plan.zones?.safe || [0, 0, 1, 1];
+const SAFE_BOX = [Math.max(ACTION, Z[0]) * W, Math.max(ACTION, Z[1]) * H, Math.min(1 - ACTION, Z[2]) * W, Math.min(1 - ACTION, Z[3]) * H];
 for (const p of qa.phrases) {
   const ws = wordsByPhrase.get(p.id) || [];
   if (!ws.length) continue;
@@ -191,8 +196,8 @@ for (const p of qa.phrases) {
     const cut = Math.max(-w.r.x, -w.r.y, w.r.x + w.r.w - W, w.r.y + w.r.h - H);
     if (cut > 2) { add("error", t, "cut off", `"${d}" sticks out of the frame by ${Math.round(cut)} px`); shotNeeded = "cut"; }
     else {
-      const out = Math.max(W * ACTION - w.r.x, H * ACTION - w.r.y, w.r.x + w.r.w - W * (1 - ACTION), w.r.y + w.r.h - H * (1 - ACTION));
-      if (out > 4) add("warn", t, "safe area", `"${d}" ${Math.round(out)} px outside the action-safe area`);
+      const out = Math.max(SAFE_BOX[0] - w.r.x, SAFE_BOX[1] - w.r.y, w.r.x + w.r.w - SAFE_BOX[2], w.r.y + w.r.h - SAFE_BOX[3]);
+      if (out > 4) add("warn", t, "safe area", `"${d}" ${Math.round(out)} px outside the safe area (the platforms' buttons and captions, the action-safe border)`);
     }
     for (const h of g.hud) if (ins(w.r, h.r) > 0.12 * w.r.w * w.r.h) { add("warn", t, "collision", `"${d}" covers the HUD (${h.cls.split(" ")[0]})`); shotNeeded ||= "hud"; }
   }

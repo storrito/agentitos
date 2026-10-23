@@ -4,7 +4,7 @@
 //
 // Bundled by tools/build.mjs (esbuild, IIFE, global `KineticType`).
 
-import { palettesOf, worldOf, createSignals } from "./signals.js";
+import { palettesOf, worldOf, createSignals, hookTop } from "./signals.js";
 import { makeGraphics, graphicsCss, TALL, WIDE } from "./graphics.js";
 
 const GOTHIC = '"League Gothic"';
@@ -53,14 +53,19 @@ export function build(root, plan, gsap) {
   const W = plan.width, H = plan.height;
   const portrait = plan.portrait;
   const preset = plan.preset || "lyric";
+  // what the platforms lay over the video (their buttons, names, captions): the safe box of
+  // agentitos' platform-zones as frame fractions, set by build.mjs (plan.zones)
+  const Z = plan.zones?.safe || [0, 0, 1, 1];
   // safe box [x0, y0, x1, y1] as frame fractions: lyric = title-safe; podcast keeps clear of the
-  // speaker chip + audiogram; social keeps clear of the hook card and the platform UI
-  // (caption/username block at the bottom, action rail on the right).
+  // speaker chip + audiogram; social is the platforms' safe box, below the hook card. Every
+  // preset stays inside the platforms' safe box.
   const SAFE = {
     lyric: [0.1, 0.13, 0.9, 0.87],
     podcast: portrait ? [0.07, 0.15, 0.93, 0.8] : [0.08, 0.13, 0.92, 0.78],
-    social: portrait ? [0.07, plan.hook ? 0.24 : 0.14, 0.85, 0.72] : [0.08, plan.hook ? 0.24 : 0.14, 0.92, 0.82],
+    social: [Z[0], plan.hook ? hookTop(plan) + 0.145 : Z[1], Z[2], Z[3]],
   }[preset] || [0.1, 0.13, 0.9, 0.87];
+  SAFE[0] = Math.max(SAFE[0], Z[0]); SAFE[1] = Math.max(SAFE[1], Z[1]);
+  SAFE[2] = Math.min(SAFE[2], Z[2]); SAFE[3] = Math.min(SAFE[3], Z[3]);
   // over footage the type keeps to the darkened band below the speaker (see build.mjs, plan.video)
   // (short-form: clear of the platform UI – caption/username block at the bottom, action rail right)
   // in a frame (a light world) the type keeps below it, or beside it in landscape
@@ -68,10 +73,10 @@ export function build(root, plan, gsap) {
     const [, , fx1, fy1] = plan.video.frame;
     if (W > H * 1.2) SAFE[0] = Math.max(SAFE[0], fx1 + 0.04);
     else SAFE[1] = Math.max(SAFE[1], fy1 + 0.045);
-    if (portrait) { SAFE[0] = 0.07; SAFE[2] = 0.88; SAFE[3] = 0.8; }
+    if (portrait) { SAFE[0] = Z[0]; SAFE[2] = Z[2]; SAFE[3] = Z[3]; }
   } else if (plan.video) {
     SAFE[1] = Math.max(SAFE[1], plan.video.shade[0] + (plan.video.shade[1] - plan.video.shade[0]) * 0.55);
-    if (portrait) { SAFE[0] = 0.07; SAFE[2] = 0.88; SAFE[3] = 0.78; }
+    if (portrait) { SAFE[0] = Z[0]; SAFE[2] = Z[2]; SAFE[3] = Z[3]; }
   }
   const drift = plan.style?.drift ?? 1;
   // a lockup breathes while it is up (push-in up to +4 %, pulses on strong words): lay it out in

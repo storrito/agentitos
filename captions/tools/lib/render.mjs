@@ -8,7 +8,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { groups, activeSpans } from "./group.mjs";
-import { placement } from "./styles.mjs";
 
 export const ID = "captions";
 const n = (x) => +x.toFixed(3);
@@ -34,10 +33,12 @@ export function brandOf(file) {
   return { primary: value(colors, "primary"), family, served, files: served ? [] : files.filter((f) => fs.existsSync(f.file)) };
 }
 
-export function writeCaptions(out, { words, style, width, height, duration, brand }) {
+// zones: platform-zones' answer for the frame (tools/lib/zones.mjs): the captions sit in its safe
+// box, their lowest line at its bottom, centred in it and never wider
+export function writeCaptions(out, { words, style, width, height, duration, brand, zones }) {
   fs.mkdirSync(out, { recursive: true });
   // the styles' sizes are for a frame whose short side is 1080 px: 1080×1920, 1920×1080, 1080×1080 alike
-  const look = { ...style.look }, place = placement(width, height), scale = Math.min(width, height) / 1080;
+  const look = { ...style.look }, [sx, sy, sw, sh] = zones.safe, scale = Math.min(width, height) / 1080;
   const links = [];
   let faces = "";
   if (brand?.primary) look.accent = brand.primary;
@@ -57,7 +58,7 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
     words: activeSpans(words, g).map((s) => ({ text: words[s.i].text, start: n(s.start), end: n(s.end), said: n(words[s.i].end), key: !!words[s.i].highlight })),
   }));
   const data = { groups: gs, look, motion: style.motion, lines: style.group.lines,
-    size: Math.round(look.size * scale), bottom: Math.round(place.bottom * height), maxWidth: Math.round(place.width * width) };
+    size: Math.round(look.size * scale), bottom: height - (sy + sh), left: sx, right: width - (sx + sw), maxWidth: sw };
 
   const html = `<!doctype html>
 <html>
@@ -70,7 +71,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
     <template>
       <style>
         ${faces}#root { position: absolute; inset: 0; pointer-events: none; }
-        #root .cap-group { position: absolute; left: 0; right: 0; bottom: ${data.bottom}px; margin: 0 auto; width: ${data.maxWidth}px;
+        #root .cap-group { position: absolute; left: ${data.left}px; right: ${data.right}px; bottom: ${data.bottom}px; margin: 0 auto; width: ${data.maxWidth}px;
           display: block; text-wrap: balance; word-spacing: ${look.gap || "0.08em"}; visibility: hidden;
           font-family: "${look.font}", sans-serif; font-weight: ${look.weight}; line-height: ${look.lineHeight}; letter-spacing: ${look.spacing};
           text-transform: ${look.case === "upper" ? "uppercase" : "none"}; text-align: center; }

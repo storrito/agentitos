@@ -39,6 +39,10 @@ Agents that call a model (a transcription, a vision model, a proposal) go throug
 
 A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md` in Google's open [DESIGN.md format](https://github.com/google-labs-code/design.md) (colours, typography and corner radii as tokens in its front matter, the brand's character, voice and audience as prose) with the logo and font files beside it, plus four keys of our own (`logo`, `fonts`, `uppercase`, `social`; see [brand-kit](brand-kit/README.md#the-kit)). [brand-kit](brand-kit/) makes a full one with the person; an agent that needs a look and finds none drafts one from the brand's website, as [story-from-link](story-from-link/) does; [thumbnail-and-intro](thumbnail-and-intro/) renders from the kit's tokens, logo and fonts. It is a file format, not a dependency: folders still never import from each other.
 
+## The platforms' zones
+
+What Instagram, TikTok, YouTube and the other apps lay over a video (their buttons, names and captions) lives in one table: [platform-zones](platform-zones/). An agent that places anything in a frame for social media (text, captions, a face, a sticker, a shot of a screen) asks its tool for the safe box and the covered areas (`node <platform-zones>/tools/zones.mjs zones [platform…] --size WxH --json`), with the platforms the person named, or none to have the usual ones of the frame. It keeps no numbers of its own: a correction to the table reaches every agent. Like the brand kit, this is a tool to call, not a dependency: folders still never import from each other.
+
 ## Agents
 
 | Agent | Description |
@@ -56,7 +60,7 @@ A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md
 
 ## Contributing
 
-Issues and pull requests are welcome. A new agent gets its own top-level folder with a `SKILL.md` and a `README.md` that describe what it does, what it needs (API keys, CLI tools, …) and how to run it.
+Issues and pull requests are welcome. A new agent gets its own top-level folder with a `SKILL.md` and a `README.md` that describe what it does, what it needs (API keys, CLI tools, …) and how to run it. What another agent of this collection already does, it calls instead of doing again: captions through [captions](captions/), the brand's look from the [brand kit](#the-brand-kit), the space the apps cover through [platform-zones](#the-platforms-zones).
 
 ## License
 

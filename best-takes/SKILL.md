@@ -87,7 +87,7 @@ They say what is wrong; change `cut.json` (or a setting) and build again with th
 When they ask for captions in the picture ("Untertitel ins Bild", "captions like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, with the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for explainers). Then
 
 ```bash
-node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<name>"] [--brand brand/DESIGN.md]
+node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<name>"] [--brand brand/DESIGN.md] [--platform <where it goes: reels, tiktok, shorts, story, …>]
 ```
 
 marks the key words with a model, keeps style and marks in `cut.json` (`"captions"`) and builds again: the preview shows them, on the cut's own words, placed for the frame (16:9 to 9:16). Another style: the same command with another `--style`; a key word too many or too few: edit `cut.json` `captions.highlight` (word numbers) and build; out again: `--off`. It uses agentitos' captions skill beside this one; when it is missing, say so.

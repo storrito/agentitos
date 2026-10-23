@@ -118,7 +118,7 @@ node <skill>/tools/short.mjs new work/<k> work/<k>.mp4
 node <skill>/tools/short.mjs brief work/<k>
 # read work/<k>/source/brief.md, write work/<k>/source/staging.json (see "Directing a short")
 node <skill>/tools/short.mjs build work/<k> --out artifacts/shorts/composition/<k>-<slug> \
-  --world … --title "…" --names "A=…,B=…" --colors "A=#…,B=#…" --cta "…" --handle @…
+  --world … --title "…" --names "A=…,B=…" --colors "A=#…,B=#…" --cta "…" --handle @… --platform <the chosen platforms>
 node <skill>/tools/short.mjs check work/<k>
 ```
 
@@ -126,8 +126,10 @@ An adapted short has a variant per platform or account `<v>` (`ig`, `tiktok`, `y
 
 ```bash
 cp -r work/<k> work/<k>-<v>
-node <skill>/tools/short.mjs build work/<k>-<v> --out artifacts/shorts/composition/<k>-<slug>-<v> --title "…" --cta "…" --handle @…
+node <skill>/tools/short.mjs build work/<k>-<v> --out artifacts/shorts/composition/<k>-<slug>-<v> --title "…" --cta "…" --handle @… --platform <the variant's platform>
 ```
+
+`--platform` takes the chosen platforms as platform-zones names them, with commas (`reels,tiktok,shorts,facebook-reels,spotlight,linkedin`): the type and the hook keep clear of what those apps lay over the video; one video for several platforms keeps clear of all of them. Without it the usual platforms of the frame count.
 
 Without composition/index.html the project shows every `composition/<name>/` side by side, a player each, titled by the short's hook. Fix the check's errors (✗) before you go on. A short's names follow its own voices (A is who speaks first in that short): map them from the episode's speakers.
 
@@ -237,7 +239,7 @@ Only material the person may use: when the episode is someone else's, say once, 
 
 ## Other uses
 
-`tools/build.mjs` takes any word-timed transcript directly, with presets `lyric` (music, big gestures, 16:9), `podcast` and `social` (9:16, hook card, CTA): `node <skill>/tools/build.mjs transcript.json --audio voice.wav --preset lyric|podcast|social [--world …] --out <project>`. Check any built project with `node <skill>/tools/qa.mjs <project>`.
+`tools/build.mjs` takes any word-timed transcript directly, with presets `lyric` (music, big gestures, 16:9), `podcast` and `social` (9:16, hook card, CTA): `node <skill>/tools/build.mjs transcript.json --audio voice.wav --preset lyric|podcast|social [--world …] --out <project>`. `--platform reels,tiktok` keeps the type clear of what those apps lay over the video (agentitos' platform-zones, which must be beside this skill; none: the usual platforms of the frame). Check any built project with `node <skill>/tools/qa.mjs <project>`.
 
 ## Rules
 

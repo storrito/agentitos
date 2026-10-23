@@ -1,6 +1,6 @@
 # captions
 
-Word-timed captions for videos: each word appears as it is said, in one of several **styles**, the key words in a colour of their own, placed clear of the buttons TikTok, Reels and Shorts lay over a vertical video, in a brand's colour and font when there is a brand kit. The captions are a [HyperFrames](https://hyperframes.heygen.com) sub-composition that any host composition mounts as one clip, so the person sees them in the player before anything is rendered; an `.srt` for the platforms' own captions comes beside the video.
+Word-timed captions for videos: each word appears as it is said, in one of several **styles**, the key words in a colour of their own, placed clear of what TikTok, Reels, Shorts and the other apps lay over the video (agentitos' platform-zones), in a brand's colour and font when there is a brand kit. The captions are a [HyperFrames](https://hyperframes.heygen.com) sub-composition that any host composition mounts as one clip, so the person sees them in the player before anything is rendered; an `.srt` for the platforms' own captions comes beside the video.
 
 It is an agent of its own (upload a video, get it back with captions, see [SKILL.md](SKILL.md)) and the captions step of the other agents of this collection: a skill with its own timed words (best-takes: the cut's words, timed in the cut) calls `build` and mounts the result.
 
@@ -8,12 +8,12 @@ It is an agent of its own (upload a video, get it back with captions, see [SKILL
 node tools/captions.mjs styles
 node tools/captions.mjs transcribe <video> <words.json>
 node tools/captions.mjs mark <words.json> [--product "Storrito"]
-node tools/captions.mjs build <words.json> <composition>/captions --style hormozi [--size 1080x1920] [--brand brand/DESIGN.md]
+node tools/captions.mjs build <words.json> <composition>/captions --style hormozi [--size 1080x1920] [--platform reels,tiktok] [--brand brand/DESIGN.md]
 node tools/captions.mjs project <video> <words.json> <composition> --style karaoke
 node tools/captions.mjs srt <words.json> <file.srt>
 ```
 
-Needs Node 20+, ffmpeg (for `transcribe`, `project`) and OpenRouter (for `transcribe`, `mark`): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`); no npm packages. The models are OpenRouter's only.
+Needs Node 20+, agentitos' [platform-zones](../platform-zones/) beside it (where the captions go), ffmpeg (for `transcribe`, `project`) and OpenRouter (for `transcribe`, `mark`): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`); no npm packages. The models are OpenRouter's only.
 
 ## Words
 
@@ -42,10 +42,11 @@ The fonts are among those HyperFrames embeds by itself when it renders (Montserr
 - A group appears when its first word is said and stays 0.35 s after its last, at least the style's minimum (0.5–1 s) when there is room, never into the next group (20 ms apart). Only one group is ever on screen.
 - The word being said is active from its start to the next word's start, so a short pause inside a group leaves no gap.
 
-### Placement (`tools/lib/styles.mjs`, `placement`)
+### Placement (agentitos' [platform-zones](../platform-zones/))
 
-- 9:16: the group's lower edge at 30 % of the height from the bottom, at most 78 % of the width wide: above the platforms' caption and buttons, clear of the buttons on the right. About the 650 px of the content workflow at 1920 high.
-- 4:5 and 1:1: 14 % from the bottom, 84 % wide. 16:9: 9 % from the bottom, 80 % wide.
+- The captions keep clear of what the apps lay over the video: `build` and `project` ask platform-zones for the frame (`tools/lib/zones.mjs`: `PLATFORM_ZONES`, else `../platform-zones` beside this skill, else `/home/sprite/skills/platform-zones`) and set the captions in its safe box: their lowest line at its bottom, centred in it, never wider. This skill keeps no numbers of its own.
+- `--platform reels,tiktok` names where the video goes (`node ../platform-zones/tools/zones.mjs list` names them all). Without it, the usual platforms of the frame together: in 9:16 Reels, Stories, TikTok, Shorts and Facebook Reels, the lowest line at 1440 px of 1920, at most 820 px wide and left of the buttons' column; in 4:5 and 1:1 the feeds; in 16:9 YouTube and the feeds.
+- Each build says for which platforms it placed them.
 - The styles' sizes are for a frame whose short side is 1080 px and scale with the short side, so a 1920×1080 frame gets the same type as a 1080×1920 one, a 3840×2160 frame twice as big.
 - `project --size 1080x1920` puts a wide video into a vertical frame (and the other way round): `--fit cover` (the default) fills the frame and cuts the video at its edges, `--fit contain` fits it in with bars; the captions are placed for the frame, not for the video.
 - Each group is set at the style's size and shrinks (to 55 % at most) until it fits its lines and no word is wider than its room. The words are inline blocks between spaces with `text-wrap: balance`, so the lines balance and no word is left alone on the second.

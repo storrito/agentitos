@@ -31,6 +31,9 @@
 //   --out <folder>    the composition/ folder of the HyperFrames project (rragent:
 //                     artifacts/<name>/composition; default <dir>/composition)
 //   --title "…"   --lang de   --frame 9:16|16:9|1:1|4:5 (default 9:16)   --fps 30
+//   --platform reels,tiktok   where the video goes: the layout and the captions keep clear of what
+//                     those apps lay over it (agentitos' platform-zones); none: the usual
+//                     platforms of the frame
 //   --pause <s>       pauses inside a keep longer than this are cut or shown (default 1)
 //   --tail <s>        how long a keep holds after its last word (default 0.45)
 //   --end <s>         how long the last keep holds (default 1.5)
@@ -53,8 +56,9 @@ import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack } from "./lib/tracks.mjs";
 import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
+import { zones, platformList } from "./lib/zones.mjs";
 
-const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
+const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
@@ -97,6 +101,15 @@ function settings(dir, opts) {
   if (!FRAMES[merged.frame]) fail(`--frame is one of ${Object.keys(FRAMES).join(", ")}`);
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return { ...merged, final: merged.loudness, loudness: TAKE_LEVEL };
+}
+
+// The frame's areas (layout.areas): from what the platforms the video goes to lay over it
+// (agentitos' platform-zones), with room for captions and labels only when the cut has them.
+function layoutOf(s, cut = {}) {
+  const [width, height] = FRAMES[s.frame];
+  let z;
+  try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ ${e.message}`); }
+  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!cut.captions, labels: (cut.keep || []).some((k) => k.label) }) };
 }
 
 const loadEnv = (file) => {
@@ -563,12 +576,13 @@ function cmdBuild(dir, opts) {
 
   // the view and the zoom of every piece: a keep's view and crop over the keep's whole span, so
   // that its shot does not jump; a piece that shows a pause by what moves in it
-  const [width, height] = FRAMES[s.frame];
-  const content = areas(width, height).content;
+  const layout = layoutOf(s, cut);
+  const { width, height } = layout;
+  const content = layout.areas.content;
   const tall = (src) => sources[src].height > sources[src].width * 1.25;
   // a screen in a narrower frame is zoomed in at least to half its width: whole, it is too
   // small to read; a phone's screen is shown whole unless a keep says where to zoom
-  const maxWidth = content[2] / content[3] < 1.3 ? 0.5 : 1;
+  const maxWidth = height > width ? 0.5 : 1;
   const zoomOf = (src, from, to) => {
     if (tall(src)) return [0, 0, 1, 1];
     const f = focus(activity[src] || [], from, to) || focus(activity[src] || [], from - 5, to + 5)
@@ -669,6 +683,7 @@ function cmdBuild(dir, opts) {
   if (cut.captions) {
     const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
     const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi",
+      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []),
       ...(cut.captions.brand || brandFile ? ["--brand", cut.captions.brand || brandFile] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
@@ -693,7 +708,7 @@ function cmdBuild(dir, opts) {
     cameraTrack(source(dir, sources.webcam.file), sources.webcam.offset, r.pieces, path.join(out, "assets", "camera.mp4"), { fps: s.fps, parts: source(dir, "camera.parts") });
     camera = "camera.mp4";
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, labels, captions, music, brand });
+  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, labels, captions, music, brand, areas: layout.areas });
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
@@ -708,6 +723,7 @@ function cmdBuild(dir, opts) {
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
+  console.log(`Laid out clear of ${layout.zones.platforms.map((p) => p.name).join(", ")}${layout.zones.fallback ? " (no --platform: the usual ones of this frame; name where it goes with --platform)" : ""}.`);
   console.log(`Next: ${cmd(`check ${rel(dir)}`)}`);
 }
 
@@ -878,10 +894,10 @@ function cmdFrame(dir, when, opts) {
   const c = p.source === name ? (p.segments?.find((g) => rec >= g.in && rec < g.out)?.crop || p.crop) : null;
   // what the automatic zoom picks for this keep's stretch of the screen, to compare with
   const activity = read(source(dir, "activity.json"));
-  const [fw, fh] = FRAMES[settings(dir, {}).frame];
+  const layout = layoutOf(settings(dir, {}), fs.existsSync(path.join(dir, "cut.json")) ? read(path.join(dir, "cut.json")) : {});
   const ps = e.pieces.filter((x) => x.keep === p.keep && x.source === name);
   const auto = activity[name] && !(src.height > src.width * 1.25)
-    ? cropFor(focus(activity[name], Math.min(...ps.map((x) => x.in)), Math.max(...ps.map((x) => x.out))), src, areas(fw, fh).content, { maxWidth: areas(fw, fh).content[2] / areas(fw, fh).content[3] < 1.3 ? 0.5 : 1 })
+    ? cropFor(focus(activity[name], Math.min(...ps.map((x) => x.in)), Math.max(...ps.map((x) => x.out))), src, layout.areas.content, { maxWidth: layout.height > layout.width ? 0.5 : 1 })
     : null;
   const rect = (b, color) => `,drawbox=x=iw*${b[0]}:y=ih*${b[1]}:w=iw*${(b[2] - b[0]).toFixed(4)}:h=ih*${(b[3] - b[1]).toFixed(4)}:color=${color}:t=6`;
   const box = (c ? rect(c, "red@0.9") : "") + (auto && auto.join() !== "0,0,1,1" ? rect(auto, "0x22cc55@0.9") : "");

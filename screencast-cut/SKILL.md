@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool, the captions' key words from a small model, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, agentitos' `platform-zones` and `captions` skills beside this one (where the apps' buttons are, the captions), ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool, the captions' key words from a small model, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## From the recording to the video, all in the chat
 
@@ -102,6 +102,7 @@ says which piece and keep play there, from where in the recording, in which view
 | "Start with …" | move that keep to the top |
 | "Longer than a minute is fine" / "at most 45 s" | keep more / drop the weakest keeps first, keep the hook and the proof |
 | "Vertical" / "wide" / "square" | `build … --frame 9:16` / `--frame 16:9` / `--frame 1:1` (or `4:5`) |
+| "It's for Reels" / "for TikTok and Shorts" / "a Story" | `build … --platform reels` / `--platform tiktok,shorts` / `--platform story`: the layout and the captions keep clear of what those apps lay over the video, and use what they leave free; without it the usual platforms of the frame count together |
 | "Hide that" (a password, an address on screen) | `"zoom"` the keep past it, or another `"view"` for that keep |
 | "Music under it" | `"music": {"file": "<path>", "volume": 0.3}` in cut.json: lower while someone speaks |
 | "Captions" / "another caption style" | `screencast.mjs captions screencast/<name> --style hormozi` (styles: hormozi, karaoke, wipe, clean) |

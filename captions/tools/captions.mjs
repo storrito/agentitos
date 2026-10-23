@@ -18,6 +18,8 @@
 //   --duration <s> (else the last word's end + 1 s)   --brand brand/DESIGN.md (its colour and font)
 //   --product "Storrito" (mark: the name to stand out)   --model <OpenRouter id> (mark)
 //   --track <n> (build: the mount's track, default 9)
+//   --platform reels,tiktok (where the video goes: the captions keep clear of what those apps lay
+//   over it, from agentitos' platform-zones skill; none: the usual platforms of the frame)
 //   --fit cover|contain (project: a video of another shape than --size fills the frame, cut at its
 //   edges, or fits into it with bars; default cover)
 //
@@ -32,6 +34,7 @@ import { writeCaptions, mount, brandOf, ID } from "./lib/render.mjs";
 import { srt } from "./lib/srt.mjs";
 import { mark, MARK_MODEL } from "./lib/mark.mjs";
 import { scribe, SCRIBE_MODEL } from "./lib/asr.mjs";
+import { zones, platformList } from "./lib/zones.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -113,12 +116,17 @@ async function cmdMark(file, opts) {
   console.log(`Next: node ${self()} build ${rel(path.resolve(file))} <folder> --style <name>`);
 }
 
+// for whom the captions are placed, in a sentence
+const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}: the lowest line ends at y ${z.safe[1] + z.safe[3]}, at most ${z.safe[2]} px wide.`;
+
 function captionsFor(words, folder, opts, size, duration) {
   const s = style(opts.style || "hormozi");
   const brand = opts.brand ? brandOf(opts.brand) : null;
   if (opts.brand && !brand) console.log(`  (no ${opts.brand}: the style's own colours and font)`);
-  const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand });
-  return { ...r, style: s, brand };
+  let z;
+  try { z = zones(size[0], size[1], platformList(opts.platform)); } catch (e) { fail(e.message); }
+  const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z });
+  return { ...r, style: s, brand, zones: z };
 }
 
 function cmdBuild(file, folder, opts) {
@@ -128,6 +136,7 @@ function cmdBuild(file, folder, opts) {
   const duration = Number(opts.duration) || doc.duration || Math.ceil(words.at(-1).end + 1);
   const r = captionsFor(words, path.resolve(folder), opts, size, duration);
   console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary ? `, accent ${r.brand.primary}` : ""}${r.brand?.family ? `, font ${r.brand.family}` : ""}`);
+  console.log(placedFor(r.zones));
   console.log(`Mount it in the host composition, inside its root:\n  ${mount({ dir: path.basename(folder), width: size[0], height: size[1], duration, track: Number(opts.track) || 9 })}`);
 }
 
@@ -175,6 +184,7 @@ function cmdProject(video, file, folder, opts) {
   fs.writeFileSync(path.join(out, "hyperframes.json"), JSON.stringify({ $schema: "https://hyperframes.heygen.com/schema/hyperframes.json", paths: { assets: "assets" }, media: { autoProxy: true } }, null, 2) + "\n");
   const shape = Math.abs(p.width / p.height - size[0] / size[1]) > 0.01 ? `, the ${p.width}×${p.height} video ${fit === "cover" ? "cut to fill it" : "fitted in with bars"}` : "";
   console.log(`${rel(out)}: ${size.join("×")}${shape}, ${p.duration.toFixed(1)} s, captions ${r.style.label} in ${r.groups} groups → index.html (the video) and ${ID}/index.html (the captions)`);
+  console.log(placedFor(r.zones));
 }
 
 function cmdSrt(file, out) {

@@ -1,6 +1,6 @@
 ---
 name: captions
-description: Burn word-timed captions into a video in one of several styles (Hormozi, karaoke pill, wipe, clean subtitles), with the key words standing out, placed clear of the platforms' buttons, in the brand's colour and font when there is a brand kit; show them as a HyperFrames preview, agree on them in the chat, then render, with an .srt beside the video. Also the captions step of other skills (best-takes, …): they call its tool on their own words.
+description: Burn word-timed captions into a video in one of several styles (Hormozi, karaoke pill, wipe, clean subtitles), with the key words standing out, placed clear of the platforms' buttons (agentitos' platform-zones), in the brand's colour and font when there is a brand kit; show them as a HyperFrames preview, agree on them in the chat, then render, with an .srt beside the video. Also the captions step of other skills (best-takes, …): they call its tool on their own words.
 license: MIT
 metadata:
   title: "Captions"
@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too) and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). The words come from ElevenLabs Scribe, a model picks the words that stand out, both through OpenRouter, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, agentitos' `platform-zones` skill beside this one (where the apps' buttons are), ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too) and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). The words come from ElevenLabs Scribe, a model picks the words that stand out, both through OpenRouter, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## From the video to the captioned video, all in the chat
 
@@ -34,7 +34,7 @@ The person attaches a video; their message names it as a line `video: uploads/<f
    ```
    node <skill>/tools/captions.mjs project uploads/<file> captions/<name>/words.json artifacts/<name>/composition --style <style> [--brand brand/DESIGN.md]
    ```
-   It writes the video as the host composition and the captions as a sub-composition (`composition/captions/`); the player beside the chat loads again by itself. Every frame works, from 16:9 to 9:16: the captions are placed and sized for it. For another frame than the video's (a wide video for a reel), add `--size 1080x1920` and `--fit cover` (fill, cut at the edges) or `--fit contain` (with bars), and say which. Ask whether it is right: "Looks good" (`:class "primary"`), "Another style", "Change words", and the button that shows the preview.
+   It writes the video as the host composition and the captions as a sub-composition (`composition/captions/`); the player beside the chat loads again by itself. Every frame works, from 16:9 to 9:16: the captions are placed and sized for it, clear of what the apps lay over the video. When the person said where the video goes, add `--platform reels` (or `tiktok`, `shorts`, `story`, several with commas); otherwise the usual platforms of the frame count together, and the tool says which. For another frame than the video's (a wide video for a reel), add `--size 1080x1920` and `--fit cover` (fill, cut at the edges) or `--fit contain` (with bars), and say which. Ask whether it is right: "Looks good" (`:class "primary"`), "Another style", "Change words", and the button that shows the preview.
 5. **Changes.** Another style, another key word, a word spelled differently: change `words.json` or the option and run `project` again.
 6. **The video.** After their yes: the `render` tool with `<name>` makes `artifacts/<name>.mp4`; then `node <skill>/tools/captions.mjs srt captions/<name>/words.json artifacts/<name>.srt` writes the subtitles for the platforms' own captions. Say in one sentence that it is ready, with the download links.
 
@@ -42,7 +42,7 @@ The conversation goes on: `remember` the style and the product name the person c
 
 ## Captions for another skill
 
-A skill that has its own timed words (best-takes has the cut's words, timed in the cut) calls the tool without transcribing: it writes `{"width", "height", "duration", "words": [{"text", "start", "end", "highlight"}]}`, runs `mark` on it if it wants key words, then `build <words.json> <composition>/captions --style <style>`, and puts the clip the tool prints into its host composition. The words must be timed in the video the captions go on, after every cut.
+A skill that has its own timed words (best-takes has the cut's words, timed in the cut) calls the tool without transcribing: it writes `{"width", "height", "duration", "words": [{"text", "start", "end", "highlight"}]}`, runs `mark` on it if it wants key words, then `build <words.json> <composition>/captions --style <style> [--platform <where it goes>]`, and puts the clip the tool prints into its host composition. The words must be timed in the video the captions go on, after every cut.
 
 ## UI in the chat
 
