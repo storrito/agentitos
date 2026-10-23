@@ -15,8 +15,8 @@ const mark = (s) => esc(s)
   .replace(/(https?:\/\/[^\s<]+)/g, '<span class="link">$1</span>');
 
 const T = {
-  en: { style: "Style", why: "Why", video: "Video", platforms: "platforms", more: "more", hashtags: "hashtags", mentions: "mentions", none: "none", ok: "Ready", warn: "Check", bad: "Fix", visible: "shown before", lang: "Language", premium: "X Premium: long posts", free: "X without Premium" },
-  de: { style: "Stil", why: "Warum", video: "Video", platforms: "Plattformen", more: "mehr", hashtags: "Hashtags", mentions: "Erwähnungen", none: "keine", ok: "Fertig", warn: "Prüfen", bad: "Korrigieren", visible: "sichtbar vor", lang: "Sprache", premium: "X Premium: lange Posts", free: "X ohne Premium" },
+  en: { style: "Style", why: "Why", video: "Video", platforms: "platforms", more: "more", hashtags: "hashtags", hashtag: "hashtag", mentions: "mentions", none: "none", ok: "Ready", warn: "Check", bad: "Fix", visible: "shown before", lang: "Language", premium: "X Premium: long posts", free: "X without Premium" },
+  de: { style: "Stil", why: "Warum", video: "Video", platforms: "Plattformen", more: "mehr", hashtags: "Hashtags", hashtag: "Hashtag", mentions: "Erwähnungen", none: "keine", ok: "Fertig", warn: "Prüfen", bad: "Korrigieren", visible: "sichtbar vor", lang: "Sprache", premium: "X Premium: lange Posts", free: "X ohne Premium" },
 };
 
 function field(f, t) {
@@ -37,9 +37,12 @@ function field(f, t) {
 function card(r, t, k) {
   const p = platformById(r.platform);
   const state = r.errors.length ? "bad" : r.warnings.length ? "warn" : "ok";
-  const tags = r.hashtags.length ? r.hashtags.map((h) => `<span class="tag">#${esc(h.text)}</span>`).join(" ") : `<span class="muted">${t.none}</span>`;
-  const ats = r.mentions.length ? r.mentions.map((m) => `<span class="at">@${esc(m.text)}</span>`).join(" ") : `<span class="muted">${t.none}</span>`;
+  // the counts in the subtitle: the tags and names themselves are marked in the text
   const hmax = p?.hashtags?.max;
+  const count = [
+    `${r.hashtags.length}${hmax ? `/${hmax}` : ""} ${r.hashtags.length === 1 && !hmax ? t.hashtag : t.hashtags}`,
+    r.mentions.length ? `${t.mentions}: ${r.mentions.map((m) => `<span class="at">@${esc(m.text)}</span>`).join(" ")}` : null,
+  ].filter(Boolean).join(" · ");
   const issues = [
     ...r.errors.map((e) => `<li class="bad">${esc(e)}</li>`),
     ...r.warnings.map((e) => `<li class="warn">${esc(e)}</li>`),
@@ -48,14 +51,10 @@ function card(r, t, k) {
   return `<article class="post" id="${esc(r.platform)}" style="--app:${p?.color || "var(--accent)"}">
   <header class="phead">
     <span class="badge" aria-hidden="true">${esc(p?.mark || "•")}</span>
-    <div class="pname"><h2>${esc(r.name || r.platform)}</h2><span class="pformat">${esc(p?.format || "")}</span></div>
+    <div class="pname"><h2>${esc(r.name || r.platform)}</h2><span class="pformat">${esc(p?.format || "")} · ${count}</span></div>
     <span class="state ${state}">${esc(t[state])}</span>
   </header>
   ${r.fields.map((f) => field(f, t)).join("")}
-  <dl class="facts">
-    <div><dt>${esc(t.hashtags)}${hmax != null ? ` <span class="of">${r.hashtags.length}/${hmax}</span>` : ""}</dt><dd>${tags}</dd></div>
-    <div><dt>${esc(t.mentions)}</dt><dd>${ats}</dd></div>
-  </dl>
   ${issues ? `<ul class="issues">${issues}</ul>` : ""}
 </article>`;
 }
@@ -97,7 +96,7 @@ export function overview(doc, results, { video, title } = {}) {
 * { box-sizing: border-box }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--display);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 48px }
-main { max-width: 1240px; margin: 0 auto; display: grid; gap: 24px }
+main { max-width: 1600px; margin: 0 auto; display: grid; gap: 24px }
 .top { display: grid; gap: 10px }
 .top h1 { margin: 0; font-size: clamp(24px, 4vw, 34px); font-weight: 800; letter-spacing: -0.02em; text-wrap: balance }
 .sub { color: var(--muted); font-size: 14px }
@@ -107,8 +106,8 @@ main { max-width: 1240px; margin: 0 auto; display: grid; gap: 24px }
 .tally { display: flex; gap: 14px; font-size: 13px; color: var(--muted) }
 .tally b { font-variant-numeric: tabular-nums }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 370px), 1fr)); gap: 18px; align-items: start }
-.post { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; min-width: 0 }
+.grid { columns: 340px; column-gap: 16px }
+.post { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 12px; min-width: 0; break-inside: avoid; margin-bottom: 16px }
 .phead { display: flex; align-items: center; gap: 10px }
 .badge { width: 32px; height: 32px; border-radius: 9px; background: var(--app); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 14px; flex: none }
 .pname { min-width: 0; flex: 1 }
@@ -135,9 +134,6 @@ main { max-width: 1240px; margin: 0 auto; display: grid; gap: 24px }
 .link { color: var(--accent); text-decoration: underline }
 .chips { display: flex; flex-wrap: wrap; gap: 6px }
 .chip { font-size: 12.5px; border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px }
-.facts { margin: 0; display: grid; gap: 4px; font-size: 13px; border-top: 1px dashed var(--line); padding-top: 10px }
-.facts div { display: grid; grid-template-columns: 110px 1fr; gap: 8px }
-.facts dt { color: var(--muted) } .facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere }
 .muted { color: var(--muted) }
 .issues { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px }
 .issues li { padding-left: 16px; position: relative }
