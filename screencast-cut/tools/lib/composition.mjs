@@ -2,9 +2,11 @@
 // the shot's crop fills its box (left, top, width, height) and clipped to the box (clip-path),
 // played from the source's own time (data-media-start: the recording's time less the source's
 // offset), muted; in the screen and phone views the webcam beside it in a circle, the same
-// moment. The sound is the main microphone's, cleaned, on a track of its own: an <audio> clip
-// per spoken piece with the gain that brings its take to the common level and 10 ms fades,
-// all through one bus (rumble out, a gentle compressor, a true-peak ceiling) as in best-takes.
+// moment, one element for the whole cut (the webcam's track, tracks.mjs) moved into place at each
+// piece. The sound is the main microphone's, cleaned, one track for the whole cut with every
+// take at the common level and 10 ms fades at the cuts (tracks.mjs), through one bus (rumble out,
+// a gentle compressor, a true-peak ceiling) as in best-takes. A browser plays only about 75 media
+// elements on a page: the shots of the screens are one each, the voice and the webcam one in all.
 // On top: a label per keep that has one, a badge on a timelapse, the captions of agentitos'
 // captions skill, and music under the voice when asked, lower while someone speaks. Nothing is
 // rendered to preview it.
@@ -14,7 +16,6 @@ import path from "node:path";
 import { areas, fit, place, cover, circle } from "./layout.mjs";
 
 const GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js";
-const FADE = 0.01;
 
 const attr = (v) => JSON.stringify(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
@@ -94,14 +95,15 @@ export function brandOf(file) {
 }
 
 export function writeComposition(out, o) {
-  const { title, lang, width, height, fps, pieces, sources, dir, voice, labels = [], captions, music, brand = {} } = o;
+  // voice: the voice's track for the whole cut in assets/ (tracks.voiceTrack); camera: the
+  // webcam's (tracks.cameraTrack), one element that is the circle and the face in turn
+  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, labels = [], captions, music, brand = {} } = o;
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   const name = path.basename(out);
   const used = new Set();
   const placed = shots(pieces, sources, width, height);
   for (const s of placed) for (const l of s.layers) used.add(l.source);
-  for (const k of used) link(path.join(dir, "source", sources[k].file), path.join(out, "assets", sources[k].file));
-  link(path.join(dir, "source", voice), path.join(out, "assets", voice));
+  for (const k of used) if (!(k === "webcam" && camera)) link(path.join(dir, "source", sources[k].file), path.join(out, "assets", sources[k].file));
   if (music) link(path.resolve(music.file), path.join(out, "assets", `music${path.extname(music.file)}`));
   fs.writeFileSync(path.join(out, "meta.json"), JSON.stringify({ id: name, name }, null, 2) + "\n");
   fs.writeFileSync(path.join(out, "hyperframes.json"), JSON.stringify({ $schema: "https://hyperframes.heygen.com/schema/hyperframes.json", paths: { assets: "assets" }, media: { autoProxy: true } }, null, 2) + "\n");
@@ -115,14 +117,19 @@ export function writeComposition(out, o) {
   const next = (p) => `${p}${String(++id).padStart(3, "0")}`;
 
   // the shots
+  // where the webcam's one element is at each piece: its geometry, or hidden
+  const cam = [];
   for (const { piece: p, layers } of placed) {
+    const camLayer = camera ? layers.find((l) => l.source === "webcam") : null;
+    cam.push({ start: p.start, style: null });
     for (const l of layers) {
       const src = sources[l.source];
       const at = place(l.box, l.crop, src);
       // a radius in pixels: a percentage would be of the whole element, not of the visible box
       const radius = l.pip ? l.box[2] / 2 : l.round;
       const clipPath = `inset(${at.inset.map(px).join(" ")}${radius ? ` round ${px(radius)}` : ""})`;
-      html.push(`      <video id="${next("v")}" class="clip${l.pip ? " pip" : ""}" src="assets/${src.file}" ${timing(l.start ?? p.start, l.duration ?? p.duration)}
+      if (l === camLayer) cam.at(-1).style = { left: px(at.left), top: px(at.top), width: px(at.width), height: px(at.height), clipPath };
+      else html.push(`      <video id="${next("v")}" class="clip${l.pip ? " pip" : ""}" src="assets/${src.file}" ${timing(l.start ?? p.start, l.duration ?? p.duration)}
         data-media-start="${n(Math.max(0, (l.in ?? p.in) - src.offset))}"${p.rate && p.rate !== 1 ? ` data-playback-rate="${+p.rate.toFixed(4)}"` : ""}
         data-track-index="${l.pip ? 2 : 0}" muted data-has-audio="false" playsinline
         style="left:${px(at.left)};top:${px(at.top)};width:${px(at.width)};height:${px(at.height)};clip-path:${clipPath}"></video>`);
@@ -149,17 +156,29 @@ export function writeComposition(out, o) {
     anim.push(`tl.from("#${elId}", { opacity: 0, y: -12, duration: 0.3, ease: "power2.out" }, ${n(l.start)});`);
   }
 
-  // the voice: the main microphone's, one clip per spoken piece
-  const voiceClips = [];
-  for (const p of pieces) {
-    if (p.mute) continue;
-    const lift = Math.abs(p.gain) > 12 ? [Math.sign(p.gain) * 12, +(p.gain - Math.sign(p.gain) * 12).toFixed(1)] : [p.gain];
-    const chain = { version: 1, nodes: lift.map((g, k) => ({ type: "gain", id: `g${k + 1}`, label: "Take level", params: { gain: g } })) };
-    const d = n4(p.duration);
-    const fades = { version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: 0 }, { t: FADE, v: 1 }, { t: n(d - FADE), v: 1 }, { t: d, v: 0 }] }] };
-    voiceClips.push(`      <audio id="${next("a")}" class="clip" src="assets/${voice}" ${timing(p.start, p.duration)} data-media-start="${n(p.in)}"
-        data-track-index="7" data-has-audio="true" data-audio-group="voice" data-fx-chain="${attr(chain)}" data-automation="${attr(fades)}"></audio>`);
+  // the webcam: one element for the whole cut, moved into place at every piece, hidden where the
+  // piece shows no webcam
+  let camHtml = "";
+  if (camera && cam.some((c) => c.style)) {
+    const first = cam.find((c) => c.style).style;
+    camHtml = `      <video id="cam" class="clip" src="assets/${camera}" ${timing(0, total)} data-media-start="0"
+        data-track-index="2" muted data-has-audio="false" playsinline
+        style="left:${first.left};top:${first.top};width:${first.width};height:${first.height};clip-path:${first.clipPath};opacity:${cam[0].style ? 1 : 0}"></video>`;
+    let shown = !!cam[0].style, last = cam[0].style || first;
+    for (const c of cam.slice(1)) {
+      if (c.style && (!shown || JSON.stringify(c.style) !== JSON.stringify(last))) {
+        anim.push(`tl.set("#cam", ${JSON.stringify({ ...c.style, opacity: 1 })}, ${n4(c.start)});`);
+        shown = true; last = c.style;
+      } else if (!c.style && shown) {
+        anim.push(`tl.set("#cam", { opacity: 0 }, ${n4(c.start)});`);
+        shown = false;
+      }
+    }
   }
+
+  // the voice: one track for the whole cut, each take's level and the fades already in it
+  const voiceClips = [`      <audio id="voice-track" class="clip" src="assets/${voice}" ${timing(0, total)} data-media-start="0"
+        data-track-index="7" data-has-audio="true" data-audio-group="voice"></audio>`];
 
   // music under it all, lower while someone speaks
   let musicHtml = "";
@@ -209,7 +228,7 @@ export function writeComposition(out, o) {
     <!-- generated by screencast-cut/tools/screencast.mjs from cut.json: change cut.json and build again -->
     <div id="main" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}" data-fps="${fps}">
       <hf-audio-group id="voice" data-label="Voice" data-fx-chain="${attr(BUS)}"></hf-audio-group>
-${html.join("\n")}
+${html.join("\n")}${camHtml ? `\n${camHtml}` : ""}
 ${voiceClips.join("\n")}${musicHtml ? `\n${musicHtml}` : ""}${captions ? `\n      ${captions}` : ""}
     </div>
     <script>

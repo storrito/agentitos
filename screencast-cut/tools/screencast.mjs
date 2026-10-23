@@ -47,6 +47,7 @@ import { grid, differ, samplesOf, mirrors, scenes, level, busy, moving, focus, M
 import { plan, range } from "./lib/cut.mjs";
 import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
+import { voiceTrack, cameraTrack } from "./lib/tracks.mjs";
 import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source"];
@@ -576,7 +577,16 @@ function cmdBuild(dir, opts) {
   }
 
   const voiceFile = fs.existsSync(source(dir, "voice.clean.m4a")) ? "voice.clean.m4a" : meta.voice;
-  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: voiceFile, labels, captions, music, brand });
+  // the voice and the webcam as one track each for the whole cut (a browser plays about 75 media
+  // elements on a page, a clip per piece ran out of them)
+  fs.mkdirSync(path.join(out, "assets"), { recursive: true });
+  voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"));
+  let camera = null;
+  if (sources.webcam?.video) {
+    cameraTrack(source(dir, sources.webcam.file), sources.webcam.offset, r.pieces, path.join(out, "assets", "camera.mp4"), { fps: s.fps });
+    camera = "camera.mp4";
+  }
+  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, labels, captions, music, brand });
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
@@ -703,6 +713,11 @@ function cmdCheck(dir) {
   for (const [k, p] of e.pieces.entries()) {
     if (p.shows && !p.hold && p.rate <= 1.05 && p.duration > 6) warnings.push(`piece ${k + 1} shows ${p.duration.toFixed(1)} s without words at their own speed: a wait? list the last word before it in "waits"`);
   }
+
+  // a browser plays about 75 media elements on a page; past that the preview goes silent or black
+  const page = fs.readFileSync(path.join(path.resolve(e.out), "index.html"), "utf8");
+  const media = (page.match(/<(video|audio)\b/g) || []).length;
+  if (media > 70) warnings.push(`the preview has ${media} media elements, near the ${75} a browser plays on a page: past them it goes silent or black; fewer keeps, or keeps that join`);
 
   // HyperFrames' own check of the project
   const [hf, ...pre] = hyperframes();
