@@ -90,6 +90,7 @@ Then list the camera shots of the clip (a new shot starts at every cut; a clip w
 their face, as its left, top, right and bottom edge in thousandths of the frame (0–1000; left and right from the left edge, top and bottom from the top edge),
 and the voice label that person speaks with (null if they do not speak in the clip).`;
   if (or.gateway && (fs.statSync(small).size * 4) / 3 > GATEWAY_MAX) {
+    fs.rmSync(small, { force: true });
     log(`frame: the clip is too large for the Sprites gateway (${GATEWAY_MAX / 1e6} MB a request): the footage stays as it is`);
     return null;
   }
@@ -264,5 +265,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4>"); process.exit(1); }
   const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
   const r = await frame(video, Array.isArray(raw) ? raw : raw.words, { aspect: (opt("aspect") || "9:16").split(":").map(Number), out: opt("out"), log: console.error });
-  console.log(r ? `${opt("out")}: the footage follows who speaks.` : "Nothing to cut: the footage has the frame's shape, or no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway).");
+  console.log(r ? `${opt("out")}: the footage follows who speaks.` : "Nothing to cut: the footage has the frame's shape, there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above).");
 }

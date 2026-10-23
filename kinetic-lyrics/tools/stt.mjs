@@ -106,10 +106,12 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-stt-"));
   let cost = 0, done = 0;
   const starts = Array.from({ length: Math.ceil(total / CH) }, (_, k) => k * CH);
-  if (starts.length > 1) log(`  transcribe: ${starts.length} pieces of ${CH / 60} min, ${Math.min(AT_ONCE, starts.length)} at a time …`);
+  // through the Sprites gateway fewer at a time: its limits are not known
+  const atOnce = or.gateway ? 8 : AT_ONCE;
+  if (starts.length > 1) log(`  transcribe: ${starts.length} pieces of ${CH / 60} min, ${Math.min(atOnce, starts.length)} at a time …`);
   let pieces;
   try {
-    pieces = await inTurns(starts, AT_ONCE, async (at, k) => {
+    pieces = await inTurns(starts, atOnce, async (at, k) => {
       // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64), then MP3 at
       // 48 kbit/s, which it transcribes as well; MP3 always through the Sprites gateway, which
       // refuses a request of several megabytes

@@ -65,8 +65,9 @@ ${numbered}` });
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  const size = content.reduce((t, c) => t + (c.video_url?.url.length || c.text?.length || 0), 0);
-  if (or.gateway && size > GATEWAY_MAX) throw new Error(`the small videos take ${(size / 1e6).toFixed(1)} MB, more than the Sprites gateway takes (${GATEWAY_MAX / 1e6} MB): read the brief and cut yourself, or set OPENROUTER_API_KEY`);
+  const body = JSON.stringify({ model, messages: [{ role: "user", content }], response_format: { type: "json_schema", json_schema: { name: "cut", strict: true, schema: SCHEMA } } });
+  const size = Buffer.byteLength(body);
+  if (or.gateway && size > GATEWAY_MAX) throw new Error(`the request with the small videos takes ${(size / 1e6).toFixed(1)} MB, more than the Sprites gateway takes (${GATEWAY_MAX / 1e6} MB): read the brief and cut yourself, or set OPENROUTER_API_KEY`);
   log(`proposing a cut (${model}, ${Math.max(1, Math.round(minutes))} min of video) …`);
   let j;
   for (let attempt = 1; ; attempt++) {
@@ -74,7 +75,7 @@ ${numbered}` });
       const res = await fetch(`${or.base}/chat/completions`, {
         method: "POST",
         headers: { ...or.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content }], response_format: { type: "json_schema", json_schema: { name: "cut", strict: true, schema: SCHEMA } } }),
+        body,
         signal: AbortSignal.timeout(600e3),
       });
       j = await res.json();
