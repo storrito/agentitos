@@ -24,6 +24,8 @@ metadata:
 cd <skill> && npm install                     # node 20+, ffmpeg on the PATH
 ```
 
+agentitos' `platform-zones` skill must be beside this one: the type keeps clear of what the apps lay over the video.
+
 With OpenRouter (`OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own)), the words and who speaks them come from Gemini 3.5 Transcribe through OpenRouter: nothing else to install. yt-dlp is taken from the PATH or downloaded once by `tools/episode.mjs`. Without OpenRouter, transcription runs on this machine and needs Parakeet (`npx hyperframes models install parakeet`), speaker detection `<skill>/.venv` with sherpa-onnx, gap repair `whisper-cli` (see README). When something is missing, say so in one sentence instead of installing it yourself.
 
 ## The main use: shorts from a YouTube episode, all in the chat

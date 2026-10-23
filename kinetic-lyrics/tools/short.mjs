@@ -29,6 +29,7 @@ import path from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readVariables } from "./variables.mjs";
+import { zones, platformList } from "./lib/zones.mjs";
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
 const VALUED = ["speakers", "names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "platform", "out"];
@@ -58,6 +59,8 @@ function settings(dir, opts) {
   // shorts from before: the text mode is gone, every word is big
   delete kept.keywords; delete kept["full-text"];
   const merged = { aspect: "9:16", ...kept, ...opts };
+  // a platform platform-zones does not know is not kept: every later build would fail on it
+  if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`--platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return merged;
 }

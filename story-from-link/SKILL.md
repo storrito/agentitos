@@ -24,7 +24,7 @@ metadata:
 cd <skill> && npm install
 ```
 
-It needs Node 20+ and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
+It needs Node 20+, agentitos' `platform-zones` skill beside this one (where Instagram covers a story) and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## The main use: a story from a link, all in the chat
 

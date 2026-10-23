@@ -99,6 +99,8 @@ function settings(dir, opts) {
   const kept = fs.existsSync(file) ? read(file) : {};
   const merged = { frame: "9:16", fps: 30, pause: 1, tail: 0.45, end: 1.5, loudness: -14, duck: 10, ...kept, ...opts };
   if (!FRAMES[merged.frame]) fail(`--frame is one of ${Object.keys(FRAMES).join(", ")}`);
+  // a platform platform-zones does not know is not kept: every later step would fail on it
+  if (opts.platform) try { zones(...FRAMES[merged.frame], platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return { ...merged, final: merged.loudness, loudness: TAKE_LEVEL };
 }
@@ -582,7 +584,7 @@ function cmdBuild(dir, opts) {
   const tall = (src) => sources[src].height > sources[src].width * 1.25;
   // a screen in a narrower frame is zoomed in at least to half its width: whole, it is too
   // small to read; a phone's screen is shown whole unless a keep says where to zoom
-  const maxWidth = height > width ? 0.5 : 1;
+  const maxWidth = height >= width * 1.5 ? 0.5 : 1;
   const zoomOf = (src, from, to) => {
     if (tall(src)) return [0, 0, 1, 1];
     const f = focus(activity[src] || [], from, to) || focus(activity[src] || [], from - 5, to + 5)
@@ -724,6 +726,8 @@ function cmdBuild(dir, opts) {
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   console.log(`Laid out clear of ${layout.zones.platforms.map((p) => p.name).join(", ")}${layout.zones.fallback ? " (no --platform: the usual ones of this frame; name where it goes with --platform)" : ""}.`);
+  // a platform named that has no numbers for this frame: who stands in for it
+  for (const n of layout.zones.notes.filter((n) => n.includes("stand in") || n.includes("stands in"))) console.log(`  ${n}`);
   console.log(`Next: ${cmd(`check ${rel(dir)}`)}`);
 }
 
@@ -731,6 +735,8 @@ function cmdBuild(dir, opts) {
 function cmdCaptions(dir, opts) {
   const cutFile = path.join(dir, "cut.json"), editFile = path.join(dir, "edit.json");
   if (!fs.existsSync(editFile)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
+  // the platform first: a wrong one fails before the key words are marked (and paid for)
+  if (opts.platform !== undefined) settings(dir, { platform: opts.platform });
   const cut = read(cutFile);
   if (opts.off) {
     delete cut.captions;
@@ -897,7 +903,7 @@ function cmdFrame(dir, when, opts) {
   const layout = layoutOf(settings(dir, {}), fs.existsSync(path.join(dir, "cut.json")) ? read(path.join(dir, "cut.json")) : {});
   const ps = e.pieces.filter((x) => x.keep === p.keep && x.source === name);
   const auto = activity[name] && !(src.height > src.width * 1.25)
-    ? cropFor(focus(activity[name], Math.min(...ps.map((x) => x.in)), Math.max(...ps.map((x) => x.out))), src, layout.areas.content, { maxWidth: layout.height > layout.width ? 0.5 : 1 })
+    ? cropFor(focus(activity[name], Math.min(...ps.map((x) => x.in)), Math.max(...ps.map((x) => x.out))), src, layout.areas.content, { maxWidth: layout.height >= layout.width * 1.5 ? 0.5 : 1 })
     : null;
   const rect = (b, color) => `,drawbox=x=iw*${b[0]}:y=ih*${b[1]}:w=iw*${(b[2] - b[0]).toFixed(4)}:h=ih*${(b[3] - b[1]).toFixed(4)}:color=${color}:t=6`;
   const box = (c ? rect(c, "red@0.9") : "") + (auto && auto.join() !== "0,0,1,1" ? rect(auto, "0x22cc55@0.9") : "");

@@ -20,45 +20,59 @@ export const FRAMES = { "9:16": [1080, 1920], "16:9": [1920, 1080], "1:1": [1080
 const MIN_CROP = 0.38; // of the source's width: at most about 2.6 times as large
 const PAD = 0.1; // around the region, of its size
 
-// The areas of a frame, in pixels: content (a screen), tall (a phone's screen), the webcam's
-// circle (pip: x, y, diameter), the label's corner. zones: platform-zones' answer for this frame
-// and the platforms the video goes to; captions, labels: whether the cut has them (their room is
-// kept only then).
+// The areas of a frame, in pixels: content (where a screen may go: one area or several to choose
+// the largest shot from), tall (a phone's screen), the webcam's circle (pip: x, y, diameter), the
+// label's corner. zones: platform-zones' answer for this frame and the platforms the video goes
+// to; captions, labels: whether the cut has them (their room is kept only then).
 export function areas(width, height, zones, { captions = true, labels = false } = {}) {
   const [sx, sy, sw, sh] = zones.safe;
   const short = Math.min(width, height), gap = Math.round(short * 0.022);
   // the captions' band: their lowest line at the safe box's bottom, room for two lines above it
-  const capTop = captions ? sy + sh - Math.round(short * (height > width ? 0.2 : 0.12)) : sy + sh;
+  // (a wide frame's captions are smaller and mostly one line)
+  const capTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
   const label = [sx, sy];
   const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
   if (height >= width * 1.5) {
-    // 9:16: the shot across the whole width, the circle below it on the left, the captions under
-    // both; a phone's screen beside the circle
+    // 9:16: the circle above the captions on the left, a phone's screen beside it. A screen goes
+    // across the whole width where no app has buttons on the right (a Story), else either across
+    // the whole width above the buttons' column (the zones' wide stretch) or inside the safe box,
+    // whichever shows it larger
     const d = Math.round(width * 0.22);
     const pip = [sx, capTop - gap - d, d];
-    return { content: [0, top, width, pip[1] - gap - top], tall: [sx + d + gap, top, sw - d - gap, capTop - gap - top], pip, label };
+    const bottom = pip[1] - gap;
+    const column = zones.margins.right > zones.margins.left + 40;
+    const content = !column ? [[0, top, width, bottom - top]]
+      : [[sx, top, sw, bottom - top], ...(zones.wide && Math.min(bottom, zones.wide[1] + zones.wide[3]) > top
+        ? [[0, top, width, Math.min(bottom, zones.wide[1] + zones.wide[3]) - top]] : [])];
+    return { content, tall: [sx + d + gap, top, sw - d - gap, capTop - gap - top], pip, label };
   }
   if (height > width * 0.9) {
     // 4:5 and 1:1: the circle in the safe box's top right corner, beside the label, the shot
-    // across the whole width below them, above the captions
+    // across the whole width below them, above the captions (a feed lays nothing at the sides)
     const d = Math.round(short * 0.16);
     const pip = [sx + sw - d, sy, d];
     const below = sy + Math.max(top - sy, d + gap);
-    return { content: [0, below, width, capTop - gap - below], tall: [sx, below, sw, capTop - gap - below], pip, label };
+    return { content: [[0, below, width, capTop - gap - below]], tall: [sx, below, sw, capTop - gap - below], pip, label };
   }
-  // wide: the shot as large as the frame above the captions allows (the whole frame without
-  // them), the circle in the safe box's top right corner, over the shot's corner where they meet
+  // wide: the shot across the width between the apps' bar at the top and the captions (the safe
+  // box's bottom without them), the circle in the safe box's top right corner and the label in
+  // its top left one, over the shot's corners where they meet
   const d = Math.round(short * 0.2);
   const pip = [sx + sw - d, sy, d];
-  return { content: [0, 0, width, captions ? capTop - gap : height], tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
+  return { content: [[0, sy, width, (captions ? capTop - gap : sy + sh) - sy]], tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
 }
 
-// the largest box of `aspect` (width / height) inside `area`, centred
+// the largest box of `aspect` (width / height) inside `area`, centred; of several areas, the one
+// that holds the largest
 export function fit(area, aspect) {
+  if (Array.isArray(area[0])) return area.map((a) => fit(a, aspect)).reduce((b, c) => (c[2] * c[3] > b[2] * b[3] ? c : b));
   const [x, y, w, h] = area;
   const bw = Math.min(w, h * aspect), bh = bw / aspect;
   return [x + (w - bw) / 2, y + (h - bh) / 2, bw, bh];
 }
+
+// of several areas, the largest: its shape is the shape of a crop chosen for them
+export const largest = (area) => (Array.isArray(area[0]) ? area.reduce((b, c) => (c[2] * c[3] > b[2] * b[3] ? c : b)) : area);
 
 // The crop of a source (in 0–1 of its frame) for a region of interest `focus` ({ box, centre }
 // from activity.focus), in the shape of `area`: the region padded, at least MIN_CROP wide, as
@@ -67,6 +81,7 @@ export function fit(area, aspect) {
 // source (a screen in a 9:16 video), where the whole would be too small to read: then at most
 // `maxWidth` of the source's width.
 export function crop(focus, source, area, { maxWidth = 1 } = {}) {
+  area = largest(area);
   const full = [0, 0, 1, 1];
   if (!focus) return full;
   const [x0, y0, x1, y1] = focus.box;

@@ -178,9 +178,15 @@ for (const p of qa.phrases) {
   const g = await page.evaluate((t, id) => {
     window.__qa.seek(t);
     const R = (e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
+    // a word without the padding its mask keeps for descenders and swashes (.ky-mk): that room is
+    // invisible, the text is what must stay clear
+    const T = (e) => {
+      const r = R(e), cs = getComputedStyle(e), p = (k) => parseFloat(cs[k]) || 0;
+      return { x: r.x + p("paddingLeft"), y: r.y + p("paddingTop"), w: r.w - p("paddingLeft") - p("paddingRight"), h: r.h - p("paddingTop") - p("paddingBottom") };
+    };
     const vis = (e) => { const s = getComputedStyle(e); return s.visibility !== "hidden" && +s.opacity > 0.05; };
     const words = [...document.querySelectorAll(`.ky-ph[data-ph="${id}"] .ky-w`)].map((e) => ({
-      i: +e.dataset.w, line: [...e.parentElement.parentElement.children].indexOf(e.parentElement), r: R(e.querySelector(".ky-mk") || e),
+      i: +e.dataset.w, line: [...e.parentElement.parentElement.children].indexOf(e.parentElement), r: T(e.querySelector(".ky-mk") || e),
       op: +getComputedStyle(e).opacity * +getComputedStyle(e.querySelector(".ky-mk") || e).opacity,
     }));
     const others = [...document.querySelectorAll(".ky-ph")].filter((e) => e.dataset.ph !== id && vis(e)).map((e) => e.dataset.ph);
@@ -196,8 +202,9 @@ for (const p of qa.phrases) {
     const cut = Math.max(-w.r.x, -w.r.y, w.r.x + w.r.w - W, w.r.y + w.r.h - H);
     if (cut > 2) { add("error", t, "cut off", `"${d}" sticks out of the frame by ${Math.round(cut)} px`); shotNeeded = "cut"; }
     else {
-      const out = Math.max(SAFE_BOX[0] - w.r.x, SAFE_BOX[1] - w.r.y, w.r.x + w.r.w - SAFE_BOX[2], w.r.y + w.r.h - SAFE_BOX[3]);
-      if (out > 4) add("warn", t, "safe area", `"${d}" ${Math.round(out)} px outside the safe area (the platforms' buttons and captions, the action-safe border)`);
+      const sides = { left: SAFE_BOX[0] - w.r.x, top: SAFE_BOX[1] - w.r.y, right: w.r.x + w.r.w - SAFE_BOX[2], bottom: w.r.y + w.r.h - SAFE_BOX[3] };
+      const [side, out] = Object.entries(sides).reduce((a, b) => (b[1] > a[1] ? b : a));
+      if (out > 4) add("warn", t, "safe area", `"${d}" ${Math.round(out)} px past the safe area's ${side} (the platforms' buttons and captions, the action-safe border)`);
     }
     for (const h of g.hud) if (ins(w.r, h.r) > 0.12 * w.r.w * w.r.h) { add("warn", t, "collision", `"${d}" covers the HUD (${h.cls.split(" ")[0]})`); shotNeeded ||= "hud"; }
   }

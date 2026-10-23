@@ -107,11 +107,16 @@ export function build(root, plan, gsap) {
   function width100(line) {
     let sum = 0;
     line.forEach((tk, i) => {
-      const m = measure(textOf(tk.w, tk.style), tk.style, 100 * tk.k);
+      const txt = textOf(tk.w, tk.style);
+      // the gothic's letter-spacing (.012em a letter, see CSS) is on the page, not in measureText
+      const m = measure(txt, tk.style, 100 * tk.k) + (tk.style === "gothic" ? 100 * tk.k * 0.012 * txt.length : 0);
       // a circled word keeps room for its circle, which is wider than the word (see noteSvg)
       sum += m + (tk.w.note === "circle" ? m * 0.12 + 40 * tk.k : 0);
       if (i) sum += 100 * 0.2 * Math.min(tk.k, line[i - 1].k);
     });
+    // a marker reaches .1em past the word it marks (.ky-marker): at the line's ends that is past the line
+    const marked = (tk) => tk && tk.w.mark && tk.style === "gothic";
+    sum += (marked(line[0]) ? 10 * line[0].k : 0) + (line.length > 1 && marked(line.at(-1)) ? 10 * line.at(-1).k : 0);
     return sum;
   }
   function fit(line, targetW, cap) {
@@ -132,7 +137,10 @@ export function build(root, plan, gsap) {
     const vizH = !vk ? 0 : tall
       ? Math.min(Math.max(safeH * (portrait ? 0.26 : 0.34), H * 0.11), safeH * 0.42)
       : Math.min(Math.max(safeH * (portrait ? 0.17 : 0.19), H * 0.07), safeH * 0.3);
-    const availH = safeH - (vizH ? vizH + H * 0.03 : 0);
+    // a phrase about rising drifts up while it is up, from 4 % of the height below its place to 5 %
+    // above it (see the lockup's drift below): its lines leave room for the way, and its growth
+    const ascend = ph.concepts?.includes("rise") || ph.concepts?.includes("sky");
+    const availH = (safeH - (vizH ? vizH + H * 0.03 : 0) - (ascend ? 0.1 * H * drift : 0)) / (1 + 0.04 * drift);
 
     if (ph.layout === "list" && ph.items) {
       // checklist: one item per line, flush left behind a checkbox
