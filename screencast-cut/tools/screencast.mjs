@@ -572,7 +572,12 @@ function cmdCaptions(dir, opts) {
   } else {
     const e = read(editFile);
     const file = captionWords(dir, e.words, {}, e);
-    runCaptions(["mark", file, ...(opts.product ? ["--product", opts.product] : [])]);
+    // the key words by the captions skill's model; without it (it needs OPENROUTER_API_KEY) the
+    // captions come without them
+    const tool = captionsTool();
+    if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
+    const marked = spawnSync(process.execPath, [tool, "mark", file, ...(opts.product ? ["--product", opts.product] : [])], { encoding: "utf8" });
+    if (marked.status) console.log(`No key words marked (${(marked.stderr || marked.stdout).trim().split("\n").pop()}): the captions come without; mark them by hand with "highlight" (word numbers) in cut.json's "captions".`);
     const highlight = read(file).words.filter((w) => w.highlight).map((w) => w.i);
     cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}) };
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
