@@ -29,35 +29,68 @@ function fresh(out, key) {
   return false;
 }
 
+// Every piece is an input of its own, opened at its moment (-ss before -i, accurate since it is
+// decoded): ffmpeg decodes only the piece's stretch, and never holds the frames of one piece
+// while it waits for another. With one input cut many ways (trim), a hook from the end of a
+// four-minute recording made ffmpeg keep every frame before it in memory, gigabytes of raw
+// video, and the machine stopped answering (2026-10-23).
+function inputs(file, pieces, span) {
+  return pieces.flatMap((p) => {
+    const [from, length] = span(p);
+    return ["-ss", String(n(Math.max(0, from))), "-t", String(n(length + 0.5)), "-i", file];
+  });
+}
+
 export function voiceTrack(file, pieces, out) {
   const key = JSON.stringify({ file, mtime: fs.statSync(file).mtimeMs, pieces: pieces.map((p) => [n(p.in), n(p.duration), p.mute ? 0 : p.gain]) });
   if (fresh(out, key)) return out;
+  const spoken = pieces.filter((p) => !p.mute);
+  let k = 0;
   const parts = pieces.map((p, i) => {
     const d = n(p.duration);
     if (p.mute) return `aevalsrc=0:s=48000:c=mono:d=${d}[a${i}]`;
-    return `[0:a]atrim=start=${n(p.in)}:duration=${d},asetpts=PTS-STARTPTS,aresample=48000,volume=${p.gain || 0}dB,`
+    return `[${k++}:a]atrim=duration=${d},asetpts=PTS-STARTPTS,aresample=48000,volume=${p.gain || 0}dB,`
       + `afade=t=in:d=0.01,afade=t=out:st=${n(Math.max(0, d - 0.01))}:d=0.01,apad=whole_dur=${d}[a${i}]`;
   });
   const graph = `${parts.join(";")};${pieces.map((_, i) => `[a${i}]`).join("")}concat=n=${pieces.length}:v=0:a=1[out]`;
-  run(["-v", "error", "-y", "-i", file, "-filter_complex", graph, "-map", "[out]", "-ac", "1", "-c:a", "aac", "-b:a", "192k", out], "the voice's track");
+  // a cut of silence alone still needs an input for ffmpeg: the file, unused
+  const ins = spoken.length ? inputs(file, spoken, (p) => [p.in, p.duration]) : ["-i", file];
+  run(["-v", "error", "-y", ...ins, "-filter_complex", graph, "-map", "[out]", "-ac", "1", "-c:a", "aac", "-b:a", "192k", out], "the voice's track");
   fs.writeFileSync(`${out}.json`, key);
   return out;
 }
 
-export function cameraTrack(file, offset, pieces, out, { fps = 30, width = 1280 } = {}) {
+// The webcam piece by piece: each an ffmpeg of its own that seeks to the piece's moment, decodes
+// only it and writes a short segment (kept in `parts`, beside the sources, not in the project,
+// under a name of what it is, so a build
+// that changed other pieces reuses it), the segments joined without encoding again. One ffmpeg
+// with every piece as an input still decoded them all at once: 3.6 GB for 35 pieces of 720p.
+export function cameraTrack(file, offset, pieces, out, { fps = 30, width = 1280, parts = `${out}.parts` } = {}) {
   const key = JSON.stringify({ file, mtime: fs.statSync(file).mtimeMs, offset, fps, width, pieces: pieces.map((p) => [n(p.in), n(p.duration), p.rate || 1]) });
   if (fresh(out, key)) return out;
-  const parts = pieces.map((p, i) => {
+  const dir = parts;
+  fs.mkdirSync(dir, { recursive: true });
+  const keep = new Set();
+  const list = pieces.map((p) => {
     const rate = p.rate || 1, frames = Math.max(1, Math.round(p.duration * fps));
     const from = Math.max(0, p.in - offset);
-    // the piece's stretch of the webcam at the piece's speed, on exactly its frames: a frame too
-    // few is held, one too many dropped
-    return `[0:v]trim=start=${n(from)}:duration=${n(p.duration * rate)},setpts=(PTS-STARTPTS)/${n(rate)},fps=${fps},`
-      + `scale=${width}:-2,setsar=1,format=yuv420p,tpad=stop_mode=clone:stop=${fps},trim=end_frame=${frames},setpts=PTS-STARTPTS[v${i}]`;
+    const name = `${n(from)}-${frames}-${n(rate)}.mp4`;
+    keep.add(name);
+    const part = `${dir}/${name}`;
+    if (!fs.existsSync(part)) {
+      // the piece's stretch of the webcam at its speed, on exactly its frames: a frame too few is
+      // held, one too many dropped
+      run(["-v", "error", "-y", "-ss", String(n(from)), "-t", String(n(p.duration * rate + 0.5)), "-i", file, "-an",
+        "-vf", `setpts=(PTS-STARTPTS)/${n(rate)},fps=${fps},scale=${width}:-2,setsar=1,format=yuv420p,tpad=stop_mode=clone:stop=${fps}`,
+        "-frames:v", String(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-g", String(fps), "-r", String(fps),
+        "-video_track_timescale", String(fps * 1000), part], "a piece of the webcam's track");
+    }
+    return `file '${name}'`;
   });
-  const graph = `${parts.join(";")};${pieces.map((_, i) => `[v${i}]`).join("")}concat=n=${pieces.length}:v=1:a=0[out]`;
-  run(["-v", "error", "-y", "-i", file, "-filter_complex", graph, "-map", "[out]", "-an", "-c:v", "libx264", "-preset", "veryfast",
-    "-crf", "22", "-g", String(fps), "-r", String(fps), "-movflags", "+faststart", out], "the webcam's track");
+  // segments of earlier builds no piece uses any more go
+  for (const f of fs.readdirSync(dir)) if (!keep.has(f) && f.endsWith(".mp4")) fs.rmSync(`${dir}/${f}`, { force: true });
+  fs.writeFileSync(`${dir}/list.txt`, list.join("\n") + "\n");
+  run(["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", `${dir}/list.txt`, "-c", "copy", "-movflags", "+faststart", out], "the webcam's track");
   fs.writeFileSync(`${out}.json`, key);
   return out;
 }
