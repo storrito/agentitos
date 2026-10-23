@@ -17,6 +17,8 @@
 //                                     <dir>/edit.json
 //   node tools/screencast.mjs check <dir>     the cut as it plays, and what to fix
 //   node tools/screencast.mjs at <dir> <m:ss> what plays at that moment of the cut, and its keep
+//   node tools/screencast.mjs frame <dir> <m:ss>   its source's picture there, whole, with a grid
+//                                     and the shot's crop: to choose a "zoom" box by
 //   node tools/screencast.mjs privacy <dir>   a model looks at every shot for what must not be
 //                                     readable (a token in a link, keys, e-mail addresses, chats);
 //                                     the build blurs it
@@ -54,7 +56,7 @@ import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { scan, PRIVACY_MODEL } from "./lib/privacy.mjs";
 import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
 
-const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "model", "style", "product"];
+const VALUED = ["out", "title", "lang", "frame", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "model", "style", "product", "source"];
 const FLAGS = ["off"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
@@ -722,6 +724,31 @@ function cmdAt(dir, when) {
   console.log(`\nTo change it, edit keep ${p.keep + 1} in cut.json: "words" (start or end a word earlier or later), "hold" (seconds after its last word), "view", "zoom", "label"; then build.`);
 }
 
+// ----------------------------------------------------------------------------------- frame
+// The picture of a source at a moment of the cut, whole, with a grid every tenth (for a zoom box
+// in 0–1) and the shot's crop in red: to look at before setting "zoom" on a keep.
+function cmdFrame(dir, when, opts) {
+  const file = path.join(dir, "edit.json");
+  if (!fs.existsSync(file)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
+  const t = seconds(when);
+  const e = read(file);
+  const meta = read(source(dir, "sources.json"));
+  const p = e.pieces.find((x) => t >= x.start && t < x.start + x.duration);
+  if (!p) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen]: a moment of the cut, which is ${clock(e.duration)} long`);
+  const name = opts.source || (p.source === "webcam" ? Object.keys(meta.sources).find((k) => k !== "webcam" && meta.sources[k].video) : p.source);
+  const src = meta.sources[name];
+  if (!src?.video) fail(`No source ${name}.`);
+  const at = p.in + (t - p.start) * (p.rate || 1) - src.offset;
+  const out = path.join(dir, "frames", `${String(t.toFixed(1)).replace(".", "_")}-${name}.jpg`);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const c = p.source === name && p.crop ? p.crop : null;
+  const box = c ? `,drawbox=x=iw*${c[0]}:y=ih*${c[1]}:w=iw*${(c[2] - c[0]).toFixed(4)}:h=ih*${(c[3] - c[1]).toFixed(4)}:color=red@0.9:t=6` : "";
+  const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, at)), "-i", source(dir, src.file), "-frames:v", "1",
+    "-vf", `scale='min(1600,iw)':-2,drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.6${box}`, "-q:v", "3", out], { encoding: "utf8" });
+  if (r.status) fail(`✗ ${r.stderr.trim()}`);
+  console.log(`${rel(out)}: ${name} at ${clock(at + src.offset)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}. Look at it, then set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}.`);
+}
+
 // ---------------------------------------------------------------------------------- finish
 function srt(words) {
   const cues = [];
@@ -789,4 +816,5 @@ else if (command === "at") cmdAt(pos[0], pos[1]);
 else if (command === "privacy") await cmdPrivacy(pos[0], opts);
 else if (command === "captions") cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
-else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | at <dir> <m:ss> | privacy <dir> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
+else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
+else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | privacy <dir> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");

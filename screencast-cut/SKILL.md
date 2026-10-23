@@ -67,7 +67,7 @@ node <skill>/tools/screencast.mjs privacy screencast/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-`build` turns `cut.json` into the project: every piece a shot of its source, zoomed in on where the picture changes, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `privacy` has a model look at every shot of a screen for what must not be readable (a link with a token, keys, passwords, e-mail addresses, private chats, a phone's notifications) and builds again with a blur over each: **always run it before the person sees the preview**, and again after a change that shows other parts of the screens (check says so). `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it).
+`build` turns `cut.json` into the project: every piece a shot of its source, zoomed in on where the picture changes, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `privacy` has a model look at every shot of a screen for what must not be readable (a link with a token, keys, passwords, e-mail addresses, private chats, a phone's notifications) and builds again with a blur over each: **always run it before the person sees the preview**, and again after a change that shows other parts of the screens (check says so). `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it). Look at two or three moments of the screen shots with `frame` (below): the automatic zoom finds where the screen changed, which is not always what the sentence is about.
 
 ### 5. Ask whether it is right
 
@@ -88,7 +88,7 @@ says which piece and keep play there, from where in the recording, in which view
 | "… is cut off" / "too fast at the end" | `"hold": 1.5` (or more) on that keep; when check says the next words follow right after, end the keep a word later |
 | "Longer waits should be time-lapses" | the last word before the wait into `"waits"` |
 | "Show the phone when …" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
-| "Too zoomed in" / "zoom on the chat" | `"zoom": "off"` / a box `[x0, y0, x1, y1]` in 0–1 of the source (look at a frame first) |
+| "Too zoomed in" / "zoom on the chat" / a shot that shows the wrong part | `screencast.mjs frame screencast/<name> 0:23` saves that moment's whole source with a grid every tenth and the shot's crop in red: read it, then `"zoom": [x0, y0, x1, y1]` (0–1) on the keep, or `"zoom": "off"` |
 | "Show that it arrived on the phone" | a keep on the phone's screen after the words, with `"hold"`, or a wait that shows it |
 | "Start with …" | move that keep to the top |
 | "Longer than a minute is fine" / "at most 45 s" | keep more / drop the weakest keeps first, keep the hook and the proof |

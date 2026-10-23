@@ -10,6 +10,8 @@
 // padded, never smaller than MIN_CROP of the source's width, in the box's shape. The crop
 // decides the box's shape too: a box is the area's largest rectangle of the crop's aspect.
 
+import { hottest } from "./activity.mjs";
+
 export const FRAMES = { "9:16": [1080, 1920], "16:9": [1920, 1080], "1:1": [1080, 1080], "4:5": [1080, 1350] };
 
 const MIN_CROP = 0.38; // of the source's width: at most about 2.6 times as large
@@ -64,8 +66,14 @@ export function crop(focus, source, area, { maxWidth = 1 } = {}) {
   if (h > sh) { h = sh; w = h * aspect; }
   // a crop of most of the frame is no zoom
   if (maxWidth >= 1 && (w * h) / (sw * sh) >= 0.55) return full;
-  const cx = focus.centre[0] * sw, cy = focus.centre[1] * sh;
-  const left = Math.min(Math.max(0, cx - w / 2), sw - w), top = Math.min(Math.max(0, cy - h / 2), sh - h);
+  // where the crop holds the most of what changed; without a heat map, around its centre
+  let left, top;
+  const best = focus.heat && hottest(focus.heat, w / sw, h / sh, focus.centre);
+  if (best) { left = best.x * sw; top = best.y * sh; }
+  else {
+    const cx = focus.centre[0] * sw, cy = focus.centre[1] * sh;
+    left = Math.min(Math.max(0, cx - w / 2), sw - w); top = Math.min(Math.max(0, cy - h / 2), sh - h);
+  }
   return [left / sw, top / sh, (left + w) / sw, (top + h) / sh].map((v) => +v.toFixed(4));
 }
 
