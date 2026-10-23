@@ -229,7 +229,8 @@ function cmdBuild(dir, opts) {
   if (cut.captions) {
     const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
     const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi", ...(cut.captions.brand ? ["--brand", cut.captions.brand] : []),
-      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : [])]);
+      // a cut.json of before the setting kept the platform with its captions
+      ...(s.platform || cut.captions.platform ? ["--platform", platformList(s.platform || cut.captions.platform).join(",")] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions });
@@ -250,6 +251,8 @@ function cmdBuild(dir, opts) {
 function cmdCaptions(dir, opts) {
   const cutFile = path.join(dir, "cut.json"), editFile = path.join(dir, "edit.json");
   if (!fs.existsSync(editFile)) fail(`Build first: takes.mjs build ${rel(dir)}`);
+  // the platform first: a wrong one fails before the key words are marked (and paid for)
+  if (opts.platform !== undefined) settings(dir, { platform: opts.platform });
   const cut = read(cutFile);
   if (opts.off) {
     delete cut.captions;
@@ -262,7 +265,7 @@ function cmdCaptions(dir, opts) {
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
-  cmdBuild(dir, opts.platform !== undefined ? { platform: opts.platform } : {});
+  cmdBuild(dir, {});
 }
 
 // ----------------------------------------------------------------------------------- check

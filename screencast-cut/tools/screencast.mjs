@@ -735,6 +735,8 @@ function cmdBuild(dir, opts) {
 function cmdCaptions(dir, opts) {
   const cutFile = path.join(dir, "cut.json"), editFile = path.join(dir, "edit.json");
   if (!fs.existsSync(editFile)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
+  // the platform first: a wrong one fails before the key words are marked (and paid for)
+  if (opts.platform !== undefined) settings(dir, { platform: opts.platform });
   const cut = read(cutFile);
   if (opts.off) {
     delete cut.captions;
@@ -752,7 +754,7 @@ function cmdCaptions(dir, opts) {
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
-  cmdBuild(dir, opts.platform !== undefined ? { platform: opts.platform } : {});
+  cmdBuild(dir, {});
 }
 
 // ----------------------------------------------------------------------------------- check
