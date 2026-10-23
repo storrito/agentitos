@@ -69,10 +69,16 @@ export function crop(focus, source, area, { maxWidth = 1 } = {}) {
   if (h > sh) { h = sh; w = h * aspect; }
   // a crop of most of the frame is no zoom
   if (maxWidth >= 1 && (w * h) / (sw * sh) >= 0.55) return full;
-  // where the crop holds the most of what changed; without a heat map, around its centre
+  // the region whole when it fits, centred on it; else where the crop holds the most of what
+  // changed; without a heat map, around its centre
   let left, top;
-  const best = focus.heat && hottest(focus.heat, w / sw, h / sh, focus.centre);
-  if (best) { left = best.x * sw; top = best.y * sh; }
+  const bw = (x1 - x0) * sw, bh = (y1 - y0) * sh;
+  const best = (bw > w || bh > h) && focus.heat && hottest(focus.heat, w / sw, h / sh, focus.centre);
+  if (bw <= w && bh <= h) {
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    left = clamp(((x0 + x1) / 2) * sw - w / 2, Math.max(0, x1 * sw - w), Math.min(x0 * sw, sw - w));
+    top = clamp(((y0 + y1) / 2) * sh - h / 2, Math.max(0, y1 * sh - h), Math.min(y0 * sh, sh - h));
+  } else if (best) { left = best.x * sw; top = best.y * sh; }
   else {
     const cx = focus.centre[0] * sw, cy = focus.centre[1] * sh;
     left = Math.min(Math.max(0, cx - w / 2), sw - w); top = Math.min(Math.max(0, cy - h / 2), sh - h);

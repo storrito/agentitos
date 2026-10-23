@@ -5,9 +5,9 @@
 // moment. The sound is the main microphone's, cleaned, on a track of its own: an <audio> clip
 // per spoken piece with the gain that brings its take to the common level and 10 ms fades,
 // all through one bus (rumble out, a gentle compressor, a true-peak ceiling) as in best-takes.
-// On top: a label per keep that has one, a badge on a timelapse, a blur over what must not be
-// readable, the captions of agentitos' captions skill, and music under the voice when asked,
-// lower while someone speaks. Nothing is rendered to preview it.
+// On top: a label per keep that has one, a badge on a timelapse, the captions of agentitos'
+// captions skill, and music under the voice when asked, lower while someone speaks. Nothing is
+// rendered to preview it.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -60,10 +60,19 @@ export function shots(pieces, sources, width, height) {
       const cam = sources.webcam || src;
       if (cam) out.push({ source: cam === src ? p.source : "webcam", box: [0, 0, width, height], crop: cover(cam, width, height), main: true });
     } else {
-      const c = p.crop || [0, 0, 1, 1];
-      const aspect = ((c[2] - c[0]) * src.width) / ((c[3] - c[1]) * src.height);
-      // a tall picture (a phone's screen) gets the tall area
-      out.push({ source: p.source, box: fit(aspect < 0.8 ? a.tall : a.content, aspect), crop: c, main: true, round: Math.round(Math.min(width, height) * 0.02) });
+      // one main layer, or one per part of a piece that spans a scene change, each with its crop
+      // and its stretch of the piece's time (the last one up to the piece's end exactly)
+      const rate = p.rate || 1, end = p.start + p.duration;
+      const parts = p.segments?.length ? p.segments : [{ in: p.in, out: p.out, crop: p.crop }];
+      parts.forEach((seg, i) => {
+        const c = seg.crop || [0, 0, 1, 1];
+        const aspect = ((c[2] - c[0]) * src.width) / ((c[3] - c[1]) * src.height);
+        const start = p.start + (seg.in - p.in) / rate;
+        // a tall picture (a phone's screen) gets the tall area
+        out.push({ source: p.source, box: fit(aspect < 0.8 ? a.tall : a.content, aspect), crop: c, main: true,
+          round: Math.round(Math.min(width, height) * 0.02),
+          ...(parts.length > 1 ? { start, duration: (i === parts.length - 1 ? end : p.start + (seg.out - p.in) / rate) - start, in: seg.in } : {}) });
+      });
       if (sources.webcam && p.pip !== false) {
         const [x, y, d] = a.pip;
         out.push({ source: "webcam", box: [x, y, d, d], crop: circle(sources.webcam), pip: true });
@@ -85,7 +94,7 @@ export function brandOf(file) {
 }
 
 export function writeComposition(out, o) {
-  const { title, lang, width, height, fps, pieces, sources, dir, voice, labels = [], blurs = [], captions, music, brand = {} } = o;
+  const { title, lang, width, height, fps, pieces, sources, dir, voice, labels = [], captions, music, brand = {} } = o;
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   const name = path.basename(out);
   const used = new Set();
@@ -113,8 +122,8 @@ export function writeComposition(out, o) {
       // a radius in pixels: a percentage would be of the whole element, not of the visible box
       const radius = l.pip ? l.box[2] / 2 : l.round;
       const clipPath = `inset(${at.inset.map(px).join(" ")}${radius ? ` round ${px(radius)}` : ""})`;
-      html.push(`      <video id="${next("v")}" class="clip${l.pip ? " pip" : ""}" src="assets/${src.file}" ${timing(p.start, p.duration)}
-        data-media-start="${n(Math.max(0, p.in - src.offset))}"${p.rate && p.rate !== 1 ? ` data-playback-rate="${+p.rate.toFixed(4)}"` : ""}
+      html.push(`      <video id="${next("v")}" class="clip${l.pip ? " pip" : ""}" src="assets/${src.file}" ${timing(l.start ?? p.start, l.duration ?? p.duration)}
+        data-media-start="${n(Math.max(0, (l.in ?? p.in) - src.offset))}"${p.rate && p.rate !== 1 ? ` data-playback-rate="${+p.rate.toFixed(4)}"` : ""}
         data-track-index="${l.pip ? 2 : 0}" muted data-has-audio="false" playsinline
         style="left:${px(at.left)};top:${px(at.top)};width:${px(at.width)};height:${px(at.height)};clip-path:${clipPath}"></video>`);
       if (l.pip) {
@@ -129,12 +138,6 @@ export function writeComposition(out, o) {
       html.push(`      <div id="${next("b")}" class="clip badge" ${timing(p.start, p.duration)} data-track-index="4"
         style="left:${px(box[0] + box[2] - 20)};top:${px(box[1] + 20)}">⏩ ${Math.round(p.rate)}×</div>`);
     }
-  }
-
-  // what must not be readable: a blur over its box, for every shot that shows it
-  for (const b of blurs) {
-    html.push(`      <div id="${next("x")}" class="clip blur" ${timing(b.start, b.duration)} data-track-index="5"
-        style="left:${px(b.left)};top:${px(b.top)};width:${px(b.width)};height:${px(b.height)}"></div>`);
   }
 
   // the labels
@@ -198,8 +201,6 @@ export function writeComposition(out, o) {
       #main .ring { position: absolute; border-radius: 50%; border: 6px solid ${accent}; }
       #main .badge { position: absolute; transform: translateX(-100%); padding: 10px 18px; border-radius: 999px;
         background: rgba(0, 0, 0, 0.72); color: #fff; font: 800 ${Math.round(Math.min(width, height) * 0.032)}px "${font}", sans-serif; }
-      #main .blur { position: absolute; border-radius: 10px; backdrop-filter: blur(22px) saturate(0.6); -webkit-backdrop-filter: blur(22px) saturate(0.6);
-        background: rgba(110, 110, 110, 0.55); }
       #main .label { position: absolute; padding: 12px 22px; border-radius: 999px; background: ${accent}; color: ${ink};
         font: 800 ${Math.round(Math.min(width, height) * 0.036)}px "${font}", sans-serif; letter-spacing: 0.02em; }
     </style>
