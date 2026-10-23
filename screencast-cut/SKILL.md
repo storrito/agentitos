@@ -1,6 +1,6 @@
 ---
 name: screencast-cut
-description: Cut a screencast recorded from several sources at the same time (the screen, the webcam, a phone's screen or camera, the microphone; rragent's screencast recorder) into one video that shows where the action is. The sources are put on one clock, the voice is cleaned, the shot switches between screen, phone and face and zooms in on what changes, waits play as timelapses, every result is held long enough to see, the agent's own record says when a message was sent and a post went live, and secrets on screen (a token in a link, keys, e-mail addresses) are blurred; show it as a HyperFrames preview, change it by the moment the person names, then render it with captions. Use for product demos, tutorials and walkthroughs recorded with screen, webcam and phone together.
+description: Cut a screencast recorded from several sources at the same time (the screen, the webcam, a phone's screen or camera, the microphone; rragent's screencast recorder) into one video that shows where the action is. The sources are put on one clock, the voice is cleaned, the shot switches between screen, phone and face and zooms in on what changes, waits play as timelapses, every result is held long enough to see, and secrets on screen (a token in a link, keys, e-mail addresses) are blurred; show it as a HyperFrames preview, change it by the moment the person names, then render it with captions. Use for product demos, tutorials and walkthroughs recorded with screen, webcam and phone together.
 license: MIT
 metadata:
   title: "Screencast cut"
@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 22+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool; the look for secrets costs a few cents. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool; the look for secrets costs a few cents. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## From the recording to the video, all in the chat
 
@@ -37,7 +37,7 @@ Say in one sentence that you are getting the recording ready. Then
 node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<time> [--frame 9:16]
 ```
 
-turns every source into a video the preview plays well, puts them on one clock (recording.json's start times, made exact by their sound), takes the clearest microphone as the voice and cleans it, measures where each picture moves, and reads what the agent did meanwhile (this bot's conversation: the messages sent, the tools called, the answers). A few minutes for a few minutes of recording. `--frame`: `9:16` (the default, for Reels, Stories, TikTok), `16:9`, `1:1`, `4:5`.
+turns every source into a video the preview plays well, puts them on one clock (recording.json's start times, made exact by their sound), takes the clearest microphone as the voice and cleans it, and measures where each picture moves. A few minutes for a few minutes of recording. `--frame`: `9:16` (the default, for Reels, Stories, TikTok), `16:9`, `1:1`, `4:5`.
 
 ### 2. The words
 
@@ -55,7 +55,7 @@ node <skill>/tools/screencast.mjs words screencast/<name> artifacts/notes/screen
 node <skill>/tools/screencast.mjs propose screencast/<name>
 ```
 
-drafts `screencast/<name>/proposal.json`: every sentence a keep, its view by what moves, waits where a picture moves or the agent works between two sentences, a hold after "posted", "there it is". It keeps everything and has no story yet. Read `screencast/<name>/source/brief.md`, all of it, and write `screencast/<name>/cut.json` from the proposal: **the result first as a hook** (a few seconds: the post on the phone, the finished page), then the steps in order, then the proof, then a short end; slips, repeats and talk about the recording out; the views where the action is; every wait in `"waits"`; `"hold": 2.5` after a result; `"label"`s when the steps help the viewer; `"fixes"` for a word still spelled wrong.
+drafts `screencast/<name>/proposal.json`: every sentence a keep, its view by what moves, waits where a picture moves between two sentences, a hold after "posted", "there it is". It keeps everything and has no story yet. Read `screencast/<name>/source/brief.md`, all of it, and write `screencast/<name>/cut.json` from the proposal: **the result first as a hook** (a few seconds: the post on the phone, the finished page), then the steps in order, then the proof, then a short end; slips, repeats and talk about the recording out; the views where the action is; every wait in `"waits"`; `"hold": 2.5` after a result; `"label"`s when the steps help the viewer; `"fixes"` for a word still spelled wrong.
 
 ### 4. The preview
 

@@ -6,13 +6,12 @@
 // folder; made for agents: each step prints what to do next.
 //
 //   node tools/screencast.mjs new <dir> <recording-folder>   the sources into <dir>/source/: on
-//                                     one clock, the voice cleaned, where each picture moves, what
-//                                     the agent did meanwhile (rragent's agent.sqlite)
+//                                     one clock, the voice cleaned, where each picture moves
 //   node tools/screencast.mjs words <dir> <words.json>      the words of source/voice.m4a, as
 //                                     rragent's transcribe tool wrote them (`words: true`)
 //   node tools/screencast.mjs transcribe <dir>              or the words by ElevenLabs Scribe
-//   node tools/screencast.mjs propose <dir>   a first cut.json from the words, the pictures and
-//                                     the agent's events: proposal.json
+//   node tools/screencast.mjs propose <dir>   a first cut.json from the words and the pictures:
+//                                     proposal.json
 //   node tools/screencast.mjs build <dir>     cut.json → the HyperFrames project (a preview) and
 //                                     <dir>/edit.json
 //   node tools/screencast.mjs check <dir>     the cut as it plays, and what to fix
@@ -48,8 +47,7 @@ import { fileURLToPath } from "node:url";
 import { probe, prepare, samples, hyperframes, clock, seconds } from "./lib/media.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from "./lib/voice.mjs";
 import { align, clarity } from "./lib/sync.mjs";
-import { measure, level, busy, moving, focus, MOVING } from "./lib/activity.mjs";
-import { events as agentEvents, working } from "./lib/events.mjs";
+import { measure, level, busy, moving, focus, MOVING, ACTIVE } from "./lib/activity.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
@@ -177,10 +175,6 @@ async function cmdNew(dir, folder, opts) {
   }
   write(source(dir, "activity.json"), activity);
 
-  // what the agent did meanwhile
-  const ev = await agentEvents(folder, t0, vp.duration);
-  write(source(dir, "events.json"), ev || { bot: null, events: [] });
-  if (ev) console.log(`the agent (bot ${ev.bot}): ${ev.events.filter((e) => e.kind === "sent").length} messages, ${ev.events.filter((e) => e.kind === "tool").length} tool calls while recording`);
 
   write(source(dir, "sources.json"), { folder: rel(folder), t0, mic, voice, duration: vp.duration, sources });
   const r = await route();
@@ -295,7 +289,6 @@ function brief(dir) {
   const meta = read(source(dir, "sources.json"));
   const { words } = read(source(dir, "words.json"));
   const activity = read(source(dir, "activity.json"));
-  const { events } = read(source(dir, "events.json"));
   const list = sentences(words);
   const lines = [];
   lines.push(`# The screencast of ${meta.folder}
@@ -307,17 +300,11 @@ ${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources
 - **Open with the result** (a hook of a few seconds: the post live on the phone, the finished thing), then how it was done, step by step, then the proof, then a short end.
 - **Show where the action is.** \`view\` of a keep: \`screen\`, \`phone-screen\`, \`phone\` (the phone's camera) or \`face\` (the webcam over the whole frame); \`auto\` picks the source that moves most. In the screen and phone views the webcam sits beside them in a circle. The column "moves" below says which source moves in each sentence.
 - **Zoom in on what changes** (\`zoom\`: \`auto\`, the default, crops to where the picture changes; \`off\`; or a box \`[x0, y0, x1, y1]\` in 0–1 of the source).
-- **Waits are timelapses.** A wait the speaker announces, the agent working, an upload, a post going live: list the last word before it in \`waits\`; the build plays the time up to the next keep's first word fast (×3 to ×10, with a badge), its first and last 20 s when it is long. Waits under "The agent" below are the spans between a message and its answer.
+- **Waits are timelapses.** A wait the speaker announces, an agent working, an upload, a post going live: list the last word before it in \`waits\`; the build plays the time up to the next keep's first word fast (×3 to ×10, with a badge) whenever anything on a screen changes in it, its first and last 20 s when it is long. The long silences between the sentences below are where to look.
 - **Every result gets its proof, and time.** When the words say it is there ("posted", "there it is", "live"), the next shot shows it (the phone's screen, the page) and stays: \`"hold": 2.5\` on that keep holds 2.5 s after its last word. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word anyway, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s: no word is cut off.
 - **Whole sentences**, no slip, no sentence said twice (keep the fluent attempt), no talk about the recording itself; "äh"s go by themselves.
 - **No fixed length**: as short as the story allows; longer than a minute is fine when it needs it.
 - \`label\` on a keep puts a short title in the frame while it plays ("01 · Ask", "The result").
-
-## The agent
-
-${events.length ? events.map((e) => `- ${clock(e.t)} ${e.kind === "sent" ? `**sent:** ${e.text}` : e.kind === "answer" ? `**answered:** ${e.text}` : `tool \`${e.name}\` ${e.what}${e.took != null ? ` (${e.took} s)` : ""}${e.result ? ` → ${e.result}` : ""}`}`).join("\n") : "Nothing recorded (the recording is not in an rragent home, or the agent did nothing meanwhile)."}
-
-${working(events).map((w) => `- the agent worked from ${clock(w.from)} to ${clock(w.to)} (${Math.round(w.to - w.from)} s)`).join("\n")}
 
 ## What is said, sentence by sentence
 
@@ -353,8 +340,6 @@ function cmdPropose(dir) {
   const meta = read(source(dir, "sources.json"));
   const { words } = read(source(dir, "words.json"));
   const activity = read(source(dir, "activity.json"));
-  const { events } = read(source(dir, "events.json"));
-  const spans = working(events);
   const keep = [], waits = [];
   for (const s of sentences(words)) {
     const view = viewOf(activity, meta.sources, s.start, s.end + 0.5);
@@ -367,13 +352,12 @@ function cmdPropose(dir) {
       keep.push({ words: `${s.from}-${s.to}`, view, ...(claim ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text });
     }
   }
-  // a gap between two keeps in which a picture moves, or the agent works, is a wait
+  // a gap between two keeps in which a picture moves is a wait
   for (let k = 0; k + 1 < keep.length; k++) {
     const a = keep[k].end, b = keep[k + 1].start;
     if (b - a < 3) continue;
     const moves = Object.keys(activity).some((x) => x !== "webcam" && busy(activity[x], a, b, MOVING) > 0.15);
-    const works = spans.some((w) => w.from < b && w.to > a);
-    if (moves || works) waits.push(range(keep[k].words)[1]);
+    if (moves) waits.push(range(keep[k].words)[1]);
   }
   const proposal = { keep: keep.map(({ start, end, text, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
   write(path.join(dir, "proposal.json"), proposal);
@@ -430,15 +414,12 @@ function cmdBuild(dir, opts) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
   }
 
-  // the pictures that move in a pause: any of the screens, and the agent at work (its chat
-  // changes a few pixels, but it is the action)
+  // the pictures that move in a pause: any of the screens; in a wait someone named, anything
+  // that changes on them (an agent's chat, a progress bar change a few pixels, but they are
+  // the action)
   const shows = Object.keys(activity).filter((k) => k !== "webcam");
-  const { events } = read(source(dir, "events.json"));
-  const busySpans = working(events);
-  const moves = (_clip, from, to) => {
-    const spans = [...shows.flatMap((k) => moving(activity[k], from, to)),
-      ...busySpans.filter((w) => w.from < to && w.to > from).map((w) => ({ from: Math.max(from, w.from), to: Math.min(to, w.to) }))]
-      .sort((a, b) => a.from - b.from);
+  const moves = (_clip, from, to, wait = false) => {
+    const spans = shows.flatMap((k) => moving(activity[k], from, to, wait ? ACTIVE : MOVING)).sort((a, b) => a.from - b.from);
     return spans.reduce((out, x) => {
       const last = out.at(-1);
       if (last && x.from <= last.to) last.to = Math.max(last.to, x.to); else out.push({ ...x });
@@ -630,7 +611,6 @@ function cmdCheck(dir) {
   const meta = read(source(dir, "sources.json"));
   const { words } = read(source(dir, "words.json"));
   const cut = read(path.join(dir, "cut.json"));
-  const { events } = read(source(dir, "events.json"));
   const text = (a, b) => words.slice(a, b + 1).filter((w) => w.kind === "word").map((w) => cut.fixes?.[w.i] ?? w.text).filter(Boolean).join(" ");
   const errors = [], warnings = [...e.warnings];
   const z = (p) => (p.crop ? " zoomed" : "");
@@ -672,12 +652,9 @@ function cmdCheck(dir) {
     else if (after.every((p) => p.view === "face")) warnings.push(`"${w.text}" at ${clock(w.end)} of the cut: the shot after it is the face; show the proof (the phone's screen, the page): "view" on that keep`);
   }
 
-  // the agent's work does not play at its own speed: a muted stretch of it at ×1 is a wait to
-  // speed up (one with words over it is fine)
-  for (const s of working(events)) {
-    const real = e.pieces.filter((p) => p.shows && p.rate <= 1.05)
-      .reduce((t, p) => t + Math.max(0, Math.min(p.out, s.to) - Math.max(p.in, s.from)), 0);
-    if (real > 6) warnings.push(`the agent worked ${clock(s.from)}–${clock(s.to)} of the recording, and ${Math.round(real)} s of it play at their own speed: list the last word before it in "waits"`);
+  // a long stretch without words at its own speed is a wait to speed up
+  for (const [k, p] of e.pieces.entries()) {
+    if (p.shows && !p.hold && p.rate <= 1.05 && p.duration > 6) warnings.push(`piece ${k + 1} shows ${p.duration.toFixed(1)} s without words at their own speed: a wait? list the last word before it in "waits"`);
   }
 
   // what must not be readable

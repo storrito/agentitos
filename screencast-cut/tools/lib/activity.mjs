@@ -86,12 +86,13 @@ export function busy(samples, from, to, threshold = ACTIVE) {
   return s.length ? s.filter((x) => x.c >= threshold).length / s.length : 0;
 }
 
-// The spans in which the picture moves: samples over MOVING, runs less than two seconds apart
-// joined (the steps of one action), a quarter of a second added around each, within from–to.
-export function moving(samples, from, to) {
+// The spans in which the picture moves (samples over `threshold`), runs less than two seconds
+// apart joined (the steps of one action), a quarter of a second added around each, within
+// from–to.
+export function moving(samples, from, to, threshold = MOVING) {
   const spans = [];
   for (const s of within(samples, from, to)) {
-    if (s.c < MOVING) continue;
+    if (s.c < threshold) continue;
     const a = s.t - 1 / RATE - 0.25, b = s.t + 0.25, last = spans.at(-1);
     if (last && a - last.to < 2) last.to = b;
     else spans.push({ from: a, to: b });

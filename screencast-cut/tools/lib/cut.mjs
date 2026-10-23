@@ -17,7 +17,7 @@ import { speed, waitSpeed, WAIT_MOVING, WAIT_HOLD } from "./motion.mjs";
 // The spans of a wait from–to, as groups of the cut: the whole of it faster when its picture
 // moves; else the first WAIT_HOLD seconds as they are, then what moves.
 function waitGroups(clip, from, to, moves) {
-  const shown = moves(clip, from, to);
+  const shown = moves(clip, from, to, true);
   const moved = shown.reduce((t, s) => t + s.to - s.from, 0);
   if (moved >= WAIT_MOVING * (to - from)) {
     // a long one at ten times its speed would still take long: its first and last 20 s, the
@@ -39,7 +39,8 @@ export function range(r) {
 
 // words: every word, filler and noise of every video, numbered in one row (words.json)
 // voices: per video { env, thr, blocks, duration }
-// moves(clip, from, to): the spans of a pause in which the picture moves (motion.mjs), [] without
+// moves(clip, from, to, wait): the spans of a pause in which the picture moves (activity.mjs;
+// for a wait, anything that changes), [] without
 // returns { pieces, removed, words (the cut's, timed in the cut), errors, warnings }
 export function plan(words, cut, settings, voices, moves = () => []) {
   const errors = [], warnings = [], removed = [];
