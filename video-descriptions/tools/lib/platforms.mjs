@@ -20,6 +20,8 @@
 // title reads well come from guides and change with every app update. Where official sources
 // disagree, the stricter number is here and the other in `rules`.
 
+import { clock } from "./media.mjs";
+
 export const CHECKED = "2026-10-23";
 
 const IG_NAME = { pattern: /^(?!.*\.\.)(?!\.)[A-Za-z0-9._]{1,30}(?<!\.)$/, rule: "1–30 letters, digits, . and _; no dot at the start or end, no two in a row" };
@@ -350,7 +352,6 @@ export const platformById = (id) => {
 // others do not; X counts without Premium
 export function fitting(v) {
   const fits = [], unfit = [];
-  const clock = (s) => (s >= 3600 ? `${s / 3600} h` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`);
   for (const p of PLATFORMS) {
     if (p.onlyNamed) continue;
     const pv = p.video || {};

@@ -56,12 +56,17 @@ export function links(text) {
   return out;
 }
 
+// whether position i is inside one of the text's links (a "#pricing" or "@channel" in a link is
+// part of the link)
+const inLink = (spans, i) => spans.some((l) => i >= l.index && i < l.index + l.text.length);
+
 // #word: letters, marks, digits and underscores after a # that does not follow a letter or digit;
 // all digits is no hashtag (#1 stays text)
 export function hashtags(text) {
   const out = [];
+  const spans = links(text);
   for (const m of String(text).matchAll(/(?<![\p{L}\p{N}_&#])[#＃]([\p{L}\p{M}\p{N}_]+)/gu)) {
-    if (/^\p{N}+$/u.test(m[1])) continue;
+    if (/^\p{N}+$/u.test(m[1]) || inLink(spans, m.index)) continue;
     out.push({ text: m[1], index: m.index });
   }
   return out;
@@ -71,7 +76,10 @@ export function hashtags(text) {
 // digit (no e-mail address); a dot at the end belongs to the sentence
 export function mentions(text) {
   const out = [];
-  for (const m of String(text).matchAll(/(?<![\p{L}\p{N}_.])[@＠]([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)/gu)) out.push({ text: m[1], index: m.index });
+  const spans = links(text);
+  for (const m of String(text).matchAll(/(?<![\p{L}\p{N}_.])[@＠]([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)/gu)) {
+    if (!inLink(spans, m.index)) out.push({ text: m[1], index: m.index });
+  }
   return out;
 }
 

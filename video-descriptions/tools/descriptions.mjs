@@ -68,7 +68,9 @@ function brandOf(dir) {
   const social = {};
   const put = (k, v) => {
     const app = APPS[k.trim().toLowerCase()];
-    const handle = String(v).trim().replace(/^["']|["']$/g, "").replace(/^https?:\/\/(www\.)?[^/]+\/(@|in\/|company\/|c\/)?/, "").replace(/^@/, "").replace(/\/.*$/, "");
+    // a URL, a path as brand-kit writes it (company/storrito, in/name, channel/…, profile/…) or a bare handle
+    const handle = String(v).trim().replace(/^["']|["']$/g, "").replace(/^https?:\/\/[^/]+\//, "")
+      .replace(/^(in|company|school|showcase|c|channel|user|profile)\//, "").replace(/^@/, "").replace(/[/?#].*$/, "");
     if (app && handle) (social[app] ||= []).push(handle);
   };
   const inline = front.match(/^social:\s*\{([^}]*)\}/m);
@@ -189,6 +191,14 @@ async function cmdRead([video, dir], opts) {
 function load(dir, opts) {
   const doc = readJson(path.join(dir, "descriptions.json"), `write it first (SKILL.md), after ${cmd(`read <video> ${rel(dir)}`)}`);
   if (!doc.posts || typeof doc.posts !== "object" || Array.isArray(doc.posts)) fail(`${rel(path.join(dir, "descriptions.json"))} needs "posts": {"<platform>": {fields…}}, as SKILL.md shows.`);
+  // a post under a platform's other name (instagram, yt) counts as the platform's own id
+  const posts = {}, keys = {};
+  for (const [key, post] of Object.entries(doc.posts)) {
+    const id = platformById(key)?.id || key;
+    if (posts[id]) fail(`descriptions.json has ${id} twice, as "${keys[id]}" and "${key}": keep one.`);
+    posts[id] = post; keys[id] = key;
+  }
+  doc.posts = posts;
   const vfile = path.join(dir, "video.json");
   const video = fs.existsSync(vfile) ? readJson(vfile) : null;
   const brand = brandOf(opts.brand || "brand");

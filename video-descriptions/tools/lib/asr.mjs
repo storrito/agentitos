@@ -22,6 +22,16 @@ const OV = 10;
 const FILLER = /^(ä+h+m*|ö+h*m+|e+h+m*|a+h+m+|u+h+m*|u+m+|e+r+m+|h+m+|m+h*m+|mhm)$/i;
 const kindOf = (text) => (FILLER.test(text.replace(/[^\p{L}]/gu, "")) ? "filler" : "word");
 
+// fn over the items, at most n at once, the results in the items' order
+async function pool(items, n, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const k = next++; out[k] = await fn(items[k], k); }
+  }));
+  return out;
+}
+
 // the words of piece k, each once: a piece owns [k*CH + OV/2, (k+1)*CH + OV/2)
 const own = (k, CH) => [k ? OV / 2 : -1, CH + OV / 2];
 
@@ -32,7 +42,9 @@ export async function scribe(file, duration, { log = () => {} } = {}) {
   const starts = Array.from({ length: Math.ceil(duration / CH) }, (_, k) => k * CH);
   let cost = 0;
   try {
-    const pieces = await Promise.all(starts.map(async (at, k) => {
+    // three pieces at a time: each is an ffmpeg and a request body of megabytes, and a Sprite
+    // has little memory
+    const pieces = await pool(starts, 3, async (at, k) => {
       const chunk = path.join(tmp, `c${k}.${fmt}`);
       await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000",
         ...(fmt === "mp3" ? ["-codec:a", "libmp3lame", "-b:a", "48k"] : []), chunk]);
@@ -67,7 +79,7 @@ export async function scribe(file, duration, { log = () => {} } = {}) {
         log(`  transcribe: OpenRouter ${res.status}, again in ${attempt * 5} s …`);
         await new Promise((r) => setTimeout(r, attempt * 5000));
       }
-    }));
+    });
     log(`  transcribed with ${SCRIBE_MODEL}, $${cost.toFixed(4)}`);
     return pieces.flat();
   } finally {

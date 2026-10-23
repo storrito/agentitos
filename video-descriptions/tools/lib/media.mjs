@@ -11,9 +11,11 @@ export function probe(file) {
   const j = JSON.parse(r.stdout);
   const v = j.streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic);
   if (!v) throw new Error(`${file} has no picture`);
+  const duration = Number(j.format.duration || v.duration);
+  if (!(duration > 0)) throw new Error(`${file} has no length ffprobe can read: write it into an MP4 again (ffmpeg -i <file> -c copy <file>.mp4) and give that`);
   const rot = Math.abs(Number(v.side_data_list?.find((d) => d.rotation != null)?.rotation ?? v.tags?.rotate ?? 0)) % 180;
   return {
-    duration: Number(j.format.duration || v.duration),
+    duration,
     width: rot === 90 ? v.height : v.width,
     height: rot === 90 ? v.width : v.height,
     sound: j.streams.some((s) => s.codec_type === "audio"),

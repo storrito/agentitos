@@ -63,7 +63,7 @@ export function checkPost(id, post, doc, ctx = {}) {
       continue;
     }
     if (f.kind === "list") {
-      if (!Array.isArray(value)) { r.errors.push(`${f.label} is a list of words, ["…", "…"]`); continue; }
+      if (!Array.isArray(value) || value.some((x) => typeof x !== "string")) { r.errors.push(`${f.label} is a list of words in quotes, ["…", "…"]`); continue; }
       const n = tagsLength(value, f);
       r.fields.push({ key, label: f.label, kind: "list", value, length: n, max, unit: f.count === "youtube-tags" ? "characters with commas" : UNITS[f.count || "chars"] });
       if (n > max) r.errors.push(`${f.label}: ${n} of ${max} ${f.count === "youtube-tags" ? "characters (commas and the quotes of tags with spaces count)" : "characters"}: leave out ${n - max}`);
@@ -82,7 +82,8 @@ export function checkPost(id, post, doc, ctx = {}) {
     const n = length(value, how);
     // X's long posts fold; without Premium there are none
     const folds = f.fold && !(typeof f.max === "object" && !premium);
-    const visible = folds ? fold(value, f.fold, how) : null;
+    // what shows is what the eye sees, whatever unit the limit counts in (YouTube's bytes)
+    const visible = folds ? fold(value, f.fold, "graphemes") : null;
     r.fields.push({ key, label: f.label, kind: "text", value, length: n, max, unit: UNITS[how], fold: f.fold || null, foldSays: f.foldSays || null, visible, rest: visible == null ? null : value.slice(visible.length) });
     if (max && n > max) r.errors.push(`${f.label}: ${n} of ${max} ${UNITS[how]}: ${n - max} too many`);
     if (f.maxBytes && Buffer.byteLength(value, "utf8") > f.maxBytes) r.errors.push(`${f.label}: ${Buffer.byteLength(value, "utf8")} of ${f.maxBytes} bytes`);
@@ -99,7 +100,7 @@ export function checkPost(id, post, doc, ctx = {}) {
       const seen = visible.replace(/[#@][\p{L}\p{N}_.]+/gu, "").replace(/\s+/g, " ").trim();
       if (seen.length < Math.min(40, visible.length / 3)) r.warnings.push(`${f.label}: before "${f.foldSays || "more"}" there are mostly hashtags or mentions; the hook goes there`);
     }
-    if (/#\S*[-'’][\p{L}\p{N}]/u.test(value)) r.warnings.push(`${f.label}: a hashtag with a dash or an apostrophe ends there (#self-care is #self): write #selfcare or #SelfCare`);
+    if (/#\S*[-'’][\p{L}\p{N}]/u.test(links(value).reduce((t, l) => t.replace(l.text, " "), value))) r.warnings.push(`${f.label}: a hashtag with a dash or an apostrophe ends there (#self-care is #self): write #selfcare or #SelfCare`);
     if (p.bait && BAIT.some((re) => re.test(value))) r.warnings.push(`${f.label}: reads as engagement bait ("comment YES", "tag a friend"), which ${p.app} shows to fewer people: ask a real question instead`);
   }
 
@@ -147,6 +148,7 @@ export function checkPost(id, post, doc, ctx = {}) {
       if (stamps.some((s, i) => i && s - stamps[i - 1] < 10)) why.push("each is at least 10 s long");
       if (stamps.some((s, i) => i && s <= stamps[i - 1])) why.push("they go up");
       if (ctx.video?.duration && stamps.some((s) => s >= ctx.video.duration)) why.push(`all are inside the video (${clock(ctx.video.duration)})`);
+      else if (ctx.video?.duration && ctx.video.duration - stamps.at(-1) < 10) why.push(`the last one too is at least 10 s long (the video ends at ${clock(ctx.video.duration)})`);
       if (why.length) r.warnings.push(`chapters: YouTube shows them only when ${why.join(", ")}`);
       else r.notes.push(`${stamps.length} chapters`);
     }

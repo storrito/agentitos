@@ -5,14 +5,27 @@
 import { styleById } from "./styles.mjs";
 import { platformById } from "./platforms.mjs";
 import { clock } from "./media.mjs";
+import { links, hashtags, mentions } from "./count.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-// hashtags, mentions and links marked in a text that is already escaped
-const mark = (s) => esc(s)
-  .replace(/(^|[^\p{L}\p{N}_&#])([#＃][\p{L}\p{M}\p{N}_]+)/gu, '$1<span class="tag">$2</span>')
-  .replace(/(^|[^\p{L}\p{N}_.])(@[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)/gu, '$1<span class="at">$2</span>')
-  .replace(/(https?:\/\/[^\s<]+)/g, '<span class="link">$1</span>');
+// links, hashtags and mentions marked, as the check finds them: a "#" or "@" inside a link stays
+// part of the link
+function mark(text) {
+  const s = String(text ?? "");
+  const spans = [
+    ...links(s).map((l) => ({ at: l.index, len: l.text.length, cls: "link" })),
+    ...hashtags(s).map((h) => ({ at: h.index, len: h.text.length + 1, cls: "tag" })),
+    ...mentions(s).map((m) => ({ at: m.index, len: m.text.length + 1, cls: "at" })),
+  ].sort((a, b) => a.at - b.at);
+  let out = "", i = 0;
+  for (const x of spans) {
+    if (x.at < i) continue;
+    out += esc(s.slice(i, x.at)) + `<span class="${x.cls}">${esc(s.slice(x.at, x.at + x.len))}</span>`;
+    i = x.at + x.len;
+  }
+  return out + esc(s.slice(i));
+}
 
 const T = {
   en: { style: "Style", why: "Why", video: "Video", platforms: "platforms", more: "more", hashtags: "hashtags", hashtag: "hashtag", mentions: "mentions", none: "none", ok: "Ready", warn: "Check", bad: "Fix", visible: "shown before", lang: "Language", premium: "X Premium: long posts", free: "X without Premium" },
