@@ -57,6 +57,7 @@ What Instagram, TikTok, YouTube and the other apps lay over a video (their butto
 | [screencast-cut](screencast-cut/) | A screencast recorded from several sources at once (screen, webcam, phone, microphone; rragent's recorder) → one video: the sources on one clock, the shot where the action is and zoomed in on it, waits as timelapses, results held to be seen; a HyperFrames preview changed by the moment named, then rendered with captions. |
 | [story-from-link](story-from-link/) | A link (blog post, product, event) → an Instagram Story of a few frames in the brand's look, with a link sticker and Storrito's interactive stickers, checked and scheduled through Storrito. |
 | [thumbnail-and-intro](thumbnail-and-intro/) | The video being made → a thumbnail and a matching silent 3–5 s intro with the same hook and imagery, in the brand kit's colours, fonts and logo: a deliberately chosen frame or screenshot, one oversized headline, one arrow, rendered with HyperFrames for 16:9 or 9:16. |
+| [video-descriptions](video-descriptions/) | A video → the texts for every platform it goes to (Instagram, TikTok, YouTube and Shorts, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest, Snapchat): captions, titles, descriptions, tags, hashtags and mentions within each platform's limits as it counts them (X's weighted 280, YouTube's bytes), in one style chosen for the video, on one overview page to check them. |
 
 ## Contributing
 
