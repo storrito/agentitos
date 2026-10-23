@@ -10,11 +10,17 @@ import { zones } from "./zones.mjs";
 
 export const W = 1080, H = 1920;
 // What Instagram lays over a story (its bar at the top, the reply field at the bottom), from
-// agentitos' platform-zones skill: stickers must stay inside, text keeps away from the edges too
-const safe = (() => {
-  try { return zones(W, H, ["instagram-story"]).safe; } catch (e) { console.error(e.message); process.exit(1); }
-})();
-export const SAFE = { top: safe[1], bottom: safe[1] + safe[3], left: safe[0], right: safe[0] + safe[2] };
+// agentitos' platform-zones skill: stickers must stay inside, text keeps away from the edges too.
+// Asked when a frame is laid out or checked, so that publishing and the status work without it.
+let safe = null;
+export function safeZone() {
+  if (!safe) {
+    let z;
+    try { z = zones(W, H, ["instagram-story"]).safe; } catch (e) { console.error(`✗ ${e.message}`); process.exit(1); }
+    safe = { top: z[1], bottom: z[1] + z[3], left: z[0], right: z[0] + z[2] };
+  }
+  return safe;
+}
 
 export const KINDS = ["cover", "text", "list", "quote", "stat", "image", "product", "event", "cta"];
 export const STICKERS = {
@@ -178,6 +184,7 @@ function layout(frame, ctx) {
 }
 
 function css(brand, v, fonts) {
+  const SAFE = safeZone();
   const d = brand.fonts.display, b = brand.fonts.body, l = brand.fonts.label;
   const radius = brand.radius;
   return `${fonts}

@@ -23,7 +23,7 @@ import { PNG } from "pngjs";
 import { launch, sleep } from "./lib/chrome.mjs";
 import * as design from "./lib/design-md.mjs";
 import { contrast, luminance, parse } from "./lib/colors.mjs";
-import { KINDS, STICKERS, SAFE, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
+import { KINDS, STICKERS, safeZone, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
 import { connect, call, componentsHost } from "./lib/storrito.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -175,6 +175,7 @@ async function build(dir) {
         if (!nw) notes.push(["✗", `the picture did not load`]);
         else if (im.scale > 1.7) notes.push(["⚠", `the picture (${nw}×${nh}) is enlarged ${im.scale}×: it will look blurry; take a bigger one, or show it in a card (a cover or image frame with theme "light" or "brand")`]);
       }
+      const SAFE = safeZone();
       for (const s of report.stickers) {
         const r = s.rect;
         if (r.y < SAFE.top || r.y + r.h > SAFE.bottom || r.x < SAFE.left || r.x + r.w > SAFE.right) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker leaves Instagram's safe zone (y ${r.y}–${r.y + r.h}): shorten the text above it`]);

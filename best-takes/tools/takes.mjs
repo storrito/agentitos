@@ -22,6 +22,8 @@
 //                      (rragent: artifacts/<name>/composition; default <dir>/composition)
 //   --title "…"        the preview's title          --lang de    the language of the words
 //   --aspect source|9:16|16:9|1:1|4:5    the frame (default: the first video's)
+//   --platform reels,tiktok    where the video goes: its captions keep clear of what those apps lay
+//                              over it (agentitos' platform-zones); none: the usual ones of the frame
 //   --fit cover|contain    a video of another shape fills the frame, or fits into it
 //   --target <s>       the longest the cut should be (the brief and the check use it)
 //   --pause <s>        pauses longer than this inside a keep are shortened (default 1)
@@ -43,6 +45,7 @@ import { activity, moving } from "./lib/motion.mjs";
 import { writeComposition } from "./lib/composition.mjs";
 import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
+import { zones, platformList } from "./lib/zones.mjs";
 import { brief, shown } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
@@ -80,6 +83,9 @@ function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? read(file) : {};
   const merged = { aspect: "source", fit: "cover", pause: 1, loudness: -14, fps: 30, ...kept, ...opts };
+  // where the video goes, for its captions: a platform platform-zones does not know is not kept,
+  // every later build would fail on it
+  if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return { ...merged, final: merged.loudness, loudness: TAKE_LEVEL };
 }
@@ -223,7 +229,7 @@ function cmdBuild(dir, opts) {
   if (cut.captions) {
     const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
     const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi", ...(cut.captions.brand ? ["--brand", cut.captions.brand] : []),
-      ...(cut.captions.platform ? ["--platform", cut.captions.platform] : [])]);
+      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions });
@@ -252,12 +258,11 @@ function cmdCaptions(dir, opts) {
     const file = captionWords(dir, e.words, {}, e);
     runCaptions(["mark", file, ...(opts.product ? ["--product", opts.product] : [])]);
     const highlight = read(file).words.filter((w) => w.highlight).map((w) => w.i);
-    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}),
-      ...(opts.platform || cut.captions?.platform ? { platform: opts.platform || cut.captions.platform } : {}) };
+    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}) };
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
-  cmdBuild(dir, {});
+  cmdBuild(dir, opts.platform !== undefined ? { platform: opts.platform } : {});
 }
 
 // ----------------------------------------------------------------------------------- check
