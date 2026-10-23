@@ -13,7 +13,7 @@ node tools/captions.mjs project <video> <words.json> <composition> --style karao
 node tools/captions.mjs srt <words.json> <file.srt>
 ```
 
-Needs Node 20+, ffmpeg (for `transcribe`, `project`) and `OPENROUTER_API_KEY` (for `transcribe`, `mark`); no npm packages. The models are OpenRouter's only.
+Needs Node 20+, ffmpeg (for `transcribe`, `project`) and OpenRouter (for `transcribe`, `mark`): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`); no npm packages. The models are OpenRouter's only.
 
 ## Words
 

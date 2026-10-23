@@ -16,7 +16,7 @@ node tools/takes.mjs finish takes/kameras artifacts/kameras.mp4                #
 
 Outside rragent the same works with any HyperFrames project folder: `--out <project>/composition`, then `hyperframes render` in that folder.
 
-Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, else `npx hyperframes@0.8.146`), `OPENROUTER_API_KEY` for the transcription by ElevenLabs Scribe and for `propose`. No npm dependencies.
+Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, else `npx hyperframes@0.8.146`), OpenRouter for the transcription by ElevenLabs Scribe and for `propose`: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound goes in 5-minute pieces of MP3, which the gateway takes, instead of 10-minute FLAC). No npm dependencies.
 
 ## How it works
 

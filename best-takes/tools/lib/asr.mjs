@@ -1,4 +1,5 @@
-// Speech to word timings with ElevenLabs Scribe v2 through OpenRouter (OPENROUTER_API_KEY): word
+// Speech to word timings with ElevenLabs Scribe v2 through OpenRouter (OPENROUTER_API_KEY, or the
+// Sprites gateway's OpenRouter connection, see openrouter.mjs): word
 // for word as spoken, "äh" and "ähm" included, noises as events ("[Kamera klackert]"), names
 // spelled right; 20 ms timings with the real pauses between words. About half a cent a minute.
 //
@@ -9,33 +10,39 @@ import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { need } from "./openrouter.mjs";
 
 export const SCRIBE_MODEL = "elevenlabs/scribe-v2";
-const CH = 600, OV = 10; // 10-minute pieces, 10 s overlap so that no word is cut in half
+// 10-minute pieces as FLAC, 10 s overlap so that no word is cut in half; through the gateway
+// 5-minute pieces as MP3 at 48 kbit/s, as rragent sends them: the gateway refuses a request of
+// several megabytes
+const OV = 10;
 
 // hesitation sounds in the languages people record in most
 const FILLER = /^(ä+h+m*|ö+h*m+|e+h+m*|a+h+m+|u+h+m*|u+m+|e+r+m+|h+m+|m+h*m+|mhm)$/i;
 const kindOf = (text) => (FILLER.test(text.replace(/[^\p{L}]/gu, "")) ? "filler" : "word");
 
 // the words of piece k, each once: a piece owns [k*CH + OV/2, (k+1)*CH + OV/2)
-const own = (k) => [k ? OV / 2 : -1, CH + OV / 2];
+const own = (k, CH) => [k ? OV / 2 : -1, CH + OV / 2];
 
 export async function scribe(file, duration, { log = () => {} } = {}) {
-  if (!process.env.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not set");
+  const or = await need("The transcription");
+  const CH = or.gateway ? 300 : 600, fmt = or.gateway ? "mp3" : "flac";
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-stt-"));
   const starts = Array.from({ length: Math.ceil(duration / CH) }, (_, k) => k * CH);
   let cost = 0;
   try {
     const pieces = await Promise.all(starts.map(async (at, k) => {
-      const chunk = path.join(tmp, `c${k}.flac`);
-      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
-      const body = JSON.stringify({ model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(chunk).toString("base64"), format: "flac" }, response_format: "verbose_json", timestamp_granularities: ["word"] });
+      const chunk = path.join(tmp, `c${k}.${fmt}`);
+      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000",
+        ...(fmt === "mp3" ? ["-codec:a", "libmp3lame", "-b:a", "48k"] : []), chunk]);
+      const body = JSON.stringify({ model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(chunk).toString("base64"), format: fmt }, response_format: "verbose_json", timestamp_granularities: ["word"] });
       for (let attempt = 1; ; attempt++) {
         let res, text;
         try {
-          res = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
+          res = await fetch(`${or.base}/audio/transcriptions`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
+            headers: { ...or.headers, "Content-Type": "application/json" },
             body,
             signal: AbortSignal.timeout(300e3),
           });
@@ -48,7 +55,7 @@ export async function scribe(file, duration, { log = () => {} } = {}) {
         if (res.ok) {
           const j = JSON.parse(text);
           cost += j.usage?.cost ?? 0;
-          const [lo, hi] = own(k);
+          const [lo, hi] = own(k, CH);
           return (j.words || []).flatMap((w) => {
             const t = String(w.word ?? "").trim();
             if (!t || !(w.start >= lo && w.start < hi)) return [];
