@@ -1,10 +1,13 @@
 // Where things sit in the frame, for each view, and how far a shot zooms in.
 //
-// The views: "screen" and "phone" show that source in a box above the captions' band, the
-// webcam small in a circle below it; "face" shows the webcam over the whole frame. The boxes
-// leave the band free in which the captions skill sets the captions (a 9:16 frame: the
-// captions' lower edge at 70 % of the height), and keep clear of the platforms' buttons along
-// the bottom and the right edge, so that the captions never cover what the shot shows.
+// The views: "screen" and "phone" show that source in a box, the webcam small in a circle beside
+// it; "face" shows the webcam over the whole frame. The boxes come from what the platforms the
+// video goes to lay over it (agentitos' platform-zones, tools/lib/zones.mjs): everything that must
+// be seen (the shot, the circle, a label, the captions) sits inside the zones' safe box, the
+// captions' band at its bottom (where the captions skill puts their lowest line) stays free, and
+// the shot is as large as the rest allows, edge to edge where the frame is narrower than it. The
+// space the apps cover (their bar at the top, their caption and buttons at the bottom) is left to
+// them.
 //
 // A zoom is a crop of the source: the region whose changes the shot is about (activity.focus),
 // padded, never smaller than MIN_CROP of the source's width, in the box's shape. The crop
@@ -17,27 +20,37 @@ export const FRAMES = { "9:16": [1080, 1920], "16:9": [1920, 1080], "1:1": [1080
 const MIN_CROP = 0.38; // of the source's width: at most about 2.6 times as large
 const PAD = 0.1; // around the region, of its size
 
-// the areas of a frame, in pixels: content (screen, phone), the webcam's circle, a label
-export function areas(width, height) {
-  const r = height / width;
-  if (r >= 1.5) { // 9:16
-    return { content: [0.037 * width, 0.115 * height, 0.926 * width, 0.465 * height], tall: [0.2 * width, 0.095 * height, 0.6 * width, 0.49 * height],
-      pip: [0.06 * width, 0.725 * height, 0.27 * width], label: [0.06 * width, 0.045 * height] };
+// The areas of a frame, in pixels: content (a screen), tall (a phone's screen), the webcam's
+// circle (pip: x, y, diameter), the label's corner. zones: platform-zones' answer for this frame
+// and the platforms the video goes to; captions, labels: whether the cut has them (their room is
+// kept only then).
+export function areas(width, height, zones, { captions = true, labels = false } = {}) {
+  const [sx, sy, sw, sh] = zones.safe;
+  const short = Math.min(width, height), gap = Math.round(short * 0.022);
+  // the captions' band: their lowest line at the safe box's bottom, room for two lines above it
+  const capTop = captions ? sy + sh - Math.round(short * (height > width ? 0.2 : 0.12)) : sy + sh;
+  const label = [sx, sy];
+  const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
+  if (height >= width * 1.5) {
+    // 9:16: the shot across the whole width, the circle below it on the left, the captions under
+    // both; a phone's screen beside the circle
+    const d = Math.round(width * 0.22);
+    const pip = [sx, capTop - gap - d, d];
+    return { content: [0, top, width, pip[1] - gap - top], tall: [sx + d + gap, top, sw - d - gap, capTop - gap - top], pip, label };
   }
-  // 4:5 and 1:1: the captions sit 14 % above the bottom and take about a quarter of the height
-  // above it, so the circle goes to the top right, beside the label, and the content stops
-  // above them
-  if (r >= 1.1) { // 4:5
-    return { content: [0.04 * width, 0.155 * height, 0.92 * width, 0.5 * height], tall: [0.25 * width, 0.105 * height, 0.5 * width, 0.545 * height],
-      pip: [0.82 * width, 0.02 * height, 0.15 * width], label: [0.05 * width, 0.035 * height] };
+  if (height > width * 0.9) {
+    // 4:5 and 1:1: the circle in the safe box's top right corner, beside the label, the shot
+    // across the whole width below them, above the captions
+    const d = Math.round(short * 0.16);
+    const pip = [sx + sw - d, sy, d];
+    const below = sy + Math.max(top - sy, d + gap);
+    return { content: [0, below, width, capTop - gap - below], tall: [sx, below, sw, capTop - gap - below], pip, label };
   }
-  if (r >= 0.9) { // 1:1
-    return { content: [0.04 * width, 0.175 * height, 0.92 * width, 0.415 * height], tall: [0.25 * width, 0.115 * height, 0.5 * width, 0.475 * height],
-      pip: [0.84 * width, 0.02 * height, 0.14 * width], label: [0.05 * width, 0.03 * height] };
-  }
-  // 16:9: the content above the captions, the circle at the top right, beside it
-  return { content: [0.13 * width, 0.09 * height, 0.74 * width, 0.72 * height], tall: [0.3 * width, 0.03 * height, 0.4 * width, 0.78 * height],
-    pip: [0.875 * width, 0.09 * height, 0.11 * width], label: [0.025 * width, 0.04 * height] };
+  // wide: the shot as large as the frame above the captions allows (the whole frame without
+  // them), the circle in the safe box's top right corner, over the shot's corner where they meet
+  const d = Math.round(short * 0.2);
+  const pip = [sx + sw - d, sy, d];
+  return { content: [0, 0, width, captions ? capTop - gap : height], tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
 }
 
 // the largest box of `aspect` (width / height) inside `area`, centred

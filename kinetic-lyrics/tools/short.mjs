@@ -18,6 +18,8 @@
 //   --speakers N  --names "A=Anna,B=Ben"  --title "…"  --subtitle "…"  --hook "…"
 //   --world cosmos|aurora|bokeh|neon|noir|editorial|geometry|slate|dusk|canopy|chalk|linen|mist  --aspect 9:16|1:1|4:5|16:9
 //   --colors "A=#ff5a36,B=#4fc3f7" (each speaker's colour; "" = the world's)  --cta "…"  --handle @name
+//   --platform reels,tiktok  where the short goes: the type and the hook keep clear of what those
+//                   apps lay over it (agentitos' platform-zones); none: the usual ones of the frame
 //   --out <folder>  where the HyperFrames project goes instead of <dir>/composition/, e.g. a
 //                   folder of a series that shows several shorts side by side
 
@@ -29,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { readVariables } from "./variables.mjs";
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["speakers", "names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "out"];
+const VALUED = ["speakers", "names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "platform", "out"];
 
 function fail(message) {
   console.log(message);
@@ -91,7 +93,7 @@ function buildArgs(dir, s) {
   const framed = framedOf(dir, s), video = fs.existsSync(framed) ? framed : footage(dir);
   if (video) args.push("--video", video);
   for (const [k, flag] of [["names", "--speakers"], ["colors", "--colors"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
-    ["world", "--world"], ["cta", "--cta"], ["handle", "--handle"]]) if (s[k]) args.push(flag, s[k]);
+    ["world", "--world"], ["cta", "--cta"], ["handle", "--handle"], ["platform", "--platform"]]) if (s[k]) args.push(flag, s[k]);
   // no title: none on screen (build.mjs takes a bare --title as none, else the file's name)
   if (!s.title) args.push("--title");
   return args;

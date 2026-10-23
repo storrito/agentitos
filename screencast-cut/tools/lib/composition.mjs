@@ -13,7 +13,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { areas, fit, place, cover, circle } from "./layout.mjs";
+import { fit, place, cover, circle } from "./layout.mjs";
 
 const GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js";
 
@@ -51,9 +51,9 @@ function timing(start, duration) {
 }
 
 // The shots of the cut: per piece its view's main video (and the webcam's circle), where it sits.
-// pieces: plan()'s, each with { view, crop } set; sources: { name: { offset, width, height } }
-export function shots(pieces, sources, width, height) {
-  const a = areas(width, height);
+// pieces: plan()'s, each with { view, crop } set; sources: { name: { offset, width, height } };
+// a: the frame's areas (layout.areas)
+export function shots(pieces, sources, width, height, a) {
   return pieces.map((p) => {
     const out = [];
     const src = sources[p.source];
@@ -97,11 +97,11 @@ export function brandOf(file) {
 export function writeComposition(out, o) {
   // voice: the voice's track for the whole cut in assets/ (tracks.voiceTrack); camera: the
   // webcam's (tracks.cameraTrack), one element that is the circle and the face in turn
-  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, labels = [], captions, music, brand = {} } = o;
+  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, labels = [], captions, music, brand = {}, areas } = o;
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   const name = path.basename(out);
   const used = new Set();
-  const placed = shots(pieces, sources, width, height);
+  const placed = shots(pieces, sources, width, height, areas);
   for (const s of placed) for (const l of s.layers) used.add(l.source);
   for (const k of used) if (!(k === "webcam" && camera)) link(path.join(dir, "source", sources[k].file), path.join(out, "assets", sources[k].file));
   if (music) link(path.resolve(music.file), path.join(out, "assets", `music${path.extname(music.file)}`));
@@ -150,7 +150,7 @@ export function writeComposition(out, o) {
   // the labels
   for (const l of labels) {
     const elId = next("l");
-    const [x, y] = areas(width, height).label;
+    const [x, y] = areas.label;
     html.push(`      <div id="${elId}" class="clip label" ${timing(l.start, l.duration)} data-track-index="6"
         style="left:${px(x)};top:${px(y)}">${esc(l.text)}</div>`);
     anim.push(`tl.from("#${elId}", { opacity: 0, y: -12, duration: 0.3, ease: "power2.out" }, ${n(l.start)});`);

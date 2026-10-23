@@ -45,7 +45,7 @@ import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { brief, shown } from "./brief.mjs";
 
-const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model", "style", "product", "brand"];
+const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
 const FLAGS = ["off"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
@@ -222,7 +222,8 @@ function cmdBuild(dir, opts) {
   fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
   if (cut.captions) {
     const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
-    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi", ...(cut.captions.brand ? ["--brand", cut.captions.brand] : [])]);
+    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi", ...(cut.captions.brand ? ["--brand", cut.captions.brand] : []),
+      ...(cut.captions.platform ? ["--platform", cut.captions.platform] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions });
@@ -251,7 +252,8 @@ function cmdCaptions(dir, opts) {
     const file = captionWords(dir, e.words, {}, e);
     runCaptions(["mark", file, ...(opts.product ? ["--product", opts.product] : [])]);
     const highlight = read(file).words.filter((w) => w.highlight).map((w) => w.i);
-    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}) };
+    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}),
+      ...(opts.platform || cut.captions?.platform ? { platform: opts.platform || cut.captions.platform } : {}) };
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");

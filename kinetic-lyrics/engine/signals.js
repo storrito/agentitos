@@ -367,3 +367,7 @@ export function createSignals(plan) {
     },
   };
 }
+
+// the social hook card's top as a fraction of the height: below what the platforms cover at the
+// top (plan.zones, from agentitos' platform-zones)
+export const hookTop = (plan) => Math.max(0.095, plan.zones?.safe?.[1] ?? 0);

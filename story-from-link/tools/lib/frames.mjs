@@ -6,11 +6,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { contrast, mix } from "./colors.mjs";
+import { zones } from "./zones.mjs";
 
 export const W = 1080, H = 1920;
-// Instagram's own bar at the top and the reply field at the bottom cover 270 px each; stickers
-// must stay inside, text keeps away from the edges too
-export const SAFE = { top: 270, bottom: 1650, left: 40, right: 1040 };
+// What Instagram lays over a story (its bar at the top, the reply field at the bottom), from
+// agentitos' platform-zones skill: stickers must stay inside, text keeps away from the edges too
+const safe = (() => {
+  try { return zones(W, H, ["instagram-story"]).safe; } catch (e) { console.error(e.message); process.exit(1); }
+})();
+export const SAFE = { top: safe[1], bottom: safe[1] + safe[3], left: safe[0], right: safe[0] + safe[2] };
 
 export const KINDS = ["cover", "text", "list", "quote", "stat", "image", "product", "event", "cta"];
 export const STICKERS = {

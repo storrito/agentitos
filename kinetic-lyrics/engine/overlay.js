@@ -5,7 +5,7 @@
 // Bundled as `KineticOverlay`. build() returns { timeline, draw(t) }; draw paints the
 // canvas parts (audiogram) for time t and is called from hf-seek like the 3D world.
 
-import { palettesOf, worldOf } from "./signals.js";
+import { palettesOf, worldOf, hookTop } from "./signals.js";
 
 const LABEL = {
   rise: "ASCEND", fall: "GRAVITY", rain: "RAIN", fire: "EMBERS", light: "LIGHT", stars: "STARFIELD", dark: "DARKNESS",
@@ -163,6 +163,7 @@ export function build(root, plan, gsap) {
     // hook headline: an accent card at the top, there for the whole video
     if (plan.hook) {
       const box = el("div", "ko-hook", hud);
+      box.style.top = `${(hookTop(plan) * 100).toFixed(2)}%`;
       const card = el("div", "ko-hookcard", box);
       const text = plan.hook.toUpperCase();
       // up to two balanced lines, sized to the card width
@@ -197,6 +198,7 @@ export function build(root, plan, gsap) {
       if (plan.cta) tl.to(box, { opacity: 0, y: -H * 0.02, duration: 0.4, ease: "power2.in" }, plan.cta.start - 0.1);
     }
     const bar = el("div", "ko-sbar", hud);
+    bar.style.top = `${((hookTop(plan) - 0.023) * 100).toFixed(2)}%`;
     const fill = el("div", "ko-sfill", bar);
     tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1, duration: plan.cta ? plan.cta.start : plan.duration, ease: "none" }, 0);
   }

@@ -14,7 +14,7 @@ node tools/story.mjs publish work/post --account mybrand --at 2026-10-22T18:00:0
 node tools/story.mjs status work/post --wait 120                    # what Storrito rendered
 ```
 
-Requirements: Node 20+, Chrome (`CHROME`, or `google-chrome` / `chromium` on the PATH), network access to the page, Google Fonts and Storrito.
+Requirements: Node 20+, agentitos' [platform-zones](../platform-zones/) beside this skill (where Instagram covers a story), Chrome (`CHROME`, or `google-chrome` / `chromium` on the PATH), network access to the page, Google Fonts and Storrito.
 
 ## How it works
 
@@ -27,7 +27,7 @@ Requirements: Node 20+, Chrome (`CHROME`, or `google-chrome` / `chromium` on the
 3. **`story.mjs build`** renders each frame of `story.json` as a 1080×1920 page in Chrome: a layout of the frame's kind in the brand's colours and fonts, every text shrunk step by step until it fits, the stickers drawn by Storrito's own components (`/js/insta-components.js` of the organization's host). It then measures where each sticker sits and takes two pictures: what a viewer sees (small, for the chat and the preview) and the frame without its stickers, which is what gets uploaded. Instagram draws the stickers itself, so they stay tappable.
 4. **`story.mjs publish`** uploads each frame's picture as a Storrito temp-blob and schedules the frames in their order with `schedule-instagram-story` (or `create-draft`). The HTML of a frame is its picture plus the stickers at the measured positions, so Storrito's extraction finds them exactly where the preview had them; the posting order is the scheduled time, then the order of creation, so frames scheduled for the same time go out one after another.
 
-The checks of a build: text that does not fit, text over a picture with too little contrast, pictures enlarged so far that they blur, stickers outside Instagram's safe zone (270 px at the top and the bottom, 40 px at the sides) or overlapping, more than one link or interactive sticker in a frame, frames with too many words for five seconds, a cover title over 40 characters, a story without a link sticker.
+The checks of a build: text that does not fit, text over a picture with too little contrast, pictures enlarged so far that they blur, stickers outside Instagram's safe zone (from agentitos' [platform-zones](../platform-zones/), which must be beside this skill: 250 px at the top, 300 px at the bottom, 60 px at the sides) or overlapping, more than one link or interactive sticker in a frame, frames with too many words for five seconds, a cover title over 40 characters, a story without a link sticker.
 
 ## The brand kit
 

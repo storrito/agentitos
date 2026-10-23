@@ -50,14 +50,3 @@ export function style(name) {
   if (!s) throw new Error(`There is no caption style "${name}"; there are ${Object.keys(STYLES).join(", ")}.`);
   return structuredClone(s);
 }
-
-// Where the captions sit, by the frame's shape: in 9:16 above the bottom quarter, where TikTok,
-// Reels and Shorts lay their own text and buttons, and clear of the buttons on the right; in a
-// wide frame near the bottom. bottom: the group's lower edge above the frame's, as a share of the
-// height; width: the group's widest, as a share of the width.
-export function placement(width, height) {
-  const ratio = width / height;
-  if (ratio < 0.7) return { bottom: 0.3, width: 0.78 };   // 9:16
-  if (ratio < 1.1) return { bottom: 0.14, width: 0.84 };  // 4:5, 1:1
-  return { bottom: 0.09, width: 0.8 };                    // 16:9
-}

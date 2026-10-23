@@ -73,7 +73,9 @@ cd videos/social-demo && npx hyperframes render -o renders/social.mp4
 | **World** | full presence | calm (45 %) | 70 % |
 | **Text** | effects by meaning | markers on key statements, speaker colours | markers on key statements |
 | **HUD** | title, timecode, concept | show title, speaker chip on every change, audiogram | hook card, progress bar, CTA card |
-| **Safe zone** | title-safe (80 %) | clear of speaker chip and audiogram | below the hook, above the apps' caption bar, left of the button column |
+| **Safe zone** | title-safe (80 %) | clear of speaker chip and audiogram | below the hook, inside the platforms' safe box |
+
+**The platforms' zones.** What Reels, TikTok, Shorts and the other apps lay over the video comes from agentitos' [platform-zones](../platform-zones/), which must be beside this skill (or `PLATFORM_ZONES` naming its `tools/zones.mjs`): `build.mjs` asks it for the frame and writes the safe box into `plan.json` (`zones`), with the platforms of `--platform reels,tiktok`, or the usual ones of the frame when none is named. Every preset's type stays inside it; in `social` it is the type's box, below the hook card, which itself sits below what the apps cover at the top. `qa.mjs` warns about a word outside it. This skill keeps no numbers of its own.
 
 Across all presets:
 - **Numbers** such as "40%", "$3.5", "1,000" or "10x" count up as they are spoken. Years are excluded.
@@ -131,7 +133,7 @@ node tools/build.mjs examples/my-clip/transcript.json --video examples/my-clip/v
 - **Motion:** The image slowly zooms in by 6 % and gives a small push (2.5 %) on hero lockups.
 - **Burned-in captions** are found automatically by `tools/burnin.mjs`. It looks for bright, sharp-edged text that changes every few tenths of a second and sits in a fixed band. Temporary overlays such as name tags or title cards are detected as well. The gradient is fully dark just above them, never higher than 50 % (the face stays clear) and never lower than 60 % (the type needs room). Without burned-in text it is a little lighter (`dim` 0.85). Result on 7 shorts: 6 caption bands and 4 overlays found, and correctly none for the clip without captions.
 - **`--video-shade a:b` / `--video-dim x`** override the detection: at frame height `a` the gradient is still transparent, from `b` on it is dark, and `x` sets how dark. The values are stored in `plan.json` under `video`.
-- **Short-form layout:** The type ends at 78 % of the frame height and keeps 12 % clear on the right, so it stays free of the platform UI (title, channel, buttons). The name tag sits directly above the type, and the audio waveform is dropped. Speakers without names only get their colour, no "A"/"B" tag.
+- **Short-form layout:** The type stays inside the platforms' safe box, free of their UI (title, channel, buttons; see below). The name tag sits directly above the type, and the audio waveform is dropped. Speakers without names only get their colour, no "A"/"B" tag.
 - **Worlds over video:** `cosmos`, `aurora` (keeps colour veils at half strength), `bokeh`, `neon`, `noir`, and the calm `slate`, `dusk`, `canopy` and `chalk` (dusk and canopy keep their ground at half strength). With `--llm` Claude only picks from these. Light worlds are replaced: `editorial` by `bokeh`, `geometry` by `neon`. Centred motifs (rings, network, chart, pulse rings, sun) move into the dark zone and get smaller.
 - **Sound:** Without `--audio` the audio track is read from the video, and the video itself plays muted.
 - **QA** (`tools/qa.mjs`) measures contrast and collisions on real video frames (ffmpeg, 8 fps).
@@ -283,7 +285,7 @@ npm run qa -- videos/my-clip      # or: node tools/qa.mjs videos/my-clip [--no-c
 | | Check |
 | --- | --- |
 | ✗ | word sticks out of the frame · two lockups at once · contrast below 1.8:1 |
-| ⚠ | word fully readable for less than 0.3 s before fading · lockup shorter than 0.6 s · outside the action-safe area (5 %) · words overlap each other or the HUD · contrast below 3:1 · caption needs more than two lines · speech in the audio without words in the transcript |
+| ⚠ | word fully readable for less than 0.3 s before fading · lockup shorter than 0.6 s · outside the safe area (the action-safe 5 % and the platforms' safe box) · words overlap each other or the HUD · contrast below 3:1 · caption needs more than two lines · speech in the audio without words in the transcript |
 
 Contrast is measured, not estimated: two screenshots of the same frame, with and without the text layer. The pixels that differ strongly are the type; their luminance is compared with what lies directly around them in the finished frame, including the soft halo behind the type (WCAG formula). `--frames` additionally saves stills at the given times (`qa/at-<t>s.png`). Result: a list in the terminal, `qa/report.json` and one frame per finding in `qa/`. Exit code 1 on errors, so it fits into scripts.
 

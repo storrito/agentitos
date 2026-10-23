@@ -15,6 +15,8 @@
 //   --speakers A=Anna,B=Ben   names for the transcript's speaker labels (podcast)
 //   --colors A=#ff5a36,B=#4fc3f7   their colours (accent words, name chip); default by world
 //   --audiogram / --no-audiogram   waveform bars from the audio (default on for podcast)
+//   --platform reels,tiktok   where the video goes: the type keeps clear of what those apps lay
+//                    over it (agentitos' platform-zones); none: the usual platforms of the frame
 //   --out <dir>      write a separate HyperFrames project there (one project per video)
 //   --diarize [N]    detect who speaks when from --audio (tools/diarize.py, local sherpa-onnx);
 //                    N = number of voices, omit to estimate. Overwrites "speaker" labels.
@@ -52,6 +54,7 @@ import { footageLayer } from "./footage.mjs";
 import { detectBurnIn } from "./burnin.mjs";
 import { CSS as TYPE_CSS } from "../engine/type.js";
 import { CSS as OVERLAY_CSS } from "../engine/overlay.js";
+import { zones, platformList } from "./lib/zones.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js";
@@ -197,6 +200,20 @@ if (opt.plan) {
   });
   if (plan.style.audiogram && typeof opt.audio === "string") plan.bands = audioBands(opt.audio);
   else plan.style.audiogram = false;
+}
+
+// What the platforms lay over the video, from agentitos' platform-zones (it keeps the one table of
+// it): the safe box as frame fractions [x0, y0, x1, y1], for the type (engine/type.js), the hook
+// card (engine/overlay.js) and the check (tools/qa.mjs). A rebuilt plan keeps its platforms unless
+// --platform names others.
+{
+  const platforms = typeof opt.platform === "string" ? platformList(opt.platform) : plan.zones?.platforms || [];
+  let z;
+  try { z = zones(plan.width, plan.height, platforms); } catch (e) { console.error(e.message); process.exit(1); }
+  const [x, y, w, h] = z.safe;
+  plan.zones = { platforms, fallback: z.fallback, for: z.platforms.map((p) => p.id),
+    safe: [x / plan.width, y / plan.height, (x + w) / plan.width, (y + h) / plan.height].map((v) => +v.toFixed(4)) };
+  console.error(`zones: clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}`);
 }
 
 // output project: this one, or a separate HyperFrames project per video (--out)
