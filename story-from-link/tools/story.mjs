@@ -178,7 +178,9 @@ async function build(dir) {
       const SAFE = safeZone();
       for (const s of report.stickers) {
         const r = s.rect;
-        if (r.y < SAFE.top || r.y + r.h > SAFE.bottom || r.x < SAFE.left || r.x + r.w > SAFE.right) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker leaves Instagram's safe zone (y ${r.y}–${r.y + r.h}): shorten the text above it`]);
+        const under = SAFE.covers.find(({ box: [x, y, w, h] }) => r.x < x + w && x < r.x + r.w && r.y < y + h && y < r.y + r.h);
+        if (under || r.x < 0 || r.y < 0 || r.x + r.w > W || r.y + r.h > H) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker lies ${under ? `under ${under.what}` : "outside the frame"} (y ${r.y}–${r.y + r.h}): shorten the text above it`]);
+        else if (r.y < SAFE.top || r.y + r.h > SAFE.bottom || r.x < SAFE.left || r.x + r.w > SAFE.right) notes.push(["⚠", `the ${s.tag.replace("insta-", "")} sticker reaches into the margin of Instagram's safe zone (y ${r.y}–${r.y + r.h}): nothing covers it there, but on some phones it sits close to the bar or the reply field`]);
         if (!s.width || !s.height) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker has no size: it would not be tappable`]);
       }
       for (let a = 0; a < report.stickers.length; a++) for (let b = a + 1; b < report.stickers.length; b++) {
