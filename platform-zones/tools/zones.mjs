@@ -92,9 +92,10 @@ function print(z) {
   console.log(`${z.frame}, ${w}×${h}: ${z.fallback ? `no platform named, so the usual ones for this frame together: ${who}` : who}`);
   console.log(`  safe     ${box(z.safe)}: text, faces and what is shown stay inside`);
   console.log(`           margins top ${z.margins.top}, bottom ${z.margins.bottom}, left ${z.margins.left}, right ${z.margins.right}`);
+  console.log(`  centred  ${box(z.centred)}: the safe box even about the frame's middle, for text centred on the frame`);
   if (z.wide) console.log(`  wide     ${box(z.wide)}: clear across the frame above the buttons on the right`);
-  const [sx, sy, sw, sh] = z.safe;
-  console.log(`  captions the lowest line ends at y ${sy + sh}, centred on x ${Math.round(sx + sw / 2)}, at most ${sw} wide`);
+  const [cx, cy, cw, ch] = z.centred;
+  console.log(`  captions the lowest line ends at y ${cy + ch}, centred on x ${Math.round(cx + cw / 2)}, at most ${cw} wide`);
   for (const c of z.covers) console.log(`  covered  ${box(c.box)}  ${c.what} (${c.platform})`);
   for (const c of z.crops) console.log(`  cropped  ${box(c.box)}  ${c.where} shows ${c.ratio} (${c.platform}): what must be seen there stays inside`);
   const bases = [...new Set(z.platforms.map((p) => BASIS[p.basis]))];
@@ -119,13 +120,13 @@ function cmdCheck([spec, ...ids], opts) {
   if (b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[2] <= 0 || b[3] <= 0) fail(`The box is x,y,w,h in px of the frame, as 60,300,960,540.`);
   const z = zonesOf(ids, opts);
   const r = check(z, b);
-  if (opts.json) return console.log(JSON.stringify({ ...r, safe: z.safe, wide: z.wide, frame: z.frame, size: z.size, fallback: z.fallback, platforms: z.platforms, notes: z.notes }, null, 2));
+  if (opts.json) return console.log(JSON.stringify({ ...r, safe: z.safe, centred: z.centred, wide: z.wide, frame: z.frame, size: z.size, fallback: z.fallback, platforms: z.platforms, notes: z.notes }, null, 2));
   console.log(`${box(b)} on ${z.frame} ${z.size.join("×")} (${z.platforms.map((p) => p.name).join(", ")}):`);
   if (r.inside && !r.covered.length && !r.cut.length && !r.offFrame) return console.log(`  ✓ clear: inside ${r.inWide ? `the wide stretch ${box(z.wide)}` : `the safe box ${box(z.safe)}`}`);
   if (r.offFrame > 0.001) console.log(`  ✗ ${pct(r.offFrame)} outside the frame`);
   const out = Object.entries(r.outside).map(([k, v]) => `${v} px past the ${k}`).join(", ");
   if (r.inWide) console.log(`  ✓ inside the wide stretch ${box(z.wide)}, above the buttons on the right`);
-  else if (out) console.log(`  ✗ leaves the safe box ${box(z.safe)}: ${out}`);
+  else if (out) console.log(`  ! leaves the safe box ${box(z.safe)}: ${out}${r.covered.length ? "" : ", into the margin the guides keep; no app lays anything there"}`);
   for (const c of r.covered) console.log(`  ✗ ${pct(c.share)} under ${c.what} (${c.platform})`);
   for (const c of r.cut) console.log(`  ! ${pct(c.share)} cut away where ${c.where} shows ${c.ratio} (${c.platform})`);
 }

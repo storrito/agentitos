@@ -8,7 +8,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 
 | need | skill | how |
 | --- | --- | --- |
-| what the apps cover of a video (buttons, names, captions of Instagram, TikTok, YouTube, Facebook, Snapchat, Pinterest, LinkedIn, X) | [platform-zones](platform-zones/) | `tools/zones.mjs zones [platform…] --size WxH --json`: whatever must be seen stays in its `safe` box; never write safe-zone numbers into a skill |
+| what the apps cover of a video (buttons, names, captions of Instagram, TikTok, YouTube, Facebook, Snapchat, Pinterest, LinkedIn, X) | [platform-zones](platform-zones/) | `tools/zones.mjs zones [platform…] --size WxH --json`: whatever must be seen stays in its `safe` box, text is centred on the frame in its `centred` box; nothing to be read under its `covers`; never write safe-zone numbers into a skill |
 | captions in a video | [captions](captions/) | `tools/captions.mjs build <words.json> <folder> --style … [--platform …]`, mount the clip it prints |
 | a brand's colours, fonts, logo, voice | [brand-kit](brand-kit/) | read `brand/DESIGN.md` of the working directory; without one, draft it as story-from-link does |
 | the best take of each part of talking-to-camera recordings, without slips and "äh"s | [best-takes](best-takes/) | its tools, as its SKILL.md describes |

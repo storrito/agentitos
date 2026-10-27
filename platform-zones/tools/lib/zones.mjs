@@ -1,6 +1,6 @@
 // The zones of one or several platforms on a frame of a given size, in px of that frame.
 //
-//   zonesFor(ids, width, height)  → { frame, size, fallback, platforms, safe, wide, margins, covers, crops, notes, sources }
+//   zonesFor(ids, width, height)  → { frame, size, fallback, platforms, safe, centred, wide, margins, covers, crops, notes, sources }
 //   check(zones, box)             → what of the box leaves the safe box or the frame, an app covers, a crop cuts
 //   resolve(name)                 → the platform an id or alias names
 //
@@ -133,10 +133,14 @@ export function zonesFor(ids, width, height) {
   const under = column.length ? Math.min(...column.map((c) => c.box[1])) : null;
   const wide = under !== null && under - m.top > 0.1 * height && m.right > m.left + 40
     ? round([m.left, m.top, width - 2 * m.left, under - m.top]) : null;
+  // the safe box made even about the frame's middle (the larger of the side margins on both
+  // sides): text centred on the frame stays clear of a column of buttons on one side
+  const side = Math.max(m.left, m.right);
   return {
     frame: frame || reduced(width, height), size: [width, height], fallback,
     platforms: placed.map(({ p, entry, standIn }) => ({ id: p.id, name: p.name, basis: entry.basis, ...(standIn ? { standIn: true } : {}) })),
     safe: round([m.left, m.top, width - m.left - m.right, height - m.top - m.bottom]),
+    centred: round([side, m.top, width - 2 * side, height - m.top - m.bottom]),
     wide,
     margins: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Math.round(v)])),
     covers: placed.flatMap(({ p, covers }) => covers.map((c) => ({ platform: p.id, what: c.what, box: round(c.box) }))),

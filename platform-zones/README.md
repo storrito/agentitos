@@ -20,7 +20,8 @@ Needs Node 20+, and ffmpeg for `draw` and `--of`. No model, no key, no npm packa
 | key | what |
 | --- | --- |
 | `safe` | `[x, y, w, h]`: text, faces, the thing being shown and the logo stay inside |
-| `margins` | the same as distances from the edges |
+| `centred` | `[x, y, w, h]`: the safe box even about the frame's middle (the larger side margin on both sides), for text centred on the frame: titles, cards, captions |
+| `margins` | the safe box as distances from the edges |
 | `wide` | in a vertical video, the stretch above the buttons' column on the right that is clear across the frame (`null` where there is none) |
 | `covers` | `[{platform, what, box}]`: each thing an app lays over the video |
 | `crops` | `[{platform, where, ratio, box}]`: the part a feed or grid shows (a reel at 4:5 in Instagram's feed, at 3:4 in the grids) |
@@ -28,9 +29,15 @@ Needs Node 20+, and ffmpeg for `draw` and `--of`. No model, no key, no npm packa
 | `fallback` | `true` when no platform was named and the frame's usual ones stand in |
 | `notes`, `sources` | what to know about the numbers, and where they come from |
 
-The text output adds where captions' lowest line ends (the safe box's bottom) and how wide they may be.
+The text output adds where captions' lowest line ends (the safe box's bottom) and how wide they may be (`centred`'s width, centred on the frame).
 
-`check` takes a box and says what of it leaves the frame, what leaves the safe box (px per side; a box inside the wide stretch counts as clear), what share of it each app covers, and what share a crop cuts away. `draw` lays the zones over a frame (the first, or `--at`): covers red, each app's on top of the others' (darker where several apps cover), the safe box green, the crops yellow.
+`check` takes a box and says what of it leaves the frame, what leaves the safe box (px per side, `!`; a box inside the wide stretch counts as clear), what share of it each app covers (`✗`), and what share a crop cuts away. `draw` lays the zones over a frame (the first, or `--at`): covers red, each app's on top of the others' (darker where several apps cover), the safe box green, the crops yellow.
+
+## Centred, and how strict
+
+Text is centred on the frame, never in the safe box. In 9:16 the apps with a column of buttons on the right (Reels, TikTok, Shorts) make the safe box uneven (60 px left, 200 right for the usual platforms together): its middle lies 70 px left of the frame's, and a title or captions centred in it look off. `centred` keeps the larger side margin on both sides, so text centred on the frame stays clear of the buttons; above them, the `wide` stretch is even too and wider. Every guide we compared puts its text box in the frame's middle ([vidpros](https://vidpros.com/vertical-video-safe-zone/): "900 × 1400, centred"; [houseofmarketers](https://houseofmarketers.com/guide-to-safe-zones-tiktok-facebook-instagram-stories-reels/), [pepperit](https://www.pepperit.com.au/why-social-media-safe-zones-for-videos-matter/)).
+
+The hard limit is what an app covers (`covers`); the margins beyond it are a buffer for other phones and app versions, from guides that disagree by up to 200 px. The skills that check a frame fail on text under an app's buttons and only warn about text in the buffer.
 
 ## Several platforms, and none
 

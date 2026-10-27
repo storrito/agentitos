@@ -2,9 +2,9 @@
 // platform-zones skill, which keeps the one table of it: PLATFORM_ZONES, else beside this skill,
 // else in the machine's clone of the skills. This skill keeps no numbers of its own.
 //
-//   zones(width, height, platforms)  → { safe: [x, y, w, h], wide, covers, crops, platforms,
-//                                        fallback, … } in px of the frame; no platforms: the usual
-//                                        ones of the frame together
+//   zones(width, height, platforms)  → { safe: [x, y, w, h], centred, wide, covers, crops,
+//                                        platforms, fallback, … } in px of the frame; no
+//                                        platforms: the usual ones of the frame together
 //   platformList(value)              → "reels,tiktok" (an option) as ["reels", "tiktok"]
 
 import fs from "node:fs";

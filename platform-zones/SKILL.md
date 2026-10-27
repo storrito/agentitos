@@ -35,16 +35,18 @@ node <skill>/tools/zones.mjs draw <video|image> <out.png> [platform…] [--at <s
 - **When the person did not say where it goes**, name none: the tool takes the usual platforms of the video's frame together (9:16: Reels, Stories, TikTok, Shorts, Facebook Reels; 4:5 and 1:1: the feeds; 16:9: YouTube and the feeds; a frame near one of these takes its numbers, any other the broadcast border). Say so in a sentence, and that naming the platform frees more of the frame. Pinterest, Snapchat and the full-screen views of LinkedIn and X are only in when named.
 - What it prints, in px of the frame:
   - `safe`: the box for text, faces, the thing being shown, the logo.
+  - `centred`: the safe box made even about the frame's middle. Text, a title, a card and captions are centred on the frame, not in the safe box: where an app has buttons on one side only (Reels, TikTok, Shorts), the safe box's middle lies left of the frame's, and text centred in it looks off. Lay them out in `centred` (its left and width, or the frame's middle and at most its width).
   - `wide`: in a vertical video, the stretch above the buttons on the right that is clear across the frame: room for something wide at the top.
   - `captions`: where captions' lowest line ends and how wide they may be.
   - `covered`: each thing an app lays over the video. A background, a hand, the rest of a screen may run under it; nothing that must be read.
   - `cropped`: where a feed or a profile grid shows the video at another ratio (Instagram shows a reel at 4:5 in the feed, at 3:4 in the grid). What must be seen there (the face, the hook's words) stays inside.
   - `basis`: how sure the numbers are. Only Pinterest publishes numbers for organic posts; the rest are third-party guides or estimates. Say so when the person relies on them.
-- **`check`** says of a box (a caption, a sticker, a shot) what leaves the safe box, what an app covers and what a feed cuts away. **`draw`** lays the zones over a frame of a video or an image (red: covered, green: safe, yellow: crops): look at it before you show the person, and show it when they ask what is covered.
+- **How strict.** What an app covers (`covered`) is the hard limit: nothing that must be read or tapped lies under it. The safe box's margins beyond that are a buffer the guides keep for other phones and app versions: something reaching into it a little is fine, when the layout needs it (centred, bigger). No platform publishes numbers for organic posts; the guides disagree by up to 200 px.
+- **`check`** says of a box (a caption, a sticker, a shot) what an app covers (✗), what only leaves the safe box into the buffer (!) and what a feed cuts away. **`draw`** lays the zones over a frame of a video or an image (red: covered, green: safe, yellow: crops): look at it before you show the person, and show it when they ask what is covered.
 
 ## For another skill
 
-Call it with `--json` and read `safe`, `wide`, `covers`, `crops`: `node <platform-zones>/tools/zones.mjs zones reels tiktok --size 1080x1920 --json`. Where the skill lives beside this one, `<platform-zones>` is `<skill>/../platform-zones`. Pass the platforms the person named, none when they named none; never copy the numbers into the skill.
+Call it with `--json` and read `safe`, `centred`, `wide`, `covers`, `crops`: `node <platform-zones>/tools/zones.mjs zones reels tiktok --size 1080x1920 --json`. Where the skill lives beside this one, `<platform-zones>` is `<skill>/../platform-zones`. Pass the platforms the person named, none when they named none; never copy the numbers into the skill.
 
 ## In the chat
 
