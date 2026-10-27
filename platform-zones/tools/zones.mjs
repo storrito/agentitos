@@ -12,16 +12,21 @@
 //   node tools/zones.mjs check <x,y,w,h> [platform…]   what of a box is covered, outside the safe
 //                                                      box, or cut away in a feed
 //   node tools/zones.mjs draw <image|video> <out.png> [platform…]   a frame with the zones drawn on
+//   node tools/zones.mjs layout <page.html|boxes.json> [platform…]   what is wrong with how a frame
+//                                                      is laid out: text under the buttons, text on
+//                                                      text or on a face, stickers on each other, …
 //
 // The frame: --size 1080x1920, --frame 9:16 (1080 px on the short side) or --of <video|image> (its
 // size); without them the first platform named brings its first frame. --at <s>: draw's moment in a video.
 // --json: everything as JSON, in px of the frame.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { PLATFORMS, DEFAULTS, CHECKED } from "./lib/platforms.mjs";
 import { zonesFor, check, resolve } from "./lib/zones.mjs";
+import { checkLayout } from "./lib/layout.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -150,10 +155,72 @@ function cmdDraw([input, out, ...ids], opts) {
   print(z);
 }
 
+// The machine's Chrome: CHROME, else the usual names on the PATH, else one puppeteer downloaded
+const CHROMES = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"];
+function chromePath() {
+  if (process.env.CHROME) return process.env.CHROME;
+  for (const dir of (process.env.PATH || "").split(path.delimiter)) for (const n of CHROMES) if (fs.existsSync(path.join(dir, n))) return path.join(dir, n);
+  for (const kind of ["chrome-headless-shell", "chrome"]) {
+    const base = path.join(os.homedir(), ".cache", "puppeteer", kind);
+    for (const v of fs.existsSync(base) ? fs.readdirSync(base).sort().reverse() : []) {
+      for (const p of [path.join(base, v, "chrome-headless-shell-linux64", "chrome-headless-shell"), path.join(base, v, "chrome-linux64", "chrome")]) if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
+// a page measured in headless Chrome by tools/measure.js: a copy of it beside it (so that its
+// relative links still work) with the script at its end, the result read from the DOM Chrome dumps
+function measurePage(file, opts) {
+  if (!fs.existsSync(file)) fail(`There is no ${file}.`);
+  const chrome = chromePath();
+  if (!chrome) fail("Measuring a page needs Chrome: set CHROME=/path/to/chrome, or measure in your own page with tools/measure.js and pass the boxes.json.");
+  const html = fs.readFileSync(file, "utf8");
+  const size = opts.size ? String(opts.size).split("x").map(Number)
+    : html.match(/data-width="(\d+)"[^>]*data-height="(\d+)"/)?.slice(1).map(Number) || [1080, 1920];
+  const measure = fs.readFileSync(new URL("./measure.js", import.meta.url), "utf8");
+  const tail = `<script>${measure}</script><script>platformZonesMeasure().then((r) => { const s = document.createElement("script"); s.type = "application/json"; s.id = "platform-zones-boxes"; s.textContent = JSON.stringify(r).replace(/</g, "\\\\u003c"); document.body.append(s); });</script>`;
+  const tmp = path.join(path.dirname(path.resolve(file)), `.platform-zones-${process.pid}.html`);
+  fs.writeFileSync(tmp, /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${tail}</body>`) : html + tail);
+  // Chrome puts a socket into TMPDIR, at most 107 bytes long: a deep TMPDIR gets the system's
+  const env = (process.env.TMPDIR || "/tmp").length > 60 ? { ...process.env, TMPDIR: "/tmp" } : process.env;
+  let r;
+  try {
+    r = spawnSync(chrome, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files", `--window-size=${size[0]},${size[1]}`, "--virtual-time-budget=15000", "--dump-dom", `file://${tmp}`], { encoding: "utf8", env, timeout: 90e3, maxBuffer: 256 << 20 });
+  } finally { fs.rmSync(tmp, { force: true }); }
+  const m = (r.stdout || "").match(/<script type="application\/json" id="platform-zones-boxes">([\s\S]*?)<\/script>/);
+  if (!m) fail(`Chrome could not measure ${file}${r.error?.code === "ETIMEDOUT" ? ": it ran for 90 seconds" : ""}: open it in a browser and look for a script error.`);
+  return JSON.parse(m[1]);
+}
+
+function cmdLayout([input, ...ids], opts) {
+  if (!input) fail(`${self()} layout <page.html|boxes.json> [platform…]`);
+  const m = /\.json$/i.test(input) ? JSON.parse(fs.readFileSync(input, "utf8")) : measurePage(input, opts);
+  if (!m.size || !Array.isArray(m.boxes)) fail(`${input} has no size and boxes: tools/measure.js makes them.`);
+  // a page that is a Storrito story is a Story, unless platforms are named
+  const story = m.story || /<insta-story[\s>]/.test(/\.html?$/i.test(input) ? fs.readFileSync(input, "utf8") : "");
+  for (const id of ids) if (!resolve(id)) fail(`There is no platform "${id}": ${PLATFORMS.map((q) => q.id).join(", ")} (${self()} list).`);
+  let z;
+  try { z = zonesFor(ids.length ? ids : story ? ["instagram-story"] : [], m.size[0], m.size[1]); } catch (e) { fail(e.message); }
+  const onStory = z.platforms.every((p) => /story/.test(p.id));
+  const found = checkLayout(z, m.boxes, { story: onStory });
+  if (opts.json) return console.log(JSON.stringify({ frame: z.frame, size: z.size, platforms: z.platforms, fallback: z.fallback, findings: found, boxes: m.boxes }, null, 2));
+  const count = (k) => m.boxes.filter((b) => b.kind === k).length;
+  const who = z.platforms.map((p) => p.name).join(", ");
+  console.log(`${input}: ${z.frame} ${z.size.join("×")} for ${who}${z.fallback ? " (no platform named: the usual ones of this frame)" : ""}; ${count("text")} texts, ${count("sticker")} stickers, ${count("face")} faces`);
+  if (!found.length) console.log(`  ✓ nothing under the apps' buttons, nothing on top of each other, text centred on the frame`);
+  for (const f of found) console.log(`  ${f.level} ${f.kind === "text" ? `"${f.label}"` : f.label} at ${box(f.box)}: ${f.what}`);
+  const bad = found.filter((f) => f.level === "✗").length;
+  if (bad) { console.log(`\n${bad} ✗ to fix, then check again.${found.length > bad ? " A ! may stay when the layout needs it." : ""}`); process.exitCode = 1; }
+  else if (found.length) console.log(`\nNo ✗. A ! may stay when the layout needs it; pull it in when it costs nothing.`);
+  if (!count("face")) console.log(`Faces it cannot see: mark them with data-zone="face", or look at the frame with ${self()} draw.`);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
 if (cmd === "list") cmdList(opts);
 else if (cmd === "zones") cmdZones(pos, opts);
 else if (cmd === "check") cmdCheck(pos, opts);
 else if (cmd === "draw") cmdDraw(pos, opts);
-else fail(`${self()} list | zones [platform…] | check <x,y,w,h> [platform…] | draw <image|video> <out.png> [platform…]   (--size 1080x1920 | --frame 9:16 | --of <file>) [--json]`);
+else if (cmd === "layout") cmdLayout(pos, opts);
+else fail(`${self()} list | zones [platform…] | check <x,y,w,h> [platform…] | draw <image|video> <out.png> [platform…] | layout <page.html|boxes.json> [platform…]   (--size 1080x1920 | --frame 9:16 | --of <file>) [--json]`);

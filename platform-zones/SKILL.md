@@ -1,6 +1,6 @@
 ---
 name: platform-zones
-description: Where Instagram (Reels, Stories, feed), TikTok, YouTube (Shorts and videos), Facebook (Reels, Stories, feed), Snapchat, Pinterest, LinkedIn and X lay their buttons, names and captions over a video, per frame (9:16, 4:5, 1:1, 16:9): the box that stays clear for text, faces and what is shown, what each app covers, and where a feed or a profile grid shows the video cut to another ratio. When the person did not say where the video goes, the usual platforms of its frame together. Use before placing text, captions, a face or a screen in a video for social media, to check a finished frame, and as the zones step of other skills (captions, screencast-cut, kinetic-lyrics, story-from-link): they call its tool.
+description: Where Instagram (Reels, Stories, feed), TikTok, YouTube (Shorts and videos), Facebook (Reels, Stories, feed), Snapchat, Pinterest, LinkedIn and X lay their buttons, names and captions over a video, per frame (9:16, 4:5, 1:1, 16:9): the box that stays clear for text, faces and what is shown, what each app covers, and where a feed or a profile grid shows the video cut to another ratio. When the person did not say where the video goes, the usual platforms of its frame together. Use before placing text, captions, a face or a screen in a video for social media, to check a finished frame, and as the zones step of other skills (captions, screencast-cut, kinetic-lyrics, story-from-link): they call its tool. Also the rules for laying out a frame (text centred on the frame, captions, faces, Instagram's stickers on Stories through Storrito) and a check of a laid-out page (text under the buttons, on a face or on other text, cut off, stickers on each other).
 license: MIT
 metadata:
   title: "Platform zones"
@@ -20,7 +20,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+; ffmpeg for `draw` and for `--of <file>`. No model, no key, no cost.
+Node 20+; ffmpeg for `draw` and for `--of <file>`; Chrome for `layout` on a page. No model, no key, no cost.
 
 ## The zones
 
@@ -43,6 +43,31 @@ node <skill>/tools/zones.mjs draw <video|image> <out.png> [platform…] [--at <s
   - `basis`: how sure the numbers are. Only Pinterest publishes numbers for organic posts; the rest are third-party guides or estimates. Say so when the person relies on them.
 - **How strict.** What an app covers (`covered`) is the hard limit: nothing that must be read or tapped lies under it. The safe box's margins beyond that are a buffer the guides keep for other phones and app versions: something reaching into it a little is fine, when the layout needs it (centred, bigger). No platform publishes numbers for organic posts; the guides disagree by up to 200 px.
 - **`check`** says of a box (a caption, a sticker, a shot) what an app covers (✗), what only leaves the safe box into the buffer (!) and what a feed cuts away. **`draw`** lays the zones over a frame of a video or an image (red: covered, green: safe, yellow: crops): look at it before you show the person, and show it when they ask what is covered.
+
+## Laying out a frame
+
+What to place where, whatever the frame shows. The numbers come from `zones` for the platforms it goes to.
+
+- **Text centred on the frame:** titles, cards, quotes and captions sit on the frame's middle, at most `centred` wide. Only what belongs to one side (a label in a corner, a price tag beside a product, a name over its person) takes the safe box's edge.
+- **Something wide at the top:** a hook, a screenshot, a chart, a headline goes into `wide`, above the buttons; it is as wide as the frame allows there.
+- **Captions:** their lowest line on the safe box's bottom. Two people one above the other: on the seam between them. A picture or a screen filling the top: between it and the face.
+- **Faces:** the eyes in the upper third of the frame; text never on a face (a name tag beside it or below the chin). A face stays inside the safe box; the body may run under the apps' bars.
+- **Under what the apps cover:** only ground, texture, the rest of a picture.
+- **Stickers on Stories.** Storrito puts Instagram's own stickers (link, poll, question, quiz, countdown, emoji slider, mention, hashtag, location) on any Story it schedules, a picture or a video, made by any skill: they are `<insta-…>` elements in the story's HTML, at the place and in the size they have there ([Storrito's component reference](https://storrito.com/documentation/api/v1/story-components.md)). So a Story keeps room for its sticker where it belongs: a link at the bottom of the safe box below the call to action, a poll, a question or a countdown in the middle, never on text or a face, 40 px between stickers. Pills (link, mention, hashtag, location) are 177 px tall; polls, questions, quizzes, countdowns and sliders 690–820 px wide and 260–890 px tall. Reels, TikTok and the feeds have no stickers: a call to action there is text.
+
+## Check a layout
+
+```
+node <skill>/tools/zones.mjs layout <page.html> [platform…] [--json]
+node <skill>/tools/zones.mjs layout <boxes.json> [platform…] [--json]
+```
+
+For a page that shows one frame (a story's HTML, a still, a card): Chrome opens it and measures every text by its letters, every `<insta-…>` sticker, and every element marked `data-zone="face"` (mark the faces: no tool sees them). A page with `<insta-story>` is a Story unless platforms are named. For a film, measure inside your own page at its moment with `<skill>/tools/measure.js` (`await platformZonesMeasure()`) and pass the boxes as JSON.
+
+- `✗`: text, a sticker or a face under an app's buttons or bars; text cut off or out of the frame; text on text, on a face, under a sticker; stickers on each other, or one without a size. Fix every ✗ and check again.
+- `!`: something in the safe box's margin; text centred in the safe box instead of on the frame; stickers closer than 40 px; text a feed's crop cuts; a sticker on a frame that is no Story. It may stay when the layout needs it.
+
+Text meant as texture (under the buttons on purpose) gets `data-zone="ignore"`.
 
 ## For another skill
 

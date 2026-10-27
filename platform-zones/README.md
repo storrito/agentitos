@@ -9,9 +9,10 @@ node tools/zones.mjs list
 node tools/zones.mjs zones [platform…] (--of <video|image> | --size 1080x1920 | --frame 9:16) [--json]
 node tools/zones.mjs check <x,y,w,h> [platform…] (--of … | --size … | --frame …) [--json]
 node tools/zones.mjs draw <video|image> <out.png> [platform…] [--at <s>]
+node tools/zones.mjs layout <page.html|boxes.json> [platform…] [--json]
 ```
 
-Needs Node 20+, and ffmpeg for `draw` and `--of`. No model, no key, no npm packages.
+Needs Node 20+, ffmpeg for `draw` and `--of`, Chrome for `layout` on a page. No model, no key, no npm packages.
 
 ## What it answers
 
@@ -40,6 +41,20 @@ Text is centred on the frame, never in the safe box. In 9:16 the apps with a col
 The buttons' columns, where guides measured them in the apps: Reels 119–120 px wide, TikTok 180 px from 840 px down, Shorts 192–201 px. The 120 px most guides give as a side margin fits Reels; TikTok's and Shorts' columns are wider. So the centred box is 840 px wide for Reels alone, about 700 for the usual vertical platforms together: name the platform when it is known.
 
 The hard limit is what an app covers (`covers`); the margins beyond it are a buffer for other phones and app versions, from guides that disagree by up to 200 px. The skills that check a frame fail on text under an app's buttons and only warn about text in the buffer.
+
+## Laying out a frame, and checking it
+
+SKILL.md's "Laying out a frame" holds the rules every skill places by: text centred on the frame and at most `centred` wide, something wide at the top in `wide`, captions on the safe box's bottom (on the seam of two stacked people, between a top picture and the face), faces in the upper third and never under text, only ground under what the apps cover.
+
+Stickers: Storrito puts Instagram's native stickers on any Story it schedules, image or video, from `<insta-…>` elements in the story's HTML. It renders the HTML at 1080×1920, takes each sticker's place and size from its rendered box, its rotation and scale from its CSS transform, and the background with the stickers hidden ([component reference](https://storrito.com/documentation/api/v1/story-components.md)). Any skill that makes a Story can therefore add stickers; the layout keeps room for them.
+
+`layout <page.html|boxes.json> [platform…]` checks a frame:
+
+- `tools/measure.js` runs in the page (`await platformZonesMeasure()` → `{size, boxes}`): the frame is the page's `<insta-story>`, else its element with `data-composition-id`, else the body. Text is measured by its letters (the glyphs' ink, line by line, from the font's metrics), one box per run of a block's text; `<insta-…>` elements and `data-zone="sticker"` are stickers, `data-zone="face"` faces; `data-zone="ignore"` leaves text out. It waits for the fonts, the images and Storrito's components (`__instaRender.waitForComponents`).
+- On a page, the tool copies it beside itself with the script added, opens it in headless Chrome (`CHROME`, else on the PATH) and reads the boxes from the DOM Chrome dumps: no npm package.
+- `tools/lib/layout.mjs` judges the boxes: ✗ under an app's covers, cut off (`clipped`: past an ancestor that hides its overflow), out of the frame, text on text (2 % of the smaller box), text on a face, a sticker on text, stickers overlapping or without a size; ! in the safe box's margin, centred text whose middle is the uneven safe box's and not the frame's, stickers closer than Storrito's 40 px, text cut by a feed's crop, a sticker on a frame that is no Story. Exit code 1 on a ✗.
+
+Tested on 46 example frames (talking heads, memes, charts, products, recipes, stories with stickers) and on story-from-link's frames with Storrito's components.
 
 ## Several platforms, and none
 
@@ -97,3 +112,4 @@ The apps change their layout without notice. When a frame looks wrong on a phone
 
 - Times: YouTube's end screens cover large parts of the last 5–20 seconds, the apps' captions grow when tapped. The zones are for the whole video.
 - Ads: the zones are for organic posts.
+- Layout: `layout` sees no faces unless they are marked, no contrast, and no words inside pictures; `draw` and a look at the frame cover those. A film is checked frame by frame in its own page (launch-video's `check` does it for HyperFrames).
