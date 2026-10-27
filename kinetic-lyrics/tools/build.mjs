@@ -203,16 +203,16 @@ if (opt.plan) {
 }
 
 // What the platforms lay over the video, from agentitos' platform-zones (it keeps the one table of
-// it): the safe box as frame fractions [x0, y0, x1, y1], for the type (engine/type.js), the hook
-// card (engine/overlay.js) and the check (tools/qa.mjs). A rebuilt plan keeps its platforms unless
+// it): the safe box as frame fractions [x0, y0, x1, y1], for the hook card (engine/overlay.js) and
+// the check (tools/qa.mjs), and the same box even about the frame's middle (centred), for the
+// type (engine/type.js), which is centred on the frame. A rebuilt plan keeps its platforms unless
 // --platform names others.
 {
   const platforms = typeof opt.platform === "string" ? platformList(opt.platform) : plan.zones?.platforms || [];
   let z;
   try { z = zones(plan.width, plan.height, platforms); } catch (e) { console.error(e.message); process.exit(1); }
-  const [x, y, w, h] = z.safe;
-  plan.zones = { platforms, fallback: z.fallback, for: z.platforms.map((p) => p.id),
-    safe: [x / plan.width, y / plan.height, (x + w) / plan.width, (y + h) / plan.height].map((v) => +v.toFixed(4)) };
+  const frac = ([x, y, w, h]) => [x / plan.width, y / plan.height, (x + w) / plan.width, (y + h) / plan.height].map((v) => +v.toFixed(4));
+  plan.zones = { platforms, fallback: z.fallback, for: z.platforms.map((p) => p.id), safe: frac(z.safe), centred: frac(z.centred) };
   console.error(`zones: clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}`);
 }
 

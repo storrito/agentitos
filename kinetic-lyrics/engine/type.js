@@ -54,8 +54,9 @@ export function build(root, plan, gsap) {
   const portrait = plan.portrait;
   const preset = plan.preset || "lyric";
   // what the platforms lay over the video (their buttons, names, captions): the safe box of
-  // agentitos' platform-zones as frame fractions, set by build.mjs (plan.zones)
-  const Z = plan.zones?.safe || [0, 0, 1, 1];
+  // agentitos' platform-zones as frame fractions, even about the frame's middle so the type is
+  // centred on the frame, set by build.mjs (plan.zones)
+  const Z = plan.zones?.centred || plan.zones?.safe || [0, 0, 1, 1];
   // safe box [x0, y0, x1, y1] as frame fractions: lyric = title-safe; podcast keeps clear of the
   // speaker chip + audiogram; social is the platforms' safe box, below the hook card. Every
   // preset stays inside the platforms' safe box.
