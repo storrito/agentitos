@@ -33,12 +33,13 @@ export function brandOf(file) {
   return { primary: value(colors, "primary"), family, served, files: served ? [] : files.filter((f) => fs.existsSync(f.file)) };
 }
 
-// zones: platform-zones' answer for the frame (tools/lib/zones.mjs): the captions sit in its safe
-// box, their lowest line at its bottom, centred in it and never wider
+// zones: platform-zones' answer for the frame (tools/lib/zones.mjs): the captions sit in its
+// centred box (the safe box even about the frame's middle), their lowest line at its bottom,
+// centred on the frame and never wider
 export function writeCaptions(out, { words, style, width, height, duration, brand, zones }) {
   fs.mkdirSync(out, { recursive: true });
   // the styles' sizes are for a frame whose short side is 1080 px: 1080×1920, 1920×1080, 1080×1080 alike
-  const look = { ...style.look }, [sx, sy, sw, sh] = zones.safe, scale = Math.min(width, height) / 1080;
+  const look = { ...style.look }, [sx, sy, sw, sh] = zones.centred, scale = Math.min(width, height) / 1080;
   const links = [];
   let faces = "";
   if (brand?.primary) look.accent = brand.primary;

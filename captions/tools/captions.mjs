@@ -117,7 +117,7 @@ async function cmdMark(file, opts) {
 }
 
 // for whom the captions are placed, in a sentence
-const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}: the lowest line ends at y ${z.safe[1] + z.safe[3]}, at most ${z.safe[2]} px wide.`;
+const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}: the lowest line ends at y ${z.centred[1] + z.centred[3]}, centred on the frame, at most ${z.centred[2]} px wide.`;
 
 function captionsFor(words, folder, opts, size, duration) {
   const s = style(opts.style || "hormozi");
