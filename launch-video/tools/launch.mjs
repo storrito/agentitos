@@ -198,8 +198,9 @@ function cmdZones(work, ids, opts) {
   const who = z.platforms.map((p) => p.name + (p.standIn ? " (standing in)" : "")).join(", ");
   console.log(`${z.frame}, ${W}×${H}: ${z.fallback ? `no platform named, so the usual ones of this frame together: ${who}` : who}`);
   console.log(`  safe     ${box(z.safe)}: every word, the product, faces and the logo stay inside`);
+  console.log(`  centred  ${box(z.centred)}: the safe box even about the frame's middle, for titles, cards and captions centred on the frame`);
   if (z.wide) console.log(`  wide     ${box(z.wide)}: clear across the frame above the buttons on the right, for something wide at the top`);
-  console.log(`  captions the lowest line ends at y ${sy + sh} (${H - sy - sh} px above the bottom), at most ${sw} px wide`);
+  console.log(`  captions the lowest line ends at y ${sy + sh} (${H - sy - sh} px above the bottom), centred on the frame, at most ${z.centred[2]} px wide`);
   for (const c of z.covers) console.log(`  covered  ${box(c.box)}  ${c.what} (${c.platform}): only ground, texture, the rest of a picture`);
   for (const c of z.crops) console.log(`  cropped  ${box(c.box)}  ${c.where} shows ${c.ratio}: the hook's words and the face stay inside`);
   for (const n of z.notes) console.log(`  note     ${n}`);
@@ -207,9 +208,10 @@ function cmdZones(work, ids, opts) {
   console.log(`\nThe root's size: data-width="${W}" data-height="${H}" (and the viewport, html and body). As custom properties for the root's :root, if you like:
   :root {
     --safe-left: ${sx}px; --safe-top: ${sy}px; --safe-width: ${sw}px; --safe-height: ${sh}px;
-    --safe-right: ${W - sx - sw}px; --safe-bottom: ${H - sy - sh}px;${wide}
+    --safe-right: ${W - sx - sw}px; --safe-bottom: ${H - sy - sh}px;
+    --centred-left: ${z.centred[0]}px; --centred-width: ${z.centred[2]}px;${wide}
   }
-A title or a card is laid out in a box of the safe one (left, top, width), not across the whole frame and centred: in a vertical frame the buttons sit on the right, so the frame's middle is not the safe box's.
+Centre a title, a card or captions on the frame, at most --centred-width wide (left: --centred-left), never in the safe box: in a vertical frame the buttons sit on the right, so the safe box's middle lies left of the frame's and text centred in it looks off. Above the buttons the wide stretch is centred too, and wider.
 → ${rel(path.join(work, "zones.json"))}. After building: ${cmd(`check ${rel(work)} <composition>`)}`);
 }
 
@@ -251,7 +253,9 @@ function cmdCheck(work, composition) {
   const bands = keepOut(z);
   const found = new Map();
   for (const b of bands) {
-    const zone = `x0=${(b[0] / W).toFixed(5)};y0=${(b[1] / H).toFixed(5)};x1=${((b[0] + b[2]) / W).toFixed(5)};y1=${((b[1] + b[3]) / H).toFixed(5)};severity=error;seek=${seek}`;
+    // rounded inwards: text that ends on the safe box's edge does not reach into the band
+    const up = (v) => (Math.ceil(v * 1e5) / 1e5).toFixed(5), down = (v) => (Math.floor(v * 1e5) / 1e5).toFixed(5);
+    const zone = `x0=${up(b[0] / W)};y0=${up(b[1] / H)};x1=${down((b[0] + b[2]) / W)};y1=${down((b[1] + b[3]) / H)};severity=error;seek=${seek}`;
     const r = spawnSync(...run(cli, ["check", path.resolve(composition), "--json", "--no-contrast", "--samples", "2", "--no-collapse-static", "--max-issues", "100000", "--caption-zone", zone]), { encoding: "utf8", env: hfEnv(), maxBuffer: 64 << 20, timeout: 900e3 });
     const why = () => (r.error?.code === "ETIMEDOUT" ? "it ran for 15 minutes" : (r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" "));
     let j;
@@ -273,8 +277,11 @@ function cmdCheck(work, composition) {
     console.log(`What no check reads: words inside pictures and screenshots, a face under the buttons. Look at the stills with the zones drawn: ${cmd(`draw ${rel(work)} <stills-folder>`)}`);
     return;
   }
-  console.log(`✗ ${found.size} text${found.size > 1 ? "s" : ""} where the apps lay their buttons and bars (${who}):`);
   const meets = (a, c) => a[0] < c[0] + c[2] && a[0] + a[2] > c[0] && a[1] < c[1] + c[3] && a[1] + a[3] > c[1];
+  // under an app's buttons is a ✗; in the safe box's margin beyond them, or only the element's box
+  // past it, a ! (the margin is a buffer for other phones, not something an app lays there)
+  const lines = [];
+  let covered = 0;
   for (const e of found.values()) {
     e.hits.sort((x, y) => x.time - y.time);
     // the spans it is there: a gap of more than two samples starts a new one
@@ -289,12 +296,19 @@ function cmdCheck(work, composition) {
     const inBand = e.hits.find((h) => letters(h) && meets(letters(h), h.band));
     const at = letters(inBand || e.hits[0]);
     const under = inBand ? z.covers.filter((c) => meets(at, c.box)) : [];
-    console.log(`  ${spans.map(([a, b]) => (a === b ? `${a.toFixed(2)}` : `${a.toFixed(2)}–${b.toFixed(2)}`)).join(", ")} s  ${e.selector} in ${e.file}: "${e.text}"${at ? ` at ${box(at)}` : ""}`);
-    if (!inBand) console.log(`      its letters are clear, but its box reaches past the safe box: give the element the safe box's left and width (${z.safe[0]} and ${z.safe[2]} px), not the whole frame`);
-    else console.log(`      ${under.length ? `under ${[...new Set(under.map((c) => `${c.what} (${c.platform})`))].join("; ")}` : "outside the safe box, in the margin the apps keep"}`);
+    if (under.length) covered++;
+    lines.push(`  ${under.length ? "✗" : "!"} ${spans.map(([a, b]) => (a === b ? `${a.toFixed(2)}` : `${a.toFixed(2)}–${b.toFixed(2)}`)).join(", ")} s  ${e.selector} in ${e.file}: "${e.text}"${at ? ` at ${box(at)}` : ""}`);
+    if (!inBand) lines.push(`      its letters are clear, but its box reaches past the safe box: centre the element on the frame at most ${z.centred[2]} px wide (left ${z.centred[0]} px), not across the whole frame`);
+    else lines.push(`      ${under.length ? `under ${[...new Set(under.map((c) => `${c.what} (${c.platform})`))].join("; ")}` : "outside the safe box, in the margin the guides keep; no app lays anything there"}`);
   }
-  console.log(`\nMove each into the safe box ${box(z.safe)}${z.wide ? ` (or the wide stretch ${box(z.wide)})` : ""}. Text that is only texture, meant to run under the buttons, gets data-layout-allow-caption-zone. Then check again.`);
-  process.exitCode = 1;
+  console.log(covered
+    ? `✗ ${covered} text${covered > 1 ? "s" : ""} under the apps' buttons and bars (${who})${found.size > covered ? `, ${found.size - covered} more in the safe box's margin` : ""}:`
+    : `! ${found.size} text${found.size > 1 ? "s" : ""} past the safe box ${box(z.safe)}, none under the apps' buttons and bars (${who}):`);
+  for (const l of lines) console.log(l);
+  if (covered) {
+    console.log(`\nMove each ✗ out from under the buttons: centred on the frame in ${box(z.centred)}${z.wide ? ` (or the wide stretch ${box(z.wide)})` : ""}. Text that is only texture, meant to run under the buttons, gets data-layout-allow-caption-zone. Then check again.`);
+    process.exitCode = 1;
+  } else console.log(`\nA ! may stay when the layout needs it (centred, bigger): the margin is a buffer for other phones. Pull it in when it costs nothing.`);
 }
 
 function cmdDraw(work, folder) {

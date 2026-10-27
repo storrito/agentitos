@@ -65,7 +65,7 @@ The platforms the person named decide the frame: Reels, TikTok, Shorts, Stories 
 node <skill>/tools/launch.mjs zones launch/<name> [reels tiktok …] [--frame 4:5]
 ```
 
-prints the frame's size, the **safe box** (every word, the product, faces and the logo stay inside), the **wide** stretch at the top of a vertical frame, where the captions end, what each app covers, and where a feed crops the film. Then make the project, once, with the `project` tool (`create`, name `<name>`, kind `hyperframes`): everything the next steps write into `artifacts/<name>/composition/` needs it to exist first. These numbers go into SPEC.md's OUTPUT line and are the layout's grid: lay titles and cards out in the safe box (its left, top and width), not across the frame and centred, because in a vertical frame the buttons sit on the right. Only ground, texture and the rest of a picture run under what the apps cover. The hook's words and the face also stay inside the feed's crop.
+prints the frame's size, the **safe box** (every word, the product, faces and the logo stay inside), the **centred** box (the safe box even about the frame's middle), the **wide** stretch at the top of a vertical frame, where the captions end, what each app covers, and where a feed crops the film. Then make the project, once, with the `project` tool (`create`, name `<name>`, kind `hyperframes`): everything the next steps write into `artifacts/<name>/composition/` needs it to exist first. These numbers go into SPEC.md's OUTPUT line and are the layout's grid: centre titles, cards and captions on the frame, at most the centred box's width, never in the safe box: in a vertical frame the buttons sit on the right, so the safe box's middle lies left of the frame's and text centred in it looks off. Only something meant to sit on one side (a label in a corner) takes the safe box's edge. Only ground, texture and the rest of a picture run under what the apps cover. The hook's words and the face also stay inside the feed's crop.
 
 ### 3. Three storylines, one pick
 
@@ -103,7 +103,7 @@ hyperframes lint artifacts/<name>/composition             # while building, seco
 node <skill>/tools/launch.mjs check launch/<name> artifacts/<name>/composition
 ```
 
-`check` finds every text the apps would cover, with when, where and under which app's buttons: move it into the safe box (a ✗ is always fixed). Then HyperFrames' own gate and review (review.md), each with the project folder: `hyperframes check artifacts/<name>/composition --json` (minutes), `hyperframes snapshot artifacts/<name>/composition --review`, and the stills of every beat for the zones, `hyperframes snapshot artifacts/<name>/composition --at <every beat's moment> --no-end -o launch/<name>/stills`. Then
+`check` finds every text the apps would cover, with when, where and under which app's buttons: move it out from under them (a ✗ is always fixed). A `!` is text in the safe box's margin, where no app lays anything: it may stay when the layout needs it. Then HyperFrames' own gate and review (review.md), each with the project folder: `hyperframes check artifacts/<name>/composition --json` (minutes), `hyperframes snapshot artifacts/<name>/composition --review`, and the stills of every beat for the zones, `hyperframes snapshot artifacts/<name>/composition --at <every beat's moment> --no-end -o launch/<name>/stills`. Then
 
 ```bash
 node <skill>/tools/launch.mjs draw launch/<name> launch/<name>/stills
@@ -157,6 +157,6 @@ The storylines:
 ## Rules
 
 - Real UI, real numbers, the person's own words: nothing the source does not say.
-- Every word and the product inside the safe box of the platforms it goes to; `check` before every preview.
+- Every word and the product clear of the apps' buttons of the platforms it goes to, text centred on the frame; `check` before every preview.
 - The preview first, the render only after the person's yes; publishing only when they ask.
 - Change the scenes, the script or the music and build again; never patch a rendered video.
