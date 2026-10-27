@@ -44,7 +44,7 @@ The hard limit is what an app covers (`covers`); the margins beyond it are a buf
 
 ## Laying out a frame, and checking it
 
-SKILL.md's "Laying out a frame" holds the rules every skill places by: text centred on the frame and at most `centred` wide, something wide at the top in `wide`, captions on the safe box's bottom (on the seam of two stacked people, between a top picture and the face), faces in the upper third and never under text, only ground under what the apps cover.
+SKILL.md's "Laying out a frame" holds the rules every skill places by: text centred on the frame and at most `centred` wide, something wide at the top in `wide`, captions on the safe box's bottom (on the seam of two stacked people, between a top picture and the face), faces in the upper third and never under text, only ground under what the apps cover, and no eyebrow over a headline unless it says what the headline does not (a series' part, a date, a source).
 
 Stickers: Storrito puts Instagram's native stickers on any Story it schedules, image or video, from `<insta-…>` elements in the story's HTML. It renders the HTML at 1080×1920, takes each sticker's place and size from its rendered box, its rotation and scale from its CSS transform, and the background with the stickers hidden ([component reference](https://storrito.com/documentation/api/v1/story-components.md)). Any skill that makes a Story can therefore add stickers; the layout keeps room for them.
 

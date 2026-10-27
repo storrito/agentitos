@@ -67,7 +67,7 @@ The frames take the display font from `headline-display` (else `display`, `headl
   "link": "https://www.example.com/products/berry",
   "lang": "de",
   "frames": [
-    {"kind": "cover", "kicker": "Neu", "title": "Weniger Zucker. *Volle Beeren.*", "image": "images/07.png"},
+    {"kind": "cover", "title": "Weniger Zucker. *Volle Beeren.*", "image": "images/07.png"},
     {"kind": "product", "title": "Bio Berry Müsli", "price": "9,95 €", "badge": "–30 % Zucker", "image": "images/01.png", "theme": "light"},
     {"kind": "cta", "title": "Jetzt *probieren*", "stickers": [{"type": "link", "text": "Zum Müsli"}]}
   ]

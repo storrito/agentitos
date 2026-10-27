@@ -9,7 +9,8 @@ people, and to show the person when they choose a style): [../examples/](../exam
 
 The rules every pattern keeps are SKILL.md's "Laying out a frame". In short: text centred on the
 frame and at most `centred` wide; something wide in `wide`; captions end on the safe box's bottom;
-faces in the upper third, never under text; under what the apps cover only ground.
+faces in the upper third, never under text; under what the apps cover only ground; no eyebrow over
+a headline unless it says what the headline does not (a series' part, a date, a source).
 
 ## Talking heads
 
@@ -51,7 +52,7 @@ faces in the upper third, never under text; under what the apps cover only groun
 | **Timeline** | A vertical line with 3–5 points (year bold, one line of text) in `centred`. |
 | **Tutorial step** | A badge "Step 2 of 5" at the top; the phone or screen in the middle with the place to tap ringed; the instruction as captions. |
 | **Screencast + face** | The screen across `wide`; the face as a circle under it at the left edge of `centred`; captions at the bottom. |
-| **News / announcement** | A picture; a label ("NEW") and the headline, big, ending near the safe box's bottom; the date under it. |
+| **News / announcement** | A picture; the headline, big, saying what is new ("Stories now on Facebook too"), ending near the safe box's bottom; the date under it. |
 
 ## Products and trades
 
@@ -75,11 +76,11 @@ Storrito adds Instagram's stickers to any Story (SKILL.md, "Stickers on Stories"
 | pattern | where |
 | --- | --- |
 | **Poll** | The question as text at the top of the safe box over the picture; the poll sticker in the lower middle, clear of the subject. |
-| **Article teaser + link** | The article's picture at the top, a label ("NEW ON THE BLOG") and the headline under it; the link sticker centred above the safe box's bottom. |
-| **Event + countdown** | Kind, title and date at the top; the countdown sticker in the middle; the link sticker (sign up) at the bottom. |
+| **Article teaser + link** | The article's picture at the top, the headline under it; the link sticker centred above the safe box's bottom. |
+| **Event + countdown** | The title and the date at the top (the title says what it is: "Live webinar: stories that sell"); the countdown sticker in the middle; the link sticker (sign up) at the bottom. |
 | **Discount code** | The discount huge, what it is for, the code in a dashed box; the link sticker at the bottom. |
 | **Giveaway** | "GIVEAWAY", the prize, the steps (follow, like, tag) and the closing date, all centred; no sticker needed (a mention sticker for the account works). |
 | **Question box** | The face; the question sticker at the top of the safe box, clear of the face. |
 | **Review + slider** | Stars, the review, who wrote it; an emoji slider below, above the safe box's bottom. |
-| **Job ad** | "WE'RE HIRING", the role big, 3 benefits; the link sticker (apply) at the bottom. |
-| **Opening / place** | A map with a pin; a card with "NEW OPENING", the place and the date; a location sticker at the top. |
+| **Job ad** | The role big, said as a search ("We're looking for a social media manager"), 3 benefits; the link sticker (apply) at the bottom. |
+| **Opening / place** | A map with a pin; a card with the headline ("Now open in Berlin"), the address and the date; a location sticker at the top. |

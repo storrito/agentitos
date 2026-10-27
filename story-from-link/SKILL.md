@@ -65,7 +65,7 @@ Write `work/<name>/story.json`. A good story:
   "link": "https://example.com/products/berry",
   "lang": "de",
   "frames": [
-    {"kind": "cover", "kicker": "Neu", "title": "Weniger Zucker. *Volle Beeren.*", "image": "images/07.png"},
+    {"kind": "cover", "title": "Weniger Zucker. *Volle Beeren.*", "image": "images/07.png"},
     {"kind": "product", "title": "Bio Berry Müsli", "price": "9,95 €", "badge": "–30 % Zucker", "image": "images/01.png", "theme": "light"},
     {"kind": "list", "title": "Was drin ist", "items": ["Erdbeeren", "Himbeeren", "Knuspriger Hafer"], "marks": "check"},
     {"kind": "stat", "value": "30 %", "title": "weniger Zucker", "stickers": [{"type": "poll", "question": "Schon probiert?", "options": ["Ja", "Noch nicht"], "color": "pink"}]},
@@ -76,7 +76,7 @@ Write `work/<name>/story.json`. A good story:
 
 | kind | fields | for |
 | --- | --- | --- |
-| `cover` | `kicker`, `title`, `image` | the hook |
+| `cover` | `title`, `image`, `kicker` (rarely: only what the title does not say and the viewer needs first, e.g. a date or "Part 2/5"; never "New", "Tip" or the brand) | the hook |
 | `text` | `title`, `body`, `number` ("02") | one point |
 | `list` | `title`, `items` (2–5), `marks: "check"` | steps, contents, reasons |
 | `quote` | `quote`, `author`, `role`, `image` (a portrait) | a voice, a review |
