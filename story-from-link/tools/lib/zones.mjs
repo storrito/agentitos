@@ -6,8 +6,10 @@
 //                                        platforms, fallback, … } in px of the frame; no
 //                                        platforms: the usual ones of the frame together
 //   platformList(value)              → "reels,tiktok" (an option) as ["reels", "tiktok"]
+//   measureScript(), layout(boxes)   → platform-zones' layout check of a frame (below)
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -31,4 +33,24 @@ export function zones(width, height, platforms = []) {
   const z = JSON.parse(r.stdout);
   cache.set(key, z);
   return z;
+}
+
+// How a frame is laid out, by platform-zones' own check: its tools/measure.js runs in the page
+// (`await platformZonesMeasure()`), its `layout` judges the boxes. The findings: [{ level: "✗" | "!",
+// kind, label, box, what }].
+export function measureScript() {
+  const tool = zonesTool();
+  const f = tool && path.join(path.dirname(tool), "measure.js");
+  if (!f || !fs.existsSync(f)) throw new Error("The layout check needs agentitos' platform-zones skill beside this one, with its tools/measure.js.");
+  return fs.readFileSync(f, "utf8");
+}
+
+export function layout(measured, platforms = []) {
+  const f = path.join(os.tmpdir(), `platform-zones-${process.pid}-${Date.now()}.json`);
+  fs.writeFileSync(f, JSON.stringify(measured));
+  try {
+    const r = spawnSync(process.execPath, [zonesTool(), "layout", f, ...platforms, "--json"], { encoding: "utf8" });
+    if (r.status && !r.stdout.trim()) throw new Error(`platform-zones: ${(r.stderr || "").trim()}`);
+    return JSON.parse(r.stdout).findings;
+  } finally { fs.rmSync(f, { force: true }); }
 }

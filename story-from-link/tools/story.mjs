@@ -23,7 +23,8 @@ import { PNG } from "pngjs";
 import { launch, sleep } from "./lib/chrome.mjs";
 import * as design from "./lib/design-md.mjs";
 import { contrast, luminance, parse } from "./lib/colors.mjs";
-import { KINDS, STICKERS, safeZone, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
+import { KINDS, STICKERS, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
+import { measureScript, layout } from "./lib/zones.mjs";
 import { connect, call, componentsHost } from "./lib/storrito.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -117,6 +118,8 @@ async function build(dir) {
   const fonts = await fontCss(brand);
   const n = story.frames.length;
   const out = [];
+  let measure;
+  try { measure = measureScript(); } catch (e) { fail(`✗ ${e.message}`); }
   const browser = await launch();
   try {
     const page = await browser.newPage();
@@ -138,6 +141,9 @@ async function build(dir) {
       });
       if (!(await page.evaluate(() => !!window.__instaRender))) fail(`✗ Storrito's sticker components did not load from ${host}/js/insta-components.js: is the machine online?`);
       const report = await page.evaluate(inFrame);
+      // measured before the stickers and the text are hidden for the pictures below
+      await page.addScriptTag({ content: measure });
+      const laidOut = layout(await page.evaluate(() => platformZonesMeasure()), ["instagram-story"]);
       await page.evaluate(() => document.fonts.ready);
       // what a viewer sees, small, for the chat and the preview
       await page.setViewport({ width: W, height: H, deviceScaleFactor: 0.5 });
@@ -175,17 +181,10 @@ async function build(dir) {
         if (!nw) notes.push(["✗", `the picture did not load`]);
         else if (im.scale > 1.7) notes.push(["⚠", `the picture (${nw}×${nh}) is enlarged ${im.scale}×: it will look blurry; take a bigger one, or show it in a card (a cover or image frame with theme "light" or "brand")`]);
       }
-      const SAFE = safeZone();
-      for (const s of report.stickers) {
-        const r = s.rect;
-        const under = SAFE.covers.find(({ box: [x, y, w, h] }) => r.x < x + w && x < r.x + r.w && r.y < y + h && y < r.y + r.h);
-        if (under || r.x < 0 || r.y < 0 || r.x + r.w > W || r.y + r.h > H) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker lies ${under ? `under ${under.what}` : "outside the frame"} (y ${r.y}–${r.y + r.h}): shorten the text above it`]);
-        else if (r.y < SAFE.top || r.y + r.h > SAFE.bottom || r.x < SAFE.left || r.x + r.w > SAFE.right) notes.push(["⚠", `the ${s.tag.replace("insta-", "")} sticker reaches into the margin of Instagram's safe zone (y ${r.y}–${r.y + r.h}): nothing covers it there, but on some phones it sits close to the bar or the reply field`]);
-        if (!s.width || !s.height) notes.push(["✗", `the ${s.tag.replace("insta-", "")} sticker has no size: it would not be tappable`]);
-      }
-      for (let a = 0; a < report.stickers.length; a++) for (let b = a + 1; b < report.stickers.length; b++) {
-        const p = report.stickers[a].rect, q = report.stickers[b].rect;
-        if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) notes.push(["✗", "two stickers overlap"]);
+      // the layout by platform-zones: text and stickers under Instagram's bar or reply field, on each
+      // other, cut off; stickers too close (✗ stays ✗, its ! is a ⚠)
+      for (const f of laidOut) {
+        notes.push([f.level === "✗" ? "✗" : "⚠", `${f.kind === "text" ? `"${f.label}"` : `the ${f.label} sticker`} ${f.what}${f.kind === "sticker" && f.level === "✗" ? ": shorten the text above it" : ""}`]);
       }
       if (report.logo && report.logo.treatment === "could not be loaded") notes.push(["⚠", "the logo could not be loaded"]);
       out.push({

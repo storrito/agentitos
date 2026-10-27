@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, agentitos' `platform-zones` and `captions` skills beside this one (where the apps' buttons are, the captions), ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool, the captions' key words from a small model, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, agentitos' `platform-zones` and `captions` skills beside this one (where the apps' buttons are, the captions; what you decide yourself, a label, where a face goes, follows platform-zones' "Laying out a frame"), ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool, the captions' key words from a small model, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## From the recording to the video, all in the chat
 

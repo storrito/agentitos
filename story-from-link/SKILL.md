@@ -180,5 +180,5 @@ The time:
 
 - Only what the page says: no invented price, date, quote, rating or number.
 - Pictures from the person's own site are theirs to use; for pictures of others, say once before scheduling that they need the right to use them.
-- One link sticker per story is enough, on the last frame; stickers never lie under Instagram's bar or reply field and stay in its safe zone when they can (the build checks it: ✗ under, ⚠ in the margin).
+- One link sticker per story is enough, on the last frame; stickers never lie under Instagram's bar or reply field, on text or on each other (the build checks every frame with platform-zones' layout check: ✗ under or on top, ⚠ in the safe zone's margin or closer than 40 px).
 - Change `story.json` or `brand/DESIGN.md` and build again; never edit the built frames by hand.

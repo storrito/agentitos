@@ -10,8 +10,8 @@ import { zones } from "./zones.mjs";
 
 export const W = 1080, H = 1920;
 // What Instagram lays over a story (its bar at the top, the reply field at the bottom), from
-// agentitos' platform-zones skill: stickers never lie under it (covers) and stay inside the safe
-// box when they can (its margin is a buffer), text keeps away from the edges too.
+// agentitos' platform-zones skill: the frame's column keeps inside its safe box; the build checks
+// the laid-out frame with platform-zones' layout check.
 // Asked when a frame is laid out or checked, so that publishing and the status work without it.
 let safe = null;
 export function safeZone() {
@@ -19,7 +19,7 @@ export function safeZone() {
     let z;
     try { z = zones(W, H, ["instagram-story"]); } catch (e) { console.error(`✗ ${e.message}`); process.exit(1); }
     const [x, y, w, h] = z.safe;
-    safe = { top: y, bottom: y + h, left: x, right: x + w, covers: z.covers };
+    safe = { top: y, bottom: y + h, left: x, right: x + w };
   }
   return safe;
 }
