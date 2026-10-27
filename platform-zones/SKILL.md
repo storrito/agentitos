@@ -46,7 +46,7 @@ node <skill>/tools/zones.mjs draw <video|image> <out.png> [platform…] [--at <s
 
 ## Laying out a frame
 
-What to place where, whatever the frame shows. The numbers come from `zones` for the platforms it goes to.
+What to place where, whatever the frame shows. The numbers come from `zones` for the platforms it goes to. For the content at hand (a talking head, a hook, a list, a product, a quote, a Story with a poll, …) read the matching pattern in [references/layouts.md](references/layouts.md) first and adapt it. Its pictures (`examples/`) are for the person: show them when they choose a style.
 
 - **Text centred on the frame:** titles, cards, quotes and captions sit on the frame's middle, at most `centred` wide. Only what belongs to one side (a label in a corner, a price tag beside a product, a name over its person) takes the safe box's edge.
 - **Something wide at the top:** a hook, a screenshot, a chart, a headline goes into `wide`, above the buttons; it is as wide as the frame allows there.

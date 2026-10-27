@@ -56,6 +56,22 @@ Stickers: Storrito puts Instagram's native stickers on any Story it schedules, i
 
 Tested on 46 example frames (talking heads, memes, charts, products, recipes, stories with stickers) and on story-from-link's frames with Storrito's components.
 
+## Layouts
+
+[references/layouts.md](references/layouts.md) describes about 45 layouts for vertical videos and Stories in words, for agents: talking heads (hook, podcast clip, two people, reaction, green screen, interview), text formats (hero, POV, meme, chat, post, notes, myth vs. fact, ranking), information (big number, list, chart, timeline, tutorial step, screencast), products and trades (product, callouts, recipe, property, workout, travel, outfit, before/after, quote) and Stories with Storrito's stickers (poll, link, countdown, discount code, question, slider, location). Each is placed by the zones, not by numbers of its own.
+
+The same layouts as pictures, for people (Reels' zones; the Stories with the Story's):
+
+![Talking heads](examples/talking-heads.jpg)
+![Text](examples/text.jpg)
+![Information](examples/information.jpg)
+![Products and trades](examples/products-and-trades.jpg)
+![Stories with stickers](examples/stories.jpg)
+
+With the zones drawn (red: what the apps cover, green: the centred box, white: the frame's middle):
+
+![Talking heads with the zones](examples/talking-heads-zones.jpg)
+
 ## Several platforms, and none
 
 - Several platforms named: their zones together. The safe box keeps each side's largest margin, so what is inside it is clear on every one of them; the covers and crops of all are listed.
