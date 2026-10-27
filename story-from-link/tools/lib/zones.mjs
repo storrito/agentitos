@@ -50,7 +50,7 @@ export function layout(measured, platforms = []) {
   fs.writeFileSync(f, JSON.stringify(measured));
   try {
     const r = spawnSync(process.execPath, [zonesTool(), "layout", f, ...platforms, "--json"], { encoding: "utf8" });
-    if (r.status && !r.stdout.trim()) throw new Error(`platform-zones: ${(r.stderr || "").trim()}`);
-    return JSON.parse(r.stdout).findings;
+    if (r.error || (r.status !== 0 && !r.stdout?.trim())) throw new Error(`platform-zones' layout check: ${r.error?.message || (r.stderr || "").trim() || `ended with ${r.status ?? r.signal}`}`);
+    try { return JSON.parse(r.stdout).findings; } catch { throw new Error(`platform-zones' layout check answered no JSON: ${(r.stderr || r.stdout || "").trim().slice(0, 200)}`); }
   } finally { fs.rmSync(f, { force: true }); }
 }

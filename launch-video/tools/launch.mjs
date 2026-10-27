@@ -294,8 +294,10 @@ function cmdCheck(work, composition) {
     // can reach into one while its letters stay clear
     const letters = (h) => (h.rect ? [Math.round(h.rect.left ?? h.rect.x), Math.round(h.rect.top ?? h.rect.y), Math.round(h.rect.width), Math.round(h.rect.height)] : null);
     const inBand = e.hits.find((h) => letters(h) && meets(letters(h), h.band));
-    const at = letters(inBand || e.hits[0]);
-    const under = inBand ? z.covers.filter((c) => meets(at, c.box)) : [];
+    // under an app's buttons at any moment, not only where it first reaches into a band
+    const coveredHit = e.hits.find((h) => letters(h) && meets(letters(h), h.band) && z.covers.some((c) => meets(letters(h), c.box)));
+    const at = letters(coveredHit || inBand || e.hits[0]);
+    const under = coveredHit ? z.covers.filter((c) => meets(at, c.box)) : [];
     if (under.length) covered++;
     lines.push(`  ${under.length ? "✗" : "!"} ${spans.map(([a, b]) => (a === b ? `${a.toFixed(2)}` : `${a.toFixed(2)}–${b.toFixed(2)}`)).join(", ")} s  ${e.selector} in ${e.file}: "${e.text}"${at ? ` at ${box(at)}` : ""}`);
     if (!inBand) lines.push(`      its letters are clear, but its box reaches past the safe box: centre the element on the frame at most ${z.centred[2]} px wide (left ${z.centred[0]} px), not across the whole frame`);

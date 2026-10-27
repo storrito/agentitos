@@ -2,9 +2,10 @@
 // one frame (a story, a still, a frame of a film at its moment) runs it and hands the result to
 // `zones.mjs layout <boxes.json>`; `zones.mjs layout <page.html>` runs it by itself.
 //
-//   await platformZonesMeasure()  → { size: [w, h], boxes: [{ kind, label, box: [x, y, w, h], clipped? }] }
+//   await platformZonesMeasure()  → { size: [w, h], story, boxes: [{ kind, label, box: [x, y, w, h], clipped? }] }
 //
-// The frame is the page's <insta-story>, else its element with data-composition-id, else the body.
+// The frame is the page's <insta-story> (story: true), else its element with data-composition-id,
+// else the window.
 // kind:
 //   text     the letters of each run of text of a block (not the element's box, not the line box),
 //            in px of the frame; centred when it is set centred
@@ -55,8 +56,12 @@
     await Promise.all([...doc.images].map((i) => (i.complete ? null : new Promise((r) => { i.onload = i.onerror = r; }))));
     await wait(400);
 
-    const root = frameOf(doc), R = root.getBoundingClientRect();
-    const sx = root.offsetWidth ? R.width / root.offsetWidth : 1;
+    const root = frameOf(doc);
+    // a page whose frame is the body (a still, a card): the window is the frame, whatever the
+    // body's own box (0 px tall with only absolute children, shifted by its margin)
+    const whole = root === doc.body || root === doc.documentElement;
+    const R = whole ? { left: 0, top: 0, width: innerWidth, height: innerHeight } : root.getBoundingClientRect();
+    const sx = !whole && root.offsetWidth ? R.width / root.offsetWidth : 1;
     const at = (q) => [q.left - R.left, q.top - R.top, q.right - q.left, q.bottom - q.top].map((v) => Math.round(v / sx));
     const boxes = [];
 
@@ -112,11 +117,12 @@
       const sticker = (el.localName.startsWith("insta-") && el.localName !== "insta-story") || el.dataset.zone === "sticker";
       const face = el.dataset.zone === "face";
       if (!sticker && !face) continue;
+      if (!shown(el, root)) continue;
       const q = el.getBoundingClientRect();
       const what = el.getAttribute("text") || el.getAttribute("question") || el.getAttribute("title") || el.getAttribute("hashtag") || el.getAttribute("username") || el.getAttribute("location") || el.dataset.label || (el.dataset.zone === "sticker" ? el.innerText : "") || "";
       const kind = el.localName.startsWith("insta-") ? el.localName.replace("insta-", "") : sticker ? "sticker" : "face";
       boxes.push({ kind: sticker ? "sticker" : "face", label: `${kind}${what ? `: ${what.replace(/\s+/g, " ").trim()}` : ""}`.slice(0, 60), box: at(q) });
     }
-    return { size: [Math.round(R.width / sx), Math.round(R.height / sx)], boxes };
+    return { size: [Math.round(R.width / sx), Math.round(R.height / sx)], story: root.localName === "insta-story", viewport: [innerWidth, innerHeight], boxes };
   };
 })();

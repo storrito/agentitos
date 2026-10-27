@@ -24,6 +24,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { PLATFORMS, DEFAULTS, CHECKED } from "./lib/platforms.mjs";
 import { zonesFor, check, resolve } from "./lib/zones.mjs";
 import { checkLayout } from "./lib/layout.mjs";
@@ -176,27 +177,45 @@ function measurePage(file, opts) {
   const chrome = chromePath();
   if (!chrome) fail("Measuring a page needs Chrome: set CHROME=/path/to/chrome, or measure in your own page with tools/measure.js and pass the boxes.json.");
   const html = fs.readFileSync(file, "utf8");
-  const size = opts.size ? String(opts.size).split("x").map(Number)
-    : html.match(/data-width="(\d+)"[^>]*data-height="(\d+)"/)?.slice(1).map(Number) || [1080, 1920];
+  // the window: --size, else the root's data-width and data-height (in either order), else 9:16
+  const root = html.match(/<[^>]*data-composition-id=[^>]*>/)?.[0] || "";
+  const attr = (name) => Number(root.match(new RegExp(`${name}="(\\d+)"`))?.[1]) || 0;
+  let size = [attr("data-width"), attr("data-height")];
+  if (opts.size) {
+    const m = String(opts.size).match(/^(\d+)x(\d+)$/);
+    if (!m || !+m[1] || !+m[2]) fail(`--size is width x height, as 1080x1920.`);
+    size = [+m[1], +m[2]];
+  } else if (!size[0] || !size[1]) size = [1080, 1920];
   const measure = fs.readFileSync(new URL("./measure.js", import.meta.url), "utf8");
   const tail = `<script>${measure}</script><script>platformZonesMeasure().then((r) => { const s = document.createElement("script"); s.type = "application/json"; s.id = "platform-zones-boxes"; s.textContent = JSON.stringify(r).replace(/</g, "\\\\u003c"); document.body.append(s); });</script>`;
   const tmp = path.join(path.dirname(path.resolve(file)), `.platform-zones-${process.pid}.html`);
-  fs.writeFileSync(tmp, /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${tail}</body>`) : html + tail);
+  try { fs.writeFileSync(tmp, /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${tail}</body>`) : html + tail); }
+  catch (e) { fail(`Measuring ${file} needs a copy of it beside it, and its folder cannot be written (${e.code}): copy the page with what it links to into a folder of yours.`); }
   // Chrome puts a socket into TMPDIR, at most 107 bytes long: a deep TMPDIR gets the system's
   const env = (process.env.TMPDIR || "/tmp").length > 60 ? { ...process.env, TMPDIR: "/tmp" } : process.env;
-  let r;
+  // the window is larger than the page it shows by Chrome's own bars: measured once, then the
+  // window that gives the page the frame's size
+  const dump = (w, h) => {
+    const r = spawnSync(chrome, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files", `--window-size=${w},${h}`, "--virtual-time-budget=15000", "--dump-dom", pathToFileURL(tmp).href], { encoding: "utf8", env, timeout: 90e3, maxBuffer: 256 << 20 });
+    const m = (r.stdout || "").match(/<script type="application\/json" id="platform-zones-boxes">([\s\S]*?)<\/script>/);
+    if (!m) throw new Error(`Chrome could not measure ${file}${r.error?.code === "ETIMEDOUT" ? ": it ran for 90 seconds" : ""}: open it in a browser and look for a script error.`);
+    return JSON.parse(m[1]);
+  };
+  let got;
   try {
-    r = spawnSync(chrome, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files", `--window-size=${size[0]},${size[1]}`, "--virtual-time-budget=15000", "--dump-dom", `file://${tmp}`], { encoding: "utf8", env, timeout: 90e3, maxBuffer: 256 << 20 });
-  } finally { fs.rmSync(tmp, { force: true }); }
-  const m = (r.stdout || "").match(/<script type="application\/json" id="platform-zones-boxes">([\s\S]*?)<\/script>/);
-  if (!m) fail(`Chrome could not measure ${file}${r.error?.code === "ETIMEDOUT" ? ": it ran for 90 seconds" : ""}: open it in a browser and look for a script error.`);
-  return JSON.parse(m[1]);
+    got = dump(size[0], size[1]);
+    const [vw, vh] = got.viewport || size;
+    if (vw !== size[0] || vh !== size[1]) got = dump(size[0] * 2 - vw, size[1] * 2 - vh);
+  } catch (e) { got = e; } finally { fs.rmSync(tmp, { force: true }); }
+  if (got instanceof Error) fail(got.message);
+  return got;
 }
 
 function cmdLayout([input, ...ids], opts) {
   if (!input) fail(`${self()} layout <page.html|boxes.json> [platform…]`);
   const m = /\.json$/i.test(input) ? JSON.parse(fs.readFileSync(input, "utf8")) : measurePage(input, opts);
   if (!m.size || !Array.isArray(m.boxes)) fail(`${input} has no size and boxes: tools/measure.js makes them.`);
+  if (!(m.size[0] > 0 && m.size[1] > 0)) fail(`${input}: the frame measured ${m.size.join("×")}: give the page's frame a size (an <insta-story>, an element with data-composition-id, data-width and data-height, or a body as large as the window).`);
   // a page that is a Storrito story is a Story, unless platforms are named
   const story = m.story || /<insta-story[\s>]/.test(/\.html?$/i.test(input) ? fs.readFileSync(input, "utf8") : "");
   for (const id of ids) if (!resolve(id)) fail(`There is no platform "${id}": ${PLATFORMS.map((q) => q.id).join(", ")} (${self()} list).`);

@@ -35,7 +35,9 @@ export function checkLayout(z, boxes, { story = false } = {}) {
 
   for (const b of boxes) {
     if (area(b.box) <= 0) { if (b.kind === "sticker") add("✗", b, "has no size: Instagram would show it invisible or not tappable"); continue; }
-    const shrunk = [b.box[0] + SLACK, b.box[1] + SLACK, b.box[2] - 2 * SLACK, b.box[3] - 2 * SLACK];
+    // at most the slack, and never so much that a thin box (a dash, a rule) has no size left
+    const sw = Math.min(SLACK, (b.box[2] - 1) / 2), sh = Math.min(SLACK, (b.box[3] - 1) / 2);
+    const shrunk = [b.box[0] + sw, b.box[1] + sh, b.box[2] - 2 * sw, b.box[3] - 2 * sh];
     const r = check(z, shrunk);
     if (r.offFrame > 0.001) add("✗", b, `${Math.round(r.offFrame * 100)} % outside the frame`);
     if (b.clipped) add("✗", b, "is cut off by its box: make the box larger or the text smaller");
