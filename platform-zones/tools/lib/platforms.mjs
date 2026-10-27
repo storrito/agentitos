@@ -17,7 +17,7 @@
 // 200 px, and the apps change their layout without notice: the numbers here lean to the larger
 // side of what the sources give, so what stays inside them stays clear on every phone they name.
 
-export const CHECKED = "2026-10-23";
+export const CHECKED = "2026-10-27";
 
 const V = [1080, 1920], P = [1080, 1350], S = [1080, 1080], L = [1920, 1080];
 
@@ -27,15 +27,19 @@ export const PLATFORMS = [
     frames: {
       "9:16": {
         canvas: V, basis: "guides",
-        margins: { top: 250, bottom: 420, left: 60, right: 200 },
+        margins: { top: 250, bottom: 420, left: 60, right: 120 },
         covers: [
           { what: "the Reels header and the camera", box: [0, 0, 1080, 200] },
           { what: "the username, follow, caption and audio", box: [0, 1500, 1080, 420] },
-          { what: "like, comment, share, save and the audio's cover", box: [880, 1040, 200, 880] },
+          { what: "like, comment, share, save and the audio's cover", box: [960, 1040, 120, 880] },
         ],
         crops: [{ where: "the Instagram feed", ratio: "4:5" }, { where: "the profile grid", ratio: "3:4" }],
-        note: "Meta's numbers for Reels ads are larger (14 % top, 35 % bottom, 6 % sides): they make room for the ad's button.",
+        note: "Meta's numbers for Reels ads are larger (14 % top, 35 % bottom, 6 % sides): they make room for the ad's button. The buttons' column is 119–120 px wide where it was measured in the app (2026-10-27).",
         sources: [
+          "https://adchecklab.com/articles/instagram-reels-safe-zone-template",
+          "https://adconvert.org/tools/instagram-reels-safe-zone-checker",
+          "https://www.firstpier.com/resources/instagram-ad-safe-zones",
+          "https://growcreator.pro/blog/instagram-reel-safe-zone",
           "https://outfy.com/blog/instagram-safe-zone",
           "https://pod2reels.com/blog/instagram-reels-safe-zone-guide",
           "https://reelsafezone.com",
@@ -97,11 +101,14 @@ export const PLATFORMS = [
         covers: [
           { what: "Following, For You, LIVE and search", box: [0, 0, 1080, 150] },
           { what: "the username, caption and sound", box: [0, 1440, 1080, 480] },
-          { what: "the profile, like, comment, save, share and the sound's disc", box: [900, 700, 180, 1220] },
+          { what: "the profile, like, comment, save, share and the sound's disc", box: [900, 840, 180, 1080] },
         ],
         crops: [{ where: "the profile grid", ratio: "3:4" }],
-        note: "TikTok's own advice for ads is the top and bottom 10 % and the right 10 % at the least; its templates for ads are larger.",
+        note: "TikTok's own advice for ads is the top and bottom 10 % and the right 10 % at the least; its templates for ads are larger. Its In-Feed safe zone file puts the buttons' column 180 px wide, from 840 px down.",
         sources: [
+          "https://www.toolswebpro.com/guides/tiktok-reels-shorts-safe-zones-2026",
+          "https://www.socialync.io/tools/safe-zones/tiktok",
+          "https://brandeal.ai/en/blog/tiktok-safe-zone-guide",
           "https://www.revid.ai/tiktok-safe-zone",
           "https://imagevideofit.com/guides/tiktok-safe-zone",
           "https://novustools.com/social-safe-zone/guides/tiktok-safe-zone",
@@ -122,8 +129,9 @@ export const PLATFORMS = [
           { what: "the title, channel, subscribe, sound and the progress bar", box: [0, 1520, 1080, 400] },
           { what: "like, dislike, comment, share, remix and the sound", box: [888, 860, 192, 1060] },
         ],
-        note: "Google's template for vertical video ads keeps 288 px top and 672 px bottom free, for the ad's button.",
+        note: "Google's template for vertical video ads keeps 288 px top and 672 px bottom free, for the ad's button. Its 192 px on the right match what was measured in the app (194–201 px).",
         sources: [
+          "https://adchecklab.com/articles/youtube-shorts-safe-area-dimensions",
           "https://www.revid.ai/youtube-shorts-safe-zone",
           "https://www.poster.ly/tools/youtube-shorts-safe-zone-checker",
           "https://imagevideofit.com/guides/youtube-shorts-safe-zone",
@@ -155,13 +163,13 @@ export const PLATFORMS = [
     frames: {
       "9:16": {
         canvas: V, basis: "guides",
-        margins: { top: 250, bottom: 480, left: 60, right: 200 },
+        margins: { top: 250, bottom: 480, left: 60, right: 120 },
         covers: [
           { what: "the Reels header", box: [0, 0, 1080, 200] },
           { what: "the page, follow, caption and audio", box: [0, 1440, 1080, 480] },
-          { what: "like, comment, share and more", box: [880, 1000, 200, 920] },
+          { what: "like, comment, share and more", box: [960, 1000, 120, 920] },
         ],
-        note: "Facebook shows more of the caption than Instagram: its bottom is larger.",
+        note: "Facebook shows more of the caption than Instagram: its bottom is larger. Its column of buttons is Instagram's; no source measured it on Facebook.",
         sources: [
           "https://adkit.so/tools/safe-zones/facebook",
           "https://www.socialync.io/tools/safe-zones/facebook-reels",
