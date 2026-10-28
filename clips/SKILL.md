@@ -22,7 +22,7 @@ The look is the video's own: the speaker's footage, cut and framed, captions, at
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions` and `platform-zones` beside this one; `video-descriptions` for the post texts when it is there. yt-dlp is taken from the PATH or downloaded once. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones` and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp is taken from the PATH or downloaded once. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 Costs: the episode's words a few cents an hour, the moments about ten cents an hour, per clip about a cent to frame it and well under a cent for its words and captions.
 
@@ -50,15 +50,15 @@ Do not read `sentences.txt` yourself (an hour is some 30,000 tokens that would s
 - **the moments**, best first: sentence range, time, length, kind, title, the first line, why it works, and a score out of 10, two points each for a cold open, one idea, a clean end, leaning on nothing said before, and a length of 20–59 s. Under 7 it says `weak`: drop those unless the person wants more. A moment whose first line is weak comes with a **hook** for the screen (6 words or fewer).
 - **the ideas too spread out to clip**: worth recording anew as a short of their own. Mention them in one line at the end, never as clips.
 
-`work/episode/moments.json` holds all of it with the YouTube links. When you need a moment's words: `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt`. Without OpenRouter, read `sentences.txt` yourself and judge by the same points.
+`work/episode/moments.json` holds all of it with the YouTube links. When you need a moment's words: `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt`.
 
 Show the moments as cards (title, time and length, the first line as a quote, why, the hook when there is one, the link to the moment) and ask how many it should be, with buttons for the numbers that make sense; they can also name the ones they want.
 
 ### 3. Where they go, and the look
 
-Ask one thing per message. First `list-social-accounts` of the Storrito connection (rragent: a function of your REPL, `(storrito/list-social-accounts {})`; `(doc storrito/<name>)` shows a procedure's input). An account with `disconnected: true` counts as not there.
+Ask one thing per message. First `list-social-accounts` of the Storrito connection (rragent: `(storrito/list-social-accounts {})` in your REPL), only to know which apps are connected; an account with `disconnected: true` counts as not there. The accounts themselves are picked when publishing (step 6).
 
-1. **The platforms**: checkboxes, one per post type that takes a video and has a connected account ("Instagram Reel", "TikTok", "YouTube Short", …), the ones made for shorts ticked. Keep them as platform-zones names them (`reels,tiktok,shorts,facebook-reels,spotlight,linkedin`): the captions and the hook keep clear of what those apps lay over the video.
+1. **The platforms**: checkboxes, one per app for short videos that has a connected account ("Instagram Reel", "TikTok", "YouTube Short", …), all ticked. Keep them as platform-zones names them (`reels,tiktok,shorts,facebook-reels,spotlight,linkedin`): the captions and the hook keep clear of what those apps lay over the video.
 2. **The captions**: the styles as buttons, none marked: **Hormozi** (one to three big words in capitals), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for interviews and explainers), or none.
 3. **The brand**: with a `brand/DESIGN.md` in your working directory (agentitos' brand-kit), its colour and font go into the captions and the hook; say so, do not ask.
 
@@ -86,27 +86,21 @@ Then show the list (title and length per clip) with buttons "They are good" and 
 | They say | You do |
 | --- | --- |
 | "Start later / end earlier" | move the keep's ends in `cut.json`, build |
-| "The pauses are too tight" | `build … --pauses picture` (only pauses over a second, following the picture) |
+| "The pauses are too tight" | `build … --pause 0.7` (still tight, only pauses over 0.7 s go) |
 | "Another hook" / "no hook" | `build … --hook "…"` / `--hook ""` |
 | "Another caption style" | `captions … --style …` |
-| "The wrong person is in the picture" | look at `work/<k>/framed.json` (the windows) and the clip; say what you saw. Framing again: `rm work/<k>/framed.mp4`, then prepare that clip anew (`rm -r work/<k>` first) |
+| "The wrong person is in the picture" | look at `work/<k>/framed.json` (the windows) and the clip; say what you saw. Framing again (the edit in `cut.json` starts over, the cut clip stays): `rm -r work/<k>/takes work/<k>/framed.mp4 work/<k>/clip.people.json`, then the same `prepare` |
 | "Longer" | a new moment with more sentences (`prepare` with the wider range into a new folder) |
 
-### 6. The plan, then render and schedule
+### 6. Render, then publish
 
-Per platform the limits come from `list-social-accounts` (`minDurationSeconds`, `maxDurationSeconds`, `maxCaptionLength`, `captionPublished`, `options`), never from memory: hold every clip's length against them. Write the post texts with agentitos' video-descriptions when it is beside this skill (its `platforms` and `check`), else yourself within `maxCaptionLength`: the hook in the platform's tone, one or two sentences, a few fitting hashtags, in the video's language.
+After "They are good":
 
-Propose the plan in one message: per clip the date and time, the accounts, and the text per account; a good default is one clip a day at 18:00 in the person's time zone, the strongest first. Buttons: "Render and schedule" (primary), "One every two days", "All today", "Change the texts". TikTok posts are private unless `privacyLevel` is `PUBLIC_TO_EVERYONE`: ask once. Write the plan into `work/plan.json` with a UUID per post made now (`uuidgen`), so that a retry never posts twice.
-
-After "Render and schedule":
-
-1. Say in one sentence that you render N clips now (about one and a half times their length each) and schedule them, and that they can close the window.
+1. Say in one sentence that you render N clips now, about one and a half times their length each.
 2. Render each, in the foreground, one command each: `node <skill>/tools/clips.mjs render work/<k> work/out/<k>.mp4`. It renders the preview with HyperFrames and brings it to −14 LUFS with subtitles beside it (`work/out/<k>.srt`). Never with `&` or `nohup`.
-3. Upload each: `create-temp-blob-upload-url` with a new UUID, `contentType` `video/mp4` and the file's exact size, then `curl -sS -T work/out/<k>.mp4 -H 'Content-Type: video/mp4' '<uploadUrl>'`.
-4. Per account the procedure the plan names, with `html` `<insta-story src="<url>"></insta-story>`, the time as `date` and the plan's UUID: `schedule-instagram-reel`, `schedule-tiktok-post`, or `schedule-social-post` for the others. Read a procedure's schema before its first use.
-5. Check with the status tools that each post is scheduled, then show a table of clip, account, time and status.
+3. Publish them with agentitos' **publish-video**, following its SKILL.md for each clip, `<name>` = `clip-<k>`: `check work/out/<k>.mp4 publish/clip-<k>` (short), its `accounts`, the texts with video-descriptions, then `publish`. Ask what the clips share once for all of them, not per clip: the accounts (the ones that fit every clip ticked), the style, TikTok's audience and the times. A good default for the times: one clip a day at 18:00 in the person's time zone, the strongest first. Show the texts of all clips before the person says yes; a ✗ of `check` on one clip is said for that clip and the others go on.
 
-If something fails, retry it with the same UUID; if it keeps failing, say which and why in one sentence and go on with the rest.
+Never call Storrito's schedule procedures yourself: publish-video does it, so that nothing is posted twice.
 
 ## UI in the chat
 

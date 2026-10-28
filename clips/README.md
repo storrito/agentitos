@@ -2,7 +2,7 @@
 
 One long video in, finished vertical shorts out, **in the video's own look**: the speaker's footage cut to the moment, framed 9:16 on whoever speaks, pauses and "äh"s cut, every clip at the same level, captions, and a hook card where the first line does not hook. The moments are the ones that **stand alone**: one idea, a cold open, a clean end, nothing that leans on the rest of the video, 20 to 59 seconds.
 
-> Agents: start with [`SKILL.md`](SKILL.md). It is written for [rragent](https://github.com/storrito/rragent): the previews are a project of its `hyperframes` template, the shorts are scheduled through Storrito.
+> Agents: start with [`SKILL.md`](SKILL.md). It is written for [rragent](https://github.com/storrito/rragent): the previews are a project of its `hyperframes` template, the shorts are published with agentitos' [publish-video](../publish-video/) through Storrito.
 
 ```bash
 node tools/episode.mjs fetch https://www.youtube.com/watch?v=… work/episode   # every word, its time and speaker

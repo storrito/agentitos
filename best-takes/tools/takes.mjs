@@ -26,9 +26,9 @@
 //                              over it (agentitos' platform-zones); none: the usual ones of the frame
 //   --fit cover|contain    a video of another shape fills the frame, or fits into it
 //   --target <s>       the longest the cut should be (the brief and the check use it)
-//   --pause <s>        pauses longer than this inside a keep are shortened (default 1)
+//   --pause <s>        pauses longer than this inside a keep are shortened (default 1, tight 0.4)
 //   --pauses picture|tight    a pause follows its picture (default: where it moves it stays,
-//                      muted, or plays faster), or every pause over 0.4 s goes, whatever the
+//                      muted, or plays faster), or every pause over --pause goes, whatever the
 //                      picture shows (tight: a talking head, a clip for a reel)
 //   --hook "…"         a card over the start that says what the viewer gets (6 words or fewer,
 //                      one *word* in the brand's colour), until the first sentence ends;
@@ -92,13 +92,14 @@ const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : re
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? read(file) : {};
-  const merged = { aspect: "source", fit: "cover", pause: 1, pauses: "picture", loudness: -14, fps: 30, ...kept, ...opts };
+  const merged = { aspect: "source", fit: "cover", pauses: "picture", loudness: -14, fps: 30, ...kept, ...opts };
   if (!["picture", "tight"].includes(merged.pauses)) fail("--pauses is picture or tight.");
   // where the video goes, for its captions: a platform platform-zones does not know is not kept,
   // every later build would fail on it
   if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
-  return { ...merged, final: merged.loudness, loudness: TAKE_LEVEL };
+  // the pause from which a pause is cut: as given, else 1 s (picture) or TIGHT
+  return { ...merged, pause: merged.pause ?? (merged.pauses === "tight" ? TIGHT : 1), final: merged.loudness, loudness: TAKE_LEVEL };
 }
 
 // ------------------------------------------------------------------------------------- new
@@ -108,6 +109,8 @@ async function cmdNew(dir, files, opts) {
   for (const f of files) if (!fs.existsSync(f)) fail(`There is no ${f}.`);
   if (!(await openrouter())) fail("This tool needs OpenRouter (the words come from ElevenLabs Scribe, the proposal from Gemini): OPENROUTER_API_KEY in the environment, or on a Sprite the gateway's OpenRouter connection.");
   fs.mkdirSync(source(dir), { recursive: true });
+  // the options first: a wrong one fails before anything is paid for
+  settings(dir, opts);
 
   let list = files.map((f) => ({ from: f, ...probe(f) }));
   const byTime = list.every((c) => c.created) && opts.order !== "given";
@@ -228,7 +231,7 @@ function cmdBuild(dir, opts) {
   // where the picture moves in a pause, measured in the video itself; tight: no pause stays
   const tight = s.pauses === "tight";
   const moves = tight ? () => [] : (clip, from, to) => moving(activity(source(dir, clips[clip].file), from, to, clips[clip]), from, to);
-  const r = plan(words, cut, tight ? { ...s, pause: TIGHT } : s, voicesOf(dir, clips), moves);
+  const r = plan(words, cut, s, voicesOf(dir, clips), moves);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
 
@@ -250,7 +253,7 @@ function cmdBuild(dir, opts) {
   if (s.hook) {
     let z;
     try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ The hook: ${e.message}`); }
-    const brand = brandOf(s.brand || cut.captions?.brand);
+    const brand = brandOf(s.brand) || brandOf(cut.captions?.brand);
     if (s.brand && !brand) console.log(`  (no ${s.brand}: the hook in its own colour and font)`);
     hook = hookCard({ text: s.hook, until: hookUntil(r.words, r.duration), zones: z, brand, out });
   }
@@ -266,7 +269,7 @@ function cmdBuild(dir, opts) {
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   if (hook) console.log(`Hook: „${s.hook}“ until ${hookUntil(r.words, r.duration)} s`);
-  if (tight) console.log(`Pauses: tight, every pause over ${TIGHT} s cut`);
+  if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
 }
 
@@ -338,7 +341,7 @@ function cmdCheck(dir) {
     const shownOf = (r) => (r.moving || []).reduce((t, m) => t + m.to - m.from, 0);
     const still = pauses.reduce((t, r) => t + r.to - r.from - shownOf(r), 0);
     const fast = pauses.flatMap((r) => r.moving || []).filter((m) => m.rate > 1);
-    console.log(`    ${pauses.length} pauses over ${s.pauses === "tight" ? TIGHT : s.pause} s: ${still.toFixed(1)} s ${s.pauses === "tight" ? "cut out (tight)" : "where the picture stands still cut out"}` +
+    console.log(`    ${pauses.length} pauses over ${s.pause} s: ${still.toFixed(1)} s ${s.pauses === "tight" ? "cut out (tight)" : "where the picture stands still cut out"}` +
       (fast.length ? `, ${fast.length} stretch${fast.length > 1 ? "es" : ""} where it moves played faster (${fast.map((m) => `${(m.to - m.from).toFixed(1)} s ×${m.rate}`).join(", ")})` : ""));
   }
 

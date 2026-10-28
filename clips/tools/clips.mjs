@@ -48,12 +48,22 @@ export function takesTool() {
 }
 
 // a tool of this skill or best-takes, its output shown, but not its "Next:" (this tool says what
-// comes next); a failure ends here with its message
-function run(tool, args) {
+// comes next); a failure ends here with its message, or returns false when it may fail
+function run(tool, args, { mayFail = false } = {}) {
   const r = spawnSync(process.execPath, [tool, ...args], { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", maxBuffer: 64 << 20 });
-  const said = (r.stdout || "").split("\n").filter((l) => r.status !== 0 || !/^\s*Next:/.test(l)).join("\n").trim();
+  const said = (r.stdout || "").split("\n").map((l) => (r.status !== 0 ? l : l.replace(/\s*Next:.*$/, ""))).filter((l) => l.trim()).join("\n");
   if (said) console.log(said);
-  if (r.status !== 0) process.exit(r.status || 1);
+  if (r.status !== 0 && !mayFail) process.exit(r.status || 1);
+  return r.status === 0;
+}
+
+// platform-zones knows the platform names: a wrong one fails here, before anything is paid for
+function checkPlatforms(list) {
+  const skill = path.dirname(HERE);
+  const tool = [process.env.PLATFORM_ZONES, path.join(skill, "..", "platform-zones", "tools", "zones.mjs"), "/home/sprite/skills/platform-zones/tools/zones.mjs"].find((p) => p && fs.existsSync(p));
+  if (!tool) fail("This needs agentitos' platform-zones skill beside this one (or PLATFORM_ZONES naming its tools/zones.mjs).");
+  const r = spawnSync(process.execPath, [tool, "zones", ...list.split(",").map((p) => p.trim()).filter(Boolean), "--size", "1080x1920", "--json"], { encoding: "utf8" });
+  if (r.status) fail(`✗ --platform: ${(r.stderr || r.stdout).trim()}`);
 }
 
 const probe = (file) => {
@@ -68,13 +78,23 @@ function prepare(episode, dir, range, opts) {
   const takes = takesTool();
   if (!takes) fail("This needs agentitos' best-takes skill beside this one (or BEST_TAKES_TOOL naming its tools/takes.mjs).");
   const td = path.join(dir, "takes");
-  if (fs.existsSync(path.join(td, "source", "words.json"))) fail(`${rel(dir)} is prepared already. To start it over: rm -r ${rel(dir)}`);
+  if (fs.existsSync(path.join(td, "source", "words.json"))) fail(`${rel(dir)} is prepared already. To start the edit over: rm -r ${rel(td)} (cut.json's changes go with it); to frame it anew, also rm ${rel(path.join(dir, "framed.mp4"))} ${rel(path.join(dir, "clip.people.json"))}; then prepare again.`);
+  if (opts.platform) checkPlatforms(opts.platform);
   fs.mkdirSync(dir, { recursive: true });
 
-  // the moment, cut from the episode with a breath of air around it
+  // the moment, cut from the episode with a breath of air around it (once: a prepare that
+  // failed later on starts from here)
   const clip = path.join(dir, "clip.mp4");
-  run(path.join(HERE, "episode.mjs"), ["cut", episode, range, clip]);
+  if (!(fs.existsSync(clip) && fs.existsSync(path.join(dir, "clip.json")) && read(path.join(dir, "clip.json")).range === range)) {
+    fs.rmSync(path.join(dir, "framed.mp4"), { force: true });
+    run(path.join(HERE, "episode.mjs"), ["cut", episode, range, clip]);
+    fs.writeFileSync(path.join(dir, "clip.json"), JSON.stringify({ ...read(path.join(dir, "clip.json")), range }));
+  }
   const { from, to } = read(path.join(dir, "clip.json"));
+  const [a, b] = range.split("-").map(Number);
+  const sentences = read(path.join(episode, "sentences.json"));
+  // where the moment's first and last sentence are in the clip
+  const said = [sentences[a].start - from, sentences[b].end - from];
 
   // its words with their speakers, timed in the clip, for the framing
   const words = read(path.join(episode, "words.json"))
@@ -83,35 +103,36 @@ function prepare(episode, dir, range, opts) {
   const wordsFile = path.join(dir, "clip.words.json");
   fs.writeFileSync(wordsFile, JSON.stringify(words));
 
-  // 9:16 on whoever speaks, when the footage is wider; else (or without OpenRouter) best-takes
-  // fills the frame from the middle
+  // 9:16 on whoever speaks, when the footage is wider; else, or when the framing fails,
+  // best-takes fills the frame from the middle
   const { width, height } = probe(clip);
   let video = clip;
-  if (width / height > 9 / 16 + 0.01) {
-    const framed = path.join(dir, "framed.mp4");
-    fs.rmSync(framed, { force: true });
-    run(path.join(HERE, "frame.mjs"), [clip, wordsFile, "--aspect", "9:16", "--out", framed]);
-    if (fs.existsSync(framed)) video = framed;
-    else console.log("The footage stays centred: best-takes crops it from the middle. Say so when the speaker is not in the middle.");
+  const framed = path.join(dir, "framed.mp4");
+  if (fs.existsSync(framed)) video = framed;
+  else if (width / height > 9 / 16 + 0.01) {
+    const ok = run(path.join(HERE, "frame.mjs"), [clip, wordsFile, "--aspect", "9:16", "--out", framed], { mayFail: true });
+    if (ok && fs.existsSync(framed)) video = framed;
+    else console.log(`The footage stays centred${ok ? "" : " (the framing failed, see above)"}: best-takes crops it from the middle. Say so when the speaker is not in the middle.`);
   }
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
   const settings = ["--aspect", "9:16", "--pauses", "tight", ...Object.entries(opts).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
 
-  // the whole moment as one keep, from the first word heard whole to the last: the cut's air may
-  // hold the tail of the sentence before or the start of the one after
+  // the whole moment as one keep: the words heard within its first and last sentence (the cut's
+  // air may hold the tail of the sentence before or the start of the one after; the episode's
+  // times are a tenth of a second off at most)
   const { words: heard } = read(path.join(td, "source", "words.json"));
-  const length = to - from;
   const spoken = heard.filter((w) => w.kind === "word" || w.kind === "filler");
-  const inside = spoken.filter((w) => w.start >= 0.15 && w.end <= length - 0.2);
-  if (!inside.length) fail(`✗ No word heard whole in ${rel(video)}: look at ${rel(path.join(td, "source", "brief.md"))} and write ${rel(path.join(td, "cut.json"))} yourself.`);
+  const inside = spoken.filter((w) => (w.start + w.end) / 2 >= said[0] - 0.25 && (w.start + w.end) / 2 <= said[1] + 0.25);
+  if (!inside.length) fail(`✗ No word heard in the moment's sentences in ${rel(video)}: look at ${rel(path.join(td, "source", "brief.md"))} and write ${rel(path.join(td, "cut.json"))} yourself.`);
   const first = inside[0].i, last = inside.at(-1).i;
   const outside = spoken.filter((w) => w.i < first || w.i > last).map((w) => `${w.i} "${w.text}"`);
+  const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
   fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify({ keep: [{ words: `${first}-${last}`, why: "the moment" }] }, null, 1) + "\n");
 
   const t = rel(takes), d = rel(td);
-  console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
+  console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
   node ${t} captions ${d} --style <style>${opts.platform ? "" : " --platform <platforms>"}${opts.brand ? ` --brand ${opts.brand}` : ""}

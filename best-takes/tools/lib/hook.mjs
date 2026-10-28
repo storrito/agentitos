@@ -43,7 +43,10 @@ export function hookCard({ text, until, zones, brand, out }) {
   const accent = brand?.primary || ACCENT;
   let font = "Inter", faces = "";
   const links = [];
-  if (brand?.family && brand.served) { font = brand.family; links.push(googleFont(font, WEIGHT)); }
+  // Inter always, as the fallback; a brand's font without a weight (Google answers a weight a
+  // font does not have with an error)
+  links.push(googleFont("Inter", WEIGHT));
+  if (brand?.family && brand.served) { font = brand.family; links.push(`https://fonts.googleapis.com/css2?family=${encodeURIComponent(font).replace(/%20/g, "+")}&display=swap`); }
   else if (brand?.family && brand.files.length) {
     font = brand.family;
     fs.mkdirSync(path.join(out, "fonts"), { recursive: true });
@@ -51,7 +54,7 @@ export function hookCard({ text, until, zones, brand, out }) {
       fs.copyFileSync(f.file, path.join(out, "fonts", path.basename(f.file)));
       faces += `@font-face { font-family: "${font}"; font-weight: ${f.weight}; src: url("fonts/${path.basename(f.file)}"); }\n`;
     }
-  } else links.push(googleFont(font, WEIGHT));
+  }
   // *word* stands out
   const words = esc(text.trim()).replace(/\*([^*]+)\*/g, `<span class="hook-accent">$1</span>`);
   // one element, no nesting (HyperFrames shows every top-level element as a row of its timeline)
