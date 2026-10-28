@@ -109,14 +109,15 @@ After the texts are agreed, ask only what applies, one block each:
 
 - **When.** "Now" and two likely times ("Today 18:00", "Tomorrow 9:00"), none marked; they may type another. The time zone only when you cannot tell (German speaks for Europe/Berlin).
 - **TikTok, who may see it**: "Everyone", "Friends", "Followers", "Only me". TikTok wants the person's own choice: no button marked, none assumed (`--tiktok-privacy public|friends|followers|private`).
-- **YouTube video, visibility**: "Public", "Unlisted", "Private" (`--privacy`); **made for kids**: "No" or "Yes" (`--made-for-kids`); YouTube asks both of every video.
+- **TikTok's cover**: not a question. Pick the moment yourself from the frames you saw (the subject clear, a face or a readable title; never a cut, a blur or a black frame), `--tiktok-cover <s>`, and name it in a few words in the "When" question ("cover: the frame at 0:12"). Without it TikTok takes the first frame.
+- **YouTube, a Short or a video: visibility**: "Public", "Unlisted", "Private" (`--privacy`); **made for kids**: "No" or "Yes" (`--made-for-kids no|yes`). YouTube asks both of every video, a Short too; the tool refuses a YouTube target without them.
 - **An option `accounts` names as required** (LinkedIn's visibility, …): its choices as buttons (`--option <target>:<key>=<value>`).
 - **Disclosures, only when they apply**: realistic AI-made people or scenes (`--ai-generated`), a paid partnership (`--paid`), the person's own brand promoted on TikTok (`--own-brand`). Ask when you see signs of one; never set one without the person.
 
 Then
 
 ```bash
-node <skill>/tools/publish.mjs publish publish/<name> --to <target>,<target> (--at 2026-10-29T18:00:00+01:00 | --now) [--tiktok-privacy …] [--privacy …] [--made-for-kids] [--thumbnail <image>] [--option …]
+node <skill>/tools/publish.mjs publish publish/<name> --to <target>,<target> (--at 2026-10-29T18:00:00+01:00 | --now) [--tiktok-privacy …] [--tiktok-cover <s>] [--privacy …] [--made-for-kids no|yes] [--thumbnail <image>] [--option …]
 ```
 
 It reads the texts from `descriptions/<name>/descriptions.json` (another folder: `--texts`), runs video-descriptions' check, checks every target's parameters before it uploads anything, uploads the video once and schedules each target. A ✗ names what is missing: fix it or ask, then run the same command again; what is done stays done, nothing is posted twice.
