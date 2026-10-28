@@ -101,6 +101,8 @@ export function checkPost(id, post, doc, ctx = {}) {
       if (seen.length < Math.min(40, visible.length / 3)) r.warnings.push(`${f.label}: before "${f.foldSays || "more"}" there are mostly hashtags or mentions; the hook goes there`);
     }
     if (/#\S*[-'’][\p{L}\p{N}]/u.test(links(value).reduce((t, l) => t.replace(l.text, " "), value))) r.warnings.push(`${f.label}: a hashtag with a dash or an apostrophe ends there (#self-care is #self): write #selfcare or #SelfCare`);
+    // the long dash is what readers have learnt to take for a machine's writing
+    if (value.includes("—")) r.warnings.push(`${f.label}: the long dash (—) reads as written by AI: a comma, a colon, a full stop or brackets instead`);
     if (p.bait && BAIT.some((re) => re.test(value))) r.warnings.push(`${f.label}: reads as engagement bait ("comment YES", "tag a friend"), which ${p.app} shows to fewer people: ask a real question instead`);
   }
 
