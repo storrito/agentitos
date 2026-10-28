@@ -85,9 +85,10 @@ ${rules(several, settings)}
   word ("hm" as an answer), give that keep \`"sounds": "keep"\`.
 - **Events** like \`[Kamera klackert]\` are noises, not speech: they stay where they are, inside
   a kept range they play along.
-- **Pauses** longer than ${settings.pause} s inside a keep: where the picture stands still they
+- **Pauses** ${settings.pauses === "tight" ? `longer than 0.3 s inside a keep are cut to a breath, whatever the picture
+  shows (tight).` : `longer than ${settings.pause} s inside a keep: where the picture stands still they
   are cut to about 0.3 s; where it moves, that part stays, muted, up to 2.5 s as it is, longer
-  in about a third of its time (2–6 s, at most ×10). \`"pauses": "keep"\` plays them as they are.
+  in about a third of its time (2–6 s, at most ×10).`} \`"pauses": "keep"\` plays them as they are.
 - **Cut points** go into the quiet just before and after the kept words.
 - **Loudness**: each take is measured and brought to the same level (${settings.loudness} LUFS
   before the bus, ${settings.final} LUFS in the rendered video). For a part that should be quieter
