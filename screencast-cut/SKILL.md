@@ -79,7 +79,7 @@ node <skill>/tools/screencast.mjs check screencast/<name>
 
 ### 5. Ask whether it is right
 
-One message: how long it was and is now, the story in one line (hook, steps, result), which views it uses, what is sped up, then **ask whether it is right**, with "Looks good" (primary), "Change something", and the button that shows the preview.
+One message: how long it was and is now, the story in one line (hook, steps, result), which views it uses, what is sped up, then **ask whether it is right**, with "Looks good" (primary) and the button that shows the preview ("Show the preview ↗"), and a line that they can type what to change.
 
 ### 6. Changes
 
@@ -144,8 +144,7 @@ The question after the preview:
   [:li "Zoomed in on the chat and the Storrito page; the phone shown whole."]]
  [:p "Is it right like this?"]
  [:button {:class "primary" :send "The cut is good, make the video"} "Looks good"] " "
- [:button {:send "I want to change something in the cut"} "Change something"] " "
- [:button {:open "artifacts/storrito-demo"} "Show the preview"]
+ [:button {:open "artifacts/storrito-demo"} "Show the preview ↗"]
  [:p [:small "Or tell me what should be different, with the moment of the preview: „at 0:23 …“."]]]
 ```
 

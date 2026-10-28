@@ -160,8 +160,8 @@ The frames:
   [:img {:src "uploads/story-berry/mvhv2k1q/03.jpg" :style {:width "100%" :aspect-ratio "9 / 16" :border-radius "8px"}}]]
  [:p "Five frames, the link sticker on the last one. Good like this?"]
  [:button {:class "primary" :send "The story is good"} "Looks good"] " "
- [:button {:send "I want to change something in the story"} "Change something"] " "
- [:button {:open "artifacts/story-berry.html"} "Show them large"]]
+ [:button {:open "artifacts/story-berry.html"} "Show them large ↗"]
+ [:p [:small "Or tell me what to change."]]]
 ```
 
 The time:

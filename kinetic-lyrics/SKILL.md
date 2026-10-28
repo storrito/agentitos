@@ -135,7 +135,7 @@ node <skill>/tools/short.mjs build work/<k>-<v> --out artifacts/shorts/compositi
 
 Without composition/index.html the project shows every `composition/<name>/` side by side, a player each, titled by the short's hook. Fix the check's errors (✗) before you go on. A short's names follow its own voices (A is who speaks first in that short): map them from the episode's speakers.
 
-Then show the list in the chat (title and length per short) with buttons "They are good" and "Change something", and `[:button {:open "artifacts/shorts"} "Show the previews"]` in case the pane shows something else. For a change, build the short again with the new settings (`short.mjs build work/<k>` keeps the others); for the staging (a word, an effect), change `staging.json` and build again.
+Then show the list in the chat (title and length per short) with a button "They are good" and `[:button {:open "artifacts/shorts"} "Show the previews ↗"]` in case the pane shows something else, and a line that they can type what to change. For a change, build the short again with the new settings (`short.mjs build work/<k>` keeps the others); for the staging (a word, an effect), change `staging.json` and build again.
 
 ### 6. The accounts
 

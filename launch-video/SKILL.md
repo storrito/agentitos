@@ -113,7 +113,7 @@ draws the zones over every still: look at each for what no check reads (a word i
 
 ### 8. Ask whether it is right
 
-One message: the storyline in a line, the length, the platforms the zones are for, what you measured and what you only looked at (the sound was measured, not heard), and **whether it is right**: "Looks good" (`:class "primary"`), "Change something", the button that shows the preview.
+One message: the storyline in a line, the length, the platforms the zones are for, what you measured and what you only looked at (the sound was measured, not heard), and **whether it is right**: "Looks good" (`:class "primary"`) and the button that shows the preview ("Show the preview ↗"), with a line that they can type what to change.
 
 ### 9. Changes
 
