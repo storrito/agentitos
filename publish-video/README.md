@@ -9,6 +9,7 @@ node tools/publish.mjs check uploads/clip.mp4 publish/clip          # measured, 
 node tools/publish.mjs check publish/clip --mode long                # when the video leaves the mode open
 node tools/publish.mjs prepare publish/clip [--pad|--crop] [--loudness] [--start 0.8] [--end 41.2]
 node tools/publish.mjs accounts publish/clip                         # the targets this video fits, and why not the others
+node tools/publish.mjs accounts publish/clip --hiccup --lang de      # the same as the question for the chat
 # the agent writes descriptions/clip/descriptions.json with video-descriptions; the person agrees
 node tools/publish.mjs publish publish/clip --to instagram/storrito_com/reel,tiktok/storrito/post \
   --at 2026-10-29T18:00:00+01:00 --tiktok-privacy public
@@ -23,7 +24,7 @@ Requirements: Node 20+, ffmpeg. agentitos' [video-descriptions](../video-descrip
 1. **`check`** takes the video from a path or a link (Google Drive and Dropbox share links are turned into downloads; a page on YouTube, Instagram or TikTok is refused) and measures it: frame, size, codec, fps, bitrate, container, length, the sound's loudness (EBU R128) and true peak, black picture and silence in the first and last three seconds. Each ffmpeg reads only what it needs: the sound alone, three seconds at each end, one frame per tile of the sheet.
    It suggests **short** or **long** from the frame and the length, and says when the video leaves it open (16:9 under 3 min, 9:16 over 3 min, square). It writes `job.json` and `uploads/publish-<name>/frames.jpg`: twelve frames, the first and the last among them; on a 9:16 video the areas Reels, TikTok, Shorts and Facebook Reels cover outlined in red and the safe box in green, from platform-zones (the person's platforms with `--platforms`).
 2. **`prepare`** writes `video.mp4` where that is mechanical and checks it again. Short: H.264 1080×1920, at most 20 Mbit/s and 60 fps, AAC, `+faststart`; a video that is not 9:16 only with `--pad` (black bars) or, when it is nearly 9:16, `--crop`. Long: the picture is copied when YouTube takes its codec, else encoded as H.264. `--loudness` brings the sound to -14 LUFS, `--start` and `--end` cut its ends.
-3. **`accounts`** reads Storrito's `list-social-accounts`: every post type that publishes a video becomes a target (`<platform>/<account>/<post type>`) with its procedure, duration limits, caption limit and options. Against the job it says which fit and why the others do not: disconnected, the other mode, too long or too short for that post type.
+3. **`accounts`** reads Storrito's `list-social-accounts`: every post type that publishes a video becomes a target (`<platform>/<account>/<post type>`) with its procedure, duration limits, caption limit and options. Against the job it says which fit and why the others do not: disconnected, the other mode, too long or too short for that post type. `--hiccup --lang de` prints the question for the chat: grouped by platform, each account with its profile picture (copied into `uploads/publish-accounts/`, since the platforms' links to them expire) or its platform's icon (drawn into `uploads/publish-icons/`), the disconnected and too long ones greyed out with why, ticked only the targets of the last publish (`publish/targets.json`).
 4. **`publish`** runs video-descriptions' `check` on the texts and refuses while it finds a ✗. It builds every target's parameters before it uploads anything, so that a missing text or choice stops all of them. Then it uploads the video once as a Storrito temp-blob, reused for 20 hours, and calls each target's procedure with a UUID kept in `plan.json`. A second run skips what is done. A target already scheduled with another video or other texts is refused until `cancel` took it back.
 5. **`status`** asks each post's status procedure; with `--wait` until the posts that are due are out, with their links.
 
@@ -48,7 +49,9 @@ publish/<name>/job.json     the video, the mode, what was measured and found, wh
 publish/<name>/source.*     a video from a link
 publish/<name>/video.mp4    the video prepare wrote
 publish/<name>/plan.json    the uploads and every post with its UUID, status and link
+publish/targets.json        the targets of the last publish, ticked when the next video's accounts are asked
 uploads/publish-<name>/frames.jpg   the sheet, for the chat
+uploads/publish-accounts/   the accounts' pictures; uploads/publish-icons/ the platforms' icons
 descriptions/<name>/        video-descriptions' folder: descriptions.json, the overview
 ```
 
