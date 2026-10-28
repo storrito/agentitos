@@ -245,7 +245,7 @@ function cmdOverview([dir], opts) {
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, overview(doc, results.filter((r) => r.platform !== "(all)"), { video, title: doc.title }));
   const warnings = results.reduce((n, r) => n + r.warnings.length, 0);
-  console.log(`${out}: the texts of ${results.filter((r) => r.platform !== "(all)").length} platforms, each with its counts, what shows before "more", the hashtags and mentions${warnings ? `; ${warnings} ⚠ marked` : ""}. Show it to the person.`);
+  console.log(`${out}: the texts of ${results.filter((r) => r.platform !== "(all)").length} platforms as they will read, and what shows before "more"${warnings ? `; the ${warnings} ⚠ stay with you, the page does not show them` : ""}. Show it to the person.`);
 }
 
 const [command, ...rest] = process.argv.slice(2);

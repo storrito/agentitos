@@ -33,10 +33,10 @@ Requirements: Node 20+, ffmpeg. agentitos' [video-descriptions](../video-descrip
 | target | procedure | texts (descriptions.json) | the person chooses |
 | --- | --- | --- | --- |
 | Instagram Reel | `schedule-instagram-reel` | `instagram-reels.caption` → `caption`; `shareToFeed` on (`--no-feed`) | – |
-| TikTok (connected directly) | `schedule-tiktok-post` | `tiktok.caption` → `title` (TikTok's caption) | `privacyLevel` (`--tiktok-privacy`), never a default |
-| YouTube Short | `schedule-social-post` `SHORT` | `youtube-shorts.description` → `text`, `.title` → `name` and the `title` option | – |
+| TikTok (connected directly) | `schedule-tiktok-post` | `tiktok.caption` → `title` (TikTok's caption); the cover's moment (`--tiktok-cover`, the agent's pick) → `videoCoverTimestampMs` | `privacyLevel` (`--tiktok-privacy`), never a default |
+| YouTube Short | `schedule-social-post` `SHORT` | `youtube-shorts.description` → `text`, `.title` → `name` and the `title` option | the `privacy` and `madeForKids` options (`--privacy`, `--made-for-kids no\|yes`), required |
 | Facebook, LinkedIn, Pinterest, Snapchat, Threads, X, … | `schedule-social-post` | the platform's caption or text → `text`; `title`, `link` and alt text into the post type's options of that name | required options (`--option <target>:<key>=<value>`) |
-| YouTube video (long) | `upload-youtube-video` | `youtube.title`, `.description` (chapters); the language from `lang` | `privacy`, `madeForKids`, a thumbnail |
+| YouTube video (long) | `upload-youtube-video` | `youtube.title`, `.description` (chapters); the language from `lang` | `privacy`, `madeForKids` (`--made-for-kids no\|yes`), required; a thumbnail |
 
 Every rendered procedure gets `<insta-story src="<temp-blob url>"></insta-story>`: Storrito renders it as the video, H.264 1080×1920 at most 30 Mbit/s, which is why short-form needs 9:16. Without `date` a post goes out as soon as it is rendered. `--ai-generated`, `--paid` and `--own-brand` set the disclosures where a procedure has them.
 

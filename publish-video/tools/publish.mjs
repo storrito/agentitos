@@ -17,7 +17,8 @@
 //        --hiccup: the list to tick in the chat, with each account's picture, the last choice ticked
 //   node tools/publish.mjs publish <dir> --to <target>[,<target>…] (--at <ISO time> | --now)
 //        [--texts descriptions/<name>] [--tiktok-privacy public|friends|followers|private]
-//        [--privacy public|unlisted|private] [--thumbnail <image>] [--made-for-kids] [--ai-generated]
+//        [--privacy public|unlisted|private] [--made-for-kids yes|no] [--thumbnail <image>]
+//        [--tiktok-cover <s>] [--ai-generated]
 //        [--paid] [--own-brand] [--no-feed] [--option [<target>:]key=value]…
 //        uploads the video once and schedules it on each target with its texts; safe to run again,
 //        nothing is posted twice
@@ -38,8 +39,8 @@ const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
 const cmd = (rest) => `node ${self()} ${rest}`;
 
-const FLAGS = ["json", "hiccup", "now", "pad", "crop", "loudness", "made-for-kids", "ai-generated", "paid", "own-brand", "no-feed"];
-const VALUED = ["lang", "mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "privacy", "thumbnail", "wait"];
+const FLAGS = ["json", "hiccup", "now", "pad", "crop", "loudness", "ai-generated", "paid", "own-brand", "no-feed"];
+const VALUED = ["lang", "mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "tiktok-cover", "privacy", "made-for-kids", "thumbnail", "wait"];
 const REPEATED = ["option"];
 
 function parse(args) {
@@ -265,8 +266,8 @@ async function cmdAccounts([dir], opts) {
   }
   if (job && fits.length) {
     console.log(`\nAsk the person which of these to post to: ${cmd(`accounts ${rel(dir)} --hiccup --lang <their language>`)} prints the list to show. Then write the texts with video-descriptions for their platforms (texts: …), and ${cmd(`publish ${rel(dir)} --to <target>,… --at <time>|--now`)}.`);
-    if (fits.some((r) => r.procedure === "schedule-tiktok-post")) console.log("TikTok: ask who may see it (--tiktok-privacy public|friends|followers|private); TikTok wants the person to choose it.");
-    if (fits.some((r) => r.mode === "long")) console.log("YouTube: ask for the privacy (--privacy public|unlisted|private) and whether it is made for kids (--made-for-kids); a thumbnail with --thumbnail.");
+    if (fits.some((r) => r.procedure === "schedule-tiktok-post")) console.log("TikTok: ask who may see it (--tiktok-privacy public|friends|followers|private); TikTok wants the person to choose it. Pick the cover's moment yourself (--tiktok-cover <s>), else TikTok takes the first frame.");
+    if (fits.some((r) => r.platform === "YOUTUBE")) console.log(`YouTube: ask for the visibility (--privacy public|unlisted|private) and whether it is made for kids (--made-for-kids yes|no), for a Short too${fits.some((r) => r.mode === "long") ? "; a thumbnail with --thumbnail" : ""}.`);
     const required = fits.flatMap((r) => r.options.filter((o) => o.required).map((o) => `${r.id}:${o.key} (${o.label}: ${(o.choices || []).map((c) => c.value).join(", ")})`));
     if (required.length) console.log(`To choose with the person: ${required.join("; ")}: --option <target>:<key>=<value>.`);
   }
@@ -312,6 +313,9 @@ async function cmdPublish([dir], opts) {
   }
   if (opts["tiktok-privacy"] && !TIKTOK[opts["tiktok-privacy"]]) fail(`--tiktok-privacy is one of ${Object.keys(TIKTOK).join(", ")}.`);
   if (opts.privacy && !["public", "unlisted", "private"].includes(opts.privacy)) fail("--privacy is public, unlisted or private.");
+  if (opts["made-for-kids"] && !["yes", "no"].includes(opts["made-for-kids"])) fail("--made-for-kids is yes or no.");
+  const cover = opts["tiktok-cover"] != null ? Number(opts["tiktok-cover"]) : null;
+  if (cover != null && !(cover >= 0 && cover < job.measured.duration)) fail(`--tiktok-cover is a moment of the video in seconds, from 0 to ${job.measured.duration.toFixed(1)}.`);
   if (opts.thumbnail && !fs.existsSync(opts.thumbnail)) fail(`There is no ${opts.thumbnail}.`);
 
   // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself
@@ -336,8 +340,8 @@ async function cmdPublish([dir], opts) {
 
   // every target's parameters before anything is uploaded: a missing text or choice stops all
   const choices = {
-    privacy: opts.privacy, tiktok: TIKTOK[opts["tiktok-privacy"]], options: opts.option,
-    flags: { madeForKids: !!opts["made-for-kids"], aiGenerated: !!opts["ai-generated"], paid: !!opts.paid, ownBrand: !!opts["own-brand"], noFeed: !!opts["no-feed"] },
+    privacy: opts.privacy, kids: opts["made-for-kids"], tiktok: TIKTOK[opts["tiktok-privacy"]], cover, options: opts.option,
+    flags: { aiGenerated: !!opts["ai-generated"], paid: !!opts.paid, ownBrand: !!opts["own-brand"], noFeed: !!opts["no-feed"] },
   };
   const planned = [];
   const problems = [];

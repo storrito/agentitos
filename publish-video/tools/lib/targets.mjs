@@ -89,12 +89,13 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
     if (!post.title) errors.push("posts.youtube has no title");
     if (bytes(String(post.description || "")) > 5000) errors.push("the description is longer than 5,000 bytes");
     if (!choices.privacy) errors.push("--privacy public|unlisted|private: ask the person");
+    if (!choices.kids) errors.push("--made-for-kids yes|no: YouTube asks it of every video; ask the person");
     if (post.tags?.length) notes.push("the tags are not sent: YouTube's API through Storrito takes none; add them in YouTube Studio");
     return {
       errors, notes,
       params: {
         socialAccountId: t.accountId, videoUrl, title: post.title, description: post.description || "", privacy: choices.privacy,
-        madeForKids: !!flags.madeForKids, aiGenerated: !!flags.aiGenerated, paidProductPlacement: !!flags.paid,
+        madeForKids: choices.kids === "yes", aiGenerated: !!flags.aiGenerated, paidProductPlacement: !!flags.paid,
         ...(thumbnailUrl ? { thumbnailUrl } : {}), ...(lang ? { defaultLanguage: lang, defaultAudioLanguage: lang } : {}), ...when,
       },
     };
@@ -111,11 +112,16 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
       errors, notes,
       params: {
         html, tiktokAccountId: t.accountId, title: text, privacyLevel: choices.tiktok,
+        ...(choices.cover != null ? { videoCoverTimestampMs: Math.round(choices.cover * 1000) } : {}),
         ...(flags.aiGenerated ? { aiGenerated: true } : {}), ...(flags.paid ? { brandedContent: true } : {}), ...(flags.ownBrand ? { brandOrganic: true } : {}), ...when,
       },
     };
   }
-  // schedule-social-post: the text, and each option filled from the post or from --option
+  // schedule-social-post: the text, and each option filled from the post or from --option; a
+  // YouTube Short asks for its visibility and "made for kids" like every YouTube video
+  const youtube = t.platform === "YOUTUBE";
+  if (youtube && !choices.privacy) errors.push("--privacy public|unlisted|private: ask the person");
+  if (youtube && !choices.kids) errors.push("--made-for-kids yes|no: YouTube asks it of every video, a Short too; ask the person");
   const given = chosen(t, choices.options);
   const options = {};
   for (const o of t.options) {
@@ -126,6 +132,8 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
       else if (/^(link|url|destinationLink)$/i.test(key) && post.link) v = post.link;
       else if (/alt/i.test(key) && post.alt) v = post.alt;
       else if (key === "aiGenerated" && flags.aiGenerated) v = true;
+      else if (key === "madeForKids" && choices.kids) v = choices.kids === "yes";
+      else if (key === "privacy" && youtube && choices.privacy) v = choices.privacy;
       else if (/^(paid|brandedContent|paidPartnership)/i.test(key) && flags.paid) v = true;
     }
     if (v == null) {
