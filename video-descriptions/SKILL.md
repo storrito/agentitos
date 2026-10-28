@@ -53,6 +53,8 @@ The platforms the person named; else every platform `read` says the video fits (
 3. the video itself: what it shows and how (a tutorial or a screen demo → `educational`, fashion in golden light → `glamorous`, a blooper → `funny`, a launch with fast cuts → `hype`, a personal journey → `storytelling`, a quiet aesthetic loop → `minimal`, a B2B result → `professional`, behind the scenes → `friendly`, a transformation → `inspirational`);
 4. the audience it speaks to.
 
+When a skill that runs this one says to let the person choose (publish-video does, when there is no brand kit), ask once instead: the three or four styles that fit the video as buttons, the one you would pick `:class "primary"`, the rest named in a line.
+
 One style for all platforms; the platform sets the register within it (LinkedIn and a YouTube title at its clear end, TikTok and Reels at its loose end). Write `"style"` and `"why"` (one sentence the person reads: why this style fits this video). A post that needs another style may have its own `"style"`.
 
 ### 4. The texts
