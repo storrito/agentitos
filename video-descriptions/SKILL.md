@@ -113,7 +113,7 @@ counts every field as its platform counts it (Instagram and TikTok in UTF-16, Yo
 node <skill>/tools/descriptions.mjs overview descriptions/<name>
 ```
 
-writes `artifacts/descriptions-<name>.html` (refused while there is a ✗): every platform's texts as they will read, what shows before "more", each field's count against its limit, the hashtags and mentions, the style and why: for the person to check everything at a glance. Tell the person in one sentence which style you chose and why, and show the overview with two buttons: "Looks good" (`:class "primary"`) and the one that opens the page ("Show all texts ↗"); a line under them says they can type what to change or another style.
+writes `artifacts/descriptions-<name>.html` (refused while there is a ✗): every platform's texts as they will read and what shows before "more", the style in a word, a field's count only when it is near its limit: what the person needs to agree, nothing of the check's verdicts, the formats or the counts. Tell the person in one sentence which style you chose and why, and show the overview with two buttons: "Looks good" (`:class "primary"`) and the one that opens the page ("Show all texts ↗"); a line under them says they can type what to change or another style.
 
 ### 7. Changes
 
