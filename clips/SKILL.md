@@ -72,7 +72,7 @@ node <skill>/tools/clips.mjs prepare work/episode work/<k> <first>-<last> \
   [--hook "<hook>"] [--brand brand/DESIGN.md]
 ```
 
-It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.3 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
+It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
 
 1. Read `work/<k>/takes/source/brief.md`. Fix misheard names in `cut.json` `"fixes"`; move the start of the keep past a stray "und", "also", "so", or the end to the last word of the payoff. The moment must still open cold and end clean.
 2. `node <takes> build work/<k>/takes`, then `node <takes> captions work/<k>/takes --style <style>` (with `--brand` when there is one), then `node <takes> check work/<k>/takes`: fix every ✗; a ⚠ unless you have a reason.

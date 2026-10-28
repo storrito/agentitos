@@ -47,9 +47,12 @@ export function takesTool() {
   return candidates.find((p) => p && fs.existsSync(p)) || null;
 }
 
-// a tool of this skill or best-takes, its output shown; a failure ends here with its message
+// a tool of this skill or best-takes, its output shown, but not its "Next:" (this tool says what
+// comes next); a failure ends here with its message
 function run(tool, args) {
-  const r = spawnSync(process.execPath, [tool, ...args], { stdio: "inherit" });
+  const r = spawnSync(process.execPath, [tool, ...args], { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", maxBuffer: 64 << 20 });
+  const said = (r.stdout || "").split("\n").filter((l) => r.status !== 0 || !/^\s*Next:/.test(l)).join("\n").trim();
+  if (said) console.log(said);
   if (r.status !== 0) process.exit(r.status || 1);
 }
 

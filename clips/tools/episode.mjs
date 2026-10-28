@@ -302,7 +302,7 @@ async function moments(dir, ...rest) {
 
 First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered).
 
-A moment is a range of whole sentences, first..last, cut straight from the episode: **at most 59 seconds** from the start of the first to the end of the last, best 25–50. It is one of those pieces (its kind). Score how well it stands alone, 0 to 2 on each point:
+A moment is a range of whole sentences, first..last, cut straight from the episode: **at most 59 seconds** from the start of the first to the end of the last, best 25–50. It is one of those pieces (its kind). Score how well it stands alone, 0 to 2 on each point, strictly: a 2 is earned, and most moments lose a point somewhere:
 - cold: its first sentence makes sense to someone who saw nothing before and works as a hook in its first three seconds (a question, a surprising claim, a vivid image, a number); 0 when it opens on "and", "so", "yeah", "like I said", small talk, or a "he", "it" or "this" nobody introduced;
 - one: it holds one idea, complete, no "and also";
 - ends: it stops on a finished thought, right after its payoff (a punchline, an insight, a striking number, an emotional turn), not mid-list or on "and then";
@@ -361,7 +361,7 @@ ${text}`;
     + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : ""));
   console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.score}/10${m.weak ? " weak" : ""} · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
     + `\n   „${m.opening}“\n   ${m.why}` + (m.hook ? `\n   hook on screen: „${m.hook}“` : "")).join("\n"));
-  if (ideas.length) console.log(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.join(", ")}): ${d.why}`).join("\n")}`);
+  if (ideas.length) console.log(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
   console.log(`${picked.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${(j.usage?.cost ?? 0).toFixed(4)}. `
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
 }

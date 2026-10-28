@@ -98,7 +98,7 @@ ${hook.style}` : ""}
     <div id="main" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}" data-fps="${fps}">
       <hf-audio-group id="voice" data-label="Voice" data-fx-chain="${attr(BUS)}"></hf-audio-group>
 ${clipsHtml}${captions ? `\n      ${captions}` : ""}${hook ? `\n      ${hook.element}` : ""}
-    </div>
+    </div>${hook ? `\n    <script>\n      ${hook.fit}\n    </script>` : ""}
     <script>
       window.__timelines["main"] = gsap.timeline({ paused: true });${hook ? `\n      ${hook.script}` : ""}
     </script>

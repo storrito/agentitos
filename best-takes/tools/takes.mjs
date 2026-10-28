@@ -28,7 +28,7 @@
 //   --target <s>       the longest the cut should be (the brief and the check use it)
 //   --pause <s>        pauses longer than this inside a keep are shortened (default 1)
 //   --pauses picture|tight    a pause follows its picture (default: where it moves it stays,
-//                      muted, or plays faster), or every pause over 0.3 s goes, whatever the
+//                      muted, or plays faster), or every pause over 0.4 s goes, whatever the
 //                      picture shows (tight: a talking head, a clip for a reel)
 //   --hook "…"         a card over the start that says what the viewer gets (6 words or fewer,
 //                      one *word* in the brand's colour), until the first sentence ends;
@@ -61,7 +61,7 @@ const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pau
 const FLAGS = ["off"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
-const TIGHT = 0.3; // --pauses tight: every pause over this goes
+const TIGHT = 0.4; // --pauses tight: every pause over this goes
 
 function fail(message) {
   console.log(message);
