@@ -338,7 +338,7 @@ function cmdCheck(dir) {
     const shownOf = (r) => (r.moving || []).reduce((t, m) => t + m.to - m.from, 0);
     const still = pauses.reduce((t, r) => t + r.to - r.from - shownOf(r), 0);
     const fast = pauses.flatMap((r) => r.moving || []).filter((m) => m.rate > 1);
-    console.log(`    ${pauses.length} pauses over ${s.pauses === "tight" ? TIGHT : s.pause} s: ${still.toFixed(1)} s where the picture stands still cut out` +
+    console.log(`    ${pauses.length} pauses over ${s.pauses === "tight" ? TIGHT : s.pause} s: ${still.toFixed(1)} s ${s.pauses === "tight" ? "cut out (tight)" : "where the picture stands still cut out"}` +
       (fast.length ? `, ${fast.length} stretch${fast.length > 1 ? "es" : ""} where it moves played faster (${fast.map((m) => `${(m.to - m.from).toFixed(1)} s ×${m.rate}`).join(", ")})` : ""));
   }
 

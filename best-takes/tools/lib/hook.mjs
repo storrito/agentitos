@@ -14,6 +14,7 @@ const googleFont = (family, weight) => `https://fonts.googleapis.com/css2?family
 const ACCENT = "#FF4D2E";
 const WEIGHT = 800;
 const PAD = 22;
+const SIZE = 72; // px at most, two lines: the card ends above the eyes of a face framed a third from the top
 
 // The brand's primary colour and display font from its DESIGN.md (brand-kit), as the captions
 // skill reads them: a font Google serves, or one shipped as files beside the DESIGN.md.
@@ -54,9 +55,9 @@ export function hookCard({ text, until, zones, brand, out }) {
   // *word* stands out
   const words = esc(text.trim()).replace(/\*([^*]+)\*/g, `<span class="hook-accent">$1</span>`);
   // one element, no nesting (HyperFrames shows every top-level element as a row of its timeline)
-  const style = `${faces}      #hook { position: absolute; left: ${x + w / 2}px; top: ${y + 24}px; transform: translateX(-50%); width: max-content; max-width: ${w}px; z-index: 5;
+  const style = `${faces}      #hook { position: absolute; left: ${x + w / 2}px; top: ${y + 8}px; transform: translateX(-50%); width: max-content; max-width: ${w}px; z-index: 5;
         padding: ${PAD}px 34px ${PAD + 4}px; border-radius: 26px; background: #FFFFFF; color: #111111; box-shadow: 0 10px 40px rgba(0,0,0,0.35);
-        font-family: "${font}", "Inter", sans-serif; font-weight: ${WEIGHT}; font-size: 84px; line-height: 1.08; letter-spacing: -0.02em; text-align: center; }
+        font-family: "${font}", "Inter", sans-serif; font-weight: ${WEIGHT}; font-size: ${SIZE}px; line-height: 1.08; letter-spacing: -0.02em; text-align: center; }
       #hook .hook-accent { color: ${accent}; }`;
   const element = `<div id="hook" class="clip" data-start="0" data-duration="${until}" data-track-index="2">${words}</div>`;
   // the type as big as fits in two lines, once the font is there: a script of its own, apart
@@ -64,7 +65,7 @@ export function hookCard({ text, until, zones, brand, out }) {
   const fit = `(function () {
         var el = document.getElementById("hook");
         function fit() {
-          var s = 84;
+          var s = ${SIZE};
           el.style.fontSize = s + "px";
           while (s > 40 && (el.scrollWidth > el.clientWidth + 1 || el.offsetHeight > s * 1.08 * 2 + ${2 * PAD + 6})) { s -= 2; el.style.fontSize = s + "px"; }
         }
