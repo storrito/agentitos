@@ -33,6 +33,8 @@ export function targetsOf(socialAccounts) {
         label: p.label || `${a.platformName || platform} ${p.postType}`,
         account: a.instagramUsername ? `@${a.instagramUsername}` : a.name,
         platform,
+        platformName: a.platformName || platform,
+        avatarUrl: a.avatarUrl || null,
         postType: p.postType,
         procedure: p.procedure,
         accountField: proc.account,

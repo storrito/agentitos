@@ -90,8 +90,8 @@ The voice:
   [:tbody [:tr [:td "Mix Dir Dein Lieblingsmüsli"] [:td "Jetzt kaufen!"]]
           [:tr [:td "Frühstücken verbindet"] [:td "Sie / Ihnen"]]]]
  [:button {:class "primary" :send "Das sind wir"} "Das sind wir"] " "
- [:button {:send "Die Stimme passt noch nicht"} "Etwas ändern"] " "
- [:button {:send "Nimm deine Vorschläge für den Rest"} "Rest vorschlagen"]]
+ [:button {:send "Nimm deine Vorschläge für den Rest"} "Rest vorschlagen"]
+ [:p [:small "Oder schreib, was an der Stimme nicht passt."]]]
 ```
 
 ## Rules

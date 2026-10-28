@@ -112,7 +112,7 @@ counts every field as its platform counts it (Instagram and TikTok in UTF-16, Yo
 node <skill>/tools/descriptions.mjs overview descriptions/<name>
 ```
 
-writes `artifacts/descriptions-<name>.html` (refused while there is a ✗): every platform's texts as they will read, what shows before "more", each field's count against its limit, the hashtags and mentions, the style and why: for the person to check everything at a glance. Tell the person in one sentence which style you chose and why, and show the overview with buttons: "Looks good" (`:class "primary"`), "Another style", "Change something", and the button that opens the page.
+writes `artifacts/descriptions-<name>.html` (refused while there is a ✗): every platform's texts as they will read, what shows before "more", each field's count against its limit, the hashtags and mentions, the style and why: for the person to check everything at a glance. Tell the person in one sentence which style you chose and why, and show the overview with two buttons: "Looks good" (`:class "primary"`) and the one that opens the page ("Show all texts ↗"); a line under them says they can type what to change or another style.
 
 ### 7. Changes
 
@@ -132,12 +132,11 @@ The texts:
 [:div
  [:p "Texts for 10 platforms, in the " [:strong "educational"] " style: the video walks through four steps, so the texts promise what one sees working."]
  [:button {:class "primary" :send "The texts are good"} "Looks good"] " "
- [:button {:send "Write them in another style"} "Another style"] " "
- [:button {:send "I want to change something"} "Change something"] " "
- [:button {:open "artifacts/descriptions-storrito-agent-demo.html"} "Show all texts"]]
+ [:button {:open "artifacts/descriptions-storrito-agent-demo.html"} "Show all texts ↗"]
+ [:p [:small "Or tell me what to change, or another style."]]]
 ```
 
-Another style:
+When they ask for another style without naming one, the styles as buttons, each writing the texts in it:
 
 ```hiccup
 [:div

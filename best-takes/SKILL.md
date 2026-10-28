@@ -62,7 +62,7 @@ node <skill>/tools/takes.mjs check takes/<name>
 
 ### 4. Ask whether it is right
 
-One message: how long it was and is now, what you left out in plain words (each retry and why, the talk about the recording, "the ähs", the pauses cut and the stretches played faster), and what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**, with "Looks good" (primary), "Change something", and the button that shows the preview. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
+One message: how long it was and is now, what you left out in plain words (each retry and why, the talk about the recording, "the ähs", the pauses cut and the stretches played faster), and what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**, with "Looks good" (primary) and the button that shows the preview ("Show the preview ↗"), and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
 
 ### 5. Changes
 
@@ -112,7 +112,7 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 
 - One question per block, buttons for the likely answers, and a hint that they can type anything else.
 - The button that moves on gets `:class "primary"`; the others stay plain.
-- A button's text says what happens; its `:send` reads as the person's answer ("The cut is good", "I want to change something").
+- A button's text says what happens; its `:send` reads as the person's answer ("The cut is good").
 - Never put a token, a word number, a path of `takes/` or a raw error into the chat.
 
 The question after the preview:
@@ -127,8 +127,7 @@ The question after the preview:
   [:li "The second recording was 11 dB quieter: now both are equally loud."]]
  [:p "Is it right like this?"]
  [:button {:class "primary" :send "The cut is good, make the video"} "Looks good"] " "
- [:button {:send "I want to change something in the cut"} "Change something"] " "
- [:button {:open "artifacts/kameras"} "Show the preview"]
+ [:button {:open "artifacts/kameras"} "Show the preview ↗"]
  [:p [:small "Or tell me what should be different."]]]
 ```
 

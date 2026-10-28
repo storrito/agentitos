@@ -51,4 +51,4 @@ Tools do what can be measured (sync, cuts between words, levels, sizes, what the
 
 ## In the chat (rragent)
 
-Short messages in the person's language, one question per hiccup block with buttons for the likely answers, the button that moves on `:class "primary"`. Never a token, a working path or a raw error in the chat.
+Short messages in the person's language, one question per hiccup block with buttons for the likely answers, the button that moves on `:class "primary"`. A button only where a click makes the agent act at once: an answer it goes on with, a choice it carries out, a page it opens. None that only leads to another question ("Change something", "Another style" without naming one): the person types what to change, and a line under the buttons says so. A button that opens an artifact ends its text with " ↗". Never a token, a working path or a raw error in the chat.
