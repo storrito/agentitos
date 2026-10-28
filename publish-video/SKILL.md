@@ -57,9 +57,9 @@ Then `check publish/<name> --mode short|long`. A wide video that should go out s
 **Look at the sheet** and judge what no tool measures: does the first frame make someone stay, does the end close or cut off mid-move, is every text readable, inside the green box and spelled right, is there another app's watermark (a TikTok logo on a Reel costs reach), black bars, a test frame, something private?
 
 - **✗ that `prepare` fixes** (size, codec, container, bitrate): run it without asking, it changes nothing one sees. `--crop` for a nearly 9:16 video only when the sheet shows nothing near the edges; else ask: cropped or thin bars.
-- **⚠ about the sound** (too quiet, too loud, peaks): `prepare --loudness`, and say so. **Black or silence at the start or end**: `prepare --start <s>` / `--end <s>` cuts it; do it when it is plainly empty, say so.
+- **⚠ about the sound** (too quiet, too loud, peaks): `prepare --loudness`. **Black or silence at the start or end**: `prepare --start <s>` / `--end <s>` cuts it, when it is plainly empty.
 - Several fixes go into one `prepare` call; it writes `publish/<name>/video.mp4` and checks it again.
-- **Weigh what you see by what it costs.** The sheet shows twelve moments, not every frame. A subtitle that touches a red outline in a frame or two, a word that runs into the margin but stays readable, the edge of a picture under the buttons: say it in passing ("at 0:10 a subtitle line touches TikTok's buttons; it stays readable") and go on, no question. A finished video is not sent back for that.
+- **Weigh what you see by what it costs.** The sheet shows twelve moments, not every frame. A subtitle that touches a red outline in a frame or two, a word that runs into the margin but stays readable, the edge of a picture under the buttons: leave it, and say nothing about it. A finished video is not sent back for that.
 - **Ask only when it hides what must be read or seen**: the hook or a title under the buttons, a name, a price, a call to action, a face cut by the caption area, subtitles under the buttons through most of the video; or a weak first second, a cut-off end, a typo in the picture, another app's watermark. Then tell the person in a sentence what you see, with the frame's time, and ask:
 
 ```hiccup
@@ -70,7 +70,7 @@ Then `check publish/<name> --mode short|long`. A wide video that should go out s
  [:button {:send "I'll fix the video first"} "I'll fix it"]]
 ```
 
-When it is ready, show the sheet with a sentence that it is ready and go on.
+When it is ready, or nearly so, say so in one sentence and go straight on to the accounts: no sheet, no list of what you converted, cut or noticed. The sheet goes into the chat only with a question about a real problem, as above.
 
 ### 4. Where it goes
 
@@ -141,6 +141,6 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 ## Rules
 
 - Nothing is published before the person agreed to the texts and named the accounts and the time.
-- Every decision the tool cannot measure is yours or the person's, said in a sentence: the mode when it is open, the crop, the cut of the ends, whether a flaw is worth fixing. A small flaw in a finished video is mentioned, not asked about.
+- Every decision the tool cannot measure is yours or the person's, said in a sentence: the mode when it is open, the crop, the cut of the ends, whether a flaw is worth fixing. A small flaw in a finished video, and what prepare fixed, is neither asked about nor mentioned.
 - TikTok's audience, YouTube's visibility and "made for kids", and every disclosure are the person's choice; never a default.
 - Change the inputs (`descriptions.json`, the video, the options) and run the tool again; never call Storrito's procedures around it for a target it handles.
