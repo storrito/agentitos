@@ -93,6 +93,7 @@ No account fits (the tool says so): say why in a sentence (the video's length or
 - **A brand kit** (`brand/DESIGN.md`): the style comes from its Voice and Tone. Say which style you take and why in one sentence; no question.
 - **No brand kit**: ask once, as video-descriptions' SKILL.md says for this case: the three or four styles that fit this video as buttons, the one you would pick `:class "primary"`.
 - The person already said how it should sound: that is the style.
+- Only Instagram Stories chosen: no style and no texts (a Story publishes none); go on with step 7.
 
 ### 6. The texts
 
