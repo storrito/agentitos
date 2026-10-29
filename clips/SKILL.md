@@ -72,10 +72,11 @@ node <skill>/tools/clips.mjs prepare work/episode work/<k> <first>-<last> \
   [--hook "<hook>"] [--brand brand/DESIGN.md]
 ```
 
-It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
+It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is; B-roll, a photo or a split screen is shown whole above the captions over a blurred copy, since a window would cut it apart), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
 
-1. Read `work/<k>/takes/source/brief.md`. Fix misheard names in `cut.json` `"fixes"`; move the start of the keep past a stray "und", "also", "so", or the end to the last word of the payoff. The moment must still open cold and end clean.
-2. `node <takes> build work/<k>/takes`, then `node <takes> captions work/<k>/takes --style <style>` (with `--brand` when there is one), then `node <takes> check work/<k>/takes`: fix every ✗; a ⚠ unless you have a reason.
+1. Look at `work/<k>/framed.sheet.jpg`, every shot against the original: the footage left, the frame right, one row per shot as `prepare` lists them. What matters must be in the frame: both faces of a photo of two, both people of a split screen, the subject of the B-roll, the speaker. Cut off: `node <skill>/tools/clips.mjs reframe work/<k> --whole <second>` (the second of that shot, as listed); a speaker in a shot shown whole that should be followed: `--follow <second>`. It costs nothing and keeps the edit; never `prepare` again for it.
+2. Read `work/<k>/takes/source/brief.md`. Fix misheard names in `cut.json` `"fixes"`; move the start of the keep past a stray "und", "also", "so", or the end to the last word of the payoff. The moment must still open cold and end clean.
+3. `node <takes> build work/<k>/takes`, then `node <takes> captions work/<k>/takes --style <style>` (with `--brand` when there is one), then `node <takes> check work/<k>/takes`: fix every ✗; a ⚠ unless you have a reason.
 
 The hook: use the moments' hook where the first line is weak, rewrite it when it is a label, and leave it out where the first line carries itself. One `*word*` may stand out. To change it: `node <takes> build work/<k>/takes --hook "…"` (`--hook ""` takes it out). It sits at the top of the free box, centred, on the first frame, and stays while the first sentence is said.
 
@@ -89,6 +90,7 @@ Then show the list (title and length per clip) with buttons "They are good" and 
 | "The pauses are too tight" | `build … --pause 0.7` (still tight, only pauses over 0.7 s go) |
 | "Another hook" / "no hook" | `build … --hook "…"` / `--hook ""` |
 | "Another caption style" | `captions … --style …` |
+| "The photo / the scene / the other person is cut off" | `reframe work/<k> --whole <second>`, build |
 | "The wrong person is in the picture" | look at `work/<k>/framed.json` (the windows) and the clip; say what you saw. Framing again (the edit in `cut.json` starts over, the cut clip stays): `rm -r work/<k>/takes work/<k>/framed.mp4 work/<k>/clip.people.json`, then the same `prepare` |
 | "Longer" | a new moment with more sentences (`prepare` with the wider range into a new folder) |
 
