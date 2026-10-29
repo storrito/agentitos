@@ -74,8 +74,9 @@ export function shots(pieces, sources, width, height, a) {
         const start = p.start + (seg.in - p.in) / rate;
         const timed = parts.length > 1 ? { start, duration: (i === parts.length - 1 ? end : p.start + (seg.out - p.in) / rate) - start, in: seg.in } : {};
         const round = Math.round(Math.min(width, height) * 0.02);
-        // a tall picture (a phone's screen) gets the tall area, whole
-        if (aspect < 0.8) return out.push({ source: p.source, box: fit(a.tall, aspect), crop: c, main: true, round, ...timed });
+        // a phone's screen (a tall source) gets the tall area, as its crop shows it; a tall crop of a
+        // wide screen is a screen's shot like any other
+        if (src.height > src.width * 1.25) return out.push({ source: p.source, box: fit(a.tall, aspect), crop: c, main: true, round, ...timed });
         // a screen: what matters as large as the safe room allows (beside the circle too, or all
         // of it without the circle), never more than 30 % of the screen's width across that room
         // nor over twice its pixels; the screen around it out to the frame's edges
