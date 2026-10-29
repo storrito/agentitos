@@ -37,7 +37,7 @@ Agents that call a model (a transcription, a vision model, a proposal) go throug
 
 ## The brand kit
 
-A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md` in Google's open [DESIGN.md format](https://github.com/google-labs-code/design.md) (colours, typography and corner radii as tokens in its front matter, the brand's character, voice and audience as prose) with the logo and font files beside it, plus four keys of our own (`logo`, `fonts`, `uppercase`, `social`; see [brand-kit](brand-kit/README.md#the-kit)). [brand-kit](brand-kit/) makes a full one with the person; an agent that needs a look and finds none drafts one from the brand's website, as [story-from-link](story-from-link/) does; [thumbnail-and-intro](thumbnail-and-intro/) renders from the kit's tokens, logo and fonts. It is a file format, not a dependency: folders still never import from each other.
+A brand's look and voice live in `brand/` of the working directory: a `DESIGN.md` in Google's open [DESIGN.md format](https://github.com/google-labs-code/design.md) (colours, typography and corner radii as tokens in its front matter, the brand's character, voice and audience as prose) with the logo and font files beside it, plus four keys of our own (`logo`, `fonts`, `uppercase`, `social`; see [brand-kit](brand-kit/README.md#the-kit)). [brand-kit](brand-kit/) makes a full one with the person; an agent that needs a look and finds none drafts one from the brand's website with brand-kit's tools (`site.mjs`, `kit.mjs draft`), as [story-from-link](story-from-link/) does; [thumbnail-and-intro](thumbnail-and-intro/) renders from the kit's tokens, logo and fonts. It is a file format, not a dependency: folders still never import from each other.
 
 ## The platforms' zones
 

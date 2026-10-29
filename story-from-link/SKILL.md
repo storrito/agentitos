@@ -22,9 +22,10 @@ metadata:
 
 ```bash
 cd <skill> && npm install
+cd <skill>/../brand-kit && npm install     # the brand kit's tools
 ```
 
-It needs Node 20+, agentitos' `platform-zones` skill beside this one (where Instagram covers a story) and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
+It needs Node 20+, agentitos' `platform-zones` skill beside this one (where Instagram covers a story), agentitos' `brand-kit` skill beside it too (the brand kit: `<kit>` below is `<skill>/../brand-kit/tools/kit.mjs`, on a Sprite else `/home/sprite/skills/brand-kit/tools/kit.mjs`) and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## The main use: a story from a link, all in the chat
 
@@ -45,9 +46,9 @@ prints what the page is (an article, a product, an event), its facts (price, dat
 ### 2. The brand, once
 
 - `brand/DESIGN.md` exists (an earlier story, or the brand-kit skill made it): take it. Say nothing about it, unless this is the first story.
-- Else, when the page is the person's own site, `node <skill>/tools/brand.mjs draft work/<name> brand`. When it is not (a press article about them, a partner's event page), ask for their website once, read it with `page.mjs <their url> work/site` and draft from `work/site`.
-- `node <skill>/tools/brand.mjs show brand` prints a hiccup block with the logo, the colours and the font. Show it and ask once whether this is their brand.
-- A change: edit the front matter of `brand/DESIGN.md` (`colors`, `typography`, `logo`), then `node <skill>/tools/brand.mjs check brand`. Another logo: the candidates are in `work/<name>/logos/` (show them as tiles); one they attach, copy it to `brand/logo.png` and set `logo.primary: logo.png`. A font: one of Google Fonts by its name with `fonts: {<family>: google}`.
+- Else, when the page is the person's own site, `node <kit> draft work/<name> brand` (brand-kit drafts from the look `page.mjs` read). When it is not (a press article about them, a partner's event page), ask for their website once, read it with `page.mjs <their url> work/site` and draft from `work/site`. The story needs only the look: the sections brand-kit marks "To agree" (voice, audience) can wait for its own skill; do not ask them here.
+- `node <kit> show brand` prints a hiccup block with the logo, the colours and the font. Show it with "Looks right" (`:class "primary"`) and ask once whether this is their brand; they type what to change.
+- A change: edit the front matter of `brand/DESIGN.md` (`colors`, `typography`, `logo`), then `node <kit> check brand` (its ⚠ about sections "to agree" do not matter for a story). Another logo: the candidates are in `work/<name>/logos/` (show them as tiles); one they attach, copy it to `brand/logo.png` and set `logo.primary: logo.png`. A font: one of Google Fonts by its name with `fonts: {<family>: google}`.
 
 ### 3. The story
 
@@ -110,10 +111,10 @@ renders every frame in Chrome with the brand's fonts and Storrito's own stickers
 
 ### 5. Where and when
 
-Ask one thing per message, and only what has more than one answer:
+Ask what has more than one answer, all in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button:
 
-- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done.
-- **The time.** Buttons for the likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none marked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
+- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
+- **The time.** The likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none ticked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
 - **Facebook**, only when the account has a Facebook page: whether the story goes there too.
 - Instead of scheduling they may want a **draft**: it lands in Storrito's gallery, where they can change it in the editor and schedule it themselves.
 
@@ -145,7 +146,7 @@ The brand stays in `brand/`. Remember the account and the usual time (rragent: `
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/story-<name>.html"` shows the preview. Links and pictures point at `https://…`, `artifacts/…` or `uploads/…`. An `input` is a checkbox or a radio button; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block. There are no text fields: for a time or a name they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - The button that moves on gets `:class "primary"`; buttons that are alternative answers stay plain.
 - A button's text says what happens; its `:send` reads as the person's answer ("The story is good", "Post it tomorrow at 9:00").
 - Never put a token, an id the person does not need or a raw error into the chat.
@@ -160,8 +161,8 @@ The frames:
   [:img {:src "uploads/story-berry/mvhv2k1q/03.jpg" :style {:width "100%" :aspect-ratio "9 / 16" :border-radius "8px"}}]]
  [:p "Five frames, the link sticker on the last one. Good like this?"]
  [:button {:class "primary" :send "The story is good"} "Looks good"] " "
- [:button {:send "I want to change something in the story"} "Change something"] " "
- [:button {:open "artifacts/story-berry.html"} "Show them large"]]
+ [:button {:open "artifacts/story-berry.html"} "Show them large ↗"]
+ [:p [:small "Or tell me what to change."]]]
 ```
 
 The time:

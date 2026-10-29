@@ -62,7 +62,7 @@ node <skill>/tools/takes.mjs check takes/<name>
 
 ### 4. Ask whether it is right
 
-One message: how long it was and is now, what you left out in plain words (each retry and why, the talk about the recording, "the ähs", the pauses cut and the stretches played faster), and what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**, with "Looks good" (primary), "Change something", and the button that shows the preview. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
+One message: how long it was and is now, what you left out in plain words (each retry and why, the talk about the recording, "the ähs", the pauses cut and the stretches played faster), and what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**, with "Looks good" (primary) and the button that shows the preview ("Show the preview ↗"), and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
 
 ### 5. Changes
 
@@ -102,7 +102,7 @@ Only after their "looks good". Tell them in one sentence that you are rendering 
 node <skill>/tools/takes.mjs finish takes/<name> artifacts/<name>.mp4
 ```
 
-brings the whole to −14 LUFS, the loudness Instagram, TikTok and YouTube play at (`--loudness` at build time for another), and writes the subtitles beside it, `artifacts/<name>.srt`. It prints the length, the size and the measured loudness; when it says the video is from before the last build, render again. The video shows beside the chat by itself; say in one sentence that it is ready, with the download links.
+brings the whole to −14 LUFS, the loudness Instagram, TikTok and YouTube play at (`--loudness` at build time for another), and writes the subtitles beside it, `artifacts/<name>.srt`. It prints the length, the size and the measured loudness; when it says the video is from before the last build, render again. The video shows beside the chat by itself; say in one sentence that it is ready, with the download links and a button "Publish it". To publish, follow agentitos' **publish-video** (beside this skill) with `artifacts/<name>.mp4`: it checks the video, writes the texts with video-descriptions and schedules it through Storrito; never call Storrito's schedule procedures yourself.
 
 ### 7. The next recording
 
@@ -110,11 +110,11 @@ The conversation goes on: `remember` what the person wants every time (a format,
 
 ## UI in the chat
 
-Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/<name>"` shows the preview. Links and videos point at `https://…`, `artifacts/…` or `uploads/…`. There are no text fields: for a change they type.
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links and videos point at `https://…`, `artifacts/…` or `uploads/…`. There are no text fields: for a change they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - The button that moves on gets `:class "primary"`; the others stay plain.
-- A button's text says what happens; its `:send` reads as the person's answer ("The cut is good", "I want to change something").
+- A button's text says what happens; its `:send` reads as the person's answer ("The cut is good").
 - Never put a token, a word number, a path of `takes/` or a raw error into the chat.
 
 The question after the preview:
@@ -129,8 +129,7 @@ The question after the preview:
   [:li "The second recording was 11 dB quieter: now both are equally loud."]]
  [:p "Is it right like this?"]
  [:button {:class "primary" :send "The cut is good, make the video"} "Looks good"] " "
- [:button {:send "I want to change something in the cut"} "Change something"] " "
- [:button {:open "artifacts/kameras"} "Show the preview"]
+ [:button {:open "artifacts/kameras"} "Show the preview ↗"]
  [:p [:small "Or tell me what should be different."]]]
 ```
 
@@ -140,7 +139,8 @@ The finished video:
 [:div
  [:p "Your video is ready: 1:13, at the loudness the platforms play."]
  [:a {:href "artifacts/kameras.mp4" :download "kameras.mp4"} "Download the video"] " · "
- [:a {:href "artifacts/kameras.srt" :download "kameras.srt"} "Subtitles (SRT)"]]
+ [:a {:href "artifacts/kameras.srt" :download "kameras.srt"} "Subtitles (SRT)"]
+ [:p [:button {:send "Publish the video"} "Publish it"]]]
 ```
 
 ## Rules

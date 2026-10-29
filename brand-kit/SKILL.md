@@ -45,7 +45,7 @@ The first reads the start page and the about page: the logo candidates, the colo
 
 ### 2. Agree, one thing per message
 
-Each message holds one question with your proposal, buttons for the likely answers, and "Take your suggestions for the rest" (they may want it quick: then decide the rest yourself, say what you decided, and go to step 3). Write every answer into `brand/DESIGN.md` at once: its front matter for the tokens, the section of the same name for the prose, replacing the "To agree" line.
+Each message holds one question with your proposal (each has its own picture to look at: the logos, the swatches, the fonts, the voice), buttons for the likely answers, and "Take your suggestions for the rest" (they may want it quick: then decide the rest yourself, say what you decided, and go to step 3). Write every answer into `brand/DESIGN.md` at once: its front matter for the tokens, the section of the same name for the prose, replacing the "To agree" line.
 
 1. **The logo.** `node <skill>/tools/kit.mjs logos work/site` prints tiles of the candidates. Their pick: copy its file to `brand/` (`brand/logo.svg`, `.png` …) and set `logo.primary` to it. None fits, or none was found: they attach theirs (best a PNG with a transparent ground, or an SVG). A logo that only works on light grounds may get a light version for dark ones, `logo.on-dark`; without one, the stories show a one-coloured logo in white and any other on a white chip.
 2. **The colours.** `node <skill>/tools/kit.mjs show brand` prints the colours as swatches. The site's other candidates are in `work/site/site.json` (`look.ranked`): offer them as swatches too. `primary` is the brand colour (covers, calls to action), `secondary` and `tertiary` the accents, `surface` the light ground, `on-surface` the text on it, `on-primary` the text on the brand colour. Write hex values in quotes (`primary: "#E20000"`).
@@ -75,7 +75,7 @@ The front matter holds the tokens, the body the prose, in these sections and thi
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/brand-board.html"` shows the board. Links and pictures point at `https://…`, `artifacts/…` or `uploads/…`. An `input` is a checkbox or a radio button; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block. There are no text fields: for a name or a colour they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else (a colour as `#RRGGBB`, a font by its name).
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else (a colour as `#RRGGBB`, a font by its name). Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - The button that moves on gets `:class "primary"`; buttons that are alternative answers stay plain.
 - A swatch is a `button` with `:style {:background "#E20000" :width "44px" :height "44px" :border-radius "50%"}`; tiles for a choice of logos as `kit.mjs logos` prints them. Text stays on the page's ground, never on a colour.
 - Never put a token, an id the person does not need or a raw error into the chat.
@@ -90,8 +90,8 @@ The voice:
   [:tbody [:tr [:td "Mix Dir Dein Lieblingsmüsli"] [:td "Jetzt kaufen!"]]
           [:tr [:td "Frühstücken verbindet"] [:td "Sie / Ihnen"]]]]
  [:button {:class "primary" :send "Das sind wir"} "Das sind wir"] " "
- [:button {:send "Die Stimme passt noch nicht"} "Etwas ändern"] " "
- [:button {:send "Nimm deine Vorschläge für den Rest"} "Rest vorschlagen"]]
+ [:button {:send "Nimm deine Vorschläge für den Rest"} "Rest vorschlagen"]
+ [:p [:small "Oder schreib, was an der Stimme nicht passt."]]]
 ```
 
 ## Rules

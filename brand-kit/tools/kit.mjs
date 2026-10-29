@@ -3,8 +3,9 @@
 // files it names. Made for agents: each command prints what it did and what to do next.
 //
 //   node tools/kit.mjs draft <site-dir> <brand-dir> [--logo <file>] [--name "…"]
-//        the first DESIGN.md from a site read with site.mjs: colours, fonts (Google's or the site's
-//        own files), logo, social profiles; the sections that need the person stay marked "To agree"
+//        the first DESIGN.md from a site read with site.mjs (or a page read with story-from-link's
+//        page.mjs: the same look): colours, fonts (Google's or the site's own files), logo, social
+//        profiles; the sections that need the person stay marked "To agree"
 //   node tools/kit.mjs check <brand-dir>      what is wrong or missing (✗) or worth a look (⚠),
 //                                             with the format's own linter
 //   node tools/kit.mjs logos <site-dir>       the logo candidates as tiles for the chat
@@ -57,7 +58,11 @@ function loadKit(dir) {
 }
 
 async function draft(siteDir, dir) {
-  const site = JSON.parse(fs.readFileSync(path.join(siteDir, "site.json"), "utf8"));
+  // site.mjs writes site.json; story-from-link's page.mjs writes page.json with the same look
+  const [read] = ["site.json", "page.json"].map((f) => path.join(siteDir, f)).filter((f) => fs.existsSync(f));
+  if (!read) fail(`${siteDir} has no site.json: read the site first with node <skill>/tools/site.mjs <url> ${siteDir}.`);
+  const site = JSON.parse(fs.readFileSync(read, "utf8"));
+  site.name ??= site.siteName || new URL(site.url).hostname.replace(/^www\./, "");
   const look = site.look;
   fs.mkdirSync(dir, { recursive: true });
   let logoSrc = opts.logo ? path.resolve(opts.logo) : null;

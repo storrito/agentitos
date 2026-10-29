@@ -12,11 +12,13 @@
 //        of its frames with what the apps cover drawn in: <dir>/job.json, uploads/publish-<name>/frames.jpg
 //   node tools/publish.mjs prepare <dir> [--pad | --crop] [--loudness] [--start <s>] [--end <s>]
 //        writes the video again in the form Storrito or YouTube takes (<dir>/video.mp4), and checks it
-//   node tools/publish.mjs accounts [<dir>] [--json]
-//        the accounts connected to Storrito and what each takes; with <dir>, whether this video fits
+//   node tools/publish.mjs accounts [<dir>] [--json | --hiccup [--lang de]]
+//        the accounts connected to Storrito and what each takes; with <dir>, whether this video fits;
+//        --hiccup: the list to tick in the chat, with each account's picture, the last choice ticked
 //   node tools/publish.mjs publish <dir> --to <target>[,<target>…] (--at <ISO time> | --now)
 //        [--texts descriptions/<name>] [--tiktok-privacy public|friends|followers|private]
-//        [--privacy public|unlisted|private] [--thumbnail <image>] [--made-for-kids] [--ai-generated]
+//        [--privacy public|unlisted|private] [--made-for-kids yes|no] [--thumbnail <image>]
+//        [--tiktok-cover <s>] [--ai-generated]
 //        [--paid] [--own-brand] [--no-feed] [--option [<target>:]key=value]…
 //        uploads the video once and schedules it on each target with its texts; safe to run again,
 //        nothing is posted twice
@@ -30,14 +32,15 @@ import { probe, frameOf, isRatio, loudness, edges, sheet, download, prepare, clo
 import { connect, call } from "./lib/storrito.mjs";
 import { PROCEDURES, targetsOf, unfit, paramsOf } from "./lib/targets.mjs";
 import { zones, checkTexts, missing, tool } from "./lib/skills.mjs";
+import { avatars, reason, hiccup } from "./lib/picker.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
 const cmd = (rest) => `node ${self()} ${rest}`;
 
-const FLAGS = ["json", "now", "pad", "crop", "loudness", "made-for-kids", "ai-generated", "paid", "own-brand", "no-feed"];
-const VALUED = ["mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "privacy", "thumbnail", "wait"];
+const FLAGS = ["json", "hiccup", "now", "pad", "crop", "loudness", "ai-generated", "paid", "own-brand", "no-feed"];
+const VALUED = ["lang", "mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "tiktok-cover", "privacy", "made-for-kids", "thumbnail", "wait"];
 const REPEATED = ["option"];
 
 function parse(args) {
@@ -71,7 +74,7 @@ function loadJob(dir) {
 
 // ------------------------------------------------------------------------------- check
 
-// the apps a short-form video goes to when the person has not named them yet (Stories are not posted here)
+// the apps a short-form video goes to when the person has not named them yet
 const SHORTS = ["instagram-reels", "tiktok", "youtube-shorts", "facebook-reels"];
 
 // short or long: from the frame and the length; `ask` when the video leaves it open
@@ -228,7 +231,7 @@ async function needApi() {
 Do it with Storrito's procedures yourself (in rragent the REPL's storrito/<procedure> functions; elsewhere its MCP server or API, reference: https://storrito.com/documentation/api/v1/index.md):
   list-social-accounts {} names each account's postTypes and their procedure;
   create-temp-blob-upload-url {tempBlobUuid, contentType "video/mp4", contentLengthBytes}, then curl -sS -T <video> -H 'Content-Type: video/mp4' '<uploadUrl>';
-  per account the postType's procedure with html '<insta-story src="<temp-blob url>"></insta-story>' (schedule-instagram-reel, schedule-tiktok-post, schedule-social-post), or videoUrl (upload-youtube-video), a new UUID kept for retries, the texts of descriptions.json and the date.`);
+  per account the postType's procedure with html '<insta-story src="<temp-blob url>"></insta-story>' (schedule-instagram-story, schedule-instagram-reel, schedule-tiktok-post, schedule-social-post), or videoUrl (upload-youtube-video), a new UUID kept for retries, the texts of descriptions.json and the date.`);
 }
 
 async function listTargets(api) {
@@ -236,25 +239,35 @@ async function listTargets(api) {
   return targetsOf(socialAccounts);
 }
 
+// the targets of the last publish in the folder of the jobs, ticked when the next video's accounts are asked
+const lastFile = (dir) => path.join(path.dirname(path.resolve(dir)), "targets.json");
+
 async function cmdAccounts([dir], opts) {
   const job = dir ? loadJob(dir) : null;
   const api = await needApi();
   const targets = await listTargets(api);
+  if (opts.hiccup) {
+    const lang = opts.lang || "en";
+    const rows = targets.map((t) => ({ t, why: reason(t, job, lang) })).filter((r) => r.why !== false);
+    if (!rows.length) fail("No account connected to Storrito takes this video: say why (its length or frame, or nothing connected) instead of a list.");
+    const last = dir && fs.existsSync(lastFile(dir)) ? readJson(lastFile(dir)).targets || [] : [];
+    return console.log(hiccup(rows, { lang, ticked: last.filter((id) => rows.some((r) => r.t.id === id && !r.why)), pics: await avatars(rows.map((r) => r.t)) }));
+  }
   const rows = targets.map((t) => ({ ...t, unfit: job ? unfit(t, job) : t.disconnected ? "the account must be connected again in Storrito" : null }));
   if (opts.json) return console.log(JSON.stringify(rows, null, 2));
   if (!rows.length) return console.log("No account connected to Storrito takes a video yet: connect one in the Storrito app (Social Accounts).");
   const fits = rows.filter((r) => !r.unfit);
   console.log(job ? `Where this video (${job.mode}, ${job.measured.frame}, ${clock(job.measured.duration)}) can go:` : "The accounts connected to Storrito and what each takes:");
-  for (const r of fits) console.log(`  ${r.id.padEnd(36)} ${r.label} · ${r.account}${r.texts ? `   texts: ${r.texts}` : ""}`);
+  for (const r of fits) console.log(`  ${r.id.padEnd(36)} ${r.label} · ${r.account}${r.texts && r.texts !== "none" ? `   texts: ${r.texts}` : ""}`);
   const rest = rows.filter((r) => r.unfit);
   if (rest.length) {
     console.log(job ? "Not for this video:" : "Not now:");
     for (const r of rest) console.log(`  ${r.id.padEnd(36)} ${r.label} · ${r.account}: ${r.unfit}`);
   }
   if (job && fits.length) {
-    console.log(`\nAsk the person which of these to post to (checkboxes). Then write the texts with video-descriptions for their platforms (texts: …), and ${cmd(`publish ${rel(dir)} --to <target>,… --at <time>|--now`)}.`);
-    if (fits.some((r) => r.procedure === "schedule-tiktok-post")) console.log("TikTok: ask who may see it (--tiktok-privacy public|friends|followers|private); TikTok wants the person to choose it.");
-    if (fits.some((r) => r.mode === "long")) console.log("YouTube: ask for the privacy (--privacy public|unlisted|private) and whether it is made for kids (--made-for-kids); a thumbnail with --thumbnail.");
+    console.log(`\nAsk the person which of these to post to: ${cmd(`accounts ${rel(dir)} --hiccup --lang <their language>`)} prints the list to show. Then write the texts with video-descriptions for their platforms (texts: …), and ${cmd(`publish ${rel(dir)} --to <target>,… --at <time>|--now`)}.`);
+    if (fits.some((r) => r.procedure === "schedule-tiktok-post")) console.log("TikTok: ask who may see it (--tiktok-privacy public|friends|followers|private); TikTok wants the person to choose it. Pick the cover's moment yourself (--tiktok-cover <s>), else TikTok takes the first frame.");
+    if (fits.some((r) => r.platform === "YOUTUBE")) console.log(`YouTube: ask for the visibility (--privacy public|unlisted|private) and whether it is made for kids (--made-for-kids yes|no), for a Short too${fits.some((r) => r.mode === "long") ? "; a thumbnail with --thumbnail" : ""}.`);
     const required = fits.flatMap((r) => r.options.filter((o) => o.required).map((o) => `${r.id}:${o.key} (${o.label}: ${(o.choices || []).map((c) => c.value).join(", ")})`));
     if (required.length) console.log(`To choose with the person: ${required.join("; ")}: --option <target>:<key>=<value>.`);
   }
@@ -300,16 +313,10 @@ async function cmdPublish([dir], opts) {
   }
   if (opts["tiktok-privacy"] && !TIKTOK[opts["tiktok-privacy"]]) fail(`--tiktok-privacy is one of ${Object.keys(TIKTOK).join(", ")}.`);
   if (opts.privacy && !["public", "unlisted", "private"].includes(opts.privacy)) fail("--privacy is public, unlisted or private.");
+  if (opts["made-for-kids"] && !["yes", "no"].includes(opts["made-for-kids"])) fail("--made-for-kids is yes or no.");
+  const cover = opts["tiktok-cover"] != null ? Number(opts["tiktok-cover"]) : null;
+  if (cover != null && !(cover >= 0 && cover < job.measured.duration)) fail(`--tiktok-cover is a moment of the video in seconds, from 0 to ${job.measured.duration.toFixed(1)}.`);
   if (opts.thumbnail && !fs.existsSync(opts.thumbnail)) fail(`There is no ${opts.thumbnail}.`);
-
-  // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself
-  const textsDir = opts.texts || path.join("descriptions", job.name);
-  const textsFile = path.join(textsDir, "descriptions.json");
-  if (!fs.existsSync(textsFile)) fail(`There is no ${rel(textsFile)}: write the texts with video-descriptions first (or name their folder with --texts).`);
-  if (!tool("video-descriptions")) fail(missing("video-descriptions"));
-  const checked = checkTexts(textsDir);
-  if (!checked.ok) fail(`video-descriptions' check finds ✗ in ${rel(textsFile)}:\n${checked.output.split("\n").filter((l) => /✗/.test(l)).join("\n")}\nFix them, check again, show the person the overview, then publish.`);
-  const doc = readJson(textsFile);
 
   const api = await needApi();
   const all = await listTargets(api);
@@ -322,15 +329,28 @@ async function cmdPublish([dir], opts) {
     targets.push(t);
   }
 
+  // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself (not
+  // needed when every target is a Story, which publishes none)
+  let doc = { posts: {} };
+  if (targets.some((t) => t.texts !== "none")) {
+    const textsDir = opts.texts || path.join("descriptions", job.name);
+    const textsFile = path.join(textsDir, "descriptions.json");
+    if (!fs.existsSync(textsFile)) fail(`There is no ${rel(textsFile)}: write the texts with video-descriptions first (or name their folder with --texts).`);
+    if (!tool("video-descriptions")) fail(missing("video-descriptions"));
+    const checked = checkTexts(textsDir);
+    if (!checked.ok) fail(`video-descriptions' check finds ✗ in ${rel(textsFile)}:\n${checked.output.split("\n").filter((l) => /✗/.test(l)).join("\n")}\nFix them, check again, show the person the overview, then publish.`);
+    doc = readJson(textsFile);
+  }
+
   // every target's parameters before anything is uploaded: a missing text or choice stops all
   const choices = {
-    privacy: opts.privacy, tiktok: TIKTOK[opts["tiktok-privacy"]], options: opts.option,
-    flags: { madeForKids: !!opts["made-for-kids"], aiGenerated: !!opts["ai-generated"], paid: !!opts.paid, ownBrand: !!opts["own-brand"], noFeed: !!opts["no-feed"] },
+    privacy: opts.privacy, kids: opts["made-for-kids"], tiktok: TIKTOK[opts["tiktok-privacy"]], cover, options: opts.option,
+    flags: { aiGenerated: !!opts["ai-generated"], paid: !!opts.paid, ownBrand: !!opts["own-brand"], noFeed: !!opts["no-feed"] },
   };
   const planned = [];
   const problems = [];
   for (const t of targets) {
-    const post = postOf(doc.posts || {}, t.texts);
+    const post = t.texts === "none" ? {} : postOf(doc.posts || {}, t.texts);
     if (!post) { problems.push(`${t.id}: descriptions.json has no posts.${t.texts}`); continue; }
     const { params, errors: errs, notes } = paramsOf(t, post, { html: "{{HTML}}", videoUrl: "{{VIDEO}}", thumbnailUrl: opts.thumbnail ? "{{THUMBNAIL}}" : null, date, lang: doc.lang, choices });
     for (const e of errs) problems.push(`${t.id}: ${e}`);
@@ -383,6 +403,8 @@ async function cmdPublish([dir], opts) {
     console.log(`${t.id}: ${post.status}${date ? ` for ${date}` : ""}${post.warnings.length ? ` — ${post.warnings.join(" | ")}` : ""}`);
     for (const n of notes) console.log(`  · ${n}`);
   }
+  const out = plan.posts.filter((p) => live(p)).map((p) => p.target);
+  if (out.length) writeJson(lastFile(dir), { targets: [...new Set(out)], at: new Date().toISOString() });
   if (failed) fail(`\n${failed} not published. Run publish again with the same options: what is done stays done.`);
   console.log(`\nNext: ${cmd(`status ${rel(dir)}${date ? "" : " --wait 300"}`)} ${date ? "shows each post's status" : "waits until the posts are out and gives their links"}.`);
 }

@@ -12,7 +12,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | whether a frame is laid out well (text under the buttons, on a face, on other text, cut off, stickers on each other) | [platform-zones](platform-zones/) | `tools/zones.mjs layout <page.html> [platform…]`, or `tools/measure.js` in your own page and `layout <boxes.json>` |
 | Instagram's stickers (link, poll, question, countdown, …) on a Story, picture or video | Storrito | `<insta-…>` elements in the story's HTML; [story-from-link](story-from-link/) shows how, platform-zones says where |
 | captions in a video | [captions](captions/) | `tools/captions.mjs build <words.json> <folder> --style … [--platform …]`, mount the clip it prints |
-| a brand's colours, fonts, logo, voice | [brand-kit](brand-kit/) | read `brand/DESIGN.md` of the working directory; without one, draft it as story-from-link does |
+| a brand's colours, fonts, logo, voice | [brand-kit](brand-kit/) | read `brand/DESIGN.md` of the working directory; without one, draft it with `tools/site.mjs <url> <dir>` (or story-from-link's `page.mjs`) and `tools/kit.mjs draft <dir> brand`, as story-from-link does |
 | the best take of each part of talking-to-camera recordings, without slips and "äh"s | [best-takes](best-takes/) | its tools, as its SKILL.md describes |
 | a wide video cropped to 9:16 or square, following one subject | [auto-reframe](auto-reframe/) | its tools |
 | a long video's words with speakers, its moments that stand alone as shorts, a moment cut out, footage framed 9:16 on whoever speaks | [clips](clips/) | `tools/episode.mjs fetch / moments / cut`, `tools/frame.mjs` |
@@ -22,7 +22,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | text checked against the apps' buttons in a HyperFrames film | [launch-video](launch-video/) | `tools/launch.mjs check <work> <composition>` after `zones` |
 | an Instagram Story, scheduled through Storrito | [story-from-link](story-from-link/) | its tools |
 | the texts for a video on each platform (captions, titles, descriptions, tags, hashtags, mentions) within the platforms' limits | [video-descriptions](video-descriptions/) | `tools/descriptions.mjs read`, then `check` and `overview` on the agent's `descriptions.json` |
-| a finished video checked and published on the person's accounts through Storrito (Reels, TikTok, Shorts, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X; long-form on YouTube) | [publish-video](publish-video/) | `tools/publish.mjs check`, `accounts`, then `publish` with video-descriptions' `descriptions.json` |
+| a finished video checked and published on the person's accounts through Storrito (Reels, TikTok, Shorts, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X; long-form on YouTube) | [publish-video](publish-video/) | `tools/publish.mjs check`, `accounts`, then `publish` with video-descriptions' `descriptions.json` ; a skill that makes videos hands them over to it instead of calling Storrito's schedule procedures itself |
 
 A new skill that needs one of these says so in its SKILL.md and README ("needs agentitos' captions skill beside this one"), and fails with that sentence when it is missing.
 
@@ -52,4 +52,4 @@ Tools do what can be measured (sync, cuts between words, levels, sizes, what the
 
 ## In the chat (rragent)
 
-Short messages in the person's language, one question per hiccup block with buttons for the likely answers, the button that moves on `:class "primary"`. Never a token, a working path or a raw error in the chat.
+Short messages in the person's language, one question per hiccup block with buttons for the likely answers, the button that moves on `:class "primary"`. Several picks from one list are checkboxes with one button. Several questions that must all be answered before the agent can go on, none depending on another's answer, are one block: a group of radio buttons per question (own `:name`, every `:value` saying what it answers, at most four groups) and one button whose `:send` holds `{checked}`. One question after the other only when it depends on the answer before or on work the person should see first. Every SKILL.md says this in its "UI in the chat", since the agent reads only that file. A button only where a click makes the agent act at once: an answer it goes on with, a choice it carries out, a page it opens. None that only leads to another question ("Change something", "Another style" without naming one): the person types what to change, and a line under the buttons says so. A button that opens an artifact ends its text with " ↗". Never a token, a working path or a raw error in the chat.

@@ -99,8 +99,16 @@ export function checkPost(id, post, doc, ctx = {}) {
     if (visible != null && visible.length < value.length) {
       const seen = visible.replace(/[#@][\p{L}\p{N}_.]+/gu, "").replace(/\s+/g, " ").trim();
       if (seen.length < Math.min(40, visible.length / 3)) r.warnings.push(`${f.label}: before "${f.foldSays || "more"}" there are mostly hashtags or mentions; the hook goes there`);
+      // the hook ends before "more": a sentence's end or a line break within what shows, and no
+      // tag or name cut in two
+      const more = f.foldSays || "more", at = visible.length;
+      const split = [...hashtags(value).map((h) => ({ i: h.index, n: h.text.length + 1 })), ...mentions(value).map((m) => ({ i: m.index, n: m.text.length + 1 }))].find((x) => x.i < at && x.i + x.n > at);
+      if (!/[.!?…:]["'”»)]?(\s|$)|\n/u.test(visible)) r.warnings.push(`${f.label}: the first sentence runs past "${more}" (what shows ends "…${visible.slice(-30)}"): end the hook before it`);
+      else if (split) r.warnings.push(`${f.label}: "${more}" cuts ${value.slice(split.i, split.i + split.n)} in two: end what shows before it, or move the tag further down`);
     }
     if (/#\S*[-'’][\p{L}\p{N}]/u.test(links(value).reduce((t, l) => t.replace(l.text, " "), value))) r.warnings.push(`${f.label}: a hashtag with a dash or an apostrophe ends there (#self-care is #self): write #selfcare or #SelfCare`);
+    // the long dash is what readers have learnt to take for a machine's writing
+    if (value.includes("—")) r.warnings.push(`${f.label}: the long dash (—) reads as written by AI: a comma, a colon, a full stop or brackets instead`);
     if (p.bait && BAIT.some((re) => re.test(value))) r.warnings.push(`${f.label}: reads as engagement bait ("comment YES", "tag a friend"), which ${p.app} shows to fewer people: ask a real question instead`);
   }
 

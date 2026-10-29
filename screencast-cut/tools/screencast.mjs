@@ -34,6 +34,9 @@
 //   --platform reels,tiktok   where the video goes: the layout and the captions keep clear of what
 //                     those apps lay over it (agentitos' platform-zones); none: the usual
 //                     platforms of the frame
+//   --speed auto|<x>  the whole cut faster, the voice at its own pitch. auto (the default): by
+//                     how fast the person speaks in the cut, towards 4 syllables a second, at
+//                     most 1.2×, none for a fast speaker; a number sets it (1 as recorded)
 //   --pause <s>       pauses inside a keep longer than this are cut or shown (default 1)
 //   --tail <s>        how long a keep holds after its last word (default 0.45)
 //   --end <s>         how long the last keep holds (default 1.5)
@@ -54,11 +57,12 @@ import { grid, differ, samplesOf, mirrors, scenes, level, busy, moving, focus, M
 import { plan, range } from "./lib/cut.mjs";
 import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
-import { voiceTrack, cameraTrack } from "./lib/tracks.mjs";
+import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
+import { findFace } from "./lib/face.mjs";
 import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 
-const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
+const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
@@ -97,12 +101,22 @@ const cmd = (rest) => `node ${self()} ${rest}`;
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? read(file) : {};
-  const merged = { frame: "9:16", fps: 30, pause: 1, tail: 0.45, end: 1.5, loudness: -14, duck: 10, ...kept, ...opts };
+  const merged = { frame: "9:16", fps: 30, speed: "auto", pause: 1, tail: 0.45, end: 1.5, loudness: -14, duck: 10, ...kept, ...opts };
   if (!FRAMES[merged.frame]) fail(`--frame is one of ${Object.keys(FRAMES).join(", ")}`);
+  if (merged.speed !== "auto") merged.speed = Number(merged.speed);
+  if (merged.speed !== "auto" && !(merged.speed >= 0.5 && merged.speed <= 2)) fail("--speed is auto, or a number between 0.5 and 2 (1.15: 15 % faster).");
   // a platform platform-zones does not know is not kept: every later step would fail on it
   if (opts.platform) try { zones(...FRAMES[merged.frame], platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   return { ...merged, final: merged.loudness, loudness: TAKE_LEVEL };
+}
+
+// The captions of a cut: clean subtitles unless cut.json says otherwise ("captions": false: none,
+// or the style the captions command wrote); none by default when the captions skill is missing
+function captionsOf(cut = {}) {
+  if (cut.captions === false) return null;
+  if (cut.captions) return cut.captions;
+  return captionsTool() ? { style: "clean", highlight: [] } : null;
 }
 
 // The frame's areas (layout.areas): from what the platforms the video goes to lay over it
@@ -111,7 +125,19 @@ function layoutOf(s, cut = {}) {
   const [width, height] = FRAMES[s.frame];
   let z;
   try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ ${e.message}`); }
-  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!cut.captions, labels: (cut.keep || []).some((k) => k.label) }) };
+  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!captionsOf(cut), labels: (cut.keep || []).some((k) => k.label) }) };
+}
+
+// Where the face is in the webcam's picture (face.mjs), once, kept in sources.json; null when
+// it was not found (the circle shows the picture's middle)
+async function faceOfWebcam(dir, meta) {
+  const cam = meta.sources.webcam;
+  if (!cam?.video || cam.face !== undefined) return;
+  try { cam.face = await findFace(source(dir, cam.file), cam.duration, { log: console.log }); } catch (e) {
+    console.log(`webcam: the face was not found (${e.message.split("\n")[0]}): the circle shows the picture's middle`);
+    cam.face = null;
+  }
+  write(source(dir, "sources.json"), meta);
 }
 
 const loadEnv = (file) => {
@@ -208,7 +234,9 @@ async function cmdNew(dir, folder, opts) {
   write(source(dir, "activity.json"), activity);
 
 
-  write(source(dir, "sources.json"), { folder: rel(folder), t0, mic, voice, duration: vp.duration, sources });
+  const meta = { folder: rel(folder), t0, mic, voice, duration: vp.duration, sources };
+  write(source(dir, "sources.json"), meta);
+  await faceOfWebcam(dir, meta);
   const r = await route();
   console.log(`\nNext, the words of ${rel(source(dir, voice))}: with rragent's transcribe tool (file ${rel(source(dir, voice))}, words: true, names: the accounts, products and people that may be said), then ${cmd(`words ${rel(dir)} <its .words.json>`)}` +
     (r ? `; or ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe through ${r.via}, no name correction)` : ""));
@@ -336,24 +364,20 @@ ${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources
 
 ## A good screencast cut
 
-- **Open with the result** (a hook of a few seconds: the post live on the phone, the finished thing; \`"hook": true\` on it, and the same moment kept in its place later too), then how it was done, step by step, then the proof, then a short end.
-- **Show what the words are about, and decide it yourself.** \`view\` of every keep (required): \`screen\`, \`phone-screen\`, \`phone\` (the phone's camera) or \`face\` (the webcam over the whole frame). In the screen and phone views the webcam sits beside them in a circle. The sheets (\`sheets\`) show every source at each keep's first, middle and last moment; the column "moves" below only says where pixels changed, not what is talked about.
-- **Zoom on what the words are about** (\`zoom\`: a box \`[x0, y0, x1, y1]\` in 0–1 of the source, read off the sheet's grid of tenths: the input field while the question is typed, the answer when it appears; \`off\`, the default, the whole source). A box holds for the whole keep: when what matters moves, split the keep at that word. In a 9:16 frame a laptop's screen whole is hard to read.
-- **Waits are timelapses.** A wait the speaker announces, an agent working, an upload, a post going live: list the last word before it in \`waits\`; the build plays the time up to the next keep's first word fast (×3 to ×10, with a badge) whenever anything on a screen changes in it, its first and last 20 s when it is long. The long silences between the sentences below are where to look.
-- **Every result gets its proof, and time.** When the words say it is there ("posted", "there it is", "live"), the next shot shows it (the phone's screen, the page) and stays: \`"hold": 2.5\` on that keep holds 2.5 s after its last word. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word anyway, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s: no word is cut off.
-- **Whole sentences**, no slip, no sentence said twice (keep the fluent attempt), no talk about the recording itself; "äh"s go by themselves.
-- **No fixed length**: as short as the story allows; longer than a minute is fine when it needs it.
-- \`label\` on a keep puts a short title in the frame while it plays ("01 · Ask", "The result").
+- **The result first** as a short hook (\`"hook": true\`, kept in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out; as short as the story allows.
+- **\`zoom\`: what must be readable** while the words are about it, \`[x0, y0, x1, y1]\` in 0–1 off the sheet's grid (the field typed in, the answer, the list picked from). The build makes it as large as the safe area allows and shows the screen around it; when what matters moves, split the keep at that word.
+- **\`view\`** only where it is not the screen: \`phone-screen\` when the words are about the phone, \`face\` for an opening line or the last words.
+- **Waits** (an agent working, an upload): the last word before them in \`waits\`, played fast. **Results** ("posted", "there it is") get \`"hold": 2.5\` and show the proof. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s.
 
 ## What is said, sentence by sentence
 
-Word numbers in brackets; "moves": how much each source changes during the sentence (▁ still … █ much), and the view \`auto\` would pick.
+Word numbers in brackets; "moves": how much each source changes during the sentence (▁ still … █ much).
 
-| words | time | ${Object.keys(activity).join(" | ")} | auto | said |
-| --- | --- | ${Object.keys(activity).map(() => "---").join(" | ")} | --- | --- |`);
+| words | time | ${Object.keys(activity).join(" | ")} | said |
+| --- | --- | ${Object.keys(activity).map(() => "---").join(" | ")} | --- |`);
   for (const s of list) {
     const lv = Object.keys(activity).map((k) => bars(busy(activity[k], s.start, s.end)));
-    lines.push(`| ${s.from}–${s.to} | ${clock(s.start)}–${clock(s.end)} | ${lv.join(" | ")} | ${viewOf(activity, meta.sources, s.start, s.end)} | ${s.text.replace(/\|/g, "/")} |`);
+    lines.push(`| ${s.from}–${s.to} | ${clock(s.start)}–${clock(s.end)} | ${lv.join(" | ")} | ${s.text.replace(/\|/g, "/")} |`);
   }
   lines.push(`\n## Every word\n\n${words.map((w) => `${w.i} ${w.kind === "filler" ? `(${w.text})` : w.kind === "event" ? w.text : w.text}${w.confidence != null && w.confidence < 0.6 ? "?" : ""}`).join(" · ")}\n
 ## cut.json
@@ -362,8 +386,8 @@ Word numbers in brackets; "moves": how much each source changes during the sente
 {
   "keep": [
     {"words": "212-230", "view": "phone-screen", "hold": 2.5, "label": "The result", "hook": true, "why": "the hook: the reel on the phone, again in its place later"},
-    {"words": "12-40", "view": "screen", "why": "the question to the agent"},
-    {"words": "41-58", "view": "screen", "zoom": [0.1, 0.15, 0.55, 0.5], "why": "the answer"}
+    {"words": "12-40", "zoom": [0.15, 0.82, 0.5, 0.98], "label": "01 · Ask", "why": "the question typed into the chat"},
+    {"words": "41-58", "zoom": [0.1, 0.15, 0.55, 0.5], "why": "the answer"}
   ],
   "waits": [40],
   "fixes": {"57": "storrito_com"}
@@ -399,7 +423,7 @@ function cmdPropose(dir) {
   write(path.join(dir, "proposal.json"), proposal);
   console.log(`${keep.length} keeps, every sentence; ${waits.length} waits where a screen moves between two:\n`);
   for (const k of keep) console.log(`  [${k.words}]${k.hold ? ` hold ${k.hold} s` : ""}  ${clock(k.start)}  ${k.text.length > 100 ? `${k.text.slice(0, 70)} … ${k.text.slice(-25)}` : k.text}`);
-  console.log(`\n→ ${rel(path.join(dir, "proposal.json"))}: every sentence, no story, no view, no zoom. Read ${rel(source(dir, "brief.md"))}; then ${cmd(`sheets ${rel(dir)} --proposal`)} shows what each sentence's moment looks like on every source. Write ${rel(path.join(dir, "cut.json"))}: the story (the result first as a hook), and for every keep its "view" and "zoom" as you decide them from its words and its sheet. Then ${cmd(`build ${rel(dir)}`)}`);
+  console.log(`\n→ ${rel(path.join(dir, "proposal.json"))}: every sentence, no story, no view, no zoom. Read ${rel(source(dir, "brief.md"))}; then ${cmd(`sheets ${rel(dir)} --proposal`)} shows what each sentence's moment looks like on every source. Write ${rel(path.join(dir, "cut.json"))}: the story (the result first as a hook), and for every keep the "zoom" on what must be readable (and a "view" where it is not the screen), from its words and its sheet. Then ${cmd(`build ${rel(dir)}`)}`);
 }
 
 // ---------------------------------------------------------------------------------- sheets
@@ -440,7 +464,7 @@ function cmdSheets(dir, opts) {
   const out = path.join(dir, "sheets");
   fs.mkdirSync(out, { recursive: true });
   const FONT = labelFont();
-  console.log(`From ${rel(cutFile)}: ${keep.length} keeps. Read each sheet with its words, then decide the keep's "view" and "zoom" in cut.json.\n`);
+  console.log(`From ${rel(cutFile)}: ${keep.length} keeps. Read each sheet with its words, then set the keep's "zoom" (and "view" where it is not the screen) in cut.json.\n`);
   for (const [k, kp] of keep.entries()) {
     if (only && !only.has(k)) continue;
     const r = range(kp.words);
@@ -544,7 +568,37 @@ function sourceOf(view, sources) {
   return Object.keys(sources).find((k) => k !== "webcam" && sources[k].video) || "webcam";
 }
 
-function cmdBuild(dir, opts) {
+// How fast the person speaks in the cut: the syllables of its spoken pieces over their length at
+// their own speed (the small pauses inside them count, the cut ones do not), and the speed that
+// brings a slow speaker towards the pace of short videos. Syllables, not words: German words are
+// longer than English ones (English has some 1.4 syllables a word). Short videos are spoken at
+// some 140–160 words a minute, energetic ones up to 180; above 160 is said to get hard to follow.
+// TARGET, 4 syllables a second, is some 160–165 words a minute: a slower speaker plays faster in
+// proportion, never more than MOST (faster sounds hurried and the face in the circle visibly too
+// fast; below 3.33 a second the target is not reached), a faster one as recorded. The recording
+// of bot 1813 (3.44 a second) comes out at 1.16×, where its person had asked for 1.15×.
+const TARGET = 4, MOST = 1.2;
+function syllables(text) {
+  const w = String(text).toLowerCase().replace(/[^a-zäöüßàâéèêëîïôûùç]/g, "");
+  if (!w) return 0;
+  let n = (w.match(/[aeiouyäöüàâéèêëîïôûù]+/g) || []).length;
+  // a silent e at the end of an English word ("make", "type"), not of "the" or "be"
+  if (n > 1 && /[^aeiouy]e$/.test(w)) n--;
+  return Math.max(1, n);
+}
+function pace(pieces, words) {
+  let n = 0, t = 0;
+  for (const p of pieces) {
+    if (p.mute || !p.words?.length) continue;
+    t += p.out - p.in;
+    for (const i of p.words) if (words[i]?.kind === "word") n += syllables(words[i].text);
+  }
+  if (t < 5 || !n) return { rate: null, speed: 1 };
+  const rate = +(n / t).toFixed(2);
+  return { rate, speed: +Math.min(MOST, Math.max(1, TARGET / rate)).toFixed(2) };
+}
+
+async function cmdBuild(dir, opts) {
   if (!fs.existsSync(source(dir, "words.json"))) fail(`The words first: ${cmd(`words ${rel(dir)} <words.json>`)}`);
   const cutFile = path.join(dir, "cut.json");
   if (!fs.existsSync(cutFile)) fail(`Write ${rel(cutFile)} first (${cmd(`propose ${rel(dir)}`)} drafts one), as ${rel(source(dir, "brief.md"))} says.`);
@@ -552,11 +606,13 @@ function cmdBuild(dir, opts) {
   try { cut = read(cutFile); } catch (e) { fail(`✗ ${rel(cutFile)} is no valid JSON: ${e.message}`); }
   const s = settings(dir, opts);
   const meta = read(source(dir, "sources.json"));
+  await faceOfWebcam(dir, meta);
   const { clips, words } = read(source(dir, "words.json"));
   const activity = read(source(dir, "activity.json"));
   const sources = meta.sources;
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
+    if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
   }
 
   // the pictures that move in a pause: any of the screens; in a wait someone named, anything
@@ -572,7 +628,12 @@ function cmdBuild(dir, opts) {
     }, []);
   };
   const { env, thr, blocks } = voiceOf(dir);
-  const r = plan(words, cut, s, { 1: { env, thr, blocks, duration: meta.duration } }, moves);
+  const voices = { 1: { env, thr, blocks, duration: meta.duration } };
+  // the speed: as asked, or by how fast the person speaks in the cut (pace())
+  let r = plan(words, cut, { ...s, speed: 1 }, voices, moves);
+  const talk = pace(r.pieces, words);
+  const speed = s.speed === "auto" ? talk.speed : s.speed;
+  if (speed !== 1) r = plan(words, cut, { ...s, speed }, voices, moves);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
 
@@ -595,13 +656,13 @@ function cmdBuild(dir, opts) {
     const ps = r.pieces.filter((p) => p.keep === k && !p.mute);
     return ps.length ? [Math.min(...ps.map((p) => p.in)), Math.max(...ps.map((p) => p.out))] : null;
   };
-  // the view and the zoom are the agent's decision per keep (sheets): no view is an error, no zoom
-  // shows the whole source; "auto" asks this tool for its guess by what moved
-  const unchosen = (cut.keep || []).map((keep, k) => (keep.view ? null : k + 1)).filter(Boolean);
-  if (unchosen.length) fail(`✗ keep ${unchosen.join(", ")}: no "view". Decide what each shows (${VIEWS.join(", ")}), from its words and its sheet: ${cmd(`sheets ${rel(dir)}`)}`);
+  // the view and the zoom are the agent's decision per keep (sheets): without a view a keep shows
+  // the screen (a screencast is about it), without a zoom the whole source; "auto" asks this tool
+  // for its guess by what moved
+  const fallbackView = sources.screen?.video ? "screen" : Object.keys(sources).find((k) => k !== "webcam" && sources[k].video) || "face";
   const keepView = (cut.keep || []).map((keep, k) => {
     const sp = span(k);
-    const view = keep.view === "auto" ? (sp ? viewOf(activity, sources, sp[0], sp[1]) : "face") : keep.view;
+    const view = keep.view === "auto" ? (sp ? viewOf(activity, sources, sp[0], sp[1]) : "face") : keep.view || fallbackView;
     const src = sourceOf(view, sources);
     const zoom = keep.zoom ?? "off";
     if (!Array.isArray(zoom) && zoom !== "off" && zoom !== "auto") fail(`✗ keep ${k + 1}: "zoom" is a box [x0, y0, x1, y1], "off" or "auto", not ${JSON.stringify(zoom)}`);
@@ -639,6 +700,7 @@ function cmdBuild(dir, opts) {
     } else {
       Object.assign(p, kv);
     }
+    if (keep.circle === false) p.pip = false;
   }
 
   // the zoom per scene: where a screen changes almost whole within a keep (another tab, a page, a
@@ -681,12 +743,13 @@ function cmdBuild(dir, opts) {
   const out = path.resolve(s.out || path.join(dir, "composition"));
   const title = s.title || cut.title || path.basename(path.resolve(dir));
   let captions = null;
+  const caps = captionsOf(cut);
   fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
-  if (cut.captions) {
-    const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
-    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi",
+  if (caps) {
+    const file = captionWords(dir, r.words, caps, { width, height, duration: r.duration });
+    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", caps.style || "hormozi",
       ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []),
-      ...(cut.captions.brand || brandFile ? ["--brand", cut.captions.brand || brandFile] : [])]);
+      ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
   let music = null;
@@ -710,21 +773,34 @@ function cmdBuild(dir, opts) {
     cameraTrack(source(dir, sources.webcam.file), sources.webcam.offset, r.pieces, path.join(out, "assets", "camera.mp4"), { fps: s.fps, parts: source(dir, "camera.parts") });
     camera = "camera.mp4";
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, labels, captions, music, brand, areas: layout.areas });
+  // behind the shots, each piece's screen blurred ("background": "plain" for the brand's colours);
+  // the face's pieces show the screen too, hidden under the face
+  let backdrop = null;
+  const screenOf = (p) => (p.view !== "face" && sources[p.source]?.video && p.source !== "webcam" ? p.source : fallbackView !== "face" ? sourceOf(fallbackView, sources) : null);
+  if (cut.background !== "plain" && r.pieces.some(screenOf)) {
+    const any = r.pieces.map(screenOf).find(Boolean);
+    backdropTrack((p) => { const k = screenOf(p) || any; return { file: source(dir, sources[k].file), offset: sources[k].offset }; },
+      r.pieces, path.join(out, "assets", "backdrop.mp4"), { fps: s.fps, parts: source(dir, "backdrop.parts") });
+    backdrop = "backdrop.mp4";
+  }
+  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, brand, areas: layout.areas });
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
-      view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}),
+      view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
-      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}) }) })),
+      rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
+      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}) }) })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   });
   const views = {};
   for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
-  if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
+  if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
+  else if (cut.captions !== false) console.log("No captions: agentitos' captions skill is not beside this one.");
+  if (talk.rate) console.log(`Speech: ${talk.rate} syllables a second where someone speaks${s.speed === "auto" ? (speed > 1 ? ` → played at ${speed}× (--speed auto: towards ${TARGET} a second, at most ${MOST}×; --speed 1 as recorded)` : `: fast enough, played as recorded (--speed auto)`) : `; played at ${speed}× (--speed ${s.speed})`}.`);
   console.log(`Laid out clear of ${layout.zones.platforms.map((p) => p.name).join(", ")}${layout.zones.fallback ? " (no --platform: the usual ones of this frame; name where it goes with --platform)" : ""}.`);
   // a platform named that has no numbers for this frame: who stands in for it
   for (const n of layout.zones.notes.filter((n) => n.includes("stand in") || n.includes("stands in"))) console.log(`  ${n}`);
@@ -732,14 +808,14 @@ function cmdBuild(dir, opts) {
 }
 
 // --------------------------------------------------------------------------------- captions
-function cmdCaptions(dir, opts) {
+async function cmdCaptions(dir, opts) {
   const cutFile = path.join(dir, "cut.json"), editFile = path.join(dir, "edit.json");
   if (!fs.existsSync(editFile)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
   // the platform first: a wrong one fails before the key words are marked (and paid for)
   if (opts.platform !== undefined) settings(dir, { platform: opts.platform });
   const cut = read(cutFile);
   if (opts.off) {
-    delete cut.captions;
+    cut.captions = false;
   } else {
     const e = read(editFile);
     const file = captionWords(dir, e.words, {}, e);
@@ -754,7 +830,7 @@ function cmdCaptions(dir, opts) {
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
-  cmdBuild(dir, {});
+  await cmdBuild(dir, {});
 }
 
 // ----------------------------------------------------------------------------------- check
@@ -831,7 +907,7 @@ function cmdCheck(dir) {
 
   // a long stretch without words at its own speed is a wait to speed up
   for (const [k, p] of e.pieces.entries()) {
-    if (p.shows && !p.hold && p.rate <= 1.05 && p.duration > 6) warnings.push(`piece ${k + 1} shows ${p.duration.toFixed(1)} s without words at their own speed: a wait? list the last word before it in "waits"`);
+    if (p.shows && !p.hold && (p.lapse ?? p.rate) <= 1.05 && p.duration > 6) warnings.push(`piece ${k + 1} shows ${p.duration.toFixed(1)} s without words at their own speed: a wait? list the last word before it in "waits"`);
   }
 
   // a browser plays about 75 media elements on a page; past that the preview goes silent or black
@@ -974,10 +1050,10 @@ if (command === "new") await cmdNew(pos[0], pos[1], opts);
 else if (command === "words") cmdWords(pos[0], pos[1]);
 else if (command === "transcribe") await cmdTranscribe(pos[0]);
 else if (command === "propose") cmdPropose(pos[0]);
-else if (command === "build") cmdBuild(pos[0], opts);
+else if (command === "build") await cmdBuild(pos[0], opts);
 else if (command === "check") cmdCheck(pos[0]);
 else if (command === "at") cmdAt(pos[0], pos[1]);
-else if (command === "captions") cmdCaptions(pos[0], opts);
+else if (command === "captions") await cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
 else if (command === "sheets") cmdSheets(pos[0], opts);

@@ -1,5 +1,7 @@
 // The cut as a HyperFrames project. Every piece is a shot: its source's <video> placed so that
-// the shot's crop fills its box (left, top, width, height) and clipped to the box (clip-path),
+// what matters (the shot's crop) is as large as the frame's safe room allows, the rest of the
+// screen around it out to the frame's edges above the captions (layout.spread), clipped there
+// (clip-path); a phone's screen and the face fill their box (left, top, width, height),
 // played from the source's own time (data-media-start: the recording's time less the source's
 // offset), muted; in the screen and phone views the webcam beside it in a circle, the same
 // moment, one element for the whole cut (the webcam's track, tracks.mjs) moved into place at each
@@ -8,12 +10,13 @@
 // a gentle compressor, a true-peak ceiling) as in best-takes. A browser plays only about 75 media
 // elements on a page: the shots of the screens are one each, the voice and the webcam one in all.
 // On top: a label per keep that has one, a badge on a timelapse, the captions of agentitos'
-// captions skill, and music under the voice when asked, lower while someone speaks. Nothing is
-// rendered to preview it.
+// captions skill, and music under the voice when asked, lower while someone speaks. Behind it all
+// the screen of each piece, small and blurred (tracks.backdropTrack), or the brand's colours.
+// Nothing is rendered to preview it.
 
 import fs from "node:fs";
 import path from "node:path";
-import { fit, place, cover, circle } from "./layout.mjs";
+import { fit, largest, place, spread, cover, circle } from "./layout.mjs";
 
 const GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js";
 
@@ -69,10 +72,18 @@ export function shots(pieces, sources, width, height, a) {
         const c = seg.crop || [0, 0, 1, 1];
         const aspect = ((c[2] - c[0]) * src.width) / ((c[3] - c[1]) * src.height);
         const start = p.start + (seg.in - p.in) / rate;
-        // a tall picture (a phone's screen) gets the tall area
-        out.push({ source: p.source, box: fit(aspect < 0.8 ? a.tall : a.content, aspect), crop: c, main: true,
-          round: Math.round(Math.min(width, height) * 0.02),
-          ...(parts.length > 1 ? { start, duration: (i === parts.length - 1 ? end : p.start + (seg.out - p.in) / rate) - start, in: seg.in } : {}) });
+        const timed = parts.length > 1 ? { start, duration: (i === parts.length - 1 ? end : p.start + (seg.out - p.in) / rate) - start, in: seg.in } : {};
+        const round = Math.round(Math.min(width, height) * 0.02);
+        // a phone's screen (a tall source) gets the tall area, as its crop shows it; a tall crop of a
+        // wide screen is a screen's shot like any other
+        if (src.height > src.width * 1.25) return out.push({ source: p.source, box: fit(a.tall, aspect), crop: c, main: true, round, ...timed });
+        // a screen: what matters as large as the safe room allows (beside the circle too, or all
+        // of it without the circle), never more than 30 % of the screen's width across that room
+        // nor over twice its pixels; the screen around it out to the frame's edges
+        const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
+        const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: Math.min(2, (0.8 * width) / (0.3 * src.width)) });
+        const [x, , w] = at.box;
+        out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });
       if (sources.webcam && p.pip !== false) {
         const [x, y, d] = a.pip;
@@ -97,7 +108,7 @@ export function brandOf(file) {
 export function writeComposition(out, o) {
   // voice: the voice's track for the whole cut in assets/ (tracks.voiceTrack); camera: the
   // webcam's (tracks.cameraTrack), one element that is the circle and the face in turn
-  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, labels = [], captions, music, brand = {}, areas } = o;
+  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, backdrop, labels = [], captions, music, brand = {}, areas } = o;
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   const name = path.basename(out);
   const used = new Set();
@@ -124,7 +135,7 @@ export function writeComposition(out, o) {
     cam.push({ start: p.start, style: null });
     for (const l of layers) {
       const src = sources[l.source];
-      const at = place(l.box, l.crop, src);
+      const at = l.at || place(l.box, l.crop, src);
       // a radius in pixels: a percentage would be of the whole element, not of the visible box
       const radius = l.pip ? l.box[2] / 2 : l.round;
       const clipPath = `inset(${at.inset.map(px).join(" ")}${radius ? ` round ${px(radius)}` : ""})`;
@@ -140,7 +151,7 @@ export function writeComposition(out, o) {
       }
     }
     // a timelapse says so
-    if (p.rate > 1.05) {
+    if ((p.lapse ?? p.rate) > 1.05) {
       const box = layers.find((l) => l.main)?.box || [0, 0, width, height];
       html.push(`      <div id="${next("b")}" class="clip badge" ${timing(p.start, p.duration)} data-track-index="4"
         style="left:${px(box[0] + box[2] - 20)};top:${px(box[1] + 20)}">⏩ ${Math.round(p.rate)}×</div>`);
@@ -217,6 +228,7 @@ export function writeComposition(out, o) {
       #main { position: relative; width: 100%; height: 100%; overflow: hidden;
         background: radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, ${accent} 16%, ${bg}) 0%, ${bg} 62%); }
       #main video { position: absolute; object-fit: fill; }
+      #main video.backdrop { left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; filter: brightness(0.55) saturate(1.2); }
       #main .ring { position: absolute; border-radius: 50%; border: 6px solid ${accent}; }
       #main .badge { position: absolute; transform: translateX(-100%); padding: 10px 18px; border-radius: 999px;
         background: rgba(0, 0, 0, 0.72); color: #fff; font: 800 ${Math.round(Math.min(width, height) * 0.032)}px "${font}", sans-serif; }
@@ -228,7 +240,8 @@ export function writeComposition(out, o) {
     <!-- generated by screencast-cut/tools/screencast.mjs from cut.json: change cut.json and build again -->
     <div id="main" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}" data-fps="${fps}">
       <hf-audio-group id="voice" data-label="Voice" data-fx-chain="${attr(BUS)}"></hf-audio-group>
-${html.join("\n")}${camHtml ? `\n${camHtml}` : ""}
+${backdrop ? `      <video id="backdrop" class="clip backdrop" src="assets/${backdrop}" ${timing(0, total)} data-media-start="0"
+        data-track-index="1" muted data-has-audio="false" playsinline></video>\n` : ""}${html.join("\n")}${camHtml ? `\n${camHtml}` : ""}
 ${voiceClips.join("\n")}${musicHtml ? `\n${musicHtml}` : ""}${captions ? `\n      ${captions}` : ""}
     </div>
     <script>

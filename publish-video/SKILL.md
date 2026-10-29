@@ -26,7 +26,7 @@ The tool measures, writes the video again where that is mechanical, and talks to
 
 ## From the video to the posts, all in the chat
 
-The person hands over a video: an upload (a line `video: uploads/<file>`), a link (Google Drive, Dropbox or a direct link to the file; not a YouTube or Instagram page), or the video another skill just made. Your files: `publish/<name>/` and `descriptions/<name>/` (`<name>` a short slug of the topic, the same for both). Keep every message short: one or two sentences and a hiccup block, one question per block. Speak the person's language.
+The person hands over a video: an upload (a line `video: uploads/<file>`), a link (Google Drive, Dropbox or a direct link to the file; not a YouTube or Instagram page), or the video another skill just made. Your files: `publish/<name>/` and `descriptions/<name>/` (`<name>` a short slug of the topic, the same for both). Keep every message short: one or two sentences and a hiccup block, one question per block, or the questions that belong together (see "UI in the chat"). Speak the person's language.
 
 ### 1. Check it
 
@@ -57,9 +57,10 @@ Then `check publish/<name> --mode short|long`. A wide video that should go out s
 **Look at the sheet** and judge what no tool measures: does the first frame make someone stay, does the end close or cut off mid-move, is every text readable, inside the green box and spelled right, is there another app's watermark (a TikTok logo on a Reel costs reach), black bars, a test frame, something private?
 
 - **✗ that `prepare` fixes** (size, codec, container, bitrate): run it without asking, it changes nothing one sees. `--crop` for a nearly 9:16 video only when the sheet shows nothing near the edges; else ask: cropped or thin bars.
-- **⚠ about the sound** (too quiet, too loud, peaks): `prepare --loudness`, and say so. **Black or silence at the start or end**: `prepare --start <s>` / `--end <s>` cuts it; do it when it is plainly empty, say so.
+- **⚠ about the sound** (too quiet, too loud, peaks): `prepare --loudness`. **Black or silence at the start or end**: `prepare --start <s>` / `--end <s>` cuts it, when it is plainly empty.
 - Several fixes go into one `prepare` call; it writes `publish/<name>/video.mp4` and checks it again.
-- **What needs another edit** (a weak first second, a cut-off end, a typo in the picture, text under the buttons): tell the person in a sentence what you see, with the frame's time, and ask:
+- **Weigh what you see by what it costs.** The sheet shows twelve moments, not every frame. A subtitle that touches a red outline in a frame or two, a word that runs into the margin but stays readable, the edge of a picture under the buttons: leave it, and say nothing about it. A finished video is not sent back for that.
+- **Ask only when it hides what must be read or seen**: the hook or a title under the buttons, a name, a price, a call to action, a face cut by the caption area, subtitles under the buttons through most of the video; or a weak first second, a cut-off end, a typo in the picture, another app's watermark. Then tell the person in a sentence what you see, with the frame's time, and ask:
 
 ```hiccup
 [:div
@@ -69,7 +70,7 @@ Then `check publish/<name> --mode short|long`. A wide video that should go out s
  [:button {:send "I'll fix the video first"} "I'll fix it"]]
 ```
 
-When it is ready, show the sheet with a sentence that it is ready and go on.
+When it is ready, or nearly so, say so in one sentence and go straight on to the accounts: no sheet, no list of what you converted, cut or noticed. The sheet goes into the chat only with a question about a real problem, as above.
 
 ### 4. Where it goes
 
@@ -77,29 +78,26 @@ When it is ready, show the sheet with a sentence that it is ready and go on.
 node <skill>/tools/publish.mjs accounts publish/<name>
 ```
 
-lists the targets the video fits (an account's post type, e.g. `instagram/storrito_com/reel`), and the others with why not. Ask with checkboxes, those that fit ticked; disconnected accounts and the reason another one does not fit in a line below:
+lists the targets the video fits (an account's post type, e.g. `instagram/storrito_com/reel`, an Instagram Story `instagram/storrito_com/story` up to 60 s), and the others with why not. Then
 
-```hiccup
-[:div
- [:p "Where should it go?"]
- [:label [:input {:type "checkbox" :name "to" :value "instagram/storrito_com/reel" :checked true}] " Instagram Reel · @storrito_com"] [:br]
- [:label [:input {:type "checkbox" :name "to" :value "tiktok/storrito/post" :checked true}] " TikTok · Storrito"] [:br]
- [:label [:input {:type "checkbox" :name "to" :value "youtube/storrito/short" :checked true}] " YouTube Short · Storrito"] [:br]
- [:button {:class "primary" :send "Post to: {checked}"} "Next"]
- [:p [:small "Pinterest is disconnected: reconnect it in Storrito to post there."]]]
+```bash
+node <skill>/tools/publish.mjs accounts publish/<name> --hiccup --lang de
 ```
 
-No account fits: say why in a sentence (the video's length or frame, or nothing connected) and what would change it.
+prints the question as a hiccup block: the accounts grouped by platform, each with its profile picture or the platform's icon, the disconnected ones and those the video is too long for greyed out with why, only the accounts of the person's last publish ticked. Put it into your answer as it is, after one sentence. Never tick them all yourself: with many accounts that is a list to untick.
+
+No account fits (the tool says so): say why in a sentence (the video's length or frame, or nothing connected) and what would change it.
 
 ### 5. The style
 
 - **A brand kit** (`brand/DESIGN.md`): the style comes from its Voice and Tone. Say which style you take and why in one sentence; no question.
 - **No brand kit**: ask once, as video-descriptions' SKILL.md says for this case: the three or four styles that fit this video as buttons, the one you would pick `:class "primary"`.
 - The person already said how it should sound: that is the style.
+- Only Instagram Stories chosen: no style and no texts (a Story publishes none); go on with step 7.
 
 ### 6. The texts
 
-Follow video-descriptions' SKILL.md, steps 1 and 4 to 6, with its folder `descriptions/<name>/` and the job's video (`publish/<name>/video.mp4` when `prepare` wrote one, else the original), for exactly the platforms of the chosen targets: the `texts:` column of `accounts` (`instagram-reels`, `tiktok`, `youtube-shorts`, `linkedin`, `x`, …; long: `youtube`). Its `check` must have no ✗; its overview is what the person agrees to: "Looks good" (`:class "primary"`), "Another style", "Change something", and the button that opens the page.
+Follow video-descriptions' SKILL.md, steps 1 and 4 to 6, with its folder `descriptions/<name>/` and the job's video (`publish/<name>/video.mp4` when `prepare` wrote one, else the original), for exactly the platforms of the chosen targets: the `texts:` column of `accounts` (an Instagram Story has none: it publishes no text, and with only Stories chosen there are no texts to write) (`instagram-reels`, `tiktok`, `youtube-shorts`, `linkedin`, `x`, …; long: `youtube`). Its `check` must have no ✗; its overview is what the person agrees to: "Looks good" (`:class "primary"`) and the button that opens the page ("Show all texts ↗"), with a line that they can type what to change.
 
 Long-form on YouTube also wants:
 - **a thumbnail**: offer to make one with agentitos' thumbnail-and-intro, or let YouTube pick a frame;
@@ -108,18 +106,42 @@ Long-form on YouTube also wants:
 
 ### 7. The last questions, then publish
 
-After the texts are agreed, ask only what applies, one block each:
+After the texts are agreed, ask what applies, all in one block (the example below): one group of radio buttons per question, none ticked, and one button that publishes. Each value says what it answers ("YouTube: public"), as `{checked}` sends them all in one line. An answer missing a group asks again only for that group.
 
-- **When.** "Now" and two likely times ("Today 18:00", "Tomorrow 9:00"), none marked; they may type another. The time zone only when you cannot tell (German speaks for Europe/Berlin).
-- **TikTok, who may see it**: "Everyone", "Friends", "Followers", "Only me". TikTok wants the person's own choice: no button marked, none assumed (`--tiktok-privacy public|friends|followers|private`).
-- **YouTube video, visibility**: "Public", "Unlisted", "Private" (`--privacy`); **made for kids**: "No" or "Yes" (`--made-for-kids`); YouTube asks both of every video.
-- **An option `accounts` names as required** (LinkedIn's visibility, …): its choices as buttons (`--option <target>:<key>=<value>`).
-- **Disclosures, only when they apply**: realistic AI-made people or scenes (`--ai-generated`), a paid partnership (`--paid`), the person's own brand promoted on TikTok (`--own-brand`). Ask when you see signs of one; never set one without the person.
+- **When.** "Now" and two likely times ("Today 18:00", "Tomorrow 9:00"); they may type another. The time zone only when you cannot tell (German speaks for Europe/Berlin).
+- **TikTok, who may see it**: "Everyone", "Friends", "Followers", "Only me". TikTok wants the person's own choice: none assumed (`--tiktok-privacy public|friends|followers|private`).
+- **TikTok's cover**: not a question. Pick the moment yourself from the frames you saw (the subject clear, a face or a readable title; never a cut, a blur or a black frame), `--tiktok-cover <s>`, and name it in a few words in the "When" question ("cover: the frame at 0:12"). Without it TikTok takes the first frame.
+- **YouTube, a Short or a video: visibility**: "Public", "Unlisted", "Private" (`--privacy`); **made for kids**: "No" or "Yes" (`--made-for-kids no|yes`). YouTube asks both of every video, a Short too; the tool refuses a YouTube target without them.
+- **An option `accounts` names as required** (LinkedIn's visibility, …): its choices as one more group (`--option <target>:<key>=<value>`).
+- **Disclosures, only when they apply**: realistic AI-made people or scenes (`--ai-generated`), a paid partnership (`--paid`), the person's own brand promoted on TikTok (`--own-brand`). Ask when you see signs of one, as unticked checkboxes in the same block; never set one without the person.
+
+```hiccup
+[:div
+ [:p "When should it go out, and who may see it? Cover on TikTok: the frame at 0:12."]
+ [:p [:strong "When"] [:br]
+  [:label [:input {:type "radio" :name "when" :value "when: now"}] " Now"] " "
+  [:label [:input {:type "radio" :name "when" :value "when: today 18:00"}] " Today 18:00"] " "
+  [:label [:input {:type "radio" :name "when" :value "when: tomorrow 09:00"}] " Tomorrow 09:00"]]
+ [:p [:strong "TikTok, who may see it"] [:br]
+  [:label [:input {:type "radio" :name "tiktok" :value "TikTok: everyone"}] " Everyone"] " "
+  [:label [:input {:type "radio" :name "tiktok" :value "TikTok: followers"}] " Followers"] " "
+  [:label [:input {:type "radio" :name "tiktok" :value "TikTok: friends"}] " Friends"] " "
+  [:label [:input {:type "radio" :name "tiktok" :value "TikTok: only me"}] " Only me"]]
+ [:p [:strong "YouTube Short"] [:br]
+  [:label [:input {:type "radio" :name "youtube" :value "YouTube: public"}] " Public"] " "
+  [:label [:input {:type "radio" :name "youtube" :value "YouTube: unlisted"}] " Unlisted"] " "
+  [:label [:input {:type "radio" :name "youtube" :value "YouTube: private"}] " Private"] [:br]
+  "Made for kids? "
+  [:label [:input {:type "radio" :name "kids" :value "for kids: no"}] " No"] " "
+  [:label [:input {:type "radio" :name "kids" :value "for kids: yes"}] " Yes"]]
+ [:button {:class "primary" :send "Publish: {checked}"} "Publish"]
+ [:p [:small "Another time: type it, with your time zone."]]]
+```
 
 Then
 
 ```bash
-node <skill>/tools/publish.mjs publish publish/<name> --to <target>,<target> (--at 2026-10-29T18:00:00+01:00 | --now) [--tiktok-privacy …] [--privacy …] [--made-for-kids] [--thumbnail <image>] [--option …]
+node <skill>/tools/publish.mjs publish publish/<name> --to <target>,<target> (--at 2026-10-29T18:00:00+01:00 | --now) [--tiktok-privacy …] [--tiktok-cover <s>] [--privacy …] [--made-for-kids no|yes] [--thumbnail <image>] [--option …]
 ```
 
 It reads the texts from `descriptions/<name>/descriptions.json` (another folder: `--texts`), runs video-descriptions' check, checks every target's parameters before it uploads anything, uploads the video once and schedules each target. A ✗ names what is missing: fix it or ask, then run the same command again; what is done stays done, nothing is posted twice.
@@ -136,13 +158,14 @@ It reads the texts from `descriptions/<name>/descriptions.json` (another folder:
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block; `:open "artifacts/descriptions-<name>.html"` shows the texts' overview. Pictures point at `uploads/…`. There are no text fields: for a time or a change they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else.
-- The button that moves on gets `:class "primary"`; alternative answers stay plain.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- A button only where a click makes you act at once: an answer you go on with, a choice you carry out, a page you open. Never one that only leads to your next question ("Change something"): they type what to change.
+- The button that moves on gets `:class "primary"`; alternative answers stay plain. A button that opens an artifact ends with " ↗".
 - Never put a token, a path of `publish/` or `descriptions/`, a target id or a raw error into the chat: account names and platforms as people say them.
 
 ## Rules
 
 - Nothing is published before the person agreed to the texts and named the accounts and the time.
-- Every decision the tool cannot measure is yours or the person's, said in a sentence: the mode when it is open, the crop, the cut of the ends, whether a flaw is worth fixing.
+- Every decision the tool cannot measure is yours or the person's, said in a sentence: the mode when it is open, the crop, the cut of the ends, whether a flaw is worth fixing. A small flaw in a finished video, and what prepare fixed, is neither asked about nor mentioned.
 - TikTok's audience, YouTube's visibility and "made for kids", and every disclosure are the person's choice; never a default.
 - Change the inputs (`descriptions.json`, the video, the options) and run the tool again; never call Storrito's procedures around it for a target it handles.

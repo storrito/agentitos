@@ -5,6 +5,7 @@
 
 // what each procedure is called with, and how its status is asked and a post taken back
 export const PROCEDURES = {
+  "schedule-instagram-story": { uuid: "storyPostUuid", status: "status-instagram-story", cancel: "cancel-instagram-story", account: "instagramUsername", min: 0.5, max: 60 },
   "schedule-instagram-reel": { uuid: "reelPostUuid", status: "status-instagram-reel", cancel: "cancel-instagram-reel", account: "instagramUsername", min: 0.5, max: 180 },
   "schedule-tiktok-post": { uuid: "tiktokPostUuid", status: "status-tiktok-post", cancel: "cancel-tiktok-post", account: "tiktokAccountId", max: 600 },
   "schedule-social-post": { uuid: "socialPostUuid", status: "status-social-post", cancel: "cancel-social-post", account: "socialAccountId" },
@@ -13,17 +14,18 @@ export const PROCEDURES = {
 
 // the platform id of video-descriptions whose texts a target takes
 const TEXTS = { INSTAGRAM: "instagram-reels", TIKTOK: "tiktok", YOUTUBE: "youtube-shorts", FACEBOOK: "facebook", LINKEDIN: "linkedin", PINTEREST: "pinterest", SNAPCHAT: "snapchat-spotlight", THREADS: "threads", TWITTER: "x", X: "x", BLUESKY: "bluesky" };
-const BY_PROCEDURE = { "schedule-instagram-reel": "instagram-reels", "schedule-tiktok-post": "tiktok", "upload-youtube-video": "youtube" };
+// an Instagram Story publishes no text: it needs none of descriptions.json
+const BY_PROCEDURE = { "schedule-instagram-story": "none", "schedule-instagram-reel": "instagram-reels", "schedule-tiktok-post": "tiktok", "upload-youtube-video": "youtube" };
 
 const slug = (s) => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9_.]+/g, "-").replace(/^-+|-+$/g, "") || "account";
 
-// every post type that publishes a video, Stories left out (story-from-link makes those)
+// every post type that publishes a video; of the Stories only Instagram's, which Storrito posts itself
 export function targetsOf(socialAccounts) {
   const out = [], seen = new Set();
   for (const a of socialAccounts || []) {
     for (const p of a.postTypes || []) {
       const proc = PROCEDURES[p.procedure];
-      if (!proc || !(p.media || []).includes("video") || /STORY/i.test(p.postType)) continue;
+      if (!proc || !(p.media || []).includes("video") || (/STORY/i.test(p.postType) && p.procedure !== "schedule-instagram-story")) continue;
       const platform = String(a.platform || "").toUpperCase();
       let id = `${platform === "TWITTER" ? "x" : slug(platform)}/${slug(a.instagramUsername || a.name)}/${slug(p.postType)}`;
       for (let n = 2; seen.has(id); n++) id = `${id.replace(/-\d+$/, "")}-${n}`;
@@ -33,6 +35,8 @@ export function targetsOf(socialAccounts) {
         label: p.label || `${a.platformName || platform} ${p.postType}`,
         account: a.instagramUsername ? `@${a.instagramUsername}` : a.name,
         platform,
+        platformName: a.platformName || platform,
+        avatarUrl: a.avatarUrl || null,
         postType: p.postType,
         procedure: p.procedure,
         accountField: proc.account,
@@ -87,12 +91,13 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
     if (!post.title) errors.push("posts.youtube has no title");
     if (bytes(String(post.description || "")) > 5000) errors.push("the description is longer than 5,000 bytes");
     if (!choices.privacy) errors.push("--privacy public|unlisted|private: ask the person");
+    if (!choices.kids) errors.push("--made-for-kids yes|no: YouTube asks it of every video; ask the person");
     if (post.tags?.length) notes.push("the tags are not sent: YouTube's API through Storrito takes none; add them in YouTube Studio");
     return {
       errors, notes,
       params: {
         socialAccountId: t.accountId, videoUrl, title: post.title, description: post.description || "", privacy: choices.privacy,
-        madeForKids: !!flags.madeForKids, aiGenerated: !!flags.aiGenerated, paidProductPlacement: !!flags.paid,
+        madeForKids: choices.kids === "yes", aiGenerated: !!flags.aiGenerated, paidProductPlacement: !!flags.paid,
         ...(thumbnailUrl ? { thumbnailUrl } : {}), ...(lang ? { defaultLanguage: lang, defaultAudioLanguage: lang } : {}), ...when,
       },
     };
@@ -100,6 +105,9 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
   if (t.maxCaption && t.texts !== "x" && text.length > t.maxCaption) errors.push(`the text is ${text.length} characters; Storrito would cut it to ${t.maxCaption}`);
   if (t.captionRequired && !text.trim()) errors.push("the platform needs a text");
   if (text && !t.captionPublished) notes.push("this post type publishes no text");
+  if (t.procedure === "schedule-instagram-story") {
+    return { errors, notes: [], params: { html, instagramUsername: t.accountId, ...(flags.aiGenerated ? { aiGenerated: true } : {}), ...when } };
+  }
   if (t.procedure === "schedule-instagram-reel") {
     return { errors, notes, params: { html, instagramUsername: t.accountId, caption: text, shareToFeed: !flags.noFeed, ...(flags.aiGenerated ? { aiGenerated: true } : {}), ...when } };
   }
@@ -109,11 +117,16 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
       errors, notes,
       params: {
         html, tiktokAccountId: t.accountId, title: text, privacyLevel: choices.tiktok,
+        ...(choices.cover != null ? { videoCoverTimestampMs: Math.round(choices.cover * 1000) } : {}),
         ...(flags.aiGenerated ? { aiGenerated: true } : {}), ...(flags.paid ? { brandedContent: true } : {}), ...(flags.ownBrand ? { brandOrganic: true } : {}), ...when,
       },
     };
   }
-  // schedule-social-post: the text, and each option filled from the post or from --option
+  // schedule-social-post: the text, and each option filled from the post or from --option; a
+  // YouTube Short asks for its visibility and "made for kids" like every YouTube video
+  const youtube = t.platform === "YOUTUBE";
+  if (youtube && !choices.privacy) errors.push("--privacy public|unlisted|private: ask the person");
+  if (youtube && !choices.kids) errors.push("--made-for-kids yes|no: YouTube asks it of every video, a Short too; ask the person");
   const given = chosen(t, choices.options);
   const options = {};
   for (const o of t.options) {
@@ -124,6 +137,8 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
       else if (/^(link|url|destinationLink)$/i.test(key) && post.link) v = post.link;
       else if (/alt/i.test(key) && post.alt) v = post.alt;
       else if (key === "aiGenerated" && flags.aiGenerated) v = true;
+      else if (key === "madeForKids" && choices.kids) v = choices.kids === "yes";
+      else if (key === "privacy" && youtube && choices.privacy) v = choices.privacy;
       else if (/^(paid|brandedContent|paidPartnership)/i.test(key) && flags.paid) v = true;
     }
     if (v == null) {

@@ -113,7 +113,7 @@ draws the zones over every still: look at each for what no check reads (a word i
 
 ### 8. Ask whether it is right
 
-One message: the storyline in a line, the length, the platforms the zones are for, what you measured and what you only looked at (the sound was measured, not heard), and **whether it is right**: "Looks good" (`:class "primary"`), "Change something", the button that shows the preview.
+One message: the storyline in a line, the length, the platforms the zones are for, what you measured and what you only looked at (the sound was measured, not heard), and **whether it is right**: "Looks good" (`:class "primary"`) and the button that shows the preview ("Show the preview ↗"), with a line that they can type what to change.
 
 ### 9. Changes
 
@@ -127,15 +127,15 @@ Only after their "looks good": say in one sentence that you are rendering it, re
 node <skill>/tools/launch.mjs finish artifacts/<name>.mp4
 ```
 
-brings it to −14 LUFS, the loudness the platforms play at. Say in one sentence that it is ready, with the download link. The texts for posting are agentitos' video-descriptions; publishing is a step of its own, only when they ask.
+brings it to −14 LUFS, the loudness the platforms play at. Say in one sentence that it is ready, with the download link. Offer to publish it with a button "Publish it": then follow agentitos' **publish-video** (beside this skill) with the video; it checks it, writes the texts with video-descriptions and schedules it through Storrito. Never call Storrito's schedule procedures yourself.
 
 `remember` the person's platforms, voice and caption style for the next film.
 
 ## UI in the chat
 
-Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/<name>"` shows the preview. Links, pictures, audio and videos point at `https://…`, `artifacts/…` or `uploads/…`. There are no text fields: for a change they type.
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links, pictures, audio and videos point at `https://…`, `artifacts/…` or `uploads/…`. There are no text fields: for a change they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - The button that moves on gets `:class "primary"`; the others stay plain.
 - Never put a token, a path of `launch/` or a raw error into the chat.
 
