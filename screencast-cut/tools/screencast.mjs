@@ -34,8 +34,9 @@
 //   --platform reels,tiktok   where the video goes: the layout and the captions keep clear of what
 //                     those apps lay over it (agentitos' platform-zones); none: the usual
 //                     platforms of the frame
-//   --speed <x>       the whole cut this much faster, the voice at its own pitch (default 1;
-//                     1.1–1.2 fits more into a short and still sounds natural)
+//   --speed auto|<x>  the whole cut faster, the voice at its own pitch. auto (the default): by
+//                     how fast the person speaks in the cut, towards 4 syllables a second, at
+//                     most 1.2×, none for a fast speaker; a number sets it (1 as recorded)
 //   --pause <s>       pauses inside a keep longer than this are cut or shown (default 1)
 //   --tail <s>        how long a keep holds after its last word (default 0.45)
 //   --end <s>         how long the last keep holds (default 1.5)
@@ -63,7 +64,7 @@ import { zones, platformList } from "./lib/zones.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
-const NUMBERS = ["fps", "speed", "pause", "tail", "end", "loudness", "duck"];
+const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const VIDEO = ["screen", "phone-screen", "phone", "webcam"];
 const VIEWS = ["screen", "phone-screen", "phone", "face"];
@@ -100,9 +101,10 @@ const cmd = (rest) => `node ${self()} ${rest}`;
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? read(file) : {};
-  const merged = { frame: "9:16", fps: 30, speed: 1, pause: 1, tail: 0.45, end: 1.5, loudness: -14, duck: 10, ...kept, ...opts };
+  const merged = { frame: "9:16", fps: 30, speed: "auto", pause: 1, tail: 0.45, end: 1.5, loudness: -14, duck: 10, ...kept, ...opts };
   if (!FRAMES[merged.frame]) fail(`--frame is one of ${Object.keys(FRAMES).join(", ")}`);
-  if (!(merged.speed >= 0.5 && merged.speed <= 2)) fail("--speed is between 0.5 and 2 (1.15: 15 % faster).");
+  if (merged.speed !== "auto") merged.speed = Number(merged.speed);
+  if (merged.speed !== "auto" && !(merged.speed >= 0.5 && merged.speed <= 2)) fail("--speed is auto, or a number between 0.5 and 2 (1.15: 15 % faster).");
   // a platform platform-zones does not know is not kept: every later step would fail on it
   if (opts.platform) try { zones(...FRAMES[merged.frame], platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
@@ -566,6 +568,36 @@ function sourceOf(view, sources) {
   return Object.keys(sources).find((k) => k !== "webcam" && sources[k].video) || "webcam";
 }
 
+// How fast the person speaks in the cut: the syllables of its spoken pieces over their length at
+// their own speed (the small pauses inside them count, the cut ones do not), and the speed that
+// brings a slow speaker towards the pace of short videos. Syllables, not words: German words are
+// longer than English ones (English has some 1.4 syllables a word). Short videos are spoken at
+// some 140–160 words a minute, energetic ones up to 180; above 160 is said to get hard to follow.
+// TARGET, 4 syllables a second, is some 160–165 words a minute: a slower speaker plays faster in
+// proportion, never more than MOST (faster sounds hurried and the face in the circle visibly too
+// fast; below 3.33 a second the target is not reached), a faster one as recorded. The recording
+// of bot 1813 (3.44 a second) comes out at 1.16×, where its person had asked for 1.15×.
+const TARGET = 4, MOST = 1.2;
+function syllables(text) {
+  const w = String(text).toLowerCase().replace(/[^a-zäöüßàâéèêëîïôûùç]/g, "");
+  if (!w) return 0;
+  let n = (w.match(/[aeiouyäöüàâéèêëîïôûù]+/g) || []).length;
+  // a silent e at the end of an English word ("make", "type"), not of "the" or "be"
+  if (n > 1 && /[^aeiouy]e$/.test(w)) n--;
+  return Math.max(1, n);
+}
+function pace(pieces, words) {
+  let n = 0, t = 0;
+  for (const p of pieces) {
+    if (p.mute || !p.words?.length) continue;
+    t += p.out - p.in;
+    for (const i of p.words) if (words[i]?.kind === "word") n += syllables(words[i].text);
+  }
+  if (t < 5 || !n) return { rate: null, speed: 1 };
+  const rate = +(n / t).toFixed(2);
+  return { rate, speed: +Math.min(MOST, Math.max(1, TARGET / rate)).toFixed(2) };
+}
+
 async function cmdBuild(dir, opts) {
   if (!fs.existsSync(source(dir, "words.json"))) fail(`The words first: ${cmd(`words ${rel(dir)} <words.json>`)}`);
   const cutFile = path.join(dir, "cut.json");
@@ -596,7 +628,12 @@ async function cmdBuild(dir, opts) {
     }, []);
   };
   const { env, thr, blocks } = voiceOf(dir);
-  const r = plan(words, cut, s, { 1: { env, thr, blocks, duration: meta.duration } }, moves);
+  const voices = { 1: { env, thr, blocks, duration: meta.duration } };
+  // the speed: as asked, or by how fast the person speaks in the cut (pace())
+  let r = plan(words, cut, { ...s, speed: 1 }, voices, moves);
+  const talk = pace(r.pieces, words);
+  const speed = s.speed === "auto" ? talk.speed : s.speed;
+  if (speed !== 1) r = plan(words, cut, { ...s, speed }, voices, moves);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
 
@@ -763,7 +800,7 @@ async function cmdBuild(dir, opts) {
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
   if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
   else if (cut.captions !== false) console.log("No captions: agentitos' captions skill is not beside this one.");
-  if (s.speed !== 1) console.log(`Played at ${s.speed}× (--speed).`);
+  if (talk.rate) console.log(`Speech: ${talk.rate} syllables a second where someone speaks${s.speed === "auto" ? (speed > 1 ? ` → played at ${speed}× (--speed auto: towards ${TARGET} a second, at most ${MOST}×; --speed 1 as recorded)` : `: fast enough, played as recorded (--speed auto)`) : `; played at ${speed}× (--speed ${s.speed})`}.`);
   console.log(`Laid out clear of ${layout.zones.platforms.map((p) => p.name).join(", ")}${layout.zones.fallback ? " (no --platform: the usual ones of this frame; name where it goes with --platform)" : ""}.`);
   // a platform named that has no numbers for this frame: who stands in for it
   for (const n of layout.zones.notes.filter((n) => n.includes("stand in") || n.includes("stands in"))) console.log(`  ${n}`);

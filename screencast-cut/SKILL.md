@@ -63,7 +63,7 @@ node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 - **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for.
 - `"label"` where a step title helps ("01 · Upload").
 
-Captions (clean subtitles), the face in a circle and the blurred screen behind the shot come by themselves.
+Captions (clean subtitles), the face in a circle, the blurred screen behind the shot and a slow speaker played a little faster come by themselves.
 
 ### 4. The preview
 
@@ -88,7 +88,7 @@ For a moment they name, `screencast.mjs at screencast/<name> 0:23` says which ke
 | --- | --- |
 | "Too small" / "show more of …" / "zoom on …" | a tighter or other `"zoom"` on that keep, from `frame` |
 | "… is cut off" / "too fast at the end" | `"hold": 1.5` on that keep, or end it a word later |
-| "Faster" / "fit more in" | `build … --speed 1.15` (the voice keeps its pitch; up to about 1.2 sounds natural) |
+| "Faster" / "slower" / "as I spoke" | `build … --speed 1.3` / `--speed 1.1` / `--speed 1` (by default the build speeds a slow speaker up to 1.2× by itself and says so; the voice keeps its pitch) |
 | "Show the phone" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
 | "Hide my face here" | `"circle": false` on that keep: the screen takes its room too |
 | "No background" / "plain background" | `"background": "plain"` in cut.json (the brand's colours) |
