@@ -12,7 +12,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | whether a frame is laid out well (text under the buttons, on a face, on other text, cut off, stickers on each other) | [platform-zones](platform-zones/) | `tools/zones.mjs layout <page.html> [platform…]`, or `tools/measure.js` in your own page and `layout <boxes.json>` |
 | Instagram's stickers (link, poll, question, countdown, …) on a Story, picture or video | Storrito | `<insta-…>` elements in the story's HTML; [story-from-link](story-from-link/) shows how, platform-zones says where |
 | captions in a video | [captions](captions/) | `tools/captions.mjs build <words.json> <folder> --style … [--platform …]`, mount the clip it prints |
-| a brand's colours, fonts, logo, voice | [brand-kit](brand-kit/) | read `brand/DESIGN.md` of the working directory; without one, draft it as story-from-link does |
+| a brand's colours, fonts, logo, voice | [brand-kit](brand-kit/) | read `brand/DESIGN.md` of the working directory; without one, draft it with `tools/site.mjs <url> <dir>` (or story-from-link's `page.mjs`) and `tools/kit.mjs draft <dir> brand`, as story-from-link does |
 | the best take of each part of talking-to-camera recordings, without slips and "äh"s | [best-takes](best-takes/) | its tools, as its SKILL.md describes |
 | a wide video cropped to 9:16 or square, following one subject | [auto-reframe](auto-reframe/) | its tools |
 | a thumbnail and a short intro for a video | [thumbnail-and-intro](thumbnail-and-intro/) | its `job.json` and tools |

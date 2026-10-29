@@ -24,7 +24,7 @@ metadata:
 cd <skill> && npm install
 ```
 
-It needs Node 20+, agentitos' `platform-zones` skill beside this one (where Instagram covers a story) and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
+It needs Node 20+, agentitos' `platform-zones` skill beside this one (where Instagram covers a story), agentitos' `brand-kit` skill beside it too (the brand kit: `<kit>` below is `<skill>/../brand-kit/tools/kit.mjs`, on a Sprite else `/home/sprite/skills/brand-kit/tools/kit.mjs`) and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## The main use: a story from a link, all in the chat
 
@@ -45,9 +45,9 @@ prints what the page is (an article, a product, an event), its facts (price, dat
 ### 2. The brand, once
 
 - `brand/DESIGN.md` exists (an earlier story, or the brand-kit skill made it): take it. Say nothing about it, unless this is the first story.
-- Else, when the page is the person's own site, `node <skill>/tools/brand.mjs draft work/<name> brand`. When it is not (a press article about them, a partner's event page), ask for their website once, read it with `page.mjs <their url> work/site` and draft from `work/site`.
-- `node <skill>/tools/brand.mjs show brand` prints a hiccup block with the logo, the colours and the font. Show it and ask once whether this is their brand.
-- A change: edit the front matter of `brand/DESIGN.md` (`colors`, `typography`, `logo`), then `node <skill>/tools/brand.mjs check brand`. Another logo: the candidates are in `work/<name>/logos/` (show them as tiles); one they attach, copy it to `brand/logo.png` and set `logo.primary: logo.png`. A font: one of Google Fonts by its name with `fonts: {<family>: google}`.
+- Else, when the page is the person's own site, `node <kit> draft work/<name> brand` (brand-kit drafts from the look `page.mjs` read). When it is not (a press article about them, a partner's event page), ask for their website once, read it with `page.mjs <their url> work/site` and draft from `work/site`. The story needs only the look: the sections brand-kit marks "To agree" (voice, audience) can wait for its own skill; do not ask them here.
+- `node <kit> show brand` prints a hiccup block with the logo, the colours and the font. Show it with "Looks right" (`:class "primary"`) and ask once whether this is their brand; they type what to change.
+- A change: edit the front matter of `brand/DESIGN.md` (`colors`, `typography`, `logo`), then `node <kit> check brand` (its ⚠ about sections "to agree" do not matter for a story). Another logo: the candidates are in `work/<name>/logos/` (show them as tiles); one they attach, copy it to `brand/logo.png` and set `logo.primary: logo.png`. A font: one of Google Fonts by its name with `fonts: {<family>: google}`.
 
 ### 3. The story
 

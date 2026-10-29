@@ -102,7 +102,7 @@ async function build(dir) {
   if (errors.length) fail(errors.map((e) => `✗ ${e}`).join("\n"));
   const brandDir = opts.brand || "brand";
   const kit = design.read(brandDir);
-  if (!kit) fail(`No brand kit in ${brandDir}/: make one with node <skill>/tools/brand.mjs draft <page-dir> ${brandDir}.`);
+  if (!kit) fail(`No brand kit in ${brandDir}/: make one with agentitos' brand-kit: node <brand-kit>/tools/kit.mjs draft <page-dir> ${brandDir}.`);
   const checked = design.check(kit, brandDir);
   if (checked.errors.length) fail(checked.errors.map((e) => `✗ brand: ${e}`).join("\n"));
   const brand = checked.brand;
