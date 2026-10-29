@@ -127,7 +127,7 @@ Only after their "looks good": say in one sentence that you are rendering it, re
 node <skill>/tools/launch.mjs finish artifacts/<name>.mp4
 ```
 
-brings it to −14 LUFS, the loudness the platforms play at. Say in one sentence that it is ready, with the download link. The texts for posting are agentitos' video-descriptions; publishing is a step of its own, only when they ask.
+brings it to −14 LUFS, the loudness the platforms play at. Say in one sentence that it is ready, with the download link. Offer to publish it with a button "Publish it": then follow agentitos' **publish-video** (beside this skill) with the video; it checks it, writes the texts with video-descriptions and schedules it through Storrito. Never call Storrito's schedule procedures yourself.
 
 `remember` the person's platforms, voice and caption style for the next film.
 
