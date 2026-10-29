@@ -56,10 +56,10 @@ Show the moments as cards (title, time and length, the first line as a quote, wh
 
 ### 3. Where they go, and the look
 
-Ask one thing per message. First `list-social-accounts` of the Storrito connection (rragent: `(storrito/list-social-accounts {})` in your REPL), only to know which apps are connected; an account with `disconnected: true` counts as not there. The accounts themselves are picked when publishing (step 6).
+Ask the platforms and the captions in one block (see "UI in the chat"). First `list-social-accounts` of the Storrito connection (rragent: `(storrito/list-social-accounts {})` in your REPL), only to know which apps are connected; an account with `disconnected: true` counts as not there. The accounts themselves are picked when publishing (step 6).
 
-1. **The platforms**: checkboxes, one per app for short videos that has a connected account ("Instagram Reel", "TikTok", "YouTube Short", …), all ticked. Keep them as platform-zones names them (`reels,tiktok,shorts,facebook-reels,spotlight,linkedin`): the captions and the hook keep clear of what those apps lay over the video.
-2. **The captions**: the styles as buttons, none marked: **Hormozi** (one to three big words in capitals), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for interviews and explainers), or none.
+1. **The platforms**: checkboxes, one per app for short videos that has a connected account ("Instagram Reel", "Instagram Story", "TikTok", "YouTube Short", …), all ticked but the Story. Keep them as platform-zones names them (`reels,story,tiktok,shorts,facebook-reels,spotlight,linkedin`): the captions and the hook keep clear of what those apps lay over the video.
+2. **The captions**: radio buttons in the same block, none ticked: **Hormozi** (one to three big words in capitals), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for interviews and explainers), or none. One button sends both (`:send "Platforms and captions: {checked}"`).
 3. **The brand**: with a `brand/DESIGN.md` in your working directory (agentitos' brand-kit), its colour and font go into the captions and the hook; say so, do not ask.
 
 ### 4. The previews beside the chat
@@ -106,7 +106,7 @@ Never call Storrito's schedule procedures yourself: publish-video does it, so th
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only: `div span p ul ol li strong em b i s small h1–h4 a img video button table thead tbody tr th td label input br`. `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/clips"` shows the previews; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the ticked `:value`s. There are no text fields: for a hook or a time they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("captions: hormozi"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - `:class "primary"` on the one button that moves on; the person decides the moments, platforms and plan, so nothing there is marked as recommended.
 - Never a token, a path of `work/`, a word number or a raw error in the chat.
 
