@@ -170,7 +170,7 @@ try {
   lines.push(`Logos: ${look.logos.map((l) => `${l.file || "?"} (${l.source}${l.colors?.length ? " " + l.colors.slice(0, 3).join(" ") : ""})`).join(", ") || "none found"}`);
   if (Object.keys(look.social).length) lines.push(`Social: ${Object.entries(look.social).map(([k, v]) => `${k} ${v}`).join(" · ")}`);
   console.log(lines.join("\n"));
-  console.log(`\nNext: without a brand kit, node <skill>/tools/brand.mjs draft ${dir} brand; then write ${path.join(dir, "story.json")} and node <skill>/tools/story.mjs build ${dir}.`);
+  console.log(`\nNext: without a brand kit, node <brand-kit>/tools/kit.mjs draft ${dir} brand (agentitos' brand-kit); then write ${path.join(dir, "story.json")} and node <skill>/tools/story.mjs build ${dir}.`);
 } finally {
   await browser.close();
 }

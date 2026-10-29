@@ -7,14 +7,14 @@ Turns a link (a blog post, a product, an event, any page) into an **Instagram St
 ```bash
 npm install
 node tools/page.mjs https://www.example.com/blog/post work/post   # what the page says, its pictures, its look
-node tools/brand.mjs draft work/post brand                          # a first brand kit from that look
+node ../brand-kit/tools/kit.mjs draft work/post brand              # a first brand kit from that look (agentitos' brand-kit)
 # write work/post/story.json (see below)
 node tools/story.mjs build work/post                                # the frames, checked; preview in artifacts/
 node tools/story.mjs publish work/post --account mybrand --at 2026-10-22T18:00:00+02:00
 node tools/story.mjs status work/post --wait 120                    # what Storrito rendered
 ```
 
-Requirements: Node 20+, agentitos' [platform-zones](../platform-zones/) beside this skill (where Instagram covers a story), Chrome (`CHROME`, or `google-chrome` / `chromium` on the PATH), network access to the page, Google Fonts and Storrito.
+Requirements: Node 20+, agentitos' [platform-zones](../platform-zones/) and [brand-kit](../brand-kit/) beside this skill (where Instagram covers a story; the brand kit), Chrome (`CHROME`, or `google-chrome` / `chromium` on the PATH), network access to the page, Google Fonts and Storrito.
 
 ## How it works
 
@@ -23,7 +23,7 @@ Requirements: Node 20+, agentitos' [platform-zones](../platform-zones/) beside t
    - the facts of its schema.org data: a product's price and availability, an event's date and place, an article's author and date,
    - its pictures (`og:image`, the article's, the biggest shown), downloaded to `images/`,
    - its look: the colours weighted by where they are used (logo, buttons, links, headings, large areas), the fonts by role (the font most large text is set in, the body text's, the buttons'), where each font comes from (Google Fonts, or the site's own files), the logo candidates (scored like [dembrandt](https://github.com/dembrandt/dembrandt) does: in the header, linked home, named "logo", partner rows left out; inline SVGs kept as SVG files), the social profiles linked from the page.
-2. **`brand.mjs`** turns that look into a brand kit: a [DESIGN.md](https://github.com/google-labs-code/design.md) with the tokens in its front matter, the logo and the font files beside it (see "The brand kit").
+2. agentitos' **[brand-kit](../brand-kit/)** turns that look into a brand kit (`kit.mjs draft <page-dir> brand`: `page.json` has the same look as its own `site.json`): a [DESIGN.md](https://github.com/google-labs-code/design.md) with the tokens in its front matter, the logo and the font files beside it (see "The brand kit"); `kit.mjs check` and `show` check it and show it in the chat. One drafting of a kit for all skills, not a copy here.
 3. **`story.mjs build`** renders each frame of `story.json` as a 1080×1920 page in Chrome: a layout of the frame's kind in the brand's colours and fonts, every text shrunk step by step until it fits, the stickers drawn by Storrito's own components (`/js/insta-components.js` of the organization's host). It then measures where each sticker sits and takes two pictures: what a viewer sees (small, for the chat and the preview) and the frame without its stickers, which is what gets uploaded. Instagram draws the stickers itself, so they stay tappable.
 4. **`story.mjs publish`** uploads each frame's picture as a Storrito temp-blob and schedules the frames in their order with `schedule-instagram-story` (or `create-draft`). The HTML of a frame is its picture plus the stickers at the measured positions, so Storrito's extraction finds them exactly where the preview had them; the posting order is the scheduled time, then the order of creation, so frames scheduled for the same time go out one after another.
 
