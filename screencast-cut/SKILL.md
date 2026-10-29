@@ -107,7 +107,7 @@ Only after their "looks good". Render with the `render` tool, name `<name>` (→
 node <skill>/tools/screencast.mjs finish screencast/<name> artifacts/<name>.mp4
 ```
 
-(−14 LUFS, and the `.srt`). When it says the video is from before the last build, render again. Then the download links in one sentence; publishing only when they ask.
+(−14 LUFS, and the `.srt`). When it says the video is from before the last build, render again. Then the download links in one sentence and a button "Publish it": to publish, follow agentitos' **publish-video** with `artifacts/<name>.mp4` (it writes the texts and schedules it through Storrito); never call Storrito's schedule procedures yourself.
 
 `remember` what they want every time (a speed, a caption style, "my face small") and use it for their next recording.
 
