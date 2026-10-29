@@ -19,6 +19,9 @@
 // What a window would cut apart is shown whole instead, above the captions over a blurred copy of
 // itself: B-roll (a photo, archive footage, a place, a document, a screen) and a picture split
 // into feeds side by side. Gemini says which a shot is and what in it must be seen.
+// Two who speak, too far apart for one window, go one above the other: a split screen of two
+// voices always, a shot of both while they talk back and forth (three turns or more of under five
+// seconds each); the window then stops swinging from one to the other.
 // framed.mp4: 1080 wide, at the footage's frame rate, with its sound; framed.json the windows;
 // framed.sheet.jpg each shot's middle, the footage beside the frame, to look at.
 
@@ -33,6 +36,9 @@ const SHORT_TURN = 1.5, PAN = 0.4, FACE_Y = 0.32;
 // where a shot shown whole sits in the frame, in thousandths of its height: above the captions,
 // below the apps' top bar
 const FIT_TOP = 0.115, FIT_BOTTOM = 0.645;
+// two above each other: each panel this share of the height, from the top, a seam between; the
+// captions sit on the lower one's chest, below its face
+const PANEL = 0.36, SEAM = 6, PANEL_FACE_Y = 0.42, BANTER = 5, BANTER_TURNS = 3;
 export const KINDS = ["people", "split", "broll"];
 
 const probe = (file) => {
@@ -224,17 +230,35 @@ function fitOf(s, { width, height }) {
 // the window over the footage, piece by piece: [{ start, end, kind, w, h, keys: [{ t, x, y }] }],
 // w×h in the frame's shape, x/y its top left corner in the footage's pixels; a shot shown whole
 // has `fit`, the part of the footage it shows. `kinds` overrides a shot's kind: [{ t, kind }]
-export function windowsOf(shots, timeline, { width, height, aspect, kinds = [] }) {
+export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], outW = 1080 }) {
   const [aw, ah] = aspect;
-  return shots.map((s0) => {
+  const outH = Math.round((outW * ah) / aw / 2) * 2;
+  const panelH = Math.round((outH * PANEL) / 2) * 2;
+  return shots.flatMap((s0) => {
     const forced = kinds.find((o) => o.t >= s0.start && o.t < s0.end);
-    const s = forced ? { ...s0, kind: forced.kind } : s0;
-    if (s.kind !== "people") return { start: s.start, end: s.end, kind: s.kind, fit: fitOf(s, { width, height }) };
+    const s = forced ? { ...s0, kind: forced.kind === "follow" ? "people" : forced.kind, single: forced.kind === "follow" } : s0;
     // a wide shot (several people, their faces small) from footage sharp enough is cut closer
     const biggest = Math.max(0, ...s.faces.map((f) => f.h));
     const zoom = height >= 1400 && s.faces.length >= 2 && biggest < height * 0.22 ? 0.72 : 1;
     let h = height * zoom, w = (h * aw) / ah;
     if (w > width) { w = width; h = (w * ah) / aw; }
+
+    // the two who speak in it, left one first, when one window cannot hold both
+    const voices = [];
+    for (const f of [...s.faces].filter((f) => f.speaker != null).sort((a, b) => b.w * b.h - a.w * a.h)) if (!voices.some((v) => v.speaker === f.speaker)) voices.push(f);
+    const pair = voices.length >= 2 ? voices.slice(0, 2).sort((a, b) => a.x - b.x) : null;
+    const apart = pair && pair[1].x + pair[1].w / 2 - (pair[0].x - pair[0].w / 2) > w * 0.9;
+    const panel = (f) => {
+      let ph = Math.min(height, Math.max(height * 0.35, f.h / 0.38)), pw = (ph * outW) / panelH;
+      if (pw > width) { pw = width; ph = (pw * panelH) / outW; }
+      const even = (v) => Math.round(v / 2) * 2;
+      return { x: even(Math.min(width - pw, Math.max(0, f.x - pw / 2))), y: even(Math.min(height - ph, Math.max(0, f.y - ph * PANEL_FACE_Y))), w: even(pw), h: even(ph) };
+    };
+    const stacked = (a, b) => ({ start: a, end: b, kind: "stack", stack: [panel(pair[0]), panel(pair[1])] });
+
+    if (s.kind === "split" && pair && apart && !s.single) return [stacked(s.start, s.end)];
+    if (s.kind !== "people") return [{ start: s.start, end: s.end, kind: s.kind, fit: fitOf(s, { width, height }) }];
+
     const place = (f) => ({
       x: Math.min(width - w, Math.max(0, f ? f.x - w / 2 : (width - w) / 2)),
       y: Math.min(height - h, Math.max(0, f ? f.y - h * FACE_Y : (height - h) * 0.3)),
@@ -245,14 +269,40 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [] }
     // who speaks as the shot starts, and every change within it (none just before a cut)
     const before = timeline.filter((e) => e.t <= s.start).pop();
     const changes = [{ t: s.start, speaker: before?.speaker ?? timeline[0]?.speaker }, ...timeline.filter((e) => e.t > s.start && e.t < s.end - 1.2)];
-    const keys = [];
-    for (const c of changes) {
-      const p = place(faceOf(c.speaker));
-      const last = keys[keys.length - 1];
-      if (last && Math.abs(last.x - p.x) < w * 0.08 && Math.abs(last.y - p.y) < h * 0.08) continue;
-      keys.push({ t: c.t, ...p });
+
+    // back and forth: runs of short turns of the two, one above the other
+    const runs = [];
+    if (pair && apart && !s.single) {
+      const turns = changes.map((c, k) => ({ ...c, end: changes[k + 1]?.t ?? s.end }));
+      let run = [];
+      const close = () => { if (run.length >= BANTER_TURNS) runs.push([run[0].t, run[run.length - 1].end]); run = []; };
+      for (const t of turns) {
+        if (t.end - t.t < BANTER && pair.some((f) => f.speaker === t.speaker)) run.push(t);
+        else close();
+      }
+      close();
     }
-    return { start: s.start, end: s.end, kind: s.kind, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys };
+
+    const single = (a, b) => {
+      const at = changes.filter((c) => c.t <= a).pop() || changes[0];
+      const keys = [];
+      for (const c of [{ t: a, speaker: at.speaker }, ...changes.filter((c) => c.t > a && c.t < b)]) {
+        const p = place(faceOf(c.speaker));
+        const last = keys[keys.length - 1];
+        if (last && Math.abs(last.x - p.x) < w * 0.08 && Math.abs(last.y - p.y) < h * 0.08) continue;
+        keys.push({ t: c.t, ...p });
+      }
+      return { start: a, end: b, kind: "people", w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys };
+    };
+    const out = [];
+    let t = s.start;
+    for (const [a, b] of runs) {
+      if (a - t > 0.05) out.push(single(t, a));
+      out.push(stacked(a, b));
+      t = b;
+    }
+    if (s.end - t > 0.05) out.push(single(t, s.end));
+    return out;
   });
 }
 
@@ -273,6 +323,14 @@ export function render(video, windows, out, { outW, outH, fps }) {
   const parts = windows.map((s, k) => {
     // the pans' keys are times in the clip: the time starts anew only after the window
     const trim = `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)}`;
+    if (s.stack) {
+      const [a, b] = s.stack, panelH = Math.round((outH * PANEL) / 2) * 2;
+      return `${trim},split=3[sa${k}][sb${k}][sg${k}];`
+        + `[sg${k}]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},gblur=sigma=35,eq=brightness=-0.12[bg${k}];`
+        + `[sa${k}]crop=w=${a.w}:h=${a.h}:x=${a.x}:y=${a.y},scale=${outW}:${panelH}:flags=lanczos[pa${k}];`
+        + `[sb${k}]crop=w=${b.w}:h=${b.h}:x=${b.x}:y=${b.y},scale=${outW}:${panelH}:flags=lanczos[pb${k}];`
+        + `[bg${k}][pa${k}]overlay=0:0[o${k}];[o${k}][pb${k}]overlay=0:${panelH + SEAM},setsar=1,setpts=PTS-STARTPTS[v${k}]`;
+    }
     if (s.fit) {
       const top = Math.round(outH * FIT_TOP), room = Math.round(outH * (FIT_BOTTOM - FIT_TOP));
       const scale = Math.min(outW / s.fit.w, room / s.fit.h);
@@ -317,10 +375,10 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   const people = await locate(video, words, { log });
   if (!people) return null;
   const shots = shotsOf(people, cutsOf(video), meta);
-  const windows = windowsOf(shots, speakerTimeline(words), { ...meta, aspect, kinds });
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
-  const whole = windows.filter((s) => s.fit).length;
-  log(`frame: ${windows.length} shot(s), ${whole ? `${whole} shown whole, ` : ""}${windows.reduce((n, s) => n + (s.keys?.length || 0), 0)} position(s), ${meta.width}×${meta.height} → ${outW}×${outH} …`);
+  const windows = windowsOf(shots, speakerTimeline(words), { ...meta, aspect, kinds, outW });
+  const whole = windows.filter((s) => s.fit).length, two = windows.filter((s) => s.stack).length;
+  log(`frame: ${windows.length} piece(s), ${whole ? `${whole} shown whole, ` : ""}${two ? `${two} with two above each other, ` : ""}${windows.reduce((n, s) => n + (s.keys?.length || 0), 0)} position(s), ${meta.width}×${meta.height} → ${outW}×${outH} …`);
   // written beside and moved over: a framed.mp4 linked into a preview is replaced, never overwritten
   const tmp = out.replace(/\.mp4$/, ".new.mp4");
   render(video, windows, tmp, { outW, outH, fps: meta.fps });
@@ -342,13 +400,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
   const r = await frame(video, Array.isArray(raw) ? raw : raw.words, {
     aspect: (opt("aspect") || "9:16").split(":").map(Number), out: opt("out"), log: console.error,
-    kinds: [...at("whole", "broll"), ...at("follow", "people")],
+    kinds: [...at("whole", "broll"), ...at("follow", "follow")],
   });
   if (!r) console.log("Nothing to cut: the footage has the frame's shape, there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above).");
   else {
-    const say = { people: "follows who speaks", split: "split picture, shown whole", broll: "B-roll, shown whole" };
+    const say = { people: "follows who speaks", stack: "the two who speak, one above the other", split: "split picture, shown whole", broll: "B-roll, shown whole" };
     console.log(`${opt("out")}: the footage follows who speaks; what a window would cut apart is shown whole.`);
     r.windows.forEach((s, k) => console.log(`  ${k + 1}. ${s.start.toFixed(1)}–${s.end.toFixed(1)} s  ${say[s.kind] || s.kind}`));
-    if (r.sheet) console.log(`Look at ${r.sheet}: one row per shot as listed, the footage left, the frame right.`);
+    if (r.sheet) console.log(`Look at ${r.sheet}: one row per piece as listed, the footage left, the frame right.`);
   }
 }
