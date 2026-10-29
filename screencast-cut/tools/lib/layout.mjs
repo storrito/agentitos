@@ -33,7 +33,9 @@ export function areas(width, height, zones, { captions = true, labels = false } 
   const label = [sx, sy];
   const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
   // where a screen's shot may lie around what matters: the whole frame above the captions (the
-  // apps' buttons and bars over it are fine there, what matters stays in content)
+  // apps' buttons and bars over it are fine there, what matters stays in content). Not under
+  // the captions: a screen's text shows through their box and makes them hard to read, and in
+  // a Reel the app's own caption covers what is below them anyway
   const bleed = [0, 0, width, capTop - gap];
   if (height >= width * 1.5) {
     // 9:16: the circle above the captions on the left, a phone's screen beside it. A screen goes
@@ -185,11 +187,11 @@ function around(source, aspect, most = 1) {
 
 // the webcam over the whole frame: its crop in the frame's shape around the face. A face low in
 // the picture (a camera set high) would sit on the captions' band: then the crop is closer, up to
-// 1.6 times, until the face's middle is at most 45 % down the frame
+// 1.25 times (closer looks blurred and too near), towards the face's middle 45 % down the frame
 export function cover(source, width, height) {
   const [, fy0, , fy1] = faceOf(source);
   const cy = fy0 + (fy1 - fy0) * 0.45;
-  return around(source, width / height, Math.min(1, Math.max(1 / 1.6, (1 - cy) / 0.55)));
+  return around(source, width / height, Math.min(1, Math.max(1 / 1.25, (1 - cy) / 0.55)));
 }
 
 // the webcam in a circle: a square around the face, the head and shoulders (about three faces

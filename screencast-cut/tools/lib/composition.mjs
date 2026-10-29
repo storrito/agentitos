@@ -1,6 +1,6 @@
 // The cut as a HyperFrames project. Every piece is a shot: its source's <video> placed so that
 // what matters (the shot's crop) is as large as the frame's safe room allows, the rest of the
-// screen around it as far as the frame goes above the captions (layout.spread), clipped there
+// screen around it out to the frame's edges above the captions (layout.spread), clipped there
 // (clip-path); a phone's screen and the face fill their box (left, top, width, height),
 // played from the source's own time (data-media-start: the recording's time less the source's
 // offset), muted; in the screen and phone views the webcam beside it in a circle, the same
