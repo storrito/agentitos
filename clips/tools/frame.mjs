@@ -16,7 +16,11 @@
 // a voice that speaks for less than a second and a half (a "ja", a laugh) moves nothing; a shot
 // of someone else (a reaction) shows them. Within a shot the window pans in 0.4 s, at a cut it
 // cuts. A wide shot (several people) from footage of 1440 lines and more is cut closer.
-// framed.mp4: 1080 wide, at the footage's frame rate, with its sound.
+// What a window would cut apart is shown whole instead, above the captions over a blurred copy of
+// itself: B-roll (a photo, archive footage, a place, a document, a screen) and a picture split
+// into feeds side by side. Gemini says which a shot is and what in it must be seen.
+// framed.mp4: 1080 wide, at the footage's frame rate, with its sound; framed.json the windows;
+// framed.sheet.jpg each shot's middle, the footage beside the frame, to look at.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -26,6 +30,10 @@ import { fileURLToPath } from "node:url";
 export const FRAME_MODEL = "google/gemini-3.8-flash";
 import { openrouter, GATEWAY_MAX } from "./lib/openrouter.mjs";
 const SHORT_TURN = 1.5, PAN = 0.4, FACE_Y = 0.32;
+// where a shot shown whole sits in the frame, in thousandths of its height: above the captions,
+// below the apps' top bar
+const FIT_TOP = 0.115, FIT_BOTTOM = 0.645;
+export const KINDS = ["people", "split", "broll"];
 
 const probe = (file) => {
   const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate:format=duration", "-of", "json", file], { encoding: "utf8" }));
@@ -55,9 +63,12 @@ const SCHEMA = {
   type: "object", additionalProperties: false, required: ["shots"],
   properties: {
     shots: { type: "array", items: {
-      type: "object", additionalProperties: false, required: ["start", "end", "people"],
+      type: "object", additionalProperties: false, required: ["start", "end", "kind", "subject", "people"],
       properties: {
         start: { type: "number" }, end: { type: "number" },
+        kind: { type: "string", enum: KINDS },
+        subject: { type: "object", additionalProperties: false, required: ["left", "top", "right", "bottom"],
+          properties: { left: { type: "number" }, top: { type: "number" }, right: { type: "number" }, bottom: { type: "number" } } },
         people: { type: "array", items: {
           type: "object", additionalProperties: false, required: ["speaker", "face", "who"],
           properties: {
@@ -86,9 +97,14 @@ export async function locate(video, words, { log = () => {} } = {}) {
 ${lines}
 
 Watch the video and listen. Find out which person in the picture each voice label belongs to (whose lips move, who gestures while that voice speaks).
-Then list the camera shots of the clip (a new shot starts at every cut; a clip without cuts is one shot), and for each shot every person visible in it:
-their face, as its left, top, right and bottom edge in thousandths of the frame (0–1000; left and right from the left edge, top and bottom from the top edge),
-and the voice label that person speaks with (null if they do not speak in the clip).`;
+Then list the camera shots of the clip (a new shot starts at every cut; a clip without cuts is one shot). For each shot:
+- its kind: "people" when the camera shows people of the conversation itself (in the room or on a call, one or several in one picture);
+  "split" when the picture is divided into separate feeds or pictures side by side (a split-screen call, two photos next to each other);
+  "broll" for everything else: a photo, archive or news footage, a place, an object, a document, a screen;
+- its subject: the box of what must stay visible for the shot to make sense (the photo with everyone in it, both feeds, the scene;
+  for "people" the people), as its left, top, right and bottom edge in thousandths of the frame (0–1000; left and right from the left edge, top and bottom from the top edge);
+- every person visible in it, people in photos and footage included: their face as such a box,
+  and the voice label that person speaks with (null if they do not speak in the clip).`;
   if (or.gateway && (fs.statSync(small).size * 4) / 3 > GATEWAY_MAX) {
     fs.rmSync(small, { force: true });
     log(`frame: the clip is too large for the Sprites gateway (${GATEWAY_MAX / 1e6} MB a request): the footage stays as it is`);
@@ -151,7 +167,15 @@ export function shotsOf(people, cuts, { width, height, duration }) {
         const [l, r] = [c(p.face.left), c(p.face.right)].sort((a, b) => a - b), [t, b] = [c(p.face.top), c(p.face.bottom)].sort((a, b) => a - b);
         return { speaker: p.speaker == null ? null : String(p.speaker), x: ((l + r) / 2) * width, y: ((t + b) / 2) * height, w: (r - l) * width, h: (b - t) * height };
       });
-    return { start, faces };
+    // older answers name no kind: a shot without a face is B-roll
+    const kind = KINDS.includes(s.kind) ? s.kind : faces.length ? "people" : "broll";
+    const box = s.subject && ["left", "top", "right", "bottom"].every((e) => Number.isFinite(s.subject[e])) ? s.subject : null;
+    const subject = box && (() => {
+      const c = (v) => Math.min(1000, Math.max(0, v)) / 1000;
+      const [l, r] = [c(box.left), c(box.right)].sort((a, b) => a - b), [t, b] = [c(box.top), c(box.bottom)].sort((a, b) => a - b);
+      return r - l > 0.05 && b - t > 0.05 ? { x: l * width, y: t * height, w: (r - l) * width, h: (b - t) * height } : null;
+    })();
+    return { start, faces, kind, subject };
   }).map((s, k, all) => ({ ...s, end: all[k + 1] ? all[k + 1].start : duration }))
     .filter((s) => s.end - s.start > 0.05);
 }
@@ -184,11 +208,28 @@ export function speakerTimeline(words) {
   return runs.map((r, k) => ({ t: k ? r.t : 0, speaker: r.speaker }));
 }
 
-// the window over the footage, piece by piece: [{ start, end, w, h, keys: [{ t, x, y }] }],
-// w×h in the frame's shape, x/y its top left corner in the footage's pixels
-export function windowsOf(shots, timeline, { width, height, aspect }) {
+// the part of a shot shown whole: its subject with a little air, or all of it; the whole width
+// when the subject fills most of it
+function fitOf(s, { width, height }) {
+  const b = s.kind === "split" || !s.subject ? { x: 0, y: 0, w: width, h: height } : s.subject;
+  const ax = b.w * 0.04, ay = b.h * 0.04;
+  let x = Math.max(0, b.x - ax), y = Math.max(0, b.y - ay);
+  let w = Math.min(width - x, b.w + 2 * ax), h = Math.min(height - y, b.h + 2 * ay);
+  if (w > width * 0.8) { x = 0; w = width; }
+  if (h > height * 0.8) { y = 0; h = height; }
+  const even = (v) => Math.max(2, Math.round(v / 2) * 2);
+  return { x: Math.round(x), y: Math.round(y), w: even(w), h: even(h) };
+}
+
+// the window over the footage, piece by piece: [{ start, end, kind, w, h, keys: [{ t, x, y }] }],
+// w×h in the frame's shape, x/y its top left corner in the footage's pixels; a shot shown whole
+// has `fit`, the part of the footage it shows. `kinds` overrides a shot's kind: [{ t, kind }]
+export function windowsOf(shots, timeline, { width, height, aspect, kinds = [] }) {
   const [aw, ah] = aspect;
-  return shots.map((s) => {
+  return shots.map((s0) => {
+    const forced = kinds.find((o) => o.t >= s0.start && o.t < s0.end);
+    const s = forced ? { ...s0, kind: forced.kind } : s0;
+    if (s.kind !== "people") return { start: s.start, end: s.end, kind: s.kind, fit: fitOf(s, { width, height }) };
     // a wide shot (several people, their faces small) from footage sharp enough is cut closer
     const biggest = Math.max(0, ...s.faces.map((f) => f.h));
     const zoom = height >= 1400 && s.faces.length >= 2 && biggest < height * 0.22 ? 0.72 : 1;
@@ -211,7 +252,7 @@ export function windowsOf(shots, timeline, { width, height, aspect }) {
       if (last && Math.abs(last.x - p.x) < w * 0.08 && Math.abs(last.y - p.y) < h * 0.08) continue;
       keys.push({ t: c.t, ...p });
     }
-    return { start: s.start, end: s.end, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys };
+    return { start: s.start, end: s.end, kind: s.kind, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys };
   });
 }
 
@@ -226,11 +267,23 @@ function moving(keys, axis) {
   return out;
 }
 
-// the framed footage: each shot cut by its window, scaled to outW×outH, back to back, with the sound
+// the framed footage: each shot cut by its window, scaled to outW×outH, back to back, with the
+// sound; a shot shown whole sits between FIT_TOP and FIT_BOTTOM over a blurred, darker copy
 export function render(video, windows, out, { outW, outH, fps }) {
   const parts = windows.map((s, k) => {
+    const trim = `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)},setpts=PTS-STARTPTS`;
+    if (s.fit) {
+      const top = Math.round(outH * FIT_TOP), room = Math.round(outH * (FIT_BOTTOM - FIT_TOP));
+      const scale = Math.min(outW / s.fit.w, room / s.fit.h);
+      const fw = Math.round((s.fit.w * scale) / 2) * 2, fh = Math.round((s.fit.h * scale) / 2) * 2;
+      const fx = Math.round((outW - fw) / 2), fy = top + Math.round((room - fh) / 2);
+      return `${trim},split=2[b${k}][f${k}];`
+        + `[b${k}]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},gblur=sigma=35,eq=brightness=-0.12[bb${k}];`
+        + `[f${k}]crop=w=${s.fit.w}:h=${s.fit.h}:x=${s.fit.x}:y=${s.fit.y},scale=${fw}:${fh}:flags=lanczos[ff${k}];`
+        + `[bb${k}][ff${k}]overlay=${fx}:${fy},setsar=1[v${k}]`;
+    }
     const x = moving(s.keys, "x"), y = moving(s.keys, "y");
-    return `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)},crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH}:flags=lanczos,setsar=1,setpts=PTS-STARTPTS[v${k}]`;
+    return `${trim},crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH}:flags=lanczos,setsar=1[v${k}]`;
   });
   const graph = parts.join(";") + ";" + windows.map((_, k) => `[v${k}]`).join("") + `concat=n=${windows.length}:v=1:a=0,fps=${fps.toFixed(3)}[v]`;
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-filter_complex", graph, "-map", "[v]", "-map", "0:a?",
@@ -238,23 +291,44 @@ export function render(video, windows, out, { outW, outH, fps }) {
   if (r.status !== 0) throw new Error("frame: ffmpeg could not cut the footage");
 }
 
+// each shot's middle as a row, the footage beside the frame, to see what the window left out
+export function sheet(video, framed, windows, file) {
+  const rows = windows.slice(0, 16), H = 320;
+  const args = ["-v", "error", "-y"];
+  for (const s of rows) {
+    const t = ((s.start + s.end) / 2).toFixed(3);
+    args.push("-ss", t, "-i", video, "-ss", t, "-i", framed);
+  }
+  const chains = rows.map((_, k) => `[${2 * k}:v]scale=-2:${H},setsar=1[o${k}];[${2 * k + 1}:v]scale=-2:${H},setsar=1,pad=iw+12:ih:12:0:white[r${k}];[o${k}][r${k}]hstack[row${k}]`);
+  const graph = chains.join(";") + ";" + rows.map((_, k) => `[row${k}]`).join("") + (rows.length > 1 ? `vstack=inputs=${rows.length}[s]` : "copy[s]");
+  const r = spawnSync("ffmpeg", [...args, "-filter_complex", graph, "-map", "[s]", "-frames:v", "1", "-q:v", "4", file], { encoding: "utf8" });
+  return r.status === 0;
+}
+
 // does footage of this shape need cutting for the frame? (wider by more than 15 %)
 export function needsFrame({ width, height }, [aw, ah]) {
   return width / height > (aw / ah) * 1.15;
 }
 
-export async function frame(video, words, { aspect = [9, 16], out, log = () => {} }) {
+export async function frame(video, words, { aspect = [9, 16], out, kinds = [], log = () => {} }) {
   const meta = probe(video);
   if (!needsFrame(meta, aspect)) return null;
   const people = await locate(video, words, { log });
   if (!people) return null;
   const shots = shotsOf(people, cutsOf(video), meta);
-  const windows = windowsOf(shots, speakerTimeline(words), { ...meta, aspect });
+  const windows = windowsOf(shots, speakerTimeline(words), { ...meta, aspect, kinds });
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
-  log(`frame: ${windows.length} shot(s), ${windows.reduce((n, s) => n + s.keys.length, 0)} position(s), ${meta.width}×${meta.height} → ${outW}×${outH} …`);
-  render(video, windows, out, { outW, outH, fps: meta.fps });
+  const whole = windows.filter((s) => s.fit).length;
+  log(`frame: ${windows.length} shot(s), ${whole ? `${whole} shown whole, ` : ""}${windows.reduce((n, s) => n + (s.keys?.length || 0), 0)} position(s), ${meta.width}×${meta.height} → ${outW}×${outH} …`);
+  // written beside and moved over: a framed.mp4 linked into a preview is replaced, never overwritten
+  const tmp = out.replace(/\.mp4$/, ".new.mp4");
+  render(video, windows, tmp, { outW, outH, fps: meta.fps });
+  fs.rmSync(out, { force: true });
+  fs.renameSync(tmp, out);
   fs.writeFileSync(out.replace(/\.mp4$/, ".json"), JSON.stringify({ footage: path.basename(video), aspect, windows }, null, 1));
-  return { out, windows };
+  const sheetFile = out.replace(/\.mp4$/, ".sheet.jpg");
+  const sheetOk = sheet(video, out, windows, sheetFile);
+  return { out, windows, sheet: sheetOk ? sheetFile : null };
 }
 
 // ---------------------------------------------------------------- CLI
@@ -262,8 +336,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   const opt = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : undefined; };
   const [video, transcript] = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
-  if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4>"); process.exit(1); }
+  if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…]"); process.exit(1); }
+  const at = (k, kind) => String(opt(k) || "").split(",").filter(Boolean).map((v) => ({ t: Number(v), kind })).filter((o) => Number.isFinite(o.t));
   const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
-  const r = await frame(video, Array.isArray(raw) ? raw : raw.words, { aspect: (opt("aspect") || "9:16").split(":").map(Number), out: opt("out"), log: console.error });
-  console.log(r ? `${opt("out")}: the footage follows who speaks.` : "Nothing to cut: the footage has the frame's shape, there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above).");
+  const r = await frame(video, Array.isArray(raw) ? raw : raw.words, {
+    aspect: (opt("aspect") || "9:16").split(":").map(Number), out: opt("out"), log: console.error,
+    kinds: [...at("whole", "broll"), ...at("follow", "people")],
+  });
+  if (!r) console.log("Nothing to cut: the footage has the frame's shape, there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above).");
+  else {
+    const say = { people: "follows who speaks", split: "split picture, shown whole", broll: "B-roll, shown whole" };
+    console.log(`${opt("out")}: the footage follows who speaks; what a window would cut apart is shown whole.`);
+    r.windows.forEach((s, k) => console.log(`  ${k + 1}. ${s.start.toFixed(1)}–${s.end.toFixed(1)} s  ${say[s.kind] || s.kind}`));
+    if (r.sheet) console.log(`Look at ${r.sheet}: one row per shot as listed, the footage left, the frame right.`);
+  }
 }

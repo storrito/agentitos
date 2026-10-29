@@ -9,6 +9,10 @@
 //        (<clip>/clip.mp4), framed on whoever speaks (<clip>/framed.mp4, tools/frame.mjs), and
 //        handed to agentitos' best-takes (<clip>/takes/): every word written down again, closer,
 //        tight pauses, one keep of the whole moment in <clip>/takes/cut.json
+//   node tools/clips.mjs reframe <clip> [--whole <s>,…] [--follow <s>,…]
+//        the framing again (no new cost: who sits where is kept), the shot at each <s> (seconds of
+//        <clip>/clip.mp4, as framed.sheet.jpg lists them) shown whole or following who speaks; the
+//        edit in takes/ stays, its next build takes the new picture
 //   node tools/clips.mjs render <clip> <video.mp4>
 //        the built preview rendered with HyperFrames, brought to −14 LUFS, subtitles beside it
 //
@@ -22,7 +26,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["out", "platform", "hook", "title", "brand"];
+const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow"];
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -116,7 +120,7 @@ function prepare(episode, dir, range, opts) {
   }
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
-  const settings = ["--aspect", "9:16", "--pauses", "tight", ...Object.entries(opts).flatMap(([k, v]) => [`--${k}`, v])];
+  const settings = ["--aspect", "9:16", "--pauses", "tight", ...Object.entries(opts).filter(([k]) => !["whole", "follow"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
 
   // the whole moment as one keep: the words heard within its first and last sentence (the cut's
@@ -133,10 +137,29 @@ function prepare(episode, dir, range, opts) {
 
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
+  if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (each shot: the footage left, the frame right). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
   node ${t} captions ${d} --style <style>${opts.platform ? "" : " --platform <platforms>"}${opts.brand ? ` --brand ${opts.brand}` : ""}
   node ${t} check ${d}`);
+}
+
+// ---------------------------------------------------------------------------------- reframe
+function reframe(dir, opts) {
+  if (!dir || !(opts.whole || opts.follow)) fail("clips.mjs reframe <clip> [--whole <s>,…] [--follow <s>,…]");
+  const clip = path.join(dir, "clip.mp4"), words = path.join(dir, "clip.words.json"), framed = path.join(dir, "framed.mp4");
+  if (!fs.existsSync(clip) || !fs.existsSync(words)) fail(`${rel(dir)} is not prepared: clips.mjs prepare first.`);
+  const flags = ["whole", "follow"].flatMap((k) => (opts[k] ? [`--${k}`, opts[k]] : []));
+  run(path.join(HERE, "frame.mjs"), [clip, words, "--aspect", "9:16", "--out", framed, ...flags]);
+  if (!fs.existsSync(framed)) fail("The framing gave no video, see above.");
+  // the edit's source is the framed clip: the new one in its place (same length, same sound)
+  const src = path.join(dir, "takes", "source", "01.mp4");
+  if (fs.existsSync(src)) {
+    fs.rmSync(src);
+    try { fs.linkSync(framed, src); } catch { fs.copyFileSync(framed, src); }
+  }
+  const takes = takesTool();
+  console.log(`Next: node ${takes ? rel(takes) : "<best-takes>/tools/takes.mjs"} build ${rel(path.join(dir, "takes"))} (the cut, the captions and the hook stay), then check.`);
 }
 
 // ----------------------------------------------------------------------------------- render
@@ -165,5 +188,6 @@ function render(dir, file) {
 const [command, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
 if (command === "prepare") prepare(pos[0], pos[1], pos[2], opts);
+else if (command === "reframe") reframe(pos[0], opts);
 else if (command === "render") render(pos[0], pos[1]);
-else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | render <clip> <video.mp4>");
+else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | render <clip> <video.mp4>");
