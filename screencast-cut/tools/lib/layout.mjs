@@ -32,19 +32,23 @@ export function areas(width, height, zones, { captions = true, labels = false } 
   const capTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
   const label = [sx, sy];
   const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
+  // where a screen's shot may lie around what matters: the whole frame above the captions (the
+  // apps' buttons and bars over it are fine there, what matters stays in content)
+  const bleed = [0, 0, width, capTop - gap];
   if (height >= width * 1.5) {
     // 9:16: the circle above the captions on the left, a phone's screen beside it. A screen goes
     // across the whole width where no app has buttons on the right (a Story), else either across
     // the whole width above the buttons' column (the zones' wide stretch) or inside the safe box,
-    // whichever shows it larger
+    // whichever shows it larger; without the circle (solo) down to the captions
     const d = Math.round(width * 0.22);
     const pip = [sx, capTop - gap - d, d];
-    const bottom = pip[1] - gap;
     const column = zones.margins.right > zones.margins.left + 40;
-    const content = !column ? [[0, top, width, bottom - top]]
+    const contentTo = (bottom) => (!column ? [[0, top, width, bottom - top]]
       : [[sx, top, sw, bottom - top], ...(zones.wide && Math.min(bottom, zones.wide[1] + zones.wide[3]) > top
-        ? [[0, top, width, Math.min(bottom, zones.wide[1] + zones.wide[3]) - top]] : [])];
-    return { content, tall: [sx + d + gap, top, sw - d - gap, capTop - gap - top], pip, label };
+        ? [[0, top, width, Math.min(bottom, zones.wide[1] + zones.wide[3]) - top]] : [])]);
+    const tall = [sx + d + gap, top, sw - d - gap, capTop - gap - top];
+    // a shot with room around it may also take the safe box beside the circle, down to the captions
+    return { content: contentTo(pip[1] - gap), beside: [tall], solo: contentTo(capTop - gap), bleed, tall, pip, label };
   }
   if (height > width * 0.9) {
     // 4:5 and 1:1: the circle in the safe box's top right corner, beside the label, the shot
@@ -52,14 +56,16 @@ export function areas(width, height, zones, { captions = true, labels = false } 
     const d = Math.round(short * 0.16);
     const pip = [sx + sw - d, sy, d];
     const below = sy + Math.max(top - sy, d + gap);
-    return { content: [[0, below, width, capTop - gap - below]], tall: [sx, below, sw, capTop - gap - below], pip, label };
+    const content = [[0, below, width, capTop - gap - below]];
+    return { content, solo: [[0, top, width, capTop - gap - top]], bleed, tall: [sx, below, sw, capTop - gap - below], pip, label };
   }
   // wide: the shot across the width between the apps' bar at the top and the captions (the safe
   // box's bottom without them), the circle in the safe box's top right corner and the label in
   // its top left one, over the shot's corners where they meet
   const d = Math.round(short * 0.2);
   const pip = [sx + sw - d, sy, d];
-  return { content: [[0, sy, width, (captions ? capTop - gap : sy + sh) - sy]], tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
+  const content = [[0, sy, width, (captions ? capTop - gap : sy + sh) - sy]];
+  return { content, solo: content, bleed, tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
 }
 
 // the largest box of `aspect` (width / height) inside `area`, centred; of several areas, the one
@@ -127,22 +133,71 @@ export function place(box, c, source) {
     inset: [by - top, left + w - (bx + bw), top + h - (by + bh), bx - left].map((v) => r(Math.max(0, v))) };
 }
 
-// the webcam over the whole frame: its crop in the frame's shape, centred, a little high
-// (a face sits in the upper half of a webcam's picture)
-export function cover(source, width, height) {
-  const aspect = width / height, sa = source.width / source.height;
-  if (sa > aspect) {
-    const w = aspect / sa;
-    return [(1 - w) / 2, 0, (1 + w) / 2, 1].map((v) => +v.toFixed(4));
-  }
-  const h = sa / aspect;
-  const top = Math.max(0, Math.min(1 - h, 0.42 - h / 2));
-  return [0, top, 1, top + h].map((v) => +v.toFixed(4));
+// A screen's shot when the frame has room around what matters: `c` (0–1 of the source) is what
+// must be seen; it is scaled to the largest it fits into `area` (the safe room, as for fit()),
+// at most to `maxScale` source pixels per frame pixel, and the rest of the source shows around it
+// as far as `bleed` (the frame where the screen may lie, under the apps' buttons too, not under
+// the captions), moved so that it fills `bleed` where it can without pushing `c` out of `area`.
+// Returns the element's geometry as place() does.
+export function spread(area, bleed, c, source, { maxScale = Infinity } = {}) {
+  const zw = (c[2] - c[0]) * source.width, zh = (c[3] - c[1]) * source.height;
+  // the room that holds the box largest
+  const rooms = Array.isArray(area[0]) ? area : [area];
+  const room0 = rooms.reduce((b, a) => (fit(a, zw / zh)[2] > fit(b, zw / zh)[2] ? a : b));
+  const scale = Math.min(fit(room0, zw / zh)[2] / zw, maxScale);
+  const w = source.width * scale, h = source.height * scale;
+  // where the box goes: centred in its room; then the source moved to fill the bleed, as far as
+  // the box stays in the room
+  const [bx, by, bw, bh] = bleed;
+  const axis = (size, rLo, rSize, bLo, bSize, full, c0) => {
+    const centred = rLo + (rSize - size) / 2 - c0 * full;
+    const lo = rLo - c0 * full, hi = rLo + rSize - size - c0 * full; // the box inside its room
+    const fLo = bLo + bSize - full, fHi = bLo; // the source covering the bleed
+    const a = Math.max(lo, fLo), b = Math.min(hi, fHi);
+    if (a <= b) return Math.min(Math.max(centred, a), b);
+    // the source cannot cover the bleed on this axis: centred on the box, kept in the room
+    return Math.min(Math.max(centred, lo), hi);
+  };
+  const left = axis(zw * scale, room0[0], room0[2], bx, bw, w, c[0]);
+  const top = axis(zh * scale, room0[1], room0[3], by, bh, h, c[1]);
+  // what shows: the source inside the bleed
+  const x0 = Math.max(left, bx), y0 = Math.max(top, by), x1 = Math.min(left + w, bx + bw), y1 = Math.min(top + h, by + bh);
+  const r = (v) => +v.toFixed(1);
+  return { left: r(left), top: r(top), width: r(w), height: r(h), box: [x0, y0, x1 - x0, y1 - y0],
+    inset: [y0 - top, left + w - x1, top + h - y1, x0 - left].map((v) => r(Math.max(0, v))) };
 }
 
-// the webcam in a circle of diameter d at (x, y): a square crop of its middle
+// a face box (0–1 of the webcam's picture, from sources.json) or the webcam's middle, a little high
+const faceOf = (source) => source.face || [0.35, 0.2, 0.65, 0.65];
+
+// the crop of `aspect` (width / height, in the source's pixels) of the largest size `most` (0–1
+// of the source's side it is limited by) around the face: the face's middle across, its eyes a
+// little above the middle
+function around(source, aspect, most = 1) {
+  const sa = source.width / source.height;
+  let w = Math.min(1, aspect / sa) * most, h = (w * sa) / aspect;
+  if (h > 1) { h = 1; w = aspect / sa; }
+  const [fx0, fy0, fx1, fy1] = faceOf(source);
+  const cx = (fx0 + fx1) / 2, cy = fy0 + (fy1 - fy0) * 0.45;
+  const left = Math.min(Math.max(0, cx - w / 2), 1 - w), top = Math.min(Math.max(0, cy - h * 0.42), 1 - h);
+  return [left, top, left + w, top + h].map((v) => +v.toFixed(4));
+}
+
+// the webcam over the whole frame: its crop in the frame's shape around the face. A face low in
+// the picture (a camera set high) would sit on the captions' band: then the crop is closer, up to
+// 1.6 times, until the face's middle is at most 45 % down the frame
+export function cover(source, width, height) {
+  const [, fy0, , fy1] = faceOf(source);
+  const cy = fy0 + (fy1 - fy0) * 0.45;
+  return around(source, width / height, Math.min(1, Math.max(1 / 1.6, (1 - cy) / 0.55)));
+}
+
+// the webcam in a circle: a square around the face, the head and shoulders (about three faces
+// high), closer when the face sits low (its middle at most half way down), never more than the
+// picture's shorter side
 export function circle(source) {
-  const s = Math.min(source.width, source.height);
-  const w = s / source.width, h = s / source.height;
-  return [(1 - w) / 2, Math.max(0, 0.45 - h / 2), (1 + w) / 2, Math.max(0, 0.45 - h / 2) + h].map((v) => +v.toFixed(4));
+  const [, fy0, , fy1] = faceOf(source);
+  const cy = fy0 + (fy1 - fy0) * 0.45;
+  const most = source.face ? Math.min(1, Math.max(0.45, Math.min((fy1 - fy0) * 3, (1 - cy) / 0.5))) : 1;
+  return around(source, 1, most);
 }

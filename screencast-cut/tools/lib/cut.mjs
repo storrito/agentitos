@@ -177,10 +177,14 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     return out;
   }, []);
 
-  // on whole frames, one after the other; a piece that plays faster takes less time than its range
+  // on whole frames, one after the other; a piece that plays faster takes less time than its range.
+  // The whole cut a little faster (settings.speed): every piece, the timelapses on top (lapse: a
+  // piece's own speed-up, without it)
+  const pace = Number(settings.speed) || 1;
   let at = 0;
   pieces = pieces.filter((p) => {
-    const rate = p.rate || 1;
+    p.lapse = p.rate || 1;
+    const rate = (p.rate = p.lapse * pace);
     const frames = Math.round(((p.out - p.in) / rate) * fps);
     if (frames < 1) { if (p.words.length) warnings.push(`words ${p.words[0]}–${p.words.at(-1)} are shorter than a frame and left out`); return false; }
     p.out = p.in + (frames / fps) * rate;
@@ -226,7 +230,8 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       if (w.kind !== "word") continue;
       const text = fixes[i] ?? fixes[String(i)] ?? w.text;
       if (!text) continue;
-      const s = p.start + Math.max(0, w.start - p.in), e = p.start + Math.min(p.duration, w.end - p.in);
+      const rate = p.rate || 1;
+      const s = p.start + Math.max(0, w.start - p.in) / rate, e = p.start + Math.min(p.duration, (w.end - p.in) / rate);
       timed.push({ i, text, start: +s.toFixed(3), end: +Math.max(e, s + 0.05).toFixed(3) });
     }
   }
