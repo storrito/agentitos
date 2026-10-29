@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A long video (a YouTube episode, a talk) as the source of several shorts.
 //
-//   node tools/episode.mjs fetch <url|file> <dir>
+//   node tools/episode.mjs fetch <url|file> <dir> [--cookies <cookies.txt>]
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
@@ -22,6 +22,12 @@
 // speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
 // (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
 // ~/.cache/agentitos/.
+//
+// YouTube turns some servers away ("Sign in to confirm you're not a bot"; a Sprite's address is
+// one): the tool says so at once instead of trying again. Then an upload of the file is the way,
+// or the person's YouTube cookies (a cookies.txt, Netscape format, from a browser extension):
+// --cookies keeps a copy in <dir>/cookies.txt for the cuts that follow; YTDLP_COOKIES names one
+// for every episode, YTDLP_PROXY a proxy for yt-dlp.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -46,7 +52,7 @@ const seconds = (v) => {
 
 // ---------------------------------------------------------------- yt-dlp
 function ytdlp() {
-  const which = (() => { try { return execFileSync("which", ["yt-dlp"], { encoding: "utf8" }).trim(); } catch { return ""; } })();
+  const which = (() => { try { return execFileSync("which", ["yt-dlp"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } })();
   if (which) return which;
   const dir = path.join(os.homedir(), ".cache", "agentitos");
   const bin = path.join(dir, "yt-dlp");
@@ -61,14 +67,27 @@ function ytdlp() {
 }
 const run = (args, opts = {}) => execFileSync(ytdlp(), args, { encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"], ...opts });
 
+// how yt-dlp reaches YouTube: the episode's cookies.txt, else YTDLP_COOKIES; YTDLP_PROXY
+function access(dir) {
+  const own = dir && path.join(dir, "cookies.txt");
+  const cookies = own && fs.existsSync(own) ? own : process.env.YTDLP_COOKIES;
+  return [...(cookies ? ["--cookies", cookies] : []), ...(process.env.YTDLP_PROXY ? ["--proxy", process.env.YTDLP_PROXY] : [])];
+}
+
 // YouTube turns a server away now and then (403, 429, "reload the page") and lets it in a
-// little later: such a refusal is tried twice more, after a pause
-const refused = (e) => /HTTP Error 40[34]|HTTP Error 429|Forbidden|needs to be reloaded|Sign in to confirm/i.test(String(e.stderr || e.message));
-function download(args) {
+// little later: such a refusal is tried twice more, after a pause. Its bot check does not pass
+// with time: it ends here, with what to do instead.
+const refused = (e) => /HTTP Error 40[34]|HTTP Error 429|Forbidden|needs to be reloaded/i.test(String(e.stderr || e.message));
+const botCheck = (e) => /Sign in to confirm|not a bot|cookies-from-browser|--cookies for the authentication/i.test(String(e.stderr || e.message));
+function download(args, dir) {
+  const used = access(dir);
   for (let attempt = 1; ; attempt++) {
     try {
-      return run(args);
+      return run([...used, ...args]);
     } catch (e) {
+      if (botCheck(e)) fail(used.includes("--cookies")
+        ? "✗ YouTube turns this machine away although cookies were given: they are old or of a signed-out browser. Ask for a fresh cookies.txt (exported while signed in to YouTube), or for the video file as an upload."
+        : "✗ YouTube turns this machine away (it asks to sign in, to prove it is no bot). Ask the person to upload the video file instead: that always works. Or, for a link, a cookies.txt of their YouTube login (exported with a browser extension such as \"Get cookies.txt LOCALLY\"), uploaded, then: episode.mjs fetch <url> <dir> --cookies uploads/cookies.txt");
       if (attempt >= 3 || !refused(e)) throw e;
       log(`episode: YouTube refused (${String(e.stderr || "").trim().split("\n").pop()}), again in ${attempt * 20} s …`);
       execFileSync("sleep", [String(attempt * 20)]);
@@ -153,12 +172,21 @@ async function fetchFile(file, dir) {
   writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words);
 }
 
-async function fetchEpisode(url, dir) {
-  if (!url || !dir) fail("episode.mjs fetch <url|file> <dir>");
+async function fetchEpisode(...args) {
+  const at = args.indexOf("--cookies");
+  const cookies = at >= 0 ? args[at + 1] : null;
+  const [url, dir] = args.filter((_, k) => at < 0 || (k !== at && k !== at + 1));
+  if (!url || !dir) fail("episode.mjs fetch <url|file> <dir> [--cookies <cookies.txt>]");
   fs.mkdirSync(dir, { recursive: true });
   if (isFile(url)) return fetchFile(path.resolve(url), dir);
+  if (cookies) {
+    if (!fs.existsSync(cookies)) fail(`There is no ${cookies}.`);
+    // kept beside the episode for its cuts, readable only by this user: they sign in as the person
+    fs.copyFileSync(cookies, path.join(dir, "cookies.txt"));
+    fs.chmodSync(path.join(dir, "cookies.txt"), 0o600);
+  }
   log("episode: reading the video's facts …");
-  const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
+  const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url], dir));
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
   let words, source;
@@ -171,7 +199,7 @@ async function fetchEpisode(url, dir) {
       // the full-rate m4a (about 130 kbit/s): at about 50 kbit/s the download is a few seconds
       // shorter, but the model's speakers fall apart, nine to thirteen voices where the full rate
       // hears four (measured 2026-10-19)
-      download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
+      download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url], dir);
       audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {
       // the captions still give every word and its time; the speakers come with each cut clip
@@ -193,7 +221,7 @@ async function fetchEpisode(url, dir) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-"));
     if (!track) fail("No sound from YouTube and no captions: nothing to write the words down from. Try again in a while.");
     // one track only: YouTube answers a second one with 429 now and then
-    download(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "subs"), url]);
+    download(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "subs"), url], dir);
     const file = fs.readdirSync(tmp).find((f) => f.endsWith(".json3"));
     if (!file) fail("No sound from YouTube and no captions: nothing to write the words down from. Try again in a while.");
     words = captionWords(path.join(tmp, file));
@@ -242,7 +270,7 @@ function cut(dir, a, b, c) {
   // (tools/frame.mjs); from 1080p that third is 608 pixels wide and comes out soft
   download(["-f", "bv*[height<=2160]+ba[ext=m4a]/bv*[height<=2160]+ba/b[height<=2160]/b",
     "--download-sections", `*${from.toFixed(2)}-${to.toFixed(2)}`, "--force-keyframes-at-cuts",
-    "--merge-output-format", "mp4", "--no-playlist", "-o", `${base}.%(ext)s`, episode.url]);
+    "--merge-output-format", "mp4", "--no-playlist", "-o", `${base}.%(ext)s`, episode.url], dir);
   if (!fs.existsSync(`${base}.mp4`)) fail("The cut did not come out, see above.");
   fs.writeFileSync(`${base}.json`, JSON.stringify({ url: episode.url, from: +from.toFixed(2), to: +to.toFixed(2) }));
   console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: the skill that edits it (kinetic-lyrics: short.mjs new <short> ${base}.mp4).`);

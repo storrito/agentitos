@@ -42,6 +42,8 @@ node <skill>/tools/episode.mjs fetch <url or uploads/<file>> work/episode
 
 writes `work/episode/episode.json` (title, channel, length, the voices), `words.json` (every word with its time and speaker) and `sentences.txt`, one numbered sentence a line.
 
+YouTube turns some machines away (a Sprite's among them): `fetch` then says so within seconds. Ask in one sentence for the video file as an upload, which always works; for someone who wants to stay with links, a `cookies.txt` of their YouTube login (exported with a browser extension while signed in), uploaded, then `fetch <url> work/episode --cookies uploads/<file>`. Never ask them to paste cookies into the chat.
+
 ### 2. The moments
 
 Do not read `sentences.txt` yourself (an hour is some 30,000 tokens that would stay in every later step). `node <skill>/tools/episode.mjs moments work/episode` has a model read it once and prints:

@@ -46,6 +46,8 @@ node <skill>/tools/episode.mjs fetch <url> work/episode
 
 writes `work/episode/episode.json` (title, channel, length, the voices), `words.json` (every word with its time and speaker) and `sentences.txt`, one numbered sentence a line: `991 [1:06:44–1:06:49] A: Du hast morgens einen Kuchen gebacken …`.
 
+YouTube turns some machines away (a Sprite's among them): `fetch` then says so within seconds. Ask in one sentence for the video file as an upload; or a `cookies.txt` of their YouTube login, uploaded, then `fetch <url> work/episode --cookies uploads/<file>`. Never ask them to paste cookies into the chat.
+
 ### 2. The moments, and how many
 
 Do not read `sentences.txt` yourself: an hour of talk is some 30,000 tokens, and what you read stays in every later step of this chat and makes each of them slower and dearer. `node <skill>/tools/episode.mjs moments work/episode` has a model read it once (a minute or two, about ten cents an hour) and lists the candidates, best first, each with its sentence range, time, length, kind, title, the first line, why it works, and a score out of 10 (two points each for a cold open, one idea, a clean end, leaning on nothing said before, and the length; under 7 it says `weak`), with what the episode holds and the ideas too spread out to clip; `work/episode/moments.json` holds them with their YouTube links. A moment's hook for the screen, when it has one, is a good start for `--hook`. Read that list; when you need a candidate's words, `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt` prints just them. Without OpenRouter read `sentences.txt` yourself. The moments it looks for, and you too when you choose among them:
