@@ -100,7 +100,7 @@ Only after their "looks good". Tell them in one sentence that you are rendering 
 node <skill>/tools/takes.mjs finish takes/<name> artifacts/<name>.mp4
 ```
 
-brings the whole to −14 LUFS, the loudness Instagram, TikTok and YouTube play at (`--loudness` at build time for another), and writes the subtitles beside it, `artifacts/<name>.srt`. It prints the length, the size and the measured loudness; when it says the video is from before the last build, render again. The video shows beside the chat by itself; say in one sentence that it is ready, with the download links.
+brings the whole to −14 LUFS, the loudness Instagram, TikTok and YouTube play at (`--loudness` at build time for another), and writes the subtitles beside it, `artifacts/<name>.srt`. It prints the length, the size and the measured loudness; when it says the video is from before the last build, render again. The video shows beside the chat by itself; say in one sentence that it is ready, with the download links and a button "Publish it". To publish, follow agentitos' **publish-video** (beside this skill) with `artifacts/<name>.mp4`: it checks the video, writes the texts with video-descriptions and schedules it through Storrito; never call Storrito's schedule procedures yourself.
 
 ### 7. The next recording
 
@@ -137,7 +137,8 @@ The finished video:
 [:div
  [:p "Your video is ready: 1:13, at the loudness the platforms play."]
  [:a {:href "artifacts/kameras.mp4" :download "kameras.mp4"} "Download the video"] " · "
- [:a {:href "artifacts/kameras.srt" :download "kameras.srt"} "Subtitles (SRT)"]]
+ [:a {:href "artifacts/kameras.srt" :download "kameras.srt"} "Subtitles (SRT)"]
+ [:p [:button {:send "Publish the video"} "Publish it"]]]
 ```
 
 ## Rules
