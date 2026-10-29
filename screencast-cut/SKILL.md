@@ -21,109 +21,95 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, agentitos' `platform-zones` and `captions` skills beside this one (where the apps' buttons are, the captions; what you decide yourself, a label, where a face goes, follows platform-zones' "Laying out a frame"), ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. The words come from rragent's `transcribe` tool, the captions' key words from a small model, well under a cent a minute. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` and `captions` skills beside this one, and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the face in the webcam and the captions' key words, well under a cent. The words come from rragent's `transcribe` tool. Nothing to `npm install`; when something is missing, say so in one sentence.
 
-## From the recording to the video, all in the chat
+## From the recording to the video
 
-A recording of rragent's screencast recorder arrives as a message like `New recording in artifacts/recordings/2026-10-23T11-04-56: phone-screen.webm (the phone's screen), screen.webm (the screen), webcam.webm (the webcam)`. When the person asks for a video of it ("make a short of it", "cut this"), you do the steps below on your own, **show the cut as a preview and ask whether it is right**, change it until it is, and only then render. Before the preview, ask nothing: what they asked for (a length, a format, "with captions") goes into the cut; everything else you decide and say what you decided.
+A recording arrives as a message like `New recording in artifacts/recordings/2026-10-23T11-04-56: screen.webm (the screen), webcam.webm (the webcam)`. When the person asks for a video of it, do the steps on your own, show a preview, change it until they like it, then render. Before the preview ask nothing: what they asked for (a length, a format) goes in, the rest you decide and say in a line.
 
-Keep every message short: one or two sentences and a hiccup block (see "UI in the chat"). Speak the person's language. Your files: `screencast/<name>/` (`<name>` a short slug of the topic, lowercase letters, digits and dashes). The artifacts: the project `artifacts/<name>/`, the preview, and at the end the video `artifacts/<name>.mp4` with its subtitles.
+Short messages in their language, one or two sentences and a hiccup block. Your files: `screencast/<name>/` (`<name>` a short slug); the project `artifacts/<name>/`; at the end `artifacts/<name>.mp4`.
 
 ### 1. The sources
 
-This step takes a few minutes, and the person sees nothing meanwhile: **first** send them one sentence that you are getting the recording ready and that it takes a few minutes (as a message of its own, before the command; not after it, and not together with other work in the same command). Then run, as a command of its own:
+First tell them in a message of its own that you are getting the recording ready and it takes a minute or two. Then, as a command of its own:
 
 ```bash
 node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<time> [--frame 9:16]
 ```
 
-It turns every source into a video the preview plays well, all of them at once, puts them on one clock (recording.json's start times, made exact by their sound), takes the clearest microphone as the voice and cleans it, and measures where each picture moves while it converts. About a minute or two for a few minutes of recording. `--frame`: `9:16` (the default, for Reels, Stories, TikTok), `16:9`, `1:1`, `4:5`.
+It puts the sources on one clock, cleans the voice, measures where each picture moves and finds the face in the webcam. `--frame` 9:16 (default), 16:9, 1:1, 4:5.
 
 ### 2. The words
 
-The names a speech model mishears are the ones that matter in a demo (the product, the account). So first gather them: the accounts you know from this conversation (with Storrito connected: `storrito/list-instagram-users` in the REPL), the product, the brand, the people. Then call the **`transcribe` tool** with `file: screencast/<name>/source/voice.m4a`, `words: true`, `names: "<the names, comma-separated>"`, `out: notes/screencast-<name>/voice.md`, and pass its words on:
+Call the **`transcribe` tool** with `file: screencast/<name>/source/voice.m4a`, `words: true`, `names:` the product, brand, accounts and people that may be said, `out: notes/screencast-<name>/voice.md`, then
 
 ```bash
 node <skill>/tools/screencast.mjs words screencast/<name> artifacts/notes/screencast-<name>/voice.words.json
 ```
 
-(When your `transcribe` tool has no `words` yet: `node <skill>/tools/screencast.mjs transcribe screencast/<name>` instead, ElevenLabs Scribe without the names; fix a misheard name with `"fixes"` in cut.json.) It writes `screencast/<name>/source/brief.md`: the rules of a good screencast cut, every sentence with how much each source moves, and every word, numbered.
+(Without `words` in your transcribe tool: `screencast.mjs transcribe screencast/<name>`.) It writes `source/brief.md`: every sentence with its word numbers and how much each source moves.
 
-### 3. The cut: you decide what is shown
+### 3. The cut
 
 ```bash
 node <skill>/tools/screencast.mjs propose screencast/<name>
 node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 ```
 
-`propose` drafts `screencast/<name>/proposal.json`: every sentence a keep, a hold after "posted", "there it is", and waits where a screen moves between two sentences. It decides nothing about what is shown. `sheets` makes one image per keep, `screencast/<name>/sheets/keep-NN.jpg`: every source (rows: the screen, the phone, the webcam) at the keep's first, middle and last moment and where a screen changes almost whole (columns), the screens with a blue line every tenth; it prints each keep's words and the moments' times.
+`propose` makes every sentence a keep (`proposal.json`); `sheets` makes one image per keep with every source at its first, middle and last moment, the screens with a line every tenth. Read the brief and the sheets and write `screencast/<name>/cut.json`:
 
-Read `screencast/<name>/source/brief.md`, all of it, and the sheets, and write `screencast/<name>/cut.json`. **You decide, keep by keep, from what is said and what the sheet shows:**
+- **The story:** the result first as a short hook (`"hook": true`, kept in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
+- **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid: the field being typed in, the answer, the list being picked from. The tool makes that part as large as the safe area allows and shows the rest of the screen around it, under the apps' buttons too, so a tight box is right. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
+- **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for.
+- `"label"` where a step title helps ("01 · Upload").
 
-- **The story:** the result first as a hook (a few seconds: the post on the phone, the finished page; `"hook": true`, and the same moment kept in its place later too), then the steps in order, then the proof, then a short end; slips, repeats and talk about the recording out; `"waits"` where something takes time (the person says so, an agent works: with agentitos' agent-timeline you know when), `"hold": 2.5` after a result, `"label"`s where the steps help.
-- **`"view"`, required:** what the words are about. "I type which accounts are connected" → the screen; "let's look on my phone" → `phone-screen`; an intro or an opinion → `face`. When the subject changes inside a sentence (the screen switches to another tab, the person picks up the phone), split the keep at that word.
-- **`"zoom"`:** on what the words are about, as a box `[x0, y0, x1, y1]` in tenths of the sheet's grid (0–1, left top right bottom): the input field while the question is typed, the answer when it appears, the status that says "posted". A box holds for the whole keep, so look at its first and last column: when what matters moves, split the keep. `"off"` shows the whole source. Without `"zoom"` the whole source is shown, and in a 9:16 frame a laptop's screen is then too small to read, so decide for every screen keep. A phone's screen is shown whole.
-
-Then make the sheets of your cut (`sheets screencast/<name>`, without `--proposal`) and look at them against your decisions once more.
+Captions (clean subtitles), the face in a circle, the blurred screen behind the shot and a slow speaker played a little faster come by themselves.
 
 ### 4. The preview
 
-Say in one sentence that the preview is coming. Make the project once, with the `project` tool: `create`, name `<name>`, kind `hyperframes`. Then
+Make the project once with the `project` tool (`create`, name `<name>`, kind `hyperframes`), then
 
 ```bash
-node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>/composition --title "…"
+node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>/composition --title "…" [--platform reels]
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-`build` turns `cut.json` into the project: every piece a shot of its source as you framed it, the webcam beside it in a circle; the voice cut in the quiet between words, every take at one level; waits played fast with a badge; labels; the captions' band kept free. `check` prints the cut as it plays and what to fix: a ✗ always, a ⚠ unless you have a reason (say it). Then look at two or three moments of the screen shots with `frame` (below): is each shot what its words are about?
+Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (below): is what the words are about large and readable?
 
 ### 5. Ask whether it is right
 
-One message: how long it was and is now, the story in one line (hook, steps, result), which views it uses, what is sped up, then **ask whether it is right**, with "Looks good" (primary) and the button that shows the preview ("Show the preview ↗"), and a line that they can type what to change.
+One message: how long it was and is now, the story in one line, what is sped up; "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change with the moment ("at 0:23 …").
 
 ### 6. Changes
 
-The person names moments of the preview ("at 0:23 it's cut off", "0:41 should show the phone"). For each:
-
-```bash
-node <skill>/tools/screencast.mjs at screencast/<name> 0:23
-```
-
-says which piece and keep play there, from where in the recording, in which view, with which words. Change that keep in `cut.json`, build, check, and ask again as in step 5, saying in one sentence what changed. Typical wishes:
+For a moment they name, `screencast.mjs at screencast/<name> 0:23` says which keep plays there; `frame screencast/<name> 0:23` saves that moment's source with a grid and the shot's zoom in red. Change the keep in `cut.json`, build, check, ask again in one sentence.
 
 | They say | You do |
 | --- | --- |
-| "… is cut off" / "too fast at the end" | `"hold": 1.5` (or more) on that keep; when check says the next words follow right after, end the keep a word later |
-| "Longer waits should be time-lapses" | the last word before the wait into `"waits"` |
-| "Show the phone when …" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
-| "Too zoomed in" / "zoom on the chat" / a shot that shows the wrong part | `screencast.mjs frame screencast/<name> 0:23` saves that moment's whole source with a grid every tenth and the shot's crop in red (in green, for context, where the screen changed most): read it with the keep's words and its sheet, then a new `"zoom": [x0, y0, x1, y1]` (0–1) on the keep, or `"off"`. A box holds for the whole keep: while the person types at the bottom, a box on the answer above shows an empty page; when what matters moves within the keep, split it at that word; check says where the screen changes whole |
-| "Show that it arrived on the phone" / "the playback was cut away" | keep the words around it ("there it is") in their place, with `"hold"`; when the hook took them, give the hook `"hook": true` and keep them here too; or the last word before it in `"waits"` |
-| "During the wait show the laptop, not the phone" | a wait shows the screen that changes most during it by itself; to choose, `"waitView": "screen"` (or `phone-screen`, `face`) on the keep the wait follows |
+| "Too small" / "show more of …" / "zoom on …" | a tighter or other `"zoom"` on that keep, from `frame` |
+| "… is cut off" / "too fast at the end" | `"hold": 1.5` on that keep, or end it a word later |
+| "Faster" / "slower" / "as I spoke" | `build … --speed 1.3` / `--speed 1.1` / `--speed 1` (by default the build speeds a slow speaker up to 1.2× by itself and says so; the voice keeps its pitch) |
+| "Show the phone" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
+| "Hide my face here" | `"circle": false` on that keep: the screen takes its room too |
+| "No background" / "plain background" | `"background": "plain"` in cut.json (the brand's colours) |
+| "Other captions" / "no captions" | `screencast.mjs captions screencast/<name> --style hormozi` (karaoke, wipe, clean) / `--off` |
+| "Longer waits as time-lapses" | the last word before it into `"waits"` |
 | "Start with …" | move that keep to the top |
-| "Longer than a minute is fine" / "at most 45 s" | keep more / drop the weakest keeps first, keep the hook and the proof |
-| "Vertical" / "wide" / "square" | `build … --frame 9:16` / `--frame 16:9` / `--frame 1:1` (or `4:5`) |
-| "It's for Reels" / "for TikTok and Shorts" / "a Story" | `build … --platform reels` / `--platform tiktok,shorts` / `--platform story`: the layout and the captions keep clear of what those apps lay over the video, and use what they leave free; without it the usual platforms of the frame count together |
-| "Hide that" (a password, an address on screen) | `"zoom"` the keep past it, or another `"view"` for that keep |
-| "Music under it" | `"music": {"file": "<path>", "volume": 0.3}` in cut.json: lower while someone speaks |
-| "Captions" / "another caption style" | `screencast.mjs captions screencast/<name> --style hormozi` (styles: hormozi, karaoke, wipe, clean) |
-
-### Captions in the picture
-
-When they ask for captions, or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi**, **Karaoke pill**, **Wipe**, **Clean subtitles**. Then `node <skill>/tools/screencast.mjs captions screencast/<name> --style <style> [--product "<name>"]`: a model marks the key words, the captions go into the band the layout keeps free, in the brand's colour and font when there is a `brand/DESIGN.md`. It uses agentitos' captions skill beside this one; when it is missing, say so.
+| "Vertical" / "square" / "for TikTok" | `build … --frame 9:16` / `1:1` / `--platform tiktok` |
+| "Hide that" (a password on screen) | a `"zoom"` past it, or another `"view"` |
+| "Music under it" | `"music": {"file": "<path>", "volume": 0.3}` |
 
 ### 7. The video
 
-Only after their "looks good". Tell them in one sentence that you are rendering it. Render with the `render` tool, name `<name>`: it writes `artifacts/<name>.mp4`. Then
+Only after their "looks good". Render with the `render` tool, name `<name>` (→ `artifacts/<name>.mp4`), then
 
 ```bash
 node <skill>/tools/screencast.mjs finish screencast/<name> artifacts/<name>.mp4
 ```
 
-brings it to −14 LUFS, the loudness the platforms play at, and writes `artifacts/<name>.srt`. When it says the video is from before the last build, render again. Say in one sentence that it is ready, with the download links. Publishing it is a step of its own: only when they ask.
+(−14 LUFS, and the `.srt`). When it says the video is from before the last build, render again. Then the download links in one sentence and a button "Publish it": to publish, follow agentitos' **publish-video** with `artifacts/<name>.mp4` (it writes the texts and schedules it through Storrito); never call Storrito's schedule procedures yourself.
 
-### 8. The next recording
-
-`remember` what the person wants every time (a format, a caption style, "my face small", the names) and use it for the next recording without asking. A new recording gets a new `<name>`.
+`remember` what they want every time (a speed, a caption style, "my face small") and use it for their next recording.
 
 ## UI in the chat
 
@@ -152,4 +138,5 @@ The question after the preview:
 
 - Never lose content the person said matters; when unsure whether something is a slip, keep it and say so.
 - Change `cut.json` or an option and build again; never edit the built `index.html` by hand.
+- When the tool cannot do what they ask, say so in a sentence and offer the nearest it can; never copy or patch its files.
 - The preview first, the render only after the person's yes; publishing only when they ask.
