@@ -26,7 +26,7 @@ The tool measures, writes the video again where that is mechanical, and talks to
 
 ## From the video to the posts, all in the chat
 
-The person hands over a video: an upload (a line `video: uploads/<file>`), a link (Google Drive, Dropbox or a direct link to the file; not a YouTube or Instagram page), or the video another skill just made. Your files: `publish/<name>/` and `descriptions/<name>/` (`<name>` a short slug of the topic, the same for both). Keep every message short: one or two sentences and a hiccup block, one question per block. Speak the person's language.
+The person hands over a video: an upload (a line `video: uploads/<file>`), a link (Google Drive, Dropbox or a direct link to the file; not a YouTube or Instagram page), or the video another skill just made. Your files: `publish/<name>/` and `descriptions/<name>/` (`<name>` a short slug of the topic, the same for both). Keep every message short: one or two sentences and a hiccup block, one question per block, or the questions that belong together (see "UI in the chat"). Speak the person's language.
 
 ### 1. Check it
 
@@ -158,7 +158,7 @@ It reads the texts from `descriptions/<name>/descriptions.json` (another folder:
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block; `:open "artifacts/descriptions-<name>.html"` shows the texts' overview. Pictures point at `uploads/…`. There are no text fields: for a time or a change they type.
 
-- One question per block (the last questions of step 7 are one block), buttons for the likely answers, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - A button only where a click makes you act at once: an answer you go on with, a choice you carry out, a page you open. Never one that only leads to your next question ("Change something"): they type what to change.
 - The button that moves on gets `:class "primary"`; alternative answers stay plain. A button that opens an artifact ends with " ↗".
 - Never put a token, a path of `publish/` or `descriptions/`, a target id or a raw error into the chat: account names and platforms as people say them.
