@@ -70,6 +70,16 @@ function checkPlatforms(list) {
   if (r.status) fail(`✗ --platform: ${(r.stderr || r.stdout).trim()}`);
 }
 
+// the pieces of the framing that show a picture whole (B-roll, two above each other): best-takes
+// does not go closer there (its --punch), it would cut into them
+function writeStill(dir) {
+  const framed = path.join(dir, "framed.json"), td = path.join(dir, "takes", "source");
+  if (!fs.existsSync(td)) return;
+  const windows = fs.existsSync(framed) ? read(framed).windows || [] : [];
+  const whole = windows.filter((w) => w.kind && w.kind !== "people").map((w) => [w.start, w.end]);
+  fs.writeFileSync(path.join(td, "still.json"), JSON.stringify({ "01.mp4": whole }) + "\n");
+}
+
 const probe = (file) => {
   const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", file], { encoding: "utf8" }));
   return { width: j.streams[0].width, height: j.streams[0].height, duration: Number(j.format.duration) };
@@ -120,8 +130,9 @@ function prepare(episode, dir, range, opts) {
   }
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
-  const settings = ["--aspect", "9:16", "--pauses", "tight", ...Object.entries(opts).filter(([k]) => !["whole", "follow"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
+  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", ...Object.entries(opts).filter(([k]) => !["whole", "follow"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
+  writeStill(dir);
 
   // the whole moment as one keep: the words heard within its first and last sentence (the cut's
   // air may hold the tail of the sentence before or the start of the one after; the episode's
@@ -158,6 +169,7 @@ function reframe(dir, opts) {
     fs.rmSync(src);
     try { fs.linkSync(framed, src); } catch { fs.copyFileSync(framed, src); }
   }
+  writeStill(dir);
   const takes = takesTool();
   console.log(`Next: node ${takes ? rel(takes) : "<best-takes>/tools/takes.mjs"} build ${rel(path.join(dir, "takes"))} (the cut, the captions and the hook stay), then check.`);
 }
