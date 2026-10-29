@@ -111,10 +111,10 @@ renders every frame in Chrome with the brand's fonts and Storrito's own stickers
 
 ### 5. Where and when
 
-Ask one thing per message, and only what has more than one answer:
+Ask what has more than one answer, all in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button:
 
-- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done.
-- **The time.** Buttons for the likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none marked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
+- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
+- **The time.** The likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none ticked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
 - **Facebook**, only when the account has a Facebook page: whether the story goes there too.
 - Instead of scheduling they may want a **draft**: it lands in Storrito's gallery, where they can change it in the editor and schedule it themselves.
 
@@ -146,7 +146,7 @@ The brand stays in `brand/`. Remember the account and the usual time (rragent: `
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/story-<name>.html"` shows the preview. Links and pictures point at `https://…`, `artifacts/…` or `uploads/…`. An `input` is a checkbox or a radio button; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block. There are no text fields: for a time or a name they type.
 
-- One question per block, buttons for the likely answers, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - The button that moves on gets `:class "primary"`; buttons that are alternative answers stay plain.
 - A button's text says what happens; its `:send` reads as the person's answer ("The story is good", "Post it tomorrow at 9:00").
 - Never put a token, an id the person does not need or a raw error into the chat.
