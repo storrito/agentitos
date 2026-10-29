@@ -26,7 +26,15 @@
 //                              over it (agentitos' platform-zones); none: the usual ones of the frame
 //   --fit cover|contain    a video of another shape fills the frame, or fits into it
 //   --target <s>       the longest the cut should be (the brief and the check use it)
-//   --pause <s>        pauses longer than this inside a keep are shortened (default 1)
+//   --pause <s>        pauses longer than this inside a keep are shortened (default 1, tight 0.4)
+//   --pauses picture|tight    a pause follows its picture (default: where it moves it stays,
+//                      muted, or plays faster), or every pause over --pause goes, whatever the
+//                      picture shows (tight: a talking head, a clip for a reel)
+//   --hook "…"         a card over the start that says what the viewer gets (6 words or fewer,
+//                      one *word* in the brand's colour), until the first sentence ends;
+//                      --hook "" takes it out
+//   --brand <DESIGN.md>    the brand's colour and font for the hook (the captions take theirs
+//                      with the captions command)
 //   --loudness <LUFS>  of the rendered video (default −14, as Instagram, TikTok and YouTube play it)
 //   --fps <n>          frames a second of the rendered video (default 30)
 //   --order recorded|given    the videos by their recording time (default, when all have one)
@@ -46,12 +54,14 @@ import { writeComposition } from "./lib/composition.mjs";
 import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
+import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { brief, shown } from "./brief.mjs";
 
-const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
+const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
 const FLAGS = ["off"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
+const TIGHT = 0.4; // --pauses tight: every pause over this goes
 
 function fail(message) {
   console.log(message);
@@ -82,12 +92,14 @@ const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : re
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? read(file) : {};
-  const merged = { aspect: "source", fit: "cover", pause: 1, loudness: -14, fps: 30, ...kept, ...opts };
+  const merged = { aspect: "source", fit: "cover", pauses: "picture", loudness: -14, fps: 30, ...kept, ...opts };
+  if (!["picture", "tight"].includes(merged.pauses)) fail("--pauses is picture or tight.");
   // where the video goes, for its captions: a platform platform-zones does not know is not kept,
   // every later build would fail on it
   if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
-  return { ...merged, final: merged.loudness, loudness: TAKE_LEVEL };
+  // the pause from which a pause is cut: as given, else 1 s (picture) or TIGHT
+  return { ...merged, pause: merged.pause ?? (merged.pauses === "tight" ? TIGHT : 1), final: merged.loudness, loudness: TAKE_LEVEL };
 }
 
 // ------------------------------------------------------------------------------------- new
@@ -97,6 +109,8 @@ async function cmdNew(dir, files, opts) {
   for (const f of files) if (!fs.existsSync(f)) fail(`There is no ${f}.`);
   if (!(await openrouter())) fail("This tool needs OpenRouter (the words come from ElevenLabs Scribe, the proposal from Gemini): OPENROUTER_API_KEY in the environment, or on a Sprite the gateway's OpenRouter connection.");
   fs.mkdirSync(source(dir), { recursive: true });
+  // the options first: a wrong one fails before anything is paid for
+  settings(dir, opts);
 
   let list = files.map((f) => ({ from: f, ...probe(f) }));
   const byTime = list.every((c) => c.created) && opts.order !== "given";
@@ -214,8 +228,9 @@ function cmdBuild(dir, opts) {
   try { cut = read(cutFile); } catch (e) { fail(`✗ ${rel(cutFile)} is no valid JSON: ${e.message}`); }
   const s = settings(dir, opts);
   const { clips, words } = read(source(dir, "words.json"));
-  // where the picture moves in a pause, measured in the video itself
-  const moves = (clip, from, to) => moving(activity(source(dir, clips[clip].file), from, to, clips[clip]), from, to);
+  // where the picture moves in a pause, measured in the video itself; tight: no pause stays
+  const tight = s.pauses === "tight";
+  const moves = tight ? () => [] : (clip, from, to) => moving(activity(source(dir, clips[clip].file), from, to, clips[clip]), from, to);
   const r = plan(words, cut, s, voicesOf(dir, clips), moves);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
@@ -233,7 +248,16 @@ function cmdBuild(dir, opts) {
       ...(s.platform || cut.captions.platform ? ["--platform", platformList(s.platform || cut.captions.platform).join(",")] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions });
+  // the hook card, at the top of the box the platforms leave free
+  let hook = null;
+  if (s.hook) {
+    let z;
+    try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ The hook: ${e.message}`); }
+    const brand = brandOf(s.brand) || brandOf(cut.captions?.brand);
+    if (s.brand && !brand) console.log(`  (no ${s.brand}: the hook in its own colour and font)`);
+    hook = hookCard({ text: s.hook, until: hookUntil(r.words, r.duration), zones: z, brand, out });
+  }
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions, hook });
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
     out: rel(out), width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
@@ -244,6 +268,8 @@ function cmdBuild(dir, opts) {
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
+  if (hook) console.log(`Hook: „${s.hook}“ until ${hookUntil(r.words, r.duration)} s`);
+  if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
 }
 
@@ -315,7 +341,7 @@ function cmdCheck(dir) {
     const shownOf = (r) => (r.moving || []).reduce((t, m) => t + m.to - m.from, 0);
     const still = pauses.reduce((t, r) => t + r.to - r.from - shownOf(r), 0);
     const fast = pauses.flatMap((r) => r.moving || []).filter((m) => m.rate > 1);
-    console.log(`    ${pauses.length} pauses over ${s.pause} s: ${still.toFixed(1)} s where the picture stands still cut out` +
+    console.log(`    ${pauses.length} pauses over ${s.pause} s: ${still.toFixed(1)} s ${s.pauses === "tight" ? "cut out (tight)" : "where the picture stands still cut out"}` +
       (fast.length ? `, ${fast.length} stretch${fast.length > 1 ? "es" : ""} where it moves played faster (${fast.map((m) => `${(m.to - m.from).toFixed(1)} s ×${m.rate}`).join(", ")})` : ""));
   }
 

@@ -66,7 +66,10 @@ The keeps play in their order.
 
 ## Settings
 
-Given to `new` or `build`, kept in `source/settings.json`: `--out`, `--title`, `--lang`, `--aspect source|9:16|16:9|1:1|4:5`, `--fit cover|contain`, `--target <s>`, `--pause <s>`, `--loudness <LUFS>`, `--fps`, `--order recorded|given`, `--model <OpenRouter id>`.
+Given to `new` or `build`, kept in `source/settings.json`: `--out`, `--title`, `--lang`, `--aspect source|9:16|16:9|1:1|4:5`, `--fit cover|contain`, `--target <s>`, `--pause <s>`, `--pauses picture|tight`, `--hook "…"`, `--brand <DESIGN.md>`, `--loudness <LUFS>`, `--fps`, `--order recorded|given`, `--model <OpenRouter id>`.
+
+- **`--pauses tight`**: every pause over 0.4 s (or `--pause`) inside a keep goes, whatever the picture shows, down to the breath the cut points leave (about a quarter of a second): the pace of a reel, for a talking head or a moment cut from a long talk (agentitos' [clips](../clips/) sets it). The default, `picture`, keeps a pause over `--pause` where its picture moves, for demos and screencasts.
+- **`--hook "…"`**: a card over the start that says what the viewer gets, for a video whose first line does not (6 words or fewer, one `*word*` in the brand's colour): white with dark type, in the brand's display font (`--brand`, else the captions' brand, else Inter), on the first frame already, centred at the top of platform-zones' centred box for `--platform`; it stays until the cut's first sentence ends (2–5 s) and fades out. `--hook ""` takes it out.
 
 ## Why these models
 
