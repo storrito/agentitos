@@ -72,7 +72,7 @@ Write the answers into `work/plan.json` as `platforms` and `variants` (`"one"`, 
 
 ### 4. The look
 
-Ask one thing per message, each with buttons, and offer to take your proposal for everything at once ("Take your suggestions"):
+Ask one thing per message, each with buttons (each shows its own tiles or swatches, and the colours depend on the world), the top line and the end card together in one block, and offer to take your proposal for everything at once ("Take your suggestions"):
 
 - **The background world.** Over the speakers' footage the dark worlds add their light; the light ones put the footage into a frame on paper or in a studio, with dark type below. Show them as tiles (see "UI in the chat"), each with its picture, its name, what it fits and a button. The pictures are stills of each world, `<skill>/assets/worlds/<world>.jpg`: copy the folder once to your uploads (`cp -r <skill>/assets/worlds uploads/`), so that `uploads/worlds/<world>.jpg` shows in the chat. You may say in a sentence which fit the episode's mood (for most talk a calm one, which moves little and keeps its motifs quiet), but mark none as recommended.
 

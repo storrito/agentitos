@@ -111,10 +111,10 @@ renders every frame in Chrome with the brand's fonts and Storrito's own stickers
 
 ### 5. Where and when
 
-Ask one thing per message, and only what has more than one answer:
+Ask what has more than one answer, all in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button:
 
-- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done.
-- **The time.** Buttons for the likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none marked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
+- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
+- **The time.** The likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none ticked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
 - **Facebook**, only when the account has a Facebook page: whether the story goes there too.
 - Instead of scheduling they may want a **draft**: it lands in Storrito's gallery, where they can change it in the editor and schedule it themselves.
 
