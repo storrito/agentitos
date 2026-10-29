@@ -22,6 +22,7 @@ metadata:
 
 ```bash
 cd <skill> && npm install
+cd <skill>/../brand-kit && npm install     # the brand kit's tools
 ```
 
 It needs Node 20+, agentitos' `platform-zones` skill beside this one (where Instagram covers a story), agentitos' `brand-kit` skill beside it too (the brand kit: `<kit>` below is `<skill>/../brand-kit/tools/kit.mjs`, on a Sprite else `/home/sprite/skills/brand-kit/tools/kit.mjs`) and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network: the page, Google Fonts, Storrito. When something is missing, say so in one sentence instead of installing it yourself.
