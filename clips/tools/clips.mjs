@@ -15,6 +15,15 @@
 //        edit in takes/ stays, its next build takes the new picture
 //   node tools/clips.mjs render <clip> <video.mp4>
 //        the built preview rendered with HyperFrames, brought to −14 LUFS, subtitles beside it
+//   node tools/clips.mjs prepare-all <episode> <clips.json> [--platform …] [--brand …] [--jobs N]
+//        prepare for every clip of clips.json side by side ([{"clip": "work/01", "range": "478-484",
+//        "out": "artifacts/clips/composition/01-…", "title": "…", "hook": "…"}, …]); each one's
+//        output as it finishes; as many at a time as the memory holds (about 1.5 GB each: 2 on a
+//        Sprite), at most 4
+//   node tools/clips.mjs render-all <clips.json> <folder> [--jobs N]
+//        render for every clip, <folder>/<clip's folder name>.mp4, one after the other: a
+//        HyperFrames render already keeps every core busy, two at once only on 8 GB and more
+//        (two on a 4 GB Sprite filled its memory and took longer than one by one)
 //
 // The edit itself is best-takes' (build, check, captions; its README): this tool only sets it up
 // and prints the command lines with its path. best-takes is found at BEST_TAKES_TOOL, beside this
@@ -22,11 +31,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync, spawn } from "node:child_process";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow"];
+const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs"];
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -185,9 +195,64 @@ function render(dir, file) {
   run(takes, ["finish", td, out]);
 }
 
+// ------------------------------------------------------------------------------ side by side
+// this tool's commands for many clips, `jobs` at a time; each one's output in one piece as it ends
+async function many(list, jobs, argsOf) {
+  const results = [];
+  let next = 0;
+  const one = (item) => new Promise((done) => {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...argsOf(item)], { stdio: ["ignore", "pipe", "pipe"] });
+    let said = "";
+    child.stdout.on("data", (d) => (said += d));
+    child.stderr.on("data", (d) => (said += d));
+    child.on("close", (code) => {
+      console.log(`\n── ${item.clip} ${code ? "✗" : "✓"}\n${said.trim()}`);
+      done({ clip: item.clip, ok: !code });
+    });
+  });
+  await Promise.all(Array.from({ length: Math.min(jobs, list.length) }, async () => {
+    while (next < list.length) results.push(await one(list[next++]));
+  }));
+  return results;
+}
+
+function readPlan(file) {
+  if (!file || !fs.existsSync(file)) fail(`There is no ${file || "clips.json"}: [{"clip": "work/01", "range": "478-484", "out": "…", "title": "…", "hook": "…"}, …]`);
+  const list = read(file);
+  if (!Array.isArray(list) || !list.length || list.some((c) => !c.clip)) fail(`${file}: a list of clips, each with its "clip" folder.`);
+  return list;
+}
+
+async function prepareAll(episode, file, opts) {
+  const list = readPlan(file);
+  for (const c of list) if (!/^\d+-\d+$/.test(c.range || "")) fail(`${c.clip}: "range" is <first>-<last>.`);
+  if (opts.platform) checkPlatforms(opts.platform);
+  const shared = ["platform", "brand"].flatMap((k) => (opts[k] ? [`--${k}`, opts[k]] : []));
+  const jobs = Number(opts.jobs || Math.max(1, Math.min(4, Math.floor(os.totalmem() / 1.5e9))));
+  console.log(`Preparing ${list.length} clips, ${Math.min(jobs, list.length)} at a time …`);
+  const r = await many(list, jobs, (c) => ["prepare", episode, c.clip, c.range, ...shared,
+    ...["out", "title", "hook"].flatMap((k) => (c[k] ? [`--${k}`, c[k]] : []))]);
+  const bad = r.filter((x) => !x.ok);
+  console.log(`\n${r.length - bad.length} of ${r.length} prepared${bad.length ? `; ✗ ${bad.map((x) => x.clip).join(", ")}: see above, then prepare those one by one` : ""}. Next, for each: read its brief, then build, captions and check as each one says.`);
+  if (bad.length) process.exit(1);
+}
+
+async function renderAll(file, folder, opts) {
+  if (!folder) fail("clips.mjs render-all <clips.json> <folder> [--jobs N]");
+  const list = readPlan(file);
+  const jobs = Number(opts.jobs || Math.max(1, Math.min(2, Math.floor(os.totalmem() / 8e9))));
+  console.log(`Rendering ${list.length} clips, ${Math.min(jobs, list.length)} at a time …`);
+  const r = await many(list, jobs, (c) => ["render", c.clip, path.join(folder, `${path.basename(c.clip)}.mp4`)]);
+  const bad = r.filter((x) => !x.ok);
+  console.log(`\n${r.length - bad.length} of ${r.length} rendered into ${rel(folder)}${bad.length ? `; ✗ ${bad.map((x) => x.clip).join(", ")}: see above` : ""}.`);
+  if (bad.length) process.exit(1);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
 if (command === "prepare") prepare(pos[0], pos[1], pos[2], opts);
 else if (command === "reframe") reframe(pos[0], opts);
 else if (command === "render") render(pos[0], pos[1]);
-else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | render <clip> <video.mp4>");
+else if (command === "prepare-all") await prepareAll(pos[0], pos[1], opts);
+else if (command === "render-all") await renderAll(pos[0], pos[1], opts);
+else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");

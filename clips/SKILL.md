@@ -64,15 +64,17 @@ Ask the platforms and the captions in one block (see "UI in the chat"). First `l
 
 ### 4. The previews beside the chat
 
-Say in one sentence that the previews appear on the right one by one. Make the project once with the `project` tool (create, name `clips`, kind `hyperframes`) and remove its `artifacts/clips/composition/index.html`: without it the project shows every `composition/<name>/` side by side. Then for every chosen moment `<k>` (`01`, `02`, … in the order you showed them; `<slug>` a short name):
+Say in one sentence that the previews appear on the right one by one. Make the project once with the `project` tool (create, name `clips`, kind `hyperframes`) and remove its `artifacts/clips/composition/index.html`: without it the project shows every `composition/<name>/` side by side. Then write every chosen moment into `work/clips.json` (`<k>` is `01`, `02`, … in the order you showed them, `<slug>` a short name) and prepare them all at once, side by side:
 
-```bash
-node <skill>/tools/clips.mjs prepare work/episode work/<k> <first>-<last> \
-  --out artifacts/clips/composition/<k>-<slug> --platform <platforms> --title "<title>" \
-  [--hook "<hook>"] [--brand brand/DESIGN.md]
+```json
+[{"clip": "work/01", "range": "<first>-<last>", "out": "artifacts/clips/composition/01-<slug>", "title": "<title>", "hook": "<hook, or leave it out>"}, …]
 ```
 
-It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is; B-roll, a photo or a split screen is shown whole above the captions over a blurred copy, since a window would cut it apart), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
+```bash
+node <skill>/tools/clips.mjs prepare-all work/episode work/clips.json --platform <platforms> [--brand brand/DESIGN.md]
+```
+
+Each clip's output comes as it finishes (one alone: `clips.mjs prepare work/episode work/<k> <first>-<last> --out … --title … [--hook …]`). For each it cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is; B-roll, a photo or a split screen is shown whole above the captions over a blurred copy, since a window would cut it apart), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
 
 1. Look at `work/<k>/framed.sheet.jpg`, every shot against the original: the footage left, the frame right, one row per shot as `prepare` lists them. What matters must be in the frame: both faces of a photo of two, both people of a split screen, the subject of the B-roll, the speaker. Cut off: `node <skill>/tools/clips.mjs reframe work/<k> --whole <second>` (the second of that shot, as listed); a speaker in a shot shown whole that should be followed: `--follow <second>`. It costs nothing and keeps the edit; never `prepare` again for it.
 2. Read `work/<k>/takes/source/brief.md`. Fix misheard names in `cut.json` `"fixes"`; move the start of the keep past a stray "und", "also", "so", or the end to the last word of the payoff. The moment must still open cold and end clean.
@@ -99,7 +101,7 @@ Then show the list (title and length per clip) with buttons "They are good" and 
 After "They are good":
 
 1. Say in one sentence that you render N clips now, about one and a half times their length each.
-2. Render each, in the foreground, one command each: `node <skill>/tools/clips.mjs render work/<k> work/out/<k>.mp4`. It renders the preview with HyperFrames and brings it to −14 LUFS with subtitles beside it (`work/out/<k>.srt`). Never with `&` or `nohup`.
+2. Render them all with one command, in the foreground: `node <skill>/tools/clips.mjs render-all work/clips.json work/out` (a clip changed since: the list holds it as before). Each is rendered with HyperFrames, brought to −14 LUFS, with subtitles beside it (`work/out/<k>.mp4`, `work/out/<k>.srt`), one after the other: a render already keeps every core busy. One alone: `clips.mjs render work/<k> work/out/<k>.mp4`. Never with `&` or `nohup`.
 3. Publish them with agentitos' **publish-video**, following its SKILL.md for each clip, `<name>` = `clip-<k>`: `check work/out/<k>.mp4 publish/clip-<k>` (short), its `accounts`, the texts with video-descriptions, then `publish`. Ask what the clips share once for all of them, not per clip: the accounts (the ones that fit every clip ticked), the style, TikTok's audience and the times. A good default for the times: one clip a day at 18:00 in the person's time zone, the strongest first. Show the texts of all clips before the person says yes; a ✗ of `check` on one clip is said for that clip and the others go on.
 
 Never call Storrito's schedule procedures yourself: publish-video does it, so that nothing is posted twice.
