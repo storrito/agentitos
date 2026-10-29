@@ -15,7 +15,7 @@ const ICONS = {
   X: ["#000000", "X"], SNAPCHAT: ["#FFFC00", "S", "#000000"], BLUESKY: ["#1185FE", "B"],
 };
 
-const TYPES = { REEL: "Reel", SHORT: "Short", POST: "Post", PIN: "Pin", SPOTLIGHT: "Spotlight", VIDEO: "Video" };
+const TYPES = { STORY: "Story", REEL: "Reel", SHORT: "Short", POST: "Post", PIN: "Pin", SPOTLIGHT: "Spotlight", VIDEO: "Video" };
 
 const SAY = {
   de: { ask: "Wo soll das Video erscheinen?", next: "Weiter", send: "Veröffentlichen auf: {checked}", reconnect: "in Storrito neu verbinden", upTo: (c) => `nimmt bis ${c}`, from: (s) => `ab ${s} s`, hint: "Du kannst die Auswahl auch schreiben." },

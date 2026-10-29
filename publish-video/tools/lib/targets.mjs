@@ -5,6 +5,7 @@
 
 // what each procedure is called with, and how its status is asked and a post taken back
 export const PROCEDURES = {
+  "schedule-instagram-story": { uuid: "storyPostUuid", status: "status-instagram-story", cancel: "cancel-instagram-story", account: "instagramUsername", min: 0.5, max: 60 },
   "schedule-instagram-reel": { uuid: "reelPostUuid", status: "status-instagram-reel", cancel: "cancel-instagram-reel", account: "instagramUsername", min: 0.5, max: 180 },
   "schedule-tiktok-post": { uuid: "tiktokPostUuid", status: "status-tiktok-post", cancel: "cancel-tiktok-post", account: "tiktokAccountId", max: 600 },
   "schedule-social-post": { uuid: "socialPostUuid", status: "status-social-post", cancel: "cancel-social-post", account: "socialAccountId" },
@@ -13,17 +14,18 @@ export const PROCEDURES = {
 
 // the platform id of video-descriptions whose texts a target takes
 const TEXTS = { INSTAGRAM: "instagram-reels", TIKTOK: "tiktok", YOUTUBE: "youtube-shorts", FACEBOOK: "facebook", LINKEDIN: "linkedin", PINTEREST: "pinterest", SNAPCHAT: "snapchat-spotlight", THREADS: "threads", TWITTER: "x", X: "x", BLUESKY: "bluesky" };
-const BY_PROCEDURE = { "schedule-instagram-reel": "instagram-reels", "schedule-tiktok-post": "tiktok", "upload-youtube-video": "youtube" };
+// an Instagram Story publishes no text: it needs none of descriptions.json
+const BY_PROCEDURE = { "schedule-instagram-story": "none", "schedule-instagram-reel": "instagram-reels", "schedule-tiktok-post": "tiktok", "upload-youtube-video": "youtube" };
 
 const slug = (s) => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9_.]+/g, "-").replace(/^-+|-+$/g, "") || "account";
 
-// every post type that publishes a video, Stories left out (story-from-link makes those)
+// every post type that publishes a video; of the Stories only Instagram's, which Storrito posts itself
 export function targetsOf(socialAccounts) {
   const out = [], seen = new Set();
   for (const a of socialAccounts || []) {
     for (const p of a.postTypes || []) {
       const proc = PROCEDURES[p.procedure];
-      if (!proc || !(p.media || []).includes("video") || /STORY/i.test(p.postType)) continue;
+      if (!proc || !(p.media || []).includes("video") || (/STORY/i.test(p.postType) && p.procedure !== "schedule-instagram-story")) continue;
       const platform = String(a.platform || "").toUpperCase();
       let id = `${platform === "TWITTER" ? "x" : slug(platform)}/${slug(a.instagramUsername || a.name)}/${slug(p.postType)}`;
       for (let n = 2; seen.has(id); n++) id = `${id.replace(/-\d+$/, "")}-${n}`;
@@ -103,6 +105,9 @@ export function paramsOf(t, post, { html, videoUrl, thumbnailUrl, date, lang, ch
   if (t.maxCaption && t.texts !== "x" && text.length > t.maxCaption) errors.push(`the text is ${text.length} characters; Storrito would cut it to ${t.maxCaption}`);
   if (t.captionRequired && !text.trim()) errors.push("the platform needs a text");
   if (text && !t.captionPublished) notes.push("this post type publishes no text");
+  if (t.procedure === "schedule-instagram-story") {
+    return { errors, notes: [], params: { html, instagramUsername: t.accountId, ...(flags.aiGenerated ? { aiGenerated: true } : {}), ...when } };
+  }
   if (t.procedure === "schedule-instagram-reel") {
     return { errors, notes, params: { html, instagramUsername: t.accountId, caption: text, shareToFeed: !flags.noFeed, ...(flags.aiGenerated ? { aiGenerated: true } : {}), ...when } };
   }

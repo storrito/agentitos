@@ -1,6 +1,6 @@
 # publish-video
 
-A finished video → checked whether it is ready, published through [Storrito](https://storrito.com/) on the accounts the person picks, with each platform's texts from [video-descriptions](../video-descriptions/). Either **short-form** (9:16: Instagram Reels, TikTok, YouTube Shorts, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X) or **long-form** on YouTube (16:9, up to 4 hours). Scheduled for a time, or posted now.
+A finished video → checked whether it is ready, published through [Storrito](https://storrito.com/) on the accounts the person picks, with each platform's texts from [video-descriptions](../video-descriptions/). Either **short-form** (9:16: Instagram Reels and Stories, TikTok, YouTube Shorts, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X) or **long-form** on YouTube (16:9, up to 4 hours). Scheduled for a time, or posted now.
 
 > Agents: start with [`SKILL.md`](SKILL.md). It is written for [rragent](https://github.com/storrito/rragent): the questions are asked in the chat, the texts agreed on video-descriptions' overview.
 
@@ -58,11 +58,10 @@ descriptions/<name>/        video-descriptions' folder: descriptions.json, the o
 ## What it does not do
 
 - **Edit the video.** It writes it again in the form Storrito or YouTube takes and cuts empty ends; reframing is [auto-reframe](../auto-reframe/)'s, captions [captions](../captions/)', a thumbnail [thumbnail-and-intro](../thumbnail-and-intro/)'s.
-- **Stories.** A video as an Instagram or Facebook Story goes through [story-from-link](../story-from-link/)'s way of scheduling stories; this skill leaves Story post types out.
+- **Facebook Stories.** A video goes out as an Instagram Story (up to 60 s, no text); the Story post types of other platforms are left out.
 
 ## To do
 
 - [ ] **Both at once**: the long-form video on YouTube and one or more 9:16 moments of it as short-form, pointing to it ([clips](../clips/) finds and cuts such moments).
 - [ ] **clips through this tool**: clips schedules its shorts with Storrito's procedures itself; its step 6 could call `publish` per clip.
-- [ ] **A video as a Story**, with the same check.
 - [ ] **Daily limits**: Storrito names a limit of posts per day and account (TikTok and YouTube 10, X 15, LinkedIn 18); the tool does not count what else is scheduled that day.

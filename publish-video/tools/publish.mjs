@@ -74,7 +74,7 @@ function loadJob(dir) {
 
 // ------------------------------------------------------------------------------- check
 
-// the apps a short-form video goes to when the person has not named them yet (Stories are not posted here)
+// the apps a short-form video goes to when the person has not named them yet
 const SHORTS = ["instagram-reels", "tiktok", "youtube-shorts", "facebook-reels"];
 
 // short or long: from the frame and the length; `ask` when the video leaves it open
@@ -231,7 +231,7 @@ async function needApi() {
 Do it with Storrito's procedures yourself (in rragent the REPL's storrito/<procedure> functions; elsewhere its MCP server or API, reference: https://storrito.com/documentation/api/v1/index.md):
   list-social-accounts {} names each account's postTypes and their procedure;
   create-temp-blob-upload-url {tempBlobUuid, contentType "video/mp4", contentLengthBytes}, then curl -sS -T <video> -H 'Content-Type: video/mp4' '<uploadUrl>';
-  per account the postType's procedure with html '<insta-story src="<temp-blob url>"></insta-story>' (schedule-instagram-reel, schedule-tiktok-post, schedule-social-post), or videoUrl (upload-youtube-video), a new UUID kept for retries, the texts of descriptions.json and the date.`);
+  per account the postType's procedure with html '<insta-story src="<temp-blob url>"></insta-story>' (schedule-instagram-story, schedule-instagram-reel, schedule-tiktok-post, schedule-social-post), or videoUrl (upload-youtube-video), a new UUID kept for retries, the texts of descriptions.json and the date.`);
 }
 
 async function listTargets(api) {
@@ -258,7 +258,7 @@ async function cmdAccounts([dir], opts) {
   if (!rows.length) return console.log("No account connected to Storrito takes a video yet: connect one in the Storrito app (Social Accounts).");
   const fits = rows.filter((r) => !r.unfit);
   console.log(job ? `Where this video (${job.mode}, ${job.measured.frame}, ${clock(job.measured.duration)}) can go:` : "The accounts connected to Storrito and what each takes:");
-  for (const r of fits) console.log(`  ${r.id.padEnd(36)} ${r.label} · ${r.account}${r.texts ? `   texts: ${r.texts}` : ""}`);
+  for (const r of fits) console.log(`  ${r.id.padEnd(36)} ${r.label} · ${r.account}${r.texts && r.texts !== "none" ? `   texts: ${r.texts}` : ""}`);
   const rest = rows.filter((r) => r.unfit);
   if (rest.length) {
     console.log(job ? "Not for this video:" : "Not now:");
@@ -318,15 +318,6 @@ async function cmdPublish([dir], opts) {
   if (cover != null && !(cover >= 0 && cover < job.measured.duration)) fail(`--tiktok-cover is a moment of the video in seconds, from 0 to ${job.measured.duration.toFixed(1)}.`);
   if (opts.thumbnail && !fs.existsSync(opts.thumbnail)) fail(`There is no ${opts.thumbnail}.`);
 
-  // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself
-  const textsDir = opts.texts || path.join("descriptions", job.name);
-  const textsFile = path.join(textsDir, "descriptions.json");
-  if (!fs.existsSync(textsFile)) fail(`There is no ${rel(textsFile)}: write the texts with video-descriptions first (or name their folder with --texts).`);
-  if (!tool("video-descriptions")) fail(missing("video-descriptions"));
-  const checked = checkTexts(textsDir);
-  if (!checked.ok) fail(`video-descriptions' check finds ✗ in ${rel(textsFile)}:\n${checked.output.split("\n").filter((l) => /✗/.test(l)).join("\n")}\nFix them, check again, show the person the overview, then publish.`);
-  const doc = readJson(textsFile);
-
   const api = await needApi();
   const all = await listTargets(api);
   const targets = [];
@@ -338,6 +329,19 @@ async function cmdPublish([dir], opts) {
     targets.push(t);
   }
 
+  // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself (not
+  // needed when every target is a Story, which publishes none)
+  let doc = { posts: {} };
+  if (targets.some((t) => t.texts !== "none")) {
+    const textsDir = opts.texts || path.join("descriptions", job.name);
+    const textsFile = path.join(textsDir, "descriptions.json");
+    if (!fs.existsSync(textsFile)) fail(`There is no ${rel(textsFile)}: write the texts with video-descriptions first (or name their folder with --texts).`);
+    if (!tool("video-descriptions")) fail(missing("video-descriptions"));
+    const checked = checkTexts(textsDir);
+    if (!checked.ok) fail(`video-descriptions' check finds ✗ in ${rel(textsFile)}:\n${checked.output.split("\n").filter((l) => /✗/.test(l)).join("\n")}\nFix them, check again, show the person the overview, then publish.`);
+    doc = readJson(textsFile);
+  }
+
   // every target's parameters before anything is uploaded: a missing text or choice stops all
   const choices = {
     privacy: opts.privacy, kids: opts["made-for-kids"], tiktok: TIKTOK[opts["tiktok-privacy"]], cover, options: opts.option,
@@ -346,7 +350,7 @@ async function cmdPublish([dir], opts) {
   const planned = [];
   const problems = [];
   for (const t of targets) {
-    const post = postOf(doc.posts || {}, t.texts);
+    const post = t.texts === "none" ? {} : postOf(doc.posts || {}, t.texts);
     if (!post) { problems.push(`${t.id}: descriptions.json has no posts.${t.texts}`); continue; }
     const { params, errors: errs, notes } = paramsOf(t, post, { html: "{{HTML}}", videoUrl: "{{VIDEO}}", thumbnailUrl: opts.thumbnail ? "{{THUMBNAIL}}" : null, date, lang: doc.lang, choices });
     for (const e of errs) problems.push(`${t.id}: ${e}`);

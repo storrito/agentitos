@@ -78,7 +78,7 @@ When it is ready, or nearly so, say so in one sentence and go straight on to the
 node <skill>/tools/publish.mjs accounts publish/<name>
 ```
 
-lists the targets the video fits (an account's post type, e.g. `instagram/storrito_com/reel`), and the others with why not. Then
+lists the targets the video fits (an account's post type, e.g. `instagram/storrito_com/reel`, an Instagram Story `instagram/storrito_com/story` up to 60 s), and the others with why not. Then
 
 ```bash
 node <skill>/tools/publish.mjs accounts publish/<name> --hiccup --lang de
@@ -96,7 +96,7 @@ No account fits (the tool says so): say why in a sentence (the video's length or
 
 ### 6. The texts
 
-Follow video-descriptions' SKILL.md, steps 1 and 4 to 6, with its folder `descriptions/<name>/` and the job's video (`publish/<name>/video.mp4` when `prepare` wrote one, else the original), for exactly the platforms of the chosen targets: the `texts:` column of `accounts` (`instagram-reels`, `tiktok`, `youtube-shorts`, `linkedin`, `x`, …; long: `youtube`). Its `check` must have no ✗; its overview is what the person agrees to: "Looks good" (`:class "primary"`) and the button that opens the page ("Show all texts ↗"), with a line that they can type what to change.
+Follow video-descriptions' SKILL.md, steps 1 and 4 to 6, with its folder `descriptions/<name>/` and the job's video (`publish/<name>/video.mp4` when `prepare` wrote one, else the original), for exactly the platforms of the chosen targets: the `texts:` column of `accounts` (an Instagram Story has none: it publishes no text, and with only Stories chosen there are no texts to write) (`instagram-reels`, `tiktok`, `youtube-shorts`, `linkedin`, `x`, …; long: `youtube`). Its `check` must have no ✗; its overview is what the person agrees to: "Looks good" (`:class "primary"`) and the button that opens the page ("Show all texts ↗"), with a line that they can type what to change.
 
 Long-form on YouTube also wants:
 - **a thumbnail**: offer to make one with agentitos' thumbnail-and-intro, or let YouTube pick a frame;
