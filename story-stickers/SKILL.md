@@ -24,11 +24,11 @@ metadata:
 cd <skill> && npm install
 ```
 
-It needs Node 20+, ffmpeg, Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH) and the network (Storrito's sticker components). agentitos' `platform-zones` skill beside this one says where Instagram covers a Story; agentitos' `publish-video` beside it publishes the Story. When something is missing, say so in one sentence instead of installing it yourself.
+It needs Node 20+ and the network (Storrito, its sticker components); `build` also needs ffmpeg and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), `layer`, `check` and `mount` do not. agentitos' `platform-zones` skill beside this one says where Instagram covers a Story; agentitos' `publish-video` beside it publishes the Story. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## How it works
 
-A sticker is never drawn into the video. The video is rendered without stickers; Storrito gets the video and the stickers as its `<insta-…>` elements and lays them over it, so that Instagram makes them tappable (a link opens, a poll counts). This skill places the stickers once, in `stickers.json`, measures them with the same components Storrito renders with, and every picture you show (the HyperFrames preview, the frames of the finished video) is what the Story will look like.
+A sticker is never drawn into the video. The video is rendered without stickers; Storrito gets the video and the stickers as its `<insta-…>` elements and lays them over it, so that Instagram makes them tappable (a link opens, a poll counts). This skill places the stickers once, in `stickers.json`, each by its centre: the layer places them in CSS (`left`/`top`, `width:max-content`, `translate(-50%,-50%)`), which Storrito reads exactly as the browser shows it. Storrito measures and checks them with the components it renders with, and every picture you show (the HyperFrames preview, the frames of the finished video) is what the Story will look like.
 
 - A sticker shows for the whole Story, from the first to the last second. Place it where the film has nothing that matters, all the time: no text, no face, no product under it.
 - One sticker that asks for a tap (poll, question, quiz, slider, countdown) per Story gets the most answers; a link sticker can come with it.
@@ -59,13 +59,16 @@ Write `stickers/<name>/stickers.json` (`<name>` the film's short name). `x` and 
 
 Where: ask platform-zones (`node <platform-zones>/tools/zones.mjs zones instagram-story --size 1080x1920 --json`) for the safe box and keep each sticker inside it; leave room between stickers. In a film you made, put the stickers where its scenes leave space, and keep the film's text and faces out of that place for the whole length.
 
-## 2. Build and check
+## 2. The layer, checked by Storrito
 
 ```bash
-node <skill>/tools/stickers.mjs build stickers/<name>/stickers.json [--video <film.mp4>] [--at 1,4.5,9]
+node <skill>/tools/stickers.mjs layer stickers/<name>/stickers.json
+node <skill>/tools/stickers.mjs check stickers/<name> [--video <the video's temp-blob url>]
 ```
 
-measures every sticker with Storrito's components (a few seconds), prints its size and place, and what platform-zones finds: ✗ under Instagram's bar or reply field or on another sticker (move it in `stickers.json`, build again), ⚠ in the safe zone's margin or close to another. It writes `stickers/<name>/layer.html` (the layer Storrito gets) and pictures for the chat: with `--video` the stickers over four frames of the video (or the moments of `--at`), without it over a dark ground. Look at them yourself: a sticker on the film's text or on a face is a ✗ no tool sees. Build again after every change of `stickers.json` and after every new render of the film.
+`layer` writes `stickers/<name>/layer.html`, the layer Storrito gets, without a browser. `check` hands it to Storrito's `check-instagram-story` (nothing is posted or saved) and prints each sticker's box and Storrito's warnings: a sticker outside Instagram's safe zone, on another sticker, an attribute it does not know. Move the sticker in `stickers.json`, write the layer and check again until nothing is left. When `check` says Storrito has no check yet, or cannot reach Storrito, `build` (step 4) checks in Chrome instead.
+
+Without the tools, in rragent's REPL: write the same elements yourself, each `style="position:absolute;left:<x>px;top:<y>px;width:max-content;transform:translate(-50%,-50%)"` (a rotation after the translation: `… translate(-50%,-50%) rotate(-4deg)`), and check them with `(storrito/check-instagram-story {:html "<insta-story>…</insta-story>"})`. Never leave out `width:max-content`: a sticker placed at `left:540px` without it is laid out squeezed into the 540 px right of it.
 
 ## 3. In the HyperFrames preview (a film you are making)
 
@@ -73,17 +76,19 @@ measures every sticker with Storrito's components (a few seconds), prints its si
 node <skill>/tools/stickers.mjs mount stickers/<name> <project>
 ```
 
-writes `compositions/story-stickers.html` into the HyperFrames project and mounts it over the film in `index.html` (the film must be 1080×1920): the preview shows the Story as Instagram will, with Storrito's real stickers. Build and mount again after a change of `stickers.json`.
+writes `compositions/story-stickers.html` into the HyperFrames project (`<project>` is the folder with its `index.html`; in rragent `artifacts/<name>/composition`) and mounts it over the film, its host marked `data-preview-only` (the film must be 1080×1920): the preview shows the Story as Instagram will, with Storrito's real stickers. Mount again after a change of the layer.
 
-**Before the delivery render:**
+**The render:** rragent's `render` tool leaves elements marked `data-preview-only` out of the video by itself. The HyperFrames CLI or Studio does not: there run `node <skill>/tools/stickers.mjs unmount <project>` before the render. A video with the stickers drawn in would show them twice: when the frames of `build --video` show a sticker twice, unmount and render again.
+
+## 4. Pictures over the finished video
 
 ```bash
-node <skill>/tools/stickers.mjs unmount <project>
+node <skill>/tools/stickers.mjs build stickers/<name>/stickers.json --video <film.mp4> [--at 1,4.5,9]
 ```
 
-takes the stickers out, so the video is rendered without them. A video with the stickers drawn in would show them twice. After the render: `build … --video <film.mp4>` once more, and show its pictures.
+shows the stickers over four frames of the rendered video (or the moments of `--at`) for the chat, measured with Storrito's components and checked by platform-zones: ✗ under Instagram's bar or reply field or on another sticker, ⚠ in the safe zone's margin or close to another. It writes the layer too. Look at the pictures yourself: a sticker on the film's text or on a face is a ✗ no tool sees.
 
-## 4. Publish
+## 5. Publish
 
 The finished video goes to agentitos' publish-video as every video does (its SKILL.md: `check`, `prepare` when it says so, `accounts`), with the layer for the Instagram Story targets:
 
@@ -118,5 +123,5 @@ The stickers over the video:
 
 - Stickers only through Storrito's `<insta-…>` elements: never draw one into the video, never fake one with a picture.
 - A link sticker's `url` is the person's page or one they named; never invent one.
-- Change `stickers.json` and build again; never edit `layer.html` or the mounted scene by hand.
-- The delivery render goes without the stickers (`unmount` first).
+- Change `stickers.json`, then `layer` (or `build`) and `mount` again; never edit `layer.html` or the mounted scene by hand.
+- The video goes out without the stickers: rragent's render leaves `data-preview-only` out, elsewhere `unmount` first.

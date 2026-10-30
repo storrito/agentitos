@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 // Instagram's stickers (link, poll, question, countdown, …) on a video Story made with HyperFrames:
 // the video is rendered without them, Storrito lays its own stickers over it and Instagram makes
-// them tappable. One file says which stickers go where; this tool measures them with Storrito's own
-// components, checks them against Instagram's bar and reply field, shows them over the video's
-// frames, mounts them as a preview into a HyperFrames project and writes the layer Storrito gets.
-// Made for agents: each command prints what it did and what to do next.
+// them tappable. One file says which stickers go where. Each sticker is placed by its centre in CSS
+// (`left`/`top`, `width:max-content`, `translate(-50%,-50%)`), which Storrito reads exactly as the
+// browser shows it, so writing the layer needs no browser; Storrito or Chrome check it, the
+// HyperFrames preview shows it over the film. Made for agents: each command prints what it did and
+// what to do next.
 //
+//   node tools/stickers.mjs layer <stickers.json> [--out <dir>]
+//        <dir>/layer.html: the stickers as Storrito gets them (publish-video's --stickers); no browser
+//   node tools/stickers.mjs check <dir> [--video <url>]
+//        Storrito's check-instagram-story of the layer: each sticker's box and what is wrong
+//        (overlaps, outside the safe zone, unknown attributes); nothing is posted
 //   node tools/stickers.mjs build <stickers.json> [--video <mp4>] [--at 1,4.5,9] [--out <dir>]
-//        <dir>/layer.html: the stickers as Storrito places them (publish-video's --stickers);
-//        <dir>/placed.json: each sticker's box; uploads/stickers-<name>/<build>/NN.jpg: the stickers
-//        over the video's frames (or over a dark ground), small, for the chat
+//        the layer too, measured in Chrome with Storrito's components and platform-zones' layout check;
+//        uploads/stickers-<name>/<build>/NN.jpg: the stickers over the video's frames (or over a
+//        dark ground), small, for the chat
 //   node tools/stickers.mjs mount <dir> <project>
-//        compositions/story-stickers.html in the HyperFrames project and its host in index.html:
-//        the stickers over the film in the Studio preview, from <dir>/layer.html
+//        compositions/story-stickers.html in the HyperFrames project and its host in index.html,
+//        marked data-preview-only: the stickers over the film in the preview, from <dir>/layer.html;
+//        rragent's render leaves such elements out by itself
 //   node tools/stickers.mjs unmount <project>
-//        takes the host out again: before the delivery render, the video goes out without stickers
+//        takes the host out again: before a render that does not leave data-preview-only out
+//        (the HyperFrames CLI or Studio), so that the video goes out without stickers
 
 import fs from "node:fs";
 import path from "node:path";
@@ -22,7 +30,7 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { launch } from "./lib/chrome.mjs";
 import { measureScript, layout } from "./lib/zones.mjs";
-import { connect, componentsHost } from "./lib/storrito.mjs";
+import { connect, call, componentsHost } from "./lib/storrito.mjs";
 
 const W = 1080, H = 1920;
 
@@ -38,7 +46,6 @@ const STICKERS = {
   hashtag: { tag: "insta-hashtag", attrs: ["hashtag", "design"] },
   location: { tag: "insta-location", attrs: ["location", "location-id", "design"] },
 };
-const TAGS = Object.values(STICKERS).map((s) => s.tag).join(", ");
 
 const [cmd, ...rest] = process.argv.slice(2);
 const opts = {};
@@ -78,7 +85,9 @@ function validate(spec) {
   return errors;
 }
 
-// one sticker as Storrito's element; its place and turn are set once it is measured
+// one sticker as Storrito's element, placed by its centre: `width:max-content` keeps its natural
+// size near the frame's edge (an absolutely placed element is otherwise squeezed into the room
+// right of `left`), the translation centres it, the rotation and the scale turn it around its centre
 function stickerTag(s) {
   const def = STICKERS[s.type];
   const attrs = { ...s };
@@ -87,8 +96,12 @@ function stickerTag(s) {
     const v = String(attrs[a]);
     return v.includes('"') ? ` ${a}='${v.replace(/'/g, "&#39;")}'` : ` ${a}="${esc(v)}"`;
   }).join("");
-  return `<${def.tag}${list} style="position:absolute;left:0;top:0;visibility:hidden"></${def.tag}>`;
+  const transform = ["translate(-50%,-50%)", s.rotate ? `rotate(${s.rotate}deg)` : "", s.scale && s.scale !== 1 ? `scale(${s.scale})` : ""].filter(Boolean).join(" ");
+  return `<${def.tag}${list} style="position:absolute;left:${s.x}px;top:${s.y}px;width:max-content;transform:${transform}"></${def.tag}>`;
 }
+
+// the layer Storrito gets inside <insta-story src="…">, and the preview scene shows over the film
+const layerHtml = (spec) => spec.stickers.map(stickerTag).join("\n") + "\n";
 
 function page(spec, host) {
   return `<!doctype html><html><head><meta charset="utf-8"><base href="${host}/">
@@ -101,35 +114,14 @@ ${spec.stickers.map(stickerTag).join("\n")}
 </insta-story></body></html>`;
 }
 
-// runs in the page: every sticker centred on its x/y, turned and scaled; its box as Storrito sees it
-function place(list) {
+// runs in the page: the box each sticker covers on the frame, as Storrito measures it
+function boxes() {
   const els = [...document.querySelectorAll("insta-story > insta-link, insta-story > insta-poll, insta-story > insta-question, insta-story > insta-quiz, insta-story > insta-countdown, insta-story > insta-emoji-slider, insta-story > insta-mention, insta-story > insta-hashtag, insta-story > insta-location")];
   const story = document.querySelector("insta-story").getBoundingClientRect();
-  return els.map((el, i) => {
-    const s = list[i];
-    const w = el.offsetWidth, h = el.offsetHeight;
-    const left = Math.round(s.x - w / 2), top = Math.round(s.y - h / 2);
-    const transform = [s.rotate ? `rotate(${s.rotate}deg)` : "", s.scale && s.scale !== 1 ? `scale(${s.scale})` : ""].filter(Boolean).join(" ");
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
-    if (transform) el.style.transform = transform;
-    el.style.visibility = "";
+  return els.map((el) => {
     const r = el.getBoundingClientRect();
-    return {
-      tag: el.tagName.toLowerCase(),
-      attrs: Object.fromEntries([...el.attributes].filter((a) => a.name !== "style").map((a) => [a.name, a.value])),
-      left, top, width: w, height: h, transform,
-      rect: { x: Math.round(r.x - story.x), y: Math.round(r.y - story.y), w: Math.round(r.width), h: Math.round(r.height) },
-    };
+    return { tag: el.tagName.toLowerCase(), left: Math.round(r.x - story.x), top: Math.round(r.y - story.y), width: Math.round(r.width), height: Math.round(r.height) };
   });
-}
-
-// the layer Storrito gets inside <insta-story src="…">, and the preview scene shows over the film
-function layerHtml(placed) {
-  return placed.map((s) => {
-    const attrs = Object.entries(s.attrs).map(([k, v]) => (String(v).includes('"') ? ` ${k}='${String(v).replace(/'/g, "&#39;")}'` : ` ${k}="${esc(v)}"`)).join("");
-    return `<${s.tag}${attrs} style="position:absolute;left:${s.left}px;top:${s.top}px${s.transform ? `;transform:${s.transform}` : ""}"></${s.tag}>`;
-  }).join("\n") + "\n";
 }
 
 function probe(video) {
@@ -146,13 +138,48 @@ function frameAt(video, t, file) {
   if (r.status || !fs.existsSync(file)) fail(`ffmpeg could not take the frame at ${t} s from ${rel(video)}: ${(r.stderr || "").trim().split("\n").pop()}`);
 }
 
-async function cmdBuild([specFile]) {
-  if (!specFile || !fs.existsSync(specFile)) fail("Usage: stickers.mjs build <stickers.json> [--video <mp4>] [--at 1,4.5] [--out <dir>]");
+// stickers.json read and checked, and the folder its layer goes to
+function loadSpec(specFile, usage) {
+  if (!specFile || !fs.existsSync(specFile)) fail(`Usage: stickers.mjs ${usage}`);
   const spec = readJson(specFile);
   const errors = validate(spec);
   if (errors.length) fail(errors.map((e) => `✗ ${e}`).join("\n"));
   const out = opts.out || path.dirname(specFile);
   fs.mkdirSync(out, { recursive: true });
+  return { spec, out };
+}
+
+function cmdLayer([specFile]) {
+  const { spec, out } = loadSpec(specFile, "layer <stickers.json> [--out <dir>]");
+  fs.writeFileSync(path.join(out, "layer.html"), layerHtml(spec));
+  console.log(`Wrote ${rel(path.join(out, "layer.html"))}: ${spec.stickers.length} sticker${spec.stickers.length > 1 ? "s" : ""}, each placed by its centre.`);
+  console.log(`Next: node <skill>/tools/stickers.mjs check ${rel(out)} (Storrito measures them), then mount ${rel(out)} <project> for the preview.`);
+}
+
+// Storrito's own check of the layer: the extraction that schedule-instagram-story runs, nothing stored
+async function cmdCheck([dir]) {
+  if (!dir) fail("Usage: stickers.mjs check <dir with layer.html> [--video <url>]");
+  const layerFile = path.join(dir, "layer.html");
+  if (!fs.existsSync(layerFile)) fail(`${rel(layerFile)} does not exist: run layer first.`);
+  if (opts.video && !/^https?:\/\//.test(opts.video)) fail("--video is the video's URL that Storrito can load (its temp-blob url after the upload); without it the stickers are checked over an empty story.");
+  const api = await connect();
+  if (!api) fail(`Storrito cannot be reached from this tool (no gateway connection, no STORRITO_API_URL and STORRITO_CREDENTIAL): call check-instagram-story yourself with html "<insta-story>" + ${rel(layerFile)} + "</insta-story>" (in rragent (storrito/check-instagram-story {:html …})), or run build, which checks in Chrome.`);
+  const html = `<insta-story${opts.video ? ` src="${esc(opts.video)}"` : ""}>\n${fs.readFileSync(layerFile, "utf8")}</insta-story>`;
+  let res;
+  try {
+    res = await call(api, "check-instagram-story", { html });
+  } catch (e) {
+    if (e.status === 404 || /unknown procedure|not found/i.test(e.message)) fail("This Storrito has no check-instagram-story yet: run build instead, which checks in Chrome.");
+    fail(`✗ ${e.message}`);
+  }
+  for (const b of res.stickers || []) console.log(`${b.tag} ${b.width}×${b.height} at left ${b.left}, top ${b.top}${b.rotation ? `, turned ${b.rotation}°` : ""}`);
+  const warnings = res.warnings || [];
+  console.log(warnings.length ? `\n${warnings.map((w) => `⚠ ${w}`).join("\n")}` : "\nStorrito finds nothing to fix: no sticker outside the safe zone, none on another.");
+  console.log(warnings.length ? "Next: move the stickers (x, y in stickers.json), write the layer again and check again." : `Next: node <skill>/tools/stickers.mjs mount ${rel(dir)} <project> for the preview; the pictures over the video's frames come from build --video.`);
+}
+
+async function cmdBuild([specFile]) {
+  const { spec, out } = loadSpec(specFile, "build <stickers.json> [--video <mp4>] [--at 1,4.5] [--out <dir>]");
   const name = nameOf(out === "." ? process.cwd() : out);
 
   let times = [], video = null, info = null;
@@ -189,7 +216,7 @@ async function cmdBuild([specFile]) {
       await wait(document.fonts.ready, 15000);
     });
     if (!(await p.evaluate(() => !!window.__instaRender))) fail(`✗ Storrito's sticker components did not load from ${host}/js/insta-components.js: is the machine online?`);
-    placed = await p.evaluate(place, spec.stickers);
+    placed = await p.evaluate(boxes);
     if (placed.some((s) => !s.width || !s.height)) fail(`✗ ${placed.filter((s) => !s.width || !s.height).map((s) => s.tag).join(", ")} rendered without a size: check its attributes against Storrito's Story Components reference.`);
     await p.addScriptTag({ content: measure });
     findings = layout(await p.evaluate(() => platformZonesMeasure()), ["instagram-story"]);
@@ -212,9 +239,9 @@ async function cmdBuild([specFile]) {
     await browser.close();
   }
 
-  fs.writeFileSync(path.join(out, "layer.html"), layerHtml(placed));
+  fs.writeFileSync(path.join(out, "layer.html"), layerHtml(spec));
   writeJson(path.join(out, "placed.json"), { host, stickers: placed });
-  for (const s of placed) console.log(`${s.tag} ${s.width}×${s.height} at left ${s.left}, top ${s.top}${s.transform ? `, ${s.transform}` : ""}`);
+  for (const s of placed) console.log(`${s.tag} ${s.width}×${s.height} at left ${s.left}, top ${s.top} (the box it covers)`);
   const tapped = spec.stickers.filter((s) => ["poll", "question", "quiz", "slider", "countdown"].includes(s.type)).length;
   if (tapped > 1) findings.push({ level: "!", kind: "story", what: `has ${tapped} stickers that ask for a tap (poll, question, quiz, slider, countdown): one per story gets the most answers` });
   const notes = findings.map((f) => `${f.level === "✗" ? "✗" : "⚠"} ${f.kind === "text" ? `"${f.label}"` : f.kind === "story" ? "the story" : `the ${f.label} sticker`} ${f.what}`);
@@ -239,11 +266,11 @@ function rootOf(project) {
 
 const MOUNT = /\n?[ \t]*<!-- story-stickers: [^\n]*-->\n[ \t]*<div id="story-stickers"[^>]*><\/div>/;
 
-function cmdMount([dir, project]) {
+async function cmdMount([dir, project]) {
   if (!dir || !project) fail("Usage: stickers.mjs mount <dir with layer.html> <project>");
   const layerFile = path.join(dir, "layer.html");
-  if (!fs.existsSync(layerFile)) fail(`${rel(layerFile)} does not exist: run build first.`);
-  const { host } = readJson(path.join(dir, "placed.json"));
+  if (!fs.existsSync(layerFile)) fail(`${rel(layerFile)} does not exist: run layer (or build) first.`);
+  const host = await componentsHost(await connect());
   const root = rootOf(project);
   if (root.width !== W || root.height !== H) fail(`✗ The film is ${root.width}×${root.height}: a Story video for Storrito is 1080×1920. Set the root's data-width="1080" data-height="1920".`);
   if (!(root.duration > 0)) fail(`✗ The root of ${rel(root.index)} has no data-duration.`);
@@ -256,8 +283,8 @@ ${fs.readFileSync(layerFile, "utf8").trim().split("\n").map((l) => `    ${l}`).j
   </div>
   <script>
     (function () {
-      // Preview only: Storrito's own sticker components from ${host}. The delivery render goes
-      // without this scene (stickers.mjs unmount); Storrito lays the stickers over the video.
+      // Preview only: Storrito's own sticker components from ${host}. The video goes out without
+      // this scene (its host is data-preview-only); Storrito lays the stickers over the video.
       if (!window.customElements.get("insta-story") && !document.querySelector("script[data-story-stickers]")) {
         var s = document.createElement("script");
         s.src = "${host}/js/insta-components.js";
@@ -271,11 +298,11 @@ ${fs.readFileSync(layerFile, "utf8").trim().split("\n").map((l) => `    ${l}`).j
 `;
   fs.mkdirSync(path.join(project, "compositions"), { recursive: true });
   fs.writeFileSync(path.join(project, "compositions", "story-stickers.html"), scene);
-  const hostTag = `\n      <!-- story-stickers: preview of Storrito's stickers; out before the delivery render (stickers.mjs unmount) -->\n      <div id="story-stickers" data-composition-id="story-stickers" data-composition-src="compositions/story-stickers.html" data-start="0" data-duration="${root.duration}" data-track-index="99" data-track-kind="graphics" data-width="${W}" data-height="${H}" style="z-index:1000"></div>`;
+  const hostTag = `\n      <!-- story-stickers: preview of Storrito's stickers, never in the video (data-preview-only; elsewhere than rragent: stickers.mjs unmount before the render) -->\n      <div id="story-stickers" data-preview-only data-composition-id="story-stickers" data-composition-src="compositions/story-stickers.html" data-start="0" data-duration="${root.duration}" data-track-index="99" data-track-kind="graphics" data-width="${W}" data-height="${H}" style="z-index:1000"></div>`;
   const html = MOUNT.test(root.html) ? root.html.replace(MOUNT, hostTag) : root.html.slice(0, root.at) + hostTag + root.html.slice(root.at);
   fs.writeFileSync(root.index, html);
   console.log(`Mounted the stickers of ${rel(layerFile)} over the film (compositions/story-stickers.html, its host in ${rel(root.index)}, ${root.duration} s).`);
-  console.log(`Next: the Studio preview shows them as Instagram will. Before the delivery render: node <skill>/tools/stickers.mjs unmount ${rel(project)}.`);
+  console.log(`Next: the preview shows them as Instagram will. rragent's render tool leaves them out of the video by itself; the HyperFrames CLI or Studio does not: there run node <skill>/tools/stickers.mjs unmount ${rel(project)} before the render.`);
 }
 
 function cmdUnmount([project]) {
@@ -287,8 +314,8 @@ function cmdUnmount([project]) {
   console.log(`Next: render the film, then check it with node <skill>/tools/stickers.mjs build <stickers.json> --video <mp4>.`);
 }
 
-const COMMANDS = { build: cmdBuild, mount: cmdMount, unmount: cmdUnmount };
-if (!COMMANDS[cmd]) fail("Usage: stickers.mjs build <stickers.json> [--video <mp4>] [--at 1,4.5] [--out <dir>] | mount <dir> <project> | unmount <project>");
+const COMMANDS = { layer: cmdLayer, check: cmdCheck, build: cmdBuild, mount: cmdMount, unmount: cmdUnmount };
+if (!COMMANDS[cmd]) fail("Usage: stickers.mjs layer <stickers.json> | check <dir> [--video <url>] | build <stickers.json> [--video <mp4>] [--at 1,4.5] [--out <dir>] | mount <dir> <project> | unmount <project>");
 try {
   await COMMANDS[cmd](pos);
 } catch (e) {
