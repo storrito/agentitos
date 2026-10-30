@@ -135,7 +135,7 @@ brings it to −14 LUFS, the loudness the platforms play at. Say in one sentence
 
 When one of the targets is an Instagram Story, it can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask once which one fits (the likely one ticked: a link when there is a page to go to; "none" is an answer too). Then follow agentitos' **story-stickers** (`<skill>/../story-stickers/SKILL.md`, on a Sprite else `/home/sprite/skills/story-stickers/SKILL.md`): the stickers as Storrito's elements in `stickers/<name>/layer.html`, checked with `storrito/check-instagram-story` (its picture goes into the chat), in the preview as a `data-preview-only` scene, published with publish-video's `--stickers`.
 
-- Leave room for them in the film: where a sticker sits stays free of text, faces and the product for the whole length.
+- Keep a band free for them in the film, planned with the scenes (a link sticker needs about 180 px of height, a poll about 570): no text, no captions, no face and no product in it for the whole length. The stickers go into a flexbox over that band.
 - Never draw a sticker, a "link in bio" or an arrow to a link into the Story's video: Storrito lays the real stickers over it, and Instagram makes them tappable.
 
 ## UI in the chat

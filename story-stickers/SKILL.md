@@ -30,19 +30,23 @@ A sticker is never drawn into the picture or the video. Storrito gets the pictur
 - A video is 1080×1920 and at most 60 s; a picture best 1080 px wide or more.
 - Do what was asked: one picture and a link make one frame with a link sticker. No text the person did not ask for, no extra frames, no invented captions; a line of text only when they want one, in their words.
 
-## 1. The stickers
+## 1. The stickers: a band, and flexbox in it
 
-Write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one element per line, each placed by its centre `x`, `y` in px of the 1080×1920 frame, with exactly this style:
+Choose a **band** of the frame where the picture or the film has nothing that matters, all the time: no text, no subtitles, no face, no product, no picture-in-picture. In a film you make, plan the band with the scenes and keep it free for the whole length; in a picture or a video the person brings, find it on the picture or the sheet of its moments (step 4). Then write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one flexbox over the band, the stickers in it, the browser spaces them:
 
 ```html
-<insta-poll question="Schon probiert?" options='["Ja","Noch nicht"]' color="pink" style="position:absolute;left:540px;top:1050px;width:max-content;transform:translate(-50%,-50%)"></insta-poll>
-<insta-link url="https://example.com/shop" text="Zum Shop" style="position:absolute;left:540px;top:1470px;width:max-content;transform:translate(-50%,-50%) rotate(-3deg)"></insta-link>
+<div style="position:absolute;left:60px;right:60px;top:1350px;bottom:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:40px">
+<insta-link url="https://example.com/shop" text="Zum Shop"></insta-link>
+<insta-poll question="Schon probiert?" options='["Ja","Noch nicht"]' color="pink"></insta-poll>
+</div>
 ```
 
-- `width:max-content` always: without it a sticker is squeezed into the room right of its `left` (Storrito warns).
-- A turn goes after the translation, `rotate(-3deg)` (−6 to 6 looks placed by hand); a size after it, `scale(0.9)` (0.3–2).
-- Keep each sticker inside Instagram's safe zone: 250 px from the top, 300 px from the bottom, 60 px from the sides (platform-zones' `zones instagram-story` has the exact box). Leave 40 px between stickers.
+- `top` and `bottom` set the band; it stays inside Instagram's safe zone: `top` 250 px or more, `bottom` 300 px or more, `left` and `right` 60 px or more (platform-zones' `zones instagram-story` has the exact box).
+- Make it tall enough for what goes in, with 40 px between stickers: a link, hashtag, mention or location is 177 px tall (its width follows the text, "Shop Now" 605 px); a poll 768 px wide and 566 / 728 / 890 px tall with 2 / 3 / 4 options; a question 771 × 454; a quiz 771 wide, 541 / 709 / 877 tall; a countdown 693 × 433; an emoji slider 818 wide, 262 tall without a question, 467 with one.
+- To one side: `align-items:flex-start` (left) or `flex-end` (right) and the band's `left` / `right`; two stickers side by side: `flex-direction:row`.
+- A turn for a sticker, `style="transform:rotate(-3deg)"` (−6 to 6 looks placed by hand); a smaller one, `transform:scale(0.85)` (not below 0.75: hard to tap).
 - Attribute values with `"` go in single quotes, as `options` above.
+- Only a sticker that must sit on an exact spot (over a button the picture shows) is placed alone by its centre: `<insta-link … style="position:absolute;left:540px;top:1470px;width:max-content;transform:translate(-50%,-50%)">` (`width:max-content` always, else Storrito warns that it is squeezed).
 
 | element | attributes |
 | --- | --- |
@@ -98,7 +102,7 @@ Its `:url` is the picture's. Its size (`ffprobe -v error -show_entries stream=wi
 </insta-story>
 ```
 
-The filled frame is the same without the blurred `<img>`, the picture `style="position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover"`. Put the stickers where the picture is calm (on the blurred band above or below a landscape picture, it covers nothing). Fonts that always load: `Instagram Sans Condensed`, `Roboto`, `AvenyT`, `Noto Color Emoji`. This HTML is the Story: keep it in the REPL, `(def story-htmls ["<insta-story>…</insta-story>"])` (one per frame, in their order), check it (step 3) and schedule it (step 5).
+The filled frame is the same without the blurred `<img>`, the picture `style="position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover"`. Put the band where the picture is calm: below or above a landscape picture, on the blurred part, it covers nothing. Fonts that always load: `Instagram Sans Condensed`, `Roboto`, `AvenyT`, `Noto Color Emoji`. This HTML is the Story: keep it in the REPL, `(def story-htmls ["<insta-story>…</insta-story>"])` (one per frame, in their order), check it (step 3) and schedule it (step 5).
 
 ## 3. Check
 
@@ -108,7 +112,7 @@ In the REPL (`eval`), with the layer's text:
 (storrito/check-instagram-story {:html (str "<insta-story>" layer "</insta-story>")})
 ```
 
-(for a picture: the whole HTML of step 2) answers each sticker's box, the `warnings` (outside the safe zone, on another sticker, squeezed, an attribute it does not know) and a `previewUrl`: a picture of the Story with its stickers. Fix every warning in `layer.html` and check again. Show the `previewUrl` in the chat: it is what Instagram will show. Once a video is uploaded (step 5), check with it, `(str "<insta-story src=\"" url "\">" layer "</insta-story>")`: the picture then shows the video's first frame under the stickers, only that one; the rest of a video is step 4.
+(for a picture: the whole HTML of step 2) answers each sticker's box, the `warnings` (outside the safe zone, on another sticker, squeezed, an attribute it does not know) and a `previewUrl`: a picture of the Story with its stickers. Fix every warning in `layer.html` and check again. Then compare each box with your band: a band too small for its stickers spills over both of its edges, onto the picture above and out of the safe zone below, and Storrito only warns about the safe zone. A box outside the band: make the band taller, move it, or put fewer stickers in it. Show the `previewUrl` in the chat: it is what Instagram will show. Once a video is uploaded (step 5), check with it, `(str "<insta-story src=\"" url "\">" layer "</insta-story>")`: the picture then shows the video's first frame under the stickers, only that one; the rest of a video is step 4.
 
 An attribute that would make the post fail is an error with what to change. When Storrito says the procedure does not exist (an older Storrito), use `storrito/create-draft` with the same HTML, `storrito/status-draft` for its `previewUrl`, then `storrito/delete-draft`.
 
@@ -175,7 +179,7 @@ DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 <video>)
 ffmpeg -v error -y -i <video> -vf "fps=12/$DUR,drawbox=x=<left>:y=<top>:w=<width>:h=<height>:color=red@0.9:t=8,scale=270:-1,tile=6x2" -frames:v 1 uploads/<name>-stickers.jpg
 ```
 
-Look at every tile: captions or subtitles burned into the video (they come and go, often in the lower third or the middle), other text, a face, a picture-in-picture (a webcam), the product. Nothing of it may lie under a box in any frame: move the sticker where every frame is calm, write the layer again, check again, draw again. Make a sticker smaller only as far as `scale(0.75)`: below that it is hard to tap; a shorter link `text` makes the pill narrower instead. Show the sheet in the chat with the preview and say in one sentence what the sticker keeps clear of ("below the subtitles, left of the webcam").
+Look at every tile: captions or subtitles burned into the video (they come and go, often in the lower third or the middle), other text, a face, a picture-in-picture (a webcam), the product. Nothing of it may lie under a box in any frame: move the band where every frame is calm, write the layer again, check again, draw again. Make a sticker smaller only as far as `scale(0.75)`: below that it is hard to tap; a shorter link `text` makes the pill narrower instead. Show the sheet in the chat with the preview and say in one sentence what the sticker keeps clear of ("below the subtitles, left of the webcam").
 
 ## 5. Publish
 
@@ -242,6 +246,6 @@ A picture Story (Storrito's `previewUrl`), the chosen design named and the other
 - Stickers only through Storrito's `<insta-…>` elements: never draw one into the picture or the video, never fake one with a picture or a "link in bio" text in a Story.
 - Only what was asked: one picture is one frame; no text, frames or captions the person did not ask for.
 - A link sticker's `url` is the person's page or one they named; never invent one.
-- Every sticker `width:max-content` and placed by its centre; no warning of `check-instagram-story` left unless the person wants it so.
+- The stickers in one flexbox over a free band, every box inside it; no warning of `check-instagram-story` left unless the person wants it so.
 - A video goes out without the stickers: rragent's render leaves `data-preview-only` out, elsewhere take the host out first.
 - A video Story is shown with its preview and the sheet of twelve frames, never with the first frame alone: no sticker on subtitles, text, a face or a picture-in-picture at any moment.
