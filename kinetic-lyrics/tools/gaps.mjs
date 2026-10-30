@@ -1,5 +1,5 @@
 // Stretches where the audio is clearly speech but the transcript has no words –
-// the ASR skipped a passage. Shared by the QA (reports them) and repair.mjs (fills them).
+// the ASR skipped a passage. The QA reports them.
 import { execFileSync } from "node:child_process";
 
 // 10 ms RMS envelope of the audio, mono 16 kHz

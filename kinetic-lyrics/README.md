@@ -15,7 +15,7 @@ npx hyperframes render                     # MP4, on the CPU: no graphics card n
 
 Options: `--aspect 16:9|9:16|1:1|4:5|21:9` or `--size 2560x1080`, `--audio <file>`, `--title`, `--seed` (another layout variant), `--tail` (seconds after the last word).
 
-To create a transcript with timings: `npx hyperframes transcribe audio.wav` → `transcript.json`.
+To create a transcript with timings: agentitos' [transcribe](../transcribe/) skill, `node ../transcribe/tools/transcribe.mjs audio.wav --out transcript.json` (`--speakers` for who speaks).
 
 ## A short from a clip, step by step (`tools/short.mjs`)
 
@@ -23,7 +23,7 @@ For agents: one folder per short, each step prints what to do next. Settings are
 
 ```bash
 node tools/short.mjs new shorts/ep12 upload.mp4                 # source/: audio.wav, video.*, transcript.json
-node tools/short.mjs brief shorts/ep12 --speakers 2             # who speaks when; writes source/brief.md
+node tools/short.mjs brief shorts/ep12                          # who speaks when; writes source/brief.md
 # the agent reads brief.md and writes source/staging.json
 node tools/short.mjs build shorts/ep12 --names "A=Anna,B=Ben"    # HyperFrames project in composition/
 node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.png, stills/15.png
@@ -87,7 +87,7 @@ Across all presets:
 
 `--out <dir>` creates a separate HyperFrames project per video.
 
-**Transcription:** `tools/clip.mjs` transcribes through OpenRouter when there is one (`OPENROUTER_API_KEY`, or a Sprite's gateway; Gemini 3.5 Transcribe, about $0.006 per minute, run by agentitos' [transcribe](../transcribe/) skill, which must be beside this one, or `TRANSCRIBE` naming its `tools/transcribe.mjs`): words, timings and who speaks, with nothing to install but ffmpeg. The model gives times in tenths of a second; the build snaps every onset to the voice (`tools/align.mjs`). Speaker detection is switched on with the provider option `diarization_mode: "speaker"`, which OpenRouter passes to Google. On two-voice test clips, its text and speakers matched the local chain exactly. Without OpenRouter, or with `--asr parakeet`, it runs locally: Parakeet (`npx hyperframes models install parakeet`), speakers via `--diarize`, gaps via whisper.cpp. Whisper's own word timings were off by up to 0.5 s in places in the demo.
+**Transcription:** `tools/clip.mjs` and `tools/highlight.mjs` transcribe through OpenRouter (`OPENROUTER_API_KEY`, or a Sprite's gateway; Gemini 3.5 Transcribe, about a cent per minute, run by agentitos' [transcribe](../transcribe/) skill, which must be beside this one, or `TRANSCRIBE` naming its `tools/transcribe.mjs`): words, timings and who speaks, with nothing to install but ffmpeg. No model runs on this machine; without OpenRouter or the transcribe skill they stop with one sentence that says so. The model gives times in tenths of a second; the build snaps every onset to the voice (`tools/align.mjs`).
 
 ## Worlds
 
@@ -217,26 +217,14 @@ Most graphics need a square-ish box and get more height under the phrase; the wi
 ## Real podcasts: speakers and fillers
 
 ```bash
-# once: local speaker detection (sherpa-onnx, ~47 MB of models, runs on the CPU)
-python3 -m venv .venv && .venv/bin/pip install sherpa-onnx numpy soundfile
-mkdir -p models/diarize && cd models/diarize
-curl -LO https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
-tar xjf sherpa-onnx-pyannote-segmentation-3-0.tar.bz2 && rm sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
-curl -LO https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx
-cd ../..
-
-# excerpt from a real episode (NASA, public domain): transcript without speakers, --diarize detects them
-node tools/build.mjs examples/moonbase/transcript.json --preset podcast --audio examples/moonbase/audio.wav \
+# excerpt from a real episode (NASA, public domain): its words with who speaks, from agentitos' transcribe skill
+node ../transcribe/tools/transcribe.mjs examples/moonbase/audio.wav --out videos/moonbase.words.json --speakers --speakers-n 2
+node tools/build.mjs videos/moonbase.words.json --preset podcast --audio examples/moonbase/audio.wav \
   --title "Houston We Have a Podcast" --subtitle "The Moon Base · NASA" --speakers "A=Host,B=Guest" \
-  --diarize --llm --out videos/moonbase
+  --llm --out videos/moonbase
 ```
 
-`--diarize` (`tools/diarize.py`) uses pyannote segmentation and TitaNet voiceprints to find out who speaks when, and labels every word with `A`, `B`, … in order of first appearance. The number of voices is estimated; `--diarize 3` sets it. Then even a voice with only one short sentence ("Yes, that sounds solid.") counts as its own speaker. One- or two-word switches in the middle of a turn and "speakers" with only a few seconds of speaking time are merged into their neighbour. The result is cached as `<transcript>.speakers.json`. `--speakers A=Name,…` gives the voices names.
-
-A second pass then checks every sentence by voiceprint. If a sentence clearly sounds like another speaker, it is moved over as a whole. This happens, for example, when the segmentation sets the boundary too late and the host's question sticks to the guest's answer.
-
-Tightly cut clips such as shorts hardly have pauses. There the segmentation often only finds one voice. If a count is given and not reached, every sentence of the transcript gets its own voiceprint instead. Sentences of 0.7 s and longer are grouped into N voices, short interjections ("Yes.", "Exactly.") go to the most similar voice.
-Tested on 10 minutes of "Houston We Have a Podcast": all four of the host's questions were separated correctly, in about 1.5 minutes on the CPU.
+Who speaks comes with the transcript: every word carries `speaker` (`A`, `B`, … in order of first appearance), as `tools/clip.mjs`, `tools/highlight.mjs` and agentitos' transcribe with `--speakers` write it. A transcript without speakers (such as `examples/moonbase/transcript.json`) is built as one voice; this skill finds no speakers of its own. `--speakers A=Name,…` gives the voices names.
 
 **Find a highlight** (`tools/highlight.mjs`): cut the strongest moment out of a whole episode.
 
@@ -244,10 +232,10 @@ Tested on 10 minutes of "Houston We Have a Podcast": all four of the host's ques
 node tools/highlight.mjs episode.mp3 --out examples/my-clip                  # Claude picks 40–75 s
 node tools/highlight.mjs episode.mp3 --out examples/my-clip --from 1840.2    # editor: start on this sentence
 node tools/build.mjs examples/my-clip/transcript.json --audio examples/my-clip/audio.wav --preset podcast \
-  --aspect 9:16 --speakers "A=Jane Doe" --diarize --llm --out videos/my-clip
+  --aspect 9:16 --speakers "A=Jane Doe" --llm --out videos/my-clip
 ```
 
-Long files are transcribed with Parakeet in 10-minute chunks (the CLI otherwise fails on its timeout) and cached as `<audio>.words.json`. Claude reads the episode as numbered sentences and proposes up to three clips: understandable without the rest of the episode, with a hook at the start and a payoff at the end. `highlight.json` contains the title, the reasoning and the alternatives. `--hint "…"` steers the search, `--from`/`--to` (seconds in the source) set the cut by hand to the nearest sentence boundary.
+The episode is transcribed once with who speaks (agentitos' transcribe, Gemini through OpenRouter, an hour in about a minute) and cached as `<audio>.words.json`; in the clip, the voices are named again in the order they speak (`A` speaks first). Claude reads the episode as numbered sentences and proposes up to three clips: understandable without the rest of the episode, with a hook at the start and a payoff at the end. `highlight.json` contains the title, the reasoning and the alternatives. `--hint "…"` steers the search, `--from`/`--to` (seconds in the source) set the cut by hand to the nearest sentence boundary.
 
 **Quotes:** Claude picks the punchline (`quotes`), which appears as a whole sentence in quotation marks instead of in pieces. **Reading time:** phrases that would be shorter than the minimum reading time (podcast 1.25 s, social 0.95 s, lyric 0.8 s) merge with the nearest neighbour of the same voice.
 
@@ -256,23 +244,6 @@ Long files are transcribed with Parakeet in 10-minute chunks (the CLI otherwise 
 **Effect budget:** So that long excerpts don't light up every second, accents keep a minimum distance per preset: image effects (word effect + world motif) 6 s for podcast, 2.4 s for social, 1.6 s for lyric; annotations 9 / 4.5 / 4 s; markers 3.2 / 1.6 s. The strongest words win (emphasis, hero, numbers), the rest are set calmly. Hand-set `fx`/`concept`/`note` always stay. The camera only pushes forward on hero words (at most every 2.4 s, weaker for podcast); single words only make the world breathe slightly.
 
 Fillers and stutters ("is is", "the the") are removed before analysis; `--keep-fillers` keeps them. The fillers depend on the detected language: English "uh", "um", "er"; German "äh", "ähm", "öhm" – because German "um" and "er" are real words.
-
-### Repairing gaps and mishearings
-
-`tools/repair.mjs`: Parakeet occasionally drops a whole clause or merges two words ("verdeutliben" instead of "verdeutlicht eben"). The highlight finder therefore runs Whisper (whisper.cpp, multilingual) over every clip automatically:
-
-- Stretches where the audio contains speech but the transcript has no words are cut out, transcribed again and spliced in.
-- Whisper listens to the whole clip a second time. Where the two recognisers disagree on up to four words, Claude decides in the context of the sentence which reading is right, or corrects minimally (for example a wrongly joined compound). Both mishear: Parakeet turned "verdeutlicht eben" into "verdeutliben", Whisper turned "Netzentgelte" into "Netzeingelte". The timings stay Parakeet's. Longer differences are left untouched, and without Claude Parakeet wins. Only real words are taken over (no "-?") and never more words than fit into the time span.
-
-```bash
-# once: whisper-cli (whisper.cpp) on the PATH and a multilingual model
-curl -L -o ~/.cache/whisper.cpp/ggml-large-v3-turbo-q5_0.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
-
-node tools/repair.mjs clip.wav transcript.json --lang de --crosscheck   # also usable on its own
-```
-
-Repaired words carry `"repaired": true`. `--no-repair` makes the highlight finder skip this step.
 
 ## Automatic quality check
 
@@ -317,9 +288,9 @@ Claude only chooses from the renderer's fixed vocabulary, and the output is sche
 If the build runs inside an agent (Claude Code, a chat agent, …), that agent can do the directing itself instead of `claude -p`:
 
 ```bash
-node tools/clip.mjs upload.mp4 --out shorts/x          # audio, video, words and speakers (OpenRouter; or Parakeet, gaps via Whisper)
+node tools/clip.mjs upload.mp4 --out shorts/x          # audio, video, words and speakers (OpenRouter)
 node tools/build.mjs shorts/x/transcript.json --audio shorts/x/audio.wav --video shorts/x/video.mp4 \
-  --preset podcast --aspect 9:16 --diarize 2 --staging-brief shorts/x/brief.md --staging shorts/x/staging.json
+  --preset podcast --aspect 9:16 --staging-brief shorts/x/brief.md --staging shorts/x/staging.json
 # the agent reads brief.md and writes staging.json
 node tools/build.mjs … --staging shorts/x/staging.json --out shorts/x/project
 ```
@@ -411,9 +382,7 @@ Everything is deterministic: the world is a pure function `(plan, t)`, particle 
 - `tools/burnin.mjs`: finds burned-in captions and overlays in the video
 - `tools/clip.mjs`: a clip someone brings (video or audio) → folder with `audio.wav`, `video.*`, `transcript.json`
 - `tools/lib/transcribe.mjs`: runs agentitos' transcribe skill (OpenRouter) as a program
-- `tools/asr.mjs`: Parakeet via the HyperFrames CLI in 10-minute chunks (shared by clip and highlight)
-- `tools/highlight.mjs`, `tools/repair.mjs`, `tools/gaps.mjs`: highlight finder, ASR repair, voiced-gap detection
-- `tools/diarize.py`: speaker detection (sherpa-onnx)
+- `tools/highlight.mjs`, `tools/gaps.mjs`: highlight finder, voiced-gap detection (QA)
 - `tools/footage.mjs`: video background (gradient, push-in, world via `screen`), shared by render and QA
 - `tools/qa.mjs`: automatic quality check
 
@@ -430,4 +399,4 @@ Only use footage and audio you have the rights to. Build output (`videos/`, `ren
 
 ## Requirements
 
-Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers, through agentitos' [transcribe](../transcribe/) beside this skill: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). Without it: Parakeet, Python 3 + sherpa-onnx (`--diarize`), whisper.cpp (`repair.mjs`). Optional: Claude Code or an Anthropic API key (`--llm`).
+Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers, through agentitos' [transcribe](../transcribe/) beside this skill: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). No local speech or speaker model, nothing to install for them. Optional: Claude Code or an Anthropic API key (`--llm`).

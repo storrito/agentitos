@@ -13,14 +13,13 @@
 //   --cta "…" --handle @name   end card (social)
 //   --subtitle "…"   e.g. episode / guest line (podcast)
 //   --speakers A=Anna,B=Ben   names for the transcript's speaker labels (podcast)
+//                    (who speaks comes with the transcript: "speaker" per word, from tools/clip.mjs
+//                    or agentitos' transcribe --speakers; without it, one voice)
 //   --colors A=#ff5a36,B=#4fc3f7   their colours (accent words, name chip); default by world
 //   --audiogram / --no-audiogram   waveform bars from the audio (default on for podcast)
 //   --platform reels,tiktok   where the video goes: the type keeps clear of what those apps lay
 //                    over it (agentitos' platform-zones); none: the usual platforms of the frame
 //   --out <dir>      write a separate HyperFrames project there (one project per video)
-//   --diarize [N]    detect who speaks when from --audio (tools/diarize.py, local sherpa-onnx);
-//                    N = number of voices, omit to estimate. Overwrites "speaker" labels.
-//                    or every word as a big lockup (lyric/social default)
 //   --keep-fillers   keep "uh", "um", "äh" and stutters ("is is") – removed by default
 //   --no-align       keep the transcript's word timings as they are (by default they are
 //                    snapped to voice onsets in --audio, see tools/align.mjs)
@@ -40,7 +39,6 @@
 // Writes plan.json (editable), index.html and compositions/{world,lyrics,overlay}.html.
 
 import fs from "node:fs";
-import os from "node:os";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +73,10 @@ if (!pos[0] && !opt.plan) {
   console.error("usage: node tools/build.mjs <transcript.json> [--audio file] [--aspect 16:9|9:16|1:1|4:5] [--size WxH] [--title t]");
   process.exit(1);
 }
+if (opt.diarize) {
+  console.error("build: --diarize is gone: who speaks comes with the words, so transcribe with speakers (tools/clip.mjs, or agentitos' transcribe --speakers) and build that transcript.");
+  process.exit(1);
+}
 
 function frameSize() {
   if (typeof opt.size === "string") {
@@ -85,32 +87,6 @@ function frameSize() {
   const [aw, ah] = String(aspect).split(":").map(Number);
   const short = 1080;
   return aw >= ah ? { width: Math.round((short * aw) / ah / 2) * 2, height: short } : { width: short, height: Math.round((short * ah) / aw / 2) * 2 };
-}
-
-// ---------------------------------------------------------------- speakers
-// Labels every word with a voice (A, B, …) via the local Python tool; cached next to the
-// transcript, keyed by the transcript + audio + requested voice count.
-function diarize(raw, audio, n) {
-  // a transcript that already says who speaks (OpenRouter, agentitos' transcribe skill) needs nothing local
-  const list = Array.isArray(raw) ? raw : raw.words ?? [];
-  if (list.length && list.every((w) => w.speaker != null)) {
-    console.error("diarize: the transcript has its speakers");
-    return raw;
-  }
-  if (typeof audio !== "string") throw new Error("--diarize needs --audio");
-  const py = path.join(ROOT, ".venv", "bin", "python");
-  if (!fs.existsSync(py)) throw new Error("--diarize: Python env missing – see README (Real podcasts: speakers and fillers)");
-  const speakers = n === true ? 0 : Number(n) || 0;
-  const cache = pos[0].replace(/\.json$/, "") + `.speakers${speakers ? "-" + speakers : ""}.json`;
-  const fresh = fs.existsSync(cache) && [pos[0], audio].every((f) => fs.statSync(f).mtimeMs < fs.statSync(cache).mtimeMs);
-  if (!fresh) {
-    const tmp = path.join(os.tmpdir(), `kinetic-words-${process.pid}.json`);
-    fs.writeFileSync(tmp, JSON.stringify(raw));
-    const r = spawnSync(py, [path.join(ROOT, "tools", "diarize.py"), audio, tmp, "--speakers", String(speakers), "--out", cache], { stdio: ["ignore", "inherit", "inherit"] });
-    fs.rmSync(tmp, { force: true });
-    if (r.status !== 0) throw new Error("diarize failed");
-  } else console.error(`diarize: cached ${path.basename(cache)}`);
-  return JSON.parse(fs.readFileSync(cache, "utf8"));
 }
 
 // ---------------------------------------------------------------- footage
@@ -137,7 +113,6 @@ if (opt.plan) {
   plan = JSON.parse(fs.readFileSync(opt.plan, "utf8"));
 } else {
   let raw = JSON.parse(fs.readFileSync(pos[0], "utf8"));
-  if (opt.diarize) raw = diarize(raw, opt.audio, opt.diarize);
   const { width, height } = frameSize();
   const title = opt.title === true ? "" : opt.title || (raw.title ?? path.basename(pos[0], ".json"));
   let words = normalizeTranscript(raw, { keepFillers: !!opt["keep-fillers"] });

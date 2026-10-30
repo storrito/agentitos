@@ -2,30 +2,28 @@
 //
 //   node tools/highlight.mjs episode.mp3 --out examples/my-clip [--transcript episode.words.json]
 //        [--min 40] [--max 75] [--hint "about the Moon"] [--llm-backend claude-code|api]
-//        [--no-repair] [--lang de]       skip / steer the Whisper pass over skipped passages
+//        [--lang de]                     the language spoken (default: the model hears it)
 //        [--from 1840.2] [--to 1921]   editor override: snap the clip to the sentences around
 //                                       these times (seconds in the source) instead of asking Claude
 //
-// 1. transcript: given, cached next to the audio (<audio>.words.json), or made with Parakeet
-//    in 10-minute chunks (long files in one go break the CLI's timeout)
+// 1. transcript: given, cached next to the audio (<audio>.words.json), or made by agentitos'
+//    transcribe skill beside this one (Gemini 3.5 Transcribe through OpenRouter, with who
+//    speaks: A, B, …; tools/lib/transcribe.mjs)
 // 2. Claude reads the whole transcript as numbered sentences and picks the strongest
 //    self-contained moment: a hook at the start, a payoff at the end, understandable
 //    without the rest of the episode
 // 3. audio + word timings of that span are cut to <out>/audio.wav and <out>/transcript.json
-//    (times shifted to the clip), plus <out>/highlight.json with title and reasoning;
-//    passages Parakeet skipped inside the clip are filled by Whisper, and words the two
-//    recognisers hear differently take Whisper's spelling (tools/repair.mjs)
+//    (times shifted to the clip, voices named again A, B, … in the order they speak in the
+//    clip), plus <out>/highlight.json with title and reasoning
 //
-// Then: node tools/build.mjs <out>/transcript.json --audio <out>/audio.wav --preset podcast --diarize --llm …
+// Then: node tools/build.mjs <out>/transcript.json --audio <out>/audio.wav --preset podcast --llm …
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
 import { askClaude } from "./llm-annotate.mjs";
-import { repairTranscript, crossCheck } from "./repair.mjs";
-import { transcribe, duration } from "./asr.mjs";
+import { transcribeFile } from "./lib/transcribe.mjs";
 
 const argv = process.argv.slice(2);
 const opt = { min: 40, max: 75 };
@@ -52,9 +50,16 @@ if (fs.existsSync(cache)) {
   words = wordsOf(JSON.parse(fs.readFileSync(cache, "utf8")));
   console.error(`highlight: transcript ${path.basename(cache)} (${words.length} words)`);
 } else {
-  console.error("highlight: transcribing with Parakeet …");
-  words = transcribe(audio, { log: console.error });
-  fs.writeFileSync(cache, JSON.stringify(words));
+  console.error("highlight: transcribing with Gemini 3.5 Transcribe (OpenRouter) …");
+  let result;
+  try {
+    result = await transcribeFile(audio, { speakers: true, lang: typeof opt.lang === "string" ? opt.lang : undefined, log: console.error });
+  } catch (e) {
+    console.error(`highlight: ${e.message}`);
+    process.exit(1);
+  }
+  words = result.words;
+  fs.writeFileSync(cache, JSON.stringify(result));
 }
 
 // ---------------------------------------------------------------- 2. pick
@@ -124,23 +129,15 @@ const t1 = Math.min(nextStart - 0.05, b.end + 0.5);
 fs.mkdirSync(opt.out, { recursive: true });
 execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", t0.toFixed(3), "-t", (t1 - t0).toFixed(3), "-i", audio,
   "-af", `afade=t=in:d=0.06,afade=t=out:st=${(t1 - t0 - 0.3).toFixed(3)}:d=0.3`, "-ar", "44100", "-ac", "2", path.join(opt.out, "audio.wav")]);
-let clip = words.slice(a.first, b.last + 1).map((w) => ({ text: w.text, start: +(w.start - t0).toFixed(3), end: +(w.end - t0).toFixed(3) }));
-// passages the ASR skipped inside the clip: transcribe them again with Whisper
-let filled = [];
-if (!opt["no-repair"]) {
-  try {
-    const clipAudio = path.join(opt.out, "audio.wav"), ro = { lang: opt.lang || "auto", log: console.error };
-    ({ words: clip, filled } = repairTranscript(clipAudio, clip, ro));
-    // and words Parakeet misheard: a second opinion over the whole (short) clip
-    let fixed;
-    ({ words: clip, fixed } = await crossCheck(clipAudio, clip, { ...ro, backend: opt["llm-backend"] || "claude-code" }));
-    filled.push(...fixed);
-  } catch (e) { console.error(`  repair skipped: ${e.message}`); }
-}
+// the clip's voices by first appearance in the clip: A is who speaks first in it
+const voices = new Map();
+for (const w of words.slice(a.first, b.last + 1)) if (w.speaker != null && !voices.has(w.speaker)) voices.set(w.speaker, String.fromCharCode(65 + voices.size));
+const clip = words.slice(a.first, b.last + 1).map((w) => ({ ...w, start: +(w.start - t0).toFixed(3), end: +(w.end - t0).toFixed(3),
+  ...(w.speaker != null ? { speaker: voices.get(w.speaker) } : {}) }));
 fs.writeFileSync(path.join(opt.out, "transcript.json"), JSON.stringify(clip, null, 0));
 const gaps = clip.slice(1).filter((w, i) => w.start - clip[i].end > 3).map((w) => +w.start.toFixed(1));
 fs.writeFileSync(path.join(opt.out, "highlight.json"), JSON.stringify({
-  source: path.basename(audio), from: +t0.toFixed(3), to: +t1.toFixed(3), title: best.title, why: best.why, repaired: filled,
+  source: path.basename(audio), from: +t0.toFixed(3), to: +t1.toFixed(3), title: best.title, why: best.why,
   alternatives: valid.filter((c) => c !== best).map((c) => ({ from: +sentences[c.first].start.toFixed(1), seconds: +lengthOf(c).toFixed(1), title: c.title, why: c.why })),
 }, null, 1));
 console.error(`highlight: ${mmss(t0)}–${mmss(t1)} (${(t1 - t0).toFixed(1)} s, ${clip.length} words) → ${opt.out}  “${best.title}”`);
