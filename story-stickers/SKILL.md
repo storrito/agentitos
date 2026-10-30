@@ -54,6 +54,21 @@ Write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one ele
 | `insta-emoji-slider` | `question`, `emoji` |
 | `insta-mention`, `insta-hashtag`, `insta-location` | `username`, `hashtag`, `location` |
 
+**The look.** Most stickers come in a few designs (`design` on link, mention, hashtag, location; `color` on poll, question, quiz, countdown, emoji slider). Never ask before the first picture: choose yourself, name it in half a sentence with the picture, and offer the likely others as buttons under it.
+
+- `default` (the white pill) unless the sticker sits on something very bright, where `black` (link, location) or `gray` reads better; `rainbow` only for playful content.
+- Poll, question, quiz: the Instagram colour nearest the brand's (a brand kit's primary colour), else `pink` or `purple` on a calm picture.
+- The buttons offer two or three designs that suit this picture ("Black", "Gray", "Rainbow" for a link), each `:send "The link sticker in black"`: change `design`, check again, show the new picture. Never more than one round of them unless the person asks.
+
+| sticker | designs |
+| --- | --- |
+| `insta-link` | `design`: default, gray, black, rainbow (invisible: see the reference) |
+| `insta-hashtag`, `insta-mention` | `design`: default, gray, rainbow |
+| `insta-location` | `design`: default, gray, black, orange, rainbow |
+| `insta-poll`, `insta-quiz` | `color`: black, pink, lavender, purple, orange, green, blue |
+| `insta-question` | `color`: white, black, pink, lavender, purple, orange, green, blue |
+| `insta-countdown` | `color`: black, white, purple, red, orange, yellow, green, blue |
+
 Storrito's full reference (every attribute, its default and the sizes): https://storrito.com/documentation/api/v1/story-components.md, read it with `fetch`.
 
 ## 2. A picture
@@ -209,14 +224,17 @@ A video Story: the sheet of its moments and the preview beside the chat:
  [:p [:small "Or tell me where to move it."]]]
 ```
 
-A picture Story (Storrito's `previewUrl`):
+A picture Story (Storrito's `previewUrl`), the chosen design named and the others one click away:
 
 ```hiccup
 [:div
  [:img {:src "https://acme.storrito.com/temp-blob/…" :style {:width "180px" :aspect-ratio "9 / 16" :border-radius "8px"}}]
- [:p "The poll sits under the title, the link below it, for the whole Story. Good like this?"]
- [:button {:class "primary" :send "The stickers are good"} "Looks good"]
- [:p [:small "Or tell me where to move them."]]]
+ [:p "The link sticker sits above the parrot, in white: it stands out on the dark background. Good like this?"]
+ [:button {:class "primary" :send "The story is good"} "Looks good"] " "
+ [:button {:send "The link sticker in black"} "Black"] " "
+ [:button {:send "The link sticker in gray"} "Gray"] " "
+ [:button {:send "The link sticker in rainbow"} "Rainbow"]
+ [:p [:small "Or tell me where to move it."]]]
 ```
 
 ## Rules

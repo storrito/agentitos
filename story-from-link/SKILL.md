@@ -91,13 +91,15 @@ Every frame may have `theme` (`brand`, `light`, `dark`, `photo`; left out, a cov
 
 | sticker | fields |
 | --- | --- |
-| `link` | `text` (1–3 words: "Read more", "Zum Shop"), `url` (the story's `link` when left out) |
+| `link` | `text` (1–3 words: "Read more", "Zum Shop"), `url` (the story's `link` when left out), `design`: default gray black rainbow |
 | `poll` | `question`, `options` (2–4), `color`: black pink lavender purple orange green blue |
 | `question` | `question`, `color` (as poll, or white) |
 | `quiz` | `question`, `options` (2–4), `correct-answer` (0-based) |
 | `countdown` | `title`, `end-time` (UTC, `2026-11-01T17:00:00Z`), `color`: black white purple red orange yellow green blue |
 | `slider` | `question`, `emoji` |
-| `mention`, `hashtag`, `location` | `username`, `hashtag`, `location` |
+| `mention`, `hashtag`, `location` | `username`, `hashtag`, `location`; `design`: default gray rainbow (location also black, orange) |
+
+The look of a sticker is yours to choose, not a question before the frames: `default` unless it sits on something very bright (then `black` or `gray`), `rainbow` only for playful content; a poll's or a question's colour the Instagram colour nearest the brand's primary colour. Name it in half a sentence with the frames and offer two or three other designs as buttons ("The link sticker in black"); a click changes `story.json`, builds and checks again.
 
 ### 4. The frames
 
