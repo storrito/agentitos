@@ -116,7 +116,7 @@ An attribute that would make the post fail is an error with what to change. When
 
 A sticker shows for the whole video, so the person must see it over all of it, and you must check every moment, not only the first frame that `check-instagram-story` pictures.
 
-**The preview beside the chat.** Write `compositions/story-stickers.html` into the HyperFrames project (in rragent `artifacts/<name>/composition/`):
+**The preview beside the chat.** In rragent make the project first, with the `project` tool (`{"action": "create", "name": "<name>", "kind": "hyperframes"}`), before anything else goes into `artifacts/<name>/`; pictures you make to check (the sheet below) go to `uploads/`, never into the project. Then write `compositions/story-stickers.html` into it (`artifacts/<name>/composition/`):
 
 ```html
 <template>
