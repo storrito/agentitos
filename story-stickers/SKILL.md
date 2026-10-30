@@ -23,7 +23,7 @@ There are no tools in this skill: you write the Story as HTML, Storrito checks i
 A sticker is never drawn into the picture or the video. Storrito gets the picture or the video and the stickers as its `<insta-…>` elements, lays them over it and gives them to Instagram as real stickers, so that a link opens and a poll counts. Storrito renders them with the same components its check shows, so the picture of the check is what the Story will look like.
 
 - **A picture** (a photo, a graphic the person brings): one Story frame, laid out in HTML (step 2), no rendering of your own. Several pictures: one frame each, in their order.
-- **A video**: rendered or brought without stickers, the stickers go over it (steps 4 and 5).
+- **A video**: rendered or brought without stickers, the stickers go over it; the person sees them over the whole video in a preview, and you check every moment (step 4), then publish (step 5).
 
 - A sticker shows for the whole Story, from the first to the last second. Place it where the picture or the film has nothing that matters: no text, no face, no product under it.
 - One sticker that asks for a tap (poll, question, quiz, slider, countdown) per Story gets the most answers; a link sticker can come with it.
@@ -93,13 +93,15 @@ In the REPL (`eval`), with the layer's text:
 (storrito/check-instagram-story {:html (str "<insta-story>" layer "</insta-story>")})
 ```
 
-(for a picture: the whole HTML of step 2) answers each sticker's box, the `warnings` (outside the safe zone, on another sticker, squeezed, an attribute it does not know) and a `previewUrl`: a picture of the Story with its stickers. Fix every warning in `layer.html` and check again. Show the `previewUrl` in the chat: it is what Instagram will show. Once a video is uploaded (step 5), check with it, `(str "<insta-story src=\"" url "\">" layer "</insta-story>")`: the picture then shows the video's first frame under the stickers. Show that picture in the chat.
+(for a picture: the whole HTML of step 2) answers each sticker's box, the `warnings` (outside the safe zone, on another sticker, squeezed, an attribute it does not know) and a `previewUrl`: a picture of the Story with its stickers. Fix every warning in `layer.html` and check again. Show the `previewUrl` in the chat: it is what Instagram will show. Once a video is uploaded (step 5), check with it, `(str "<insta-story src=\"" url "\">" layer "</insta-story>")`: the picture then shows the video's first frame under the stickers, only that one; the rest of a video is step 4.
 
 An attribute that would make the post fail is an error with what to change. When Storrito says the procedure does not exist (an older Storrito), use `storrito/create-draft` with the same HTML, `storrito/status-draft` for its `previewUrl`, then `storrito/delete-draft`.
 
-## 4. In the HyperFrames preview (a film you are making)
+## 4. A video: the preview, and every moment checked
 
-Write `compositions/story-stickers.html` into the project (in rragent `artifacts/<name>/composition/`):
+A sticker shows for the whole video, so the person must see it over all of it, and you must check every moment, not only the first frame that `check-instagram-story` pictures.
+
+**The preview beside the chat.** Write `compositions/story-stickers.html` into the HyperFrames project (in rragent `artifacts/<name>/composition/`):
 
 ```html
 <template>
@@ -129,7 +131,36 @@ and mount it over the whole film as the root's first child in `index.html`, mark
 <div id="story-stickers" data-preview-only data-composition-id="story-stickers" data-composition-src="compositions/story-stickers.html" data-start="0" data-duration="<the root's data-duration>" data-track-index="99" data-track-kind="graphics" data-width="1080" data-height="1920" style="z-index:1000"></div>
 ```
 
-The preview shows the Story as Instagram will. rragent's `render` leaves elements marked `data-preview-only` out of the video; the HyperFrames CLI or Studio does not: there take the host out before the render. A video with the stickers drawn in would show them twice. After a change of `layer.html`, copy its lines into the scene again.
+- **A film you are making**: the project is the film's.
+- **A video the person brings**: make a project only for the preview, `artifacts/<name>/composition/` with the video copied in as `video.mp4`, the scene above and this `index.html` (`<duration>` in seconds from `ffprobe -v error -show_entries format=duration -of csv=p=0 video.mp4`; `data-has-audio="true"` when the video has sound, else `muted`):
+
+```html
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <style>html, body { margin: 0; width: 1080px; height: 1920px; background: #000; }</style></head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="<duration>" data-width="1080" data-height="1920">
+      <div id="story-stickers" data-preview-only data-composition-id="story-stickers" data-composition-src="compositions/story-stickers.html" data-start="0" data-duration="<duration>" data-track-index="99" data-track-kind="graphics" data-width="1080" data-height="1920" style="z-index:1000"></div>
+      <video id="story-video" class="clip" data-start="0" data-duration="<duration>" data-has-audio="true" src="video.mp4" style="position:absolute;left:0;top:0;width:1080px;height:1920px;object-fit:cover;z-index:1"></video>
+    </div>
+    <script>window.__timelines = window.__timelines || {}; window.__timelines["main"] = gsap.timeline({ paused: true });</script>
+  </body>
+</html>
+```
+
+  Never render it: the person's video goes to Storrito as it is, and Storrito lays the stickers over it.
+
+The preview shows the Story as Instagram will; the person can play it and see the sticker over every moment. Open it beside the chat (`:open "artifacts/<name>"`). rragent's `render` leaves elements marked `data-preview-only` out of a film's video; the HyperFrames CLI or Studio does not: there take the host out before the render. After a change of `layer.html`, copy its lines into the scene again.
+
+**Every moment.** Draw each sticker's box from `check-instagram-story` (`left`, `top`, `width`, `height`) on twelve frames over the whole length, one `drawbox` per sticker:
+
+```bash
+DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 <video>)
+ffmpeg -v error -y -i <video> -vf "fps=12/$DUR,drawbox=x=<left>:y=<top>:w=<width>:h=<height>:color=red@0.9:t=8,scale=270:-1,tile=6x2" -frames:v 1 uploads/<name>-stickers.jpg
+```
+
+Look at every tile: captions or subtitles burned into the video (they come and go, often in the lower third or the middle), other text, a face, a picture-in-picture (a webcam), the product. Nothing of it may lie under a box in any frame: move the sticker where every frame is calm, write the layer again, check again, draw again. Make a sticker smaller only as far as `scale(0.75)`: below that it is hard to tap; a shorter link `text` makes the pill narrower instead. Show the sheet in the chat with the preview and say in one sentence what the sticker keeps clear of ("below the subtitles, left of the webcam").
 
 ## 5. Publish
 
@@ -167,7 +198,18 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - The button that moves on gets `:class "primary"`; buttons that are alternative answers stay plain. A button that opens a page ends its text with " ↗".
 - Never put a token, an id the person does not need or a raw error into the chat.
 
-The Story with its stickers (Storrito's `previewUrl`):
+A video Story: the sheet of its moments and the preview beside the chat:
+
+```hiccup
+[:div
+ [:img {:src "uploads/launch-stickers.jpg" :style {:width "100%" :border-radius "8px"}}]
+ [:p "The link sticker sits below the subtitles and left of the webcam, in every moment of the video. Good like this?"]
+ [:button {:class "primary" :send "The stickers are good"} "Looks good"] " "
+ [:button {:open "artifacts/launch"} "Play the preview ↗"]
+ [:p [:small "Or tell me where to move it."]]]
+```
+
+A picture Story (Storrito's `previewUrl`):
 
 ```hiccup
 [:div
@@ -184,3 +226,4 @@ The Story with its stickers (Storrito's `previewUrl`):
 - A link sticker's `url` is the person's page or one they named; never invent one.
 - Every sticker `width:max-content` and placed by its centre; no warning of `check-instagram-story` left unless the person wants it so.
 - A video goes out without the stickers: rragent's render leaves `data-preview-only` out, elsewhere take the host out first.
+- A video Story is shown with its preview and the sheet of twelve frames, never with the first frame alone: no sticker on subtitles, text, a face or a picture-in-picture at any moment.
