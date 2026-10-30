@@ -42,6 +42,7 @@ import { fileURLToPath } from "node:url";
 import { zonesTool, platformList } from "./lib/zones.mjs";
 import { post, postAudio, streamAudio } from "./lib/openrouter.mjs";
 import { align } from "./lib/align.mjs";
+import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 
 const SKILL = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fail = (msg) => { console.error(msg); process.exit(1); };
@@ -53,7 +54,6 @@ const writeJson = (f, v) => { fs.mkdirSync(path.dirname(f), { recursive: true })
 
 const SPEECH_MODEL = "elevenlabs/eleven-v3";
 const SPEECH_VOICE = "sarah";
-const SCRIBE_MODEL = "elevenlabs/scribe-v2";
 const MUSIC_MODELS = { clip: "google/lyria-3-clip-preview", pro: "google/lyria-3-pro-preview" };
 const IMAGE_MODEL = "google/gemini-3.1-flash-image";
 
@@ -386,25 +386,15 @@ async function cmdSample(work, opts) {
   console.log(`Play them to the person (an <audio> each) and let them choose; then set "voice" (and "model") in the script.`);
 }
 
-// the words of one spoken line, timed: Scribe through OpenRouter, one small MP3 per line
+// the words of one spoken line, timed: ElevenLabs Scribe, run by agentitos' transcribe skill
 async function hear(file) {
-  const tmp = path.join(os.tmpdir(), `launch-voice-${process.pid}-${crypto.randomBytes(4).toString("hex")}.mp3`);
-  try {
-    ffmpeg(["-i", file, "-vn", "-ac", "1", "-ar", "16000", "-codec:a", "libmp3lame", "-b:a", "48k", tmp]);
-    const j = await post("The voice's words", "/audio/transcriptions", {
-      model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(tmp).toString("base64"), format: "mp3" },
-      response_format: "verbose_json", timestamp_granularities: ["word"],
-    }, { log: console.log });
-    const heard = (j.words || []).filter((w) => w.type !== "audio_event" && w.type !== "spacing" && String(w.word ?? "").trim() && !/^\[.*\]$/.test(String(w.word).trim()))
-      .map((w) => ({ text: String(w.word).trim(), start: w.start, end: w.end }));
-    return { heard, cost: j.usage?.cost ?? 0 };
-  } finally {
-    fs.rmSync(tmp, { force: true });
-  }
+  const r = await transcribeFile(file);
+  return { heard: r.words.filter((w) => w.kind !== "event").map(({ text, start, end }) => ({ text, start, end })), cost: r.cost };
 }
 
 async function cmdVoice(work, scriptFile, composition, opts) {
   if (!work || !scriptFile || !composition) fail(`Usage: ${cmd("voice <work> <script.json> <composition>")}`);
+  if (!transcribeTool()) fail(`✗ ${NEEDS_TRANSCRIBE}`);
   const script = readJson(scriptFile, null) || fail(`✗ There is no ${scriptFile}.`);
   const lines = script.lines || fail(`✗ ${scriptFile} has no "lines": [{"id": "hook", "text": "…"}, …].`);
   const ids = new Set();

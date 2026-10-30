@@ -47,7 +47,7 @@ Call the **`transcribe` tool** with `file: screencast/<name>/source/voice.m4a`, 
 node <skill>/tools/screencast.mjs words screencast/<name> artifacts/notes/screencast-<name>/voice.words.json
 ```
 
-(Without `words` in your transcribe tool: `screencast.mjs transcribe screencast/<name>`.) It writes `source/brief.md`: every sentence with its word numbers and how much each source moves.
+(Without `words` in your transcribe tool: `screencast.mjs transcribe screencast/<name>`, which needs agentitos' `transcribe` skill beside this one.) It writes `source/brief.md`: every sentence with its word numbers and how much each source moves.
 
 ### 3. The cut
 
