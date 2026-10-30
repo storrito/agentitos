@@ -165,7 +165,7 @@ npx hyperframes check --json --caption-zone "x0=<left/1080>;y0=<top/1920>;x1=<1-
 
 Every `caption_zone_collision` names the text, its moment and its box: move the text out of the band, or the band.
 
-**A video's pixels** (subtitles burned in, a face, a picture-in-picture, the product, in a video the person brings and in a film you rendered), every moment of it:
+**A video's pixels** (subtitles burned in, a face, a picture-in-picture, the product), every moment of it. Always for a video the person brings: nobody planned it around the band. For a film you made, only when footage you do not know frame by frame runs under the band (a stock clip with people or text in it); a band you kept free by design needs no more than `--caption-zone`.
 
 ```bash
 # the moments: 2 a second, the ones that look alike left out, the band and the safe zone drawn, 30 to a sheet
