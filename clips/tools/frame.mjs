@@ -271,7 +271,8 @@ function moving(keys, axis) {
 // sound; a shot shown whole sits between FIT_TOP and FIT_BOTTOM over a blurred, darker copy
 export function render(video, windows, out, { outW, outH, fps }) {
   const parts = windows.map((s, k) => {
-    const trim = `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)},setpts=PTS-STARTPTS`;
+    // the pans' keys are times in the clip: the time starts anew only after the window
+    const trim = `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)}`;
     if (s.fit) {
       const top = Math.round(outH * FIT_TOP), room = Math.round(outH * (FIT_BOTTOM - FIT_TOP));
       const scale = Math.min(outW / s.fit.w, room / s.fit.h);
@@ -280,10 +281,10 @@ export function render(video, windows, out, { outW, outH, fps }) {
       return `${trim},split=2[b${k}][f${k}];`
         + `[b${k}]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},gblur=sigma=35,eq=brightness=-0.12[bb${k}];`
         + `[f${k}]crop=w=${s.fit.w}:h=${s.fit.h}:x=${s.fit.x}:y=${s.fit.y},scale=${fw}:${fh}:flags=lanczos[ff${k}];`
-        + `[bb${k}][ff${k}]overlay=${fx}:${fy},setsar=1[v${k}]`;
+        + `[bb${k}][ff${k}]overlay=${fx}:${fy},setsar=1,setpts=PTS-STARTPTS[v${k}]`;
     }
     const x = moving(s.keys, "x"), y = moving(s.keys, "y");
-    return `${trim},crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH}:flags=lanczos,setsar=1[v${k}]`;
+    return `${trim},crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH}:flags=lanczos,setsar=1,setpts=PTS-STARTPTS[v${k}]`;
   });
   const graph = parts.join(";") + ";" + windows.map((_, k) => `[v${k}]`).join("") + `concat=n=${windows.length}:v=1:a=0,fps=${fps.toFixed(3)}[v]`;
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-filter_complex", graph, "-map", "[v]", "-map", "0:a?",
