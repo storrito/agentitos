@@ -13,7 +13,7 @@ It is a thin layer over HyperFrames' own guides (story, spec, look, motion, soun
 
 - Node 20+ and ffmpeg.
 - The HyperFrames CLI (`hyperframes` on the PATH, or `RRAGENT_HYPERFRAMES`/`HYPERFRAMES` naming it) with a Chrome; its package carries the guides (`dist/skills/`), else `~/.agents/skills/` (`hyperframes skills update`).
-- agentitos' `platform-zones` and `captions` beside this folder (or `PLATFORM_ZONES` and `CAPTIONS_TOOL` naming their tools), `brand-kit` beside it for a brand without a kit.
+- agentitos' `platform-zones`, `captions` and `transcribe` beside this folder (or `PLATFORM_ZONES`, `CAPTIONS_TOOL` and `TRANSCRIBE` naming their tools), `brand-kit` beside it for a brand without a kit.
 - OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (see the [README](../README.md#models-openrouter-with-a-key-or-through-the-sprites-gateway)). A 30 s film costs a few cents: the voice 4–8 cents (ElevenLabs v3: $0.08 per 1000 characters), its timing well under a cent, the music $0.04 (Lyria 3 Clip, up to 30 s) or $0.08 (Pro, longer), a picture a few cents.
 
 ## The tool

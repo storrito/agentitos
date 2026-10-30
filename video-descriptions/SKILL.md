@@ -20,7 +20,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+ and ffmpeg. For the words of the video OpenRouter (ElevenLabs Scribe, about half a cent a minute): `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection; or words another tool already made (rragent's transcribe tool, the captions skill: `--words`). Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+ and ffmpeg. For the words of the video agentitos' `transcribe` skill beside this one, which takes them from ElevenLabs Scribe through OpenRouter (about half a cent a minute): `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection; or words another tool already made (rragent's transcribe tool, the captions skill: `--words`). Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 The texts are yours to write; the tool reads the video, knows the rules, counts and checks, and builds the overview.
 

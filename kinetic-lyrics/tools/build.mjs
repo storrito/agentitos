@@ -91,7 +91,7 @@ function frameSize() {
 // Labels every word with a voice (A, B, …) via the local Python tool; cached next to the
 // transcript, keyed by the transcript + audio + requested voice count.
 function diarize(raw, audio, n) {
-  // a transcript that already says who speaks (OpenRouter, tools/stt.mjs) needs nothing local
+  // a transcript that already says who speaks (OpenRouter, agentitos' transcribe skill) needs nothing local
   const list = Array.isArray(raw) ? raw : raw.words ?? [];
   if (list.length && list.every((w) => w.speaker != null)) {
     console.error("diarize: the transcript has its speakers");

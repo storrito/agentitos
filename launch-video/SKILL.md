@@ -23,7 +23,7 @@ This skill is a thin layer over **HyperFrames' own guides**, which say how a goo
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `platform-zones` and `captions` skills beside this one (where the apps' buttons are; the captions), `brand-kit` beside it for a brand without a kit, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. No HeyGen account. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `platform-zones`, `captions` and `transcribe` skills beside this one (where the apps' buttons are; the captions; the voice's word times), `brand-kit` beside it for a brand without a kit, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection, which the tool finds by itself. No HeyGen account. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## The guides
 

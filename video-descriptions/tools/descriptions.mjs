@@ -26,6 +26,7 @@ import { probe, frameOf, readWords, lines, sheet, clock } from "./lib/media.mjs"
 import { checkAll } from "./lib/check.mjs";
 import { overview } from "./lib/overview.mjs";
 import { UNITS } from "./lib/count.mjs";
+import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -149,10 +150,10 @@ async function cmdRead([video, dir], opts) {
     try { words = readWords(opts.words); } catch (e) { fail(`${opts.words} holds no words: ${e.message}`); }
     source = rel(opts.words);
   } else if (!opts["no-words"] && info.sound) {
-    const { scribe } = await import("./lib/asr.mjs");
+    if (!transcribeTool()) fail(`${NEEDS_TRANSCRIBE} Or give the words with --words <words.json>, or --no-words for a video without speech.`);
     console.log("Transcribing (ElevenLabs Scribe through OpenRouter) …");
-    try { words = await scribe(video, info.duration, { log: (s) => console.log(s) }); }
-    catch (e) { fail(`The transcription failed (${e.message.split("\n")[0]}). Give the words with --words <words.json> (rragent's transcribe tool, the captions skill), or --no-words for a video without speech.`); }
+    try { words = (await transcribeFile(video, { log: (s) => console.log(s) })).words; }
+    catch (e) { fail(`${e.message.split("\n")[0]} Or give the words with --words <words.json> (rragent's transcribe tool, the captions skill), or --no-words for a video without speech.`); }
     fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify({ words }, null, 1));
     source = "ElevenLabs Scribe";
   }

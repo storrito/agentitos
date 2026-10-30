@@ -59,7 +59,8 @@ import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { findFace } from "./lib/face.mjs";
-import { transcribe as scribe, kindOf, SCRIBE_MODEL, route } from "./lib/openrouter.mjs";
+import { kindOf, route } from "./lib/openrouter.mjs";
+import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
@@ -321,11 +322,12 @@ function cmdWords(dir, file) {
 async function cmdTranscribe(dir) {
   if (!fs.existsSync(source(dir, "sources.json"))) fail(`Run first: screencast.mjs new ${rel(dir)} <recording-folder>`);
   const meta = read(source(dir, "sources.json"));
-  console.log(`Listening to ${clock(meta.duration)} of voice with ${SCRIBE_MODEL} …`);
+  if (!transcribeTool()) fail(`✗ ${NEEDS_TRANSCRIBE}`);
+  console.log(`Listening to ${clock(meta.duration)} of voice with ElevenLabs Scribe …`);
   let r;
-  try { r = await scribe(source(dir, meta.voice), meta.duration, { log: console.log }); } catch (e) { fail(`✗ ${e.message}`); }
+  try { r = await transcribeFile(source(dir, meta.voice), { log: console.log }); } catch (e) { fail(`✗ ${e.message}`); }
   console.log(`$${r.cost.toFixed(4)}`);
-  keepWords(dir, r.words, SCRIBE_MODEL);
+  keepWords(dir, r.words, r.model);
 }
 
 // ----------------------------------------------------------------------------------- brief

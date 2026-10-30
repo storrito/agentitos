@@ -19,7 +19,7 @@ node tools/screencast.mjs frame screencast/demo 0:23                            
 node tools/screencast.mjs finish screencast/demo artifacts/demo.mp4                     # at −14 LUFS, and demo.srt
 ```
 
-Outside rragent the same works with any HyperFrames project folder (`--out <project>/composition`, then `hyperframes render` there) and any folder with a `recording.json` (below); `transcribe` takes the words from ElevenLabs Scribe when there is no `transcribe` tool.
+Outside rragent the same works with any HyperFrames project folder (`--out <project>/composition`, then `hyperframes render` there) and any folder with a `recording.json` (below); `transcribe` takes the words from ElevenLabs Scribe through agentitos' [transcribe](../transcribe/) skill beside this one (or `TRANSCRIBE` naming its `tools/transcribe.mjs`) when there is no `transcribe` tool.
 
 Requirements: Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (found at `http://sprite.internal/v1/gateway/list`; an rragent agent there has no key of its own). OpenRouter finds the face in the webcam (`google/gemini-3.8-flash`, three frames, under half a cent) and marks the captions' key words; without it the circle shows the webcam's middle. No npm dependencies. Built after [best-takes](../best-takes/): its cut points, levels, timelapses and finish, copied and adapted (agentitos' folders never import from each other); captions come from [captions](../captions/), called as a tool.
 

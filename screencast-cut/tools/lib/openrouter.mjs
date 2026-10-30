@@ -4,13 +4,7 @@
 //
 //   route()                     → { base, headers, via } or null
 //   chat(model, messages, opts) → { text, cost }       (chat completions)
-//   transcribe(file, opts)      → { words, cost }      (ElevenLabs Scribe v2, word timings)
-
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+//   kindOf(text)                → "filler" | "word"    (a hesitation sound or a word)
 
 const GATEWAY = process.env.SPRITE_GATEWAY_URL || "http://sprite.internal";
 let found;
@@ -83,39 +77,6 @@ export async function chat(model, messages, { json = false, maxTokens = 4000, lo
   return { text: j.choices?.[0]?.message?.content ?? "", cost: j.usage?.cost ?? 0 };
 }
 
-export const SCRIBE_MODEL = "elevenlabs/scribe-v2";
-const CH = 600, OV = 10; // 10-minute pieces, 10 s overlap so that no word is cut in half
-
 // hesitation sounds in the languages people record in most
 const FILLER = /^(ä+h+m*|ö+h*m+|e+h+m*|a+h+m+|u+h+m*|u+m+|e+r+m+|h+m+|m+h*m+|mhm)$/i;
 export const kindOf = (text) => (FILLER.test(String(text).replace(/[^\p{L}]/gu, "")) ? "filler" : "word");
-
-// The words of an audio file with their times: Scribe, word for word as spoken, "äh" included,
-// noises as events. [{ text, start, end, kind: "word" | "filler" | "event" }]
-export async function transcribe(file, duration, { log = () => {} } = {}) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "screencast-stt-"));
-  const starts = Array.from({ length: Math.ceil(duration / CH) }, (_, k) => k * CH);
-  let cost = 0;
-  try {
-    const pieces = await Promise.all(starts.map(async (at, k) => {
-      // MP3 at 48 kbit/s, as rragent sends it: a gateway refuses a request of several megabytes
-      const chunk = path.join(tmp, `c${k}.mp3`);
-      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-codec:a", "libmp3lame", "-b:a", "48k", chunk]);
-      const j = await post("transcription", "/audio/transcriptions", {
-        model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(chunk).toString("base64"), format: "mp3" },
-        response_format: "verbose_json", timestamp_granularities: ["word"],
-      }, { log });
-      cost += j.usage?.cost ?? 0;
-      const lo = k ? OV / 2 : -1, hi = CH + OV / 2;
-      return (j.words || []).flatMap((w) => {
-        const t = String(w.word ?? "").trim();
-        if (!t || !(w.start >= lo && w.start < hi)) return [];
-        const kind = w.type === "audio_event" || /^\[.*\]$/.test(t) ? "event" : kindOf(t);
-        return [{ text: t, start: +(w.start + at).toFixed(3), end: +(Math.max(w.end, w.start + 0.04) + at).toFixed(3), kind }];
-      });
-    }));
-    return { words: pieces.flat(), cost };
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-}

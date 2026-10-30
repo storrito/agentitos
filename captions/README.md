@@ -13,13 +13,13 @@ node tools/captions.mjs project <video> <words.json> <composition> --style karao
 node tools/captions.mjs srt <words.json> <file.srt>
 ```
 
-Needs Node 20+, agentitos' [platform-zones](../platform-zones/) beside it (where the captions go), ffmpeg (for `transcribe`, `project`) and OpenRouter (for `transcribe`, `mark`): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`); no npm packages. The models are OpenRouter's only.
+Needs Node 20+, agentitos' [platform-zones](../platform-zones/) beside it (where the captions go) and, for `transcribe`, agentitos' [transcribe](../transcribe/) (or `TRANSCRIBE` naming its `tools/transcribe.mjs`), ffmpeg (for `transcribe`, `project`) and OpenRouter (for `transcribe`, `mark`): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`); no npm packages. The models are OpenRouter's only.
 
 ## Words
 
 `words.json` is `{"width": 1080, "height": 1920, "duration": 61.2, "words": [{"text": "Hello", "start": 0.12, "end": 0.48, "highlight": true}, …]}`, or the array of words alone; times in seconds, in the video the captions go on (after every cut: a skill that cuts maps its words onto the cut first).
 
-- **`transcribe`** takes the words from **ElevenLabs Scribe v2** through OpenRouter (`tools/lib/asr.mjs`, the same as best-takes': 10-minute pieces with an overlap, 20 ms timings, about half a cent a minute). Fillers ("äh", "um") and noises stay out of the captions. Three or more words in a row squeezed into under 60 ms each are left out too: Scribe now and then writes a sentence twice and the copy lands in such a run, which would show the sentence twice.
+- **`transcribe`** takes the words from **ElevenLabs Scribe v2** through OpenRouter, run by agentitos' [transcribe](../transcribe/) skill (`tools/lib/transcribe.mjs` finds it; the same words as best-takes': 10-minute pieces with an overlap, 20 ms timings, about half a cent a minute). Fillers ("äh", "um") and noises stay out of the captions. Three or more words in a row squeezed into under 60 ms each are left out too: Scribe now and then writes a sentence twice and the copy lands in such a run, which would show the sentence twice.
 - **`mark`** sends the numbered words to **Claude Haiku 5.5** through OpenRouter (`--model` for another) and sets `"highlight": true` on the few that should stand out: numbers with their units, product and brand names (`--product` names the one that matters), the key word of a claim or a punchline, a call to action; about one word in eight, never two neighbours. This is what Storrito's [content workflow](https://github.com/storrito/tool-content-workflow) does with its transcript (`:highlight? true`), here with an OpenRouter model.
 
 ## Styles

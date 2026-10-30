@@ -5,7 +5,8 @@
 //
 //   node tools/captions.mjs styles                        the styles, with what each looks like
 //   node tools/captions.mjs transcribe <video> <words.json>   the words said, timed (ElevenLabs
-//                                         Scribe through OpenRouter); fillers and doubled words out
+//                                         Scribe through OpenRouter, by agentitos' transcribe skill);
+//                                         fillers and doubled words out
 //   node tools/captions.mjs mark <words.json>             a model picks the words that stand out
 //                                         ("highlight": true on them)
 //   node tools/captions.mjs build <words.json> <folder>   the captions as a sub-composition,
@@ -33,7 +34,7 @@ import { STYLES, style } from "./lib/styles.mjs";
 import { writeCaptions, mount, brandOf, ID } from "./lib/render.mjs";
 import { srt } from "./lib/srt.mjs";
 import { mark, MARK_MODEL } from "./lib/mark.mjs";
-import { scribe, SCRIBE_MODEL } from "./lib/asr.mjs";
+import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
@@ -95,12 +96,15 @@ async function cmdTranscribe(video, out) {
   if (!fs.existsSync(video)) fail(`There is no ${video}.`);
   const p = probe(video);
   if (!p.audio) fail(`${video} has no sound to take the words from.`);
-  const heard = await scribe(video, p.duration, { log: console.log });
+  if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
+  let r;
+  try { r = await transcribeFile(video, { log: console.log }); } catch (e) { fail(e.message); }
+  const heard = r.words;
   const said = heard.filter((w) => w.kind === "word");
   const words = withoutGhosts(said).map(({ text, start, end }) => ({ text, start, end }));
   if (said.length > words.length) console.log(`  ${said.length - words.length} words left out: the voice has no time for them (the recognizer wrote them twice)`);
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify({ asr: SCRIBE_MODEL, duration: p.duration, width: p.width, height: p.height, words }, null, 1));
+  fs.writeFileSync(out, JSON.stringify({ asr: r.model, duration: p.duration, width: p.width, height: p.height, words }, null, 1));
   console.log(`${rel(path.resolve(out))}: ${words.length} words, ${heard.length - said.length} fillers and noises left out`);
   console.log(`Next: node ${self()} mark ${rel(path.resolve(out))}`);
 }

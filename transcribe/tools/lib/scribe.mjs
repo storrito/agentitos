@@ -1,9 +1,9 @@
 // Speech to word timings with ElevenLabs Scribe v2 through OpenRouter (OPENROUTER_API_KEY, or the
-// Sprites gateway's OpenRouter connection, see openrouter.mjs): word
-// for word as spoken, "äh" and "ähm" included, noises as events ("[Kamera klackert]"), names
-// spelled right; 20 ms timings with the real pauses between words. About half a cent a minute.
+// Sprites gateway's OpenRouter connection, see openrouter.mjs): word for word as spoken, "äh" and
+// "ähm" included, noises as events ("[Kamera klackert]"), names spelled right; 20 ms timings with
+// the real pauses between words. About half a cent a minute.
 //
-//   scribe(file, duration) → [{ text, start, end, kind: "word" | "filler" | "event" }]   (seconds)
+//   scribe(file, duration, { lang, log }) → { words: [{ text, start, end, kind: "word" | "filler" | "event" }], cost }   (seconds)
 
 import fs from "node:fs";
 import os from "node:os";
@@ -22,6 +22,9 @@ const OV = 10;
 const FILLER = /^(ä+h+m*|ö+h*m+|e+h+m*|a+h+m+|u+h+m*|u+m+|e+r+m+|h+m+|m+h*m+|mhm)$/i;
 const kindOf = (text) => (FILLER.test(text.replace(/[^\p{L}]/gu, "")) ? "filler" : "word");
 
+// the words of piece k, each once: a piece owns [k*CH + OV/2, (k+1)*CH + OV/2)
+const own = (k, CH) => [k ? OV / 2 : -1, CH + OV / 2];
+
 // fn over the items, at most n at once, the results in the items' order
 async function pool(items, n, fn) {
   const out = new Array(items.length);
@@ -32,13 +35,10 @@ async function pool(items, n, fn) {
   return out;
 }
 
-// the words of piece k, each once: a piece owns [k*CH + OV/2, (k+1)*CH + OV/2)
-const own = (k, CH) => [k ? OV / 2 : -1, CH + OV / 2];
-
-export async function scribe(file, duration, { log = () => {} } = {}) {
+export async function scribe(file, duration, { lang, log = () => {} } = {}) {
   const or = await need("The transcription");
   const CH = or.gateway ? 300 : 600, fmt = or.gateway ? "mp3" : "flac";
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "video-descriptions-stt-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-scribe-"));
   const starts = Array.from({ length: Math.ceil(duration / CH) }, (_, k) => k * CH);
   let cost = 0;
   try {
@@ -48,7 +48,11 @@ export async function scribe(file, duration, { log = () => {} } = {}) {
       const chunk = path.join(tmp, `c${k}.${fmt}`);
       await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000",
         ...(fmt === "mp3" ? ["-codec:a", "libmp3lame", "-b:a", "48k"] : []), chunk]);
-      const body = JSON.stringify({ model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(chunk).toString("base64"), format: fmt }, response_format: "verbose_json", timestamp_granularities: ["word"] });
+      const body = JSON.stringify({
+        model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(chunk).toString("base64"), format: fmt },
+        ...(lang && lang !== "auto" ? { language: lang } : {}),
+        response_format: "verbose_json", timestamp_granularities: ["word"],
+      });
       for (let attempt = 1; ; attempt++) {
         let res, text;
         try {
@@ -81,7 +85,7 @@ export async function scribe(file, duration, { log = () => {} } = {}) {
       }
     });
     log(`  transcribed with ${SCRIBE_MODEL}, $${cost.toFixed(4)}`);
-    return pieces.flat();
+    return { words: pieces.flat(), cost };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
