@@ -131,6 +131,13 @@ brings it to −14 LUFS, the loudness the platforms play at. Say in one sentence
 
 `remember` the person's platforms, voice and caption style for the next film.
 
+## An Instagram Story
+
+When one of the targets is an Instagram Story, it can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask once which one fits (the likely one ticked: a link when there is a page to go to; "none" is an answer too). Then follow agentitos' **story-stickers** (`<skill>/../story-stickers/SKILL.md`, on a Sprite else `/home/sprite/skills/story-stickers/SKILL.md`): the stickers as Storrito's elements in `stickers/<name>/layer.html`, checked with `storrito/check-instagram-story` (its picture goes into the chat), in the preview as a `data-preview-only` scene, published with publish-video's `--stickers`.
+
+- Leave room for them in the film: where a sticker sits stays free of text, faces and the product for the whole length.
+- Never draw a sticker, a "link in bio" or an arrow to a link into the Story's video: Storrito lays the real stickers over it, and Instagram makes them tappable.
+
 ## UI in the chat
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links, pictures, audio and videos point at `https://…`, `artifacts/…` or `uploads/…`. There are no text fields: for a change they type.

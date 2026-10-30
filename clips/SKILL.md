@@ -107,6 +107,13 @@ After "They are good":
 
 Never call Storrito's schedule procedures yourself: publish-video does it, so that nothing is posted twice.
 
+## An Instagram Story
+
+When one of the targets is an Instagram Story, it can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask once which one fits (the likely one ticked: a link when there is a page to go to; "none" is an answer too). Then follow agentitos' **story-stickers** (`<skill>/../story-stickers/SKILL.md`, on a Sprite else `/home/sprite/skills/story-stickers/SKILL.md`): the stickers as Storrito's elements in `stickers/<name>/layer.html`, checked with `storrito/check-instagram-story` (its picture goes into the chat), in the preview as a `data-preview-only` scene, published with publish-video's `--stickers`.
+
+- Leave room for them in the film: where a sticker sits stays free of text, faces and the product for the whole length.
+- Never draw a sticker, a "link in bio" or an arrow to a link into the Story's video: Storrito lays the real stickers over it, and Instagram makes them tappable.
+
 ## UI in the chat
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only: `div span p ul ol li strong em b i s small h1–h4 a img video button table thead tbody tr th td label input br`. `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/clips"` shows the previews; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the ticked `:value`s. There are no text fields: for a hook or a time they type.

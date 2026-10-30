@@ -321,9 +321,9 @@ async function cmdPublish([dir], opts) {
   // Instagram's stickers over a Story's video: the layer agentitos' story-stickers wrote and checked
   let layer = "";
   if (opts.stickers) {
-    if (!fs.existsSync(opts.stickers)) fail(`There is no ${opts.stickers}: agentitos' story-stickers writes it (stickers.mjs build).`);
+    if (!fs.existsSync(opts.stickers)) fail(`There is no ${opts.stickers}: the layer of agentitos' story-stickers, stickers/<name>/layer.html (its SKILL.md).`);
     layer = fs.readFileSync(opts.stickers, "utf8").trim();
-    if (!/<insta-[a-z-]+[\s>]/.test(layer) || /<insta-story[\s>]|<script/i.test(layer)) fail(`${opts.stickers} is no sticker layer: write it with agentitos' story-stickers (stickers.mjs build).`);
+    if (!/<insta-[a-z-]+[\s>]/.test(layer) || /<insta-story[\s>]|<script/i.test(layer)) fail(`${opts.stickers} is no sticker layer: its lines are <insta-…> stickers only, as agentitos' story-stickers writes them (its SKILL.md).`);
   }
 
   const api = await needApi();
