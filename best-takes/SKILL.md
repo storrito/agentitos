@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too) and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). The words come from ElevenLabs Scribe ("äh" included, names spelled right), and Gemini watches the videos and proposes the cut, about two cents a minute of recording in all. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `transcribe` skill beside this one (the words) and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). The words come from ElevenLabs Scribe ("äh" included, names spelled right), and Gemini watches the videos and proposes the cut, about two cents a minute of recording in all. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## From the recordings to the video, all in the chat
 

@@ -3,21 +3,22 @@
 // connection, see openrouter.mjs). A long recording goes in 5-minute
 // pieces, all at once: an hour or two take about as long as the slowest piece, under a minute.
 //
-//   transcribeRemote(file, { lang, speakers }) → [{ text, start, end, speaker }]
+//   gemini(file, duration, { lang, speakers, voices, log }) → { words: [{ text, start, end, speaker }], cost }
 //
-// The model gives times in tenths of a second; build.mjs snaps every word onset to the voice
-// in the audio (tools/align.mjs), as it does for Parakeet. Speakers are A, B, … in the order
+// The model gives times in tenths of a second: enough to find and cut a moment; a skill that
+// needs them closer snaps them to the voice or transcribes the cut clip again with Scribe.
+// Speakers are A, B, … in the order
 // they first speak. The model names them per piece; the pieces overlap by 20 seconds, and a
 // voice heard in the overlap keeps its letter in the next piece, as does a single one left
 // over when a single known voice is missing. A voice that is new to the recording, or one of
-// several silent in the overlap, may get a letter of its own.
+// several silent in the overlap, may get a letter of its own. With `voices` (the person knows how
+// many speak), the words of any voice beyond the ones that speak most go to the nearest of those.
 
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { duration } from "./asr.mjs";
 import { need } from "./openrouter.mjs";
 
 export const STT_MODEL = "google/gemini-3.5-transcribe";
@@ -100,10 +101,9 @@ function voicesOf(pieces) {
   return (k, speaker) => voice.get(`${k}:${speaker}`);
 }
 
-export async function transcribeRemote(file, { lang = "auto", speakers = true, log = () => {} } = {}) {
+export async function gemini(file, total, { lang = "auto", speakers = true, voices = 0, log = () => {} } = {}) {
   const or = await need("The transcription");
-  const total = duration(file);
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-stt-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-gemini-"));
   let cost = 0, done = 0;
   const starts = Array.from({ length: Math.ceil(total / CH) }, (_, k) => k * CH);
   // through the Sprites gateway fewer at a time: its limits are not known
@@ -171,6 +171,29 @@ export async function transcribeRemote(file, { lang = "auto", speakers = true, l
       all.push({ text: w.text, start: +w.start.toFixed(3), end: +w.end.toFixed(3), ...(sp ? { speaker: sp } : {}) });
     }
   });
-  log(`  transcribe: ${all.length} words, $${cost.toFixed(4)}`);
-  return all;
+  const words = voices > 0 ? atMost(all, voices) : all;
+  log(`  transcribe: ${words.length} words, $${cost.toFixed(4)}`);
+  return { words, cost };
+}
+
+// the words of the n voices that say the most; every other word takes the voice of the nearest
+// word (in time) of one of those, and the letters are given again by first appearance
+function atMost(words, n) {
+  const said = new Map();
+  for (const w of words) if (w.speaker) said.set(w.speaker, (said.get(w.speaker) || 0) + 1);
+  if (said.size <= n) return words;
+  const kept = new Set([...said].sort((a, b) => b[1] - a[1]).slice(0, n).map(([s]) => s));
+  const anchors = words.filter((w) => kept.has(w.speaker));
+  const nearest = (t) => {
+    let best = null, gap = Infinity;
+    for (const a of anchors) { const g = Math.abs(a.start - t); if (g < gap) { gap = g; best = a.speaker; } }
+    return best;
+  };
+  const letters = new Map();
+  return words.map((w) => {
+    const v = !w.speaker ? null : kept.has(w.speaker) ? w.speaker : nearest(w.start);
+    if (v && !letters.has(v)) letters.set(v, String.fromCharCode(65 + letters.size));
+    const { speaker, ...rest } = w;
+    return v ? { ...rest, speaker: letters.get(v) } : rest;
+  });
 }

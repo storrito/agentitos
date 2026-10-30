@@ -50,7 +50,7 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { probe, playable, samples, hyperframes, clock } from "./lib/media.mjs";
-import { scribe, SCRIBE_MODEL } from "./lib/asr.mjs";
+import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { activity, moving } from "./lib/motion.mjs";
@@ -130,6 +130,7 @@ async function cmdNew(dir, files, opts) {
   if (!dir || !files.length) fail("Usage: takes.mjs new <dir> <video> [<video> …]");
   if (fs.existsSync(source(dir, "words.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
   for (const f of files) if (!fs.existsSync(f)) fail(`There is no ${f}.`);
+  if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
   if (!(await openrouter())) fail("This tool needs OpenRouter (the words come from ElevenLabs Scribe, the proposal from Gemini): OPENROUTER_API_KEY in the environment, or on a Sprite the gateway's OpenRouter connection.");
   fs.mkdirSync(source(dir), { recursive: true });
   // the options first: a wrong one fails before anything is paid for
@@ -141,6 +142,7 @@ async function cmdNew(dir, files, opts) {
   if (list.length > 1) console.log(`${list.length} videos, ${byTime ? "in the order they were recorded" : "in the order given"}: ${list.map((c) => c.from).join(", ")}`);
 
   const clips = {}, words = [];
+  let asr = null;
   for (const [k, c] of list.entries()) {
     const n = k + 1, name = `${String(n).padStart(2, "0")}.mp4`, file = source(dir, name);
     const how = playable(c.from, file);
@@ -148,7 +150,8 @@ async function cmdNew(dir, files, opts) {
     console.log(`video ${n}: ${c.from} (${clock(p.duration, false)}, ${p.width}×${p.height}${how.startsWith("transcoded") ? `, ${how} to H.264` : ""}) – listening …`);
     const env = envelope(samples(file));
     fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.env`), Buffer.from(env.buffer));
-    const heard = await scribe(file, p.duration, { log: console.log });
+    let heard;
+    try { ({ words: heard, model: asr } = await transcribeFile(file, { log: console.log })); } catch (e) { fail(e.message); }
     const moved = retime(heard, env, threshold(env));
     if (moved) console.log(`  ${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
     const { kept: said, runs } = ghosts(heard);
@@ -165,7 +168,7 @@ async function cmdNew(dir, files, opts) {
   }
   if (!words.some((w) => w.kind === "word")) fail("No speech found in the videos: this tool cuts by what is said.");
 
-  fs.writeFileSync(source(dir, "words.json"), JSON.stringify({ asr: SCRIBE_MODEL, clips, words }, null, 1));
+  fs.writeFileSync(source(dir, "words.json"), JSON.stringify({ asr, clips, words }, null, 1));
   const s = settings(dir, opts);
   fs.writeFileSync(source(dir, "brief.md"), brief(clips, words, s));
   const levels = Object.values(clips).map((c) => c.lufs).filter((l) => l != null);

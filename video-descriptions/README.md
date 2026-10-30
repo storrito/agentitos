@@ -13,7 +13,7 @@ node tools/descriptions.mjs check descriptions/clip                   # every li
 node tools/descriptions.mjs overview descriptions/clip                # artifacts/descriptions-clip.html
 ```
 
-Requirements: Node 20+, ffmpeg. For the words OpenRouter (ElevenLabs Scribe v2, about 0.5 ¢ a minute): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs`); or the words of another tool with `--words` (rragent's transcribe tool, [captions](../captions/), [best-takes](../best-takes/)). No npm packages, no other model: the agent writes the texts itself.
+Requirements: Node 20+, ffmpeg. For the words agentitos' [transcribe](../transcribe/) beside it (or `TRANSCRIBE` naming its `tools/transcribe.mjs`), which takes them from ElevenLabs Scribe v2 through OpenRouter (about 0.5 ¢ a minute): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection; or the words of another tool with `--words` (rragent's transcribe tool, [captions](../captions/), [best-takes](../best-takes/)). No npm packages, no other model: the agent writes the texts itself.
 
 ## How it works
 

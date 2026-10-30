@@ -87,7 +87,7 @@ Across all presets:
 
 `--out <dir>` creates a separate HyperFrames project per video.
 
-**Transcription:** `tools/clip.mjs` transcribes through OpenRouter when there is one (`OPENROUTER_API_KEY`, or a Sprite's gateway; `tools/stt.mjs`, Gemini 3.5 Transcribe, about $0.006 per minute): words, timings and who speaks, with nothing to install but ffmpeg. The model gives times in tenths of a second; the build snaps every onset to the voice (`tools/align.mjs`). Speaker detection is switched on with the provider option `diarization_mode: "speaker"`, which OpenRouter passes to Google. On two-voice test clips, its text and speakers matched the local chain exactly. Without OpenRouter, or with `--asr parakeet`, it runs locally: Parakeet (`npx hyperframes models install parakeet`), speakers via `--diarize`, gaps via whisper.cpp. Whisper's own word timings were off by up to 0.5 s in places in the demo.
+**Transcription:** `tools/clip.mjs` transcribes through OpenRouter when there is one (`OPENROUTER_API_KEY`, or a Sprite's gateway; Gemini 3.5 Transcribe, about $0.006 per minute, run by agentitos' [transcribe](../transcribe/) skill, which must be beside this one, or `TRANSCRIBE` naming its `tools/transcribe.mjs`): words, timings and who speaks, with nothing to install but ffmpeg. The model gives times in tenths of a second; the build snaps every onset to the voice (`tools/align.mjs`). Speaker detection is switched on with the provider option `diarization_mode: "speaker"`, which OpenRouter passes to Google. On two-voice test clips, its text and speakers matched the local chain exactly. Without OpenRouter, or with `--asr parakeet`, it runs locally: Parakeet (`npx hyperframes models install parakeet`), speakers via `--diarize`, gaps via whisper.cpp. Whisper's own word timings were off by up to 0.5 s in places in the demo.
 
 ## Worlds
 
@@ -410,6 +410,7 @@ Everything is deterministic: the world is a pure function `(plan, t)`, particle 
 - `tools/align.mjs`, `tools/audio.mjs`: word timings snapped to the audio, audiogram bands
 - `tools/burnin.mjs`: finds burned-in captions and overlays in the video
 - `tools/clip.mjs`: a clip someone brings (video or audio) → folder with `audio.wav`, `video.*`, `transcript.json`
+- `tools/lib/transcribe.mjs`: runs agentitos' transcribe skill (OpenRouter) as a program
 - `tools/asr.mjs`: Parakeet via the HyperFrames CLI in 10-minute chunks (shared by clip and highlight)
 - `tools/highlight.mjs`, `tools/repair.mjs`, `tools/gaps.mjs`: highlight finder, ASR repair, voiced-gap detection
 - `tools/diarize.py`: speaker detection (sherpa-onnx)
@@ -429,4 +430,4 @@ Only use footage and audio you have the rights to. Build output (`videos/`, `ren
 
 ## Requirements
 
-Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). Without it: Parakeet, Python 3 + sherpa-onnx (`--diarize`), whisper.cpp (`repair.mjs`). Optional: Claude Code or an Anthropic API key (`--llm`).
+Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers, through agentitos' [transcribe](../transcribe/) beside this skill: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). Without it: Parakeet, Python 3 + sherpa-onnx (`--diarize`), whisper.cpp (`repair.mjs`). Optional: Claude Code or an Anthropic API key (`--llm`).

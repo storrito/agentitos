@@ -17,8 +17,8 @@
 // A file instead of a link (an upload, a recording of the person's own) goes the same way: its
 // sound is written down as it is, its stretches are cut from it with ffmpeg.
 //
-// The words come from Gemini 3.5 Transcribe through OpenRouter (OPENROUTER_API_KEY or the Sprites
-// gateway's OpenRouter connection, with
+// The words come from Gemini 3.5 Transcribe through OpenRouter, run by agentitos' transcribe skill
+// beside this one (OPENROUTER_API_KEY or the Sprites gateway's OpenRouter connection, with
 // speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
 // (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
 // ~/.cache/agentitos/.
@@ -27,7 +27,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { transcribeRemote } from "./lib/stt.mjs";
+import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 
@@ -145,11 +145,13 @@ function writeEpisode(dir, facts, words) {
 
 // the person's own file: no captions to fall back on, so the words need the key
 async function fetchFile(file, dir) {
+  if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
   if (!(await openrouter())) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
   const title = path.basename(file).replace(/\.[^.]+$/, "");
   const length = duration(file);
   log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
-  const words = await transcribeRemote(file, { lang: "auto", speakers: true, log });
+  let words;
+  try { ({ words } = await transcribeFile(file, { speakers: true, log })); } catch (e) { fail(e.message); }
   writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words);
 }
 
@@ -165,6 +167,7 @@ async function fetchEpisode(url, dir) {
   // the sound and words of an episode fetched into this folder before are not this one's
   for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
   if (await openrouter()) {
+    if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
     let audio = null;
     try {
@@ -180,7 +183,7 @@ async function fetchEpisode(url, dir) {
     if (audio) {
       log("episode: writing down every word and who speaks it, a few minutes …");
       try {
-        words = await transcribeRemote(path.join(dir, audio), { lang: lang || "auto", speakers: true, log });
+        ({ words } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
         source = "openrouter";
       } catch (e) {
         log(`episode: the transcription failed (${e.message}), the captions instead …`);
