@@ -1,34 +1,38 @@
 ---
 name: story-stickers
-description: Put Instagram's own stickers (link, poll, question, quiz, countdown, emoji slider, mention, hashtag, location) on a video Story: written as Storrito's sticker elements, checked by Storrito, shown over the film in the HyperFrames preview, then published through Storrito, which lays the real, tappable stickers over the video. No tools: the elements, the preview scene and Storrito's procedures from the REPL. Use when a Story video (made with HyperFrames by launch-video, clips or by hand, or one the person brings) needs a link to a shop, a poll, a countdown or another sticker.
+description: Turn a picture or a video into an Instagram Story with Instagram's own stickers (link, poll, question, quiz, countdown, emoji slider, mention, hashtag, location), tappable, exactly where the person saw them. A picture the person brings is laid out on the 9:16 Story in HTML, a video (one the person brings or a HyperFrames film of launch-video, clips, …) is rendered without the stickers; Storrito checks the Story, shows a picture of it and publishes it with the real stickers. No tools: HTML and Storrito's procedures from the REPL. Use when someone wants a Story from their photo or video, with a link to a shop or a page, a poll, a countdown or another sticker. A Story designed from a web page in the brand's look is story-from-link.
 license: MIT
 metadata:
-  title: "Stickers on a video Story"
-  title-de: "Sticker auf einer Video-Story"
-  summary: "Instagram's link, poll, countdown and other stickers on your Story video, tappable, exactly where you saw them."
-  summary-de: "Instagrams Link-, Umfrage-, Countdown- und andere Sticker auf deinem Story-Video, antippbar, genau dort, wo du sie gesehen hast."
-  ask: "Attach your Story video (9:16) and say which sticker it needs: a link to your shop, a poll, a countdown … I show you where it sits, then schedule the Story."
-  ask-de: "Hänge dein Story-Video (9:16) an und sag, welchen Sticker es braucht: einen Link zu deinem Shop, eine Umfrage, einen Countdown … Ich zeige dir, wo er sitzt, und plane dann die Story ein."
+  title: "Story from a picture or video"
+  title-de: "Story aus einem Bild oder Video"
+  summary: "Your picture or video as an Instagram Story, with Instagram's link, poll, countdown and other stickers, tappable."
+  summary-de: "Dein Bild oder Video als Instagram-Story, mit Instagrams Link-, Umfrage-, Countdown- und anderen Stickern, antippbar."
+  ask: "Attach your picture or Story video and say which sticker it needs: a link to your shop, a poll, a countdown … I show you the Story, then schedule it."
+  ask-de: "Hänge dein Bild oder dein Story-Video an und sag, welchen Sticker es braucht: einen Link zu deinem Shop, eine Umfrage, einen Countdown … Ich zeige dir die Story und plane sie dann ein."
   placeholder: "Which sticker, and where?"
   placeholder-de: "Welcher Sticker, und wo?"
-  inputs: "video"
+  inputs: "image, video"
 ---
 
 # story-stickers
 
-There are no tools in this skill: you write the stickers as HTML, Storrito checks them and shows a picture, and publish-video publishes the Story. Full reference: [README.md](README.md).
+There are no tools in this skill: you write the Story as HTML, Storrito checks it and shows a picture of it, and Storrito publishes it (a video through publish-video). Full reference: [README.md](README.md).
 
 ## How it works
 
-A sticker is never drawn into the video. The video is rendered without stickers; Storrito gets the video and the stickers as its `<insta-…>` elements, lays them over it and gives them to Instagram as real stickers, so that a link opens and a poll counts. Storrito renders them with the same components the preview shows, so what the person sees in the preview is what the Story will look like.
+A sticker is never drawn into the picture or the video. Storrito gets the picture or the video and the stickers as its `<insta-…>` elements, lays them over it and gives them to Instagram as real stickers, so that a link opens and a poll counts. Storrito renders them with the same components its check shows, so the picture of the check is what the Story will look like.
 
-- A sticker shows for the whole Story, from the first to the last second. Place it where the film has nothing that matters, all the time: no text, no face, no product under it.
+- **A picture** (a photo, a graphic the person brings): one Story frame, laid out in HTML (step 2), no rendering of your own. Several pictures: one frame each, in their order.
+- **A video**: rendered or brought without stickers, the stickers go over it (steps 4 and 5).
+
+- A sticker shows for the whole Story, from the first to the last second. Place it where the picture or the film has nothing that matters: no text, no face, no product under it.
 - One sticker that asks for a tap (poll, question, quiz, slider, countdown) per Story gets the most answers; a link sticker can come with it.
-- The video is 1080×1920 and at most 60 s.
+- A video is 1080×1920 and at most 60 s; a picture best 1080 px wide or more.
+- Do what was asked: one picture and a link make one frame with a link sticker. No text the person did not ask for, no extra frames, no invented captions; a line of text only when they want one, in their words.
 
 ## 1. The stickers
 
-Write `stickers/<name>/layer.html` (`<name>` the film's short name): one element per line, each placed by its centre `x`, `y` in px of the 1080×1920 frame, with exactly this style:
+Write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one element per line, each placed by its centre `x`, `y` in px of the 1080×1920 frame, with exactly this style:
 
 ```html
 <insta-poll question="Schon probiert?" options='["Ja","Noch nicht"]' color="pink" style="position:absolute;left:540px;top:1050px;width:max-content;transform:translate(-50%,-50%)"></insta-poll>
@@ -52,7 +56,36 @@ Write `stickers/<name>/layer.html` (`<name>` the film's short name): one element
 
 Storrito's full reference (every attribute, its default and the sizes): https://storrito.com/documentation/api/v1/story-components.md, read it with `fetch`.
 
-## 2. Check
+## 2. A picture
+
+Upload it to Storrito first (bash, `<bytes>` from `stat -c%s`, the content type `image/jpeg` or `image/png`):
+
+```clojure
+(def upload (storrito/create-temp-blob-upload-url {:tempBlobUuid (str (random-uuid)) :contentType "image/jpeg" :contentLengthBytes <bytes>}))
+```
+
+```bash
+curl -sS -T <picture> -H 'Content-Type: image/jpeg' '<uploadUrl>'
+```
+
+Its `:url` is the picture's. Its size (`ffprobe -v error -show_entries stream=width,height -of csv=p=0 <picture>`) decides the layout:
+
+- **Nearly 9:16** (width ÷ height from 0.5 to 0.62): it fills the frame, `object-fit:cover`; `object-position` keeps what matters (`center 30%`).
+- **Anything else** (square, landscape, a wider portrait): the whole picture across the width, centred, over a blurred enlargement of itself:
+
+```html
+<insta-story>
+<img src="<url>" style="position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover;filter:blur(40px) brightness(.7);transform:scale(1.15)">
+<img src="<url>" style="position:absolute;left:0;top:50%;width:1080px;transform:translateY(-50%)">
+<!-- a line of text only when asked: -->
+<p style="position:absolute;left:60px;right:60px;top:330px;margin:0;text-align:center;font:700 72px 'Instagram Sans Condensed';color:#fff;text-shadow:0 4px 16px rgba(0,0,0,.6)">…</p>
+<!-- the lines of layer.html -->
+</insta-story>
+```
+
+The filled frame is the same without the blurred `<img>`, the picture `style="position:absolute;inset:0;width:1080px;height:1920px;object-fit:cover"`. Put the stickers where the picture is calm (on the blurred band above or below a landscape picture, it covers nothing). Fonts that always load: `Instagram Sans Condensed`, `Roboto`, `AvenyT`, `Noto Color Emoji`. This HTML is the Story: keep it in the REPL, `(def story-htmls ["<insta-story>…</insta-story>"])` (one per frame, in their order), check it (step 3) and schedule it (step 5).
+
+## 3. Check
 
 In the REPL (`eval`), with the layer's text:
 
@@ -60,11 +93,11 @@ In the REPL (`eval`), with the layer's text:
 (storrito/check-instagram-story {:html (str "<insta-story>" layer "</insta-story>")})
 ```
 
-answers each sticker's box, the `warnings` (outside the safe zone, on another sticker, squeezed, an attribute it does not know) and a `previewUrl`: a picture of the Story with its stickers. Fix every warning in `layer.html` and check again. Once the video is uploaded (step 4), check with it, `(str "<insta-story src=\"" url "\">" layer "</insta-story>")`: the picture then shows the video's first frame under the stickers. Show that picture in the chat.
+(for a picture: the whole HTML of step 2) answers each sticker's box, the `warnings` (outside the safe zone, on another sticker, squeezed, an attribute it does not know) and a `previewUrl`: a picture of the Story with its stickers. Fix every warning in `layer.html` and check again. Show the `previewUrl` in the chat: it is what Instagram will show. Once a video is uploaded (step 5), check with it, `(str "<insta-story src=\"" url "\">" layer "</insta-story>")`: the picture then shows the video's first frame under the stickers. Show that picture in the chat.
 
 An attribute that would make the post fail is an error with what to change. When Storrito says the procedure does not exist (an older Storrito), use `storrito/create-draft` with the same HTML, `storrito/status-draft` for its `previewUrl`, then `storrito/delete-draft`.
 
-## 3. In the HyperFrames preview (a film you are making)
+## 4. In the HyperFrames preview (a film you are making)
 
 Write `compositions/story-stickers.html` into the project (in rragent `artifacts/<name>/composition/`):
 
@@ -98,9 +131,25 @@ and mount it over the whole film as the root's first child in `index.html`, mark
 
 The preview shows the Story as Instagram will. rragent's `render` leaves elements marked `data-preview-only` out of the video; the HyperFrames CLI or Studio does not: there take the host out before the render. A video with the stickers drawn in would show them twice. After a change of `layer.html`, copy its lines into the scene again.
 
-## 4. Publish
+## 5. Publish
 
-The finished video goes to agentitos' publish-video as every video does (its SKILL.md: `check`, `prepare` when it says so, `accounts`), with the layer for the Instagram Story targets:
+Only after the person's yes. Ask what has more than one answer in one block (see "UI in the chat"): the account (`(storrito/list-social-accounts {})`: those whose `postTypes` have `schedule-instagram-story`; one: take it; none or `disconnected`: `(storrito/create-connect-link {…})` makes a link), the time ("Now", "Today 18:00", "Tomorrow 9:00"; the time zone only when you cannot tell), Facebook when the account has a page (`facebookDestinations`), or a draft in Storrito's gallery instead.
+
+**A picture**: Storrito's procedures in the REPL. Give each frame and account a UUID and remember it first, so that a retry posts nothing twice (Storrito answers a known UUID with the post it has):
+
+```clojure
+(def plan (vec (for [account ["mybrand"] [n html] (map-indexed vector story-htmls)]
+                 {:account account :n (inc n) :html html :uuid (str (random-uuid))})))
+(remember {:story "<name>" :plan (mapv #(dissoc % :html) plan)})
+(mapv (fn [{:keys [account html uuid]}]
+        (storrito/schedule-instagram-story {:html html :instagramUsername account :storyPostUuid uuid
+                                            :date "2026-10-22T16:00:00Z"}))   ; leave :date out for now
+      plan)
+```
+
+Several frames go out in their order with the same time. Facebook too: `:shareToFacebook true :facebookDestinationId <id>`; a picture made with AI: `:aiGenerated true`. A draft: `(storrito/create-draft {:html html :draftUuid uuid :name "<name>" :folderName "Stories"})`. Then `(storrito/status-instagram-story {:storyPostUuid uuid})` (`status-draft`) once it is rendered, usually within a minute; `cancel-instagram-story` (`delete-draft`) takes it back. Tell the person in one sentence what is scheduled when and where.
+
+**A video**: the finished video goes to agentitos' publish-video as every video does (its SKILL.md: `check`, `prepare` when it says so, `accounts`), with the layer for the Instagram Story targets:
 
 ```bash
 node <publish-video>/tools/publish.mjs publish publish/<name> --to instagram/<account>/story --at <ISO time> --stickers stickers/<name>/layer.html
@@ -130,7 +179,8 @@ The Story with its stickers (Storrito's `previewUrl`):
 
 ## Rules
 
-- Stickers only through Storrito's `<insta-…>` elements: never draw one into the video, never fake one with a picture or a "link in bio" text in a Story.
+- Stickers only through Storrito's `<insta-…>` elements: never draw one into the picture or the video, never fake one with a picture or a "link in bio" text in a Story.
+- Only what was asked: one picture is one frame; no text, frames or captions the person did not ask for.
 - A link sticker's `url` is the person's page or one they named; never invent one.
 - Every sticker `width:max-content` and placed by its centre; no warning of `check-instagram-story` left unless the person wants it so.
-- The video goes out without the stickers: rragent's render leaves `data-preview-only` out, elsewhere take the host out first.
+- A video goes out without the stickers: rragent's render leaves `data-preview-only` out, elsewhere take the host out first.

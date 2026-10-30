@@ -1,6 +1,6 @@
 ---
 name: story-from-link
-description: Turn a link (a blog post, a product, an event, any page) into an Instagram Story of a few frames in the brand's own look, with a link sticker back to the page; agree on it with the person in the chat, then schedule it through Storrito or save it as a draft. Use for story sequences from articles, product launches, offers, events and announcements.
+description: Turn a link (a blog post, a product, an event, any page) into an Instagram Story of a few frames in the brand's own look, with a link sticker back to the page; agree on it with the person in the chat, then schedule it through Storrito or save it as a draft. Use for story sequences from articles, product launches, offers, events and announcements. A picture or a video the person brings, with a link or another sticker, is agentitos' story-stickers, not this.
 license: MIT
 metadata:
   title: "Story from a link"
