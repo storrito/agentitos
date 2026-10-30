@@ -21,7 +21,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | what an rragent bot did meanwhile (its messages, tools, waits) | [agent-timeline](agent-timeline/) | `tools/timeline.mjs` |
 | voice, music or a picture made by a model (a voiceover with every word's time, a music bed, a background) | [launch-video](launch-video/) | `tools/launch.mjs voice`, `music`, `image` (OpenRouter; no HeyGen account) |
 | text checked against the apps' buttons in a HyperFrames film | [launch-video](launch-video/) | `tools/launch.mjs check <work> <composition>` after `zones` |
-| an Instagram Story, scheduled through Storrito | [story-from-link](story-from-link/) | its tools |
+| an Instagram Story, scheduled through Storrito | [story-from-link](story-from-link/) | `tools/story.mjs build` (the frames, uploaded, `frames.edn`), then Storrito's procedures in the REPL: `check-instagram-story`, `schedule-instagram-story` |
 | the texts for a video on each platform (captions, titles, descriptions, tags, hashtags, mentions) within the platforms' limits | [video-descriptions](video-descriptions/) | `tools/descriptions.mjs read`, then `check` and `overview` on the agent's `descriptions.json` |
 | a finished video checked and published on the person's accounts through Storrito (Reels, TikTok, Shorts, Facebook, LinkedIn, Pinterest, Snapchat, Threads, X; long-form on YouTube) | [publish-video](publish-video/) | `tools/publish.mjs check`, `accounts`, then `publish` with video-descriptions' `descriptions.json` ; a skill that makes videos hands them over to it instead of calling Storrito's schedule procedures itself |
 

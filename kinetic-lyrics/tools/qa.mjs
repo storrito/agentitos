@@ -227,9 +227,9 @@ for (const p of qa.phrases) {
       const x1 = Math.min(W, Math.ceil(Math.max(...live.map((w) => w.r.x + w.r.w)))), y1 = Math.min(H, Math.ceil(Math.max(...live.map((w) => w.r.y + w.r.h))));
       if (x1 - x0 > 4 && y1 - y0 > 4) {
         const clip = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
-        const withText = PNG.sync.read(await page.screenshot({ clip }));
+        const withText = PNG.sync.read(Buffer.from(await page.screenshot({ clip })));
         await page.evaluate(() => { document.getElementById("lyrics-root").style.visibility = "hidden"; });
-        const bare = PNG.sync.read(await page.screenshot({ clip }));
+        const bare = PNG.sync.read(Buffer.from(await page.screenshot({ clip })));
         await page.evaluate(() => { document.getElementById("lyrics-root").style.visibility = ""; });
         for (const w of live) {
           // the text layer also carries a soft halo that lifts the paper behind the words: glyph

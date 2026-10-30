@@ -1,26 +1,20 @@
 #!/usr/bin/env node
 // A story of a few frames from <dir>/story.json, in the look of a brand kit, rendered in Chrome
-// with Storrito's own sticker components, checked, and scheduled on Instagram through Storrito.
-// Made for agents: each command prints what it found and what to do next.
+// with Storrito's own sticker components and checked; the frames' pictures uploaded to Storrito,
+// so that the agent checks and schedules them from its REPL (code mode: storrito/check-instagram-story,
+// storrito/schedule-instagram-story, …). Made for agents: it prints what it found and what to do next.
 //
 //   node tools/story.mjs build <dir> [--brand brand] [--preview artifacts/story-<name>.html]
-//        <dir>/frames/NN.png: each frame's picture without its stickers (what is uploaded), the
-//        stickers' places in <dir>/frames.json; uploads/story-<name>/<build>/NN.jpg: the frames as a
-//        viewer sees them, small, for the chat; the preview page beside the chat shows them side by side
-//   node tools/story.mjs accounts                    the Instagram accounts a story can go to
-//   node tools/story.mjs publish <dir> --account <name>[,<name>…] (--at <ISO time> | --now)
-//        [--facebook] [--draft [--folder "…"]]
-//        uploads the frames and schedules them in their order on each account, or puts them into
-//        Storrito's gallery as drafts; safe to run again, nothing is posted twice
-//   node tools/story.mjs status <dir> [--wait 120]   each frame's status and the picture Storrito
-//                                                    rendered of it
-//   node tools/story.mjs cancel <dir>                takes every scheduled frame back
+//        <dir>/frames/NN.png: each frame's picture without its stickers; uploads/story-<name>/<build>/NN.jpg:
+//        the frames as a viewer sees them, small, for the chat; the preview page beside the chat
+//        shows them side by side; when Storrito is reachable, the pictures uploaded as temp-blobs
+//        and <dir>/frames.edn: each frame's HTML for Storrito, ready for the REPL
 
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { PNG } from "pngjs";
-import { launch, sleep } from "./lib/chrome.mjs";
+import { launch } from "./lib/chrome.mjs";
 import * as design from "./lib/design-md.mjs";
 import { contrast, luminance, parse } from "./lib/colors.mjs";
 import { KINDS, STICKERS, W, H, framePage, inFrame, scheduleHtml, defaultTheme, resolveImage, fontCss } from "./lib/frames.mjs";
@@ -28,7 +22,7 @@ import { measureScript, layout } from "./lib/zones.mjs";
 import { connect, call, componentsHost } from "./lib/storrito.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
-const FLAGS = ["now", "facebook", "draft"];
+const FLAGS = [];
 const opts = {};
 const pos = [];
 for (let i = 0; i < rest.length; i++) {
@@ -158,7 +152,8 @@ async function build(dir) {
       let ground = null;
       if (image) {
         await page.evaluate(() => document.querySelectorAll(".title, .body, .t, .kicker, .value, .price, .who, .date, .source, .logo, .arrow").forEach((e) => (e.style.visibility = "hidden")));
-        ground = PNG.sync.read(await page.screenshot({ type: "png" }));
+        // puppeteer answers a Uint8Array, pngjs reads a Buffer
+        ground = PNG.sync.read(Buffer.from(await page.screenshot({ type: "png" })));
       }
       const notes = [];
       if (report.overflow > 0) notes.push(["✗", `${report.overflow}px of text do not fit: shorten the text${frame.image && frame.kind !== "cover" ? " or leave out the picture" : ""}`]);
@@ -200,7 +195,9 @@ async function build(dir) {
   const storyNotes = [];
   if (!hasLink) storyNotes.push("⚠ no link sticker: the story links nowhere; the last frame usually carries it");
   if (n > 7) storyNotes.push(`⚠ ${n} frames: most viewers leave before the end of a story longer than 7`);
-  writeJson(path.join(dir, "frames.json"), { name, link: story.link || null, built: new Date().toISOString(), brand: path.resolve(brandDir), host, frames: out, notes: storyNotes });
+  const built = { name, link: story.link || null, built: new Date().toISOString(), brand: path.resolve(brandDir), host, frames: out, notes: storyNotes };
+  const uploaded = await uploadFrames(api, dir, built);
+  writeJson(path.join(dir, "frames.json"), built);
   const preview = opts.preview || path.join("artifacts", `story-${name}.html`);
   writePreview(preview, story, out);
 
@@ -213,7 +210,42 @@ async function build(dir) {
   }
   for (const note of storyNotes) console.log(note);
   console.log(`\nPreview beside the chat: ${preview}`);
-  console.log(bad ? `\nFix the ✗ in story.json and build again.` : `\nShow the frames in the chat (${thumbs}/NN.jpg); once the person agrees: node <skill>/tools/story.mjs publish ${dir} --account <instagram> --at <time>`);
+  if (bad) { console.log(`\nFix the ✗ in story.json and build again.`); return; }
+  console.log(`\nShow the frames in the chat (${thumbs}/NN.jpg).`);
+  if (uploaded) console.log(`The pictures are uploaded; each frame's HTML for Storrito is in ${path.join(dir, "frames.edn")}: in the REPL (def frames <its content>), then check and schedule them as SKILL.md's steps 5 and 6 say.`);
+  else console.log(`Storrito could not be reached from this tool: upload ${path.join(dir, "frames")}/NN.png yourself (create-temp-blob-upload-url, curl -T) and put each url into its frame's html in frames.json (for {{BACKGROUND}}).`);
+}
+
+// Each frame's picture as a temp-blob of the organization, and its HTML for Storrito with the
+// picture's URL: frames.edn, for the agent's REPL. A picture that did not change since the last
+// build keeps its upload (temp-blobs live about a day). Without Storrito: false, the html keeps
+// {{BACKGROUND}}.
+async function uploadFrames(api, dir, built) {
+  if (!api) return false;
+  const file = path.join(dir, "uploads.json");
+  const before = fs.existsSync(file) ? readJson(file) : {};
+  const now = {};
+  for (const f of built.frames) {
+    const png = fs.readFileSync(path.join(dir, f.file));
+    const sha = crypto.createHash("sha256").update(png).digest("hex");
+    const kept = before[sha];
+    if (kept && Date.now() - Date.parse(kept.at) < 20 * 3600e3) { now[sha] = kept; }
+    else {
+      const tempBlobUuid = crypto.randomUUID();
+      const res = await call(api, "create-temp-blob-upload-url", { tempBlobUuid, contentType: "image/png", contentLengthBytes: png.length });
+      if (res.uploadUrl) {
+        const put = await fetch(res.uploadUrl, { method: "PUT", headers: { "content-type": "image/png", "content-length": String(png.length) }, body: png, signal: AbortSignal.timeout(180000) });
+        if (!put.ok) fail(`✗ frame ${f.n}: the upload answered HTTP ${put.status}; build again to retry.`);
+      }
+      now[sha] = { url: res.url, at: new Date().toISOString() };
+    }
+    f.url = now[sha].url;
+    f.html = f.html.replace("{{BACKGROUND}}", f.url);
+  }
+  writeJson(file, now);
+  const edn = (s) => JSON.stringify(s);
+  fs.writeFileSync(path.join(dir, "frames.edn"), "[" + built.frames.map((f) => `{:n ${f.n} :kind ${edn(f.kind)} :ai-generated ${!!f.aiGenerated} :html ${edn(f.html)}}`).join("\n ") + "]\n");
+  return true;
 }
 
 function writePreview(file, story, frames) {
@@ -235,149 +267,5 @@ figcaption{color:var(--muted);margin-top:8px}ul{margin:4px 0 0;padding-left:18px
 </style></head><body><main>${tiles}</main></body></html>`);
 }
 
-async function needApi() {
-  const api = await connect();
-  if (api) return api;
-  fail(`Storrito cannot be reached from this tool (no gateway connection to Storrito, no STORRITO_API_URL and STORRITO_CREDENTIAL).
-Do it with Storrito's procedures yourself, frame by frame in their order (frames.json has each frame's file and html):
-  create-temp-blob-upload-url {tempBlobUuid, contentType "image/png", size}, then curl -sS -T <file> -H 'Content-Type: image/png' '<uploadUrl>';
-  schedule-instagram-story {html (its {{BACKGROUND}} replaced by the temp-blob's url), instagramUsername, storyPostUuid (a new UUID, kept for retries), date}.`);
-}
-
-async function accounts() {
-  const api = await needApi();
-  const { socialAccounts } = await call(api, "list-social-accounts", {});
-  const ig = socialAccounts.filter((a) => a.instagramUsername && a.postTypes.some((p) => p.procedure === "schedule-instagram-story"));
-  if (!ig.length) console.log("No Instagram account takes stories yet: connect one in Storrito (create-connect-link makes a link).");
-  for (const a of ig) {
-    const fb = (a.facebookDestinations || []).map((d) => `${d.facebookDestinationName} (${d.facebookDestinationId})`).join(", ");
-    console.log(`@${a.instagramUsername}${a.disconnected ? " — disconnected: reconnect it in Storrito" : ""}${fb ? ` · Facebook: ${fb}` : ""}`);
-  }
-}
-
-async function publish(dir) {
-  const framesFile = path.join(dir, "frames.json");
-  if (!fs.existsSync(framesFile)) fail(`Build the story first: node <skill>/tools/story.mjs build ${dir}`);
-  const built = readJson(framesFile);
-  const errs = built.frames.flatMap((f) => f.notes.filter((x) => x.startsWith("✗")).map((x) => `frame ${f.n}: ${x}`));
-  if (errs.length) fail(`${errs.join("\n")}\nFix these and build again before publishing.`);
-  const draft = !!opts.draft;
-  const accountsWanted = String(opts.account || "").split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
-  if (!draft && !accountsWanted.length) fail("Which account? --account <instagram username>[,<another>]");
-  if (!draft && !opts.now && !opts.at) fail("When? --at 2026-10-22T18:00:00+02:00 (with the offset of the person's time zone) or --now");
-  let date = null;
-  if (!draft && opts.at) {
-    const d = new Date(opts.at);
-    if (isNaN(d)) fail(`--at ${opts.at} is no time: write it as 2026-10-22T18:00:00+02:00`);
-    if (d.getTime() < Date.now() - 60000) fail(`--at ${opts.at} is in the past.`);
-    date = d.toISOString();
-  }
-  const api = await needApi();
-  const planFile = path.join(dir, "plan.json");
-  const plan = fs.existsSync(planFile) ? readJson(planFile) : {};
-  // the same frames keep their uploads; a new build gets new ones
-  if (plan.built !== built.built) { plan.built = built.built; plan.uploads = {}; }
-  plan.uploads ||= {};
-  plan.posts ||= [];
-  const save = () => writeJson(planFile, plan);
-  // frames of an earlier build that are still scheduled: taken back first, so that nothing goes twice
-  const live = (p) => p.done && !["canceled", "deleted", "failed"].includes(p.status);
-  const stale = plan.posts.filter((p) => live(p) && p.built !== built.built);
-  if (stale.length) fail(`${stale.length} frames of an earlier build of this story are still ${stale[0].draft ? "drafts" : "scheduled"}. Take them back with node <skill>/tools/story.mjs cancel ${dir}, then publish again.`);
-  let facebook = null;
-  if (opts.facebook && !draft) {
-    const { socialAccounts } = await call(api, "list-social-accounts", {});
-    facebook = Object.fromEntries(socialAccounts.filter((a) => a.instagramUsername).map((a) => [a.instagramUsername, a.facebookDestinations || []]));
-  }
-  for (const f of built.frames) {
-    const key = String(f.n);
-    if (plan.uploads[key]?.url) continue;
-    const file = path.join(dir, f.file);
-    const size = fs.statSync(file).size;
-    const tempBlobUuid = plan.uploads[key]?.uuid || crypto.randomUUID();
-    plan.uploads[key] = { uuid: tempBlobUuid };
-    save();
-    const res = await call(api, "create-temp-blob-upload-url", { tempBlobUuid, contentType: "image/png", size });
-    if (res.uploadUrl) {
-      const put = await fetch(res.uploadUrl, { method: "PUT", headers: { "content-type": "image/png", "content-length": String(size) }, body: fs.readFileSync(file), signal: AbortSignal.timeout(180000) });
-      if (!put.ok) fail(`✗ frame ${f.n}: the upload answered HTTP ${put.status}; run publish again to retry.`);
-    }
-    plan.uploads[key] = { uuid: tempBlobUuid, url: res.url };
-    save();
-    console.log(`frame ${f.n} uploaded`);
-  }
-  const targets = draft ? [null] : accountsWanted;
-  for (const account of targets) {
-    for (const f of built.frames) {
-      const key = draft ? `draft:${f.n}` : `${account}:${f.n}`;
-      let post = plan.posts.find((p) => p.key === key && p.built === built.built && !["canceled", "deleted"].includes(p.status));
-      if (post?.done) continue;
-      if (!post) { post = { key, account, frame: f.n, uuid: crypto.randomUUID(), built: built.built }; plan.posts.push(post); save(); }
-      const html = f.html.replace("{{BACKGROUND}}", plan.uploads[String(f.n)].url);
-      try {
-        if (draft) {
-          const res = await call(api, "create-draft", { html, draftUuid: post.uuid, name: `${built.name} ${f.n}/${built.frames.length}`.slice(0, 200), folderName: opts.folder || "Stories from links" });
-          Object.assign(post, { done: true, draft: true, editorUrl: res.editorUrl, warnings: res.warnings || [] });
-        } else {
-          const params = { html, instagramUsername: account, storyPostUuid: post.uuid, ...(date ? { date } : {}), ...(f.aiGenerated ? { aiGenerated: true } : {}) };
-          if (facebook) {
-            const dests = facebook[account] || [];
-            if (dests.length) Object.assign(params, { shareToFacebook: true, facebookDestinationId: dests[0].facebookDestinationId });
-          }
-          const res = await call(api, "schedule-instagram-story", params);
-          Object.assign(post, { done: true, status: res.status, date: date || "now", warnings: res.warnings || [] });
-        }
-      } catch (e) {
-        post.error = e.message;
-        save();
-        fail(`✗ ${draft ? "draft" : "@" + account} frame ${f.n}: ${e.message}\nRun publish again with the same options: what is done stays done.`);
-      }
-      delete post.error;
-      save();
-      console.log(`${draft ? "draft" : "@" + account} frame ${f.n}: ${draft ? "in the gallery" : post.status}${post.warnings.length ? " — " + post.warnings.join(" | ") : ""}`);
-    }
-  }
-  console.log(`\nNext: node <skill>/tools/story.mjs status ${dir} --wait 120 shows what Storrito rendered.`);
-}
-
-async function status(dir) {
-  const planFile = path.join(dir, "plan.json");
-  if (!fs.existsSync(planFile)) fail("Nothing published yet.");
-  const plan = readJson(planFile);
-  const api = await needApi();
-  const until = Date.now() + Number(opts.wait || 0) * 1000;
-  for (;;) {
-    let pending = 0;
-    for (const p of plan.posts.filter((x) => x.done && x.built === plan.built)) {
-      try {
-        const res = p.draft ? await call(api, "status-draft", { draftUuid: p.uuid }) : await call(api, "status-instagram-story", { storyPostUuid: p.uuid });
-        Object.assign(p, { status: res.status, previewUrl: res.previewUrl || p.previewUrl, errorMessage: res.errorMessage, editorUrl: res.editorUrl || p.editorUrl });
-        if (!res.previewUrl && !["failed", "canceled", "deleted"].includes(res.status)) pending++;
-      } catch (e) { p.statusError = e.message; }
-    }
-    writeJson(planFile, plan);
-    if (!pending || Date.now() > until) break;
-    await sleep(10000);
-  }
-  for (const p of plan.posts.filter((x) => x.done && x.built === plan.built)) {
-    console.log(`${p.draft ? "draft" : "@" + p.account} frame ${p.frame}: ${p.status}${p.errorMessage ? ` (${p.errorMessage})` : ""}${p.previewUrl ? ` · rendered ${p.previewUrl}` : " · not rendered yet"}${p.editorUrl ? ` · editor ${p.editorUrl}` : ""}`);
-  }
-}
-
-async function cancel(dir) {
-  const planFile = path.join(dir, "plan.json");
-  if (!fs.existsSync(planFile)) fail("Nothing published yet.");
-  const plan = readJson(planFile);
-  const api = await needApi();
-  for (const p of plan.posts.filter((x) => x.done && !["canceled", "deleted"].includes(x.status))) {
-    const res = p.draft ? await call(api, "delete-draft", { draftUuid: p.uuid }) : await call(api, "cancel-instagram-story", { storyPostUuid: p.uuid });
-    p.status = res.status || "deleted";
-    writeJson(planFile, plan);
-    console.log(`${p.draft ? "draft" : "@" + p.account} frame ${p.frame}: ${p.status}`);
-  }
-}
-
-const commands = { build, publish, status, cancel };
-if (cmd === "accounts") await accounts();
-else if (commands[cmd] && pos[0]) await commands[cmd](pos[0]);
-else fail("Commands: build <dir>, accounts, publish <dir> --account … --at …|--now [--facebook] [--draft], status <dir>, cancel <dir>");
+if (cmd === "build" && pos[0]) await build(pos[0]);
+else fail("Command: build <dir> [--brand brand] [--preview artifacts/story-<name>.html]. Checking, scheduling, the status and cancelling go through Storrito's procedures in the REPL (SKILL.md, steps 5 to 7).");

@@ -109,34 +109,52 @@ node <skill>/tools/story.mjs build work/<name>
 
 renders every frame in Chrome with the brand's fonts and Storrito's own stickers (a few seconds), prints a line per frame with its picture for the chat (`uploads/story-<name>/<build>/NN.jpg`, a new folder per build) and what a viewer would notice: fix every ✗ in `story.json` and build again; fix a ⚠ unless you have a reason not to. The preview beside the chat shows the frames side by side. Look at one or two of the pictures yourself for what no check sees (a face cut off, a picture that does not fit the words). Then show them in the chat as a row of pictures with "Looks good" and "Change something". A change: edit `story.json`, build again.
 
-### 5. Where and when
+The build also uploads each frame's picture to Storrito (the machine's gateway, or `STORRITO_API_URL` and `STORRITO_CREDENTIAL`) and writes `work/<name>/frames.edn`: each frame's HTML for Storrito, its picture and its stickers where they sat, `[{:n 1 :kind "cover" :ai-generated false :html "<insta-story>…"} …]`. Everything from here on is Storrito's procedures in your REPL (`eval`): read `frames.edn` and start with `(def frames <its content>)`; `frames` stays defined for the next calls.
 
-Ask what has more than one answer, all in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button:
+### 5. Check, then where and when
 
-- **The account.** `node <skill>/tools/story.mjs accounts` lists the Instagram accounts that take stories, with their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked disconnected: `create-connect-link` of Storrito's procedures makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
+Check every frame with Storrito, as it will post it:
+
+```clojure
+(def checked (mapv #(storrito/check-instagram-story {:html (:html %)}) frames))
+(mapv (fn [f c] [(:n f) (:warnings c) (:previewUrl c)]) frames checked)
+```
+
+A warning (a sticker outside the safe zone, on another one): fix it in `story.json`, build again, check again. The `previewUrl`s are what Instagram will show; they belong in the chat when the person asks how it will look.
+
+Then ask what has more than one answer, all in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button:
+
+- **The account.** `(storrito/list-social-accounts {})`: the accounts whose `postTypes` have the procedure `schedule-instagram-story` take stories, `facebookDestinations` are their Facebook pages. One account: take it. Several: checkboxes and one button. None, or one marked `disconnected`: `(storrito/create-connect-link {…})` makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
 - **The time.** The likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none ticked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
 - **Facebook**, only when the account has a Facebook page: whether the story goes there too.
 - Instead of scheduling they may want a **draft**: it lands in Storrito's gallery, where they can change it in the editor and schedule it themselves.
 
 ### 6. Schedule
 
-Only after their "yes":
+Only after their "yes". First give every frame and account its own UUID and remember them, so that a retry posts nothing twice (Storrito answers a known UUID with the post it has):
 
-```bash
-node <skill>/tools/story.mjs publish work/<name> --account <username> --at 2026-10-22T18:00:00+02:00 [--facebook]
-node <skill>/tools/story.mjs publish work/<name> --account <username> --now
-node <skill>/tools/story.mjs publish work/<name> --draft
+```clojure
+(def plan (vec (for [account ["mymuesli"] f frames] {:account account :n (:n f) :uuid (str (random-uuid))})))
+(remember {:story "<name>" :plan plan})
 ```
 
-uploads the frames and schedules them in their order (Instagram shows them one after another), on several accounts with `--account a,b`. It is safe to run again: what is done stays done, nothing posts twice. Then
+Then schedule them in the frames' order (Instagram shows them one after another), each with the same time:
 
-```bash
-node <skill>/tools/story.mjs status work/<name> --wait 120
+```clojure
+(def by-n (into {} (map (juxt :n identity)) frames))
+(def facebook-page nil)                                  ; the facebookDestinationId when it goes to Facebook too
+(mapv (fn [{:keys [account n uuid]}]
+        (storrito/schedule-instagram-story
+          (cond-> {:html (:html (by-n n)) :instagramUsername account :storyPostUuid uuid
+                   :date "2026-10-22T16:00:00Z"}            ; leave :date out for now
+            (:ai-generated (by-n n)) (assoc :aiGenerated true)
+            facebook-page (assoc :shareToFacebook true :facebookDestinationId facebook-page))))
+      plan)
 ```
 
-shows what Storrito rendered of each frame (`rendered …`, a picture); it must look like the preview. Tell the person in one or two sentences what is scheduled when and where; show the rendered pictures only when they ask. A failure: say which frame and why in one sentence. `story.mjs cancel work/<name>` takes the story back; to change a scheduled story: cancel, change, build, publish.
+A failure: run the same call again with the same `plan` (`recall` it after a restart of the REPL); what is done stays done. A **draft**: `(storrito/create-draft {:html … :draftUuid uuid :name "<name> 2/5" :folderName "Stories from links"})` per frame instead.
 
-The tools reach Storrito by themselves through the machine's gateway (rragent on a Sprite) or with `STORRITO_API_URL` and `STORRITO_CREDENTIAL`. When `publish` says it cannot reach Storrito, use Storrito's procedures yourself, in the frames' order, as it explains: in rragent they are functions of your REPL (`(storrito/create-temp-blob-upload-url {…})`, `(doc storrito/schedule-instagram-story)`), elsewhere the Storrito tools of the same names.
+Then `(storrito/status-instagram-story {:storyPostUuid uuid})` per post (`status-draft` for drafts) once Storrito rendered it, usually within a minute: its `previewUrl` must look like the frame. Tell the person in one or two sentences what is scheduled when and where; a failure: which frame and why, in one sentence. To take the story back: `cancel-instagram-story` per post (`delete-draft` for drafts); to change a scheduled story: cancel, change, build, check, schedule with new UUIDs.
 
 ### 7. The next link
 
