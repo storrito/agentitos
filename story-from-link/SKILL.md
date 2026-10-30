@@ -113,16 +113,9 @@ renders every frame in Chrome with the brand's fonts and Storrito's own stickers
 
 The build also uploads each frame's picture to Storrito (the machine's gateway, or `STORRITO_API_URL` and `STORRITO_CREDENTIAL`) and writes `work/<name>/frames.edn`: each frame's HTML for Storrito, its picture and its stickers where they sat, `[{:n 1 :kind "cover" :ai-generated false :html "<insta-story>…"} …]`. Everything from here on is Storrito's procedures in your REPL (`eval`): read `frames.edn` and start with `(def frames <its content>)`; `frames` stays defined for the next calls.
 
-### 5. Check, then where and when
+### 5. Where and when
 
-Check every frame with Storrito, as it will post it:
-
-```clojure
-(def checked (mapv #(storrito/check-instagram-story {:html (:html %)}) frames))
-(mapv (fn [f c] [(:n f) (:warnings c) (:previewUrl c)]) frames checked)
-```
-
-A warning (a sticker outside the safe zone, on another one): fix it in `story.json`, build again, check again. The `previewUrl`s are what Instagram will show; they belong in the chat when the person asks how it will look.
+The build's pictures are what Instagram will show: the frames are rendered with Storrito's own components, and the build checked their layout.
 
 Then ask what has more than one answer, all in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button:
 
@@ -154,9 +147,9 @@ Then schedule them in the frames' order (Instagram shows them one after another)
       plan)
 ```
 
-A failure: run the same call again with the same `plan` (`recall` it after a restart of the REPL); what is done stays done. A **draft**: `(storrito/create-draft {:html … :draftUuid uuid :name "<name> 2/5" :folderName "Stories from links"})` per frame instead.
+Storrito refuses what would make the post fail with what to change; its `warnings` come with a post already scheduled: cancel it, fix `story.json`, build, schedule again with new UUIDs. A failure: run the same call again with the same `plan` (`recall` it after a restart of the REPL); what is done stays done. A **draft**: `(storrito/create-draft {:html … :draftUuid uuid :name "<name> 2/5" :folderName "Stories from links"})` per frame instead.
 
-Then `(storrito/status-instagram-story {:storyPostUuid uuid})` per post (`status-draft` for drafts) once Storrito rendered it, usually within a minute: its `previewUrl` must look like the frame. Tell the person in one or two sentences what is scheduled when and where; a failure: which frame and why, in one sentence. To take the story back: `cancel-instagram-story` per post (`delete-draft` for drafts); to change a scheduled story: cancel, change, build, check, schedule with new UUIDs.
+Then `(storrito/status-instagram-story {:storyPostUuid uuid})` per post (`status-draft` for drafts) once Storrito rendered it, usually within a minute: its `previewUrl` must look like the frame. Tell the person in one or two sentences what is scheduled when and where; a failure: which frame and why, in one sentence. To take the story back: `cancel-instagram-story` per post (`delete-draft` for drafts); to change a scheduled story: cancel, change, build, schedule with new UUIDs.
 
 ### 7. The next link
 

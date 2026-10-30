@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A story of a few frames from <dir>/story.json, in the look of a brand kit, rendered in Chrome
 // with Storrito's own sticker components and checked; the frames' pictures uploaded to Storrito,
-// so that the agent checks and schedules them from its REPL (code mode: storrito/check-instagram-story,
+// so that the agent schedules them from its REPL (code mode:
 // storrito/schedule-instagram-story, …). Made for agents: it prints what it found and what to do next.
 //
 //   node tools/story.mjs build <dir> [--brand brand] [--preview artifacts/story-<name>.html]
@@ -212,7 +212,7 @@ async function build(dir) {
   console.log(`\nPreview beside the chat: ${preview}`);
   if (bad) { console.log(`\nFix the ✗ in story.json and build again.`); return; }
   console.log(`\nShow the frames in the chat (${thumbs}/NN.jpg).`);
-  if (uploaded) console.log(`The pictures are uploaded; each frame's HTML for Storrito is in ${path.join(dir, "frames.edn")}: in the REPL (def frames <its content>), then check and schedule them as SKILL.md's steps 5 and 6 say.`);
+  if (uploaded) console.log(`The pictures are uploaded; each frame's HTML for Storrito is in ${path.join(dir, "frames.edn")}: in the REPL (def frames <its content>), then schedule them as SKILL.md's steps 5 and 6 say.`);
   else console.log(`Storrito could not be reached from this tool: upload ${path.join(dir, "frames")}/NN.png yourself (create-temp-blob-upload-url, curl -T) and put each url into its frame's html in frames.json (for {{BACKGROUND}}).`);
 }
 
