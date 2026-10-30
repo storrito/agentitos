@@ -1,6 +1,6 @@
 ---
 name: video-descriptions
-description: Write the texts that go with a video on every platform it is posted to (Instagram Reels and Stories, TikTok, YouTube Shorts and videos, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest, Snapchat Spotlight): captions, titles, descriptions, tags, alt texts, hashtags and mentions, each within the platform's length limit as the platform counts it (X's weighted count, YouTube's bytes), its hashtag and mention rules and what it shows before "more"; in one style chosen for the video (professional, friendly, funny, glamorous, inspirational, educational, bold, storytelling, minimal); shown on one overview page for the person to check. Use when someone wants captions, descriptions, hashtags or post texts for a video, or before posting a video anywhere.
+description: Write the texts that go with a video on every platform it is posted to (Instagram Reels, TikTok, YouTube Shorts and videos, Facebook, LinkedIn, X, Threads, Bluesky, Pinterest, Snapchat Spotlight): captions, titles, descriptions, tags, alt texts, hashtags and mentions, each within the platform's length limit as the platform counts it (X's weighted count, YouTube's bytes), its hashtag and mention rules and what it shows before "more"; in one style chosen for the video (professional, friendly, funny, glamorous, inspirational, educational, bold, storytelling, minimal); shown on one overview page for the person to check. Use when someone wants captions, descriptions, hashtags or post texts for a video, or before posting a video anywhere.
 license: MIT
 metadata:
   title: "Post texts for a video"
@@ -42,7 +42,7 @@ When there is a brand kit (`brand/DESIGN.md`), read its Voice and Tone, Audience
 
 ### 2. Where it goes
 
-The platforms the person named; else every platform `read` says the video fits (the tool leaves out what does not: a 16:9 video is no Short, a video over 2:20 does not go on X without Premium). Say in a sentence which ones you write for. An Instagram Story (`instagram-story`: stickers, no caption) only when they want a story. X: 280 weighted characters unless they say they have Premium (`"x": {"premium": true}`, then up to 25,000): ask only when a long X post is what they want.
+The platforms the person named; else every platform `read` says the video fits (the tool leaves out what does not: a 16:9 video is no Short, a video over 2:20 does not go on X without Premium). Say in a sentence which ones you write for. An Instagram Story has no texts: its link, hashtag or mention goes on it as a sticker with agentitos' story-stickers, not here. X: 280 weighted characters unless they say they have Premium (`"x": {"premium": true}`, then up to 25,000): ask only when a long X post is what they want.
 
 ### 3. The style: choose it yourself
 
@@ -80,8 +80,7 @@ One style for all platforms; the platform sets the register within it (LinkedIn 
     "threads": {"text": "…"},
     "bluesky": {"text": "…", "alt": "…"},
     "pinterest": {"title": "…", "description": "…", "alt": "…", "link": "https://…"},
-    "snapchat-spotlight": {"description": "…"},
-    "instagram-story": {"hashtag": "#…", "mentions": ["…"], "link": "https://…", "linkText": "…"}
+    "snapchat-spotlight": {"description": "…"}
   }
 }
 ```

@@ -18,7 +18,7 @@
 //   node tools/publish.mjs publish <dir> --to <target>[,<target>…] (--at <ISO time> | --now)
 //        [--texts descriptions/<name>] [--tiktok-privacy public|friends|followers|private]
 //        [--privacy public|unlisted|private] [--made-for-kids yes|no] [--thumbnail <image>]
-//        [--tiktok-cover <s>] [--ai-generated] [--stickers <layer.html>]
+//        [--tiktok-cover <s>] [--ai-generated] [--stickers <layer.html> | --no-stickers]
 //        [--paid] [--own-brand] [--no-feed] [--option [<target>:]key=value]…
 //        uploads the video once and schedules it on each target with its texts; safe to run again,
 //        nothing is posted twice; --stickers: story-stickers' layer of Instagram stickers (link,
@@ -40,7 +40,7 @@ const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
 const cmd = (rest) => `node ${self()} ${rest}`;
 
-const FLAGS = ["json", "hiccup", "now", "pad", "crop", "loudness", "ai-generated", "paid", "own-brand", "no-feed"];
+const FLAGS = ["json", "hiccup", "now", "pad", "crop", "loudness", "ai-generated", "paid", "own-brand", "no-feed", "no-stickers"];
 const VALUED = ["lang", "mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "tiktok-cover", "privacy", "made-for-kids", "thumbnail", "stickers", "wait"];
 const REPEATED = ["option"];
 
@@ -337,6 +337,9 @@ async function cmdPublish([dir], opts) {
     targets.push(t);
   }
   const isStory = (t) => t.procedure === "schedule-instagram-story";
+  if (layer && opts["no-stickers"]) fail("--stickers and --no-stickers exclude each other: one of them.");
+  // a Story is decided on: Instagram's own stickers (a link, a poll, …) or knowingly none
+  if (targets.some(isStory) && !layer && !opts["no-stickers"]) fail(`${targets.filter(isStory).map((t) => t.id).join(", ")} can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask the person which one fits, write it with agentitos' story-stickers (its SKILL.md: stickers/<name>/layer.html, checked by Storrito) and publish with --stickers stickers/<name>/layer.html; or with --no-stickers when the Story goes out without.`);
   if (layer && !targets.some(isStory)) fail(`--stickers go on Instagram Stories only, and none of ${wanted.join(", ")} is one: leave --stickers out, or add the account's story target.`);
 
   // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself (not

@@ -55,7 +55,6 @@ Compared 2026-10-23; `tools/lib/platforms.mjs` holds them with every source. Har
 | platform | id | fields: limit (how counted) | before "more" | hashtags | mentions | links | video |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Instagram Reels (every video post) | `instagram-reels` | caption 2,200 (UTF-16) | ~125 chars, 2 lines | **at most 5** (since Dec 2025), 3–5 | 20 | text only | 15 min (API), over 3 min not shown to non-followers |
-| Instagram Story | `instagram-story` | stickers: 1 hashtag, mentions, 1 link | – | 1 sticker | 20 | link sticker | 60 s per story |
 | TikTok | `tiktok` | caption 2,200 (UTF-16, API; app 4,000) | ~80 chars | at most 5 (in-app since 2025), 3–5 | – | text only | 10 min |
 | YouTube Shorts | `youtube-shorts` | title 100, description 5,000 **bytes**, tags 500 | title ~40–60 | over 60 → all ignored; 1–3 | – | not clickable | 3 min, 9:16 or 1:1 |
 | YouTube | `youtube` | title 100, description 5,000 **bytes**, tags 500; chapters | title ~60–70, description ~150 | over 60 → all ignored; 1–3 | – | clickable | 15 min, 12 h verified |

@@ -141,12 +141,12 @@ After the texts are agreed, ask what applies, all in one block (the example belo
 Then
 
 ```bash
-node <skill>/tools/publish.mjs publish publish/<name> --to <target>,<target> (--at 2026-10-29T18:00:00+01:00 | --now) [--tiktok-privacy …] [--tiktok-cover <s>] [--privacy …] [--made-for-kids no|yes] [--thumbnail <image>] [--option …] [--stickers stickers/<name>/layer.html]
+node <skill>/tools/publish.mjs publish publish/<name> --to <target>,<target> (--at 2026-10-29T18:00:00+01:00 | --now) [--tiktok-privacy …] [--tiktok-cover <s>] [--privacy …] [--made-for-kids no|yes] [--thumbnail <image>] [--option …] [--stickers stickers/<name>/layer.html | --no-stickers]
 ```
 
 It reads the texts from `descriptions/<name>/descriptions.json` (another folder: `--texts`), runs video-descriptions' check, checks every target's parameters before it uploads anything, uploads the video once and schedules each target. A ✗ names what is missing: fix it or ask, then run the same command again; what is done stays done, nothing is posted twice.
 
-`--stickers`: Instagram's stickers (a link, a poll, …) over an Instagram Story's video, the `layer.html` agentitos' story-stickers wrote and the person saw; only the Story targets get it. Never draw stickers into the video for this.
+`--stickers`: Instagram's stickers (a link, a poll, …) over an Instagram Story's video, the `layer.html` agentitos' story-stickers wrote and the person saw; only the Story targets get it. A Story target needs `--stickers` or `--no-stickers`: ask the person which sticker fits (a link when there is a page to go to; none is an answer too) before you publish. Never draw stickers into the video for this.
 
 `--now`: `status publish/<name> --wait 300` until the posts are out, then a table of account, status and link. A time: `status publish/<name>` shows them scheduled. Say it in one sentence, the table below; a failed post with its reason in plain words.
 

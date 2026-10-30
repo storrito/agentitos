@@ -61,27 +61,6 @@ export const PLATFORMS = [
     ],
   },
   {
-    id: "instagram-story", name: "Instagram Story", app: "Instagram", format: "Story (no caption: stickers)", aliases: ["story", "stories", "ig-story"], onlyNamed: true,
-    color: "#d62976", mark: "IG",
-    fields: {
-      hashtag: { label: "Hashtag sticker", kind: "text", max: 100, count: "utf16", carries: true, singleLine: true },
-      mentions: { label: "Mention stickers", kind: "mentions", maxItems: 20 },
-      link: { label: "Link sticker", kind: "url", max: 2048 },
-      linkText: { label: "Link sticker text", kind: "text", max: 30, count: "graphemes", singleLine: true },
-    },
-    hashtags: { max: 1, overSays: "one hashtag sticker shows one tag", best: [0, 1] },
-    mentions: { max: 20, ...IG_NAME },
-    links: "field",
-    video: { max: 60, over: "warn", maxSays: "a longer video is split into stories of 60 s", frames: ["9:16"] },
-    rules: [
-      "A story has no caption: the text is in the video or in stickers, one link sticker per story.",
-      "Up to 20 people mentioned per story, each gets a notification and a message.",
-      "Stickers stay inside the story's safe zone (agentitos' platform-zones).",
-    ],
-    basis: "official (Help Center, Graph API); the link sticker's text length is an estimate",
-    sources: ["https://help.instagram.com/218520165235356", "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media", "https://buffer.com/resources/how-to-add-link-to-instagram-story/"],
-  },
-  {
     id: "tiktok", name: "TikTok", app: "TikTok", format: "Video post", aliases: ["tt"],
     color: "#111111", mark: "TT",
     fields: {
@@ -348,7 +327,7 @@ export const platformById = (id) => {
   return PLATFORMS.find((p) => p.id === k || p.aliases?.includes(k));
 };
 
-// the platforms a video fits by its length and frame (stories only when named), and why the
+// the platforms a video fits by its length and frame (one marked onlyNamed only when named), and why the
 // others do not; X counts without Premium
 export function fitting(v) {
   const fits = [], unfit = [];
