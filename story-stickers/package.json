@@ -1,0 +1,12 @@
+{
+  "name": "story-stickers",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.15.0"
+  }
+}

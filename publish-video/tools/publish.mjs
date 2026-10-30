@@ -18,10 +18,11 @@
 //   node tools/publish.mjs publish <dir> --to <target>[,<target>…] (--at <ISO time> | --now)
 //        [--texts descriptions/<name>] [--tiktok-privacy public|friends|followers|private]
 //        [--privacy public|unlisted|private] [--made-for-kids yes|no] [--thumbnail <image>]
-//        [--tiktok-cover <s>] [--ai-generated]
+//        [--tiktok-cover <s>] [--ai-generated] [--stickers <layer.html>]
 //        [--paid] [--own-brand] [--no-feed] [--option [<target>:]key=value]…
 //        uploads the video once and schedules it on each target with its texts; safe to run again,
-//        nothing is posted twice
+//        nothing is posted twice; --stickers: story-stickers' layer of Instagram stickers (link,
+//        poll, …) over the video, on the Instagram Story targets
 //   node tools/publish.mjs status <dir> [--wait <s>]   each post's status and its link once it is out
 //   node tools/publish.mjs cancel <dir> [--to <target>,…]   takes scheduled posts back
 
@@ -40,7 +41,7 @@ const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : re
 const cmd = (rest) => `node ${self()} ${rest}`;
 
 const FLAGS = ["json", "hiccup", "now", "pad", "crop", "loudness", "ai-generated", "paid", "own-brand", "no-feed"];
-const VALUED = ["lang", "mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "tiktok-cover", "privacy", "made-for-kids", "thumbnail", "wait"];
+const VALUED = ["lang", "mode", "platforms", "start", "end", "to", "at", "texts", "tiktok-privacy", "tiktok-cover", "privacy", "made-for-kids", "thumbnail", "stickers", "wait"];
 const REPEATED = ["option"];
 
 function parse(args) {
@@ -231,7 +232,7 @@ async function needApi() {
 Do it with Storrito's procedures yourself (in rragent the REPL's storrito/<procedure> functions; elsewhere its MCP server or API, reference: https://storrito.com/documentation/api/v1/index.md):
   list-social-accounts {} names each account's postTypes and their procedure;
   create-temp-blob-upload-url {tempBlobUuid, contentType "video/mp4", contentLengthBytes}, then curl -sS -T <video> -H 'Content-Type: video/mp4' '<uploadUrl>';
-  per account the postType's procedure with html '<insta-story src="<temp-blob url>"></insta-story>' (schedule-instagram-story, schedule-instagram-reel, schedule-tiktok-post, schedule-social-post), or videoUrl (upload-youtube-video), a new UUID kept for retries, the texts of descriptions.json and the date.`);
+  per account the postType's procedure with html '<insta-story src="<temp-blob url>"></insta-story>' (schedule-instagram-story, schedule-instagram-reel, schedule-tiktok-post, schedule-social-post), or videoUrl (upload-youtube-video), a new UUID kept for retries, the texts of descriptions.json and the date; a Story with --stickers gets the lines of that layer.html inside its <insta-story>.`);
 }
 
 async function listTargets(api) {
@@ -317,6 +318,13 @@ async function cmdPublish([dir], opts) {
   const cover = opts["tiktok-cover"] != null ? Number(opts["tiktok-cover"]) : null;
   if (cover != null && !(cover >= 0 && cover < job.measured.duration)) fail(`--tiktok-cover is a moment of the video in seconds, from 0 to ${job.measured.duration.toFixed(1)}.`);
   if (opts.thumbnail && !fs.existsSync(opts.thumbnail)) fail(`There is no ${opts.thumbnail}.`);
+  // Instagram's stickers over a Story's video: the layer agentitos' story-stickers wrote and checked
+  let layer = "";
+  if (opts.stickers) {
+    if (!fs.existsSync(opts.stickers)) fail(`There is no ${opts.stickers}: agentitos' story-stickers writes it (stickers.mjs build).`);
+    layer = fs.readFileSync(opts.stickers, "utf8").trim();
+    if (!/<insta-[a-z-]+[\s>]/.test(layer) || /<insta-story[\s>]|<script/i.test(layer)) fail(`${opts.stickers} is no sticker layer: write it with agentitos' story-stickers (stickers.mjs build).`);
+  }
 
   const api = await needApi();
   const all = await listTargets(api);
@@ -328,6 +336,8 @@ async function cmdPublish([dir], opts) {
     if (why) fail(`${id}: ${why}.`);
     targets.push(t);
   }
+  const isStory = (t) => t.procedure === "schedule-instagram-story";
+  if (layer && !targets.some(isStory)) fail(`--stickers go on Instagram Stories only, and none of ${wanted.join(", ")} is one: leave --stickers out, or add the account's story target.`);
 
   // the texts: video-descriptions' descriptions.json, checked by video-descriptions itself (not
   // needed when every target is a Story, which publishes none)
@@ -361,9 +371,10 @@ async function cmdPublish([dir], opts) {
   const planFile = path.join(dir, "plan.json");
   const plan = fs.existsSync(planFile) ? readJson(planFile) : { posts: [] };
   const save = () => writeJson(planFile, plan);
-  const version = (params) => hash({ video: job.stamp, params });
+  // a Story with stickers is another post than one without, or one with other stickers
+  const version = (params, t) => hash({ video: job.stamp, params, ...(layer && isStory(t) ? { stickers: layer } : {}) });
   // a target already scheduled with another video or other texts: taken back first, never twice
-  const stale = planned.filter(({ t, params }) => plan.posts.some((p) => p.target === t.id && live(p) && p.version !== version(params)));
+  const stale = planned.filter(({ t, params }) => plan.posts.some((p) => p.target === t.id && live(p) && p.version !== version(params, t)));
   if (stale.length) fail(`${stale.map(({ t }) => t.id).join(", ")} already ${stale.length > 1 ? "have" : "has"} this video scheduled with other texts or settings. Take ${stale.length > 1 ? "them" : "it"} back with ${cmd(`cancel ${rel(dir)} --to ${stale.map(({ t }) => t.id).join(",")}`)}, then publish again.`);
 
   const before = plan.video?.uuid;
@@ -377,16 +388,16 @@ async function cmdPublish([dir], opts) {
     }
   } catch (e) { fail(`✗ ${e.message}`); }
   console.log(`${path.basename(job.video)} ${plan.video.uuid === before ? "was uploaded before" : `uploaded (${mb(plan.video.stamp.bytes)})`}.`);
-  const html = `<insta-story src="${plan.video.url}"></insta-story>`;
+  const htmlOf = (t) => `<insta-story src="${plan.video.url}">${layer && isStory(t) ? `\n${layer}\n` : ""}</insta-story>`;
 
   let failed = 0;
   for (const { t, params, notes } of planned) {
-    const v = version(params);
+    const v = version(params, t);
     let post = plan.posts.find((p) => p.target === t.id && p.version === v && !["canceled", "failed"].includes(p.status));
     if (post?.done) { console.log(`${t.id}: already ${post.status}${post.date && post.date !== "now" ? ` for ${post.date}` : ""}`); continue; }
     if (!post) { post = { target: t.id, label: `${t.label} · ${t.account}`, procedure: t.procedure, uuid: crypto.randomUUID(), version: v }; plan.posts.push(post); save(); }
     const proc = PROCEDURES[t.procedure];
-    const body = JSON.parse(JSON.stringify(params).replace('"{{HTML}}"', JSON.stringify(html)).replace('"{{VIDEO}}"', JSON.stringify(plan.video.url)).replace('"{{THUMBNAIL}}"', JSON.stringify(plan.thumbnail?.url || "")));
+    const body = JSON.parse(JSON.stringify(params).replace('"{{HTML}}"', JSON.stringify(htmlOf(t))).replace('"{{VIDEO}}"', JSON.stringify(plan.video.url)).replace('"{{THUMBNAIL}}"', JSON.stringify(plan.thumbnail?.url || "")));
     body[proc.uuid] = post.uuid;
     try {
       const res = await call(api, t.procedure, body, { timeout: proc.long ? 12 * 60000 : 5 * 60000 });
