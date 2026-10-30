@@ -1,6 +1,6 @@
 # transcribe
 
-The words of a recording (audio or video), each with its time, through [OpenRouter](https://openrouter.ai): the one transcription of agentitos. [captions](../captions/), [best-takes](../best-takes/), [video-descriptions](../video-descriptions/), [clips](../clips/) and [kinetic-lyrics](../kinetic-lyrics/) run its tool as a program instead of each keeping a copy that drifts.
+The words of a recording (audio or video), each with its time, through [OpenRouter](https://openrouter.ai): the one transcription of agentitos. [captions](../captions/), [best-takes](../best-takes/), [video-descriptions](../video-descriptions/), [clips](../clips/), [kinetic-lyrics](../kinetic-lyrics/), [launch-video](../launch-video/) and [screencast-cut](../screencast-cut/) run its tool as a program instead of each keeping a copy that drifts.
 
 > Agents: start with [`SKILL.md`](SKILL.md).
 

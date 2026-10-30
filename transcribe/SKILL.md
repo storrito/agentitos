@@ -1,6 +1,6 @@
 ---
 name: transcribe
-description: The words of a recording (audio or video), each with its time in seconds, through OpenRouter. By default ElevenLabs Scribe v2, word for word as spoken with "äh"s and noises marked, 20 ms timings, for cutting and captions; with --speakers Gemini 3.5 Transcribe, which also says who speaks (A, B, …), for interviews and podcasts. Use when the person wants a transcript, and as the transcription step of other skills (captions, best-takes, clips, kinetic-lyrics, video-descriptions): they run its tool instead of keeping their own.
+description: The words of a recording (audio or video), each with its time in seconds, through OpenRouter. By default ElevenLabs Scribe v2, word for word as spoken with "äh"s and noises marked, 20 ms timings, for cutting and captions; with --speakers Gemini 3.5 Transcribe, which also says who speaks (A, B, …), for interviews and podcasts. Use when the person wants a transcript, and as the transcription step of other skills (captions, best-takes, clips, kinetic-lyrics, launch-video, screencast-cut, video-descriptions): they run its tool instead of keeping their own.
 license: MIT
 metadata:
   title: "Transcribe"
