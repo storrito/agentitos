@@ -32,7 +32,7 @@ A sticker is never drawn into the picture or the video. Storrito gets the pictur
 
 ## 1. The stickers: a band, and flexbox in it
 
-Choose a **band** of the frame where the picture or the film has nothing that matters, all the time: no text, no subtitles, no face, no product, no picture-in-picture. In a film you make, plan the band with the scenes and keep it free for the whole length; in a picture or a video the person brings, find it on the picture or the sheet of its moments (step 4). Then write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one flexbox over the band, the stickers in it, the browser spaces them:
+Choose a **band** of the frame where the picture or the film has nothing that matters, all the time: only background may lie in it (a colour, a gradient, a photo, calm footage); no text, no subtitles, no graphic, logo, icon or SVG, no face, no product, no picture-in-picture, nothing that moves through it. In a film you make, plan the band with the scenes and keep it free for the whole length; in a picture or a video the person brings, find it on the picture or the sheet of its moments (step 4). Then write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one flexbox over the band, the stickers in it, the browser spaces them:
 
 ```html
 <div style="position:absolute;left:60px;right:60px;top:1350px;bottom:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:40px">
