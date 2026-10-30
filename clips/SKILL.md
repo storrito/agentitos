@@ -72,7 +72,7 @@ node <skill>/tools/clips.mjs prepare work/episode work/<k> <first>-<last> \
   [--hook "<hook>"] [--brand brand/DESIGN.md]
 ```
 
-It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is; B-roll or a photo is shown whole above the captions over a blurred copy, since a window would cut it apart; two who speak in a split screen, or in one shot while they talk back and forth, go one above the other), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
+It cuts the moment, frames it 9:16 on whoever speaks (a model watches the clip once and names the faces with their voices; footage that is already vertical stays as it is; B-roll or a photo is shown whole above the captions over a blurred copy, since a window would cut it apart; two who speak in a split screen, or in one shot while they talk back and forth, go one above the other), and hands it to best-takes: every word written down again, closer, "äh"s marked, the level measured, every pause over 0.4 s cut (`--pauses tight`), at every jump cut 12 % closer or back out, closer on a key word, never on a picture shown whole or two above each other (`--punch on`), and `work/<k>/takes/cut.json` as one keep of the whole moment. It prints the next command lines with best-takes' path (`<takes>` below). Then:
 
 1. Look at `work/<k>/framed.sheet.jpg`, every shot against the original: the footage left, the frame right, one row per shot as `prepare` lists them. What matters must be in the frame: both faces of a photo of two, both people of a split screen, the subject of the B-roll, the speaker. Cut off: `node <skill>/tools/clips.mjs reframe work/<k> --whole <second>` (the second of that shot, as listed); a speaker in a piece shown whole, or two above each other, who should be followed alone: `--follow <second>`. It costs nothing and keeps the edit; never `prepare` again for it.
 2. Read `work/<k>/takes/source/brief.md`. Fix misheard names in `cut.json` `"fixes"`; move the start of the keep past a stray "und", "also", "so", or the end to the last word of the payoff. The moment must still open cold and end clean.
@@ -88,6 +88,7 @@ Then show the list (title and length per clip) with buttons "They are good" and 
 | --- | --- |
 | "Start later / end earlier" | move the keep's ends in `cut.json`, build |
 | "The pauses are too tight" | `build … --pause 0.7` (still tight, only pauses over 0.7 s go) |
+| "No zooming" | `build … --punch off` |
 | "Another hook" / "no hook" | `build … --hook "…"` / `--hook ""` |
 | "Another caption style" | `captions … --style …` |
 | "The photo / the scene / the other person is cut off" | `reframe work/<k> --whole <second>`, build |

@@ -30,6 +30,10 @@
 //   --pauses picture|tight    a pause follows its picture (default: where it moves it stays,
 //                      muted, or plays faster), or every pause over --pause goes, whatever the
 //                      picture shows (tight: a talking head, a clip for a reel)
+//   --punch on|off     a jump cut inside a take goes in closer, or back out (default off): the
+//                      cut looks meant, and a key word of the captions lands closer; never where
+//                      source/still.json names the picture as one to leave whole
+//                      ({"01.mp4": [[from, to], …]}, seconds of that video)
 //   --hook "…"         a card over the start that says what the viewer gets (6 words or fewer,
 //                      one *word* in the brand's colour), until the first sentence ends;
 //                      --hook "" takes it out
@@ -57,7 +61,7 @@ import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { brief, shown } from "./brief.mjs";
 
-const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
+const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
 const FLAGS = ["off"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
@@ -94,12 +98,31 @@ function settings(dir, opts) {
   const kept = fs.existsSync(file) ? read(file) : {};
   const merged = { aspect: "source", fit: "cover", pauses: "picture", loudness: -14, fps: 30, ...kept, ...opts };
   if (!["picture", "tight"].includes(merged.pauses)) fail("--pauses is picture or tight.");
+  if (merged.punch !== undefined && !["on", "off"].includes(merged.punch)) fail("--punch is on or off.");
   // where the video goes, for its captions: a platform platform-zones does not know is not kept,
   // every later build would fail on it
   if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   // the pause from which a pause is cut: as given, else 1 s (picture) or TIGHT
   return { ...merged, pause: merged.pause ?? (merged.pauses === "tight" ? TIGHT : 1), final: merged.loudness, loudness: TAKE_LEVEL };
+}
+
+// how close each piece is: at a jump cut inside a take (the same video, a stretch left out) the
+// picture goes in by PUNCH or back out, in when the piece holds a key word of the captions; a
+// piece that follows on without a cut keeps the one before; a picture to leave whole stays out
+const PUNCH = 1.12;
+function punches(pieces, { highlight = [], still = {}, clips }) {
+  const keys = new Set(highlight);
+  let prev = null, scale = 1;
+  return pieces.map((p) => {
+    const whole = (still[clips[p.clip].file] || []).some(([a, b]) => p.in < b && p.out > a);
+    if (whole || p.mute || !p.words.length) { prev = p; scale = 1; return 1; }
+    const jump = prev && prev.clip === p.clip && !prev.mute && p.in - prev.out > 0.01;
+    if (jump) scale = p.words.some((i) => keys.has(i)) ? PUNCH : scale === 1 ? PUNCH : 1;
+    else if (!prev || prev.clip !== p.clip) scale = 1;
+    prev = p;
+    return scale;
+  });
 }
 
 // ------------------------------------------------------------------------------------- new
@@ -257,7 +280,11 @@ function cmdBuild(dir, opts) {
     if (s.brand && !brand) console.log(`  (no ${s.brand}: the hook in its own colour and font)`);
     hook = hookCard({ text: s.hook, until: hookUntil(r.words, r.duration), zones: z, brand, out });
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces: r.pieces, clips, dir, captions, hook });
+  // closer at the jump cuts (--punch on)
+  const still = fs.existsSync(source(dir, "still.json")) ? read(source(dir, "still.json")) : {};
+  const scales = s.punch === "on" ? punches(r.pieces, { highlight: cut.captions?.highlight, still, clips }) : r.pieces.map(() => 1);
+  const pieces = r.pieces.map((p, k) => ({ ...p, scale: scales[k] }));
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, hook });
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
     out: rel(out), width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
@@ -270,6 +297,7 @@ function cmdBuild(dir, opts) {
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   if (hook) console.log(`Hook: „${s.hook}“ until ${hookUntil(r.words, r.duration)} s`);
   if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
+  if (s.punch === "on") console.log(`Punch: ${scales.filter((v) => v > 1).length} of ${scales.length} pieces closer, at the jump cuts`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
 }
 

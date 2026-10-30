@@ -71,7 +71,8 @@ export function writeComposition(out, { title, lang, width, height, fit, fps, pi
         data-duration="${d}"
         data-media-start="${n(p.in)}"${p.rate && p.rate !== 1 ? `
         data-playback-rate="${+p.rate.toFixed(4)}"` : ""}
-        data-track-index="0"
+        data-track-index="0"${p.scale > 1 ? `
+        style="transform: scale(${p.scale}); transform-origin: 50% 32%"` : ""}
         playsinline
         ${sound}
       ></video>`;

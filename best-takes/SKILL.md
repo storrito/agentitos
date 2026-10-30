@@ -76,6 +76,7 @@ They say what is wrong; change `cut.json` (or a setting) and build again with th
 | "Start with …" | move that keep to the top |
 | "The pauses are too short / too long" | `--pause 1.5` (only pauses over 1.5 s are touched), or `"pauses": "keep"` on that keep (its pauses play as they are) |
 | "Tighter" / "faster, like a reel" | `--pauses tight`: every pause over 0.4 s goes (with `--pause 0.7` only those over 0.7 s), whatever the picture shows (a talking head; not for a demo whose waits show something) |
+| "More movement" / "zoom in at the cuts" | `--punch on`: at every jump cut the picture goes closer or back out, closer on a key word; `--punch off` takes it out |
 | "A hook at the start" | `--hook "Three words that promise"` (6 words or fewer, one `*word*` stands out): a card at the top until the first sentence ends; `--hook ""` takes it out |
 | "It looks as if no time passed" / "the wait is gone" | add the last word of the sentence that announces the wait to `"waits"` |
 | "That wait / that silence is too long" | it is a pause whose picture moves a little: look at it in `check`; drop it from its keep by ending the keep before it and starting the next after it |
