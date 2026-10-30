@@ -106,6 +106,8 @@ The filled frame is the same without the blurred `<img>`, the picture `style="po
 
 ## 3. Check
 
+One check, right before the person sees the Story: it gives the picture to show, every sticker's box and the safety net (a typo in an attribute, a band too small). Check again only after a change; with stickers in a flexbox over a free band, the first check usually finds nothing to fix.
+
 In the REPL (`eval`), with the layer's text:
 
 ```clojure
