@@ -23,16 +23,16 @@ There are no tools in this skill: you write the Story as HTML, a HyperFrames pre
 A sticker is never drawn into the picture or the video. Storrito gets the picture or the video and the stickers as its `<insta-…>` elements, lays them over it and gives them to Instagram as real stickers, so that a link opens and a poll counts. Storrito renders them with the same components the HyperFrames preview loads, so the preview is what the Story will look like.
 
 - **A picture** (a photo, a graphic the person brings): one Story frame, laid out in HTML (step 2), no rendering of your own. Several pictures: one frame each, in their order.
-- **A video**: rendered or brought without stickers, the stickers go over it; the person sees them over the whole video in a preview, and you check every moment (step 4), then publish (step 5).
+- **A video**: rendered or brought without stickers, the stickers go over it; the person sees them over the whole video in a preview, you make sure the band stays free (step 4), then publish (step 5).
 
 - A sticker shows for the whole Story, from the first to the last second. Place it where the picture or the film has nothing that matters: no text, no face, no product under it.
 - One sticker that asks for a tap (poll, question, quiz, slider, countdown) per Story gets the most answers; a link sticker can come with it.
 - A video is 1080×1920 and at most 60 s; a picture best 1080 px wide or more.
-- Do what was asked: one picture and a link make one frame with a link sticker. No text the person did not ask for, no extra frames, no invented captions; a line of text only when they want one, in their words.
+- A picture or a video the person brings: do what was asked. One picture and a link make one frame with a link sticker; no text they did not ask for, no extra frames, no invented captions; a line of text only when they want one, in their words. (A film you make for another skill follows that skill.)
 
 ## 1. The stickers: a band, and flexbox in it
 
-Choose a **band** of the frame where the picture or the film has nothing that matters, all the time: only background may lie in it (a colour, a gradient, a photo, calm footage); no text, no subtitles, no graphic, logo, icon or SVG, no face, no product, no picture-in-picture, nothing that moves through it. In a film you make, plan the band with the scenes and keep it free for the whole length; in a picture or a video the person brings, find it on the picture or the sheet of its moments (step 4). Then write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one flexbox over the band, the stickers in it, the browser spaces them:
+Choose a **band** of the frame where the picture or the film has nothing under it that the viewer must see or read, all the time: no text or subtitles, no face, no product, no logo, no picture-in-picture, no content. Background may lie behind the stickers (a colour, a gradient, a photo, calm footage), and so may texture and decorative motion. In a film you make, plan the band with the scenes and keep it free for the whole length; in a picture or a video the person brings, find it on the picture or the sheet of its moments (step 4). Then write `stickers/<name>/layer.html` (`<name>` a short name of the Story): one flexbox over the band, the stickers in it, the browser spaces them:
 
 ```html
 <div style="position:absolute;left:60px;right:60px;top:1350px;bottom:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:40px">
