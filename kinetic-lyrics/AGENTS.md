@@ -80,7 +80,7 @@ https://hyperframes.heygen.com/llms.txt
 - `index.html` — main composition (root timeline)
 - `compositions/` — sub-compositions referenced via `data-composition-src`
 - `meta.json` — project metadata (id, name)
-- `transcript.json` — whisper word-level transcript (if generated)
+- `transcript.json` — word-level transcript (if generated)
 
 ## Linting — ALWAYS RUN AFTER CHANGES
 

@@ -275,7 +275,7 @@ if (frameDir) fs.rmSync(frameDir, { recursive: true, force: true });
 const audio = plan.audio ? path.join(dir, plan.audio) : null;
 if (audio && fs.existsSync(audio)) {
   for (const { a, b } of voicedGaps(audio, plan.words))
-    add("warn", a, "transcript", `${(b - a).toFixed(1)} s of speech without words in the transcript (${mmss(a)}–${mmss(b)}) – missing passage? (tools/repair.mjs)`);
+    add("warn", a, "transcript", `${(b - a).toFixed(1)} s of speech without words in the transcript (${mmss(a)}–${mmss(b)}) – missing passage? (transcribe the clip again)`);
 }
 
 // ---------------------------------------------------------------- report

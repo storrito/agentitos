@@ -15,7 +15,7 @@
 //
 // <dir> may already exist (e.g. made by the harness the agent runs in); `new` only needs
 // <dir>/source/ to be free. Options are kept in source/settings.json for the next steps:
-//   --speakers N  --names "A=Anna,B=Ben"  --title "…"  --subtitle "…"  --hook "…"
+//   --names "A=Anna,B=Ben"  --title "…"  --subtitle "…"  --hook "…"
 //   --world cosmos|aurora|bokeh|neon|noir|editorial|geometry|slate|dusk|canopy|chalk|linen|mist  --aspect 9:16|1:1|4:5|16:9
 //   --colors "A=#ff5a36,B=#4fc3f7" (each speaker's colour; "" = the world's)  --cta "…"  --handle @name
 //   --platform reels,tiktok  where the short goes: the type and the hook keep clear of what those
@@ -32,7 +32,7 @@ import { readVariables } from "./variables.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["speakers", "names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "platform", "out"];
+const VALUED = ["names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "platform", "out"];
 
 function fail(message) {
   console.log(message);
@@ -92,7 +92,7 @@ function frameFootage(dir, s) {
 
 function buildArgs(dir, s) {
   const args = [source(dir, "transcript.json"), "--preset", "podcast", "--aspect", s.aspect,
-    "--audio", source(dir, "audio.wav"), "--diarize", s.speakers || "0"];
+    "--audio", source(dir, "audio.wav")];
   const framed = framedOf(dir, s), video = fs.existsSync(framed) ? framed : footage(dir);
   if (video) args.push("--video", video);
   for (const [k, flag] of [["names", "--speakers"], ["colors", "--colors"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
@@ -106,9 +106,8 @@ const README = `# source/
 
 What \`tools/short.mjs\` of kinetic-lyrics keeps for this short:
 
-- \`video.*\`, \`audio.wav\`: the clip; \`transcript.json\`: its words with their timings and,
-  transcribed through OpenRouter, who speaks them
-- \`transcript.speakers*.json\`: who speaks when, found on this machine when the transcript has no speakers
+- \`video.*\`, \`audio.wav\`: the clip; \`transcript.json\`: its words with their timings and
+  who speaks them
 - \`video.people.json\`: who sits where in the footage (Gemini, asked once), and
   \`framed-9x16.mp4\`: the footage cut to the short's frame, following who speaks
 - \`settings.json\`: the options of the builds
@@ -138,16 +137,12 @@ function brief(dir, opts) {
   const s = settings(dir, opts);
   if (node("build.mjs", ...buildArgs(dir, s), "--staging-brief", source(dir, "brief.md"), "--staging", source(dir, "staging.json")) !== 0)
     fail("The brief failed, see above.");
-  // who speaks: the transcript itself (OpenRouter) or the newest local diarization
-  const latest = fs.readdirSync(source(dir)).filter((f) => /^transcript(\.speakers.*)?\.json$/.test(f))
-    .map((f) => source(dir, f)).sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs).pop();
-  if (latest) {
-    const raw = JSON.parse(fs.readFileSync(latest, "utf8"));
-    const voices = {};
-    for (const w of Array.isArray(raw) ? raw : raw.words || []) if (w.speaker) voices[w.speaker] = (voices[w.speaker] || 0) + 1;
-    const list = Object.keys(voices).sort().map((k) => `${k} ${voices[k]} words`);
-    if (list.length) console.log(`Voices: ${list.join(", ")}. Name them with --names "A=…,B=…" (who speaks first is A).`);
-  }
+  // who speaks: the transcript itself
+  const raw = JSON.parse(fs.readFileSync(source(dir, "transcript.json"), "utf8"));
+  const voices = {};
+  for (const w of Array.isArray(raw) ? raw : raw.words || []) if (w.speaker) voices[w.speaker] = (voices[w.speaker] || 0) + 1;
+  const list = Object.keys(voices).sort().map((k) => `${k} ${voices[k]} words`);
+  if (list.length) console.log(`Voices: ${list.join(", ")}. Name them with --names "A=…,B=…" (who speaks first is A).`);
   console.log(`Read ${source(dir, "brief.md")} and write the staging into ${source(dir, "staging.json")}, then short.mjs build ${dir}.`);
 }
 
