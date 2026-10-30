@@ -38,4 +38,5 @@ Requirements: Node 20+, ffmpeg, the HyperFrames CLI (for the render), OpenRouter
 
 - A clip is only as good as its moment: a video full of "as we saw", "this slide" gives few clips and more ideas to record anew.
 - The framing follows faces and voices and shows B-roll, photos and split screens whole, smaller, above the captions; a picture in a picture is cut as one picture.
+- A subject that moves without speaking (a car, a player, an animal) is followed by [auto-reframe](../auto-reframe/) (CPU tracking, offline), not by this framing, which goes by faces and voices.
 - Only material the person may use.

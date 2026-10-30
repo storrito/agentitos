@@ -14,7 +14,7 @@ Before writing code for a job, look whether a skill here does it, and call its t
 | captions in a video | [captions](captions/) | `tools/captions.mjs build <words.json> <folder> --style … [--platform …]`, mount the clip it prints |
 | a brand's colours, fonts, logo, voice | [brand-kit](brand-kit/) | read `brand/DESIGN.md` of the working directory; without one, draft it with `tools/site.mjs <url> <dir>` (or story-from-link's `page.mjs`) and `tools/kit.mjs draft <dir> brand`, as story-from-link does |
 | the best take of each part of talking-to-camera recordings, without slips and "äh"s | [best-takes](best-takes/) | its tools, as its SKILL.md describes |
-| a wide video cropped to 9:16 or square, following one subject | [auto-reframe](auto-reframe/) | its tools |
+| a wide video cropped to 9:16 or square, following one subject that moves without speaking (a car, an athlete, a product), on the CPU, offline | [auto-reframe](auto-reframe/) | its tools; people talking go to clips' `tools/frame.mjs` |
 | a long video's words with speakers, its moments that stand alone as shorts, a moment cut out, footage framed 9:16 on whoever speaks | [clips](clips/) | `tools/episode.mjs fetch / moments / cut`, `tools/frame.mjs` |
 | a thumbnail and a short intro for a video | [thumbnail-and-intro](thumbnail-and-intro/) | its `job.json` and tools |
 | what an rragent bot did meanwhile (its messages, tools, waits) | [agent-timeline](agent-timeline/) | `tools/timeline.mjs` |

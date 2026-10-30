@@ -22,6 +22,8 @@ metadata:
 
 This is **cropping**, not outpainting: it follows one selected subject and discards the sides. It cannot keep several widely separated cars inside one narrow crop. It does not synthesize missing scenery, remove overlays, add subtitles or publish posts. Keep original aspect and perspective: never squeeze the video.
 
+People talking (a podcast, an interview, a talk) are not this skill's: agentitos' clips frames them on whoever speaks (`clips/tools/frame.mjs`, a model through OpenRouter that hears who speaks), shows B-roll whole and puts two speakers one above the other. This one is for a subject that moves without speaking (a car, an athlete, an animal, a product), on the CPU alone, offline.
+
 The generic path is CPU CSRT with a manually selected first box. Optional MobileNet-SSD corrections are **for cars only**. No network is used during tracking/rendering. An external VLM may provide a seed, but it is not needed or included.
 
 ## Setup
