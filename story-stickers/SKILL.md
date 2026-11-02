@@ -105,7 +105,8 @@ The person sees the Story in a HyperFrames preview with Storrito's real stickers
 Read `<skill>/references/preview.md` before writing the preview: the scene `compositions/story-stickers.html` (the lines of `layer.html` plus Storrito's components) and an `index.html` with what goes under the stickers (the picture's Story HTML or the video), the scene mounted over it as the root's first child, marked `data-preview-only`.
 
 - **A film you are making** is its own project: mount the scene into it at the start, so you design around the stickers.
-- Open the preview beside the chat (`:open "artifacts/<name>"`); a picture for the chat: `npx hyperframes snapshot --at 1 --no-end -o uploads/<name>-preview` in `composition/`.
+- **Several Stories** (several pictures, a test set, the frames of one Story): one project, each Story its own composition in `composition/<NN>-<slug>/` (`01`, `02`, … in posting order) with its own `index.html` and `compositions/story-stickers.html`, and delete `composition/index.html`: then the preview shows them side by side, each titled by its `<title>`. Never chain several Stories in one timeline.
+- Open the preview beside the chat (`:open "artifacts/<name>"`); a picture for the chat: `npx hyperframes snapshot --at 1 --no-end -o uploads/<name>-preview` in `composition/` (several Stories: in each `composition/<NN>-<slug>/`, to `uploads/<name>-<NN>`).
 - After a change of `layer.html`, copy its lines into the scene again.
 - rragent's `render` leaves `data-preview-only` elements out of a film's video; the HyperFrames CLI or Studio does not: there take the host out before the render.
 
