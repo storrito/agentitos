@@ -33,7 +33,7 @@ A folder with the sources and a `recording.json`:
  "files": ["phone-screen.webm", "screen.webm", "webcam.webm"]}
 ```
 
-The sources are `screen`, `webcam`, `phone` (the phone's camera), `phone-screen` and `audio` (the microphone alone), any of them; `started` is when each began, in milliseconds. When the person paused the recording, `pauses` lists when (`[{"from": …, "to": …}]`, milliseconds of the same clock): every source paused at once and the files leave that time out, so a source started after a pause starts that much sooner on the recording's clock.
+The sources are `screen`, `webcam`, `phone` (the phone's camera), `phone-screen` and `audio` (the microphone alone), any of them; `started` is when each began, in milliseconds. When the person paused the recording, `pauses` lists when (`[{"from": …, "to": …}]`, milliseconds of the same clock): every source paused at once and the files leave that time out, so a source started after a pause starts that much sooner on the recording's clock. The phone's camera holds a moment later, when the word reaches it; its own times are `phone-pauses`. This tool does not use them yet: after a pause the phone's camera can be off by that moment (up to a few seconds when its page missed the word), so watch its pieces after a pause.
 
 ## How it works
 
