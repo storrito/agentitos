@@ -1,8 +1,8 @@
 # Which stickers an account has
 
-Instagram does not offer every interactive sticker to every account: the quiz is missing for many, and a poll, question, emoji slider or countdown can be missing too. Storrito knows each account's stickers from Instagram and refuses a Story with one the account lacks, so a Story planned around it never goes out.
+Instagram does not offer every sticker to every account: the quiz is missing for many, and any other (a link, a poll, a mention, …) can be missing too. Storrito knows each account's stickers from Instagram and refuses a Story with one the account lacks, so a Story planned around it never goes out.
 
-Before a poll, quiz, question, emoji slider or countdown goes into a Story, ask Storrito in the REPL:
+Before a sticker goes into a Story, ask Storrito in the REPL:
 
 ```clojure
 (storrito/list-instagram-users {})
@@ -22,6 +22,8 @@ The accounts that count are the ones the Story may go to: the only one connected
   | `insta-question` | `insta-poll` with two to four likely answers |
   | `insta-emoji-slider` | `insta-poll` |
   | `insta-countdown` | the date as text in the Story, no sticker |
+  | `insta-mention`, `insta-hashtag`, `insta-location` | the @name, the #tag or the place as text in the Story |
+  | `insta-link` | nothing replaces it (never "link in bio" text): say the Story then has no way to the page, and offer it without the link |
 
   The other sticker has another size: make sure it still fits where the first one was meant to go.
 - **Some lack it**: keep it. When you ask for the accounts (publishing), offer only the ones that have it, with a small line naming the others and why ("@soul.globe has no quiz sticker"). A video goes out through publish-video, whose account block lists them all: leave the `instagram/<account>/story` targets of the accounts that lack it out of `--to`, and say why in that line. A second version without the sticker for those only when the person asks.
