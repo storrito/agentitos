@@ -6,8 +6,10 @@
 // as timelapses, the results held long enough to see them. Step by step, in one folder; made for
 // agents: each step prints what to do next.
 //
-//   node tools/screencast.mjs new <dir> <recording-folder>   the sources into <dir>/source/: on
-//                                     one clock, the voice cleaned, where each picture moves
+//   node tools/screencast.mjs new <dir> <recording-folder> [<recording-folder> …]   the sources
+//                                     into <dir>/source/: on one clock, the voice cleaned, where
+//                                     each picture moves; several recordings one after the other
+//                                     (sessions); run again after it was cut off, it goes on
 //   node tools/screencast.mjs words <dir> <words.json>      the words of source/voice.m4a, as
 //                                     rragent's transcribe tool wrote them (`words: true`)
 //   node tools/screencast.mjs transcribe <dir>              or the words by ElevenLabs Scribe
@@ -54,7 +56,7 @@ import { probe, prepare, samples, hyperframes, clock, seconds } from "./lib/medi
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from "./lib/voice.mjs";
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, moving, focus, MOVING, ACTIVE } from "./lib/activity.mjs";
-import { plan, range } from "./lib/cut.mjs";
+import { plan, range, timeRange } from "./lib/cut.mjs";
 import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
@@ -147,12 +149,19 @@ const loadEnv = (file) => {
 };
 
 // ------------------------------------------------------------------------------------- new
-async function cmdNew(dir, folder, opts) {
-  if (!dir || !folder) fail("Usage: screencast.mjs new <dir> <recording-folder>");
+// One recording into `sdir`: every source converted (resumed: a source converted before, its
+// activity counts beside it, is not converted again), on one clock, the voice cleaned, where each
+// picture moves. Writes sdir/sources.json last; returns it with the activity.
+async function prepareRecording(sdir, folder, s, opts) {
+  const at = (file = "") => path.join(sdir, file);
   const facts = path.join(folder, "recording.json");
   if (!fs.existsSync(facts)) fail(`${folder} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
-  if (fs.existsSync(source(dir, "sources.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
-  fs.mkdirSync(source(dir), { recursive: true });
+  if (fs.existsSync(at("sources.json"))) {
+    const meta = read(at("sources.json"));
+    if (path.resolve(meta.folder) !== path.resolve(folder)) fail(`${rel(sdir)} holds ${meta.folder}, not ${folder}: give the recordings in the order of the first run, or start over: rm -r ${rel(path.dirname(sdir))}`);
+    return { meta, activity: read(at("activity.json")) };
+  }
+  fs.mkdirSync(sdir, { recursive: true });
   const rec = read(facts);
   const names = (rec.files || fs.readdirSync(folder)).map((f) => path.basename(f).replace(/\.[^.]+$/, ""))
     .filter((k) => [...VIDEO, "audio"].includes(k) && fs.readdirSync(folder).some((f) => f.startsWith(`${k}.`)));
@@ -161,14 +170,14 @@ async function cmdNew(dir, folder, opts) {
   const t0 = Math.min(...names.map((k) => started[k]).filter(Number.isFinite));
   // the recorder's pauses (clock times) are not in the files: a source that began after one starts that much sooner
   const paused = (ms) => (rec.pauses || []).reduce((t, p) => t + (Number.isFinite(p.from) && Number.isFinite(p.to) ? Math.max(0, Math.min(ms, p.to) - Math.max(t0, p.from)) : 0), 0);
-  const s = settings(dir, opts);
 
   // every source converted at once, its activity measured from the same decoding
-  console.log(`${names.length} sources, preparing them all at once …`);
   const sources = {}, grids = {}, counted = {}, done = {}, lengths = {};
+  const todo = names.filter((k) => !fs.existsSync(at(`${k}.prepared.json`)));
+  console.log(`${folder}: ${names.length} sources${todo.length < names.length ? `, ${names.length - todo.length} converted before` : ""}, preparing ${todo.length ? todo.join(", ") : "nothing"} …`);
   // how far each source is, every ten seconds, for the person watching the chat
   const ticker = setInterval(() => {
-    console.log(`  preparing: ${names.map((k) => `${k} ${Math.min(99, Math.round((100 * (done[k] || 0)) / (lengths[k] || 1)))} %`).join(", ")}`);
+    console.log(`  preparing: ${todo.map((k) => `${k} ${Math.min(99, Math.round((100 * (done[k] || 0)) / (lengths[k] || 1)))} %`).join(", ")}`);
   }, 10000);
   await Promise.all(names.map(async (k) => {
     const from = path.join(folder, fs.readdirSync(folder).find((f) => f.startsWith(`${k}.`)));
@@ -176,18 +185,34 @@ async function cmdNew(dir, folder, opts) {
     lengths[k] = p0.duration;
     const file = p0.video ? `${k}.mp4` : `${k}.m4a`;
     if (p0.video) grids[k] = grid(p0);
-    const frames = p0.video ? differ(grids[k]) : null;
-    if (frames) frames.filter = grids[k].filter;
-    const p = await prepare(from, source(dir, file), { fps: s.fps, frames, progress: (t) => { done[k] = t; } });
-    if (frames) counted[k] = frames.counts;
+    let p;
+    if (todo.includes(k)) {
+      const frames = p0.video ? differ(grids[k]) : null;
+      if (frames) frames.filter = grids[k].filter;
+      // into a part file first: a conversion cut off (the bash's time ran out) leaves nothing half
+      const part = at(`${k}.part${path.extname(file)}`);
+      p = await prepare(from, part, { fps: s.fps, frames, progress: (t) => { done[k] = t; } });
+      if (frames) {
+        const all = new Uint16Array(frames.counts.length * grids[k].cells);
+        frames.counts.forEach((n, i) => all.set(n, i * grids[k].cells));
+        fs.writeFileSync(at(`${k}.counts`), Buffer.from(all.buffer));
+      }
+      fs.renameSync(part, at(file));
+      write(at(`${k}.prepared.json`), p);
+    } else p = read(at(`${k}.prepared.json`));
+    if (p0.video) {
+      const raw = fs.readFileSync(at(`${k}.counts`)), cells = grids[k].cells;
+      const all = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+      counted[k] = Array.from({ length: all.length / cells }, (_, i) => all.subarray(i * cells, (i + 1) * cells));
+    }
     const offset = Number.isFinite(started[k]) && Number.isFinite(t0) ? (started[k] - t0 - paused(started[k])) / 1000 : 0;
     sources[k] = { file, from: rel(from), offset: +offset.toFixed(3), duration: p.duration, width: p.width, height: p.height, video: p.video, audio: p.audio };
   })).finally(() => clearInterval(ticker));
   for (const k of names) {
     const p = sources[k];
     if (p.audio) {
-      const env = envelope(samples(source(dir, p.file)));
-      fs.writeFileSync(source(dir, `${k}.env`), Buffer.from(env.buffer));
+      const env = envelope(samples(at(p.file)));
+      fs.writeFileSync(at(`${k}.env`), Buffer.from(env.buffer));
       p.clarity = clarity(env);
     }
     console.log(`${k}: ${clock(p.duration, false)}${p.video ? `, ${p.width}×${p.height}` : ", sound"}, starts at ${p.offset.toFixed(2)} s${p.audio ? `, its microphone ${p.clarity} dB over the room` : ""}`);
@@ -201,10 +226,10 @@ async function cmdNew(dir, folder, opts) {
   const mic = opts.mic || [...heard].sort((a, b) => (a === "audio" ? -1 : b === "audio" ? 1 : 0)
     || sources[b].clarity - sources[a].clarity || prefer.indexOf(a) - prefer.indexOf(b))[0];
   if (!sources[mic]?.audio) fail(`--mic ${mic}: no such source with sound (${heard.join(", ")})`);
-  const mainEnv = loadEnv(source(dir, `${mic}.env`));
+  const mainEnv = loadEnv(at(`${mic}.env`));
   for (const k of heard) {
     if (k === mic) continue;
-    const a = align(mainEnv, sources[mic].offset, loadEnv(source(dir, `${k}.env`)), sources[k].offset);
+    const a = align(mainEnv, sources[mic].offset, loadEnv(at(`${k}.env`)), sources[k].offset);
     sources[k].sync = a.score;
     if (a.moved) console.log(`${k}: laid onto the voice, ${a.moved > 0 ? "+" : ""}${a.moved} s (match ${a.score})`);
     else if (a.score < 0.5) console.log(`${k}: its sound does not match the voice (${a.score}): its start stays as recorded`);
@@ -214,14 +239,14 @@ async function cmdNew(dir, folder, opts) {
   // the voice on the recording's timeline: the main microphone from 0, cleaned (rumble and hiss out)
   const voice = "voice.m4a";
   const delay = Math.round(sources[mic].offset * 1000);
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", source(dir, sources[mic].file), "-vn",
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", at(sources[mic].file), "-vn",
     "-af", `${delay > 0 ? `adelay=${delay}:all=1,` : ""}highpass=f=80,afftdn=nf=-30:tn=1,lowpass=f=15000`,
-    "-ac", "1", "-ar", "48000", "-c:a", "aac", "-b:a", "160k", source(dir, voice)], { stdio: ["ignore", "ignore", "inherit"] });
-  const vp = probe(source(dir, voice));
-  const venv = envelope(samples(source(dir, voice)));
-  fs.writeFileSync(source(dir, "voice.env"), Buffer.from(venv.buffer));
-  write(source(dir, "voice.loudness.json"), loudnessBlocks(source(dir, voice)));
-  console.log(`voice: ${mic}'s microphone, cleaned → ${rel(source(dir, voice))}`);
+    "-ac", "1", "-ar", "48000", "-c:a", "aac", "-b:a", "160k", at(voice)], { stdio: ["ignore", "ignore", "inherit"] });
+  const vp = probe(at(voice));
+  const venv = envelope(samples(at(voice)));
+  fs.writeFileSync(at("voice.env"), Buffer.from(venv.buffer));
+  write(at("voice.loudness.json"), loudnessBlocks(at(voice)));
+  console.log(`voice: ${mic}'s microphone, cleaned → ${rel(at(voice))}`);
 
   // where each picture moves, from the counts the conversion streamed, on the aligned clock; on a
   // screen, not where it shows the webcam's own picture (a preview of the camera in the page)
@@ -234,12 +259,96 @@ async function cmdNew(dir, folder, opts) {
     const moved = activity[k].filter((x) => x.b).length / Math.max(1, activity[k].length);
     console.log(`${k}: moves in ${Math.round(moved * 100)} % of the time`);
   }
+  write(at("activity.json"), activity);
+  // the recording's length: its voice, or a picture that runs longer
+  const duration = Math.max(vp.duration, ...Object.values(sources).map((x) => x.offset + x.duration));
+  const meta = { folder: rel(folder), t0, mic, voice, duration: +duration.toFixed(3), sources };
+  write(at("sources.json"), meta);
+  return { meta, activity };
+}
+
+// Several recordings (sessions, one after the other) on one clock: each source's sessions joined
+// without encoding again (each starts where its session does; a session without it shows its last
+// picture, which no keep should show), the voice joined with silence where a session's voice is
+// shorter, the activity moved by each session's start. The joined sources carry no sound of their
+// own: the voice is the sound.
+function joinRecordings(dir, parts) {
+  const sessions = [];
+  let from = 0;
+  for (const [i, { meta }] of parts.entries()) {
+    sessions.push({ n: i + 1, folder: meta.folder, dir: `session-${i + 1}`, from: +from.toFixed(3), duration: meta.duration });
+    from += meta.duration;
+  }
+  const total = from;
+  const names = [...new Set(parts.flatMap(({ meta }) => Object.keys(meta.sources)))].filter((k) => parts.some(({ meta }) => meta.sources[k].video));
+  const sources = {}, activity = {};
+  for (const k of names) {
+    const having = sessions.filter((x, i) => parts[i].meta.sources[k]?.video).map((x) => ({ ...x, src: parts[x.n - 1].meta.sources[k] }));
+    const first = having[0].src;
+    // a size other than the first session's: that session's picture scaled into it
+    const files = having.map((h) => {
+      const file = path.join(source(dir, h.dir), h.src.file);
+      if (h.src.width === first.width && h.src.height === first.height) return file;
+      const fitted = path.join(source(dir, h.dir), `${k}.fitted.mp4`), part = path.join(source(dir, h.dir), `${k}.fitted.part.mp4`);
+      if (!fs.existsSync(fitted)) {
+        execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-an", "-vf", `scale=${first.width}:${first.height}:force_original_aspect_ratio=decrease,pad=${first.width}:${first.height}:-1:-1,setsar=1`,
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", "30", part], { stdio: ["ignore", "ignore", "inherit"] });
+        fs.renameSync(part, fitted);
+      }
+      return fitted;
+    });
+    // each file lasts up to where the next session's piece of this source begins
+    const begins = having.map((h) => h.from + h.src.offset);
+    const list = having.map((h, j) => `file '${path.resolve(files[j])}'${j + 1 < having.length ? `\nduration ${(begins[j + 1] - begins[j]).toFixed(3)}\noutpoint ${(begins[j + 1] - begins[j]).toFixed(3)}` : ""}`);
+    fs.writeFileSync(source(dir, `${k}.list.txt`), list.join("\n") + "\n");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", source(dir, `${k}.list.txt`), "-an", "-c", "copy", "-movflags", "+faststart", source(dir, `${k}.mp4`)], { stdio: ["ignore", "ignore", "inherit"] });
+    const p = probe(source(dir, `${k}.mp4`));
+    sources[k] = { file: `${k}.mp4`, from: having.map((h) => h.src.from).join(" + "), offset: +begins[0].toFixed(3), duration: p.duration, width: first.width, height: first.height,
+      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), sessions: having.map((h) => h.n) };
+    // a recording scaled into the first one's size sits in bars: its boxes moved into them, its
+    // grid cells (on its own frame) left out
+    const into = (src) => {
+      if (src.width === first.width && src.height === first.height) return null;
+      const f = Math.min(first.width / src.width, first.height / src.height);
+      const w = (src.width * f) / first.width, h = (src.height * f) / first.height;
+      return (b) => b && [(1 - w) / 2 + b[0] * w, (1 - h) / 2 + b[1] * h, (1 - w) / 2 + b[2] * w, (1 - h) / 2 + b[3] * h].map((v) => +v.toFixed(3));
+    };
+    activity[k] = having.flatMap((h) => {
+      const move = into(h.src);
+      return (parts[h.n - 1].activity[k] || []).map(({ g, r, ...x }) => ({ ...x, t: +(x.t + h.from).toFixed(2),
+        ...(move ? { b: move(x.b) } : g ? { g, r } : {}) }));
+    });
+  }
+  // the voice: each session's padded to its length, one after the other
+  const voices = sessions.map((x) => ["-i", path.join(source(dir, x.dir), "voice.m4a")]).flat();
+  const graph = sessions.map((x, i) => `[${i}:a]apad=whole_dur=${x.duration},atrim=duration=${x.duration}[a${i}]`).join(";") + ";" + sessions.map((_, i) => `[a${i}]`).join("") + `concat=n=${sessions.length}:v=0:a=1[out]`;
+  execFileSync("ffmpeg", ["-v", "error", "-y", ...voices, "-filter_complex", graph, "-map", "[out]", "-ac", "1", "-ar", "48000", "-c:a", "aac", "-b:a", "160k", source(dir, "voice.m4a")], { stdio: ["ignore", "ignore", "inherit"] });
+  const venv = envelope(samples(source(dir, "voice.m4a")));
+  fs.writeFileSync(source(dir, "voice.env"), Buffer.from(venv.buffer));
+  write(source(dir, "voice.loudness.json"), loudnessBlocks(source(dir, "voice.m4a")));
   write(source(dir, "activity.json"), activity);
+  const meta = { folder: sessions.map((x) => x.folder).join(" + "), t0: parts[0].meta.t0, mic: parts[0].meta.mic, voice: "voice.m4a",
+    duration: +probe(source(dir, "voice.m4a")).duration.toFixed(3), sessions, sources };
+  console.log(`\n${sessions.length} recordings one after the other, ${clock(total)}: ${sessions.map((x) => `${x.n} ${x.folder} from ${clock(x.from)}`).join(", ")}`);
+  return meta;
+}
 
-
-  const meta = { folder: rel(folder), t0, mic, voice, duration: vp.duration, sources };
-  write(source(dir, "sources.json"), meta);
+async function cmdNew(dir, folders, opts) {
+  if (!dir || !folders.length) fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …]");
+  if (fs.existsSync(source(dir, "sources.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
+  for (const f of folders) if (!fs.existsSync(path.join(f, "recording.json"))) fail(`${f} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
+  fs.mkdirSync(source(dir), { recursive: true });
+  const s = settings(dir, opts);
+  let meta;
+  if (folders.length === 1) meta = (await prepareRecording(source(dir), folders[0], s, opts)).meta;
+  else {
+    const parts = [];
+    for (const [i, f] of folders.entries()) parts.push(await prepareRecording(source(dir, `session-${i + 1}`), f, s, opts));
+    meta = joinRecordings(dir, parts);
+    write(source(dir, "sources.json"), meta);
+  }
   await faceOfWebcam(dir, meta);
+  const voice = meta.voice;
   const r = await route();
   console.log(`\nNext, the words of ${rel(source(dir, voice))}: with rragent's transcribe tool (file ${rel(source(dir, voice))}, words: true, names: the accounts, products and people that may be said), then ${cmd(`words ${rel(dir)} <its .words.json>`)}` +
     (r ? `; or ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe through ${r.via}, no name correction)` : ""));
@@ -271,7 +380,9 @@ function keepWords(dir, list, asr) {
     if (last && w.start - last[1] < 0.3) last[1] = w.end; else said.push([w.start, w.end]);
   }
   const lufs = loudness(blocks, said);
-  const words = kept.map((w, i) => ({ i, clip: 1, ...w }));
+  // the recording each word is in, when there are several (new with more than one folder)
+  const sessionAt = (t) => meta.sessions ? meta.sessions.filter((x) => x.from <= t + 0.05).at(-1)?.n ?? 1 : undefined;
+  const words = kept.map((w, i) => ({ i, clip: 1, ...(meta.sessions ? { session: sessionAt(w.start) } : {}), ...w }));
   write(source(dir, "words.json"), { asr, clips: { 1: { n: 1, file: meta.voice, duration: meta.duration, lufs } }, words });
   duck(dir, words);
   fs.writeFileSync(source(dir, "brief.md"), brief(dir));
@@ -339,10 +450,10 @@ function sentences(words) {
   for (const w of words) {
     if (w.kind === "event") continue;
     const prev = cur?.words.at(-1);
-    if (!cur || (prev && (w.start - prev.end > 1.2 || /[.!?]$/.test(prev.text)))) { cur = { words: [] }; out.push(cur); }
+    if (!cur || (prev && (w.start - prev.end > 1.2 || /[.!?]$/.test(prev.text) || w.session !== prev.session))) { cur = { words: [] }; out.push(cur); }
     cur.words.push(w);
   }
-  return out.map((c) => ({ from: c.words[0].i, to: c.words.at(-1).i, start: c.words[0].start, end: c.words.at(-1).end, text: c.words.map((w) => w.text).join(" ") }));
+  return out.map((c) => ({ from: c.words[0].i, to: c.words.at(-1).i, start: c.words[0].start, end: c.words.at(-1).end, session: c.words[0].session, text: c.words.map((w) => w.text).join(" ") }));
 }
 
 // the view that shows what happens in a span: the source that moves most, else the face
@@ -364,13 +475,14 @@ function brief(dir) {
   const lines = [];
   lines.push(`# The screencast of ${meta.folder}
 
-${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources).map(([k, s]) => `**${k}** (${s.video ? `${s.width}×${s.height}` : "sound"}, from ${s.offset.toFixed(2)} s${s.sync != null ? `, laid onto the voice: match ${s.sync}` : ""})`).join(", ")}. The voice is ${meta.mic}'s microphone, cleaned.
+${meta.sessions ? `${meta.sessions.length} recordings one after the other: ${meta.sessions.map((x) => `**${x.n}** ${x.folder} from ${clock(x.from)}`).join(", ")}. A keep never runs from one into the next: the cut goes between them. ` : ""}${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources).map(([k, s]) => `**${k}** (${s.video ? `${s.width}×${s.height}` : "sound"}, from ${s.offset.toFixed(2)} s${s.sync != null ? `, laid onto the voice: match ${s.sync}` : ""})`).join(", ")}. The voice is ${meta.mic}'s microphone, cleaned.
 
 ## A good screencast cut
 
 - **The result first** as a short hook (\`"hook": true\`, kept in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out; as short as the story allows.
 - **\`zoom\`: what must be readable** while the words are about it, \`[x0, y0, x1, y1]\` in 0–1 off the sheet's grid (the field typed in, the answer, the list picked from). The build makes it as large as the safe area allows and shows the screen around it; when what matters moves, split the keep at that word.
 - **\`view\`** only where it is not the screen: \`phone-screen\` when the words are about the phone, \`face\` for an opening line or the last words.
+- **What happens without words** (a click, a box ticked, a result coming in) is a keep by its time: \`{"at": "7:01.5-7:06", "zoom": [...]}\`, the picture alone; the table's "moves" and the sheets show where.
 - **Waits** (an agent working, an upload): the last word before them in \`waits\`, played fast. **Results** ("posted", "there it is") get \`"hold": 2.5\` and show the proof. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s.
 
 ## What is said, sentence by sentence
@@ -379,7 +491,13 @@ Word numbers in brackets; "moves": how much each source changes during the sente
 
 | words | time | ${Object.keys(activity).join(" | ")} | said |
 | --- | --- | ${Object.keys(activity).map(() => "---").join(" | ")} | --- |`);
+  let session;
   for (const s of list) {
+    if (meta.sessions && s.session !== session) {
+      session = s.session;
+      const x = meta.sessions[session - 1];
+      lines.push(`| | **${clock(x.from)}** | ${Object.keys(activity).map(() => "").join(" | ")} | **recording ${x.n}** (${x.folder}) |`);
+    }
     const lv = Object.keys(activity).map((k) => bars(busy(activity[k], s.start, s.end)));
     lines.push(`| ${s.from}–${s.to} | ${clock(s.start)}–${clock(s.end)} | ${lv.join(" | ")} | ${s.text.replace(/\|/g, "/")} |`);
   }
@@ -411,19 +529,20 @@ function cmdPropose(dir) {
   // (sheets), not a guess of this tool
   const keep = [], waits = [];
   for (const s of sentences(words)) {
-    keep.push({ words: `${s.from}-${s.to}`, ...(CLAIM.test(s.text) ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text });
+    keep.push({ words: `${s.from}-${s.to}`, ...(CLAIM.test(s.text) ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text, session: s.session });
   }
   // a gap between two keeps in which a picture moves is a wait
   for (let k = 0; k + 1 < keep.length; k++) {
     const a = keep[k].end, b = keep[k + 1].start;
-    if (b - a < 3) continue;
+    // no wait across into another recording: the cut goes there
+    if (b - a < 3 || keep[k].session !== keep[k + 1].session) continue;
     const moves = Object.keys(activity).some((x) => x !== "webcam" && busy(activity[x], a, b, MOVING) > 0.15);
     // the last word said, not an "äh" after it: plan() looks for a wait after a word
     const [first, last] = range(keep[k].words);
     const said = words.slice(first, last + 1).filter((w) => w.kind === "word").at(-1);
     if (moves && said) waits.push(said.i);
   }
-  const proposal = { keep: keep.map(({ start, end, text, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
+  const proposal = { keep: keep.map(({ start, end, text, session, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
   write(path.join(dir, "proposal.json"), proposal);
   console.log(`${keep.length} keeps, every sentence; ${waits.length} waits where a screen moves between two:\n`);
   for (const k of keep) console.log(`  [${k.words}]${k.hold ? ` hold ${k.hold} s` : ""}  ${clock(k.start)}  ${k.text.length > 100 ? `${k.text.slice(0, 70)} … ${k.text.slice(-25)}` : k.text}`);
@@ -471,11 +590,11 @@ function cmdSheets(dir, opts) {
   console.log(`From ${rel(cutFile)}: ${keep.length} keeps. Read each sheet with its words, then set the keep's "zoom" (and "view" where it is not the screen) in cut.json.\n`);
   for (const [k, kp] of keep.entries()) {
     if (only && !only.has(k)) continue;
-    const r = range(kp.words);
-    if (!r) continue;
-    const said = words.slice(r[0], r[1] + 1).filter((w) => w.kind === "word");
-    if (!said.length) continue;
-    const from = said[0].start, to = said.at(-1).end;
+    const r = range(kp.words), t = kp.words === undefined ? timeRange(kp.at) : null;
+    if (!r && !t) continue;
+    const said = r ? words.slice(r[0], r[1] + 1).filter((w) => w.kind === "word") : [];
+    if (r && !said.length) continue;
+    const from = t ? t[0] : said[0].start, to = t ? t[1] : said.at(-1).end;
     // the moments: the first and the last always, then where a screen changes almost whole and the
     // middle, each at least 0.8 s from those taken, five at most
     const changes = order.filter((x) => x !== "webcam").flatMap((x) => scenes(activity[x] || [], from, to)).map((t) => t + 0.3);
@@ -527,9 +646,9 @@ function cmdSheets(dir, opts) {
     const res = spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs, "-filter_complex", parts.join(";"), "-map", "[out]", "-frames:v", "1", "-q:v", "4", file], { encoding: "utf8" });
     if (res.status || !fs.existsSync(file)) fail(`✗ the sheet of keep ${k + 1}: ${(res.stderr || "").trim().split("\n").pop() || "ffmpeg made no image"}`);
     const text = said.map((w) => w.text).join(" ");
-    console.log(`keep ${k + 1} [${kp.words}] ${clock(from)}–${clock(to)}${kp.view ? ` (now: view ${kp.view}${kp.zoom ? `, zoom ${JSON.stringify(kp.zoom)}` : ""})` : ""} → ${rel(file)}`);
+    console.log(`keep ${k + 1} ${t ? `at ${kp.at} (no words)` : `[${kp.words}]`} ${clock(from)}–${clock(to)}${kp.view ? ` (now: view ${kp.view}${kp.zoom ? `, zoom ${JSON.stringify(kp.zoom)}` : ""})` : ""} → ${rel(file)}`);
     console.log(`  rows ${order.join(", ")}; columns at ${moments.map((t) => clock(t)).join(", ")} of the recording`);
-    console.log(`  "${text.length > 220 ? `${text.slice(0, 160)} … ${text.slice(-50)}` : text}"`);
+    if (text) console.log(`  "${text.length > 220 ? `${text.slice(0, 160)} … ${text.slice(-50)}` : text}"`);
     if (changes.length) console.log(`  the screen changes almost whole at ${changes.map((t) => clock(t)).join(", ")}: a part before and after may need its own view or zoom (split the keep at the word)`);
   }
 }
@@ -632,7 +751,7 @@ async function cmdBuild(dir, opts) {
     }, []);
   };
   const { env, thr, blocks } = voiceOf(dir);
-  const voices = { 1: { env, thr, blocks, duration: meta.duration } };
+  const voices = { 1: { env, thr, blocks, duration: meta.duration, sessions: meta.sessions } };
   // the speed: as asked, or by how fast the person speaks in the cut (pace())
   let r = plan(words, cut, { ...s, speed: 1 }, voices, moves);
   const talk = pace(r.pieces, words);
@@ -657,7 +776,8 @@ async function cmdBuild(dir, opts) {
     return cropFor(f, sources[src], content, { maxWidth });
   };
   const span = (k) => {
-    const ps = r.pieces.filter((p) => p.keep === k && !p.mute);
+    const own = r.pieces.filter((p) => p.keep === k);
+    const ps = own.some((p) => !p.mute) ? own.filter((p) => !p.mute) : own.filter((p) => p.silent);
     return ps.length ? [Math.min(...ps.map((p) => p.in)), Math.max(...ps.map((p) => p.out))] : null;
   };
   // the view and the zoom are the agent's decision per keep (sheets): without a view a keep shows
@@ -795,7 +915,7 @@ async function cmdBuild(dir, opts) {
       view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
-      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}) }) })),
+      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   });
   const views = {};
@@ -853,7 +973,7 @@ function cmdCheck(dir) {
   e.pieces.forEach((p, k) => {
     const where = `${p.view}${z(p)}, recorded at ${clock(p.in)}`;
     if (p.shows) {
-      console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${p.hold ? "held after the words, the voice faded" : p.wait ? "a wait" : "the picture moves"}, ${(p.out - p.in).toFixed(1)} s${p.rate > 1 ? ` ×${p.rate} in ${p.duration.toFixed(1)} s` : ""})   (${where})`);
+      console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${p.silent ? "a keep by its time" : p.hold ? "held after the words, the voice faded" : p.wait ? "a wait" : "the picture moves"}, ${(p.out - p.in).toFixed(1)} s${p.rate > 1 ? ` ×${p.rate} in ${p.duration.toFixed(1)} s` : ""})   (${where})`);
       return;
     }
     console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  [${p.words[0]}–${p.words[1]}] ${text(p.words[0], p.words[1])}   (${where}, ${p.gain >= 0 ? "+" : ""}${p.gain} dB)`);
@@ -946,13 +1066,13 @@ function cmdAt(dir, when) {
   if (k < 0) fail(`The cut is ${clock(e.duration)} long.`);
   const p = e.pieces[k], keep = cut.keep[p.keep] || { words: "?", why: "cut.json changed since the last build: build again" };
   const said = e.words.filter((w) => Math.abs((w.start + w.end) / 2 - t) < 2.5).map((w) => w.text).join(" ");
-  console.log(`${clock(t)} of the cut: piece ${k + 1} of keep ${p.keep + 1} ([${keep.words}]${keep.why ? `, ${keep.why}` : ""})`);
+  console.log(`${clock(t)} of the cut: piece ${k + 1} of keep ${p.keep + 1} (${keep.words === undefined && keep.at ? `at ${keep.at}` : `[${keep.words}]`}${keep.why ? `, ${keep.why}` : ""})`);
   console.log(`  plays ${clock(p.in)}–${clock(p.out)} of the recording${p.rate > 1 ? ` at ×${p.rate}` : ""}, from ${clock(p.start)} to ${clock(p.start + p.duration)} of the cut`);
   const rec = p.in + (t - p.start) * (p.rate || 1);
   const crop = p.segments?.find((g) => rec >= g.in && rec < g.out)?.crop || p.crop;
   console.log(`  view ${p.view}${crop ? `, zoomed to [${crop.join(", ")}]` : ""}${p.segments ? ` (the screen changes within it: ${p.segments.length} parts, each zoomed for itself)` : ""}`);
   if (p.words) console.log(`  words ${p.words[0]}–${p.words[1]}: ${words.slice(p.words[0], p.words[1] + 1).filter((w) => w.kind === "word").map((w) => w.text).join(" ")}`);
-  else console.log(`  no words: ${p.hold ? "held after the keep's words, the voice faded" : p.wait ? "a wait" : "the picture moving in a pause"}`);
+  else console.log(`  no words: ${p.silent ? "a keep by its time (\"at\")" : p.hold ? "held after the keep's words, the voice faded" : p.wait ? "a wait" : "the picture moving in a pause"}`);
   if (said) console.log(`  heard around it: …${said}…`);
   const prev = e.pieces[k - 1], next = e.pieces[k + 1];
   console.log(`  before: ${prev ? `keep ${prev.keep + 1}, ${prev.view}` : "the start"} · after: ${next ? `keep ${next.keep + 1}, ${next.view}` : "the end"}`);
@@ -1050,7 +1170,7 @@ function cmdFinish(dir, file) {
 // -------------------------------------------------------------------------------------- main
 const [command, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
-if (command === "new") await cmdNew(pos[0], pos[1], opts);
+if (command === "new") await cmdNew(pos[0], pos.slice(1), opts);
 else if (command === "words") cmdWords(pos[0], pos[1]);
 else if (command === "transcribe") await cmdTranscribe(pos[0]);
 else if (command === "propose") cmdPropose(pos[0]);
@@ -1061,4 +1181,4 @@ else if (command === "captions") await cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
 else if (command === "sheets") cmdSheets(pos[0], opts);
-else fail("Usage: screencast.mjs new <dir> <recording-folder> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
+else fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …] | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
