@@ -10,7 +10,7 @@ Before a poll, quiz, question, emoji slider or countdown goes into a Story, ask 
 
 Each account's `unsupportedStickers` lists the `<insta-…>` elements Instagram does not offer it: `[]` means it has them all. Without the key Storrito does not know the account's stickers yet; go on, Storrito lets them through. An account is the same in `list-social-accounts`, where you offer the accounts: its `instagramUsername`.
 
-The accounts that count are the ones the Story may go to: the only one connected, else the ones the person named. Several and none named yet: as "Some lack it" below, decided when the accounts are asked.
+The accounts that count are the ones the Story may go to: the only one connected, else the ones the person named. Several and none named yet: as "Some lack it" below, decided when the accounts are asked; should every one of them lack it, as "All of them lack it".
 
 - **None of them lacks the sticker**: go on and say nothing about it.
 - **All of them lack it**: leave it out. Say so in one sentence ("Instagram does not offer @soul.globe the quiz sticker.") and offer the nearest sticker the account has, as a button that puts it in at once, with "Without it" beside it and a line that they may type something else:
