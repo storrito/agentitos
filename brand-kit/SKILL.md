@@ -1,6 +1,6 @@
 ---
 name: brand-kit
-description: Build a brand kit from a company's website, agreed with the person in the chat (logo, colours, fonts, voice, audience, social profiles), written as a DESIGN.md (Google's open format, which HyperFrames and other design tools read) with the logo and font files beside it, and shown as a brand board. Every story, reel or video an agent makes for the brand then takes its look and voice from it. Use when someone wants their brand set up, their brand guidelines written down, or a consistent look for their social media.
+description: Build a brand kit (logo, colours, fonts, voice, audience, social profiles) from a company's website, agreed in the chat, saved as DESIGN.md with a brand board, for a consistent brand look.
 license: MIT
 metadata:
   title: "Brand kit"
@@ -16,7 +16,7 @@ metadata:
 
 # brand-kit
 
-`<skill>` below is the folder this file is in. Run the tools as `node <skill>/tools/…` from your own working directory; every path you pass is yours. Never change the files in `<skill>`. Full reference: [README.md](README.md).
+`<skill>` is this file's folder. Run the tools as `node <skill>/tools/…` from your own working directory; every path you pass is yours. Never change the files in `<skill>`. Full reference: [README.md](README.md).
 
 ## Setup (once per machine)
 
@@ -24,13 +24,13 @@ metadata:
 cd <skill> && npm install
 ```
 
-It needs Node 20+ and Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH), and the network. When something is missing, say so in one sentence instead of installing it yourself.
+Needs Node 20+, Chrome (`CHROME`, or `google-chrome`/`chromium` on the PATH) and the network. Something missing: say so in one sentence, never install it yourself.
 
 ## The main use: a brand kit from a website, all in the chat
 
-The person pastes their website. You read it, draft the kit, agree on it with them one thing at a time, then show the brand board. The kit is the folder `brand/` of your working directory: `brand/DESIGN.md` and the files it names. It stays: whatever this agent makes later takes its look and voice from it. Keep every message short: one or two sentences and a hiccup block (see "UI in the chat"). Speak the person's language. Decide small things yourself and say what you decided.
+The person pastes their website. Read it, draft the kit, agree on it one thing at a time, then show the brand board. The kit is `brand/` in your working directory: `brand/DESIGN.md` and the files it names. It stays: whatever this agent makes later takes its look and voice from it. Every message: one or two sentences in the person's language and a hiccup block (see "UI in the chat"). Decide small things yourself and say what you decided.
 
-Your files: `work/site/` for what the site shows; `brand/` for the kit; the board `artifacts/brand-board.html` is the only artifact; pictures for the chat go to `uploads/brand/`.
+Files: `work/site/` for what the site shows, `brand/` for the kit; the only artifact is the board `artifacts/brand-board.html`; pictures for the chat go to `uploads/brand/`.
 
 ### 1. The website
 
@@ -41,18 +41,18 @@ node <skill>/tools/site.mjs <url> work/site
 node <skill>/tools/kit.mjs draft work/site brand
 ```
 
-The first reads the start page and the about page: the logo candidates, the colours by where the site uses them, the fonts and where their files come from, the social profiles, the site's own words (`work/site/words.txt`) and how it looks on a desktop and a phone (`home.png`, `mobile.png`; look at them). The second writes the first `brand/DESIGN.md`; what needs the person is marked "To agree with the person".
+`site.mjs` reads the start and about pages into `work/site/`: logo candidates, colours, fonts and where their files come from, social profiles, the site's own words (`words.txt`) and screenshots on desktop and phone (`home.png`, `mobile.png`; look at them). `draft` writes the first `brand/DESIGN.md`; what needs the person is marked "To agree with the person".
 
 ### 2. Agree, one thing per message
 
-Each message holds one question with your proposal (each has its own picture to look at: the logos, the swatches, the fonts, the voice), buttons for the likely answers, and "Take your suggestions for the rest" (they may want it quick: then decide the rest yourself, say what you decided, and go to step 3). Write every answer into `brand/DESIGN.md` at once: its front matter for the tokens, the section of the same name for the prose, replacing the "To agree" line.
+Each message: one question with your proposal and its picture (logos, swatches, fonts, voice), buttons for the likely answers, and "Take your suggestions for the rest" (then decide the rest yourself, say what you decided, and go to step 3). Write every answer into `brand/DESIGN.md` at once: tokens in the front matter, prose in the section of the same name, replacing its "To agree" line. Read `<skill>/references/design-md.md` before the first edit of `brand/DESIGN.md`: its sections, keys and tokens.
 
-1. **The logo.** `node <skill>/tools/kit.mjs logos work/site` prints tiles of the candidates. Their pick: copy its file to `brand/` (`brand/logo.svg`, `.png` …) and set `logo.primary` to it. None fits, or none was found: they attach theirs (best a PNG with a transparent ground, or an SVG). A logo that only works on light grounds may get a light version for dark ones, `logo.on-dark`; without one, the stories show a one-coloured logo in white and any other on a white chip.
-2. **The colours.** `node <skill>/tools/kit.mjs show brand` prints the colours as swatches. The site's other candidates are in `work/site/site.json` (`look.ranked`): offer them as swatches too. `primary` is the brand colour (covers, calls to action), `secondary` and `tertiary` the accents, `surface` the light ground, `on-surface` the text on it, `on-primary` the text on the brand colour. Write hex values in quotes (`primary: "#E20000"`).
+1. **The logo.** `node <skill>/tools/kit.mjs logos work/site` prints tiles of the candidates. Their pick: copy its file to `brand/` (`brand/logo.svg`, `.png` …) and set `logo.primary` to it. None fits or none was found: they attach theirs (best a PNG with a transparent ground, or an SVG). A logo that only works on light grounds may get a light version for dark ones, `logo.on-dark`; without one, stories show a one-coloured logo in white and any other on a white chip.
+2. **The colours.** `node <skill>/tools/kit.mjs show brand` prints the colours as swatches; offer the site's other candidates (`look.ranked` in `work/site/site.json`) as swatches too. `primary` is the brand colour (covers, calls to action), `secondary` and `tertiary` the accents, `surface` the light ground, `on-surface` the text on it, `on-primary` the text on the brand colour. Hex values in quotes (`primary: "#E20000"`).
 3. **The fonts.** `node <skill>/tools/kit.mjs fonts brand` makes a picture of them for the chat. A font from the site's own files is the brand's web font: say so, and offer the closest Google font beside it (`--try "Jost"`), since a Google font works everywhere. Their pick: `typography` names the family exactly as Google Fonts spells it, `fonts` says where it comes from (`Jost: google`).
-4. **The voice.** Read `work/site/words.txt` and propose how the brand speaks: three adjectives; for German whether it says du or Sie (and whether Du is capitalized); emoji or not; short or long sentences; and a table "We say / We never say" of two to four rows, the "We say" side in the site's own words. Ask whether it sounds like them.
+4. **The voice.** From `work/site/words.txt`, propose how the brand speaks: three adjectives; for German du or Sie (and whether Du is capitalized); emoji or not; short or long sentences; a table "We say / We never say" of two to four rows, the "We say" side in the site's own words. Ask whether it sounds like them.
 5. **The audience and the pictures.** Who the brand talks to and what they care about; what its pictures show and how (from the site's pictures and words). Two sentences each, in one message.
-6. **Social.** The profiles the site links (in the front matter under `social`), the brand's own hashtag if it has one, and the calls to action it likes (the site's buttons are in `words.txt`). Then the do's and don'ts: two or three of each, from what they told you.
+6. **Social.** The profiles the site links (front matter `social`), the brand's own hashtag if it has one, the calls to action it likes (the site's buttons are in `words.txt`). Then two or three do's and don'ts each, from what they told you.
 
 ### 3. The board
 
@@ -61,24 +61,23 @@ node <skill>/tools/kit.mjs check brand
 node <skill>/tools/kit.mjs board brand --lang de
 ```
 
-`check` lists what is wrong (✗: fix it) or still open (⚠), with the DESIGN.md format's own linter. `board` puts the brand board beside the chat (logo on light, brand and dark grounds, the colours with their contrast, the type, three story frames in the brand's look, the voice) and a picture of it into `uploads/brand/`; `--lang` is `de` or `en`. Show the picture in the chat and ask whether the kit is right. A change: edit `brand/DESIGN.md`, `check`, `board` again.
+`check` lists what is wrong (✗: fix it) or still open (⚠). `board` puts the brand board beside the chat and a picture of it into `uploads/brand/`; `--lang` is `de` or `en`. Show the picture and ask whether the kit is right. A change: edit `brand/DESIGN.md`, `check`, `board` again.
 
 ### 4. Done
 
-Say in two sentences where the kit is (`brand/DESIGN.md`) and what uses it: every story, reel or video this agent makes from now on, and any tool that reads DESIGN.md (HyperFrames takes it as its design spec). When the skill `story-from-link` is beside this one (`<skill>/../story-from-link/SKILL.md`), offer to make the first story from a link right away: when they want it, read that SKILL.md and follow it from its first step; `brand/` is already there.
-
-## DESIGN.md
-
-The front matter holds the tokens, the body the prose, in these sections and this order: Overview, Colors, Typography, Shapes, Logo, Imagery, Voice and Tone, Audience, Social, Do's and Don'ts. Beside the format's own keys (`version`, `name`, `description`, `colors`, `typography`, `rounded`) a kit has `logo` (`primary`, `on-dark`: files beside DESIGN.md), `fonts` (`<family>: google`, or a list of `{file, weight}`), `uppercase` (the typography tokens set in capitals) and `social` (`instagram: handle`, `website: url` …). Typography tokens: `headline-display` (big titles), `headline-lg`, `body-md` (text), `label-md` (labels and buttons), each with `fontFamily`, `fontWeight`, and when it matters `lineHeight` and `letterSpacing` (`-0.02em`).
+Say in two sentences where the kit is (`brand/DESIGN.md`) and what uses it: every story, reel or video this agent makes from now on, and any tool that reads DESIGN.md (HyperFrames takes it as its design spec). When `story-from-link` is beside this skill (`<skill>/../story-from-link/SKILL.md`), offer to make the first story from a link right away; if they want it, read that SKILL.md and follow it from its first step (`brand/` is already there).
 
 ## UI in the chat
 
-Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/brand-board.html"` shows the board. Links and pictures point at `https://…`, `artifacts/…` or `uploads/…`. An `input` is a checkbox or a radio button; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block. There are no text fields: for a name or a colour they type.
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/brand-board.html"` shows the board. Links and pictures point at `https://…`, `artifacts/…` or `uploads/…`. An `input` is a checkbox or a radio button; `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block. No text fields: they type a name or a colour.
 
-- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else (a colour as `#RRGGBB`, a font by its name). Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
-- The button that moves on gets `:class "primary"`; buttons that are alternative answers stay plain.
+- One question per block: buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else (a colour as `#RRGGBB`, a font by its name).
+- Several picks from one list: checkboxes and one button.
+- Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out: ask again for that group only. One question after the other only when it depends on the answer before, or on work the person should see first.
+- Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- The button that moves on gets `:class "primary"`; alternative answers stay plain.
 - A swatch is a `button` with `:style {:background "#E20000" :width "44px" :height "44px" :border-radius "50%"}`; tiles for a choice of logos as `kit.mjs logos` prints them. Text stays on the page's ground, never on a colour.
-- Never put a token, an id the person does not need or a raw error into the chat.
+- Never a token, an id the person does not need or a raw error in the chat.
 
 The voice:
 
