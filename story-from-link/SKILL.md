@@ -53,7 +53,7 @@ Read `<skill>/references/story-json.md` (the fields of every frame kind and stic
 - **Facts from the page only**: prices, dates and numbers exactly as written there; never an invented quote, rating or number.
 - In the page's language, unless the person wants another.
 - The page's pictures, or ones the person attaches. In rragent the `image` tool can make a picture a frame needs; then give that frame `"aiImage": true`, so that Instagram labels the story as made with AI.
-- A poll or question sticker in the middle gets taps, which get the story shown to more people. At most one interactive sticker per frame. Before a poll, quiz, question, slider or countdown goes into `story.json`, read `<stickers>/references/accounts.md` and do what it says: Instagram does not offer each of them to every account, and Storrito refuses a story with one the account lacks (its `insta-emoji-slider` is `slider` here).
+- A poll or question sticker in the middle gets taps, which get the story shown to more people. At most one interactive sticker per frame. Before the stickers go into `story.json`, the link sticker too, read `<stickers>/references/accounts.md` and do what it says: Instagram does not offer every sticker to every account, and Storrito refuses a story with one the account lacks (its `insta-emoji-slider` is `slider` here).
 
 ```json
 {
@@ -81,7 +81,7 @@ The build also uploads each frame's picture to Storrito (the machine's gateway, 
 
 Ask everything with more than one answer in one block (see "UI in the chat"): the accounts as checkboxes, the time and Facebook as radio groups, one button.
 
-- **The account.** `(storrito/list-social-accounts {})`: accounts whose `postTypes` have the procedure `schedule-instagram-story` take stories; `facebookDestinations` are their Facebook pages. A story with an interactive sticker goes only to the accounts that have it (`<stickers>/references/accounts.md`). One account: take it. None, or one marked `disconnected`: `(storrito/create-connect-link {…})` makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
+- **The account.** `(storrito/list-social-accounts {})`: accounts whose `postTypes` have the procedure `schedule-instagram-story` take stories; `facebookDestinations` are their Facebook pages. A story goes only to the accounts that have its stickers (`<stickers>/references/accounts.md`). One account: take it. None, or one marked `disconnected`: `(storrito/create-connect-link {…})` makes a link (`[:a {:href …} "Connect Instagram"]`); ask them to say when they are done, before the rest.
 - **The time.** The likely ones ("Now", "Today 18:00", "Tomorrow 9:00"), none ticked; they may type another. Ask for the time zone only when you cannot tell (German speaks for Europe/Berlin).
 - **Facebook**, only when the account has a Facebook page: whether the story goes there too.
 - Instead of scheduling they may want a **draft**: it lands in Storrito's gallery, where they can change it in the editor and schedule it themselves.
