@@ -41,6 +41,14 @@ A new skill that needs one of these says so in its SKILL.md and README ("needs a
 - Node 20+ and ffmpeg; no npm packages unless a skill cannot do without them.
 - Models through OpenRouter only: `OPENROUTER_API_KEY`, else the Sprites gateway's connection (the README's "Models"). The gateway takes requests of up to about 7 MB: sound as MP3 at 48 kbit/s in pieces of five minutes.
 
+## What goes into a SKILL.md
+
+Only what a strong model cannot know or infer: our facts (Storrito's API and zones, the tools' commands and outputs, measured numbers, names), recipes it would get wrong (text on a circle, a punch-in that keeps the face in place), and the flow the person sees. Never generic craft or process a model already has: how to plan, write code, debug, check its own work, or design "well". A rule stays only while a run without it goes wrong.
+
+- The flow the person sees is steps, never left to the model: which questions and in what order, a reference or sketch frames before building, a preview before a render, what needs their yes. Models do not ask for these on their own.
+- A bot takes the body of its SKILL.md as its definition, which is in its context on every turn: detail one step needs goes into `references/`. Name the file in that step, as "read `references/<file>.md` before …": models skim other files, and a reference only mentioned somewhere is never opened.
+- A new bot reads the frontmatter of every SKILL.md to find its job: the `description` is one sentence of what the skill does and when it fits.
+
 ## Decisions belong to the agent, mechanics to the tools
 
 Tools do what can be measured (sync, cuts between words, levels, sizes, what the apps cover). What needs judgement (which part of a screen to show, where to zoom, what to keep, the hook) the agent decides from what the tool gives it to look at (frames, contact sheets, words); a tool's heuristic is a suggestion it can ask for, never a silent default.
