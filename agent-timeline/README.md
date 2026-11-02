@@ -25,7 +25,9 @@ The bot is the one whose folder the recording, or the working directory, lies in
 - **answered**: the agent's text;
 - **working**: from each message to the agent's last answer or call before the next message.
 
-`--json` writes `{bot, from, to, events: [{t, kind, …}], working: [{from, to, message}], out: [{t, what}]}`, times in seconds from the span's start.
+`--json` writes `{bot, from, to, events: [{t, kind, …}], working: [{from, to, message}], pauses: [{t, seconds}], out: [{t, what}]}`, times in seconds from the span's start.
+
+**Pauses**: when the person paused the recorder (`pauses` in `recording.json`, clock times), the files leave the paused time out, and so do the timeline's times: they are the files' times. What happened during a pause is marked ⏸ (`paused: true`) and stands at the moment the pause began; `pauses` says where each was and how long it lasted.
 
 ## With screencast-cut
 
