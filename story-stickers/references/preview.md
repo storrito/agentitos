@@ -45,4 +45,6 @@ and an `index.html` with what goes under the stickers, the scene mounted over it
 </html>
 ```
 
+Several Stories: these two files per Story in `artifacts/<name>/composition/<NN>-<slug>/` (the paths in them stay relative to that folder, the snapshot runs there), a `<title>` naming the Story, and no `composition/index.html`.
+
 `data-has-audio="true"` when the video has sound, else `muted`. A film you are making is its own project: mount the scene into it at the start, so that you design around the stickers. After a change of `layer.html`, copy its lines into the scene again. rragent's `render` leaves elements marked `data-preview-only` out of a film's video; the HyperFrames CLI or Studio does not: there take the host out before the render.
