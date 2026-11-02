@@ -59,6 +59,8 @@ Choose a **band** where the picture or film never shows anything the viewer must
 | `insta-mention`, `insta-hashtag` | `username`, `hashtag` | `design`: default, gray, rainbow |
 | `insta-location` | `location` | `design`: default, gray, black, orange, rainbow |
 
+Before a poll, quiz, question, emoji slider or countdown goes into the layer, read `<skill>/references/accounts.md`: Instagram does not offer each of them to every account, and Storrito refuses a Story with one the account lacks.
+
 **The look.** Never ask before the first picture: choose yourself, name it in half a sentence with the picture, offer the likely others as buttons under it.
 
 - `default` (the white pill) unless the sticker sits on something very bright: then `black` (link, location) or `gray`; `rainbow` only for playful content.
@@ -125,7 +127,7 @@ Show the moments or the map in the chat with the preview and say in one sentence
 
 ## 5. Publish
 
-Only after the person's yes. Ask what has more than one answer in one block (see "UI in the chat"): the account (`(storrito/list-social-accounts {})`: those whose `postTypes` have `schedule-instagram-story`; one: take it; none or `disconnected`: `(storrito/create-connect-link {…})` makes a link), the time ("Now", "Today 18:00", "Tomorrow 9:00"; the time zone only when you cannot tell), Facebook when the account has a page (`facebookDestinations`), or a draft in Storrito's gallery instead.
+Only after the person's yes. Ask what has more than one answer in one block (see "UI in the chat"): the account (`(storrito/list-social-accounts {})`: those whose `postTypes` have `schedule-instagram-story`, and with a poll, quiz, question, emoji slider or countdown only those that have it, see `references/accounts.md`; one: take it; none or `disconnected`: `(storrito/create-connect-link {…})` makes a link), the time ("Now", "Today 18:00", "Tomorrow 9:00"; the time zone only when you cannot tell), Facebook when the account has a page (`facebookDestinations`), or a draft in Storrito's gallery instead.
 
 **A picture**: Storrito's procedures in the REPL. Give each frame and account a UUID and remember it first, so a retry posts nothing twice (Storrito answers a known UUID with the post it has):
 
@@ -139,7 +141,7 @@ Only after the person's yes. Ask what has more than one answer in one block (see
       plan)
 ```
 
-- Storrito refuses what would make the post fail (a link without https, a poll with one answer, an unknown username …) with what to change. Its `warnings` (stickers on each other, CSS it cannot show, an unknown attribute) come with a post already scheduled: `cancel-instagram-story`, fix, schedule again with new UUIDs.
+- Storrito refuses what would make the post fail (a link without https, a poll with one answer, an unknown username, a sticker the account lacks: `<skill>/references/accounts.md`) with what to change. Its `warnings` (stickers on each other, CSS it cannot show, an unknown attribute) come with a post already scheduled: `cancel-instagram-story`, fix, schedule again with new UUIDs.
 - Several frames go out in their order with the same time. Facebook too: `:shareToFacebook true :facebookDestinationId <id>`; a picture made with AI: `:aiGenerated true`.
 - A draft: `(storrito/create-draft {:html html :draftUuid uuid :name "<name>" :folderName "Stories"})`.
 - `(storrito/status-instagram-story {:storyPostUuid uuid})` (`status-draft`) once rendered, usually within a minute; `cancel-instagram-story` (`delete-draft`) takes it back. Tell the person in one sentence what is scheduled when and where.
