@@ -156,7 +156,11 @@ async function prepareRecording(sdir, folder, s, opts) {
   const at = (file = "") => path.join(sdir, file);
   const facts = path.join(folder, "recording.json");
   if (!fs.existsSync(facts)) fail(`${folder} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
-  if (fs.existsSync(at("sources.json"))) return { meta: read(at("sources.json")), activity: read(at("activity.json")) };
+  if (fs.existsSync(at("sources.json"))) {
+    const meta = read(at("sources.json"));
+    if (path.resolve(meta.folder) !== path.resolve(folder)) fail(`${rel(sdir)} holds ${meta.folder}, not ${folder}: give the recordings in the order of the first run, or start over: rm -r ${rel(path.dirname(sdir))}`);
+    return { meta, activity: read(at("activity.json")) };
+  }
   fs.mkdirSync(sdir, { recursive: true });
   const rec = read(facts);
   const names = (rec.files || fs.readdirSync(folder)).map((f) => path.basename(f).replace(/\.[^.]+$/, ""))
@@ -285,10 +289,11 @@ function joinRecordings(dir, parts) {
     const files = having.map((h) => {
       const file = path.join(source(dir, h.dir), h.src.file);
       if (h.src.width === first.width && h.src.height === first.height) return file;
-      const fitted = path.join(source(dir, h.dir), `${k}.fitted.mp4`);
+      const fitted = path.join(source(dir, h.dir), `${k}.fitted.mp4`), part = path.join(source(dir, h.dir), `${k}.fitted.part.mp4`);
       if (!fs.existsSync(fitted)) {
         execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-an", "-vf", `scale=${first.width}:${first.height}:force_original_aspect_ratio=decrease,pad=${first.width}:${first.height}:-1:-1,setsar=1`,
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", "30", fitted], { stdio: ["ignore", "ignore", "inherit"] });
+          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", "30", part], { stdio: ["ignore", "ignore", "inherit"] });
+        fs.renameSync(part, fitted);
       }
       return fitted;
     });
@@ -300,7 +305,19 @@ function joinRecordings(dir, parts) {
     const p = probe(source(dir, `${k}.mp4`));
     sources[k] = { file: `${k}.mp4`, from: having.map((h) => h.src.from).join(" + "), offset: +begins[0].toFixed(3), duration: p.duration, width: first.width, height: first.height,
       video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), sessions: having.map((h) => h.n) };
-    activity[k] = having.flatMap((h) => (parts[h.n - 1].activity[k] || []).map((x) => ({ ...x, t: +(x.t + h.from).toFixed(2) })));
+    // a recording scaled into the first one's size sits in bars: its boxes moved into them, its
+    // grid cells (on its own frame) left out
+    const into = (src) => {
+      if (src.width === first.width && src.height === first.height) return null;
+      const f = Math.min(first.width / src.width, first.height / src.height);
+      const w = (src.width * f) / first.width, h = (src.height * f) / first.height;
+      return (b) => b && [(1 - w) / 2 + b[0] * w, (1 - h) / 2 + b[1] * h, (1 - w) / 2 + b[2] * w, (1 - h) / 2 + b[3] * h].map((v) => +v.toFixed(3));
+    };
+    activity[k] = having.flatMap((h) => {
+      const move = into(h.src);
+      return (parts[h.n - 1].activity[k] || []).map(({ g, r, ...x }) => ({ ...x, t: +(x.t + h.from).toFixed(2),
+        ...(move ? { b: move(x.b) } : g ? { g, r } : {}) }));
+    });
   }
   // the voice: each session's padded to its length, one after the other
   const voices = sessions.map((x) => ["-i", path.join(source(dir, x.dir), "voice.m4a")]).flat();
@@ -512,19 +529,20 @@ function cmdPropose(dir) {
   // (sheets), not a guess of this tool
   const keep = [], waits = [];
   for (const s of sentences(words)) {
-    keep.push({ words: `${s.from}-${s.to}`, ...(CLAIM.test(s.text) ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text });
+    keep.push({ words: `${s.from}-${s.to}`, ...(CLAIM.test(s.text) ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text, session: s.session });
   }
   // a gap between two keeps in which a picture moves is a wait
   for (let k = 0; k + 1 < keep.length; k++) {
     const a = keep[k].end, b = keep[k + 1].start;
-    if (b - a < 3) continue;
+    // no wait across into another recording: the cut goes there
+    if (b - a < 3 || keep[k].session !== keep[k + 1].session) continue;
     const moves = Object.keys(activity).some((x) => x !== "webcam" && busy(activity[x], a, b, MOVING) > 0.15);
     // the last word said, not an "äh" after it: plan() looks for a wait after a word
     const [first, last] = range(keep[k].words);
     const said = words.slice(first, last + 1).filter((w) => w.kind === "word").at(-1);
     if (moves && said) waits.push(said.i);
   }
-  const proposal = { keep: keep.map(({ start, end, text, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
+  const proposal = { keep: keep.map(({ start, end, text, session, ...k }) => ({ ...k, why: text.length > 90 ? `${text.slice(0, 60)} … ${text.slice(-25)}` : text })), waits };
   write(path.join(dir, "proposal.json"), proposal);
   console.log(`${keep.length} keeps, every sentence; ${waits.length} waits where a screen moves between two:\n`);
   for (const k of keep) console.log(`  [${k.words}]${k.hold ? ` hold ${k.hold} s` : ""}  ${clock(k.start)}  ${k.text.length > 100 ? `${k.text.slice(0, 70)} … ${k.text.slice(-25)}` : k.text}`);
@@ -733,7 +751,7 @@ async function cmdBuild(dir, opts) {
     }, []);
   };
   const { env, thr, blocks } = voiceOf(dir);
-  const voices = { 1: { env, thr, blocks, duration: meta.duration } };
+  const voices = { 1: { env, thr, blocks, duration: meta.duration, sessions: meta.sessions } };
   // the speed: as asked, or by how fast the person speaks in the cut (pace())
   let r = plan(words, cut, { ...s, speed: 1 }, voices, moves);
   const talk = pace(r.pieces, words);

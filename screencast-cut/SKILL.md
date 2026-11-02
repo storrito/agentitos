@@ -39,7 +39,7 @@ node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<ti
 
 It puts the sources on one clock, cleans the voice, measures movement and finds the webcam face. `--frame` 9:16 (default), 16:9, 1:1, 4:5. **Several recordings** for one video (the person stopped and recorded again): all their folders in the order they were recorded, in one `new`; never join them yourself.
 
-It converts about a minute of three sources in 30 s. Your bash stops a command after a few minutes: for recordings over five minutes in all, run it in the background (`nohup node … new … > screencast/<name>/new.log 2>&1 &`) and read the log's end every minute until it says "Next". A `new` that was cut off goes on where it stopped when you run the same command again.
+It converts about a minute of three sources in 30 s. Your bash stops a command after a few minutes: for recordings over five minutes in all, run it in the background (`mkdir -p screencast/<name> && nohup node <skill>/tools/screencast.mjs new … > screencast/<name>/new.log 2>&1 &`) and read the log's end every minute until it says "Next". A `new` that was cut off goes on where it stopped when you run the same command again.
 
 ### 2. The words
 

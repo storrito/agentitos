@@ -71,8 +71,15 @@ export function plan(words, cut, settings, voices, moves = () => []) {
   const usedWaits = new Set();
 
   // the sound before and after a word in its own video, whether kept or not
-  const before = (w) => (w.i > 0 && words[w.i - 1].clip === w.clip ? words[w.i - 1].end : 0);
-  const after = (w) => (w.i + 1 < words.length && words[w.i + 1].clip === w.clip ? words[w.i + 1].start : voices[w.clip].duration);
+  // the recordings one after the other (voices[clip].sessions: [{ n, from, duration }]), or one
+  const sessions = voices[1]?.sessions;
+  const sessionAt = (t) => (sessions ? (sessions.filter((x) => x.from <= t + 0.001).at(-1) ?? sessions[0]).n : undefined);
+  const startOf = (w) => (sessions && w.session ? sessions[w.session - 1].from : 0);
+  const endOf = (w) => (sessions && w.session ? sessions[w.session - 1].from + sessions[w.session - 1].duration : voices[w.clip].duration);
+  // the sound before and after a word in its own recording, whether kept or not; never across into
+  // another recording: a cut, a hold, a fade there would play the next one's first moments
+  const before = (w) => (w.i > 0 && words[w.i - 1].clip === w.clip && words[w.i - 1].session === w.session ? words[w.i - 1].end : startOf(w));
+  const after = (w) => (w.i + 1 < words.length && words[w.i + 1].clip === w.clip && words[w.i + 1].session === w.session ? words[w.i + 1].start : endOf(w));
 
   (cut.keep || []).forEach((keep, k) => {
     // a stretch by its time: the picture alone, muted
@@ -83,7 +90,8 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       if (!t) return errors.push(`${name}: "at" is a span of the recording like "7:01.5-7:06"`);
       if (!(t[1] > t[0]) || t[0] < 0 || t[1] > total + 0.05) return errors.push(`${name}: "at" runs forward within the recording (0:00–${Math.floor(total / 60)}:${String(Math.floor(total % 60)).padStart(2, "0")})`);
       if (t[1] - t[0] < 0.4) return errors.push(`${name}: under 0.4 s is too short to see; make it longer`);
-      pieces.push({ clip: 1, in: t[0], out: Math.min(t[1], total), words: [], keep: k, adjust: 0, rate: 1, mute: true, silent: true });
+      if (sessions && sessionAt(t[0]) !== sessionAt(t[1] - 0.01)) return errors.push(`${name}: runs from recording ${sessionAt(t[0])} into recording ${sessionAt(t[1] - 0.01)}; end it at ${sessions[sessionAt(t[0])].from.toFixed(1)} s, a keep of its own after`);
+      pieces.push({ clip: 1, in: t[0], out: Math.min(t[1], total), words: [], keep: k, adjust: 0, rate: 1, mute: true, silent: true, session: sessionAt(t[0]) });
       return;
     }
     const r = range(keep.words);
@@ -152,7 +160,7 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     const nk = cut.keep[k + 1];
     const nextRange = range(nk?.words), nextAt = nk && nk.words === undefined ? timeRange(nk.at) : null;
     const next = nextRange ? words[nextRange[0]]
-      : nextAt && lastWord && !words.some((w) => w.start > lastWord.end && w.start < nextAt[0] && w.session !== lastWord.session)
+      : nextAt && lastWord && sessionAt(nextAt[0]) === lastWord.session
         ? { clip: lastWord.clip, session: lastWord.session, start: nextAt[0] + 0.3, i: null } : null;
     if (lastWord && waits.has(lastWord.i) && next && next.clip === lastWord.clip && next.session === lastWord.session && next.start > lastWord.end + 0.5) {
       usedWaits.add(lastWord.i);
@@ -183,14 +191,14 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       if (!groups.slice(n + 1).some(Array.isArray)) {
         const final = k === (cut.keep || []).length - 1;
         const hold = Number(keep.hold ?? (final ? settings.end : settings.tail)) || 0;
-        const wanted = Math.min(v.duration, last.end + hold);
-        to = Math.min(v.duration, Math.max(to, Math.min(wanted, after(last) - 0.12)));
+        const wanted = Math.min(endOf(last), last.end + hold);
+        to = Math.min(endOf(last), Math.max(to, Math.min(wanted, after(last) - 0.12)));
         if (wanted - to >= 0.3) held = { clip: first.clip, in: to, out: wanted, words: [], keep: k, adjust: 0, rate: 1, mute: true, hold: true };
       }
       // the words' room before them is the picture's when it showed the pause
       const shown = pieces.at(-1);
       const start = shown?.mute && shown.keep === k ? Math.max(from, shown.out) : from;
-      pieces.push({ clip: first.clip, in: start, out: to, words: g.map((w) => w.i), keep: k, adjust: Number(keep.gain) || 0 });
+      pieces.push({ clip: first.clip, in: start, out: to, words: g.map((w) => w.i), keep: k, adjust: Number(keep.gain) || 0, session: first.session });
       if (held) pieces.push(held);
     });
   });
@@ -242,7 +250,7 @@ export function plan(words, cut, settings, voices, moves = () => []) {
   for (const p of pieces) {
     if (p.mute) { p.lufs = null; p.gain = 0; continue; }
     const t = takes.at(-1), q = t?.pieces.at(-1);
-    if (q && q.clip === p.clip && p.in >= q.out - 0.05 && (p.keep === q.keep || p.in - q.out < 5)) t.pieces.push(p);
+    if (q && q.clip === p.clip && q.session === p.session && p.in >= q.out - 0.05 && (p.keep === q.keep || p.in - q.out < 5)) t.pieces.push(p);
     else takes.push({ clip: p.clip, pieces: [p] });
   }
   for (const t of takes) {
