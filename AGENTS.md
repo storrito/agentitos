@@ -46,8 +46,8 @@ A new skill that needs one of these says so in its SKILL.md and README ("needs a
 Only what a strong model cannot know or infer: our facts (Storrito's API and zones, the tools' commands and outputs, measured numbers, names), recipes it would get wrong (text on a circle, a punch-in that keeps the face in place), and the flow the person sees. Never generic craft or process a model already has: how to plan, write code, debug, check its own work, or design "well". A rule stays only while a run without it goes wrong.
 
 - The flow the person sees is steps, never left to the model: which questions and in what order, a reference or sketch frames before building, a preview before a render, what needs their yes. Models do not ask for these on their own.
-- Every line is read on every run: detail one step needs goes into `references/`. Name the file in that step, as "read `references/<file>.md` before …": models skim, and a reference only mentioned somewhere is never opened.
-- The `description` is listed on every turn of every bot: one sentence.
+- A bot takes the body of its SKILL.md as its definition, which is in its context on every turn: detail one step needs goes into `references/`. Name the file in that step, as "read `references/<file>.md` before …": models skim other files, and a reference only mentioned somewhere is never opened.
+- A new bot reads the frontmatter of every SKILL.md to find its job: the `description` is one sentence of what the skill does and when it fits.
 
 ## Decisions belong to the agent, mechanics to the tools
 
