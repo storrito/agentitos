@@ -4,7 +4,10 @@
 // recorders a few hundred milliseconds apart and its numbers are near, not exact; every source
 // carries the microphone, so the offsets are made exact by laying each source's sound onto the
 // main microphone's (the lag of the best correlation of their loudness envelopes, within ±1.5 s
-// of what recording.json says).
+// of what recording.json says). rragent's recorder stamped a source's start when its recorder
+// said it had started, which for a phone's screen is its first picture, seconds or a minute after
+// its file began with the others: when the sound does not match near that stamp, it is looked for
+// near the main microphone's start too.
 //
 // A source's time s is the recording's time T = s + offset.
 
@@ -41,17 +44,26 @@ function correlation(a, b, lag) {
 // `main` (the main microphone's envelope, starting at `mainOffset`): { offset, moved, score }.
 // A score under 0.5 is no match (another microphone, no speech): the offset stays.
 export function align(main, mainOffset, env, offset) {
-  const a = curve(main, mainOffset), b = curve(env, offset);
-  let best = { lag: 0, score: correlation(a, b, 0) };
-  const range = Math.round(SEARCH / HOP);
-  for (let lag = -range; lag <= range; lag++) {
-    const score = correlation(a, b, lag);
-    if (score > best.score) best = { lag, score };
+  const a = curve(main, mainOffset);
+  // the best lag within SEARCH of `at`
+  const near = (at) => {
+    const b = curve(env, at), range = Math.round(SEARCH / HOP);
+    let best = { at, lag: 0, score: correlation(a, b, 0) };
+    for (let lag = -range; lag <= range; lag++) {
+      const score = correlation(a, b, lag);
+      if (score > best.score) best = { at, lag, score };
+    }
+    return best;
+  };
+  let best = near(offset);
+  if (best.score < 0.5 && Math.abs(offset - mainOffset) > SEARCH) {
+    const there = near(mainOffset);
+    if (there.score > best.score) best = there;
   }
   if (best.score < 0.5) return { offset, moved: 0, score: +best.score.toFixed(2) };
   // b's sound at f + lag is a's at f: the source starts `lag` frames earlier than assumed
-  const moved = -best.lag * HOP;
-  return { offset: +(offset + moved).toFixed(3), moved: +moved.toFixed(3), score: +best.score.toFixed(2) };
+  const to = best.at - best.lag * HOP, moved = to - offset;
+  return { offset: +to.toFixed(3), moved: +moved.toFixed(3), score: +best.score.toFixed(2) };
 }
 
 // How clearly a source's microphone carries the voice: loud speech over the room's floor, in dB.
