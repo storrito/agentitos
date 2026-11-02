@@ -34,10 +34,12 @@ Messages: one or two sentences and a hiccup block, in their language. Files: `sc
 First, in a message of its own, say that you are getting the recording ready and it takes a minute or two. Then, as a command of its own:
 
 ```bash
-node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<time> [--frame 9:16]
+node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<time> [artifacts/recordings/<time2> …] [--frame 9:16]
 ```
 
-It puts the sources on one clock, cleans the voice, measures movement and finds the webcam face. `--frame` 9:16 (default), 16:9, 1:1, 4:5.
+It puts the sources on one clock, cleans the voice, measures movement and finds the webcam face. `--frame` 9:16 (default), 16:9, 1:1, 4:5. **Several recordings** for one video (the person stopped and recorded again): all their folders in the order they were recorded, in one `new`; never join them yourself.
+
+It converts about a minute of three sources in 30 s. Your bash stops a command after a few minutes: for recordings over five minutes in all, run it in the background (`mkdir -p screencast/<name> && nohup node <skill>/tools/screencast.mjs new … > screencast/<name>/new.log 2>&1 &`) and read the log's end every minute until it says "Next". A `new` that was cut off goes on where it stopped when you run the same command again.
 
 ### 2. The words
 
@@ -58,8 +60,10 @@ node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 
 `propose` makes every sentence a keep (`proposal.json`); `sheets` makes one image per keep with every source at its first, middle and last moment, screens with a line every tenth. Read the brief and the sheets and write `screencast/<name>/cut.json`:
 
-- **The story:** the result first as a short hook (`"hook": true`, stays in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
-- **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid (the field being typed in, the answer, the list being picked from). The tool enlarges it as far as the safe area allows and shows the rest around it, under the apps' buttons too, so a tight box is right. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
+- **The story:** the result first as a short hook (`"hook": true`, stays in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. The hook is something that works and is seen: never a limitation or what is missing ("the music sticker is missing" was turned down as an opening), which goes later, briefly, where it happens. A take that went wrong (the person says so, or it ends in an error) is left out whole. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
+- **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid (the field being typed in, the answer, the list being picked from). The tool enlarges it as far as the safe area allows (up to twice its pixels) and shows the rest around it, under the apps' buttons too, so a tight box is right: around the content, never the page's empty margins beside it. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
+- **A phone's screen:** zoom past the phone's own bars (the clock and battery at the top, the navigation at the bottom) and the app's chrome around what is shown, e.g. a Story without its viewer's top and bottom rows; with `"circle": false` it takes the whole room.
+- **What happens without words** (a box ticked, a button pressed, a result coming in while the person is quiet): a keep by its time, `{"at": "7:01.5-7:06", "zoom": [...], "why": "…"}`, the picture alone. Find the moment with the brief's "moves" column and `frame`.
 - **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for.
 - `"label"` where a step title helps ("01 · Upload").
 

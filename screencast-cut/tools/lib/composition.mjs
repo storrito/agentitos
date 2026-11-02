@@ -74,14 +74,21 @@ export function shots(pieces, sources, width, height, a) {
         const start = p.start + (seg.in - p.in) / rate;
         const timed = parts.length > 1 ? { start, duration: (i === parts.length - 1 ? end : p.start + (seg.out - p.in) / rate) - start, in: seg.in } : {};
         const round = Math.round(Math.min(width, height) * 0.02);
-        // a phone's screen (a tall source) gets the tall area, as its crop shows it; a tall crop of a
-        // wide screen is a screen's shot like any other
-        if (src.height > src.width * 1.25) return out.push({ source: p.source, box: fit(a.tall, aspect), crop: c, main: true, round, ...timed });
+        // a phone's screen (a tall source) gets the tall area beside the circle, as its crop shows
+        // it, and without the circle the whole room when that holds it larger (a phone's screen
+        // cropped to the story, its bars off, is wider than the tall area); a tall crop of a wide
+        // screen is a screen's shot like any other
+        if (src.height > src.width * 1.25) {
+          const room = p.pip === false || !sources.webcam ? [a.tall, ...(a.solo || [])] : a.tall;
+          return out.push({ source: p.source, box: fit(room, aspect), crop: c, main: true, round, ...timed });
+        }
         // a screen: what matters as large as the safe room allows (beside the circle too, or all
-        // of it without the circle), never more than 30 % of the screen's width across that room
-        // nor over twice its pixels; the screen around it out to the frame's edges
+        // of it without the circle), at most twice its pixels; the screen around it out to the
+        // frame's edges. (Until 2026-11 also never less than 30 % of the screen's width across the
+        // room: a tight zoom on a 2560 px screen came out at 1.1 times, small in a sea of the
+        // screen's empty margins, and bot 4585's agent cut the screen narrower by hand.)
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
-        const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: Math.min(2, (0.8 * width) / (0.3 * src.width)) });
+        const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
         const [x, , w] = at.box;
         out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });
