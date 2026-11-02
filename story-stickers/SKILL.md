@@ -58,6 +58,8 @@ Choose a **band** of the frame where the picture or the film has nothing under i
 | `insta-emoji-slider` | `question`, `emoji` |
 | `insta-mention`, `insta-hashtag`, `insta-location` | `username`, `hashtag`, `location` |
 
+Before a poll, quiz, question, emoji slider or countdown goes into the layer, read [`references/accounts.md`](references/accounts.md): Instagram does not offer each of them to every account, and Storrito refuses a Story with one the account lacks.
+
 **The look.** Most stickers come in a few designs (`design` on link, mention, hashtag, location; `color` on poll, question, quiz, countdown, emoji slider). Never ask before the first picture: choose yourself, name it in half a sentence with the picture, and offer the likely others as buttons under it.
 
 - `default` (the white pill) unless the sticker sits on something very bright, where `black` (link, location) or `gray` reads better; `rainbow` only for playful content.
@@ -180,7 +182,7 @@ Show the moments or the map in the chat with the preview and say in one sentence
 
 ## 5. Publish
 
-Only after the person's yes. Ask what has more than one answer in one block (see "UI in the chat"): the account (`(storrito/list-social-accounts {})`: those whose `postTypes` have `schedule-instagram-story`; one: take it; none or `disconnected`: `(storrito/create-connect-link {…})` makes a link), the time ("Now", "Today 18:00", "Tomorrow 9:00"; the time zone only when you cannot tell), Facebook when the account has a page (`facebookDestinations`), or a draft in Storrito's gallery instead.
+Only after the person's yes. Ask what has more than one answer in one block (see "UI in the chat"): the account (`(storrito/list-social-accounts {})`: those whose `postTypes` have `schedule-instagram-story`, and with a poll, quiz, question, emoji slider or countdown only those that have it, see `references/accounts.md`; one: take it; none or `disconnected`: `(storrito/create-connect-link {…})` makes a link), the time ("Now", "Today 18:00", "Tomorrow 9:00"; the time zone only when you cannot tell), Facebook when the account has a page (`facebookDestinations`), or a draft in Storrito's gallery instead.
 
 **A picture**: Storrito's procedures in the REPL. Give each frame and account a UUID and remember it first, so that a retry posts nothing twice (Storrito answers a known UUID with the post it has):
 
@@ -194,7 +196,7 @@ Only after the person's yes. Ask what has more than one answer in one block (see
       plan)
 ```
 
-Storrito refuses what would make the post fail (a link without https, a poll with one answer, an unknown username …) with what to change; its `warnings` (stickers on each other, CSS it cannot show, an attribute it does not know) come with a post already scheduled: then `cancel-instagram-story`, fix, schedule again with new UUIDs. Several frames go out in their order with the same time. Facebook too: `:shareToFacebook true :facebookDestinationId <id>`; a picture made with AI: `:aiGenerated true`. A draft: `(storrito/create-draft {:html html :draftUuid uuid :name "<name>" :folderName "Stories"})`. Then `(storrito/status-instagram-story {:storyPostUuid uuid})` (`status-draft`) once it is rendered, usually within a minute; `cancel-instagram-story` (`delete-draft`) takes it back. Tell the person in one sentence what is scheduled when and where.
+Storrito refuses what would make the post fail (a link without https, a poll with one answer, an unknown username, a sticker the account lacks: `references/accounts.md`) with what to change; its `warnings` (stickers on each other, CSS it cannot show, an attribute it does not know) come with a post already scheduled: then `cancel-instagram-story`, fix, schedule again with new UUIDs. Several frames go out in their order with the same time. Facebook too: `:shareToFacebook true :facebookDestinationId <id>`; a picture made with AI: `:aiGenerated true`. A draft: `(storrito/create-draft {:html html :draftUuid uuid :name "<name>" :folderName "Stories"})`. Then `(storrito/status-instagram-story {:storyPostUuid uuid})` (`status-draft`) once it is rendered, usually within a minute; `cancel-instagram-story` (`delete-draft`) takes it back. Tell the person in one sentence what is scheduled when and where.
 
 **A video**: the finished video goes to agentitos' publish-video as every video does (its SKILL.md: `check`, `prepare` when it says so, `accounts`), with the layer for the Instagram Story targets:
 
