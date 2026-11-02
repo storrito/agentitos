@@ -22,7 +22,7 @@ The look is the video's own: the speaker's footage, cut and framed, captions, at
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones`, `transcribe` and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp is taken from the PATH or downloaded once. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones`, `transcribe`, for b-roll `b-roll`, and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp is taken from the PATH or downloaded once. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 Costs: the episode's words a few cents an hour, the moments about ten cents an hour, per clip about a cent to frame it and well under a cent for its words and captions.
 
@@ -108,6 +108,8 @@ After "They are good":
 Never call Storrito's schedule procedures yourself: publish-video does it, so that nothing is posted twice.
 
 ## An Instagram Story
+
+A clip whose words name something that can be shown (a product, a page, a post, a number) can get b-roll: offer it once for the clips that have such moments, when the person agreed to them, naming the moments in a sentence. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), "For another skill", on `work/<k>/takes` (its `edit.json`, `takes.mjs broll work/<k>/takes …`), clip by clip; the moments of a podcast need little of it.
 
 When one of the targets is an Instagram Story, it can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask once which one fits (the likely one ticked: a link when there is a page to go to; "none" is an answer too). Then follow agentitos' **story-stickers** (`<skill>/../story-stickers/SKILL.md`, on a Sprite else `/home/sprite/skills/story-stickers/SKILL.md`): the stickers as Storrito's elements in `stickers/<name>/layer.html`, in the preview as a `data-preview-only` scene mounted at the start, the band checked with `hyperframes check --caption-zone` (and on the rendered video's moments where footage you do not know runs under it), published with publish-video's `--stickers`.
 

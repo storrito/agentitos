@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `transcribe` skill beside this one (the words) and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). The words come from ElevenLabs Scribe ("äh" included, names spelled right), and Gemini watches the videos and proposes the cut, about two cents a minute of recording in all. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `transcribe` skill beside this one (the words), for b-roll its `b-roll` skill, and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). The words come from ElevenLabs Scribe ("äh" included, names spelled right), and Gemini watches the videos and proposes the cut, about two cents a minute of recording in all. Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## From the recordings to the video, all in the chat
 
@@ -84,6 +84,7 @@ They say what is wrong; change `cut.json` (or a setting) and build again with th
 | "Vertical" / "square" | `--aspect 9:16` / `--aspect 1:1` (with `--fit contain` the whole picture stays, with bars) |
 | a word in the subtitles is wrong | `"fixes": {"57": "Pentax"}` |
 | "Captions in the picture" / "another caption style" | `takes.mjs captions takes/<name> --style hormozi` (see "Captions in the picture") |
+| "Show the app when I mention it" / "b-roll" | see "B-roll" |
 
 ### Captions in the picture
 
@@ -95,9 +96,19 @@ node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<
 
 marks the key words with a model, keeps style and marks in `cut.json` (`"captions"`) and builds again: the preview shows them, on the cut's own words, placed for the frame (16:9 to 9:16). Another style: the same command with another `--style`; a key word too many or too few: edit `cut.json` `captions.highlight` (word numbers) and build; out again: `--off`. It uses agentitos' captions skill beside this one; when it is missing, say so.
 
+### B-roll: what they talk about, on screen
+
+When the person agreed to the cut and its words name things that can be shown (their product, a page, a post they quote, a number), offer once, before you render: in the message after their yes, one sentence naming two or three of those moments, with "Render it" (primary) and "Show what I talk about" (plain); when they ask for it themselves ("show the app when I mention it", "b-roll"), go straight on. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), its "For another skill": its brief on `takes/<name>/edit.json`, the pictures it takes and you look at, `takes/<name>/broll/broll.json`, then
+
+```bash
+node <skill>/tools/takes.mjs broll takes/<name> takes/<name>/broll/broll.json
+```
+
+keeps it in `cut.json` and builds again: the b-roll is mounted under the captions on the cut's word numbers, so every later build keeps each beat on its word (one whose word is cut out is left out, and the build says so; its ⚠ lines are b-roll's). `--off` takes it out. Look at its sheet, then ask as its step 6 says. When the b-roll skill is missing, say so.
+
 ### 6. The video
 
-Only after their "looks good". Tell them in one sentence that you are rendering it now (about one and a half times the cut's length). Render with the `render` tool, name `<name>`: it writes `artifacts/<name>.mp4`, the pane shows its progress. Then
+Only after their "looks good" (and the b-roll question, when there was one). Tell them in one sentence that you are rendering it now (about one and a half times the cut's length). Render with the `render` tool, name `<name>`: it writes `artifacts/<name>.mp4`, the pane shows its progress. Then
 
 ```bash
 node <skill>/tools/takes.mjs finish takes/<name> artifacts/<name>.mp4

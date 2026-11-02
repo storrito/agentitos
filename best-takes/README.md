@@ -16,7 +16,7 @@ node tools/takes.mjs finish takes/kameras artifacts/kameras.mp4                #
 
 Outside rragent the same works with any HyperFrames project folder: `--out <project>/composition`, then `hyperframes render` in that folder.
 
-Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, else `npx hyperframes@0.8.146`), agentitos' [transcribe](../transcribe/) beside it (or `TRANSCRIBE` naming its `tools/transcribe.mjs`) for the transcription by ElevenLabs Scribe, OpenRouter for it and for `propose`: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it transcribe sends the sound in 5-minute pieces of MP3, which the gateway takes, instead of 10-minute FLAC). No npm dependencies.
+Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, else `npx hyperframes@0.8.146`), agentitos' [transcribe](../transcribe/) beside it (or `TRANSCRIBE` naming its `tools/transcribe.mjs`) for the transcription by ElevenLabs Scribe, for b-roll agentitos' [b-roll](../b-roll/) (or `BROLL_TOOL`), OpenRouter for it and for `propose`: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it transcribe sends the sound in 5-minute pieces of MP3, which the gateway takes, instead of 10-minute FLAC). No npm dependencies.
 
 ## How it works
 
@@ -64,6 +64,10 @@ The keeps play in their order.
 
 `takes.mjs captions <dir> --style hormozi|karaoke|wipe|clean [--product …] [--brand brand/DESIGN.md] [--platform reels,tiktok]` (the platforms the video goes to: the captions keep clear of what they lay over it; kept in settings.json for every build, `build --platform` too) hands the cut's own words (timed in the cut, `fixes` applied) to agentitos' [captions](../captions/) skill: its `mark` lets a model pick the key words, which `cut.json` keeps as `"captions": {"style": "hormozi", "highlight": [word numbers]}`; from then on every `build` writes `captions.json` beside `cut.json`, runs the captions skill's `build` into `<out>/captions/` and mounts the sub-composition on top of the cut. `--off` takes them out. The tool looks for the captions skill at `CAPTIONS_TOOL`, beside this skill (`../captions`, a checkout of the collection), and in the machine's clone of the skills (`/home/sprite/skills/captions`).
 
+
+## B-roll
+
+`takes.mjs broll <dir> <broll.json>` (`--off` takes it out) keeps the file in `cut.json` (`"broll"`); from then on every `build` writes the cut's words to `broll.words.json` beside `cut.json` (the word numbers of the brief, timed in the cut), runs agentitos' [b-roll](../b-roll/) skill's `build` into `<out>/broll/` with the frame, `--platform` and the brand, and mounts its sub-composition over the pieces, under the captions. A beat whose word the cut left out is dropped, and the build says so. The tool looks for the b-roll skill at `BROLL_TOOL`, beside this skill (`../b-roll`) and in the machine's clone (`/home/sprite/skills/b-roll`). The agent writes `broll.json` from the b-roll skill's brief on `edit.json`.
 ## Settings
 
 Given to `new` or `build`, kept in `source/settings.json`: `--out`, `--title`, `--lang`, `--aspect source|9:16|16:9|1:1|4:5`, `--fit cover|contain`, `--target <s>`, `--pause <s>`, `--pauses picture|tight`, `--hook "…"`, `--brand <DESIGN.md>`, `--loudness <LUFS>`, `--fps`, `--order recorded|given`, `--model <OpenRouter id>`.
