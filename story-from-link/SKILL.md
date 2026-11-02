@@ -147,7 +147,7 @@ Then schedule them in the frames' order (Instagram shows them one after another)
       plan)
 ```
 
-Storrito refuses what would make the post fail with what to change; its `warnings` come with a post already scheduled: cancel it, fix `story.json`, build, schedule again with new UUIDs. A failure: run the same call again with the same `plan` (`recall` it after a restart of the REPL); what is done stays done. A **draft**: `(storrito/create-draft {:html … :draftUuid uuid :name "<name> 2/5" :folderName "Stories from links"})` per frame instead.
+Storrito refuses what would make the post fail with what to change; its `warnings` come with a post already scheduled: cancel it, fix `story.json`, build, schedule again with new UUIDs. A failure: run the same call again with the same `plan` (`recall` it after a restart of the REPL); what is done stays done. Not when Storrito refuses a sticker the account lacks: `<stickers>/references/accounts.md` says what to do. A **draft**: `(storrito/create-draft {:html … :draftUuid uuid :name "<name> 2/5" :folderName "Stories from links"})` per frame instead.
 
 Then `(storrito/status-instagram-story {:storyPostUuid uuid})` per post (`status-draft` for drafts) once Storrito rendered it, usually within a minute: its `previewUrl` must look like the frame. Tell the person in one or two sentences what is scheduled when and where; a failure: which frame and why, in one sentence. To take the story back: `cancel-instagram-story` per post (`delete-draft` for drafts); to change a scheduled story: cancel, change, build, schedule with new UUIDs.
 
