@@ -1,6 +1,6 @@
 ---
 name: screencast-cut
-description: Cut a screencast recorded from several sources at the same time (the screen, the webcam, a phone's screen or camera, the microphone; rragent's screencast recorder) into one video that shows where the action is. The sources are put on one clock, the voice is cleaned, the shot switches between screen, phone and face and zooms in on what changes, waits play as timelapses, and every result is held long enough to see; show it as a HyperFrames preview, change it by the moment the person names, then render it with captions. Use for product demos, tutorials and walkthroughs recorded with screen, webcam and phone together.
+description: Cut a screencast recorded from several sources at once (screen, webcam, phone, mic; rragent's recorder) into one video that zooms to the action and speeds up waits; preview, change, render with captions.
 license: MIT
 metadata:
   title: "Screencast cut"
@@ -17,27 +17,27 @@ metadata:
 
 # screencast-cut
 
-You run in rragent: the chat on the left, the artifacts beside it. `<skill>` below is the folder this file is in. Run the tool as `node <skill>/tools/screencast.mjs …` from your working directory; every path you pass is yours. Never change the files in `<skill>`. Full reference: [README.md](README.md).
+You run in rragent: chat left, artifacts beside it. `<skill>` is this file's folder. Run `node <skill>/tools/screencast.mjs …` from your working directory; never change files in `<skill>`. Full reference: [README.md](README.md).
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` and `captions` skills beside this one, and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the face in the webcam and the captions' key words, well under a cent. The words come from rragent's `transcribe` tool. Nothing to `npm install`; when something is missing, say so in one sentence.
+Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` and `captions` skills beside this one, and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the webcam face and the captions' key words, well under a cent. The words come from rragent's `transcribe` tool. Nothing to `npm install`; when something is missing, say so in one sentence.
 
 ## From the recording to the video
 
 A recording arrives as a message like `New recording in artifacts/recordings/2026-10-23T11-04-56: screen.webm (the screen), webcam.webm (the webcam)`. When the person asks for a video of it, do the steps on your own, show a preview, change it until they like it, then render. Before the preview ask nothing: what they asked for (a length, a format) goes in, the rest you decide and say in a line.
 
-Short messages in their language, one or two sentences and a hiccup block. Your files: `screencast/<name>/` (`<name>` a short slug); the project `artifacts/<name>/`; at the end `artifacts/<name>.mp4`.
+Messages: one or two sentences and a hiccup block, in their language. Files: `screencast/<name>/` (`<name>` a short slug); the project `artifacts/<name>/`; at the end `artifacts/<name>.mp4`.
 
 ### 1. The sources
 
-First tell them in a message of its own that you are getting the recording ready and it takes a minute or two. Then, as a command of its own:
+First, in a message of its own, say that you are getting the recording ready and it takes a minute or two. Then, as a command of its own:
 
 ```bash
 node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<time> [--frame 9:16]
 ```
 
-It puts the sources on one clock, cleans the voice, measures where each picture moves and finds the face in the webcam. `--frame` 9:16 (default), 16:9, 1:1, 4:5.
+It puts the sources on one clock, cleans the voice, measures movement and finds the webcam face. `--frame` 9:16 (default), 16:9, 1:1, 4:5.
 
 ### 2. The words
 
@@ -56,10 +56,10 @@ node <skill>/tools/screencast.mjs propose screencast/<name>
 node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 ```
 
-`propose` makes every sentence a keep (`proposal.json`); `sheets` makes one image per keep with every source at its first, middle and last moment, the screens with a line every tenth. Read the brief and the sheets and write `screencast/<name>/cut.json`:
+`propose` makes every sentence a keep (`proposal.json`); `sheets` makes one image per keep with every source at its first, middle and last moment, screens with a line every tenth. Read the brief and the sheets and write `screencast/<name>/cut.json`:
 
-- **The story:** the result first as a short hook (`"hook": true`, kept in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
-- **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid: the field being typed in, the answer, the list being picked from. The tool makes that part as large as the safe area allows and shows the rest of the screen around it, under the apps' buttons too, so a tight box is right. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
+- **The story:** the result first as a short hook (`"hook": true`, stays in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
+- **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid (the field being typed in, the answer, the list being picked from). The tool enlarges it as far as the safe area allows and shows the rest around it, under the apps' buttons too, so a tight box is right. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
 - **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for.
 - `"label"` where a step title helps ("01 · Upload").
 
@@ -74,30 +74,15 @@ node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (below): is what the words are about large and readable?
+Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable?
 
 ### 5. Ask whether it is right
 
-One message: how long it was and is now, the story in one line, what is sped up; "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change with the moment ("at 0:23 …").
+One message: length before and now, the story in one line, what is sped up; "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change with the moment ("at 0:23 …").
 
 ### 6. Changes
 
-For a moment they name, `screencast.mjs at screencast/<name> 0:23` says which keep plays there; `frame screencast/<name> 0:23` saves that moment's source with a grid and the shot's zoom in red. Change the keep in `cut.json`, build, check, ask again in one sentence.
-
-| They say | You do |
-| --- | --- |
-| "Too small" / "show more of …" / "zoom on …" | a tighter or other `"zoom"` on that keep, from `frame` |
-| "… is cut off" / "too fast at the end" | `"hold": 1.5` on that keep, or end it a word later |
-| "Faster" / "slower" / "as I spoke" | `build … --speed 1.3` / `--speed 1.1` / `--speed 1` (by default the build speeds a slow speaker up to 1.2× by itself and says so; the voice keeps its pitch) |
-| "Show the phone" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
-| "Hide my face here" | `"circle": false` on that keep: the screen takes its room too |
-| "No background" / "plain background" | `"background": "plain"` in cut.json (the brand's colours) |
-| "Other captions" / "no captions" | `screencast.mjs captions screencast/<name> --style hormozi` (karaoke, wipe, clean) / `--off` |
-| "Longer waits as time-lapses" | the last word before it into `"waits"` |
-| "Start with …" | move that keep to the top |
-| "Vertical" / "square" / "for TikTok" | `build … --frame 9:16` / `1:1` / `--platform tiktok` |
-| "Hide that" (a password on screen) | a `"zoom"` past it, or another `"view"` |
-| "Music under it" | `"music": {"file": "<path>", "volume": 0.3}` |
+For a moment they name, `screencast.mjs at screencast/<name> 0:23` says which keep plays there; `frame screencast/<name> 0:23` saves that moment's source with a grid and the shot's zoom in red. Read `<skill>/references/changes.md` before changing the cut. Change the keep in `cut.json`, build, check, ask again in one sentence.
 
 ### 7. The video
 
@@ -107,24 +92,21 @@ Only after their "looks good". Render with the `render` tool, name `<name>` (→
 node <skill>/tools/screencast.mjs finish screencast/<name> artifacts/<name>.mp4
 ```
 
-(−14 LUFS, and the `.srt`). When it says the video is from before the last build, render again. Then the download links in one sentence and a button "Publish it": to publish, follow agentitos' **publish-video** with `artifacts/<name>.mp4` (it writes the texts and schedules it through Storrito); never call Storrito's schedule procedures yourself.
+(−14 LUFS, and the `.srt`). When it says the video is from before the last build, render again. Then the download links in one sentence and a button "Publish it": to publish, follow agentitos' **publish-video** with `artifacts/<name>.mp4`; never call Storrito's schedule procedures yourself.
 
 `remember` what they want every time (a speed, a caption style, "my face small") and use it for their next recording.
 
 ## An Instagram Story
 
-When one of the targets is an Instagram Story, it can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask once which one fits (the likely one ticked: a link when there is a page to go to; "none" is an answer too). Then follow agentitos' **story-stickers** (`<skill>/../story-stickers/SKILL.md`, on a Sprite else `/home/sprite/skills/story-stickers/SKILL.md`): the stickers as Storrito's elements in `stickers/<name>/layer.html`, in the preview as a `data-preview-only` scene mounted at the start, the band checked with `hyperframes check --caption-zone` (and on the rendered video's moments where footage you do not know runs under it), published with publish-video's `--stickers`.
-
-- Keep a band free for them in the film, planned with the scenes (a link sticker needs about 180 px of height, a poll about 570): for the whole length nothing in it that the viewer must see or read (no text or captions, no face, no product, no logo, no content); background, texture and decorative motion may lie behind the stickers. The stickers go into a flexbox over that band.
-- Never draw a sticker, a "link in bio" or an arrow to a link into the Story's video: Storrito lays the real stickers over it, and Instagram makes them tappable.
+When one of the targets is an Instagram Story, it can carry Instagram's own stickers: a link to the page, a poll, a question, a countdown. Ask once which one fits (the likely one ticked: a link when there is a page to go to; "none" is an answer too). Then read `<skill>/references/instagram-story.md` before planning the scenes and adding the stickers. Never draw a sticker, a "link in bio" or an arrow to a link into the Story's video: Storrito lays the real stickers over it, and Instagram makes them tappable.
 
 ## UI in the chat
 
-Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links and videos point at `https://…`, `artifacts/…` or `uploads/…`. There are no text fields: for a change they type.
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links and videos point at `https://…`, `artifacts/…` or `uploads/…`. No text fields: for a change they type.
 
-- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else, a moment of the preview included ("at 0:23 …"). Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, and one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out is asked again for that group only. Ask one after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else, a moment of the preview included ("at 0:23 …"). Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several independent questions that must all be answered before you go on: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"). An answer missing a group: ask again for that group only. One question after the other only when it depends on the answer before or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
 - The button that moves on gets `:class "primary"`; the others stay plain.
-- Never put a token, a word number, a path of `screencast/` or a raw error into the chat.
+- Never a token, a word number, a `screencast/` path or a raw error in the chat.
 
 The question after the preview:
 
@@ -146,4 +128,4 @@ The question after the preview:
 - Never lose content the person said matters; when unsure whether something is a slip, keep it and say so.
 - Change `cut.json` or an option and build again; never edit the built `index.html` by hand.
 - When the tool cannot do what they ask, say so in a sentence and offer the nearest it can; never copy or patch its files.
-- The preview first, the render only after the person's yes; publishing only when they ask.
+- Publishing only when they ask.

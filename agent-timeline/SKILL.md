@@ -1,6 +1,6 @@
 ---
 name: agent-timeline
-description: What this rragent agent did in a span of time, from its own record: when the person sent a message, which tools it called, how long each took and what it answered (a story "scheduled", later "executed"), when it answered, and the spans in which it worked. For a recording of rragent's screencast recorder, the recording's own span, timed from its start. Use when the person asks what the agent did meanwhile, and when cutting a screencast of the agent at work, to find the waits to speed up and the moment a result went out.
+description: Tells what this rragent agent did in a time span or screencast recording (messages, tool calls, durations, results); use when asked what it did meanwhile or when cutting such a screencast.
 license: MIT
 metadata:
   title: "Agent timeline"
@@ -16,7 +16,7 @@ metadata:
 
 # agent-timeline
 
-You run in rragent. `<skill>` below is the folder this file is in. Run the tool as `node <skill>/tools/timeline.mjs …` from your working directory (your bash runs in your bot's folder, which is how the tool knows which bot you are). Never change the files in `<skill>`. Full reference: [README.md](README.md).
+You run in rragent. `<skill>` is this file's folder. Run `node <skill>/tools/timeline.mjs …` from your working directory (your bot's folder: that is how the tool knows which bot you are). Never change the files in `<skill>`. Full reference: [README.md](README.md).
 
 ## What it needs
 
@@ -30,9 +30,9 @@ For a recording of rragent's screencast recorder (`artifacts/recordings/<time>`)
 node <skill>/tools/timeline.mjs artifacts/recordings/<time> --json screencast/<name>/agent.json
 ```
 
-For a span: `--from -20m` (twenty minutes ago), `--from 2026-10-23T11:05:00+02:00 --to 2026-10-23T11:10:00+02:00`. It prints every message the person sent, every tool call with how long it took and what it answered (★ where a service says it is out: "executed", "published", "posted"), every answer, and the spans in which the agent worked; times from the span's start (for a recording: the recording's time) and the wall clock. `--json` writes the same for another tool: `events`, `working` and `out`, times in seconds from the start.
+For a span: `--from -20m` (twenty minutes ago), `--from 2026-10-23T11:05:00+02:00 --to 2026-10-23T11:10:00+02:00`. It prints every message the person sent, every tool call with its duration and answer (★ where a service says it is out: "executed", "published", "posted"), every answer, and the spans the agent worked; times from the span's start (for a recording: the recording's time) and the wall clock. `--json` writes the same for another tool: `events`, `working` and `out`, times in seconds from the start.
 
-Asked what you did meanwhile: say it in a few sentences in the person's language, the steps that mattered and how long the waits were; no tool names or paths unless they ask.
+Asked what you did meanwhile: a few sentences in the person's language, the steps that mattered and how long the waits were; no tool names or paths unless they ask.
 
 ## For a screencast cut
 
