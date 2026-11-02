@@ -1,0 +1,38 @@
+{
+  "name": "creative-practice",
+  "title": "Make space for a creative practice",
+  "language": "en",
+  "mode": "stack-fan",
+  "introDuration": 2.5,
+  "introCopy": "Small rituals make space for ideas.",
+  "echoKey": "SPACE",
+  "colors": {
+    "bg": "#F3EFE4",
+    "ink": "#233E40",
+    "accent": "#BB4825",
+    "panel": "#E5E1D6"
+  },
+  "headline": "Make room\nfor an idea.",
+  "cta": "Try one\nsmall ritual.",
+  "bodyBeats": [
+    {
+      "body": "Bring a notebook. Choose a quiet corner."
+    },
+    {
+      "heading": "Begin with\none object.",
+      "body": "Look closely. Sketch the shapes you notice."
+    },
+    {
+      "heading": "Leave space\nfor the next idea.",
+      "body": "Keep a page open for something you want to revisit."
+    },
+    {
+      "body": "Choose a simple practice you would like to return to."
+    }
+  ],
+  "link": {
+    "url": "https://example.com/creative-practice",
+    "text": "Explore the guide",
+    "design": "black"
+  }
+}
