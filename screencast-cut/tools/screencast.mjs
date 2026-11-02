@@ -159,6 +159,8 @@ async function cmdNew(dir, folder, opts) {
   if (!names.length) fail(`${folder} holds none of screen, webcam, phone, phone-screen, audio.`);
   const started = rec.started || {};
   const t0 = Math.min(...names.map((k) => started[k]).filter(Number.isFinite));
+  // the recorder's pauses (clock times) are not in the files: a source that began after one starts that much sooner
+  const paused = (ms) => (rec.pauses || []).reduce((t, p) => t + (Number.isFinite(p.from) && Number.isFinite(p.to) ? Math.max(0, Math.min(ms, p.to) - Math.max(t0, p.from)) : 0), 0);
   const s = settings(dir, opts);
 
   // every source converted at once, its activity measured from the same decoding
@@ -178,7 +180,7 @@ async function cmdNew(dir, folder, opts) {
     if (frames) frames.filter = grids[k].filter;
     const p = await prepare(from, source(dir, file), { fps: s.fps, frames, progress: (t) => { done[k] = t; } });
     if (frames) counted[k] = frames.counts;
-    const offset = Number.isFinite(started[k]) && Number.isFinite(t0) ? (started[k] - t0) / 1000 : 0;
+    const offset = Number.isFinite(started[k]) && Number.isFinite(t0) ? (started[k] - t0 - paused(started[k])) / 1000 : 0;
     sources[k] = { file, from: rel(from), offset: +offset.toFixed(3), duration: p.duration, width: p.width, height: p.height, video: p.video, audio: p.audio };
   })).finally(() => clearInterval(ticker));
   for (const k of names) {

@@ -30,7 +30,9 @@ For a recording of rragent's screencast recorder (`artifacts/recordings/<time>`)
 node <skill>/tools/timeline.mjs artifacts/recordings/<time> --json screencast/<name>/agent.json
 ```
 
-For a span: `--from -20m` (twenty minutes ago), `--from 2026-10-23T11:05:00+02:00 --to 2026-10-23T11:10:00+02:00`. It prints every message the person sent, every tool call with its duration and answer (★ where a service says it is out: "executed", "published", "posted"), every answer, and the spans the agent worked; times from the span's start (for a recording: the recording's time) and the wall clock. `--json` writes the same for another tool: `events`, `working` and `out`, times in seconds from the start.
+For a span: `--from -20m` (twenty minutes ago), `--from 2026-10-23T11:05:00+02:00 --to 2026-10-23T11:10:00+02:00`. It prints every message the person sent, every tool call with its duration and answer (★ where a service says it is out: "executed", "published", "posted"), every answer, and the spans the agent worked; times from the span's start (for a recording: the recording's time) and the wall clock. `--json` writes the same for another tool: `events`, `working`, `pauses` and `out`, times in seconds from the start.
+
+When the person paused the recording, the times leave the pauses out, as the files do. What happened during a pause (⏸, `paused: true`) is not in the video: it stands at the moment the pause began; a result that went out then is not seen, say so instead of holding on it.
 
 Asked what you did meanwhile: a few sentences in the person's language, the steps that mattered and how long the waits were; no tool names or paths unless they ask.
 
