@@ -68,7 +68,7 @@ Before a sticker goes into the layer, read `<skill>/references/accounts.md`: Ins
 - Choose once, by these rules, before the first snapshot, and show that one: no second guess of your own on contrast or colour after you have seen it.
 - Two or three designs that suit this picture as buttons ("Black", "Gray", "Rainbow" for a link), each `:send "The link sticker in black"`: change `design`, copy it into the scene, show the new snapshot. One round only unless the person asks.
 
-Storrito's full reference (every attribute, its default, the sizes): https://storrito.com/documentation/api/v1/story-components.md, read it with `fetch`.
+Storrito's full reference (every attribute, its default, the sizes): https://storrito.com/documentation/api/v1/story-components.md, `fetch` it only for an attribute the table above does not have.
 
 ## 2. A picture
 
@@ -109,6 +109,7 @@ Read `<skill>/references/preview.md` before writing the preview: the scene `comp
 - **Several Stories** (several pictures, a test set, the frames of one Story): one project, each Story its own composition in `composition/<NN>-<slug>/` (`01`, `02`, … in posting order) with its own `index.html` and `compositions/story-stickers.html`, and delete `composition/index.html`: then the preview shows them side by side, each titled by its `<title>`. Never chain several Stories in one timeline.
 - Open the preview beside the chat (`:open "artifacts/<name>"`); a picture for the chat: `npx hyperframes snapshot --at 1 --no-end -o uploads/<name>-preview` in `composition/` (several Stories: in each `composition/<NN>-<slug>/`, to `uploads/<name>-<NN>`).
 - After a change of `layer.html`, copy its lines into the scene again.
+- No README in the project: the Story is its HTML.
 - rragent's `render` leaves `data-preview-only` elements out of a film's video; the HyperFrames CLI or Studio does not: there take the host out before the render.
 
 ## 4. Is the band free, the whole time?

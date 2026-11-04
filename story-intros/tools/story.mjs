@@ -159,7 +159,9 @@ rest.from('#s1 .body-copy',{y:24,opacity:0,duration:.5,ease:'power3.out'},1.95);
   rest += "rest.to({},{duration:.01},14.99);\n";
   return `<!doctype html>
 <html lang="${esc(c.language)}"><head><meta charset="utf-8"><meta name="viewport" content="width=1080, initial-scale=1">`
-    + `<title>${esc(c.title)}</title><link rel="preload" href="assets/fonts/Anton-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous"><style>${CSS}</style></head><body>
+    + `<title>${esc(c.title)}</title><link rel="preload" href="assets/fonts/Anton-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous"><style>${CSS}</style>`
+    // the sticker components before the snapshot: the scene loads them only when missing, too late for it every few runs
+    + `<script src="https://c1.storrito.com/js/insta-components.js"></script></head><body>
 `
     + `<main id="main" data-composition-id="main" data-start="0" data-duration="16.60" data-width="1080" data-height="1920" data-fps="30" `
     + `style="--series-bg:${c.colors.bg};--series-ink:${c.colors.ink};--series-accent:${c.colors.accent};--panel:${c.colors.panel}">`

@@ -34,6 +34,7 @@ and an `index.html` with what goes under the stickers, the scene mounted over it
 <!doctype html>
 <html>
   <head><meta charset="utf-8"><script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://c1.storrito.com/js/insta-components.js"></script>
   <style>html, body { margin: 0; width: 1080px; height: 1920px; background: #000; overflow: hidden; }</style></head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="<duration>" data-width="1080" data-height="1920">
@@ -47,6 +48,8 @@ and an `index.html` with what goes under the stickers, the scene mounted over it
 </html>
 ```
 
+The components' `<script>` in the head: the scene loads them itself only when they are missing, too late for a snapshot every few runs, which then shows no stickers. A snapshot shows the elements marked `data-preview-only`: never take the attribute out.
+
 Several Stories: these two files per Story in `artifacts/<name>/composition/<NN>-<slug>/` (the paths in them stay relative to that folder, the snapshot runs there), a `<title>` naming the Story, and no `composition/index.html`.
 
-`data-has-audio="true"` when the video has sound, else `muted`. A film you are making is its own project: mount the scene into it at the start, so that you design around the stickers. After a change of `layer.html`, copy its lines into the scene again. rragent's `render` leaves elements marked `data-preview-only` out of a film's video; the HyperFrames CLI or Studio does not: there take the host out before the render.
+`data-has-audio="true"` when the video has sound, else `muted`. A film you are making is its own project: mount the scene into it at the start, the components' `<script>` in its head, so that you design around the stickers. After a change of `layer.html`, copy its lines into the scene again. rragent's `render` leaves elements marked `data-preview-only` out of a film's video; the HyperFrames CLI or Studio does not: there take the host out before the render.
