@@ -65,6 +65,7 @@ Before a sticker goes into the layer, read `<skill>/references/accounts.md`: Ins
 
 - `default` (the white pill) unless the sticker sits on something very bright: then `black` (link, location) or `gray`; `rainbow` only for playful content.
 - Poll, question, quiz: the Instagram colour nearest the brand's (a brand kit's primary colour), else `pink` or `purple` on a calm picture.
+- Choose once, by these rules, before the first snapshot, and show that one: no second guess of your own on contrast or colour after you have seen it.
 - Two or three designs that suit this picture as buttons ("Black", "Gray", "Rainbow" for a link), each `:send "The link sticker in black"`: change `design`, copy it into the scene, show the new snapshot. One round only unless the person asks.
 
 Storrito's full reference (every attribute, its default, the sizes): https://storrito.com/documentation/api/v1/story-components.md, read it with `fetch`.
@@ -102,7 +103,7 @@ The filled frame: the same without the blurred `<div>`, the picture `style="posi
 
 The person sees the Story in a HyperFrames preview with Storrito's real stickers, never a description of it. In rragent create the project first, with the `project` tool (`{"action": "create", "name": "<name>", "kind": "hyperframes"}`), before anything goes into `artifacts/<name>/`; pictures you make to look at (sheets, maps) go to `uploads/`, never into the project. The preview is never rendered: it only shows.
 
-Read `<skill>/references/preview.md` before writing the preview: the scene `compositions/story-stickers.html` (the lines of `layer.html` plus Storrito's components) and an `index.html` with what goes under the stickers (the picture's Story HTML or the video), the scene mounted over it as the root's first child, marked `data-preview-only`.
+Read `<skill>/references/preview.md` before writing the preview: the scene `compositions/story-stickers.html` (the lines of `layer.html` plus Storrito's components) and an `index.html` with what goes under the stickers (the elements inside the picture's `<insta-story>`, or the video), the scene mounted over it as the root's first child, marked `data-preview-only`. No `<insta-story>` anywhere in the preview: its black box hides the picture.
 
 - **A film you are making** is its own project: mount the scene into it at the start, so you design around the stickers.
 - **Several Stories** (several pictures, a test set, the frames of one Story): one project, each Story its own composition in `composition/<NN>-<slug>/` (`01`, `02`, … in posting order) with its own `index.html` and `compositions/story-stickers.html`, and delete `composition/index.html`: then the preview shows them side by side, each titled by its `<title>`. Never chain several Stories in one timeline.
@@ -113,6 +114,8 @@ Read `<skill>/references/preview.md` before writing the preview: the scene `comp
 ## 4. Is the band free, the whole time?
 
 Look at the preview first: a sticker on a face, text or the product is wrong, and a band too small for its stickers spills over both its edges.
+
+**A picture without a line of text**: the snapshot is the whole check. No `hyperframes check`, no sheets: one snapshot after each change, looked at once.
 
 **Text in a film you make, or a picture's line of text**: HyperFrames checks it against the band, given in fractions of the frame (`left/1080`, `top/1920`, `1 - right/1080`, `1 - bottom/1920`):
 

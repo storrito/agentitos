@@ -2,6 +2,8 @@
 
 The person sees the Story in a HyperFrames preview with Storrito's real stickers. The project is made first, in rragent with the `project` tool (`{"action": "create", "name": "<name>", "kind": "hyperframes"}`); its files go into `artifacts/<name>/composition/`. The preview is never rendered: it only shows.
 
+No `<insta-story>` in the preview, neither in the scene nor in `index.html`: the stickers render on their own (each its own canvas), and `<insta-story>` paints a black 1080×1920 box in its shadow DOM that `background:transparent` does not remove, so everything under it disappears. `<insta-story>` belongs only in the HTML Storrito gets (`story-htmls`, step 2). Never read or grep `insta-components.js`: the table in SKILL.md and Storrito's reference say everything a sticker takes.
+
 Write `compositions/story-stickers.html` into the project (`artifacts/<name>/composition/`), with the lines of `stickers/<name>/layer.html` inside:
 
 ```html
@@ -36,7 +38,7 @@ and an `index.html` with what goes under the stickers, the scene mounted over it
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="<duration>" data-width="1080" data-height="1920">
       <div id="story-stickers" data-preview-only data-composition-id="story-stickers" data-composition-src="compositions/story-stickers.html" data-start="0" data-duration="<duration>" data-track-index="99" data-track-kind="graphics" data-width="1080" data-height="1920" style="z-index:1000"></div>
-      <!-- a picture: the elements of its Story HTML (step 2), each with class="clip" data-start="0" data-duration="<duration>" and a z-index, the picture copied in as picture.jpg -->
+      <!-- a picture: the elements inside its <insta-story> (step 2), without the <insta-story> and without the lines of layer.html, each with class="clip" data-start="0" data-duration="<duration>" and a z-index, the picture copied in as picture.jpg -->
       <!-- a video the person brings: -->
       <video id="story-video" class="clip" data-start="0" data-duration="<duration>" data-has-audio="true" src="video.mp4" style="position:absolute;left:0;top:0;width:1080px;height:1920px;object-fit:cover;z-index:1"></video>
     </div>
