@@ -17,7 +17,9 @@ metadata:
 
 # screencast-cut
 
-You run in rragent: chat left, artifacts beside it. `<skill>` is this file's folder. Run `node <skill>/tools/screencast.mjs …` from your working directory; never change files in `<skill>`. Full reference: [README.md](README.md).
+You run in rragent: chat left, artifacts beside it. `<skill>` is this file's folder. Run `node <skill>/tools/screencast.mjs …` from your working directory; never change files in `<skill>`. Full reference: [README.md](README.md), only when this file and the tool's own output leave a question open.
+
+Every file you read stays in the conversation and slows each later step. So: don't read the tool's source (`<skill>/tools/`) to learn how to use it, its output says what comes next and what to fix; only when it does not do what it should. The build makes the whole composition, so the HyperFrames, platform-zones and media-use skills and their references are not needed here: don't read them.
 
 ## What it needs
 
@@ -58,7 +60,7 @@ node <skill>/tools/screencast.mjs propose screencast/<name>
 node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 ```
 
-`propose` makes every sentence a keep (`proposal.json`); `sheets` makes one image per keep with every source at its first, middle and last moment, screens with a line every tenth. Read the brief and the sheets and write `screencast/<name>/cut.json`:
+`propose` makes every sentence a keep (`proposal.json`); `sheets` makes one image per keep with every source at its first, middle and last moment, screens with a line every tenth. Read the brief and the sheets yourself (no subagent: it reads them again from scratch and takes longer) and write `screencast/<name>/cut.json`:
 
 - **The story:** the result first as a short hook (`"hook": true`, stays in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. The hook is something that works and is seen: never a limitation or what is missing ("the music sticker is missing" was turned down as an opening), which goes later, briefly, where it happens. A take that went wrong (the person says so, or it ends in an error) is left out whole. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
 - **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid (the field being typed in, the answer, the list being picked from). The tool enlarges it as far as the safe area allows (up to twice its pixels) and shows the rest around it, under the apps' buttons too, so a tight box is right: around the content, never the page's empty margins beside it. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
@@ -78,7 +80,9 @@ node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable?
+Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable? Before you ask (step 5), once, in `artifacts/<name>/composition`: `npx hyperframes check --json`, and fix its errors (text hidden under the face circle, a label off the frame). No `hyperframes snapshot --review` and no rounds of snapshots: `frame` and the check are the review.
+
+The cut lives in `cut.json`: no notes files (SPEC.md, REVIEW.md, a README) in the project or beside it.
 
 ### 5. Ask whether it is right
 
