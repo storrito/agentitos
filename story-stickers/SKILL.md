@@ -132,7 +132,7 @@ Every `caption_zone_collision` names the text, its moment and its box: move the 
 
 **A video's pixels** (burned-in subtitles, a face, a picture-in-picture, the product), every moment: always for a video the person brings; for a film you made only when footage you do not know frame by frame runs under the band (a stock clip with people or text); a band kept free by design needs only `--caption-zone`. Read `<skill>/references/video-moments.md` before checking a video's pixels: the ffmpeg commands for the sheets of moments and the occupancy map, how to choose the band from them, and what to offer when no band is free (say so; re-rendering a film you made only after the person's yes).
 
-Show the moments or the map in the chat with the preview and say in one sentence what the band keeps clear of ("below the subtitles, left of the webcam"). A video Story is never shown with one frame alone.
+The moments and the map are for you, never for the chat: the person sees the preview's snapshot with the button that plays it, and one sentence of what the band keeps clear of ("below the subtitles, left of the webcam"). Only when no band is free does the moment that shows why go along.
 
 ## 5. Publish
 
@@ -171,11 +171,11 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - The button that moves on gets `:class "primary"`; alternative answers stay plain. A button that opens a page ends its text with " ↗".
 - Never a token, an id the person does not need or a raw error in the chat.
 
-A video Story: the sheet of its moments and the preview beside the chat:
+A video Story: the preview's snapshot, the button that plays it, no sheets:
 
 ```hiccup
 [:div
- [:img {:src "uploads/launch-moments-1.jpg" :style {:width "100%" :border-radius "8px"}}]
+ [:img {:src "uploads/launch-preview/frame-00-at-1s.png" :style {:width "180px" :aspect-ratio "9 / 16" :border-radius "8px"}}]
  [:p "The link sticker sits below the subtitles and left of the webcam, in every moment of the video. Good like this?"]
  [:button {:class "primary" :send "The stickers are good"} "Looks good"] " "
  [:button {:open "artifacts/launch"} "Play the preview ↗"]
