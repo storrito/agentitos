@@ -24,6 +24,7 @@ The accounts that count are the ones the Story may go to: the only one connected
   | `insta-countdown` | the date as text in the Story, no sticker |
   | `insta-mention`, `insta-hashtag`, `insta-location` | the @name, the #tag or the place as text in the Story |
   | `insta-link` | nothing replaces it (never "link in bio" text): say the Story then has no way to the page, and offer it without the link |
+  | `insta-music` | nothing replaces it (never a song mixed into the video yourself): offer the Story without music. A business account finds only Meta's royalty-free songs: when a picked song is not among them, Storrito plays the first song it finds instead |
 
   The other sticker has another size: make sure it still fits where the first one was meant to go.
 - **Some lack it**: keep it. When you ask for the accounts (publishing), offer only the ones that have it, with a small line naming the others and why ("@soul.globe has no quiz sticker"). A video goes out through publish-video, whose account block lists them all: leave the `instagram/<account>/story` targets of the accounts that lack it out of `--to`, and say why in that line. A second version without the sticker for those only when the person asks.

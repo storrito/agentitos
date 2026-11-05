@@ -1,6 +1,6 @@
 ---
 name: story-stickers
-description: Turns a picture or video the person brings, or a HyperFrames film, into an Instagram Story with Instagram's tappable stickers (link, poll, countdown, …), previewed and then scheduled through Storrito.
+description: Turns a picture or video the person brings, or a HyperFrames film, into an Instagram Story with Instagram's tappable stickers (link, poll, countdown, music, …), previewed and then scheduled through Storrito.
 license: MIT
 metadata:
   title: "Story from a picture or video"
@@ -29,6 +29,7 @@ A sticker is never drawn into the picture or the video, never faked with a pictu
 - A video is 1080×1920 and at most 60 s; a picture best 1080 px wide or more.
 - A picture or video the person brings: do only what was asked. One picture and a link make one frame with a link sticker; no text, frames or captions they did not ask for; a line of text only when they want one, in their words. (A film you make for another skill follows that skill.)
 - A link sticker's `url` is the person's page or one they named; never invent one.
+- Music is Instagram's music sticker with a song the person picks, never one you guess: "Music" below.
 
 ## 1. The stickers: a band, and flexbox in it
 
@@ -42,7 +43,7 @@ Choose a **band** where the picture or film never shows anything the viewer must
 ```
 
 - `top`/`bottom` set the band, inside Instagram's safe zone: `top` 250 px or more, `bottom` 300 px or more, `left`/`right` 60 px or more (platform-zones' `zones instagram-story` has the exact box).
-- Tall enough for its stickers, 40 px between them: link, hashtag, mention, location 177 px tall (width follows the text, "Shop Now" 605 px); poll 768 wide, 566 / 728 / 890 tall with 2 / 3 / 4 options; question 771 × 454; quiz 771 wide, 541 / 709 / 877 tall; countdown 693 × 433; emoji slider 818 wide, 262 tall without a question, 467 with one.
+- Tall enough for its stickers, 40 px between them: link, hashtag, mention, location 177 px tall (width follows the text, "Shop Now" 605 px); poll 768 wide, 566 / 728 / 890 tall with 2 / 3 / 4 options; question 771 × 454; quiz 771 wide, 541 / 709 / 877 tall; countdown 693 × 433; emoji slider 818 wide, 262 tall without a question, 467 with one; music `simple` 201 tall (width follows the song, about 640), `album-art` 561 × 705, `vinyl` 561 × 688.
 - To one side: `align-items:flex-start` (left) or `flex-end` (right) and the band's `left`/`right`; two side by side: `flex-direction:row`.
 - A turn: `style="transform:rotate(-3deg)"` (−6 to 6 looks placed by hand); smaller: `transform:scale(0.85)` (not below 0.75: hard to tap).
 - Attribute values with `"` go in single quotes, as `options` above.
@@ -58,6 +59,9 @@ Choose a **band** where the picture or film never shows anything the viewer must
 | `insta-emoji-slider` | `question`, `emoji` | `color` |
 | `insta-mention`, `insta-hashtag` | `username`, `hashtag` | `design`: default, gray, rainbow |
 | `insta-location` | `location` | `design`: default, gray, black, orange, rainbow |
+| `insta-music` | `search-term`, `track-id`, `start-ms`: as the person's pick gives them, never written yourself | `design`: simple, album-art, vinyl, invisible (the song plays, a tappable area instead of a visual) |
+
+**Music.** In rragent the person picks the song with the `music_pick` tool, never you: call it with `sectionMs`, how long the song plays (15000 for a picture, which becomes a 15 s video with music; a video's length in ms, at most 60000), and give its link as a card (`[:a {:href "<link>"} "Pick the song ↗"]`). They search the song like in Storrito's editor and drag where it starts; tell them in the same sentence to pick it with the account the Story goes to (the page's account select), since Storrito finds the song again with that account. Then wait: the choice comes back as a message with the `<insta-music search-term=… track-id=… start-ms=…>` element. Put it into the layer as it is, only `design` added, and show the preview; the preview shows the song's name on a gray cover, the Story the real cover. One music sticker per Story. Without `music_pick` (another agent): ask the person which song and write `<insta-music search-term="<title> <artist>">`; Storrito takes the first song it finds.
 
 Before a sticker goes into the layer, read `<skill>/references/accounts.md`: Instagram does not offer every sticker to every account, and Storrito refuses a Story with one the account lacks.
 
