@@ -100,6 +100,9 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     const [a, b] = r;
     if (a > b || b >= words.length) return errors.push(`${name}: the words are numbered 0–${words.length - 1}`);
     const items = words.slice(a, b + 1);
+    // a keep that shows another video ("show") has nothing of the recording to see in its pauses:
+    // they go like a still picture's, as a jump cut (bot 1832: "shorten the pauses in it")
+    const movesHere = keep.show !== undefined ? () => [] : moves;
     const other = items.find((w) => w.clip !== items[0].clip);
     if (other) return errors.push(`${name} runs from video ${items[0].clip} into video ${other.clip}: end it at ${other.i - 1}, start the next keep at ${other.i}`);
     // a hook ("hook": true) shows a moment ahead that plays again in its place: its words may be
@@ -137,13 +140,13 @@ export function plan(words, cut, settings, voices, moves = () => []) {
         close();
       } else if (last && waits.has(last.i) && w.start > last.end) {
         usedWaits.add(last.i);
-        const parts = waitGroups(w.clip, last.end, w.start, moves);
+        const parts = waitGroups(w.clip, last.end, w.start, movesHere);
         removed.push({ kind: "pause", wait: true, clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
           moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
         close();
         groups.push(...parts);
       } else if (last && keep.pauses !== "keep" && w.start - last.end > maxPause) {
-        const shown = moves(w.clip, last.end, w.start);
+        const shown = movesHere(w.clip, last.end, w.start);
         removed.push({ kind: "pause", clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
           moving: shown.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +speed(s.to - s.from).toFixed(2) })) });
         close();
@@ -164,7 +167,7 @@ export function plan(words, cut, settings, voices, moves = () => []) {
         ? { clip: lastWord.clip, session: lastWord.session, start: nextAt[0] + 0.3, i: null } : null;
     if (lastWord && waits.has(lastWord.i) && next && next.clip === lastWord.clip && next.session === lastWord.session && next.start > lastWord.end + 0.5) {
       usedWaits.add(lastWord.i);
-      const parts = waitGroups(lastWord.clip, lastWord.end, next.start - 0.3, moves);
+      const parts = waitGroups(lastWord.clip, lastWord.end, next.start - 0.3, movesHere);
       removed.push({ kind: "pause", wait: true, clip: lastWord.clip, from: lastWord.end, to: next.start, words: [lastWord.i, next.i ?? lastWord.i],
         moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
       groups.push(...parts);

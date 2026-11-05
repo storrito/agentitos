@@ -721,6 +721,9 @@ function pace(pieces, words) {
   return { rate, speed: +Math.min(MOST, Math.max(1, TARGET / rate)).toFixed(2) };
 }
 
+// a keep's "show": a file's name, or { file, from, sound }
+const showOf = (keep) => (typeof keep.show === "string" ? { file: keep.show } : keep.show && typeof keep.show === "object" ? keep.show : {});
+
 async function cmdBuild(dir, opts) {
   if (!fs.existsSync(source(dir, "words.json"))) fail(`The words first: ${cmd(`words ${rel(dir)} <words.json>`)}`);
   const cutFile = path.join(dir, "cut.json");
@@ -736,6 +739,18 @@ async function cmdBuild(dir, opts) {
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
     if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
+    if (keep.show !== undefined) {
+      const show = showOf(keep);
+      const usage = `"show" is a video that plays instead of the recording while the keep's words play: "show": "uploads/result.mp4", or {"file": "uploads/result.mp4", "from": 2, "sound": 0.8}`;
+      if (!show.file || !fs.existsSync(show.file)) fail(`✗ keep ${k + 1}: ${usage}; there is no ${show.file ?? "file named"}`);
+      let info;
+      try { info = probe(show.file); } catch (e) { fail(`✗ keep ${k + 1}: "show": ${e.message}`); }
+      if (!info.video) fail(`✗ keep ${k + 1}: "show": ${show.file} has no picture`);
+      if (show.from !== undefined && !(Number(show.from) >= 0 && Number(show.from) < info.duration)) fail(`✗ keep ${k + 1}: "show" "from" is a second of ${show.file} (0–${info.duration.toFixed(1)})`);
+      if (show.sound !== undefined && !(Number(show.sound) >= 0 && Number(show.sound) <= 1)) fail(`✗ keep ${k + 1}: "show" "sound" is its sound's level 0–1 (0 or none: muted)`);
+      if (Number(show.sound) > 0 && !info.audio) fail(`✗ keep ${k + 1}: "show" "sound": ${show.file} has no sound (a Story's music is added by Instagram: the posted Story, downloaded or recorded, has it)`);
+      show.info = info;
+    }
   }
 
   // the pictures that move in a pause: any of the screens; in a wait someone named, anything
@@ -836,7 +851,7 @@ async function cmdBuild(dir, opts) {
   };
   for (const p of r.pieces) {
     const zoom = cut.keep[p.keep].zoom;
-    if (p.view === "face" || !p.source || tall(p.source) || zoom !== "auto") continue;
+    if (p.view === "face" || !p.source || tall(p.source) || zoom !== "auto" || cut.keep[p.keep].show !== undefined) continue;
     const sp = span(p.keep) || [p.in, p.out];
     const cuts = p.wait ? scenes(activity[p.source] || [], p.in, p.out) : sceneCuts(p.keep, p.source);
     if (!cuts.length) continue;
@@ -907,19 +922,42 @@ async function cmdBuild(dir, opts) {
       r.pieces, path.join(out, "assets", "backdrop.mp4"), { fps: s.fps, parts: source(dir, "backdrop.parts") });
     backdrop = "backdrop.mp4";
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, brand, areas: layout.areas });
+  // a keep that shows another video ("show"): its picture over the keep's whole length (its words,
+  // its pauses, its hold), from "from" on at its own speed; its sound ("sound") cut out beside it
+  const shown = { ...sources }, inserts = [];
+  for (const [k, keep] of (cut.keep || []).entries()) {
+    if (keep.show === undefined) continue;
+    const show = showOf(keep), info = probe(show.file);
+    const ps = r.pieces.filter((p) => p.keep === k);
+    if (!ps.length) continue;
+    const start = ps[0].start, end = ps.at(-1).start + ps.at(-1).duration, from = Number(show.from) || 0;
+    const duration = Math.min(end - start, info.duration - from);
+    if (duration < end - start - 0.05) r.warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s): an earlier "from", a shorter "hold", or end the keep a word earlier`);
+    const key = `show-${k + 1}`;
+    shown[key] = { file: `${key}${path.extname(show.file) || ".mp4"}`, path: path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };
+    for (const p of ps) p.show = { source: key, in: from + (p.start - start), until: start + duration };
+    const sound = Number(show.sound) || 0;
+    if (sound > 0 && duration > 0.1) {
+      const audio = `${key}.m4a`;
+      const a = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(from), "-t", duration.toFixed(3), "-i", show.file, "-vn", "-c:a", "aac", "-b:a", "192k", path.join(out, "assets", audio)], { encoding: "utf8" });
+      if (a.status !== 0) fail(`✗ keep ${k + 1}: the sound of ${show.file}: ${(a.stderr || "").trim().split("\n").pop()}`);
+      const said = r.words.filter((w) => w.start >= start - 0.01 && w.end <= end + 0.01);
+      inserts.push({ start, duration, sound, spoken: said.length ? said.at(-1).end - start : 0, audio });
+    }
+  }
+  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: shown, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts, brand, areas: layout.areas });
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
-      view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
+      view: p.view, source: p.source, ...(p.show ? { show: showOf(cut.keep[p.keep]).file } : {}), ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   });
   const views = {};
-  for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
+  for (const p of r.pieces) { const v = p.show ? "another video (show)" : p.view; views[v] = (views[v] || 0) + p.duration; }
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
   if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
@@ -971,7 +1009,7 @@ function cmdCheck(dir) {
 
   console.log(`${clock(e.recorded)} recorded → ${clock(e.duration)} cut, ${e.pieces.length} pieces\n\nAs it plays:`);
   e.pieces.forEach((p, k) => {
-    const where = `${p.view}${z(p)}, recorded at ${clock(p.in)}`;
+    const where = p.show ? `shows ${p.show} over the recording's sound at ${clock(p.in)}` : `${p.view}${z(p)}, recorded at ${clock(p.in)}`;
     if (p.shows) {
       console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${p.silent ? "a keep by its time" : p.hold ? "held after the words, the voice faded" : p.wait ? "a wait" : "the picture moves"}, ${(p.out - p.in).toFixed(1)} s${p.rate > 1 ? ` ×${p.rate} in ${p.duration.toFixed(1)} s` : ""})   (${where})`);
       return;
@@ -1024,7 +1062,7 @@ function cmdCheck(dir) {
   const settingsNow = settings(dir, {});
   const [fw, fh] = FRAMES[settingsNow.frame];
   for (const [k, keep] of (cut.keep || []).entries()) {
-    if (keep.zoom !== undefined || !e.pieces.some((p) => p.keep === k && p.source === "screen" && !p.wait)) continue;
+    if (keep.zoom !== undefined || keep.show !== undefined || !e.pieces.some((p) => p.keep === k && p.source === "screen" && !p.wait)) continue;
     const src = meta.sources.screen;
     if (src && fh > fw && src.width > src.height) warnings.push(`keep ${k + 1} shows the whole screen in a ${settingsNow.frame} frame, where its text is small: decide from its sheet whether to zoom ("zoom": [x0, y0, x1, y1]) or keep it whole on purpose ("zoom": "off")`);
   }

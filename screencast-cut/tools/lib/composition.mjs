@@ -10,7 +10,10 @@
 // a gentle compressor, a true-peak ceiling) as in best-takes. A browser plays only about 75 media
 // elements on a page: the shots of the screens are one each, the voice and the webcam one in all.
 // On top: a label per keep that has one, a badge on a timelapse, the captions of agentitos'
-// captions skill, and music under the voice when asked, lower while someone speaks. Behind it all
+// captions skill, and music under the voice when asked, lower while someone speaks. A keep that
+// shows another video (cut.json "show": the finished result, a clip) has that video for its
+// picture, at its own speed, and its sound under the voice when asked, rising up to the keep's
+// last word (bot 1832: "the music getting louder while I say it"). Behind it all
 // the screen of each piece, small and blurred (tracks.backdropTrack), or the brand's colours.
 // Nothing is rendered to preview it.
 
@@ -60,7 +63,24 @@ export function shots(pieces, sources, width, height, a) {
   return pieces.map((p) => {
     const out = [];
     const src = sources[p.source];
-    if (p.view === "face" || !src) {
+    const round = Math.round(Math.min(width, height) * 0.02);
+    const pip = () => {
+      if (!sources.webcam || p.pip === false) return;
+      const [x, y, d] = a.pip;
+      out.push({ source: "webcam", box: [x, y, d, d], crop: circle(sources.webcam), pip: true });
+    };
+    if (p.show) {
+      // another video instead of the recording: whole, as large as the room holds it, from its
+      // own time on at its own speed (the piece's speed-up is the recording's), up to its end
+      const shown = sources[p.show.source];
+      const tallShown = shown.height > shown.width * 1.25;
+      const room = p.pip === false || !sources.webcam
+        ? (tallShown ? [a.tall, ...(a.solo || []), ...(a.whole ? [a.whole] : [])] : a.solo || a.content)
+        : (tallShown ? a.tall : [...a.content, ...(a.beside || [])]);
+      const duration = Math.min(p.duration, p.show.until - p.start);
+      if (duration > 0.001) out.push({ source: p.show.source, box: fit(room, shown.width / shown.height), crop: [0, 0, 1, 1], main: true, show: true, round, start: p.start, duration, in: p.show.in, rate: 1 });
+      pip();
+    } else if (p.view === "face" || !src) {
       const cam = sources.webcam || src;
       if (cam) out.push({ source: cam === src ? p.source : "webcam", box: [0, 0, width, height], crop: cover(cam, width, height), main: true });
     } else {
@@ -73,13 +93,13 @@ export function shots(pieces, sources, width, height, a) {
         const aspect = ((c[2] - c[0]) * src.width) / ((c[3] - c[1]) * src.height);
         const start = p.start + (seg.in - p.in) / rate;
         const timed = parts.length > 1 ? { start, duration: (i === parts.length - 1 ? end : p.start + (seg.out - p.in) / rate) - start, in: seg.in } : {};
-        const round = Math.round(Math.min(width, height) * 0.02);
         // a phone's screen (a tall source) gets the tall area beside the circle, as its crop shows
         // it, and without the circle the whole room when that holds it larger (a phone's screen
-        // cropped to the story, its bars off, is wider than the tall area); a tall crop of a wide
-        // screen is a screen's shot like any other
+        // cropped to the story, its bars off, is wider than the tall area): shown whole, the
+        // frame's full height above the captions (a.whole); a tall crop of a wide screen is a
+        // screen's shot like any other
         if (src.height > src.width * 1.25) {
-          const room = p.pip === false || !sources.webcam ? [a.tall, ...(a.solo || [])] : a.tall;
+          const room = p.pip === false || !sources.webcam ? [a.tall, ...(a.solo || []), ...(a.whole && c.join() === "0,0,1,1" ? [a.whole] : [])] : a.tall;
           return out.push({ source: p.source, box: fit(room, aspect), crop: c, main: true, round, ...timed });
         }
         // a screen: what matters as large as the safe room allows (beside the circle too, or all
@@ -92,10 +112,7 @@ export function shots(pieces, sources, width, height, a) {
         const [x, , w] = at.box;
         out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });
-      if (sources.webcam && p.pip !== false) {
-        const [x, y, d] = a.pip;
-        out.push({ source: "webcam", box: [x, y, d, d], crop: circle(sources.webcam), pip: true });
-      }
+      pip();
     }
     return { piece: p, layers: out };
   });
@@ -115,13 +132,15 @@ export function brandOf(file) {
 export function writeComposition(out, o) {
   // voice: the voice's track for the whole cut in assets/ (tracks.voiceTrack); camera: the
   // webcam's (tracks.cameraTrack), one element that is the circle and the face in turn
-  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, backdrop, labels = [], captions, music, brand = {}, areas } = o;
+  // inserts: the keeps that show another video and play its sound ({ start, duration, sound,
+  // spoken: the keep's last word's end from its start, audio: its sound in assets/ })
+  const { title, lang, width, height, fps, pieces, sources, dir, voice, camera, backdrop, labels = [], captions, music, inserts = [], brand = {}, areas } = o;
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   const name = path.basename(out);
   const used = new Set();
   const placed = shots(pieces, sources, width, height, areas);
   for (const s of placed) for (const l of s.layers) used.add(l.source);
-  for (const k of used) if (!(k === "webcam" && camera)) link(path.join(dir, "source", sources[k].file), path.join(out, "assets", sources[k].file));
+  for (const k of used) if (!(k === "webcam" && camera)) link(sources[k].path || path.join(dir, "source", sources[k].file), path.join(out, "assets", sources[k].file));
   if (music) link(path.resolve(music.file), path.join(out, "assets", `music${path.extname(music.file)}`));
   fs.writeFileSync(path.join(out, "meta.json"), JSON.stringify({ id: name, name }, null, 2) + "\n");
   fs.writeFileSync(path.join(out, "hyperframes.json"), JSON.stringify({ $schema: "https://hyperframes.heygen.com/schema/hyperframes.json", paths: { assets: "assets" }, media: { autoProxy: true } }, null, 2) + "\n");
@@ -148,7 +167,7 @@ export function writeComposition(out, o) {
       const clipPath = `inset(${at.inset.map(px).join(" ")}${radius ? ` round ${px(radius)}` : ""})`;
       if (l === camLayer) cam.at(-1).style = { left: px(at.left), top: px(at.top), width: px(at.width), height: px(at.height), clipPath };
       else html.push(`      <video id="${next("v")}" class="clip${l.pip ? " pip" : ""}" src="assets/${src.file}" ${timing(l.start ?? p.start, l.duration ?? p.duration)}
-        data-media-start="${n(Math.max(0, (l.in ?? p.in) - src.offset))}"${p.rate && p.rate !== 1 ? ` data-playback-rate="${+p.rate.toFixed(4)}"` : ""}
+        data-media-start="${n(Math.max(0, (l.in ?? p.in) - src.offset))}"${(l.rate ?? p.rate) && (l.rate ?? p.rate) !== 1 ? ` data-playback-rate="${+(l.rate ?? p.rate).toFixed(4)}"` : ""}
         data-track-index="${l.pip ? 2 : 0}" muted data-has-audio="false" playsinline
         style="left:${px(at.left)};top:${px(at.top)};width:${px(at.width)};height:${px(at.height)};clip-path:${clipPath}"></video>`);
       if (l.pip) {
@@ -157,8 +176,8 @@ export function writeComposition(out, o) {
         style="left:${px(x - 4)};top:${px(y - 4)};width:${px(d + 8)};height:${px(d + 8)}"></div>`);
       }
     }
-    // a timelapse says so
-    if ((p.lapse ?? p.rate) > 1.05) {
+    // a timelapse says so (not over another video, which plays at its own speed)
+    if ((p.lapse ?? p.rate) > 1.05 && !layers.some((l) => l.show)) {
       const box = layers.find((l) => l.main)?.box || [0, 0, width, height];
       html.push(`      <div id="${next("b")}" class="clip badge" ${timing(p.start, p.duration)} data-track-index="4"
         style="left:${px(box[0] + box[2] - 20)};top:${px(box[1] + 20)}">⏩ ${Math.round(p.rate)}×</div>`);
@@ -221,6 +240,17 @@ export function writeComposition(out, o) {
         data-track-index="8" data-has-audio="true" data-automation="${attr(auto)}"></audio>`;
   }
 
+  // the sound of a video a keep shows: a quarter of its level under the first words, rising over
+  // the last 1.5 s of them to its level at the last word, held, out over the last 0.25 s
+  const insertHtml = inserts.filter((i) => i.audio).map((i, k) => {
+    const top = i.sound, low = top / 4, d = i.duration, s = Math.min(Math.max(i.spoken || 0, 0), d);
+    const points = (s > 0.3 ? [{ t: 0, v: low }, { t: n(Math.max(0, s - 1.5)), v: low }, { t: n(s), v: top }] : [{ t: 0, v: 0 }, { t: n(Math.min(0.2, d / 2)), v: top }])
+      .concat([{ t: n(Math.max(0, d - 0.25)), v: top }, { t: n(d), v: 0 }])
+      .filter((x, j, all) => j === 0 || x.t > all.slice(0, j).reduce((m, y) => Math.max(m, y.t), -1));
+    return `      <audio id="show-sound-${k + 1}" class="clip" src="assets/${i.audio}" ${timing(i.start, d)} data-media-start="0"
+        data-track-index="9" data-has-audio="true" data-automation="${attr({ version: 1, lanes: [{ target: "volume", points }] })}"></audio>`;
+  });
+
   const doc = `<!doctype html>
 <html lang="${esc(lang || "en")}">
   <head>
@@ -249,7 +279,7 @@ export function writeComposition(out, o) {
       <hf-audio-group id="voice" data-label="Voice" data-fx-chain="${attr(BUS)}"></hf-audio-group>
 ${backdrop ? `      <video id="backdrop" class="clip backdrop" src="assets/${backdrop}" ${timing(0, total)} data-media-start="0"
         data-track-index="1" muted data-has-audio="false" playsinline></video>\n` : ""}${html.join("\n")}${camHtml ? `\n${camHtml}` : ""}
-${voiceClips.join("\n")}${musicHtml ? `\n${musicHtml}` : ""}${captions ? `\n      ${captions}` : ""}
+${voiceClips.join("\n")}${musicHtml ? `\n${musicHtml}` : ""}${insertHtml.length ? `\n${insertHtml.join("\n")}` : ""}${captions ? `\n      ${captions}` : ""}
     </div>
     <script>
       const tl = gsap.timeline({ paused: true });
