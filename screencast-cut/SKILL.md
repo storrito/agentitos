@@ -17,7 +17,7 @@ metadata:
 
 # screencast-cut
 
-You run in rragent: chat left, artifacts beside it. `<skill>` is this file's folder. Run `node <skill>/tools/screencast.mjs …` from your working directory; never change files in `<skill>`. Full reference: [README.md](README.md), only when this file and the tool's own output leave a question open.
+You run in rragent: chat left, artifacts beside it. `<skill>` is this file's folder. Run `node <skill>/tools/screencast.mjs …` from your working directory; never change files in `<skill>`. `node <skill>/tools/screencast.mjs --help` lists every command and option. Full reference: [README.md](README.md), only when this file, `--help` and the tool's own output leave a question open.
 
 Every file you read stays in the conversation and slows each later step. So: don't read the tool's source (`<skill>/tools/`) to learn how to use it, its output says what comes next and what to fix; only when it does not do what it should. The build makes the whole composition, so the HyperFrames, platform-zones and media-use skills and their references are not needed here: don't read them.
 
@@ -41,7 +41,7 @@ node <skill>/tools/screencast.mjs new screencast/<name> artifacts/recordings/<ti
 
 It puts the sources on one clock, cleans the voice, measures movement and finds the webcam face. `--frame` 9:16 (default), 16:9, 1:1, 4:5. **Several recordings** for one video (the person stopped and recorded again): all their folders in the order they were recorded, in one `new`; never join them yourself.
 
-It converts about a minute of three sources in 30 s. Your bash stops a command after a few minutes: for recordings over five minutes in all, run it in the background (`mkdir -p screencast/<name> && nohup node <skill>/tools/screencast.mjs new … > screencast/<name>/new.log 2>&1 &`) and read the log's end every minute until it says "Next". A `new` that was cut off goes on where it stopped when you run the same command again.
+It converts about a minute of three sources in 30 s. Your bash stops a command after a few minutes: for recordings over five minutes in all, run it in the background (`mkdir -p screencast/<name> && nohup node <skill>/tools/screencast.mjs new … > screencast/<name>/new.log 2>&1 &`) and read the log's end every minute until it says "Next". Meanwhile only the log: no frames or probes of the recording of your own, the sheets (step 3) show what you need. A `new` that was cut off goes on where it stopped when you run the same command again.
 
 ### 2. The words
 
@@ -64,7 +64,7 @@ node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 
 - **The story:** the result first as a short hook (`"hook": true`, stays in its place later too), then the steps, then the proof; slips, repeats and talk about the recording out. The hook is something that works and is seen: never a limitation or what is missing ("the music sticker is missing" was turned down as an opening), which goes later, briefly, where it happens. A take that went wrong (the person says so, or it ends in an error) is left out whole. `"waits"`: the last word before something takes time (an agent working, an upload), played fast. `"hold": 2.5` after a result.
 - **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid (the field being typed in, the answer, the list being picked from). The tool enlarges it as far as the safe area allows (up to twice its pixels) and shows the rest around it, under the apps' buttons too, so a tight box is right: around the content, never the page's empty margins beside it. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
-- **A phone's screen:** zoom past the phone's own bars (the clock and battery at the top, the navigation at the bottom) and the app's chrome around what is shown, e.g. a Story without its viewer's top and bottom rows; with `"circle": false` it takes the whole room.
+- **A phone's screen:** shown whole, `"zoom": "off"`, the phone's bars and the app's buttons included: they show it is the real app on a real phone. With `"circle": false` it takes the whole room. A zoom on a phone only when the person asks for one.
 - **What happens without words** (a box ticked, a button pressed, a result coming in while the person is quiet): a keep by its time, `{"at": "7:01.5-7:06", "zoom": [...], "why": "…"}`, the picture alone. Find the moment with the brief's "moves" column and `frame`.
 - **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for.
 - `"label"` where a step title helps ("01 · Upload").
@@ -80,7 +80,13 @@ node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable? Before you ask (step 5), once, in `artifacts/<name>/composition`: `npx hyperframes check --json`, and fix its errors (text hidden under the face circle, a label off the frame). No `hyperframes snapshot --review` and no rounds of snapshots: `frame` and the check are the review.
+Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable? Before you ask (step 5), once, in `artifacts/<name>/composition`, with its long output filtered:
+
+```bash
+npx hyperframes check --json 2>/dev/null | jq -c '{ok, problems: [.. | objects | select(.severity? == "error" or .severity? == "warning") | {code, severity, message, time}] | unique_by(.code, .time)}'
+```
+
+Fix its errors (text hidden under the face circle, a label off the frame). No `hyperframes snapshot --review` and no rounds of snapshots: `frame` and the check are the review.
 
 The cut lives in `cut.json`: no notes files (SPEC.md, REVIEW.md, a README) in the project or beside it.
 

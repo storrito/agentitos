@@ -1167,10 +1167,20 @@ function cmdFinish(dir, file) {
   console.log(`${rel(path.resolve(file))}: ${clock(p.duration)}, ${p.width}×${p.height}, ${after.lufs} LUFS (was ${before.lufs}), true peak ${after.peak} dBTP; subtitles: ${rel(path.resolve(subs))}`);
 }
 
+// -------------------------------------------------------------------------------------- help
+// The head of this file, every command and option, without its comment marks.
+function help() {
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1);
+  const head = lines.slice(0, lines.findIndex((l) => !l.startsWith("//")));
+  console.log(head.map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+}
+
 // -------------------------------------------------------------------------------------- main
 const [command, ...rest] = process.argv.slice(2);
-const [pos, opts] = parse(rest);
-if (command === "new") await cmdNew(pos[0], pos.slice(1), opts);
+const asksHelp = command === "help" || process.argv.slice(2).some((a) => a === "--help" || a === "-h");
+const [pos, opts] = asksHelp ? [[], {}] : parse(rest);
+if (asksHelp) help();
+else if (command === "new") await cmdNew(pos[0], pos.slice(1), opts);
 else if (command === "words") cmdWords(pos[0], pos[1]);
 else if (command === "transcribe") await cmdTranscribe(pos[0]);
 else if (command === "propose") cmdPropose(pos[0]);
@@ -1181,4 +1191,4 @@ else if (command === "captions") await cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
 else if (command === "sheets") cmdSheets(pos[0], opts);
-else fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …] | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (options: see the head of this file)");
+else fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …] | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (every option: --help)");
