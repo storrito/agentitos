@@ -24,6 +24,7 @@ Each Story is a 1080×1920 HyperFrames film of 16.60 s: one of four word intros 
 
 - A Google Sheet or another service: if it is not connected, give the person its sign-in link first, before anything else. Read only; never change the plan. A file (CSV, XLSX, JSON) or a list in the chat works too.
 - One Story per row the person picks, named `<NN>-<slug>` in posting order (`01-scheduling`). Common columns: the topic and title are the brief, the hook is the wording to start from, the link is the sticker's `url`. A date is planning, never text on screen.
+- A Story is 16.60 s, and its four scenes hold about 40–55 words besides the intro (`story.mjs` counts them; a Story an editor liked had 38, the example has 53). A row with more is cut with the person: propose the cut in their wording beside their text and say that longer copy is a change to their plan. Never lengthen the Story, add scenes or set whole paragraphs to fit a row, even when asked for the full text or a longer Story: say that this skill makes 16.60 s Stories and offer the cut. Versions stretched to 50–60 s lost the intros' motion and read as slides.
 - Only what the plan says: no figures, results, tests or promises it does not have. A drawn chart or app screen is an illustration, labelled as an example when it shows numbers, never passed off as the product.
 
 ## 2. What the person decides first

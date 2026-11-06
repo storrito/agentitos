@@ -32,6 +32,7 @@ Requirements: Node 20+, the HyperFrames CLI, agentitos' story-stickers and platf
 ## Limits
 
 - The tool writes a start: every Story needs its illustrations drawn and its text placed by the agent.
+- 16.60 s and four scenes hold about 40–55 words besides the intro; `new` prints the count and warns above 55. Longer copy is cut in the plan, never by stretching the Story: versions of 50–60 s with the full text lost the intros' motion and read as slides.
 - The intro sentence is 2–8 words in a Latin script; Anton has no other.
 - Changing the sentence later means editing it in three places of the markup, or a new name and `new` again.
 
