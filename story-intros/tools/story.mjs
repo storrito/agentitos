@@ -10,6 +10,7 @@ const SKILL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MODES = { "stamp-orbit": 3.2, "stack-fan": 2.5, "slide-lock": 2.3, "echo-collapse": 3.2 };
 const KEYS = new Set(["name", "title", "language", "mode", "introDuration", "introCopy", "echoKey", "colors", "headline", "cta", "bodyBeats", "link", "musicFile"]);
 const BEATS = [0, 5.2, 9.2, 13.8, 16.6];
+const MAX_WORDS = 55;
 
 function fail(message) {
   console.error("story: " + message);
@@ -185,6 +186,8 @@ const configFile = path.resolve(configArg);
 let c;
 try { c = JSON.parse(fs.readFileSync(configFile, "utf8")); } catch (e) { fail(`cannot read ${configArg} as JSON: ${e.message}.`); }
 const { cases, caps, music } = validate(c, configFile);
+// What the four scenes show besides the intro: the headline, the headings, the bodies and the call to action.
+const words = [c.headline, c.cta, ...c.bodyBeats.flatMap((b) => [b.heading ?? "", b.body])].join(" ").split(/\s+/).filter(Boolean).length;
 const project = path.resolve(projectArg);
 if (!fs.existsSync(path.join(project, "composition"))) fail(`${projectArg} has no composition/ folder: create the HyperFrames project first.`);
 const dir = path.join(project, "composition", c.name);
@@ -202,6 +205,7 @@ fs.writeFileSync(path.join("stickers", c.name, "layer.html"), lines);
 fs.writeFileSync(path.join(dir, "compositions/story-stickers.html"), scene(lines));
 fs.writeFileSync(path.join(dir, "index.html"), story(c, cases, caps, musicName));
 
-console.log(`Wrote composition/${c.name}/ in ${projectArg} (${c.mode}, intro ${c.introDuration.toFixed(2)} s, Story 16.60 s, ${music ? "with the music" : "silent"}) and stickers/${c.name}/layer.html.`);
+console.log(`Wrote composition/${c.name}/ in ${projectArg} (${c.mode}, intro ${c.introDuration.toFixed(2)} s, Story 16.60 s, ${music ? "with the music" : "silent"}, ${words} words in the scenes) and stickers/${c.name}/layer.html.`);
+if (words > MAX_WORDS) console.log(`${words} words are more than the ${MAX_WORDS} that 16.60 s holds: propose a cut to the person, never a longer Story or more scenes.`);
 if (fs.existsSync(path.join(project, "composition/index.html"))) console.log("Delete composition/index.html, so the preview shows the Stories side by side.");
 console.log("Next: each beat's illustration in its .topic-illustration, then the preview.");
