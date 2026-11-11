@@ -7,6 +7,9 @@ It exists for [rragent](https://github.com/storrito/rragent): a bot that has agr
 | a phone | a wide screen |
 | --- | --- |
 | <img src="examples/story-approval-phone.png" width="260" alt="Four cards, one under the other"> | <img src="examples/story-approval-wide.png" width="620" alt="The same four cards in a row"> |
+| <img src="examples/story-approval-phone-dark.png" width="260" alt="The four cards on a phone, dark"> | <img src="examples/story-approval-wide-dark.png" width="620" alt="The four cards in a row, dark"> |
+
+Light or dark follows the theme of the page it is shown in, else the system's.
 
 Six cards, something outside that starts it, several ways in and several places out, a condition as a note ([examples/review-stories.json](examples/review-stories.json)):
 
@@ -20,13 +23,13 @@ Six cards, something outside that starts it, several ways in and several places 
 
 ```
 node tools/diagram.mjs build <workflow.json> [--out <folder>]
-node tools/diagram.mjs picture <workflow.json> [--width <px>] [--out <file.png>]
+node tools/diagram.mjs picture <workflow.json> [--width <px>] [--dark] [--out <file.png>]
 node tools/diagram.mjs icons
 ```
 
 Needs Node 20+. `picture` needs Chrome (`google-chrome` on the path, or `CHROME_PATH`). No model, no key, no npm packages.
 
-`build` writes `index.html` beside the JSON: one file, the stylesheet and the icons inside it, no script, nothing loaded from anywhere. `picture` builds and then takes a picture of the page as a screen of that width shows it (390 px, a phone, by default), for the agent to look at or for where a page cannot go.
+`build` writes `index.html` beside the JSON: one file, the stylesheet and the icons inside it, nothing loaded from anywhere, and one small script, which takes the theme (below). `picture` builds and then takes a picture of the page as a screen of that width shows it (390 px, a phone, by default), light or `--dark`, for the agent to look at or for where a page cannot go.
 
 ## workflow.json
 
@@ -72,6 +75,8 @@ Needs Node 20+. `picture` needs Chrome (`google-chrome` on the path, or `CHROME_
 
 Everything about how a workflow looks is in [style/style.css](style/style.css): the colours of the three kinds of step (`--you`, `--auto`, `--event`, each with a soft tone, a background, a border and a note colour), the type, the sizes, and the three layouts by the width of the screen (one column of rows below 640 px, upright cards in two columns from there, three or four in a row on a wide screen). The custom properties at its top are what a change of the look usually touches.
 
+**Light and dark.** The stylesheet holds every colour twice: the light values on `:root`, the dark ones for `prefers-color-scheme: dark` and for `data-theme="dark"` on the root (two blocks with the same values; keep them the same). Without anything else the page follows the system. Where a person chose a theme, [style/theme.js](style/theme.js), which the tool puts into the page, sets `data-theme` from it: from the page around this one when it is shown in a frame of the same origin (rragent's pane; rragent keeps the choice as `data-theme` on its root), else from what the browser keeps of it (`rragent.theme`), and it follows a switch there at once. In the dark values a step's main colour is the light one and its soft tone the darker, so that an icon reads on a dark card.
+
 An icon is `style/icons/<name>.svg`, drawn on `viewBox="0 0 150 140"` with `var(--role)` for its main colour, `var(--role-soft)` for the lighter one and `var(--role-bg)` or `#fff` inside, so that it takes the colour of whichever card it sits in. A new file there is a new icon; `icons` lists them.
 
 After a change, build the two examples and look at them at both widths:
@@ -79,6 +84,8 @@ After a change, build the two examples and look at them at both widths:
 ```
 node tools/diagram.mjs picture examples/story-approval.json --width 390 --out examples/story-approval-phone.png
 node tools/diagram.mjs picture examples/story-approval.json --width 1400 --out examples/story-approval-wide.png
+node tools/diagram.mjs picture examples/story-approval.json --width 390 --dark --out examples/story-approval-phone-dark.png
+node tools/diagram.mjs picture examples/story-approval.json --width 1400 --dark --out examples/story-approval-wide-dark.png
 node tools/diagram.mjs picture examples/review-stories.json --width 1100 --out examples/review-stories-wide.png
 ```
 

@@ -4,7 +4,7 @@
 // style/icons/ beside this folder; nothing of it is decided here.
 //
 //   diagram.mjs build <workflow.json> [--out <folder>]
-//   diagram.mjs picture <workflow.json> [--width <px>] [--out <file.png>]
+//   diagram.mjs picture <workflow.json> [--width <px>] [--dark] [--out <file.png>]
 //   diagram.mjs icons
 
 import fs from 'node:fs';
@@ -21,10 +21,11 @@ const HELP = `workflow-diagram: a workflow as a page of a few cards, for a phone
 
   diagram.mjs build <workflow.json> [--out <folder>]
       writes index.html beside the JSON (or into --out): the page the person opens.
-  diagram.mjs picture <workflow.json> [--width <px>] [--out <file.png>]
+      It is light or dark with the page it is shown in, else with the system.
+  diagram.mjs picture <workflow.json> [--width <px>] [--dark] [--out <file.png>]
       builds, then takes a picture of the page as it looks at that width
-      (390, a phone, by default; 1400 for a wide screen): for you to look at, or
-      for where a page cannot go (a message, a document). Needs Chrome.
+      (390, a phone, by default; 1400 for a wide screen), light or --dark: for you
+      to look at, or for where a page cannot go (a message, a document). Needs Chrome.
   diagram.mjs icons
       the names an "icon" can take.
 
@@ -163,6 +164,9 @@ function page(spec) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(plain(spec.title))}</title>
 <!-- Built by workflow-diagram from workflow.json: change that file and build again, never this one. -->
+<script>
+${fs.readFileSync(path.join(styleDir, 'theme.js'), 'utf8').trim()}
+</script>
 <style>
 ${fs.readFileSync(path.join(styleDir, 'style.css'), 'utf8').trim()}
 </style>
@@ -193,7 +197,7 @@ function chrome() {
 }
 
 // A picture of the page as a browser of that width shows it, as tall as the page is.
-function picture(html, png, width) {
+function picture(html, png, width, dark) {
   const bin = chrome();
   if (!bin) fail('No browser to take the picture: google-chrome is not on this machine (or CHROME_PATH names no file). The page itself is built; open that.');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-diagram-'));
@@ -211,8 +215,11 @@ function picture(html, png, width) {
     const dom = spawnSync(bin, [...base, '--window-size=2600,1200', '--virtual-time-budget=2000', '--dump-dom', pathToFileURL(frame).href], { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024 });
     const height = Number(/data-height="(\d+)"/.exec(dom.stdout || '')?.[1]);
     if (!height) fail(`The browser did not open the page (${(dom.stderr || dom.error?.message || 'no answer').trim().split('\n').pop()}): run the command again.`);
+    // the page as it is, light where nothing says otherwise, or a copy with the dark theme chosen
+    const shot = path.join(tmp, 'shot.html');
+    fs.writeFileSync(shot, fs.readFileSync(html, 'utf8').replace('<html ', `<html data-theme="${dark ? 'dark' : 'light'}" `));
     fs.rmSync(png, { force: true });
-    spawnSync(bin, [...base, '--force-device-scale-factor=2', `--window-size=${width},${height}`, `--screenshot=${png}`, pathToFileURL(html).href], { encoding: 'utf8', timeout: 60000 });
+    spawnSync(bin, [...base, '--force-device-scale-factor=2', `--window-size=${width},${height}`, `--screenshot=${png}`, pathToFileURL(shot).href], { encoding: 'utf8', timeout: 60000 });
     if (!fs.existsSync(png)) fail('The browser took no picture: run the command again.');
     return height;
   } finally {
@@ -220,12 +227,13 @@ function picture(html, png, width) {
   }
 }
 
-function options(args, known) {
+function options(args, known, flags = []) {
   const got = { file: null };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (known.includes(a)) { got[a.slice(2)] = args[++i]; if (!got[a.slice(2)]) fail(`${a} needs a value.`); }
-    else if (a.startsWith('--')) fail(`No option "${a}" here: ${known.join(', ') || 'none'} (diagram.mjs --help).`);
+    else if (flags.includes(a)) got[a.slice(2)] = true;
+    else if (a.startsWith('--')) fail(`No option "${a}" here: ${[...known, ...flags].join(', ') || 'none'} (diagram.mjs --help).`);
     else if (!got.file) got.file = a;
     else fail(`One workflow at a time: "${a}" is one too many.`);
   }
@@ -258,13 +266,13 @@ if (!command || command === '--help' || command === '-h' || command === 'help') 
   build(got.file, got.out);
   console.log('Next: show the person the page (a button that opens index.html beside the chat).');
 } else if (command === 'picture') {
-  const got = options(args, ['--width', '--out']);
+  const got = options(args, ['--width', '--out'], ['--dark']);
   const width = got.width === undefined ? 390 : Number(got.width);
   if (!Number.isInteger(width) || width < 320 || width > 2400) fail('--width is the width of the screen in px, 320 to 2400: 390 for a phone, 1400 for a wide screen.');
   const html = build(got.file, null);
-  const png = path.resolve(got.out || path.join(path.dirname(html), `workflow-${width}.png`));
-  const height = picture(html, png, width);
-  console.log(`wrote ${shown(png)} (the page at ${width} px wide, ${height} px tall; the file at 2×)`);
+  const png = path.resolve(got.out || path.join(path.dirname(html), `workflow-${width}${got.dark ? '-dark' : ''}.png`));
+  const height = picture(html, png, width, got.dark);
+  console.log(`wrote ${shown(png)} (the page at ${width} px wide, ${height} px tall, ${got.dark ? 'dark' : 'light'}; the file at 2×)`);
 } else {
   fail(`No command "${command}": build, picture or icons (diagram.mjs --help).`);
 }

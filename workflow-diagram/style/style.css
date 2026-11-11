@@ -9,12 +9,16 @@
    3, 5 or 6 cards, four in a row for 4). */
 
 :root {
+  color-scheme: light;
+
   /* the page */
   --page: #ffffff;
   --ink: #1f2937;      /* headings */
   --text: #374151;     /* a card's text */
   --muted: #6b7280;    /* subtitle, small lines */
   --arrow: #d1d5db;    /* the chevrons between the cards */
+  --surface: #ffffff;  /* what lies on a card: an item, a chip, a note */
+  --on-role: #ffffff;  /* the number on a card's dot */
   --font: Inter, -apple-system, "Segoe UI", Helvetica, Arial, "Liberation Sans", sans-serif;
 
   /* who does a step: the person */
@@ -49,6 +53,34 @@
   --radius: 24px;
 
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M12 6L28 20L12 34' fill='none' stroke='%23000' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Dark: with the system, unless a theme was chosen (`data-theme` on the
+   root, which theme.js sets from the page this one is shown in); the
+   same values twice, once for each way there. Keep the two blocks the
+   same. A step's main colour is the light one here and its soft tone
+   the darker, so that both still read on a dark card. */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #111315; --ink: #f1f3f5; --text: #c9ced6; --muted: #8d949e; --arrow: #3a4048;
+    --surface: #15171b; --on-role: #111315;
+    --you: #fb923c;   --you-soft: #b4540f;   --you-bg: #2a1a0e;   --you-border: #f97316;   --you-note: #fdba74;
+    --auto: #a78bfa;  --auto-soft: #5f4bb6;  --auto-bg: #1e1a33;  --auto-border: #3f3672;  --auto-note: #c4b5fd;
+    --event: #60a5fa; --event-soft: #2c5fb8; --event-bg: #13203a; --event-border: #264777; --event-note: #93c5fd;
+    --promise: #22c55e; --promise-bg: #12301f;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #111315; --ink: #f1f3f5; --text: #c9ced6; --muted: #8d949e; --arrow: #3a4048;
+  --surface: #15171b; --on-role: #111315;
+  --you: #fb923c;   --you-soft: #b4540f;   --you-bg: #2a1a0e;   --you-border: #f97316;   --you-note: #fdba74;
+  --auto: #a78bfa;  --auto-soft: #5f4bb6;  --auto-bg: #1e1a33;  --auto-border: #3f3672;  --auto-note: #c4b5fd;
+  --event: #60a5fa; --event-soft: #2c5fb8; --event-bg: #13203a; --event-border: #264777; --event-note: #93c5fd;
+  --promise: #22c55e; --promise-bg: #12301f;
 }
 
 * { box-sizing: border-box; }
@@ -90,7 +122,7 @@ h1 { font-size: 27px; line-height: 1.15; margin: 0; letter-spacing: -.02em; }
   position: absolute; top: -15px; left: 16px;
   width: 30px; height: 30px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: var(--role); color: #fff; font-weight: 800; font-size: 15px;
+  background: var(--role); color: var(--on-role); font-weight: 800; font-size: 15px;
 }
 .who { grid-column: 2; font-size: 11.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--role); }
 .icon { grid-column: 1; grid-row: 1 / span 2; align-self: start; margin-top: 6px; }
@@ -116,7 +148,7 @@ h2 { font-size: 19px; line-height: 1.22; margin: 3px 0 5px; letter-spacing: -.01
 /* several things in one step: the ways it can start, the places it goes to */
 .items { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .items li {
-  background: #fff; border: 2px solid var(--role-border); border-radius: 10px;
+  background: var(--surface); border: 2px solid var(--role-border); border-radius: 10px;
   padding: 6px 10px; font-size: 14.5px; font-weight: 700; line-height: 1.3; color: var(--ink);
 }
 
@@ -124,7 +156,7 @@ h2 { font-size: 19px; line-height: 1.22; margin: 3px 0 5px; letter-spacing: -.01
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chips span {
   font-weight: 800; font-size: 14px; padding: 4px 8px; border-radius: 9px;
-  background: #fff; border: 2px solid var(--role-border); color: var(--role);
+  background: var(--surface); border: 2px solid var(--role-border); color: var(--role);
 }
 
 .card p.small { font-size: 14px; color: var(--muted); margin-top: 8px; }
@@ -132,7 +164,7 @@ h2 { font-size: 19px; line-height: 1.22; margin: 3px 0 5px; letter-spacing: -.01
 /* what else can happen at this step, said as a sentence instead of a loop */
 .grow { flex: 1; min-height: 12px; }
 .note {
-  background: #fff; border: 2px dashed var(--role); border-radius: 12px;
+  background: var(--surface); border: 2px dashed var(--role); border-radius: 12px;
   padding: 9px 12px; font-size: 14px; line-height: 1.4; color: var(--role-note);
 }
 .note b { color: var(--role-note); }

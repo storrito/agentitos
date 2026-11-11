@@ -16,7 +16,7 @@ metadata:
 
 # workflow-diagram
 
-One tool: you write the workflow as `workflow.json`, `<skill>/tools/diagram.mjs` builds the page from it, `index.html`, which the person opens beside the chat. The look (colours, type, cards, icons, how it folds for a phone) is fixed in `<skill>/style/` and the same for every workflow: you decide the words, never the look, and you write no HTML. `<skill>` is the folder this file is in. Needs Node 20+. Full reference: [README.md](README.md).
+One tool: you write the workflow as `workflow.json`, `<skill>/tools/diagram.mjs` builds the page from it, `index.html`, which the person opens beside the chat. The look (colours, type, cards, icons, how it folds for a phone, light and dark) is fixed in `<skill>/style/` and the same for every workflow: you decide the words, never the look, and you write no HTML. `<skill>` is the folder this file is in. Needs Node 20+. Full reference: [README.md](README.md).
 
 ## When
 
@@ -46,9 +46,9 @@ Write `artifacts/<job>-workflow/workflow.json` (`node <skill>/tools/diagram.mjs 
 node <skill>/tools/diagram.mjs build artifacts/<job>-workflow/workflow.json
 ```
 
-It writes `index.html` beside the JSON, or says in a sentence what does not fit (a text too long for its card, an icon it does not have). A line `check:` names a word the person may not know: rewrite it, unless it is their own. To change anything, edit `workflow.json` and build again; never `index.html`. The page lays itself out for the screen it is opened on, a phone included: nothing to do for that.
+It writes `index.html` beside the JSON, or says in a sentence what does not fit (a text too long for its card, an icon it does not have). A line `check:` names a word the person may not know: rewrite it, unless it is their own. To change anything, edit `workflow.json` and build again; never `index.html`. The page lays itself out for the screen it is opened on, a phone included, and is light or dark with the theme the person uses: nothing to do for either.
 
-To see it yourself, `node <skill>/tools/diagram.mjs picture artifacts/<job>-workflow/workflow.json` takes a picture of the page as a phone shows it (`--width 1400`: a wide screen), which you read; needs Chrome. Only when you doubt a card, and never as what the person gets: they get the page.
+To see it yourself, `node <skill>/tools/diagram.mjs picture artifacts/<job>-workflow/workflow.json` takes a picture of the page as a phone shows it (`--width 1400`: a wide screen; `--dark`: the dark theme), which you read; needs Chrome. Only when you doubt a card, and never as what the person gets: they get the page.
 
 ## 3. Show it
 
