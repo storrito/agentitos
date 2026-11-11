@@ -199,10 +199,16 @@ function picture(html, png, width) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-diagram-'));
   const base = ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', `--user-data-dir=${path.join(tmp, 'profile')}`];
   try {
-    // the page with one line more, which says how tall it is at this width
-    const measured = path.join(tmp, 'measure.html');
-    fs.writeFileSync(measured, fs.readFileSync(html, 'utf8').replace('</body>', '<script>document.documentElement.dataset.height = Math.ceil(document.querySelector(".page").getBoundingClientRect().height)</script>\n</body>'));
-    const dom = spawnSync(bin, [...base, `--window-size=${width},1000`, '--dump-dom', pathToFileURL(measured).href], { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024 });
+    // How tall the page is at this width: asked of a copy of it in a frame of
+    // exactly that width, since Chrome gives a page it only reads (--dump-dom)
+    // a window of at least 500 px and less than the height asked for, and
+    // only a picture the size it was told. The copy says its height to the
+    // frame's page, whose text Chrome prints.
+    fs.writeFileSync(path.join(tmp, 'measure.html'), fs.readFileSync(html, 'utf8').replace('</body>',
+      '<script>parent.postMessage(Math.ceil(document.querySelector(".page").getBoundingClientRect().height), "*")</script>\n</body>'));
+    const frame = path.join(tmp, 'frame.html');
+    fs.writeFileSync(frame, `<!doctype html><body style="margin:0"><script>addEventListener("message", (e) => { document.documentElement.dataset.height = e.data; })</script><iframe src="measure.html" style="display:block;border:0;width:${width}px;height:1000px"></iframe></body>`);
+    const dom = spawnSync(bin, [...base, '--window-size=2600,1200', '--virtual-time-budget=2000', '--dump-dom', pathToFileURL(frame).href], { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024 });
     const height = Number(/data-height="(\d+)"/.exec(dom.stdout || '')?.[1]);
     if (!height) fail(`The browser did not open the page (${(dom.stderr || dom.error?.message || 'no answer').trim().split('\n').pop()}): run the command again.`);
     fs.rmSync(png, { force: true });
