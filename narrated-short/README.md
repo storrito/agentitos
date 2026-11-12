@@ -22,7 +22,8 @@ Requirements: Node 20+, ffmpeg (with ffprobe) and the HyperFrames CLI; no npm pa
 | the sources, judged on contact sheets | footage (its own pull request), or any video file |
 | the voice, a line a sentence, every word timed and heard back | [launch-video](../launch-video/) `voice` (with [transcribe](../transcribe/)) |
 | the music | launch-video `music` |
-| the captions, the key words in colour | [captions](../captions/) `build` |
+| the captions, the key words in colour, phrases as cards of their own (`boxes`) | [captions](../captions/) `build` |
+| the first beat's freeze with the subject cut out (`freeze`) | freeze-cutout (its own pull request), when it is there |
 | where text may stand | [platform-zones](../platform-zones/) `zones` |
 | text under the apps' buttons | launch-video `check` |
 | the loudness of the finished video | launch-video `finish` |
@@ -47,7 +48,7 @@ The text stands where platform-zones says so for the platforms named: the credit
 
 ## Where the rules come from
 
-The form is that of a pilot account that posted three such videos a day and measured them: the first frame proves the first sentence, a text hook of two to five words, one text on screen at a time, a comparison within the same kind on a sentence of its own, the ending that asks for the share, no end card so the video loops. The pilot's own pipeline did the same with Python, a GPU and its own captions; this skill keeps the form and leaves the work to the collection's tools. Not carried over yet: the freeze of the first beat with the subject cut out (a mask from an image model), which would be a skill of its own.
+The form is that of a pilot account that posted three such videos a day and measured them: the first frame proves the first sentence, a text hook of two to five words, one text on screen at a time, a comparison within the same kind on a sentence of its own, the ending that asks for the share, no end card so the video loops. The pilot's own pipeline did the same with Python, a GPU and its own captions; this skill keeps the form and leaves the work to the collection's tools. The freeze of the first beat with the subject cut out is a skill of its own, freeze-cutout, which `build` runs on the first beat when the beat asks for it; the pilot's boxes around a spoken phrase are an option of captions, which `build` asks for with the beats' `boxes`.
 
 ## In rragent
 

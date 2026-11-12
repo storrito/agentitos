@@ -22,7 +22,7 @@ Your files: `short/<name>/` (`<name>`: one short slug, lowercase letters, digits
 
 ## What it needs
 
-Node 20+, ffmpeg and the HyperFrames CLI. Beside this skill, agentitos' **footage** (the sources), **launch-video** (`L` below is `/home/sprite/skills/launch-video/tools/launch.mjs`: voice, music, the zones check, the loudness), **captions**, **platform-zones** and **transcribe**; OpenRouter for the voice and the music: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection. A voice costs about three cents, the music four. When something is missing, the tool says so in one sentence: pass it on, never install it.
+Node 20+, ffmpeg and the HyperFrames CLI. Beside this skill, agentitos' **footage** (the sources), **launch-video** (`L` below is `/home/sprite/skills/launch-video/tools/launch.mjs`: voice, music, the zones check, the loudness), **captions**, **platform-zones** and **transcribe**, and for the first beat's freeze **freeze-cutout** (without it the short opens on the plain clip); OpenRouter for the voice, the music and the freeze's mask: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection. A voice costs about three cents, the music four, a freeze 7 to 14. When something is missing, the tool says so in one sentence: pass it on, never install it.
 
 ## From a story to the video
 
@@ -59,7 +59,7 @@ Make the project first, once, with the `project` tool (create, name `<name>`, ki
 
 ### 4. The beats
 
-Read `<skill>/references/beats.md` before you write them. `short/<name>/beats.json` says which stretch of which source runs under which words, the hook text, the key words and the comparison card.
+Read `<skill>/references/beats.md` before you write them. `short/<name>/beats.json` says which stretch of which source runs under which words, the hook text, the first beat's freeze, the key words, the boxes and the comparison card.
 
 ```bash
 node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --platform tiktok

@@ -11,11 +11,13 @@
 //        <work>/beats.json and the clock → one clip per beat cut into <composition>/assets/clips/
 //        and checked (dark, cut short, frozen, a dark first frame, a cut of the source inside),
 //        the captions built by agentitos' captions (paused under the comparison card, the key
-//        words marked), and <composition>/index.html: clips, voice, music, hook text, card,
-//        credit, handle. Changed beats: build again; a clip whose beat did not change is kept.
+//        words marked, the beats' "boxes" as cards of their own), the first beat's freeze by
+//        agentitos' freeze-cutout when the beat asks for one, and <composition>/index.html:
+//        clips, voice, music, hook text, card, credit, handle. Changed beats: build again; a
+//        clip whose beat did not change is kept.
 //   node tools/short.mjs sheet <work> <composition>
-//        stills of the composition at the moments that matter (the hook, each beat at its start
-//        and middle, the card, the end) on one sheet, <work>/sheet.jpg, to look at
+//        stills of the composition at the moments that matter (the hook, the freeze, each beat
+//        at its start and middle, every card, the end) on one sheet, <work>/sheet.jpg, to look at
 //
 // Text sits where platform-zones says the apps cover nothing; this tool keeps no numbers of its
 // own. Every step prints what it did and what to do next; an error is one sentence, exit 1.
@@ -168,6 +170,28 @@ function markKeys(words, keys) {
   return missed;
 }
 
+// Spoken phrases as cards of their own in the captions: the marks agentitos' captions reads
+// ("box" on the phrase's words, "icon" on its first), set as its `box` command sets them. A
+// phrase's first token without a letter or a digit is its emoji.
+function markBoxes(words, phrases) {
+  const missed = [];
+  let n = 0;
+  for (const phrase of phrases) {
+    const tokens = String(phrase).trim().split(/\s+/).filter(Boolean);
+    const icon = tokens.length > 1 && !bare(tokens[0]) ? tokens.shift() : null;
+    const want = tokens.map(bare).filter(Boolean);
+    let at = -1;
+    for (let i = 0; want.length && i + want.length <= words.length && at < 0; i++) {
+      if (want.every((w, k) => bare(words[i + k].text) === w) && !words.slice(i, i + want.length).some((w) => w.box)) at = i;
+    }
+    if (at < 0) { missed.push(phrase); continue; }
+    n++;
+    for (let k = 0; k < want.length; k++) words[at + k].box = n;
+    if (icon) words[at].icon = icon;
+  }
+  return { n, missed };
+}
+
 // ---------------------------------------------------------------- the text hook
 // the largest size at which the hook fits two lines (three under 80 px) in `room` px; capitals of
 // a heavy grotesque are about 0.64 em wide. The browser balances the lines.
@@ -230,6 +254,8 @@ function build(args) {
     if (i && Math.abs(b.from - beats[i - 1].to) > 0.011) fail(`Beat ${b.id} starts at ${b.from}, the beat before ends at ${beats[i - 1].to}: beats follow each other without a gap.`);
     if (b.frame && !["whole", "fill", "native"].includes(b.frame)) fail(`Beat ${b.id}: "frame" is whole (the wide frame as a band over a blurred copy, the default), fill (a 9:16 crop from the middle) or native (the source is vertical).`);
     if (b.speed != null && !(b.speed >= 0.5 && b.speed <= 1)) fail(`Beat ${b.id}: "speed" slows the source down, 0.5 to 1.`);
+    if (b.freeze != null && (i !== 0 || !Number.isFinite(b.freeze) || b.freeze < 0)) fail(`Beat ${b.id}: "freeze" is the second into the first beat where its picture freezes; only the first beat has one.`);
+    if (b.pop != null && !["strong", "soft"].includes(b.pop)) fail(`Beat ${b.id}: "pop" is strong or soft.`);
   });
   const voiceEnd = ck.end, last = beats.at(-1);
   const total = r2(Math.max(voiceEnd + END_TAIL, last.to));
@@ -265,6 +291,7 @@ function build(args) {
   fs.mkdirSync(clipsDir, { recursive: true });
   const report = [];
   let failed = 0, cutAnew = 0;
+  const popped = {};   // beat id → the clip with the freeze, when it was made
   beats.forEach((b, i) => {
     const src = sourceOf(b), frame = b.frame || "whole", speed = b.speed ?? 1;
     const seconds = r2(b.to - b.from), taken = Math.round(seconds * speed * 1000) / 1000;
@@ -283,6 +310,22 @@ function build(args) {
       if (r.status || !fs.existsSync(out)) fail(`Beat ${b.id}: the clip could not be cut: ${(r.stderr || "").trim().split("\n").pop()}`);
       fs.writeFileSync(note, how);
       cutAnew++;
+    }
+    // the first beat's freeze, when it asks for one: agentitos' freeze-cutout, run as a program
+    if (i === 0 && b.freeze != null) {
+      const cut = tool("FREEZE_CUTOUT", "freeze-cutout", "cutout.mjs");
+      const pop = path.join(clipsDir, `${b.id}-pop.mp4`), popNote = path.join(clipsDir, `${b.id}-pop.json`);
+      const popHow = JSON.stringify({ how, freeze: b.freeze, subject: cfg.subject || null, pop: b.pop || "strong" });
+      if (!cut) report.push(`  ! ${b.id}: the freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs); the plain clip is used`);
+      else if (fs.existsSync(pop) && fs.existsSync(popNote) && fs.readFileSync(popNote, "utf8") === popHow) popped[b.id] = true;
+      else {
+        fs.rmSync(pop, { force: true });
+        const cr = spawnSync(process.execPath, [cut, out, pop, "--at", String(b.freeze), "--work", path.join(work, "cutout"),
+          ...(cfg.subject ? ["--subject", String(cfg.subject)] : []), ...(b.pop ? ["--style", String(b.pop)] : [])], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 900e3 });
+        if (!cr.status && fs.existsSync(pop)) { fs.writeFileSync(popNote, popHow); popped[b.id] = true; }
+        else report.push(`  ! ${b.id}: no freeze: ${(cr.stdout || cr.stderr || "").trim().split("\n").pop()} The plain clip is used.`);
+      }
+      if (popped[b.id]) report.push(`  ${b.id}: freezes at ${b.freeze} s; look at ${rel(path.join(work, "cutout", "cutout-check.jpg"))}: the outline around the subject only, nothing cut off`);
     }
     // the gate: what needs no judgement
     const ys = lumas(out), dur = probe(out)?.duration || 0, peak = ys.length ? Math.max(...ys) : 0, problems = [];
@@ -310,6 +353,8 @@ function build(args) {
   const words = ck.words.map((w) => ({ text: w.text, start: w.start, end: w.end }));
   const missed = markKeys(words, cfg.keys || []);
   for (const k of missed) warn.push(`the key "${k}" is not among the spoken words; it marks nothing`);
+  const boxes = markBoxes(words, cfg.boxes || []);
+  for (const k of boxes.missed) warn.push(`the box "${k}" is not said like that; no card for it`);
   const shown = card ? words.filter((w) => !(w.start >= card.at - 0.05 && w.start < card.at + card.for)) : words;
   let mount = "";
   if (!opts["no-captions"]) {
@@ -317,6 +362,11 @@ function build(args) {
     if (!capTool) fail("The captions need agentitos' captions skill beside this one (or CAPTIONS naming its tools/captions.mjs); without captions: --no-captions.");
     const wordsFile = path.join(work, "words.json");
     fs.writeFileSync(wordsFile, JSON.stringify({ width: SIZE[0], height: SIZE[1], duration: total, words: shown }, null, 1));
+    // an older captions knows no boxes and would show the phrases as plain captions without a word
+    if (boxes.n && spawnSync(process.execPath, [capTool, "box", wordsFile], { encoding: "utf8" }).status) {
+      warn.push(`the captions skill here knows no boxes yet: the ${boxes.n} phrase(s) show as plain captions`);
+      boxes.n = 0;
+    }
     const brand = fs.existsSync(path.resolve("brand", "DESIGN.md")) ? ["--brand", path.resolve("brand", "DESIGN.md")] : [];
     const cr = spawnSync(process.execPath, [capTool, "build", wordsFile, path.join(comp, "captions"), "--style", opts.style || cfg.captions || "hormozi",
       ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...brand, "--duration", String(total)], { encoding: "utf8" });
@@ -332,7 +382,7 @@ function build(args) {
   let videos = "", tweens = "";
   beats.forEach((b, i) => {
     const d = r2(b.to - b.from);
-    videos += `      <div class="fill" id="z-${b.id}">\n        <video id="v-${b.id}" src="assets/clips/${b.id}.mp4" class="clip" data-start="${b.from}" data-duration="${d}" data-track-index="2" muted playsinline></video>\n      </div>\n`;
+    videos += `      <div class="fill" id="z-${b.id}">\n        <video id="v-${b.id}" src="assets/clips/${b.id}${popped[b.id] ? "-pop" : ""}.mp4" class="clip" data-start="${b.from}" data-duration="${d}" data-track-index="2" muted playsinline></video>\n      </div>\n`;
     const [from, to] = i % 2 ? [1.04, 1] : [1, 1.04];   // a slow move in every clip, in and out in turn
     tweens += `      tl.fromTo("#z-${b.id}", { scale: ${from} }, { scale: ${to}, duration: ${d}, ease: "none" }, ${b.from});\n`;
   });
@@ -416,7 +466,7 @@ ${tweens}      window.__timelines["main"] = tl;
   fs.mkdirSync(comp, { recursive: true });
   fs.writeFileSync(path.join(comp, "index.html"), html);
 
-  console.log(`${rel(path.join(comp, "index.html"))}: ${total} s, ${beats.length} beats (${cutAnew} cut anew), the voice in ${ck.lines.length} lines${hasMusic ? ", music" : ", no music yet (assets/music.mp3)"}${mount ? `, captions (${shown.length} of ${words.length} words${card ? ", paused under the card" : ""})` : ", no captions"}; text placed for ${zones.platforms?.map((p) => p.name).join(", ") || "the usual apps"}.`);
+  console.log(`${rel(path.join(comp, "index.html"))}: ${total} s, ${beats.length} beats (${cutAnew} cut anew), the voice in ${ck.lines.length} lines${hasMusic ? ", music" : ", no music yet (assets/music.mp3)"}${mount ? `, captions (${shown.length} of ${words.length} words${card ? ", paused under the card" : ""}${boxes.n ? `, ${boxes.n} as cards` : ""})` : ", no captions"}; text placed for ${zones.platforms?.map((p) => p.name).join(", ") || "the usual apps"}.`);
   for (const l of report) console.log(l);
   for (const w of warn) console.log(`  ! ${w}`);
   if (failed) fail(`${failed} clip(s) cannot go out as they are (✗): change their beats and build again.`);
@@ -439,6 +489,17 @@ function sheet(args) {
     at.add(r2(b.from + 0.3)); at.add(r2((b.from + to) / 2));
   });
   if (cfg.compare) at.add(r2(cfg.compare.at + Math.min(1.2, cfg.compare.for / 2)));
+  if (cfg.beats[0].freeze != null) at.add(r2(cfg.beats[0].freeze + 0.35));   // the pop at its largest
+  // every card of the captions, in the middle of its phrase (build's words.json carries them)
+  try {
+    const ws = JSON.parse(fs.readFileSync(path.join(work, "words.json"), "utf8")).words || [];
+    ws.forEach((w, i) => {
+      if (!w.box || w.box === ws[i - 1]?.box) return;
+      let j = i;
+      while (ws[j + 1]?.box === w.box) j++;
+      at.add(r2((w.start + ws[j].end) / 2));
+    });
+  } catch { /* no captions built: no cards to look at */ }
   at.add(r2(total - 0.2));
   // moments less than a quarter second apart show the same picture: one of them
   const times = [...at].filter((t) => t >= 0 && t < total).sort((a, b) => a - b).filter((t, i, all) => !i || t - all[i - 1] >= 0.25);
