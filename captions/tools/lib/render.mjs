@@ -54,9 +54,12 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
     }
   } else links.push(googleFont(look.font, look.weight));
 
+  // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
+  // carries `icon`, its numbers in the key colour
   const gs = groups(words, style.group, duration).filter((g) => !duration || g.start < duration).map((g) => ({
-    start: n(g.start), end: n(g.end),
-    words: activeSpans(words, g).map((s) => ({ text: words[s.i].text, start: n(s.start), end: n(s.end), said: n(words[s.i].end), key: !!words[s.i].highlight })),
+    start: n(g.start), end: n(g.end), ...(g.box ? { box: true, icon: words[g.from].icon || null } : {}),
+    words: activeSpans(words, g).map((s) => ({ text: words[s.i].text, start: n(s.start), end: n(s.end), said: n(words[s.i].end),
+      key: !!words[s.i].highlight || (!!g.box && /\d/.test(words[s.i].text)) })),
   }));
   const data = { groups: gs, look, motion: style.motion, lines: style.group.lines,
     size: Math.round(look.size * scale), bottom: height - (sy + sh), left: sx, right: width - (sx + sw), maxWidth: sw };
@@ -78,6 +81,9 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
           text-transform: ${look.case === "upper" ? "uppercase" : "none"}; text-align: center; }
         #root .cap-group.boxed { width: fit-content; max-width: ${data.maxWidth}px;
           background: ${look.box || "transparent"}; padding: 0.22em 0.5em; border-radius: 0.3em; }
+        #root .cap-group.box { width: fit-content; max-width: ${data.maxWidth}px; padding: 0.2em 0.5em 0.24em; border-radius: 0.32em;
+          background: rgba(10,14,20,0.86); border: ${Math.max(3, Math.round(look.size * scale * 0.045))}px solid ${look.card || look.highlight}; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+        #root .cap-icon { display: inline-block; margin-right: 0.3em; text-transform: none; font-weight: 400; }
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
           ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * scale)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
           ${look.pill ? "padding: 0.04em 0.22em; border-radius: 0.28em;" : ""} transform-origin: 50% 60%; }
@@ -89,8 +95,15 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
           var L = DATA.look, M = DATA.motion, root = document.getElementById("root");
           var els = DATA.groups.map(function (g, gi) {
             var el = document.createElement("div");
-            el.className = "cap-group" + (L.box ? " boxed" : "");
+            el.className = "cap-group" + (L.box ? " boxed" : "") + (g.box ? " box" : "");
             el.id = "cap-g" + gi;
+            if (g.icon) {
+              var ico = document.createElement("span");
+              ico.className = "cap-icon";
+              ico.textContent = g.icon;
+              el.appendChild(ico);
+              el.appendChild(document.createTextNode(" "));
+            }
             g.words.forEach(function (w, wi) {
               if (wi) el.appendChild(document.createTextNode(" "));
               var s = document.createElement("span");
@@ -109,7 +122,12 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
             el.style.visibility = "hidden";
             for (; size > least; size -= 2) {
               el.style.fontSize = size + "px";
-              var lines = el.offsetHeight / (size * L.lineHeight);
+              var high = el.offsetHeight;
+              if (el.classList.contains("box")) {   // a card's own padding and border are not lines of text
+                var cs = getComputedStyle(el);
+                high = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+              }
+              var lines = high / (size * L.lineHeight);
               var widest = Math.max.apply(null, Array.prototype.map.call(el.children, function (c) { return c.offsetWidth; }));
               // (the words are inline blocks between spaces: the lines balance, no word is left alone)
               if (lines <= DATA.lines + 0.35 && widest <= DATA.maxWidth) break;
@@ -123,7 +141,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
           function build() {
             var tl = gsap.timeline({ paused: true });
             DATA.groups.forEach(function (g, gi) {
-              var el = els[gi], words = el.children;
+              var el = els[gi], words = el.querySelectorAll(".cap-word");
               fit(el);
               tl.set(el, { visibility: "visible", opacity: 1 }, g.start);
               if (M.in === "pop") tl.fromTo(el, { scale: 0.82, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.12, ease: "back.out(2.2)" }, g.start);
