@@ -28,9 +28,10 @@ The clip comes as a line `video: uploads/<file>`, or from the skill you work for
 
 ### 1. The moment
 
-The freeze shows one frame for most of a second, so choose it: the subject **big, sharp and whole** in the picture, nothing in front of it (no dust, spray, hand), not at the very start (0.2 s before it, 1.1 s after it must be clip). Look at the clip's first seconds as frames before you decide, two a second:
+The freeze shows one frame for most of a second, so choose it: the subject **big, sharp and whole** in the picture, nothing in front of it (no dust, spray, hand), not at the very start (0.2 s of clip before it, 1.2 s after it; 1 s after it for `soft`). Look at the clip's first seconds as frames before you decide, two a second:
 
 ```bash
+mkdir -p cutout/<name>
 ffmpeg -v error -y -i <clip> -t 3 -vf "fps=2,scale=270:-2,tile=6x1" -frames:v 1 cutout/<name>/strip.jpg
 ```
 
@@ -44,9 +45,11 @@ node <skill>/tools/cutout.mjs <clip> artifacts/<name>-pop.mp4 --at <seconds> --s
 
 - `--subject`: what the eye should take for the subject, as you would point at it: "the yellow robot", "the red truck". Left out, the model takes what it thinks is the main thing.
 - `--style soft`: a shorter, smaller pop with a thinner outline (0.45 s, 1.12 times) instead of `strong` (0.7 s, 1.2 times), for a calm film.
-- `--region x,y,w,h`: where to look, when the picture holds more than the footage. A clip that lies as a band over a blurred copy of itself needs none: the band is found.
+- `--region band`: for a clip that lies as a band over a blurred copy of itself, look in the band only; `--region x,y,w,h`: look there, when the picture holds more than the footage. Without it the whole frame is looked at. The tool's line says where it looked.
 
-The clip keeps its length: the freeze takes its time out of the end. The mask is kept in the work folder; the same frame and subject again cost nothing.
+The clip keeps its length and its frame rate: the freeze takes its time out of the end. **It comes out without sound**: the effect is for footage that lies under a voice; a clip whose own sound matters is not for it. The mask is kept in the work folder; the same frame and subject again cost nothing. A clip larger than 2560×1440 is refused: scale it down first.
+
+The model marks everything but the subject green, so a subject that is itself bright green cannot be cut out this way.
 
 ### 3. Look at it
 
@@ -72,13 +75,13 @@ One sentence and the clip:
 
 ## For another skill
 
-A skill runs the tool as a program, never imports its code: `FREEZE_CUTOUT` naming `tools/cutout.mjs`, else `<skill>/../freeze-cutout/tools/cutout.mjs` beside it, else `/home/sprite/skills/freeze-cutout/tools/cutout.mjs`. It passes the clip, the output, `--at`, `--subject` and `--work`; exit 0 means the output is written and `cutout-check.jpg` lies in the work folder for its agent to look at; exit 1 with one sentence means nothing was written and the plain clip is used. Without the tool such a skill says: "The freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs)."
+A skill runs the tool as a program, never imports its code: `FREEZE_CUTOUT` naming `tools/cutout.mjs`, else `<skill>/../freeze-cutout/tools/cutout.mjs` beside it, else `/home/sprite/skills/freeze-cutout/tools/cutout.mjs`. It passes the clip, the output, `--at`, `--subject`, `--work` and, for its band clips, `--region band`; exit 0 means the output is written (and, unless the line says otherwise, `cutout-check.jpg` lies in the work folder for its agent to look at); any other end, with one sentence on stdout, means there is no output and the plain clip is used. Without the tool such a skill says: "The freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs)."
 
 ## UI in the chat
 
-A ```hiccup block in your answer becomes part of the page. EDN hiccup, data only. `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/<file>"` shows that file beside the chat.
+Short messages in the person's language. A ```hiccup block in your answer becomes part of the page. EDN hiccup, data only. `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/<file>"` shows that file beside the chat.
 
-- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a line that they can type anything else. Several picks from one list: checkboxes and one button whose `:send` holds `{checked}`. Several questions that must all be answered before you go on, none depending on another: one block, a group of radio buttons per question (own `:name`, every `:value` saying what it answers, at most four groups) and one button whose `:send` holds `{checked}`. One question after the other only when it depends on the answer before, or on work the person should see first.
 - A button only where a click makes you act at once. Never one that only leads to your next question: they type what to change.
 - The button that moves on gets `:class "primary"`; a button that opens an artifact ends with " ↗".
-- Never a path of `cutout/` or a raw error in the chat.
+- Never a token, a path of `cutout/` or a raw error in the chat.
