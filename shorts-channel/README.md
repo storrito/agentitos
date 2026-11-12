@@ -8,8 +8,8 @@ It has no tools. It is the order in which a bot uses the others, and what it kee
 
 | step | whose |
 | --- | --- |
-| the footage of a topic | footage (its own pull request) |
-| the video | narrated-short (its own pull request), or another skill that makes a video from a story |
+| the footage of a topic | [footage](../footage/) |
+| the video | [narrated-short](../narrated-short/), or another skill that makes a video from a story |
 | the texts and the publishing | [video-descriptions](../video-descriptions/), [publish-video](../publish-video/) |
 | the page the person says yes to before it runs by itself | [workflow-diagram](../workflow-diagram/) |
 | the runs | rragent's schedules: a fresh conversation each, with the bot's definition |
@@ -19,7 +19,7 @@ It has no tools. It is the order in which a bot uses the others, and what it kee
 Under `artifacts/`, where the person reads along:
 
 - `channel.md`: what was agreed once (the account and its handle, topic and language, the rhythm, the approval, who may see the videos, the AI label, the voice, the style of the texts) and what the channel learns (its lanes with their series, hashtags, news sources, confirmed handles, rules).
-- `backlog.md`: topics, newest news on top, `ready` only once their footage was looked at.
+- `backlog.md`: topics, newest news on top, marked `footage seen` once their footage was looked at.
 - `today.md`: a line a slot with its status: `planned`, `ready` (waits for the yes), `scheduled`, `skipped` with why.
 - `log.md`: a line a video: what, whose footage, what was learned.
 
