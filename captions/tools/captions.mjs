@@ -9,6 +9,12 @@
 //                                         fillers and doubled words out
 //   node tools/captions.mjs mark <words.json>             a model picks the words that stand out
 //                                         ("highlight": true on them)
+//   node tools/captions.mjs box <words.json> "<phrase>" …   spoken phrases that stand as a card of
+//                                         their own: a box, an emoji in front when the phrase
+//                                         starts with one ("📏 one foot wide"), its numbers in
+//                                         colour. Only what is boxed here gets a box; --drop
+//                                         "<phrase>" takes one away, --clear all. Without
+//                                         phrases: the boxes there are.
 //   node tools/captions.mjs build <words.json> <folder>   the captions as a sub-composition,
 //                                         <folder>/index.html, and the clip that mounts it
 //   node tools/captions.mjs project <video> <words.json> <composition-folder>   a whole HyperFrames
@@ -25,7 +31,8 @@
 //   edges, or fits into it with bars; default cover)
 //
 // words.json: {"words": [{"text": "Hello", "start": 0.12, "end": 0.48, "highlight": true}, …]} or the
-// array alone, times in seconds in the video the captions go on.
+// array alone, times in seconds in the video the captions go on. A run of words with the same
+// "box" is a card of its own, "icon" on its first word the emoji in front.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -120,6 +127,73 @@ async function cmdMark(file, opts) {
   console.log(`Next: node ${self()} build ${rel(path.resolve(file))} <folder> --style <name>`);
 }
 
+// Spoken phrases as cards of their own. A phrase is words as they are said; an emoji in front
+// of it is its icon. A phrase is one card: the first place it is said that is free; said again,
+// the card it has stays (its emoji can change). Words that are only punctuation ("&", "–") do
+// not count, in the phrase or in the words.
+const bare = (t) => String(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const isEmoji = (t) => /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[#*0-9]️?⃣)/u.test(t) && !/\p{L}/u.test(t) && !/^[#*0-9]+$/.test(t);
+function cmdBox(file, phrases, opts) {
+  // an option in front of a value swallows it: `--clear <file>` and `--clear "<phrase>"` both mean a plain --clear
+  if (typeof opts.clear === "string") {
+    if (!file || (fs.existsSync(opts.clear) && !fs.existsSync(file))) { phrases = file ? [file, ...phrases] : phrases; file = opts.clear; } else phrases = [opts.clear, ...phrases];
+    opts.clear = true;
+  }
+  if (!file) fail('Usage: captions.mjs box <words.json> "<phrase>" ["<phrase>" …] [--drop "<phrase>"] [--clear]');
+  const { doc, words } = readWords(file);
+  const clock = (t) => { const tenths = Math.round(t * 10); return `${Math.floor(tenths / 600)}:${String(Math.floor((tenths % 600) / 10)).padStart(2, "0")}.${tenths % 10}`; };
+  const runs = () => {
+    const out = [];
+    words.forEach((w, i) => { if (w.box && w.box === words[i - 1]?.box) out.at(-1).to = i; else if (w.box) out.push({ from: i, to: i }); });
+    return out;
+  };
+  const listed = () => runs().map((r) => `  ${clock(words[r.from].start)}  ${words[r.from].icon ? `${words[r.from].icon} ` : ""}${words.slice(r.from, r.to + 1).map((w) => w.text).join(" ")}`);
+  const say = (none) => { const l = listed(); console.log(l.length ? `${l.length} box(es) in ${rel(path.resolve(file))}:\n${l.join("\n")}` : none); };
+  if (!phrases.length && !opts.clear && opts.drop == null) return say(`No boxes in ${rel(path.resolve(file))}: the captions are the style's alone.`);
+  if (opts.clear) words.forEach((w) => { delete w.box; delete w.icon; });
+  // the words that count, and every place a phrase is said among them: [first word, last word]
+  const said = words.map((w, i) => (bare(w.text) ? i : -1)).filter((i) => i >= 0);
+  const places = (want) => {
+    const out = [];
+    for (let s0 = 0; want.length && s0 + want.length <= said.length; s0++) {
+      if (want.every((t, k) => bare(words[said[s0 + k]].text) === t)) out.push([said[s0], said[s0 + want.length - 1]]);
+    }
+    return out;
+  };
+  const split = (phrase) => {
+    const tokens = String(phrase).trim().split(/\s+/).filter(Boolean);
+    const icon = tokens.length > 1 && isEmoji(tokens[0]) ? tokens.shift() : null;
+    return { icon, want: tokens.map(bare).filter(Boolean), text: tokens.join(" ") };
+  };
+  const isCard = ([a, z]) => runs().some((r) => r.from === a && r.to === z);
+  const missed = [], long = [];
+  if (opts.drop != null && opts.drop !== true) {
+    const place = places(split(opts.drop).want).find(isCard);
+    if (place) for (let i = place[0]; i <= place[1]; i++) { delete words[i].box; delete words[i].icon; }
+    else missed.push(`${opts.drop} (no card of these words to take away)`);
+  } else if (opts.drop === true) fail('--drop needs the card\'s words: --drop "<phrase>"');
+  let next = Math.max(0, ...words.map((w) => Number(w.box) || 0)) + 1;
+  for (const phrase of phrases) {
+    const { icon, want, text } = split(phrase);
+    const all = places(want);
+    let place = all.find(isCard);                       // the card it has already
+    if (!place) {
+      place = all.find(([a, z]) => !words.slice(a, z + 1).some((w) => w.box));
+      if (!place) { missed.push(all.length ? `${phrase} (its words are in another card)` : `${phrase} (not said like that; give the words as they are spoken)`); continue; }
+      for (let i = place[0]; i <= place[1]; i++) { words[i].box = next; delete words[i].icon; }
+      next++;
+    }
+    if (icon) words[place[0]].icon = icon; else delete words[place[0]].icon;
+    if (want.length > 4 || text.length > 26) long.push(phrase);
+  }
+  fs.writeFileSync(file, JSON.stringify({ ...doc, words }, null, 1));
+  say(`No boxes in ${rel(path.resolve(file))} now: the captions are the style's alone.`);
+  for (const m of long) console.log(`  long for a card: "${m}"; two to four words read at a glance`);
+  for (const m of missed) console.log(`  not done: ${m}`);
+  if (missed.length) process.exit(1);
+  console.log(`Next: node ${self()} build ${rel(path.resolve(file))} <folder> --style <name> (or project), and look at each box in the preview.`);
+}
+
 // for whom the captions are placed, in a sentence
 const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}: the lowest line ends at y ${z.centred[1] + z.centred[3]}, centred on the frame, at most ${z.centred[2]} px wide.`;
 
@@ -204,10 +278,11 @@ try {
   if (command === "styles") cmdStyles();
   else if (command === "transcribe") await cmdTranscribe(pos[0], pos[1]);
   else if (command === "mark") await cmdMark(pos[0], opts);
+  else if (command === "box") cmdBox(pos[0], pos.slice(1), opts);
   else if (command === "build") cmdBuild(pos[0], pos[1], opts);
   else if (command === "project") cmdProject(pos[0], pos[1], pos[2], opts);
   else if (command === "srt") cmdSrt(pos[0], pos[1]);
-  else fail("Usage: captions.mjs styles | transcribe <video> <words.json> | mark <words.json> | build <words.json> <folder> | project <video> <words.json> <composition-folder> | srt <words.json> <file.srt>   (options: see the head of this file)");
+  else fail("Usage: captions.mjs styles | transcribe <video> <words.json> | mark <words.json> | box <words.json> \"<phrase>\" … | build <words.json> <folder> | project <video> <words.json> <composition-folder> | srt <words.json> <file.srt>   (options: see the head of this file)");
 } catch (e) {
   fail(`✗ ${e.message}`);
 }
