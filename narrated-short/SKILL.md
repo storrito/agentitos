@@ -12,6 +12,7 @@ metadata:
   placeholder: "The story, a link or a video"
   placeholder-de: "Die Geschichte, ein Link oder ein Video"
   inputs: "video"
+  templates: [hyperframes]
 ---
 
 # narrated-short
@@ -22,7 +23,7 @@ Your files: `short/<name>/` (`<name>`: one short slug, lowercase letters, digits
 
 ## What it needs
 
-Node 20+, ffmpeg and the HyperFrames CLI. Beside this skill, agentitos' **footage** (the sources), **launch-video** (`L` below is `/home/sprite/skills/launch-video/tools/launch.mjs`: voice, music, the zones check, the loudness), **captions**, **platform-zones** and **transcribe**, and for the first beat's freeze **freeze-cutout** (without it the short opens on the plain clip); OpenRouter for the voice, the music and the freeze's mask: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection. A voice costs about three cents, the music four, a freeze 7 to 14. When something is missing, the tool says so in one sentence: pass it on, never install it.
+Node 20+, ffmpeg and the HyperFrames CLI. Beside this skill, agentitos' **footage** (the sources), **launch-video** (`<launch>` below is `<skill>/../launch-video/tools/launch.mjs`: voice, music, the zones check, the loudness), **captions**, **platform-zones** and **transcribe**, and for the first beat's freeze **freeze-cutout** (without it the short opens on the plain clip); OpenRouter for the voice, the music and the freeze's mask: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection. A voice and the music cost a few cents each (their tools print it), a freeze 7 to 14. When something is missing, the tool says so in one sentence: pass it on, never install it.
 
 ## From a story to the video
 
@@ -50,8 +51,8 @@ Show it for a yes before a word is spoken:
 ### 3. The voice and the clock
 
 ```bash
-node L zones short/<name> tiktok --frame 9:16                       # the platforms it goes to, once
-node L voice short/<name> short/<name>/script.json artifacts/<name>/composition
+node <launch> zones short/<name> tiktok --frame 9:16                       # the platforms it goes to, once
+node <launch> voice short/<name> short/<name>/script.json artifacts/<name>/composition
 node <skill>/tools/short.mjs clock short/<name>
 ```
 
@@ -70,7 +71,7 @@ It cuts a clip per beat, checks them, builds the captions and writes the composi
 ### 5. The music
 
 ```bash
-node L music short/<name> artifacts/<name>/composition --prompt "<instrumental; the story's mood, tempo, instruments, in neutral words>" --seconds <the film's length>
+node <launch> music short/<name> artifacts/<name>/composition --prompt "<instrumental; the story's mood, tempo, instruments, in neutral words>" --seconds <the film's length>
 node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --platform tiktok
 ```
 
@@ -80,11 +81,11 @@ The second build lays it under the voice. No music came back: the prompt in othe
 
 ```bash
 hyperframes lint artifacts/<name>/composition
-node L check short/<name> artifacts/<name>/composition
+node <launch> check short/<name> artifacts/<name>/composition
 node <skill>/tools/short.mjs sheet short/<name> artifacts/<name>/composition
 ```
 
-Read `<skill>/references/quality.md` and go through `short/<name>/sheet.jpg` by it. `check` names text the apps would cover: a `✗` is always fixed; its `!` for the hook text may stay, the hook stands in the wide stretch above the buttons on purpose. Fix every defect in the beats or the script, build, look again, until nothing is left.
+Read `<skill>/references/quality.md` and go through `short/<name>/sheet.jpg` by it. `lint` must name no error; its three warnings `nested_structure_needs_subcomposition` (the hook text, the card, the handle) are this composition's own and stay. `check` names text the apps would cover: a `✗` is always fixed; its `!` for the hook text and for the card may stay, both stand in the wide stretch above the buttons on purpose. Fix every defect in the beats or the script, build, look again, until nothing is left.
 
 ### 7. Ask whether it is right
 
@@ -104,7 +105,7 @@ They name a moment or a part: change the beats (a shot, the hook text, a key wor
 
 ### 9. The video
 
-Only after their "looks good": say in one sentence that you are rendering, render with the `render` tool, name `<name>` (writes `artifacts/<name>.mp4`), then `node L finish artifacts/<name>.mp4` brings it to −14 LUFS. Say in one sentence that it is ready, and offer a button "Publish it": then follow agentitos' **publish-video** with the video; it checks it, writes the texts with video-descriptions (the footage's owner and the sources of the facts go into them, from `brief.md`) and schedules through Storrito. Never call Storrito's schedule procedures yourself.
+Only after their "looks good": say in one sentence that you are rendering, render with the `render` tool, name `<name>` (writes `artifacts/<name>.mp4`), then `node <launch> finish artifacts/<name>.mp4` brings it to −14 LUFS. Say in one sentence that it is ready, with the download link, and offer a button "Publish it": then follow agentitos' **publish-video** with the video; it checks it, writes the texts with video-descriptions (the footage's owner and the sources of the facts go into them, from `brief.md`) and schedules through Storrito. Never call Storrito's schedule procedures yourself.
 
 ## In a run of a hook or a schedule
 
@@ -114,10 +115,10 @@ Nobody is in the chat: the job in your definition stands in for the person's yes
 
 A ```hiccup block in your answer becomes part of the page. EDN hiccup, data only. `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/<name>"` shows the preview; pictures point at `uploads/…`.
 
-- One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list: checkboxes and one button whose `:send` holds `{checked}`. Several questions that must all be answered before you go on, none depending on another: one block, a group of radio buttons per question (own `:name`, every `:value` saying what it answers, at most four groups) and one button whose `:send` holds `{checked}`.
+- One question per block, buttons for the likely answers when a click is the whole answer, and a line that they can type anything else. Several picks from one list: checkboxes and one button whose `:send` holds `{checked}`. Several questions that must all be answered before you go on, none depending on another: one block, a group of radio buttons per question (own `:name`, every `:value` saying what it answers, at most four groups) and one button whose `:send` holds `{checked}`. One question after the other only when it depends on the answer before, or on work the person should see first.
 - A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
 - The button that moves on gets `:class "primary"`; a button that opens an artifact ends with " ↗".
-- Never a path of `short/` or `footage/`, a source's id or a raw error in the chat: sources by their owner, moments by their time.
+- Never a token, a path of `short/` or `footage/`, a source's id or a raw error in the chat: sources by their owner, moments by their time.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # The quality round
 
-On `short/<name>/sheet.jpg`, before the person is asked: stills of the composition at the hook, at each beat's start and middle, on the comparison card and at the end, row by row, the times in the tool's last line. A moment closer up: `hyperframes snapshot artifacts/<name>/composition --at <seconds>`.
+On `short/<name>/sheet.jpg`, before the person is asked: stills of the composition at its first frame, in the hook, at the freeze, at each beat's start and middle, on the comparison card, on every box and at the end, row by row; `sheet` prints their times. A moment closer up: `hyperframes snapshot artifacts/<name>/composition --at <seconds> --no-end -o short/<name>/stills`.
 
 Each point: what to look for, then the usual fix.
 

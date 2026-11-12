@@ -9,7 +9,7 @@ About 90 to 100 words in the film's language, 35 to 46 s spoken; a small story m
 ]}
 ```
 
-Ids are lowercase letters, digits and dashes, each once. `node /home/sprite/skills/launch-video/tools/launch.mjs voices` lists the voices; the person's choice, once made, stays.
+Ids are lowercase letters, digits and dashes, each once. `node <skill>/../launch-video/tools/launch.mjs voices` lists the voices; the person's choice, once made, stays.
 
 - **The hook, the first sentence.** A contradiction, a secret or something impossible that **the first picture proves** ("Nobody is steering this robot, and it is doing a backflip."). No number, no price, no superlative to open. The clip comes first, the sentence is written for it: never a sentence the picture does not show. A name everyone knows (NASA, a famous maker) belongs here when there is one.
 - **A story, not a data sheet.** What should not work, a trick, a secret. The number comes second.
