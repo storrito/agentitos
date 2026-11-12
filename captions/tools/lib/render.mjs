@@ -81,8 +81,8 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
           text-transform: ${look.case === "upper" ? "uppercase" : "none"}; text-align: center; }
         #root .cap-group.boxed { width: fit-content; max-width: ${data.maxWidth}px;
           background: ${look.box || "transparent"}; padding: 0.22em 0.5em; border-radius: 0.3em; }
-        #root .cap-group.box { width: fit-content; max-width: ${data.maxWidth}px; padding: 0.2em 0.5em 0.24em; border-radius: 0.32em;
-          background: rgba(10,14,20,0.86); border: ${Math.max(3, Math.round(look.size * scale * 0.045))}px solid ${look.card || look.highlight}; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+        #root .cap-group.cap-card { box-sizing: border-box; width: fit-content; max-width: ${data.maxWidth}px; padding: 0.2em 0.5em 0.24em; border-radius: 0.32em;
+          background: rgba(10,14,20,0.86); border: ${Math.max(3, Math.round(look.size * scale * 0.045))}px solid ${look.highlight}; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
         #root .cap-icon { display: inline-block; margin-right: 0.3em; text-transform: none; font-weight: 400; }
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
           ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * scale)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
@@ -95,7 +95,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
           var L = DATA.look, M = DATA.motion, root = document.getElementById("root");
           var els = DATA.groups.map(function (g, gi) {
             var el = document.createElement("div");
-            el.className = "cap-group" + (L.box ? " boxed" : "") + (g.box ? " box" : "");
+            el.className = "cap-group" + (L.box ? " boxed" : "") + (g.box ? " cap-card" : "");
             el.id = "cap-g" + gi;
             if (g.icon) {
               var ico = document.createElement("span");
@@ -122,15 +122,16 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
             el.style.visibility = "hidden";
             for (; size > least; size -= 2) {
               el.style.fontSize = size + "px";
-              var high = el.offsetHeight;
-              if (el.classList.contains("box")) {   // a card's own padding and border are not lines of text
+              var high = el.offsetHeight, room = DATA.maxWidth;
+              if (el.classList.contains("cap-card")) {   // a card's own padding and border are no lines of text, and no room for a word
                 var cs = getComputedStyle(el);
                 high = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+                room = DATA.maxWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 2 * parseFloat(cs.borderLeftWidth);
               }
               var lines = high / (size * L.lineHeight);
               var widest = Math.max.apply(null, Array.prototype.map.call(el.children, function (c) { return c.offsetWidth; }));
               // (the words are inline blocks between spaces: the lines balance, no word is left alone)
-              if (lines <= DATA.lines + 0.35 && widest <= DATA.maxWidth) break;
+              if (lines <= DATA.lines + 0.35 && widest <= room) break;
             }
             el.style.fontSize = size + "px";
           }
@@ -164,6 +165,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               var safe = Math.max(last.said, last.start + reveal(last) + 0.07);
               if (M.out === "fade" && g.end - 0.15 >= safe) tl.to(el, { opacity: 0, duration: 0.15, ease: "power1.in" }, g.end - 0.15);
               if (M.out === "wipe" && g.end - 0.2 >= safe) tl.to(words, { clipPath: "inset(-20% -10% -20% 110%)", duration: 0.2, stagger: 0.03, ease: "power2.in" }, g.end - 0.2);
+              if (M.out === "wipe" && g.box && g.end - 0.2 >= safe) tl.to(el, { opacity: 0, duration: 0.2, ease: "power1.in" }, g.end - 0.2);   // a card goes whole
               tl.set(el, { visibility: "hidden", opacity: 0 }, g.end);
             });
             window.__timelines["${ID}"] = tl;
