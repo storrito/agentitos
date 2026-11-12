@@ -93,7 +93,11 @@ body { margin: 0; background: var(--page); color: var(--ink); font-family: var(-
 
 /* ---------- a phone: one column, each card a row ---------- */
 
-.page { margin: 0 auto; padding: 24px 16px 28px; }
+/* a word longer than its line (a German compound in a heading) breaks,
+   at a syllable where the browser knows the language, instead of
+   running out of its card */
+.page { margin: 0 auto; padding: 24px 16px 28px; overflow-wrap: anywhere; }
+h1, h2, .items li { -webkit-hyphens: auto; hyphens: auto; }
 
 h1 { font-size: 27px; line-height: 1.15; margin: 0; letter-spacing: -.02em; }
 .sub { font-size: 16.5px; line-height: 1.4; color: var(--muted); margin: 8px 0 0; }

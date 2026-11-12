@@ -52,7 +52,7 @@ To see it yourself, `node <skill>/tools/diagram.mjs picture artifacts/<job>-work
 
 ## 3. Show it
 
-One card (see "UI in the chat"): in a sentence what is theirs to do, and the button that opens the page beside the chat. Before a workflow goes live the card asks for their yes, and nothing is created before it. When they write what should be different: a change of how it works goes into the job in your file first, then into `workflow.json`; a change of words only into `workflow.json`; then build again, the page beside the chat reloads by itself, and say in a sentence what changed.
+One card (see "UI in the chat"): in a sentence what is theirs to do, and the button that opens the page beside the chat. Before a workflow goes live the card asks for their yes, and nothing is created before it. When they write what should be different: a change of how it works goes into the job in your file first, then into `workflow.json`; a change of words only into `workflow.json`; then build again (the page beside the chat reloads by itself), say in a sentence what changed and show the card again: the buttons of a card are spent once the person answered, so the yes needs a new one.
 
 A workflow that is only an idea gets the same page without the button that starts it, and a sentence that none of it runs yet.
 
