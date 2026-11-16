@@ -57,7 +57,9 @@ All words, numbered:
 ${numbered}` });
     for (const c of list) {
       const small = path.join(tmp, `${c.n}.mp4`);
-      execFileSync("ffmpeg", ["-v", "error", "-y", "-i", path.join(dir, "source", c.file), "-vf", "scale=-2:360,fps=4", "-c:v", "libx264", "-preset", "veryfast", "-crf", "33", "-c:a", "aac", "-b:a", "32k", "-ac", "1", small]);
+      // without the file's tags: a phone's video names the place it was recorded at, and ffmpeg
+      // would carry that into the copy the model watches
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-i", path.join(dir, "source", c.file), "-map_metadata", "-1", "-vf", "scale=-2:360,fps=4", "-c:v", "libx264", "-preset", "veryfast", "-crf", "33", "-c:a", "aac", "-b:a", "32k", "-ac", "1", small]);
       if (several) content.push({ type: "text", text: `Video ${c.n}:` });
       content.push({ type: "video_url", video_url: { url: `data:video/mp4;base64,${fs.readFileSync(small).toString("base64")}` } });
     }

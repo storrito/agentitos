@@ -32,8 +32,11 @@ export function probe(file) {
   const ext = path.extname(file).slice(1).toLowerCase();
   const formats = String(j.format.format_name || "").split(",");
   const container = formats.includes("mp4") || formats.includes("mov") ? (ext === "mov" || ext === "qt" ? "mov" : "mp4") : formats[0];
+  // a phone writes the place of the recording into its file; only that it is there is kept, never where
+  const located = [j.format.tags, ...j.streams.map((s) => s.tags)].some((tags) => tags && Object.keys(tags).some((k) => /location|gps/i.test(k)));
   return {
     container,
+    located,
     bytes: Number(j.format.size) || fs.statSync(file).size,
     duration,
     width: rot === 90 ? v.height : v.width,
@@ -177,6 +180,8 @@ export async function download(url, dir) {
 // A nearly 9:16 video (a phone's 9:19.5) is cropped to fill only with `crop`.
 // `loud` brings the sound to -14 LUFS (one pass of loudnorm), as the apps play it; `start` and
 // `end` (seconds) cut black or silence off its ends, which encodes the picture again.
+// The file's tags are left out either way (a phone's video names the place it was recorded at);
+// how the picture is turned stays, it is not a tag.
 export function prepare(input, out, info, { mode, pad = false, crop = false, loud = false, start = 0, end = null }) {
   const vf = [], said = [];
   let video = ["-c:v", "copy"];
@@ -208,7 +213,8 @@ export function prepare(input, out, info, { mode, pad = false, crop = false, lou
     : ["-c:a", "copy"];
   const tmp = `${out}.part.mp4`;
   fs.rmSync(tmp, { force: true });
-  const args = ["-v", "error", "-y", "-i", input, ...span, "-map", "0:v:0", ...(info.sound ? ["-map", "0:a:0"] : []), ...(vf.length ? ["-vf", vf.join(",")] : []), ...video, ...audio, "-movflags", "+faststart", tmp];
+  const args = ["-v", "error", "-y", "-i", input, ...span, "-map", "0:v:0", ...(info.sound ? ["-map", "0:a:0"] : []), "-map_metadata", "-1", ...(vf.length ? ["-vf", vf.join(",")] : []), ...video, ...audio, "-movflags", "+faststart", tmp];
+  if (info.located) said.push("the place it was recorded at taken out");
   const r = spawnSync("ffmpeg", args, { encoding: "utf8" });
   if (r.status || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`ffmpeg could not write the video: ${(r.stderr || "").trim().split("\n").pop()}`); }
   fs.renameSync(tmp, out);

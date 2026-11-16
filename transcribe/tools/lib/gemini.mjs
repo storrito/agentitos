@@ -114,12 +114,13 @@ export async function gemini(file, total, { lang = "auto", speakers = true, voic
     pieces = await inTurns(starts, atOnce, async (at, k) => {
       // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64), then MP3 at
       // 48 kbit/s, which it transcribes as well; MP3 always through the Sprites gateway, which
-      // refuses a request of several megabytes
+      // refuses a request of several megabytes. Either without the file's tags: a phone's
+      // recording names the place it was made at, and ffmpeg would carry that into the piece
       let format = "flac", chunk = path.join(tmp, `c${k}.flac`);
-      if (!or.gateway) await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", chunk]);
+      if (!or.gateway) await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-map_metadata", "-1", "-ac", "1", "-ar", "16000", chunk]);
       if (or.gateway || (fs.statSync(chunk).size * 4) / 3 > 40e6) {
         format = "mp3"; chunk = path.join(tmp, `c${k}.mp3`);
-        await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
+        await ffmpeg(["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-map_metadata", "-1", "-ac", "1", "-ar", "16000", "-b:a", "48k", chunk]);
       }
       const j = await request({
         model: STT_MODEL,

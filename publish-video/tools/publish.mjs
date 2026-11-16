@@ -123,6 +123,7 @@ function assess(info, mode, sound, ends) {
     else if (sound.lufs > -9) add("⚠", `loud: ${sound.lufs.toFixed(1)} LUFS; the apps turn it down to about -14`, "--loudness");
     if (sound.peak != null && sound.peak > -1) add("⚠", `peaks at ${sound.peak.toFixed(1)} dBTP: may crackle after the apps encode it`, "--loudness");
   }
+  if (info.located) add("✗", "the file names the place it was recorded at (a phone writes it into its videos): whoever gets the file can read it", "prepare");
   if (ends.blackStart >= 0.4) add("⚠", `begins with ${ends.blackStart.toFixed(1)} s of black: the first second decides whether people stay`, "--start");
   if (ends.silentStart != null && ends.silentStart >= 1) add("⚠", `the first ${ends.silentStart.toFixed(1)} s are silent`, "--start");
   if (ends.blackEnd >= 1) add("⚠", `ends with ${ends.blackEnd.toFixed(1)} s of black`, "--end");

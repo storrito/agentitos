@@ -65,6 +65,7 @@ Tools do what can be measured (sync, cuts between words, levels, sizes, what the
 - A page plays only about 75 media elements (Chrome): one element per source for the whole cut (a voice track, a webcam track), not one per piece.
 - Sprites have little memory: never decode a whole recording at once to cut many pieces from it; one ffmpeg per piece, joined afterwards.
 - Names the speech model mishears (product and account names like "storrito_com") are corrected in the words, keeping their times.
+- A phone writes the place of a recording into its file, and ffmpeg carries a file's tags into what it converts (MP4, MOV, WebM, MP3, FLAC, Opus; not WAV, JPEG, PNG). Whatever a tool sends to a model or writes to be published is made with `-map_metadata -1`; a tool that reports a file's tags says only that a place is there, never where.
 
 ## In the chat (rragent)
 
