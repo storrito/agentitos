@@ -150,9 +150,10 @@ async function cmdNew(dir, files, opts) {
     console.log(`video ${n}: ${c.from} (${clock(p.duration, false)}, ${p.width}×${p.height}${how.startsWith("transcoded") ? `, ${how} to H.264` : ""}) – listening …`);
     const env = envelope(samples(file));
     fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.env`), Buffer.from(env.buffer));
-    let heard;
-    try { ({ words: heard, model: asr } = await transcribeFile(file, { log: console.log })); } catch (e) { fail(e.message); }
-    const moved = retime(heard, env, threshold(env));
+    let heard, edges;
+    try { ({ words: heard, model: asr, edges } = await transcribeFile(file, { log: console.log })); } catch (e) { fail(e.message); }
+    // words whose times the transcribe skill has set by the sound (edges: "sound") are not timed a second time
+    const moved = edges === "sound" ? 0 : retime(heard, env, threshold(env));
     if (moved) console.log(`  ${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
     const { kept: said, runs } = ghosts(heard);
     for (const r of runs) console.log(`  left out, the voice has no time for them (the recognizer wrote them twice): ${r}`);

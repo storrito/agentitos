@@ -262,7 +262,7 @@ Contrast is measured, not estimated: two screenshots of the same frame, with and
 
 ## Alignment with the audio
 
-Word timings from speech recognition often drift by 100–500 ms and sometimes land in the silence after the word. That is why the build aligns the timings with the audio whenever `--audio` is given (`tools/align.mjs`). Candidate word boundaries are voice onsets after pauses and after short energy dips between syllables. Dynamic programming picks, for all words together and in fixed order, the boundaries that best match the ASR times. A word that lies in silence is penalised. Word ends that reach into silence are pulled back to the end of the voice. With `--no-align` the timings stay as they are in the transcript.
+Word timings from speech recognition often drift by 100–500 ms and sometimes land in the silence after the word. That is why the build aligns the timings with the audio whenever `--audio` is given (`tools/align.mjs`). Candidate word boundaries are voice onsets after pauses and after short energy dips between syllables. Dynamic programming picks, for all words together and in fixed order, the boundaries that best match the ASR times. A word that lies in silence is penalised. Word ends that reach into silence are pulled back to the end of the voice. A transcript marked `"edges": "sound"` (the transcribe skill's Scribe words, whose edges the sound has set already) is not aligned again. With `--no-align` the timings stay as they are in the transcript.
 
 In addition, every word effect starts earlier by its own lead time. So the moment the word becomes readable falls on the onset, not just the start of the animation. The last word of a phrase stays for at least 0.35 s.
 
