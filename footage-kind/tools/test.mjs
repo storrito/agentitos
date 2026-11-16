@@ -38,6 +38,10 @@ screen("1170x2532", at("phone", "phone.mp4"), false);
 fs.mkdirSync(at("wide"), { recursive: true });
 screen("2200x1000", at("wide", "wide.mp4"), false);
 ff("-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=8", "-vf", "noise=alls=24:allf=t,pad=1280:2276:0:778:black", ...x264, at("bars", "bars.mp4"));
+// a phone's own file: upright, a calm wall over a moving lower part, and tags of the phone and of a place
+fs.mkdirSync(at("phonecam"), { recursive: true });
+ff("-f", "lavfi", "-i", "color=c=0xd8d8d8:s=1080x1920:r=30:d=8", "-f", "lavfi", "-i", "testsrc2=s=1080x1300:r=30:d=8", ...voice(), "-filter_complex", "[1]noise=alls=24:allf=t[m];[0][m]overlay=0:620", "-t", "8", ...x264,
+  "-movflags", "use_metadata_tags", "-metadata", "com.android.manufacturer=TestMaker", "-metadata", "com.android.model=TestPhone 1", "-metadata", "location=+12.3456-098.7654/", at("phonecam", "PXL_test.mp4"));
 ff(...voice(), "-c:a", "aac", at("voice", "voice.m4a"));
 ff("-f", "lavfi", "-i", "color=c=white:s=1179x2556", "-frames:v", "1", at("stills", "shot.png"));
 fs.writeFileSync(at("stills", "notes.txt"), "Three things to say about the new feature.\n");
@@ -68,6 +72,11 @@ check("a picture narrower than 9:16 that stands is a phone's screen, named B4", 
 
 r = look("wide");
 check("a picture wider than 2:1 that stands is never called a phone's screen, and never sure", kind(r, "wide.mp4") !== "phone-screen" && !r.files[0].sure, [kind(r, "wide.mp4"), r.files[0].sure]);
+
+r = look("phonecam");
+const cam = r.files[0], written = fs.readFileSync(at("out", "phonecam", "footage.json"), "utf8");
+check("a file that names its phone is a camera, sure, named P1, whatever its picture measures", cam.kind === "camera" && cam.sure && named(r).includes("P1"), [cam.kind, cam.sure, named(r), cam.picture?.band]);
+check("the place a phone wrote into its file is nowhere in footage.json, only that there is one", cam.facts.located === true && !/12\.3456|098\.7654/.test(written) && !("tags" in cam.facts), [cam.facts.located, /12\.3456/.test(written)]);
 
 r = look("bars");
 check("black bars above and below make a finished video, named F2", kind(r, "bars.mp4") === "finished" && named(r).includes("F2"), [kind(r, "bars.mp4"), r.files[0].picture?.bars]);

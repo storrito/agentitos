@@ -60,7 +60,14 @@ function probe(file) {
     hdr: /smpte2084|arib-std-b67/.test(v?.color_transfer || ""),
     sounds: sounds.length,
     channels: sounds[0]?.channels || 0,
-    tags,
+    // Of the file's tags only these leave this function. A phone writes where it filmed into its
+    // files: that place, and whatever else a file carries (an owner, a title, a comment), is
+    // never read out, only whether a place is there.
+    camera: [tags["com.apple.quicktime.make"] || tags["com.android.manufacturer"] || tags.make, tags["com.apple.quicktime.model"] || tags["com.android.model"] || tags.model].filter(Boolean).join(" ") || null,
+    rendered: !!tags.hyperframes_renderer,
+    writer: tags.hyperframes_renderer ? "HyperFrames" : /lavf/i.test(tags.encoder || "") ? "ffmpeg" : tags["com.apple.quicktime.software"] || tags.encoder || null,
+    created: tags.creation_time || null,
+    located: Object.keys(tags).some((k) => /location|gps|iso6709|xyz/.test(k)),
   };
 }
 
@@ -276,9 +283,7 @@ function suggest(name, f, pic, snd) {
     else if (snd) ev.push(`${snd.pauses} pauses a minute, sound ${pct(snd.busy)} of the time`);
     return { kind: "audio", sure: true, evidence: ev, open: ["Speech or music? How many voices? (transcribe says)"] };
   }
-  const ratio = f.width / f.height, t = f.tags;
-  const maker = t["com.apple.quicktime.make"] || t.make, model = t["com.apple.quicktime.model"] || t.model;
-  const made = t.hyperframes_renderer ? "HyperFrames" : /lavf/i.test(t.encoder || "") ? "ffmpeg" : (t["com.apple.quicktime.software"] || t.encoder || "");
+  const ratio = f.width / f.height;
   // upright only: a picture of 2:1 and wider is as often an ultrawide display, a cinema format or
   // a call's recording as a phone held sideways (a call with a shared screen was taken for one)
   const phone = ratio > 0.42 && ratio < 0.53, wide = ratio > 1.9 && ratio < 2.4;
@@ -297,10 +302,11 @@ function suggest(name, f, pic, snd) {
   }
   if (wide) ev.push(`${size} is wider than 2:1: an ultrawide display, a cinema format, a call's recording or a phone held sideways`);
   if (f.variable) ev.push("its frame rate varies: a recorder that writes a frame only when the picture changes (a phone's screen, a browser)");
-  if (maker || model) ev.push(`the file names its camera: ${[maker, model].filter(Boolean).join(" ")}`);
+  if (f.camera) ev.push(`the file names its camera: ${f.camera}`);
+  if (f.located) ev.push("it carries the place it was recorded at, as a phone's camera writes it (the place is not read here; never pass a recording's place on)");
   if (f.turned) ev.push("stored turned: filmed with a phone held upright");
   if (f.hdr) ev.push("HDR, as a phone's camera films");
-  if (made) ev.push(`written by ${made}${t.hyperframes_renderer ? ": a video one of our skills rendered" : /ffmpeg/.test(made) ? ": exported or converted, not straight from a device" : ""}`);
+  if (f.writer) ev.push(`written by ${f.writer}${f.rendered ? ": a video one of our skills rendered" : f.writer === "ffmpeg" ? ": exported or converted, not straight from a device" : ""}`);
   if (named) ev.push("its name says screen recording");
   if (bars) ev.push(`black bars (top ${pct(pic.bars.top)}, bottom ${pct(pic.bars.bottom)}, left ${pct(pic.bars.left)}, right ${pct(pic.bars.right)} of the frame): a picture of another shape inside`);
   if (!f.sounds) ev.push("no sound track");
@@ -310,12 +316,15 @@ function suggest(name, f, pic, snd) {
 
   let kind, sure = false;
   const who = "Who or what is in the picture: one person speaking to the camera, two or more, hands and a thing, a place without anyone speaking?";
-  if (t.hyperframes_renderer) { kind = "finished"; sure = true; }
-  else if (maker || model) { kind = "camera"; sure = !(pic?.frozen >= 0.5); open.push(who); if (!sure) open.push("The file names a camera but its picture stands like a screen: a filmed screen, or a tripod shot of something that does not move?"); }
+  if (f.rendered) { kind = "finished"; sure = true; }
+  // what the file says of itself goes before anything measured on its picture: a camera films
+  // 16:9 or 4:3, so a camera's name on a picture of another shape is the one case left open
+  else if (f.camera && !phone) { kind = "camera"; sure = !(pic?.frozen >= 0.5); open.push(who); if (!sure) open.push("The file names a camera but its picture stands like a screen: a filmed screen, or a tripod shot of something that does not move?"); }
   else if (phone && !bars) {
-    kind = "phone-screen"; sure = !pic || pic.still > 0.3;
+    kind = "phone-screen"; sure = !f.camera && (!pic || pic.still > 0.3);
     ev.unshift(`${size} is a phone screen's shape, narrower than 9:16`);
-    if (!sure) open.push("Shaped like a phone's screen but moving like a camera's picture: a game, a video played on the phone, or a crop?");
+    if (f.camera) open.push("The file names a camera, but its shape is a phone screen's, not a camera's: a screen recording, or a crop of what a camera filmed?");
+    else if (!sure) open.push("Shaped like a phone's screen but moving like a camera's picture: a game, a video played on the phone, or a crop?");
   } else if (bars) { kind = "finished"; open.push("What is inside the bars: a video made for another format? Burned-in captions, a logo?"); }
   else if (pic?.frozen >= 0.5) {
     kind = "desktop-screen"; sure = display || named;
