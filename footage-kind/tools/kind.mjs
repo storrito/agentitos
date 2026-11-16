@@ -255,6 +255,10 @@ function sheet(file, f, out) {
 // frames; slides with the speaker's picture in a corner repeat none, but 89 % of their area
 // stands; footage and a wide shot of a speaker stand on under 30 %; a webcam before a blurred
 // background (77 %) and a studio interview (43 %) lie between and are left open.
+// A kind is called sure only when the file itself says it (text, a still, sound alone, a render's
+// or a camera's tag) or two measurements agree (a display's shape and frames that repeat; a
+// phone screen's upright shape and a picture that stands). On three files kept apart from those
+// the bars were set on, the kind from the picture alone was right for one.
 function suggest(name, f, pic, snd) {
   const ev = [], open = [];
   const size = `${f.width}×${f.height}`;
@@ -275,7 +279,9 @@ function suggest(name, f, pic, snd) {
   const ratio = f.width / f.height, t = f.tags;
   const maker = t["com.apple.quicktime.make"] || t.make, model = t["com.apple.quicktime.model"] || t.model;
   const made = t.hyperframes_renderer ? "HyperFrames" : /lavf/i.test(t.encoder || "") ? "ffmpeg" : (t["com.apple.quicktime.software"] || t.encoder || "");
-  const phone = (ratio > 0.42 && ratio < 0.53) || (ratio > 1.9 && ratio < 2.4);
+  // upright only: a picture of 2:1 and wider is as often an ultrawide display, a cinema format or
+  // a call's recording as a phone held sideways (a call with a shared screen was taken for one)
+  const phone = ratio > 0.42 && ratio < 0.53, wide = ratio > 1.9 && ratio < 2.4;
   const display = ratio >= 1.5 && ratio <= 1.62;
   const bars = pic && (pic.bars.top || pic.bars.bottom || pic.bars.left || pic.bars.right);
   const named = /screen ?recording|bildschirmaufnahme|screencast|^screen\b/i.test(name);
@@ -289,6 +295,7 @@ function suggest(name, f, pic, snd) {
     if (pic.band && pic.still < 0.5) ev.push(`a strip along the ${pic.band.edge} (${pct(pic.band.share)} of the frame) stands while the rest moves`);
     if (pic.cuts >= 2) ev.push(`${pic.cuts} cuts a minute${pic.cuts >= 6 ? ": cut together from several shots" : ""}`);
   }
+  if (wide) ev.push(`${size} is wider than 2:1: an ultrawide display, a cinema format, a call's recording or a phone held sideways`);
   if (f.variable) ev.push("its frame rate varies: a recorder that writes a frame only when the picture changes (a phone's screen, a browser)");
   if (maker || model) ev.push(`the file names its camera: ${[maker, model].filter(Boolean).join(" ")}`);
   if (f.turned) ev.push("stored turned: filmed with a phone held upright");
@@ -322,7 +329,7 @@ function suggest(name, f, pic, snd) {
   } else if (inset) {
     kind = "desktop-screen";
     open.push(`The part that always moves (${inset.where}): a webcam or a speaker's picture recorded into a screen or into slides?`);
-  } else if (pic && pic.still <= 0.3) { kind = "camera"; sure = true; open.push(who); } // a camera's picture; who or what it shows stays open
+  } else if (pic && pic.still <= 0.3) { kind = "camera"; open.push(who); open.push("Or no camera at all: a game, an animation, a video played on a screen?"); } // one measurement: never sure
   else {
     // between the two: the shape and the flat areas only tip it
     kind = display || pic?.flat >= 0.85 ? "desktop-screen" : "camera";

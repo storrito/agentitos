@@ -35,6 +35,8 @@ camera("testsrc2", at("screencast", "face.mp4"), 0);
 camera("testsrc2", at("cameras", "cam-a.mp4"), 0);
 camera("testsrc", at("cameras", "cam-b.mp4"), 1.5);
 screen("1170x2532", at("phone", "phone.mp4"), false);
+fs.mkdirSync(at("wide"), { recursive: true });
+screen("2200x1000", at("wide", "wide.mp4"), false);
 ff("-f", "lavfi", "-i", "testsrc2=s=1280x720:r=30:d=8", "-vf", "noise=alls=24:allf=t,pad=1280:2276:0:778:black", ...x264, at("bars", "bars.mp4"));
 ff(...voice(), "-c:a", "aac", at("voice", "voice.m4a"));
 ff("-f", "lavfi", "-i", "color=c=white:s=1179x2556", "-frames:v", "1", at("stills", "shot.png"));
@@ -63,6 +65,9 @@ check("the second camera starts 1.5 s after the first", Math.abs((b.starts ?? -9
 
 r = look("phone");
 check("a picture narrower than 9:16 that stands is a phone's screen, named B4", kind(r, "phone.mp4") === "phone-screen" && named(r).includes("B4"), [kind(r, "phone.mp4"), named(r)]);
+
+r = look("wide");
+check("a picture wider than 2:1 that stands is never called a phone's screen, and never sure", kind(r, "wide.mp4") !== "phone-screen" && !r.files[0].sure, [kind(r, "wide.mp4"), r.files[0].sure]);
 
 r = look("bars");
 check("black bars above and below make a finished video, named F2", kind(r, "bars.mp4") === "finished" && named(r).includes("F2"), [kind(r, "bars.mp4"), r.files[0].picture?.bars]);

@@ -73,6 +73,8 @@ Measured on 17 files of agentitos-lab's corpus (2026-11-16; none of them a devic
 
 With each of the corpus' 14 jobs given to `look` on its own, the labelled situation was among the ones it named for all 12 labelled jobs, and first (or named for all files together) for 10.
 
+On three files kept apart from those (the lab's `holdout-v1`, from other sources: a man speaking to a camera, a video call with a shared screen, a talk mixed live between the stage camera and its slides), with the rules as first committed: the kind matched the label for 1 of 3, the labelled situation was named for 2 of 3 and first for none. The call was called a phone's screen without doubt, because a picture wider than 2:1 counted as a phone held sideways. That rule is gone, and a kind taken from the picture alone is never called sure any more. This was not checked again on files kept apart. Read every kind as a first guess that the sheet confirms or corrects.
+
 What it does not tell, and the agent sees on the sheet: a webcam before a calm background from a screen; who is in a camera's picture and how many; burned-in text; speech from sung music (transcribe does). What nobody could measure yet for lack of files: a device's originals (the camera a file names, a phone's rotation, a screen recorder's varying frame rate) and a phone's screen recording.
 
 ## Rules it keeps
