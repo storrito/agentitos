@@ -13,17 +13,23 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 // (from–to: indexes of its first and last word, both included). First the phrases (a sentence,
 // up to a pause or a comma); a phrase too long for one group is split into groups of about equal
 // size ("Let me show | how it works.", not "Let me show how | it works.").
+//
+// A run of words that carry the same `box` (captions.mjs box) is a group of its own, whole,
+// whatever the style's size: what the person chose to stand as a card. The words before and
+// after it are grouped as if the run were a pause. Without a `box` on any word nothing changes.
 export function groups(words, { words: maxWords, chars: maxChars, pause, min }, duration = Infinity) {
+  const boxOf = (w) => w.box || null;
   const phrases = [];
   let cur = null;
   words.forEach((w, i) => {
     const prev = words[i - 1];
-    const breaks = !cur || sentenceEnd(prev.text) || w.start - prev.end >= pause || (phraseEnd(prev.text) && i - cur.from >= maxWords / 2);
-    if (breaks) { cur = { from: i, to: i }; phrases.push(cur); } else cur.to = i;
+    const breaks = !cur || boxOf(w) !== boxOf(prev) || (!boxOf(w) && (sentenceEnd(prev.text) || w.start - prev.end >= pause || (phraseEnd(prev.text) && i - cur.from >= maxWords / 2)));
+    if (breaks) { cur = { from: i, to: i, box: !!boxOf(w) }; phrases.push(cur); } else cur.to = i;
   });
   const text = (a, b) => words.slice(a, b + 1).map((x) => x.text).join(" ");
   const out = [];
   for (const ph of phrases) {
+    if (ph.box) { out.push({ from: ph.from, to: ph.to, box: true }); continue; }
     const n = ph.to - ph.from + 1;
     let k = Math.ceil(n / maxWords);
     while (k < n && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => t.length > maxChars)) k++;
