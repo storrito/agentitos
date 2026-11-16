@@ -31,11 +31,22 @@ node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.j
 node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json --speakers [--speakers-n 2] [--lang de]
 ```
 
-- Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word.
+- Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word. Every word's time is checked against the recording's own sound: the few the recognizer squeezed, drew over a pause or put into silence are moved to where the voice is (`"by": "sound"`), a stretch that stays doubtful is heard again alone (`"by": "second hearing"`). The summary line says how many words lie where the voice is and which spots stay doubtful.
 - `--speakers`: Gemini 3.5 Transcribe, `"speaker": "A"`, `"B"`, … in the order they first speak, times to a tenth of a second, an hour in about a minute. For an interview or a podcast. `--speakers-n N` when the person said how many speak: more voices than that are merged into the nearest of the N that speak most.
 - `--lang de` when you know the language; else the model hears it.
 
-The tool writes `{engine, model, duration, cost, words: [{text, start, end, …}]}`. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
+The tool writes `{engine, model, duration, cost, timing, words: [{text, start, end, …}]}`. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
+
+## When a time looks wrong
+
+A spot the summary calls doubtful, or one the person says is off (a caption too early, a cut into a word):
+
+```bash
+node <skill>/tools/timing.mjs sheet uploads/<file> transcribe/<name>/words.json --at 2:14
+node <skill>/tools/timing.mjs check uploads/<file> <words.json> [--fix]
+```
+
+`sheet` draws six seconds of the sound around the moment: the waveform, in green where a voice is, every word as a box over its time, doubtful words in red; read the picture and set a wrong word's start and end in `words.json` to its voice. `check` measures words from anywhere against the sound, `--fix` moves the ones it contradicts. Words with one time each (start = end) it refuses: the sound cannot say which stretch of voice is which word, take them again with `transcribe.mjs`.
 
 ## For another skill
 

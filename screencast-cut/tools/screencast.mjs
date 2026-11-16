@@ -10,9 +10,11 @@
 //                                     into <dir>/source/: on one clock, the voice cleaned, where
 //                                     each picture moves; several recordings one after the other
 //                                     (sessions); run again after it was cut off, it goes on
-//   node tools/screencast.mjs words <dir> <words.json>      the words of source/voice.m4a, as
-//                                     rragent's transcribe tool wrote them (`words: true`)
-//   node tools/screencast.mjs transcribe <dir>              or the words by ElevenLabs Scribe
+//   node tools/screencast.mjs transcribe <dir>              the words of source/voice.m4a by
+//                                     ElevenLabs Scribe (agentitos' transcribe skill): every word
+//                                     with its start and end, checked against the voice
+//   node tools/screencast.mjs words <dir> <words.json>      or words from elsewhere, each with
+//                                     its start and end (one time per word is refused)
 //   node tools/screencast.mjs propose <dir>   every sentence a keep: proposal.json (no view, no
 //                                     zoom: those the agent decides)
 //   node tools/screencast.mjs sheets <dir> [--proposal] [--keeps 3,5]   one image per keep: every
@@ -350,8 +352,9 @@ async function cmdNew(dir, folders, opts) {
   await faceOfWebcam(dir, meta);
   const voice = meta.voice;
   const r = await route();
-  console.log(`\nNext, the words of ${rel(source(dir, voice))}: with rragent's transcribe tool (file ${rel(source(dir, voice))}, words: true, names: the accounts, products and people that may be said), then ${cmd(`words ${rel(dir)} <its .words.json>`)}` +
-    (r ? `; or ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe through ${r.via}, no name correction)` : ""));
+  console.log(r && transcribeTool()
+    ? `\nNext, the words of ${rel(source(dir, voice))}: ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe through ${r.via}, every word's start and end checked against the voice; names it mishears go into cut.json's "fixes")`
+    : `\nNext, the words of ${rel(source(dir, voice))}: ${r ? NEEDS_TRANSCRIBE : "ElevenLabs Scribe needs OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's connection)"} Words from elsewhere, each with its start and end: ${cmd(`words ${rel(dir)} <words.json>`)}`);
 }
 
 // ----------------------------------------------------------------------------------- words
@@ -360,11 +363,20 @@ function voiceOf(dir) {
   return { env, thr: threshold(env), blocks: read(source(dir, "voice.loudness.json")) };
 }
 
+// Words with one time each (start = end, as some recognizers give them) say nothing about where
+// a word ends: cut points and captions by them are a guess the sound cannot settle, since it does
+// not say which stretch of voice is which word. Refused, with the way to words that have both.
+function lengthless(list) {
+  const said = list.filter((w) => (w.kind || "word") !== "event" && Number.isFinite(+w.start));
+  const bare = said.filter((w) => !(+w.end - +w.start > 0.045)).length;
+  return said.length >= 20 && bare / said.length > 0.3 ? `${bare} of the ${said.length} words have no length (start = end): this tool cuts between words and needs where each one ends.` : null;
+}
+
 function keepWords(dir, list, asr) {
   const meta = read(source(dir, "sources.json"));
   const { env, thr, blocks } = voiceOf(dir);
   const items = list.map((w) => ({ text: String(w.text ?? w.word ?? "").trim(), start: +w.start, end: +Math.max(w.end, w.start + 0.04),
-    kind: w.kind || kindOf(w.text ?? w.word), ...(w.confidence != null ? { confidence: w.confidence } : {}), ...(w.heard ? { heard: w.heard } : {}) }))
+    kind: w.kind || kindOf(w.text ?? w.word), ...(w.confidence != null ? { confidence: w.confidence } : {}), ...(w.heard ? { heard: w.heard } : {}), ...(w.by ? { by: w.by } : {}) }))
     .filter((w) => w.text && Number.isFinite(w.start)).sort((a, b) => a.start - b.start);
   const moved = retime(items, env, thr);
   if (moved) console.log(`${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
@@ -425,10 +437,12 @@ function duck(dir, words) {
 
 function cmdWords(dir, file) {
   if (!fs.existsSync(source(dir, "sources.json"))) fail(`Run first: screencast.mjs new ${rel(dir)} <recording-folder>`);
-  if (!file || !fs.existsSync(file)) fail(`Usage: screencast.mjs words ${rel(dir)} <words.json> (rragent's transcribe tool writes it beside the transcript with words: true)`);
+  if (!file || !fs.existsSync(file)) fail(`Usage: screencast.mjs words ${rel(dir)} <words.json> ({ words: [{ text, start, end }] } in seconds of source/voice.m4a; or ${cmd(`transcribe ${rel(dir)}`)} takes them itself)`);
   const j = read(file);
   const list = Array.isArray(j) ? j : j.words || [];
   if (!list.length) fail(`${file} holds no words.`);
+  const bare = lengthless(list);
+  if (bare) fail(`✗ ${bare} Take the words with ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe, every word with its start and end); names it mishears go into cut.json's "fixes".`);
   keepWords(dir, list, j.model || "rragent transcribe");
 }
 
@@ -439,7 +453,8 @@ async function cmdTranscribe(dir) {
   console.log(`Listening to ${clock(meta.duration)} of voice with ElevenLabs Scribe …`);
   let r;
   try { r = await transcribeFile(source(dir, meta.voice), { log: console.log }); } catch (e) { fail(`✗ ${e.message}`); }
-  console.log(`$${r.cost.toFixed(4)}`);
+  const t = r.timing;
+  console.log(`$${r.cost.toFixed(4)}` + (t ? `; ${(t.inVoice * 100).toFixed(1)} % of the words lie where the voice is${t.moved ? `, ${t.moved} moved there` : ""}${t.heardAgain ? `, ${t.heardAgain} from a second hearing` : ""}${t.doubtful?.length ? `, ${t.doubtful.length} still doubtful` : ""}` : ""));
   keepWords(dir, r.words, r.model);
 }
 
