@@ -31,11 +31,11 @@ node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.j
 node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json --speakers [--speakers-n 2] [--lang de]
 ```
 
-- Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word. Every word's time is checked against the recording's own sound: the few the recognizer squeezed, drew over a pause or put into silence are moved to where the voice is (`"by": "sound"`), a stretch that stays doubtful is heard again alone (`"by": "second hearing"`). The summary line says how many words lie where the voice is and which spots stay doubtful.
+- Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word. Every word's time is checked against the recording's own sound: the few the recognizer squeezed, drew over a pause or put into silence are moved to where the voice is (`"by": "sound"`), a stretch that stays doubtful is heard again alone (`"by": "second hearing"`). Then the edges of all words are set where their sound begins and ends: Scribe starts a word about 60 ms late and ends one in eight more than 100 ms early, so a cut or a caption by its own times comes after the word has begun. The summary line says how many words lie where the voice is and which spots stay doubtful.
 - `--speakers`: Gemini 3.5 Transcribe, `"speaker": "A"`, `"B"`, … in the order they first speak, times to a tenth of a second, an hour in about a minute. For an interview or a podcast. `--speakers-n N` when the person said how many speak: more voices than that are merged into the nearest of the N that speak most.
 - `--lang de` when you know the language; else the model hears it.
 
-The tool writes `{engine, model, duration, cost, timing, words: [{text, start, end, …}]}`. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
+The tool writes `{engine, model, duration, cost, timing, edges, words: [{text, start, end, …}]}`; `"edges": "sound"` says the words' edges lie on the sound, and a skill that takes them times nothing a second time. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
 
 ## When a time looks wrong
 

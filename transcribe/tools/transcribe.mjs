@@ -9,14 +9,18 @@
 //                Every word's time is checked against the recording's own sound (lib/timing.mjs):
 //                the few the recognizer squeezed, stretched or put into silence are moved to
 //                where the voice is (by: "sound"), a stretch that stays doubtful is heard again
-//                alone (lib/again.mjs, by: "second hearing")
+//                alone (lib/again.mjs, by: "second hearing"); then the edges of all words are set
+//                where their sound begins and ends (lib/edges.mjs): Scribe starts a word a little
+//                late and ends it a little early
 //   --speakers   Gemini 3.5 Transcribe with who speaks (A, B, … by first appearance), tenths of a
 //                second, an hour in about a minute; words [{ text, start, end, speaker }]
 //   --lang de    the language spoken (default: the model hears it)
 //   --speakers-n N   with --speakers: how many voices there are, when the person knows
 //
-// Writes { engine, model, duration, cost, timing, words } to --out (times in seconds of the
-// file; timing: how many words the sound confirmed, moved and still contradicts) and prints one
+// Writes { engine, model, duration, cost, timing, edges, words } to --out (times in seconds of the
+// file; timing: how many words the sound confirmed, moved and still contradicts, and how many
+// had an edge set by it; edges: "sound" says the words' edges lie on the sound, so that a skill
+// taking them corrects nothing a second time) and prints one
 // line: what it wrote and what to do next. Progress goes to stderr. An error is one
 // sentence on stdout, exit 1.
 
@@ -27,6 +31,7 @@ import { scribe, SCRIBE_MODEL } from "./lib/scribe.mjs";
 import { gemini, STT_MODEL } from "./lib/gemini.mjs";
 import { envelopeOf, threshold, bare, check, repair } from "./lib/timing.mjs";
 import { hearAgain } from "./lib/again.mjs";
+import { edged } from "./lib/edges.mjs";
 
 const USAGE = "Usage: transcribe.mjs <audio|video> --out <words.json> [--speakers] [--lang de] [--speakers-n N]";
 const FLAGS = ["speakers"];
@@ -102,13 +107,15 @@ if (!opts.speakers && r.words.length) {
     r.cost += x.cost;
     return x.words;
   }, log);
+  // the gross errors are out: now every word's edges, outward to where its sound begins and ends
+  const edges = edged(r.words, env);
   const after = check(r.words, env, thr);
-  timing = { checked: after.speech, inVoice: after.inVoice, moved, heardAgain: again.heard, doubtful: after.off };
+  timing = { checked: after.speech, inVoice: after.inVoice, moved, heardAgain: again.heard, edged: edges, doubtful: after.off };
 }
 
 const out = path.resolve(opts.out);
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, JSON.stringify({ engine, model, duration: +duration.toFixed(3), cost: +r.cost.toFixed(4), ...(timing ? { timing } : {}), words: r.words }, null, 1));
+fs.writeFileSync(out, JSON.stringify({ engine, model, duration: +duration.toFixed(3), cost: +r.cost.toFixed(4), ...(timing ? { timing, edges: "sound" } : {}), words: r.words }, null, 1));
 
 const n = (kind) => r.words.filter((w) => w.kind === kind).length;
 const said = opts.speakers ? `${r.words.length} words` : `${n("word")} words, ${n("filler")} fillers, ${n("event")} noises`;
@@ -119,6 +126,7 @@ const at = (i) => `"${r.words[i].text}" at ${clock(r.words[i].start)}`;
 const timed = !timing ? "" : ` Timings checked against the sound: ${(timing.inVoice * 100).toFixed(1)} % of the words lie where the voice is`
   + (timing.moved ? `, ${timing.moved} moved there` : "")
   + (timing.heardAgain ? `, ${timing.heardAgain} taken from a second hearing` : "")
+  + (timing.edged ? `, the edges of ${timing.edged} set where their sound begins and ends` : "")
   + (timing.doubtful.length ? `; still doubtful: ${timing.doubtful.slice(0, 5).map(at).join(", ")}${timing.doubtful.length > 5 ? ` and ${timing.doubtful.length - 5} more` : ""} (timing.mjs sheet shows a spot)` : "") + ".";
 console.log(`${rel(out)}: ${said}${who.length ? `, voices ${who.join(" ")}` : ""} in ${clock(duration)} (${model}, $${r.cost.toFixed(4)}).${timed}`
   + (r.words.length ? ` Next: read its words (${shape}, seconds) and fix names the model misheard, keeping their times.` : " No speech heard: is there any in it?"));

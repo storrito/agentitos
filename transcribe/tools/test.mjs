@@ -9,8 +9,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { envelopeOf, threshold, voiced, islands, bare, check, repair, HOP } from "./lib/timing.mjs";
+import { envelopeOf, smooth, threshold, voiced, islands, bare, check, repair, HOP } from "./lib/timing.mjs";
 import { stretches, adopt, hearAgain } from "./lib/again.mjs";
+import { quietLevels, edged } from "./lib/edges.mjs";
 
 // loudness in 10 ms frames: quiet room noise, voice where `parts` say ([from, to, level])
 function sound(seconds, parts) {
@@ -111,6 +112,66 @@ test("noises and words already right are left alone", () => {
 test("words without a length are counted", () => {
   const words = [word("a", 1, 1), word("b", 2, 2.04), word("c", 3, 3.3), word("[x]", 4, 4, "event")];
   assert.deepEqual(bare(words), { speech: 3, bare: 2 });
+});
+
+// the edges of the words: loudness as lib/timing.mjs gives it (smoothed), from stretches [seconds, level]
+function stretch(...parts) {
+  const frames = [];
+  for (const [seconds, level] of parts) for (let f = 0; f < Math.round(seconds / HOP); f++) frames.push(level);
+  return smooth(Float32Array.from(frames));
+}
+const times = (words) => words.map((w) => [w.start, w.end]);
+// a tone, 0.3 s of quiet, a tone
+const PAUSE = () => stretch([1, 0.3], [0.3, 0.001], [1, 0.3]);
+
+test("a word ends where its sound stops and begins where its sound sets in", () => {
+  // (a frame in, for the smoothing)
+  const words = [word("early", 0.2, 0.9), word("late", 1.45, 2.0)];
+  assert.equal(edged(words, PAUSE()), 2);
+  assert.deepEqual(times(words), [[0.2, 1.01], [1.29, 2.0]]);
+  assert.equal(words[0].kind, "word"); assert.equal(words[0].text, "early");
+});
+
+test("with noise under the speech, quiet is what is near the ground of the sound", () => {
+  const noisy = stretch([1, 0.3], [0.3, 0.05], [1, 0.3], [0.3, 0.05]);
+  assert.deepEqual([...quietLevels(noisy)].map((x) => +x.toFixed(3)), [0.1, 0.1, 0.1]);
+  assert.deepEqual([...quietLevels(PAUSE())].map((x) => +x.toFixed(3)), [0.024, 0.024, 0.024]);
+  const words = [word("early", 0.2, 0.9), word("late", 1.45, 2.3)];
+  edged(words, noisy);
+  assert.deepEqual(times(words), [[0.2, 1.01], [1.29, 2.31]]);
+});
+
+test("sound that goes on for more than 0.4 s is not the word's", () => {
+  const words = [word("a", 0.1, 0.3), word("b", 1.9, 2.2)];
+  assert.equal(edged(words, PAUSE()), 0);
+  assert.deepEqual(times(words), [[0.1, 0.3], [1.9, 2.2]]);
+});
+
+test("two words with sound all the way between them meet where it is weakest", () => {
+  const words = [word("early", 0.2, 0.9), word("next", 1.1, 1.8)];
+  edged(words, stretch([1, 0.3], [0.03, 0.15], [1, 0.3], [0.5, 0.001]));
+  assert.deepEqual(times(words), [[0.2, 1.01], [1.01, 2.04]]);
+  // in sound that never pauses nothing tells a word from the ground, and nothing moves
+  const still = [word("early", 0.2, 0.9), word("next", 1.1, 1.8)];
+  assert.equal(edged(still, stretch([1, 0.3], [0.03, 0.15], [1, 0.3])), 0);
+  assert.deepEqual(times(still), [[0.2, 0.9], [1.1, 1.8]]);
+});
+
+test("no edge moves inward: a word that ends in the quiet, or begins in it, stays", () => {
+  const words = [word("soft", 0.2, 1.2), word("onset", 1.25, 2.0)];
+  assert.equal(edged(words, PAUSE()), 0);
+  assert.deepEqual(times(words), [[0.2, 1.2], [1.25, 2.0]]);
+});
+
+test("without the sound, or with a word without a time, the words stay as they came", () => {
+  const words = [word("early", 0.2, 0.9), word("late", 1.45, 2.0)];
+  assert.equal(edged(words, null), 0);
+  assert.equal(edged(words, new Float32Array(0)), 0);
+  const bareWord = [word("early", 0.2, 0.9), { text: "bare", kind: "word" }];
+  assert.equal(edged(bareWord, PAUSE()), 0);
+  assert.deepEqual(bareWord[0], word("early", 0.2, 0.9));
+  assert.equal(edged([], PAUSE()), 0);
+  assert.deepEqual(times(words), [[0.2, 0.9], [1.45, 2.0]]);
 });
 
 test("doubtful spots get their surroundings, touching ones merged", () => {

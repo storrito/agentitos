@@ -372,13 +372,15 @@ function lengthless(list) {
   return said.length >= 20 && bare / said.length > 0.3 ? `${bare} of the ${said.length} words have no length (start = end): this tool cuts between words and needs where each one ends.` : null;
 }
 
-function keepWords(dir, list, asr) {
+// `edged`: the words' times were set by the sound where they come from (the transcribe skill's
+// edges: "sound"), so they are not timed a second time here
+function keepWords(dir, list, asr, edged = false) {
   const meta = read(source(dir, "sources.json"));
   const { env, thr, blocks } = voiceOf(dir);
   const items = list.map((w) => ({ text: String(w.text ?? w.word ?? "").trim(), start: +w.start, end: +Math.max(w.end, w.start + 0.04),
     kind: w.kind || kindOf(w.text ?? w.word), ...(w.confidence != null ? { confidence: w.confidence } : {}), ...(w.heard ? { heard: w.heard } : {}), ...(w.by ? { by: w.by } : {}) }))
     .filter((w) => w.text && Number.isFinite(w.start)).sort((a, b) => a.start - b.start);
-  const moved = retime(items, env, thr);
+  const moved = edged ? 0 : retime(items, env, thr);
   if (moved) console.log(`${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
   const { kept, runs } = ghosts(items);
   for (const r of runs) console.log(`left out, the voice has no time for them (written twice): ${r}`);
@@ -443,7 +445,7 @@ function cmdWords(dir, file) {
   if (!list.length) fail(`${file} holds no words.`);
   const bare = lengthless(list);
   if (bare) fail(`✗ ${bare} Take the words with ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe, every word with its start and end); names it mishears go into cut.json's "fixes".`);
-  keepWords(dir, list, j.model || "rragent transcribe");
+  keepWords(dir, list, j.model || "rragent transcribe", j.edges === "sound");
 }
 
 async function cmdTranscribe(dir) {
@@ -455,7 +457,7 @@ async function cmdTranscribe(dir) {
   try { r = await transcribeFile(source(dir, meta.voice), { log: console.log }); } catch (e) { fail(`✗ ${e.message}`); }
   const t = r.timing;
   console.log(`$${r.cost.toFixed(4)}` + (t ? `; ${(t.inVoice * 100).toFixed(1)} % of the words lie where the voice is${t.moved ? `, ${t.moved} moved there` : ""}${t.heardAgain ? `, ${t.heardAgain} from a second hearing` : ""}${t.doubtful?.length ? `, ${t.doubtful.length} still doubtful` : ""}` : ""));
-  keepWords(dir, r.words, r.model);
+  keepWords(dir, r.words, r.model, r.edges === "sound");
 }
 
 // ----------------------------------------------------------------------------------- brief

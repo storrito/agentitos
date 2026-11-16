@@ -9,7 +9,7 @@ node tools/transcribe.mjs talk.mp4 --out words.json                             
 node tools/transcribe.mjs podcast.m4a --out words.json --speakers --speakers-n 2  # Gemini: who speaks
 node tools/timing.mjs check talk.mp4 words.json [--fix]                         # words from anywhere against the sound
 node tools/timing.mjs sheet talk.mp4 words.json --at 2:14                        # one spot as a picture
-node --test tools/test.mjs                                                       # the timing check, no request
+node --test tools/test.mjs                                                       # the timing check and the edges, no request
 ```
 
 Requirements: Node 20+, ffmpeg, OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`). No npm packages.
@@ -38,7 +38,11 @@ A recognizer writes the words well and times most of them well, not all: next to
 4. **The repair**, only of those, between their well-timed neighbours: a squeezed word or one in silence goes onto the voice between the words around it; a run of squeezed words gets one island each when there are as many, else they share the voiced time by their letters; a word with one silent end keeps its other end and gets the voice next to it. Clicks and breaths in a pause are islands too, but light ones: an island counts when it weighs a third of the heaviest (inside a word's own time a sixth, so a soft start or a stutter counts). Every moved word gets `"by": "sound"`. Where the sound leaves a choice (words sharing an island, a word with voice at both ends of too long a time, several islands for one word) the time is a guess and the spot is doubtful.
 5. **The second hearing** (`tools/lib/again.mjs`), of the doubtful spots and the words the check still contradicts: the spot with three words on either side and 0.35 s of sound around them is cut out (FLAC) and transcribed again alone, at most 8 spots per recording; a recognizer that lost its place in ten minutes of sound usually finds it in ten seconds. Its times are taken only when it wrote every doubtful word, each with a length, between the words around them, and the well-timed words of the context lie within 0.25 s of where they were; then `"by": "second hearing"`. Else the guess stays. Its cost is added.
 
-The JSON gets `"timing": {"checked", "inVoice", "moved", "heardAgain", "doubtful": [word indices]}`; the summary line says the same in a sentence and names up to five doubtful words with their times.
+6. **The edges** (`tools/lib/edges.mjs`), of all words, after the gross errors are out. Scribe times a word a little inside its sound: it begins a word 60 ms late in the middle and ends one in eight more than 100 ms early. In the stretch it left between two words, the word before ends where its sound stops and the word after begins where its sound sets in, each moved 0.4 s at most; where the sound runs through for half a second at most, the two meet where it is weakest. No edge moves inward, so an ending too soft to measure is not cut off. Quiet is what lies under 8 % of loud speech, or under twice the ground of the three seconds to either side (the 10th percentile), the larger: with noise, voices or music under the speech nothing is ever under 8 %.
+
+The JSON gets `"timing": {"checked", "inVoice", "moved", "heardAgain", "edged", "doubtful": [word indices]}` and `"edges": "sound"`, by which best-takes, screencast-cut and kinetic-lyrics know not to time the words a second time; the summary line says the same in a sentence and names up to five doubtful words with their times.
+
+Measured for the edges against the forced alignment of an earnings call (2,164 words, 2026-11-16): as Scribe gave them, 15.0 % of the starts were more than 100 ms late and 13.0 % of the ends more than 100 ms early; with the edges set by the sound 4.8 % and 4.7 %, no edge moved inward. A forced-alignment model of its own (MMS_FA, 1.2 GB) came to 8.6 % and 18 %. With pink noise 15 dB under the speech 5.7 % and 8.5 % (14.8 % and 14.1 % as given), with music 5 dB under it 8.3 % and 8.8 % (15.7 % and 12.1 %).
 
 Measured on a 10:41 screencast voice with Scribe's 897 words: the check finds 2 of them doubtful, one a real error (Scribe's "I" starts half a second before the voice), one a stutter. With every word squeezed into 40 ms in turn (860 times), the repair puts 816 back over their whole word and 9 beside it, 6 of those flagged as doubtful; with a word's start or end drawn over a pause of 0.6 s or more next to it (230 times) it moves 208, and the 6 it puts beside their word are all flagged.
 
@@ -48,7 +52,7 @@ Measured on a 10:41 screencast voice with Scribe's 897 words: the check finds 2 
 
 ```json
 {"engine": "scribe", "model": "elevenlabs/scribe-v2", "duration": 63.4, "cost": 0.0061,
- "timing": {"checked": 152, "inVoice": 1, "moved": 2, "heardAgain": 0, "doubtful": []},
+ "timing": {"checked": 152, "inVoice": 1, "moved": 2, "heardAgain": 0, "edged": 131, "doubtful": []}, "edges": "sound",
  "words": [{"text": "Hallo", "start": 0.42, "end": 0.71, "kind": "word"}, {"text": "zusammen", "start": 0.8, "end": 1.31, "kind": "word", "by": "sound"}, …]}
 ```
 
