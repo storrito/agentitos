@@ -51,6 +51,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { probe, playable, samples, hyperframes, clock } from "./lib/media.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
+import { voiceTrack } from "./lib/tracks.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { activity, moving } from "./lib/motion.mjs";
@@ -289,8 +290,13 @@ function cmdBuild(dir, opts) {
   const scales = s.punch === "on" ? punches(r.pieces, { highlight: cut.captions?.highlight, still, clips }) : r.pieces.map(() => 1);
   const pieces = r.pieces.map((p, k) => ({ ...p, scale: scales[k] }));
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, hook });
+  // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
+  // are timed in it. The preview does not need it, so a failure is said and the build goes on
+  let voice = null;
+  try { voice = voiceTrack((p) => source(dir, clips[p.clip].file), r.pieces, path.join(dir, "voice.cut.m4a")); }
+  catch (e) { console.log(`  (the cut's voice as one file was not made: ${e.message})`); }
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
-    out: rel(out), width, height, fps: s.fps, duration: r.duration,
+    out: rel(out), ...(voice ? { voice: rel(voice) } : {}), width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
     pieces: r.pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}) }), keep: p.keep })),
@@ -298,6 +304,7 @@ function cmdBuild(dir, opts) {
   }, null, 1));
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
+  if (voice) console.log(`Voice: ${rel(voice)}, the cut's sound as one file (each take at its level); the words in ${rel(path.join(dir, "edit.json"))} are timed in it`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   if (hook) console.log(`Hook: „${s.hook}“ until ${hookUntil(r.words, r.duration)} s`);
   if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
