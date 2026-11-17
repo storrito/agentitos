@@ -95,8 +95,8 @@ two people. Name tags are not placed, and who speaks when is not an input.
 | B5 | Phone fills, circle in a free corner | as soon as someone taps | the circle moves to another corner when the part that matters is there | `screen-zoom` with a webcam |
 
 - The circle's sizes (22 % of the width in 9:16, 16 % of the short side in 4:5 and 1:1, 20 % in
-  16:9) and the least share of the screen (38 % of its width) are from screencast-cut. The times
-  and "about half the width" are sketch.
+  16:9), the least share of the screen (38 % of its width) and the 1.25× of "Face large" are from
+  screencast-cut. The times and "about half the width" are sketch.
 - What reads is a guess: a capital letter of the screen's smallest text 24 px tall in a frame
   1080 px wide (`--readable`). Nobody looked at a screen recording enlarged 1.5–2×; the limits
   come from a person's still.
