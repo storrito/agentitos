@@ -33,13 +33,30 @@ export function brandOf(file) {
   return { primary: value(colors, "primary"), family, served, files: served ? [] : files.filter((f) => fs.existsSync(f.file)) };
 }
 
-// zones: platform-zones' answer for the frame (tools/lib/zones.mjs): the captions sit in its
-// centred box (the safe box even about the frame's middle), their lowest line at its bottom,
-// centred on the frame and never wider
-export function writeCaptions(out, { words, style, width, height, duration, brand, zones }) {
-  fs.mkdirSync(out, { recursive: true });
+// The captions' area and type. Without `place`: platform-zones' centred box (the safe box even
+// about the frame's middle), the lowest line at its bottom, centred on the frame and never wider,
+// in the style's size and lines. `place` is what the caller asked for instead, each key only when
+// it was asked for: { bottom (the y at which the lowest line ends), left, width, align ("left",
+// "center", "right"), size (the type's, px of the frame), lines }. What it leaves out stays as
+// above: a width alone is centred on the frame, a left edge alone reaches to the centred box's
+// right edge. `grow` is the type against the style's: its stroke and a card's border grow with it.
+function areaOf(place, style, width, height, [sx, sy, sw, sh]) {
   // the styles' sizes are for a frame whose short side is 1080 px: 1080×1920, 1920×1080, 1080×1080 alike
-  const look = { ...style.look }, [sx, sy, sw, sh] = zones.centred, scale = Math.min(width, height) / 1080;
+  const scale = Math.min(width, height) / 1080;
+  if (!place) return { left: sx, right: width - (sx + sw), bottom: height - (sy + sh), maxWidth: sw, type: style.look.size * scale, grow: scale, lines: style.group.lines, align: "center" };
+  const maxWidth = place.width ?? (place.left != null ? sx + sw - place.left : sw);
+  if (!(maxWidth > 0)) throw new Error(`--x ${place.left} leaves no room up to x ${sx + sw}, where the platforms' centred box ends: give --max-width as well.`);
+  const left = place.left ?? (place.width != null ? n((width - maxWidth) / 2) : sx);
+  return { left, right: n(width - (left + maxWidth)), bottom: height - (place.bottom ?? sy + sh), maxWidth, type: place.size ?? style.look.size * scale,
+    grow: place.size != null ? place.size / style.look.size : scale, lines: place.lines ?? style.group.lines, align: place.align ?? "center", sized: place.size != null };
+}
+
+// zones: platform-zones' answer for the frame (tools/lib/zones.mjs); place: where the caller wants
+// the captions instead of where it says (areaOf above). Without place the file is what it was
+// before there was one.
+export function writeCaptions(out, { words, style, width, height, duration, brand, zones, place }) {
+  const look = { ...style.look }, area = areaOf(place, style, width, height, zones.centred);
+  fs.mkdirSync(out, { recursive: true });
   const links = [];
   let faces = "";
   if (brand?.primary) look.accent = brand.primary;
@@ -54,15 +71,37 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
     }
   } else links.push(googleFont(look.font, look.weight));
 
+  // Where the caller placed them, a group holds no more characters than fit its lines there: at
+  // the size the caller named, which is meant to be seen, else at the smallest the style's shrinks
+  // to (55 %, fit() below). A character is about `advance` em wide (styles.mjs); the padding of a
+  // style's box (1 em) is no room for one. Only where the style's groups are longer than that
+  // are they cut anew, by length (group.mjs); else they are the style's, as everywhere.
+  const held = area.sized ? area.type : area.type * 0.55, room = area.maxWidth - (look.box ? held : 0);
+  const fits = Math.max(1, Math.floor((area.lines * room) / (held * style.advance)));
+  const group = place && fits < style.group.chars ? { ...style.group, chars: fits, even: "length" } : style.group;
+
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
   // carries `icon`, its numbers in the key colour
-  const gs = groups(words, style.group, duration).filter((g) => !duration || g.start < duration).map((g) => ({
+  const gs = groups(words, group, duration).filter((g) => !duration || g.start < duration).map((g) => ({
     start: n(g.start), end: n(g.end), ...(g.box ? { box: true, icon: words[g.from].icon || null } : {}),
     words: activeSpans(words, g).map((s) => ({ text: words[s.i].text, start: n(s.start), end: n(s.end), said: n(words[s.i].end),
       key: !!words[s.i].highlight || (!!g.box && /\d/.test(words[s.i].text)) })),
   }));
-  const data = { groups: gs, look, motion: style.motion, lines: style.group.lines,
-    size: Math.round(look.size * scale), bottom: height - (sy + sh), left: sx, right: width - (sx + sw), maxWidth: sw };
+  const data = { groups: gs, look, motion: style.motion, lines: area.lines,
+    size: Math.round(area.type), bottom: area.bottom, left: area.left, right: area.right, maxWidth: area.maxWidth };
+  // left or right in the area: the text, a box that is only as wide as its text, and the point a group pops in from
+  const margin = { left: "0 auto 0 0", center: "0 auto", right: "0 0 0 auto" }[area.align];
+  const origin = area.align === "center" ? "" : ` transform-origin: ${area.align === "left" ? "0%" : "100%"} 50%;`;
+  // (a box around two lines is as wide as the area: centred that is even, at one side it would
+  // stand out past its text; this goes into fit() of the script below)
+  const hug = area.align === "center" ? "" : `
+            // left or right in its area, a box ends where its longest line ends
+            if (el.classList.contains("boxed") || el.classList.contains("cap-card")) {
+              var from = Infinity, to = -Infinity, box = getComputedStyle(el);
+              Array.prototype.forEach.call(el.children, function (c) { from = Math.min(from, c.offsetLeft); to = Math.max(to, c.offsetLeft + c.offsetWidth); });
+              var around = box.boxSizing === "border-box" ? parseFloat(box.paddingLeft) + parseFloat(box.paddingRight) + 2 * parseFloat(box.borderLeftWidth) : 0;
+              el.style.width = Math.ceil(to - from) + 1 + around + "px";
+            }`;
 
   const html = `<!doctype html>
 <html>
@@ -75,17 +114,17 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
     <template>
       <style>
         ${faces}#root { position: absolute; inset: 0; pointer-events: none; }
-        #root .cap-group { position: absolute; left: ${data.left}px; right: ${data.right}px; bottom: ${data.bottom}px; margin: 0 auto; width: ${data.maxWidth}px;
+        #root .cap-group { position: absolute; left: ${data.left}px; right: ${data.right}px; bottom: ${data.bottom}px; margin: ${margin}; width: ${data.maxWidth}px;
           display: block; text-wrap: balance; word-spacing: ${look.gap || "0.08em"}; visibility: hidden;
           font-family: "${look.font}", sans-serif; font-weight: ${look.weight}; line-height: ${look.lineHeight}; letter-spacing: ${look.spacing};
-          text-transform: ${look.case === "upper" ? "uppercase" : "none"}; text-align: center; }
+          text-transform: ${look.case === "upper" ? "uppercase" : "none"}; text-align: ${area.align};${origin} }
         #root .cap-group.boxed { width: fit-content; max-width: ${data.maxWidth}px;
           background: ${look.box || "transparent"}; padding: 0.22em 0.5em; border-radius: 0.3em; }
         #root .cap-group.cap-card { box-sizing: border-box; width: fit-content; max-width: ${data.maxWidth}px; padding: 0.2em 0.5em 0.24em; border-radius: 0.32em;
-          background: rgba(10,14,20,0.86); border: ${Math.max(3, Math.round(look.size * scale * 0.045))}px solid ${look.highlight}; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
+          background: rgba(10,14,20,0.86); border: ${Math.max(3, Math.round(area.type * 0.045))}px solid ${look.highlight}; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
         #root .cap-icon { display: inline-block; margin-right: 0.3em; text-transform: none; font-weight: 400; }
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
-          ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * scale)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
+          ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * area.grow)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
           ${look.pill ? "padding: 0.04em 0.22em; border-radius: 0.28em;" : ""} transform-origin: 50% 60%; }
       </style>
       <div id="root" data-composition-id="${ID}" data-width="${width}" data-height="${height}"${duration ? ` data-duration="${n(duration)}"` : ""}></div>
@@ -133,7 +172,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               // (the words are inline blocks between spaces: the lines balance, no word is left alone)
               if (lines <= DATA.lines + 0.35 && widest <= room) break;
             }
-            el.style.fontSize = size + "px";
+            el.style.fontSize = size + "px";${hug}
           }
           function reveal(w) {
             var spoken = Math.max(0.03, w.said - w.start);
@@ -178,7 +217,9 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
 </html>
 `;
   fs.writeFileSync(path.join(out, "index.html"), html);
-  return { groups: gs.length };
+  // (the area as the frame's px: the y its lowest line ends at, and about how high its lines reach)
+  const ends = height - area.bottom;
+  return { groups: gs.length, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight), align: area.align, size: Math.round(area.type), lines: area.lines } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.

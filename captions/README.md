@@ -10,8 +10,10 @@ node tools/captions.mjs transcribe <video> <words.json>
 node tools/captions.mjs mark <words.json> [--product "Storrito"]
 node tools/captions.mjs box <words.json> "📏 32 centimetres wide"     # only when cards are asked for: a phrase as a box of its own
 node tools/captions.mjs build <words.json> <composition>/captions --style hormozi [--size 1080x1920] [--platform reels,tiktok] [--brand brand/DESIGN.md]
+node tools/captions.mjs build <words.json> <composition>/captions --style clean --size 1920x1080 --x 704 --y 930 --max-width 1120 --align left   # another place than the safe box's bottom
 node tools/captions.mjs project <video> <words.json> <composition> --style karaoke
 node tools/captions.mjs srt <words.json> <file.srt>
+node --test tools/test.mjs                                           # where the captions go, and that nothing changed for captions nobody placed; no request
 ```
 
 Needs Node 20+, agentitos' [platform-zones](../platform-zones/) beside it (where the captions go) and, for `transcribe`, agentitos' [transcribe](../transcribe/) (or `TRANSCRIBE` naming its `tools/transcribe.mjs`), ffmpeg (for `transcribe`, `project`) and OpenRouter (for `transcribe`, `mark`): `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/lib/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`); no npm packages. The models are OpenRouter's only.
@@ -46,12 +48,29 @@ The fonts are among those HyperFrames embeds by itself when it renders (Montserr
 
 ### Placement (agentitos' [platform-zones](../platform-zones/))
 
-- The captions keep clear of what the apps lay over the video: `build` and `project` ask platform-zones for the frame (`tools/lib/zones.mjs`: `PLATFORM_ZONES`, else `../platform-zones` beside this skill, else `/home/sprite/skills/platform-zones`) and set the captions in its centred box (the safe box even about the frame's middle): their lowest line at its bottom, centred on the frame, never wider. This skill keeps no numbers of its own.
+- The captions keep clear of what the apps lay over the video: `build` and `project` ask platform-zones for the frame (`tools/lib/zones.mjs`: `PLATFORM_ZONES`, else `../platform-zones` beside this skill, else `/home/sprite/skills/platform-zones`) and set the captions in its centred box (the safe box even about the frame's middle): their lowest line at its bottom, centred on the frame, never wider, unless the caller names another place (below). This skill keeps no numbers of its own.
 - `--platform reels,tiktok` names where the video goes (`node ../platform-zones/tools/zones.mjs list` names them all). Without it, the usual platforms of the frame together: in 9:16 Reels, Stories, TikTok, Shorts and Facebook Reels, the lowest line at 1440 px of 1920, centred, at most 696 px wide (840 for Reels alone), clear of the buttons' column on the right; in 4:5 and 1:1 the feeds; in 16:9 YouTube and the feeds.
 - Each build says for which platforms it placed them.
 - The styles' sizes are for a frame whose short side is 1080 px and scale with the short side, so a 1920×1080 frame gets the same type as a 1080×1920 one, a 3840×2160 frame twice as big.
 - `project --size 1080x1920` puts a wide video into a vertical frame (and the other way round): `--fit cover` (the default) fills the frame and cuts the video at its edges, `--fit contain` fits it in with bars; the captions are placed for the frame, not for the video.
 - Each group is set at the style's size and shrinks (to 55 % at most) until it fits its lines and no word is wider than its room. The words are inline blocks between spaces with `text-wrap: balance`, so the lines balance and no word is left alone on the second.
+
+### Another place, named by the caller
+
+The bottom of the safe box is wrong for some pictures: in a close selfie it is the speaker's chin and the free picture is the wall above the head; in a 16:9 frame with the speaker as a tall panel on the left the captions belong in the free area on the right, left-aligned, sometimes much larger. The tool cannot see that and does not try: it places the captions, whoever looked at the frames (an agent, a layout tool) decides where. `build` and `project` take the place in px of the frame, each option on its own; what is not given stays as above, and without any of them the built file is byte for byte what it was before there were options (`tools/test.mjs` builds both and compares).
+
+| option | what it sets | when a caller needs it |
+| --- | --- | --- |
+| `--y <px>` | the y, from the frame's top, at which the lowest line ends (a style's box ends there, its padding included) | the safe box's bottom lies on what must be seen: a chin, a product, a screen's lower edge |
+| `--x <px>` | where the captions' area starts from the left; without it the area is centred on the frame | the free area lies at one side |
+| `--max-width <px>` | how wide the area is; without it the centred box's width, or with `--x` up to the centred box's right edge | the free area is narrower or wider than the centred box |
+| `--align left\|centre\|right` | the lines in the area (default centre); left or right, a style's box and a card stand at that edge and end where their longest line ends, and a group pops in from that edge | the area begins beside something (a panel, a list): every group starts at the same edge |
+| `--font-size <px>` | the type's size in px of the frame instead of the style's (not `--size`, the frame's); the stroke and a card's border grow with it | the area is much larger or smaller than the strip the styles are made for |
+| `--lines 1\|2` | how many lines a group may have (default 2) | the area is low: a strip of wall above a head, a bar under a screen |
+
+- **The safe box is said, not enforced.** The tool answers where it put the captions (`Placed where asked: the lowest line ends at y 440, centred in x 192–888 (at most 696 px wide), one line of 60 px type.`) and asks platform-zones' own `check` about that area (as high as its lines at that size): inside the safe box, or the stretch above the buttons, of the platforms it names, or one line beginning with `!`: how far past which edge, and what the apps lay there. The file is built all the same; captions under an app's buttons are the commonest mistake, but the place is the caller's.
+- **A size that is named is kept.** A style's groups are made for two lines of its size in the centred box and lean on the shrinking above; in one line, a narrow area or larger type they would shrink to the least and still break into another line. So where the caller placed the captions, a group holds no more characters than fit its lines: at the size given with `--font-size`, else at the least the style's size shrinks to. A character counts as the style's `advance` em (`tools/lib/styles.mjs`: measured in Chrome on German and English groups, nine in ten are narrower; 0.54 em for `clean`, 0.77 for `hormozi`), a style's box as 1 em of padding. Only where that is less than the style's own groups are they cut anew, and then by length, not by words (`tools/lib/group.mjs`): a phrase into the fewest groups that fit, about equally long ("wie ihr eure | Instagram-Storys | für die ganze | Woche vorplant." in a 696 px line of 60 px type; by words the same phrase fell into seven groups, three of a single short word). Captions that are only moved (`--y`, `--align`) keep the style's groups.
+- Seen on stills of two real cases (2026-11-17): a close selfie in 9:16 with `--style clean --y 440 --max-width 696 --font-size 60 --lines 1` (one line on the wall above the head, every group at 60 px), and a 16:9 frame with the speaker as a panel on the left with `--style clean --x 704 --y 930 --max-width 1120 --align left`.
 
 ### The sub-composition (`tools/lib/render.mjs`)
 
@@ -66,6 +85,11 @@ The fonts are among those HyperFrames embeds by itself when it renders (Montserr
 `srt` writes cues to the usual rules of readable subtitles: at most two lines of 42 characters broken near the middle, a new cue at the end of a sentence or a pause of 0.6 s, at least 0.8 s and at most 6 s on screen, long enough to read at 17 characters a second where the next cue leaves room.
 
 ## What it does not do (yet)
+
+- Choose where the captions go: it knows what the apps cover, not what the picture shows.
+- Captions that start at a top edge or stand in the middle of an area's height, and more than two lines: they always end on a y and grow upwards.
+- Keep a word with a hyphen in one piece: one that is wider than its area ("Instagram-Storys" in very large type) breaks at the hyphen instead of shrinking.
+- Pass the place on from the skills that call `build` for their own videos (best-takes, narrated-short, screencast-cut, launch-video): their captions end on the safe box's bottom.
 
 - Emoji above key words (the content workflow's `caption-emoji-pop`): the render machine has no colour-emoji font, so they would come out as boxes; it needs an emoji font shipped with the captions.
 - A still of each style for the chat: the style buttons describe them in words.

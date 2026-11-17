@@ -17,7 +17,11 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 // A run of words that carry the same `box` (captions.mjs box) is a group of its own, whole,
 // whatever the style's size: what the person chose to stand as a card. The words before and
 // after it are grouped as if the run were a pause. Without a `box` on any word nothing changes.
-export function groups(words, { words: maxWords, chars: maxChars, pause, min }, duration = Infinity) {
+//
+// `even: "length"` (captions the caller placed where the style's groups do not fit, render.mjs):
+// a phrase too long for one group is split into the fewest groups that hold it, about equally
+// long in characters, not in words, so that each fills its line.
+export function groups(words, { words: maxWords, chars: maxChars, pause, min, even }, duration = Infinity) {
   const boxOf = (w) => w.box || null;
   const phrases = [];
   let cur = null;
@@ -30,6 +34,7 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min }, 
   const out = [];
   for (const ph of phrases) {
     if (ph.box) { out.push({ from: ph.from, to: ph.to, box: true }); continue; }
+    if (even === "length") { for (const [a, b] of byLength(words.slice(ph.from, ph.to + 1).map((w) => w.text), maxWords, maxChars)) out.push({ from: ph.from + a, to: ph.from + b }); continue; }
     const n = ph.to - ph.from + 1;
     let k = Math.ceil(n / maxWords);
     while (k < n && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => t.length > maxChars)) k++;
@@ -41,6 +46,27 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min }, 
     const natural = Math.max(last.end + TAIL, first.start + min);
     g.end = Math.max(last.end, Math.min(natural, next - GAP, duration));
   });
+  return out;
+}
+
+// A phrase's words into the fewest groups of at most maxWords words and maxChars characters, and
+// of those ways the one whose groups are most alike in length (the least sum of their squared
+// lengths); returns [[first, last], …] as indexes into the phrase. A word longer than maxChars
+// stands alone.
+function byLength(texts, maxWords, maxChars) {
+  const length = (a, b) => texts.slice(a, b).join(" ").length;   // of the words a … b - 1
+  // best[i]: the words before i as [how many groups, their squared lengths summed, where the last one starts]
+  const best = [[0, 0, 0]];
+  for (let i = 1; i <= texts.length; i++) {
+    for (let j = i - 1; j >= Math.max(0, i - maxWords); j--) {
+      const l = length(j, i);
+      if (l > maxChars && j < i - 1) break;
+      const way = [best[j][0] + 1, best[j][1] + l * l, j];
+      if (!best[i] || way[0] < best[i][0] || (way[0] === best[i][0] && way[1] < best[i][1])) best[i] = way;
+    }
+  }
+  const out = [];
+  for (let i = texts.length; i > 0; i = best[i][2]) out.unshift([best[i][2], i - 1]);
   return out;
 }
 

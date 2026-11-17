@@ -36,10 +36,22 @@ The person attaches a video, named in their message as `video: uploads/<file>`. 
    node <skill>/tools/captions.mjs project uploads/<file> captions/<name>/words.json artifacts/<name>/composition --style <style> [--brand brand/DESIGN.md]
    ```
    The video becomes the host composition, the captions a sub-composition (`composition/captions/`), placed for any frame from 16:9 to 9:16, clear of what the apps lay over it; the player beside the chat reloads by itself. When the person said where the video goes, add `--platform reels` (or `tiktok`, `shorts`, `story`, several with commas); otherwise the frame's usual platforms count together, and the tool says which. For another frame than the video's (a wide video for a reel): `--size 1080x1920` with `--fit cover` (fill, cut at the edges) or `--fit contain` (bars), and say which. Ask whether it is right: "Looks good" (`:class "primary"`), "Another style", "Change words", and the button that shows the preview.
-5. **Changes.** Another style, key word, card or spelling: change `words.json` (or `box` again) or the option and run `project` again.
+5. **Changes.** Another style, key word, card or spelling: change `words.json` (or `box` again) or the option and run `project` again. Another place for the captions: "Where the captions go" below.
 6. **The video.** After their yes: the `render` tool with `<name>` makes `artifacts/<name>.mp4`; then `node <skill>/tools/captions.mjs srt captions/<name>/words.json artifacts/<name>.srt` writes the subtitles for the platforms' own captions. Say in one sentence that it is ready, with the download links.
 
 `remember` the style and product name the person chose and use them for the next video without asking.
+
+## Where the captions go
+
+`build` and `project` set the captions where the apps leave room: the lowest line on the bottom of the platforms' safe box, centred on the frame, in the style's size, two lines at most. The tool never looks at the picture and never chooses another place. A caller that knows a better one (the person names it, you saw it on a frame of the video, a skill laid the frame out) says where, in px of the frame. Each option alone or with the others; what is not given stays as above:
+
+- `--y <px>`: the y, counted from the frame's top, at which the lowest line ends. Needed when the safe box's bottom lies on what must be seen: in a close selfie it is the chin, and the free picture is the wall above the head.
+- `--x <px>` and `--max-width <px>`: where the captions' area starts from the left and how wide it is. Needed when the free area lies at one side: the speaker as a tall panel on the left of a 16:9 frame, a screen beside the face. `--max-width` alone stays centred on the frame; `--x` alone reaches to the right edge of the platforms' centred box.
+- `--align left|centre|right`: the lines inside that area. Left (or right) when the area begins beside something, so that every group starts at the same edge; for captions centred on the frame, leave it out.
+- `--font-size <px>`: the type's size instead of the style's (`--size` is the frame's size). Needed when the area is much larger or smaller than the strip the styles are made for: the free half of a wide frame carries type twice as large. A size that is named is kept: the groups are cut shorter until they fit their lines at it.
+- `--lines 1|2`: one line when the area is low: a strip of wall above a head, a bar under a screen.
+
+The tool answers where it put them and whether that is inside the safe box of the platforms; a line that begins with `!` says how far the area leaves it and what the apps lay there. It builds all the same: the place is the caller's.
 
 ## Captions for another skill
 
