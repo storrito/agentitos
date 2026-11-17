@@ -10,6 +10,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { arrange, dropSpans, keepsWithout, numbers, ranges, longest, MAX_SECONDS } from "./lib/moments.mjs";
+import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const run = (tool, args, env = {}) => spawnSync(process.execPath, [path.join(HERE, tool), ...args],
@@ -133,4 +134,25 @@ test("prepare refuses sentences to drop that are not inside the moment, before a
     assert.ok(!fs.existsSync(path.join(dir, "01")));
   }
   fs.rmSync(dir, { recursive: true });
+});
+
+test("a key that OpenRouter turns away is told from everything else, and said in one sentence", async () => {
+  const or = { base: "https://openrouter.example/api/v1", headers: { Authorization: "Bearer k" }, gateway: false };
+  const answers = (status, body) => async (url, init) => {
+    assert.equal(url, "https://openrouter.example/api/v1/key");
+    assert.equal(init.headers.Authorization, "Bearer k");
+    return { status, json: async () => body };
+  };
+  assert.equal(await keyRejected(or, answers(401, { error: { message: "User not found.", code: 401 } })), "401 User not found.");
+  assert.equal(await keyRejected(or, answers(403, {})), "403");
+  assert.equal(await keyRejected(or, answers(200, { data: {} })), null);
+  // another API behind OPENROUTER_BASE_URL, no network, a gateway that adds the key itself: not a rejection
+  assert.equal(await keyRejected(or, answers(404, {})), null);
+  assert.equal(await keyRejected(or, async () => { throw new Error("fetch failed"); }), null);
+  assert.equal(await keyRejected({ ...or, gateway: true }, async () => { throw new Error("never asked"); }), null);
+  assert.equal(await keyRejected(null), null);
+
+  assert.equal(rejectedIn('The transcription with google/gemini-3.5-transcribe failed (OpenRouter 401: {"error":{"message":"User not found.","code":401}}); check OPENROUTER_API_KEY'), "401");
+  assert.equal(rejectedIn("OpenRouter 429: rate limited"), null);
+  assert.match(REJECTED("401 User not found."), /^OpenRouter turned the key away \(401 User not found\.\), so nothing was written: put a valid OPENROUTER_API_KEY/);
 });

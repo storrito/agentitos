@@ -21,9 +21,11 @@
 //
 // The words come from Gemini 3.5 Transcribe through OpenRouter, run by agentitos' transcribe skill
 // beside this one (OPENROUTER_API_KEY or the Sprites gateway's OpenRouter connection, with
-// speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
-// (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
-// ~/.cache/agentitos/.
+// speakers, 34 to 44 cents an hour as measured on twelve episodes in November 2026, a minute or
+// two), else from the video's captions on YouTube (no speakers): without OpenRouter, or when the
+// transcription fails, and then fetch says so in its last line. A key that OpenRouter turns away
+// ends fetch at once: nothing after it would work. yt-dlp: the one on the PATH, else a copy
+// downloaded once into ~/.cache/agentitos/.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -31,7 +33,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
-import { openrouter } from "./lib/openrouter.mjs";
+import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 import { KINDS, MAX_SECONDS, longest, arrange, ranges } from "./lib/moments.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
@@ -129,10 +131,14 @@ function captionTrack(info) {
 }
 
 // ---------------------------------------------------------------- fetch
+// what fetch says when the words are YouTube's captions although OpenRouter is there
+const CAPTIONS_INSTEAD = (why) => `These are YouTube's captions, without voices, because ${/^YouTube/.test(why) ? why : `the transcription failed (${String(why).slice(0, 200)})`}: `
+  + `run fetch again for the voices (the framing and an exchange between two people need them). `;
+
 // a path that exists, not a link
 const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
 
-function writeEpisode(dir, facts, words) {
+function writeEpisode(dir, facts, words, note = "") {
   if (!words.length) fail("No words found: is there speech in it?");
   const sentences = sentencesOf(words);
   const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };
@@ -142,14 +148,17 @@ function writeEpisode(dir, facts, words) {
   fs.writeFileSync(path.join(dir, "sentences.txt"), sentences.map((s, k) =>
     `${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`).join("\n") + "\n");
   console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
-    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. episode.mjs moments ${dir} picks the moments; `
+    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. ${note}episode.mjs moments ${dir} picks the moments; `
     + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
 }
 
 // the person's own file: no captions to fall back on, so the words need the key
 async function fetchFile(file, dir) {
   if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
-  if (!(await openrouter())) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
+  const or = await openrouter();
+  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
+  const turnedAway = await keyRejected(or);
+  if (turnedAway) fail(REJECTED(turnedAway));
   const title = path.basename(file).replace(/\.[^.]+$/, "");
   const length = duration(file);
   log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
@@ -166,11 +175,16 @@ async function fetchEpisode(url, dir) {
   const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
-  let words, source;
+  let words, source, note = "";
   // the sound and words of an episode fetched into this folder before are not this one's
   for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
-  if (await openrouter()) {
+  const or = await openrouter();
+  if (or) {
     if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
+    // a key OpenRouter turns away: the captions would come out as if all were well, and
+    // moments, the framing and the edit would fail one after the other
+    const turnedAway = await keyRejected(or);
+    if (turnedAway) fail(REJECTED(turnedAway));
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
     let audio = null;
     try {
@@ -189,11 +203,16 @@ async function fetchEpisode(url, dir) {
         ({ words } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
         source = "openrouter";
       } catch (e) {
+        if (rejectedIn(e.message)) fail(REJECTED(rejectedIn(e.message)));
         log(`episode: the transcription failed (${e.message}), the captions instead …`);
+        note = CAPTIONS_INSTEAD(e.message);
       }
+    } else {
+      note = CAPTIONS_INSTEAD("YouTube gave no sound");
     }
   } else {
     log("episode: no OpenRouter, the captions on YouTube (no speakers) …");
+    note = "These are YouTube's captions, without voices: there is no OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's connection), and without it moments cannot pick. ";
   }
   if (!words) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-"));
@@ -205,10 +224,11 @@ async function fetchEpisode(url, dir) {
     words = captionWords(path.join(tmp, file));
     source = "captions";
   }
+  // the description as the channel's audience sees it: moments counts the names in it as introduced
   writeEpisode(dir, {
     url: info.webpage_url || url, id: info.id, title: info.title, channel: info.channel || info.uploader,
-    duration: info.duration, lang, source,
-  }, words);
+    duration: info.duration, lang, source, description: String(info.description || "").slice(0, 1500),
+  }, words, note);
 }
 
 // ---------------------------------------------------------------- cut
@@ -359,6 +379,7 @@ async function moments(dir, ...rest) {
       if (res.ok && j.choices) break;
       throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(j).slice(0, 300)}`);
     } catch (e) {
+      if (rejectedIn(e.message)) fail(REJECTED(`${rejectedIn(e.message)}${j?.error?.message ? " " + j.error.message : ""}`));
       if (attempt >= 3) fail(`Picking the moments failed (${e.message}): read sentences.txt yourself.`);
       log(`episode: ${e.message}, again …`);
       await new Promise((r) => setTimeout(r, attempt * 5000));
