@@ -21,7 +21,7 @@
 //                                         project: the video with its captions mounted
 //   node tools/captions.mjs srt <words.json> <file.srt>   the captions as a subtitle file
 //
-// Options: --style hormozi|karaoke|wipe|clean (default hormozi)   --size 1080x1920 (else the video's)
+// Options: --style <name> (default hormozi; `styles` lists them)   --size 1080x1920 (else the video's)
 //   --duration <s> (else the last word's end + 1 s)   --brand brand/DESIGN.md (its colour and font)
 //   --product "Storrito" (mark: the name to stand out)   --model <OpenRouter id> (mark)
 //   --track <n> (build: the mount's track, default 9)
@@ -107,7 +107,7 @@ function withoutGhosts(words) {
 }
 
 function cmdStyles() {
-  for (const [name, s] of Object.entries(STYLES)) console.log(`${name.padEnd(8)} ${s.label}: ${s.about}\n         ${s.look.font} ${s.look.weight}, up to ${s.group.words} words at once`);
+  for (const [name, s] of Object.entries(STYLES)) console.log(`${name.padEnd(9)} ${s.label}: ${s.about}\n          ${s.look.font} ${s.look.weight}${s.look.keyFont ? `, key words in ${s.look.keyFont}` : ""}, ${s.group.words === 1 ? "one word" : `up to ${s.group.words} words`} at once`);
   console.log(`\nNext: node ${self()} build <words.json> <folder> --style <name>`);
 }
 
@@ -258,7 +258,9 @@ function captionsFor(words, folder, opts, size, duration) {
   let z;
   try { z = zones(size[0], size[1], platformList(opts.platform)); } catch (e) { fail(e.message); }
   const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z, place });
-  return { ...r, style: s, brand, zones: z, placed: place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z) };
+  // (a brand's colour that the key words could not carry: said in a line of its own, before where they are placed)
+  const kept = r.kept ? `  (the brand's ${r.kept.primary} ${r.kept.why}: ${r.kept.what} keep the style's ${r.kept.highlight})\n` : "";
+  return { ...r, style: s, brand, zones: z, placed: kept + (place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z)) };
 }
 
 function cmdBuild(file, folder, opts) {
@@ -267,7 +269,7 @@ function cmdBuild(file, folder, opts) {
   const size = sizeOf(opts, doc.width && doc.height ? [doc.width, doc.height] : null) || fail("Give --size (width x height): the words carry no frame size.");
   const duration = Number(opts.duration) || doc.duration || Math.ceil(words.at(-1).end + 1);
   const r = captionsFor(words, path.resolve(folder), opts, size, duration);
-  console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary ? `, accent ${r.brand.primary}` : ""}${r.brand?.family ? `, font ${r.brand.family}` : ""}`);
+  console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary && !r.kept ? `, ${{ key: "key words", both: "accent and key words" }[r.style.look.brand] || "accent"} ${r.brand.primary}` : ""}${r.brand?.family ? `, font ${r.brand.family}` : ""}`);
   console.log(r.placed);
   console.log(`Mount it in the host composition, inside its root:\n  ${mount({ dir: path.basename(folder), width: size[0], height: size[1], duration, track: Number(opts.track) || 9 })}`);
 }

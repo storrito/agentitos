@@ -5,7 +5,7 @@
 // there is room.
 
 const TAIL = 0.35;   // seconds a group stays after its last word
-const GAP = 0.02;    // seconds between one group's end and the next one's start
+const GAP = 0.02;    // seconds between one group's end and the next one's start (a style's `gap` says otherwise)
 const sentenceEnd = (text) => /[.!?…]["»”)]*$/.test(text);
 const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 
@@ -23,7 +23,10 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 // and a word are, all in the type's size. A phrase whose groups, cut as above, each set in
 // those lines keeps them; any other is split into the fewest groups that do, about equally
 // long. A word wider than a line stands alone: the browser sets it smaller.
-export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit }, duration = Infinity) {
+//
+// `gap` (a style whose groups are cut in and cut out): 0, so that a group ends in the moment the
+// next one starts; with the usual 20 ms a frame of a 30 fps video often shows neither.
+export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit, gap = GAP }, duration = Infinity) {
   const boxOf = (w) => w.box || null;
   const phrases = [];
   let cur = null;
@@ -49,7 +52,7 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, fi
     const first = words[g.from], last = words[g.to], next = out[k + 1] ? words[out[k + 1].from].start : duration;
     g.start = first.start;
     const natural = Math.max(last.end + TAIL, first.start + min);
-    g.end = Math.max(last.end, Math.min(natural, next - GAP, duration));
+    g.end = Math.max(last.end, Math.min(natural, next - gap, duration));
   });
   return out;
 }

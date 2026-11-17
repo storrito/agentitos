@@ -14,8 +14,22 @@ export const ID = "captions";
 const n = (x) => +x.toFixed(3);
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 
+// How far two colours are apart in lightness (WCAG's contrast ratio, 1 to 21); null when one is
+// neither a hex colour (#rgb, #rrggbb, #rrggbbaa) nor rgb() / rgba().
+function contrast(a, b) {
+  const light = (c) => {
+    const text = String(c).trim(), hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(text), rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*(?:[,/][^)]*)?\)$/i.exec(text);
+    if (!hex && !rgb) return null;
+    const digits = hex && (hex[1].length === 3 ? [...hex[1]].map((d) => d + d).join("") : hex[1]);
+    const [r, g, bl] = (hex ? [0, 2, 4].map((i) => parseInt(digits.slice(i, i + 2), 16)) : rgb.slice(1, 4).map(Number)).map((v) => Math.min(255, v) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const la = light(a), lb = light(b);
+  return la == null || lb == null ? null : (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
 // The <link> of a font Google serves, for the preview (the renderer embeds its own fonts).
-const googleFont = (family, weight) => `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:wght@${weight}&display=swap`;
+const googleFont = (family, weight, italic) => `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:${italic ? "ital,wght@1," : "wght@"}${weight}&display=swap`;
 
 // The brand's colours and display font from its DESIGN.md (brand-kit): the primary colour becomes
 // the accent, a font served by Google or shipped as files becomes the captions' font.
@@ -62,8 +76,23 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
   fs.mkdirSync(out, { recursive: true });
   const links = [];
   let faces = "";
-  if (brand?.primary) look.accent = brand.primary;
-  if (brand?.family && (brand.served || brand.files.length)) {
+  // A brand's primary colour goes where the style says (look.brand): to the accent (the word
+  // being said; the default, as the styles before had it), to the key words (a style in which
+  // no word lights up), or to both (a style whose key words keep the colour of the word being
+  // said). Key words stay on the picture, or on the box of their line, so they must be read
+  // there: a primary too close to what is behind them (under 4.5 : 1 against the dark edge and
+  // shadow, under 3 : 1 against a line's box), or one that cannot be weighed (no hex, no
+  // rgb()), is left out, the style keeps its own colours, and the caller is told (`kept`).
+  const takes = look.brand || "accent";
+  let kept = null;
+  if (brand?.primary && takes === "accent") look.accent = brand.primary;
+  else if (brand?.primary) {
+    const ratio = contrast(brand.primary, look.lineBox || "#000000");
+    if (ratio != null && ratio >= (look.lineBox ? 3 : 4.5)) { look.highlight = brand.primary; if (takes === "both") look.accent = brand.primary; }
+    else kept = { primary: brand.primary, why: ratio == null ? "is no hex or rgb() colour to weigh" : `would not be read on ${look.lineBox ? "the box of its line" : "a picture"}`,
+      what: takes === "both" ? "the word being said and the key words" : "the key words", highlight: look.highlight };
+  }
+  if (brand?.family && !look.ownFont && (brand.served || brand.files.length)) {
     look.font = brand.family;
     if (brand.served) links.push(googleFont(brand.family, look.weight));
     fs.mkdirSync(path.join(out, "fonts"), { recursive: true });
@@ -73,14 +102,16 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
       faces += `@font-face { font-family: "${brand.family}"; font-weight: ${f.weight}; src: url("${path.basename(out)}/fonts/${name}"); }\n`;
     }
   } else links.push(googleFont(look.font, look.weight));
+  if (look.keyFont) links.push(googleFont(look.keyFont, look.keyWeight || look.weight, look.keyItalic));
 
   // In a width, in lines or at a size of the caller's own, a group must set in its lines at the
   // type's size (the one named, else the style's), line by line: the styles' groups are made for
   // two lines of the centred box and lean on fit() below, which shrinks them. The words are
-  // measured in the style's own font (widths.mjs); the padding of a style's box (1 em) is no room
-  // for them. A phrase whose groups set keeps them, any other is cut anew (group.mjs). Captions
+  // measured in the style's own font (widths.mjs); the padding of a style's box (1 em), or of the
+  // box each line has (linePad), is no room for them. A phrase whose groups set keeps them, any
+  // other is cut anew (group.mjs). Captions
   // that are only moved or aligned keep the style's groups.
-  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : 0)) / area.type;
+  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : 0)) / area.type;
   const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: type.word } } : style.group;
 
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
@@ -90,6 +121,8 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
     words: activeSpans(words, g).map((s) => ({ text: words[s.i].text, start: n(s.start), end: n(s.end), said: n(words[s.i].end),
       key: !!words[s.i].highlight || (!!g.box && /\d/.test(words[s.i].text)) })),
   }));
+  // groupKey: a caption that holds a key word stands whole in the key colour
+  if (look.groupKey) for (const g of gs) if (!g.box && g.words.some((w) => w.key)) for (const w of g.words) w.key = true;
   const data = { groups: gs, look, motion: style.motion, lines: area.lines,
     size: Math.round(area.type), bottom: area.bottom, left: area.left, right: area.right, maxWidth: area.maxWidth };
   // left or right in the area: the text, a box that is only as wide as its text, and the point a group pops in from
@@ -108,6 +141,46 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
               Array.prototype.forEach.call(el.children, function (c) { from = Math.min(from, c.offsetLeft); to = Math.max(to, c.offsetLeft + c.offsetWidth); });
               el.style.width = Math.ceil(to - from) + 1 + parseFloat(box.paddingLeft) + parseFloat(box.paddingRight) + 2 * parseFloat(box.borderLeftWidth) + "px";
             }`;
+
+  // What only some styles have, written only for them (the other styles' files stay as they were):
+  //   lineBox   each line on a box of its own that hugs its text: the words of a group sit in one
+  //             inline box whose background is drawn anew on every line (box-decoration-break);
+  //             the lowest box ends where the lowest line would, so the group stands higher by
+  //             the box's padding. A card keeps its own box, in the lines' colour (its words
+  //             are the style's, dark on a light box).
+  //   keyFont   key words in another typeface, larger (keyScale); they take no height of their
+  //             own (line-height 0), so a line with one is as high as a line without
+  //   active "fill"   the words wait in look.wait; the one being said takes the accent (a key word
+  //             its key colour) and stays in look.color once it is said. A word shorter than
+  //             the light-up is lit by its end, so two tweens never hold its colour at once
+  //             (the colour would depend on where the timeline was sought from)
+  const rules = (look.lineBox ? `
+        #root .cap-group.lined { margin-bottom: ${look.linePad[0]}em; }
+        #root .cap-line { background: ${look.lineBox}; padding: ${look.linePad[0]}em ${look.linePad[1]}em; border-radius: ${look.lineRadius || "0.2em"};
+          -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+        #root .cap-group.cap-card { background: ${look.lineBox}; }` : "") + (look.keyFont ? `
+        #root .cap-word.key { font-family: "${look.keyFont}", serif; font-weight: ${look.keyWeight || look.weight}; font-style: ${look.keyItalic ? "italic" : "normal"};
+          font-size: ${look.keyScale || 1}em; line-height: 0; letter-spacing: 0; }` : "");
+  const wordMore = (look.keyFont ? `
+              if (w.key) s.className += " key";` : "") + (style.motion.active === "fill" ? `
+              s.style.color = L.wait;` : "");
+  const lined = look.lineBox ? `
+            if (!g.box) {
+              var line = document.createElement("span");
+              line.className = "cap-line";
+              while (el.firstChild) line.appendChild(el.firstChild);
+              el.appendChild(line);
+              el.className += " lined";
+            }` : "";
+  // in "punch": the group is there at once, a little smaller, and snaps to its size (a pop without
+  // the frame in which it is half transparent: at 30 fps a word of a tenth of a second has three)
+  const punch = style.motion.in === "punch" ? `
+              if (M.in === "punch") tl.fromTo(el, { scale: 0.84 }, { scale: 1, duration: 0.1, ease: "power3.out" }, g.start);` : "";
+  const fill = style.motion.active === "fill" ? `
+                if (M.active === "fill") {
+                  tl.to(s, { color: w.key ? L.highlight : L.accent, duration: Math.max(0.01, Math.min(0.08, w.end - w.start)), ease: "power1.out" }, w.start);
+                  if (!w.key && L.accent !== L.color) tl.to(s, { color: L.color, duration: 0.05, ease: "power1.out" }, w.end);
+                }` : "";
 
   const html = `<!doctype html>
 <html>
@@ -131,7 +204,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
         #root .cap-icon { display: inline-block; margin-right: 0.3em; text-transform: none; font-weight: 400; }
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
           ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * area.grow)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
-          ${look.pill ? "padding: 0.04em 0.22em; border-radius: 0.28em;" : ""} transform-origin: 50% 60%; }
+          ${look.pill ? "padding: 0.04em 0.22em; border-radius: 0.28em;" : ""} transform-origin: 50% 60%; }${rules}
       </style>
       <div id="root" data-composition-id="${ID}" data-width="${width}" data-height="${height}"${duration ? ` data-duration="${n(duration)}"` : ""}></div>
       <script>
@@ -155,9 +228,9 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               s.className = "cap-word";
               s.id = "cap-g" + gi + "-w" + wi;
               s.textContent = w.text;
-              if (w.key) s.style.color = L.highlight;
+              if (w.key) s.style.color = L.highlight;${wordMore}
               el.appendChild(s);
-            });
+            });${lined}
             root.appendChild(el);
             return el;
           });
@@ -192,7 +265,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               tl.set(el, { visibility: "visible", opacity: 1 }, g.start);
               if (M.in === "pop") tl.fromTo(el, { scale: 0.82, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.12, ease: "back.out(2.2)" }, g.start);
               if (M.in === "rise") tl.fromTo(el, { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.18, ease: "power2.out" }, g.start);
-              if (M.in === "fade") tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, g.start);
+              if (M.in === "fade") tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, g.start);${punch}
               g.words.forEach(function (w, wi) {
                 var s = words[wi], base = w.key ? L.highlight : L.color;
                 if (M.in === "wipe") tl.fromTo(s, { clipPath: "inset(-20% 100% -20% 0%)" }, { clipPath: "inset(-20% -10% -20% -10%)", duration: reveal(w), ease: "power2.out" }, w.start);
@@ -204,7 +277,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
                   tl.to(s, { backgroundColor: L.accent, color: "#FFFFFF", duration: 0.06 }, w.start);
                   tl.to(s, { backgroundColor: "rgba(0,0,0,0)", color: base, duration: 0.08 }, w.end);
                 }
-                if (M.active === "dim-after" && !w.key) tl.to(s, { color: L.dim, duration: 0.2 }, w.said);
+                if (M.active === "dim-after" && !w.key) tl.to(s, { color: L.dim, duration: 0.2 }, w.said);${fill}
               });
               var last = g.words[g.words.length - 1];
               var safe = Math.max(last.said, last.start + reveal(last) + 0.07);
@@ -228,9 +301,9 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
   // that are wider than a line of it and so are set smaller, and how many cards there are, which
   // are never cut to an area.
   const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
-  const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : 0;
+  const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : look.lineBox ? 2 * look.linePad[0] * area.type : 0;
   const wide = type ? gs.filter((g) => !g.box && g.words.length === 1 && type.word(g.words[0].text) > room).map((g) => g.words[0].text) : [];
-  return { groups: gs.length, cards, wide, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
+  return { groups: gs.length, cards, wide, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.
