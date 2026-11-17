@@ -18,10 +18,12 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 // whatever the style's size: what the person chose to stand as a card. The words before and
 // after it are grouped as if the run were a pause. Without a `box` on any word nothing changes.
 //
-// `even: "length"` (captions the caller placed where the style's groups do not fit, render.mjs):
-// a phrase too long for one group is split into the fewest groups that hold it, about equally
-// long in characters, not in words, so that each fills its line.
-export function groups(words, { words: maxWords, chars: maxChars, pause, min, even }, duration = Infinity) {
+// `fit` (captions in an area, lines or a size of the caller's own, render.mjs): { lines, room,
+// space, word(text) }, how many lines a group may have and how wide a line, a gap between words
+// and a word are, all in the type's size. A phrase whose groups, cut as above, each set in
+// those lines keeps them; any other is split into the fewest groups that do, about equally
+// long. A word wider than a line stands alone: the browser sets it smaller.
+export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit }, duration = Infinity) {
   const boxOf = (w) => w.box || null;
   const phrases = [];
   let cur = null;
@@ -34,10 +36,13 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, ev
   const out = [];
   for (const ph of phrases) {
     if (ph.box) { out.push({ from: ph.from, to: ph.to, box: true }); continue; }
-    if (even === "length") { for (const [a, b] of byLength(words.slice(ph.from, ph.to + 1).map((w) => w.text), maxWords, maxChars)) out.push({ from: ph.from + a, to: ph.from + b }); continue; }
     const n = ph.to - ph.from + 1;
     let k = Math.ceil(n / maxWords);
     while (k < n && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => t.length > maxChars)) k++;
+    if (fit && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => !sets(t.split(" "), fit))) {
+      for (const [a, b] of byLength(words.slice(ph.from, ph.to + 1).map((w) => w.text), maxWords, maxChars, fit)) out.push({ from: ph.from + a, to: ph.from + b });
+      continue;
+    }
     for (let j = 0; j < k; j++) out.push({ from: ph.from + Math.round((j * n) / k), to: ph.from + Math.round(((j + 1) * n) / k) - 1 });
   }
   out.forEach((g, k) => {
@@ -49,18 +54,32 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, ev
   return out;
 }
 
-// A phrase's words into the fewest groups of at most maxWords words and maxChars characters, and
-// of those ways the one whose groups are most alike in length (the least sum of their squared
-// lengths); returns [[first, last], …] as indexes into the phrase. A word longer than maxChars
-// stands alone.
-function byLength(texts, maxWords, maxChars) {
+// Whether words set in at most fit.lines lines of fit.room, line by line as a browser fills
+// them: a word that does not fit the line begins the next. A word alone always does (it shrinks).
+function sets(texts, fit) {
+  if (texts.length === 1) return true;
+  let lines = 1, used = 0;
+  for (const t of texts) {
+    const w = fit.word(t);
+    if (w > fit.room) return false;
+    if (used && used + fit.space + w > fit.room) { lines++; used = w; } else used += (used ? fit.space : 0) + w;
+  }
+  return lines <= fit.lines;
+}
+
+// A phrase's words into the fewest groups of at most maxWords words and maxChars characters that
+// each set in their lines (sets above), and of those ways the one whose groups are most alike in
+// length (the least sum of their squared lengths); returns [[first, last], …] as indexes into
+// the phrase. A word that fits no line stands alone.
+function byLength(texts, maxWords, maxChars, fit) {
   const length = (a, b) => texts.slice(a, b).join(" ").length;   // of the words a … b - 1
   // best[i]: the words before i as [how many groups, their squared lengths summed, where the last one starts]
   const best = [[0, 0, 0]];
   for (let i = 1; i <= texts.length; i++) {
     for (let j = i - 1; j >= Math.max(0, i - maxWords); j--) {
       const l = length(j, i);
-      if (l > maxChars && j < i - 1) break;
+      // (a group that does not set is not helped by a word more in front of it)
+      if (j < i - 1 && (l > maxChars || !sets(texts.slice(j, i), fit))) break;
       const way = [best[j][0] + 1, best[j][1] + l * l, j];
       if (!best[i] || way[0] < best[i][0] || (way[0] === best[i][0] && way[1] < best[i][1])) best[i] = way;
     }

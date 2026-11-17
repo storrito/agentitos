@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { groups, activeSpans } from "./group.mjs";
+import { measure } from "./widths.mjs";
 
 export const ID = "captions";
 const n = (x) => +x.toFixed(3);
@@ -40,6 +41,7 @@ export function brandOf(file) {
 // "center", "right"), size (the type's, px of the frame), lines }. What it leaves out stays as
 // above: a width alone is centred on the frame, a left edge alone reaches to the centred box's
 // right edge. `grow` is the type against the style's: its stroke and a card's border grow with it.
+// `own`: the width, the lines or the size are the caller's, not those the styles are made for.
 function areaOf(place, style, width, height, [sx, sy, sw, sh]) {
   // the styles' sizes are for a frame whose short side is 1080 px: 1080×1920, 1920×1080, 1080×1080 alike
   const scale = Math.min(width, height) / 1080;
@@ -47,8 +49,9 @@ function areaOf(place, style, width, height, [sx, sy, sw, sh]) {
   const maxWidth = place.width ?? (place.left != null ? sx + sw - place.left : sw);
   if (!(maxWidth > 0)) throw new Error(`--x ${place.left} leaves no room up to x ${sx + sw}, where the platforms' centred box ends: give --max-width as well.`);
   const left = place.left ?? (place.width != null ? n((width - maxWidth) / 2) : sx);
+  const lines = place.lines ?? style.group.lines;
   return { left, right: n(width - (left + maxWidth)), bottom: height - (place.bottom ?? sy + sh), maxWidth, type: place.size ?? style.look.size * scale,
-    grow: place.size != null ? place.size / style.look.size : scale, lines: place.lines ?? style.group.lines, align: place.align ?? "center", sized: place.size != null };
+    grow: place.size != null ? place.size / style.look.size : scale, lines, align: place.align ?? "center", own: maxWidth !== sw || lines !== style.group.lines || place.size != null };
 }
 
 // zones: platform-zones' answer for the frame (tools/lib/zones.mjs); place: where the caller wants
@@ -71,14 +74,14 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
     }
   } else links.push(googleFont(look.font, look.weight));
 
-  // Where the caller placed them, a group holds no more characters than fit its lines there: at
-  // the size the caller named, which is meant to be seen, else at the smallest the style's shrinks
-  // to (55 %, fit() below). A character is about `advance` em wide (styles.mjs); the padding of a
-  // style's box (1 em) is no room for one. Only where the style's groups are longer than that
-  // are they cut anew, by length (group.mjs); else they are the style's, as everywhere.
-  const held = area.sized ? area.type : area.type * 0.55, room = area.maxWidth - (look.box ? held : 0);
-  const fits = Math.max(1, Math.floor((area.lines * room) / (held * style.advance)));
-  const group = place && fits < style.group.chars ? { ...style.group, chars: fits, even: "length" } : style.group;
+  // In a width, in lines or at a size of the caller's own, a group must set in its lines at the
+  // type's size (the one named, else the style's), line by line: the styles' groups are made for
+  // two lines of the centred box and lean on fit() below, which shrinks them. The words are
+  // measured in the style's own font (widths.mjs); the padding of a style's box (1 em) is no room
+  // for them. A phrase whose groups set keeps them, any other is cut anew (group.mjs). Captions
+  // that are only moved or aligned keep the style's groups.
+  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : 0)) / area.type;
+  const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: type.word } } : style.group;
 
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
   // carries `icon`, its numbers in the key colour
@@ -92,15 +95,18 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
   // left or right in the area: the text, a box that is only as wide as its text, and the point a group pops in from
   const margin = { left: "0 auto 0 0", center: "0 auto", right: "0 0 0 auto" }[area.align];
   const origin = area.align === "center" ? "" : ` transform-origin: ${area.align === "left" ? "0%" : "100%"} 50%;`;
+  // Where the caller placed them, the area holds a style's box whole, its padding too, whatever
+  // box-sizing the host sets: the box counts with its padding, and the padding is no room for a
+  // word (both go into the rule and into fit() of the script below).
+  const whole = place ? " box-sizing: border-box;" : "", padded = place ? ' || el.classList.contains("boxed")' : "";
   // (a box around two lines is as wide as the area: centred that is even, at one side it would
-  // stand out past its text; this goes into fit() of the script below)
+  // stand out past its text; this goes into fit() too)
   const hug = area.align === "center" ? "" : `
             // left or right in its area, a box ends where its longest line ends
             if (el.classList.contains("boxed") || el.classList.contains("cap-card")) {
               var from = Infinity, to = -Infinity, box = getComputedStyle(el);
               Array.prototype.forEach.call(el.children, function (c) { from = Math.min(from, c.offsetLeft); to = Math.max(to, c.offsetLeft + c.offsetWidth); });
-              var around = box.boxSizing === "border-box" ? parseFloat(box.paddingLeft) + parseFloat(box.paddingRight) + 2 * parseFloat(box.borderLeftWidth) : 0;
-              el.style.width = Math.ceil(to - from) + 1 + around + "px";
+              el.style.width = Math.ceil(to - from) + 1 + parseFloat(box.paddingLeft) + parseFloat(box.paddingRight) + 2 * parseFloat(box.borderLeftWidth) + "px";
             }`;
 
   const html = `<!doctype html>
@@ -118,7 +124,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
           display: block; text-wrap: balance; word-spacing: ${look.gap || "0.08em"}; visibility: hidden;
           font-family: "${look.font}", sans-serif; font-weight: ${look.weight}; line-height: ${look.lineHeight}; letter-spacing: ${look.spacing};
           text-transform: ${look.case === "upper" ? "uppercase" : "none"}; text-align: ${area.align};${origin} }
-        #root .cap-group.boxed { width: fit-content; max-width: ${data.maxWidth}px;
+        #root .cap-group.boxed {${whole} width: fit-content; max-width: ${data.maxWidth}px;
           background: ${look.box || "transparent"}; padding: 0.22em 0.5em; border-radius: 0.3em; }
         #root .cap-group.cap-card { box-sizing: border-box; width: fit-content; max-width: ${data.maxWidth}px; padding: 0.2em 0.5em 0.24em; border-radius: 0.32em;
           background: rgba(10,14,20,0.86); border: ${Math.max(3, Math.round(area.type * 0.045))}px solid ${look.highlight}; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
@@ -162,7 +168,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
             for (; size > least; size -= 2) {
               el.style.fontSize = size + "px";
               var high = el.offsetHeight, room = DATA.maxWidth;
-              if (el.classList.contains("cap-card")) {   // a card's own padding and border are no lines of text, and no room for a word
+              if (el.classList.contains("cap-card")${padded}) {   // a card's own padding and border are no lines of text, and no room for a word
                 var cs = getComputedStyle(el);
                 high = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
                 room = DATA.maxWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 2 * parseFloat(cs.borderLeftWidth);
@@ -217,9 +223,14 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
 </html>
 `;
   fs.writeFileSync(path.join(out, "index.html"), html);
-  // (the area as the frame's px: the y its lowest line ends at, and about how high its lines reach)
-  const ends = height - area.bottom;
-  return { groups: gs.length, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight), align: area.align, size: Math.round(area.type), lines: area.lines } };
+  // What the caller is told: the area in px of the frame (the y its lowest line ends at, how high
+  // its lines reach with the padding and border of a style's box or a card around them), the words
+  // that are wider than a line of it and so are set smaller, and how many cards there are, which
+  // are never cut to an area.
+  const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
+  const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : 0;
+  const wide = type ? gs.filter((g) => !g.box && g.words.length === 1 && type.word(g.words[0].text) > room).map((g) => g.words[0].text) : [];
+  return { groups: gs.length, cards, wide, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.

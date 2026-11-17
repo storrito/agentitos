@@ -1,6 +1,7 @@
 // Where the captions go. Without the options for it (--x, --y, --max-width, --align, --font-size,
 // --lines) the tool builds what the version before them built, byte for byte; with them the built
-// file carries the area, the alignment, the size and the lines asked for. No request, no browser.
+// file carries the area, the alignment, the size and the lines asked for, and its groups set in
+// those lines at that size. No request.
 //
 //   node --test tools/test.mjs
 //
@@ -9,6 +10,10 @@
 // another commit). Without git or without that commit (the skill's folder alone, a shallow
 // clone) that test is skipped. Whoever changes the captions nobody placed on purpose names the
 // commit that did it here.
+//
+// The last test lays the built files out in a Chrome (CHROME, one on the PATH, puppeteer's or
+// HyperFrames' own) and measures lines, sizes and boxes; it loads the styles' fonts from Google
+// and is skipped without a Chrome or without the fonts.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -17,9 +22,10 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { STYLES } from "./lib/styles.mjs";
 import { groups } from "./lib/group.mjs";
+import { measure } from "./lib/widths.mjs";
 import { zones, zonesTool } from "./lib/zones.mjs";
 
 const BEFORE = process.env.CAPTIONS_BEFORE || "ce60c3a5dc639e9231a78762282d28c24fd67cd6";
@@ -42,6 +48,10 @@ function wordsOf(text, more = {}) {
 const WORDS = wordsOf(SAID);
 // the same with a card: "the whole week" in a box, an emoji in front
 const BOXED = wordsOf(SAID, { 10: { box: 1, icon: "📅" }, 11: { box: 1 }, 12: { box: 1 } });
+// the sentences a review of the first version failed on (2026-11-17)
+const NARROW = "For that I use Storrito, which runs in the browser and needs no app.";
+const ONE_LINE = "Umfragen, Links, Countdowns und Erwähnungen funktionieren wie in der App selbst.";
+const BIG_BOX = "That is straightforward, and it works automatically.";
 
 function folder(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "captions-test-"));
@@ -63,6 +73,18 @@ function built(t, opts, words = WORDS) {
   return { html, rule, data: JSON.parse(html.match(/var DATA = (.*);\n/)[1]), said: r.stdout };
 }
 const texts = (data) => data.groups.map((g) => g.words.map((w) => w.text).join(" "));
+// how many lines of `room` (in the type's size) words take in a style's own type, filled as a
+// browser fills them; Infinity when a word is wider than a line
+function linesOf(text, style, room) {
+  const m = measure(STYLES[style].look);
+  let lines = 1, used = 0;
+  for (const w of text.split(" ").map(m.word)) {
+    if (w > room) return Infinity;
+    if (used && used + m.space + w > room) { lines++; used = w; } else used += (used ? m.space : 0) + w;
+  }
+  return lines;
+}
+const video = (file, size) => assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=gray:s=${size}:r=30:d=9`, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", file]).status, 0);
 
 // the tools of the version before the options, in `dir`; null when the history is not there
 function versionBefore(dir) {
@@ -79,24 +101,36 @@ function versionBefore(dir) {
 test("without the options the built files and what the tool says are those of the version before", { skip: noZones }, (t) => {
   const dir = folder(t), old = versionBefore(path.join(dir, "before"));
   if (!old) return t.skip(`no commit ${BEFORE} in a git history here`);
-  const same = (name, args, files, words) => {
+  // `put` lays what the run needs beside its words (a brand kit, a video) into both folders
+  const same = (name, args, files, { words, put } = {}) => {
+    for (const side of ["a", "b"]) { fs.mkdirSync(path.join(dir, side, name), { recursive: true }); put?.(path.join(dir, side, name)); }
     const a = run(old, path.join(dir, "a", name), args, words), b = run(TOOL, path.join(dir, "b", name), args, words);
     assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
     assert.equal(b.stdout, a.stdout, `${name}: what the tool says`);
     for (const f of files) assert.ok(fs.readFileSync(path.join(dir, "b", name, f)).equals(fs.readFileSync(path.join(dir, "a", name, f))), `${name}: ${f} differs from the version before`);
   };
-  for (const style of Object.keys(STYLES)) for (const size of ["1080x1920", "1920x1080", "1080x1080", "720x1280"]) {
+  // 9:16, 16:9, 1:1, 4:5 and a small 9:16
+  for (const style of Object.keys(STYLES)) for (const size of ["1080x1920", "1920x1080", "1080x1080", "1080x1350", "720x1280"]) {
     same(`${style}-${size}`, ["build", "words.json", "out/captions", "--style", style, "--size", size], ["out/captions/index.html"]);
   }
   same("one-platform", ["build", "words.json", "out/captions", "--style", "karaoke", "--size", "1080x1920", "--platform", "reels", "--duration", "9", "--track", "4"], ["out/captions/index.html"]);
-  same("cards", ["build", "words.json", "out/captions", "--style", "wipe", "--size", "1080x1920"], ["out/captions/index.html"], BOXED);
+  same("cards", ["build", "words.json", "out/captions", "--style", "wipe", "--size", "1080x1920"], ["out/captions/index.html"], { words: BOXED });
+  // a brand kit: its colour and a font Google serves, and one whose font is a file beside it
+  const kit = (fonts, files = {}) => (to) => {
+    fs.mkdirSync(path.join(to, "brand", "fonts"), { recursive: true });
+    fs.writeFileSync(path.join(to, "brand", "DESIGN.md"), `---\nname: Test Brand\ncolors:\n  primary: "#5429CA"\ntypography:\n  headline-display:\n    fontFamily: "Brand Sans"\n    fontWeight: 800\nfonts:\n${fonts}\n---\n# Test Brand\n`);
+    for (const [name, bytes] of Object.entries(files)) fs.writeFileSync(path.join(to, "brand", name), bytes);
+  };
+  same("brand-served", ["build", "words.json", "out/captions", "--style", "karaoke", "--size", "1080x1920", "--brand", "brand/DESIGN.md"], ["out/captions/index.html"], { put: kit("  Brand Sans: google") });
+  same("brand-file", ["build", "words.json", "out/captions", "--style", "hormozi", "--size", "1080x1350", "--brand", "brand/DESIGN.md"], ["out/captions/index.html", "out/captions/fonts/brand-sans-800.ttf"],
+    { put: kit("  Brand Sans:\n    - file: fonts/brand-sans-800.ttf\n      weight: 800", { "fonts/brand-sans-800.ttf": "not a font, only copied" }) });
+  same("no-brand", ["build", "words.json", "out/captions", "--style", "clean", "--size", "1080x1920", "--brand", "brand/DESIGN.md"], ["out/captions/index.html"]);
   if (!ffmpeg) return t.diagnostic("no ffmpeg: `project` not compared");
-  for (const side of ["a", "b"]) {
-    fs.mkdirSync(path.join(dir, side, "project"), { recursive: true });
-    const made = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=360x640:r=30:d=9", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", path.join(dir, side, "project", "video.mp4")], { encoding: "utf8" });
-    assert.equal(made.status, 0, made.stderr);
-  }
-  same("project", ["project", "video.mp4", "words.json", "comp", "--style", "clean"], ["comp/index.html", "comp/captions/index.html", "comp/meta.json", "comp/hyperframes.json"]);
+  // a project: the video's own frame, a wide video filling and fitting a vertical frame
+  const project = ["comp/index.html", "comp/captions/index.html", "comp/meta.json", "comp/hyperframes.json"];
+  same("project", ["project", "video.mp4", "words.json", "comp", "--style", "clean"], project, { put: (to) => video(path.join(to, "video.mp4"), "360x640") });
+  same("project-cover", ["project", "video.mp4", "words.json", "comp", "--style", "wipe", "--size", "1080x1920"], project, { put: (to) => video(path.join(to, "video.mp4"), "640x360") });
+  same("project-contain", ["project", "video.mp4", "words.json", "comp", "--size", "1080x1920", "--fit", "contain", "--platform", "tiktok"], project, { put: (to) => video(path.join(to, "video.mp4"), "640x360") });
 });
 
 test("an area, an alignment, a size and a line count that are asked for are in the built file", { skip: noZones }, (t) => {
@@ -116,7 +150,8 @@ test("an area, an alignment, a size and a line count that are asked for are in t
   assert.deepEqual([tall.rule.left, tall.rule.right, tall.rule.bottom, tall.rule.width], ["192px", "192px", "1480px", "696px"]);
   assert.deepEqual([tall.rule["text-align"], tall.rule.margin, tall.rule["transform-origin"]], ["center", "0 auto", undefined]);
   assert.deepEqual([tall.data.size, tall.data.lines], [60, 1]);
-  assert.doesNotMatch(tall.html, /el\.style\.width/);        // centred, a box stays as it was
+  assert.doesNotMatch(tall.html, /el\.style\.width/);        // centred, a box stays as wide as it was
+  for (const script of tall.html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]);
 
   const right = built(t, ["--style", "karaoke", "--size", "1080x1080", "--x", "100", "--max-width", "600", "--align", "right"]);
   assert.deepEqual([right.rule.left, right.rule.right, right.rule.width, right.rule["text-align"], right.rule.margin, right.rule["transform-origin"]], ["100px", "380px", "600px", "right", "0 0 0 auto", "100% 50%"]);
@@ -124,7 +159,7 @@ test("an area, an alignment, a size and a line count that are asked for are in t
   // `project` takes them as `build` does
   if (!ffmpeg) return t.diagnostic("no ffmpeg: `project` not built");
   const dir = folder(t);
-  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=360x640:r=30:d=9", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", path.join(dir, "video.mp4")]);
+  video(path.join(dir, "video.mp4"), "360x640");
   const r = run(TOOL, dir, ["project", "video.mp4", "words.json", "comp", "--size", "1080x1920", "--y", "440", "--align", "left", "--lines", "1"]);
   assert.equal(r.status, 0, r.stderr);
   const html = fs.readFileSync(path.join(dir, "comp", "captions", "index.html"), "utf8");
@@ -132,7 +167,7 @@ test("an area, an alignment, a size and a line count that are asked for are in t
   assert.match(html, /"lines":1,/);
 });
 
-test("what is not asked for stays where platform-zones puts it, in the style's size and lines", { skip: noZones }, (t) => {
+test("what is not asked for stays where platform-zones puts it, in the style's size, lines and groups", { skip: noZones }, (t) => {
   const [cx, cy, cw, ch] = zones(1080, 1920).centred;
   const plain = built(t, ["--style", "wipe", "--size", "1080x1920"]);
   assert.deepEqual([plain.rule.left, plain.rule.right, plain.rule.bottom, plain.rule.width], [`${cx}px`, `${1080 - cx - cw}px`, `${1920 - cy - ch}px`, `${cw}px`]);
@@ -156,15 +191,17 @@ test("what is not asked for stays where platform-zones puts it, in the style's s
   assert.equal(one.data.lines, 1); assert.equal(one.data.size, plain.data.size); but(one, []);
   const left = only("--align", "left");
   but(left, ["margin", "text-align", "transform-origin"]); assert.deepEqual(left.data.groups, plain.data.groups);
+  // the width and the lines the styles are made for, said aloud, change no group either
+  assert.deepEqual(only("--max-width", String(cw), "--lines", "2", "--y", "500", "--align", "right").data.groups, plain.data.groups);
 });
 
-test("a size that is named is held: the groups are cut to what fits their line, every word once and in order", { skip: noZones }, (t) => {
+test("in a width, in lines or at a size of the caller's own the groups set in their lines at the type's size, every word once and in order", { skip: noZones }, (t) => {
   for (const style of Object.keys(STYLES)) {
     const one = built(t, ["--style", style, "--size", "1080x1920", "--y", "440", "--max-width", "696", "--font-size", "60", "--lines", "1"]);
     assert.equal(texts(one.data).join(" "), SAID, style);
-    // about `advance` em a character, a box's padding off the room
-    const fits = Math.floor((696 - (STYLES[style].look.box ? 60 : 0)) / (60 * STYLES[style].advance));
-    for (const text of texts(one.data)) assert.ok(text.length <= fits || !text.includes(" "), `${style}: "${text}" is longer than the ${fits} characters of a line`);
+    // (the padding of a style's box is no room for a word)
+    const room = (696 - (STYLES[style].look.box ? 60 : 0)) / 60;
+    for (const text of texts(one.data)) assert.ok(!text.includes(" ") || linesOf(text, style, room) === 1, `${style}: "${text}" does not set in one line of 60 px type`);
     one.data.groups.forEach((g, i) => { if (i) assert.ok(g.start >= one.data.groups[i - 1].end, `${style}: one group at a time`); });
   }
   // type that is larger than the style's takes its stroke along
@@ -172,15 +209,67 @@ test("a size that is named is held: the groups are cut to what fits their line, 
   assert.match(big.html, /-webkit-text-stroke: 18px/);
 });
 
-test("a phrase cut by length: the fewest groups that fit, about equally long, a long word alone", () => {
+test("a phrase whose groups do not set in their lines is cut by length: the fewest groups that do, about equally long, a wide word alone", () => {
   const phrase = (text) => text.split(" ").map((w, i) => ({ text: w, start: i * 0.3, end: i * 0.3 + 0.25 }));
-  const cut = (text, words, chars, even) => { const ws = phrase(text); return groups(ws, { words, chars, pause: 0.45, min: 1, even }, 60).map((g) => ws.slice(g.from, g.to + 1).map((w) => w.text).join(" ")); };
+  // a line of `room` characters, a space one wide
+  const cut = (text, words, chars, lines, room) => { const ws = phrase(text); return groups(ws, { words, chars, pause: 0.45, min: 1, ...(room ? { fit: { lines, room, space: 1, word: (t) => t.length } } : {}) }, 60).map((g) => ws.slice(g.from, g.to + 1).map((w) => w.text).join(" ")); };
   const said = "wie ihr eure Instagram-Storys für die ganze Woche vorplant.";
-  assert.deepEqual(cut(said, 9, 19, "length"), ["wie ihr eure", "Instagram-Storys", "für die ganze", "Woche vorplant."]);
-  // by words, as the styles cut, the same phrase falls into single words
-  assert.equal(cut(said, 9, 19).length, 7);
-  assert.deepEqual(cut("a Donaudampfschifffahrtsgesellschaft b", 9, 12, "length"), ["a", "Donaudampfschifffahrtsgesellschaft", "b"]);
-  assert.deepEqual(cut("one two three four five six", 2, 64, "length"), ["one two", "three four", "five six"]);
+  assert.deepEqual(cut(said, 9, 64, 1, 19), ["wie ihr eure", "Instagram-Storys", "für die ganze", "Woche vorplant."]);
+  assert.deepEqual(cut(said, 9, 64), [said]);                                    // the style alone: one group
+  assert.deepEqual(cut(said, 9, 64, 2, 30), [said]);                             // two lines of 30 hold it: the style's group stays
+  assert.deepEqual(cut(said, 9, 64, 2, 19), ["wie ihr eure Instagram-Storys", "für die ganze Woche vorplant."]);
+  // two lines are two lines, not one of twice the length: "the browser and" is 15 characters, but no two lines of 9
+  assert.deepEqual(cut("the browser and needs no app.", 3, 22, 2, 9), ["the browser", "and needs", "no app."]);
+  assert.deepEqual(cut("a Donaudampfschifffahrtsgesellschaft b", 9, 64, 1, 12), ["a", "Donaudampfschifffahrtsgesellschaft", "b"]);
+  assert.deepEqual(cut("one two three four five six", 2, 64, 1, 10), ["one two", "three four", "five six"]);
+});
+
+test("review 1: a narrow area holds every group in two lines, line by line, and a named size holds", { skip: noZones }, (t) => {
+  const narrow = built(t, ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420"], wordsOf(NARROW));
+  assert.deepEqual(texts(narrow.data), ["For that", "I use", "Storrito,", "which runs", "in the", "browser", "and needs", "no app."]);
+  for (const text of texts(narrow.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 96) <= 2, `"${text}" takes more than two lines of 420 px at 96 px`);
+  assert.match(narrow.said, /\n {2}Wider than a line of this area at 96 px, so each alone and set smaller: "Storrito,", "browser"\.\n/);
+  const named = built(t, ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420", "--font-size", "110"], wordsOf(NARROW));
+  assert.deepEqual(texts(named.data), ["For that", "I use", "Storrito,", "which", "runs", "in the", "browser", "and needs", "no app."]);
+  for (const text of texts(named.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 110) <= 2, `"${text}" takes more than two lines of 420 px at 110 px`);
+  assert.match(named.said, /at 110 px, so each alone and set smaller: "Storrito,", "which", "browser"\./);
+});
+
+test("review 2: without a named size the groups set at the style's size, not at the least it shrinks to; a card stays whole and the tool says so", { skip: noZones }, (t) => {
+  const cw = zones(1080, 1920).centred[2];
+  const one = built(t, ["--style", "clean", "--size", "1080x1920", "--lines", "1"], wordsOf(ONE_LINE));
+  assert.deepEqual(texts(one.data), ["Umfragen, Links,", "Countdowns und", "Erwähnungen", "funktionieren wie", "in der App selbst."]);
+  assert.equal(one.data.size, 52);
+  for (const text of texts(one.data)) assert.equal(linesOf(text, "clean", (cw - 52) / 52), 1, `"${text}" at 52 px`);
+  assert.doesNotMatch(one.said, /card|Wider than/);
+  const card = built(t, ["--style", "hormozi", "--size", "1080x1920", "--lines", "1"], BOXED);
+  assert.deepEqual(card.data.groups.filter((g) => g.box).map((g) => g.words.map((w) => w.text).join(" ")), ["the whole week."]);
+  assert.match(card.said, /\n {2}A card keeps its words together whatever the area \(1 here\): it shrinks to the lines asked for and takes another line where it cannot\.\n/);
+  assert.doesNotMatch(built(t, ["--style", "hormozi", "--size", "1080x1920", "--y", "500"], BOXED).said, /A card/);   // only moved: cards as ever
+});
+
+test("review 3: the area holds a style's box whole, and the warning judges the box", { skip: noZones }, (t) => {
+  const opts = ["--style", "clean", "--size", "1920x1080", "--x", "1000", "--max-width", "824", "--font-size", "110"];
+  const left = built(t, [...opts, "--align", "left"], wordsOf(BIG_BOX));
+  // the box counts with its padding, whatever the host sets, and the padding is no room for a word
+  assert.match(left.html, /#root \.cap-group\.boxed \{ box-sizing: border-box; width: fit-content; max-width: 824px;/);
+  assert.match(left.html, /if \(el\.classList\.contains\("cap-card"\) \|\| el\.classList\.contains\("boxed"\)\) \{/);
+  assert.deepEqual(texts(left.data), ["That is", "straightforward,", "and it works", "automatically."]);
+  assert.match(left.said, /\nThat is inside the safe box of /);
+  assert.match(left.said, /set smaller: "straightforward,", "automatically\."\./);
+  // captions nobody placed keep the box they had
+  assert.match(built(t, ["--style", "clean", "--size", "1920x1080"], wordsOf(BIG_BOX)).html, /#root \.cap-group\.boxed \{ width: fit-content;[^}]*\}\n[\s\S]*if \(el\.classList\.contains\("cap-card"\)\) \{/);
+  // the letters of one line end inside the safe box, the box around them does not
+  const safeTop = zones(1920, 1080).safe[1], y = safeTop + Math.round(110 * 1.3) + 10, top = Math.round(y - 110 * 1.3 - 0.44 * 110);
+  const high = built(t, [...opts, "--lines", "1", "--y", String(y)], wordsOf(BIG_BOX));
+  assert.match(high.said, new RegExp(`\\n! That leaves the safe box of .*: ${safeTop - top} px past the top, `));
+});
+
+test("review 4: an area that passes the frame is said in the same sentence", { skip: noZones }, (t) => {
+  const off = built(t, ["--style", "hormozi", "--size", "1080x1920", "--x", "900", "--max-width", "400", "--align", "right"], wordsOf(NARROW));
+  const warned = off.said.split("\n").filter((l) => l.startsWith("! "));
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /^! That leaves the frame \(220 px past its right edge: not in the video\) and the safe box of .*: \d+ px past the right, where the apps lay .* over the captions\.$/);
 });
 
 test("an area that leaves the platforms' safe box is said in one sentence, and built all the same", { skip: noZones }, (t) => {
@@ -211,5 +300,90 @@ test("an option that cannot be meant is one sentence that says what it takes", {
   refused(["--y", "2000"], /^--y is a number of px from 1 to 1920/);
   refused(["--x"], /^--x is a number of px from 0 to 1079/);
   refused(["--x", "1000"], /--x 1000 leaves no room .* give --max-width as well\.$/);
+  // review 5: an empty value (a shell variable that is not set) is no 0, nor is 0x10 sixteen
+  refused(["--x", ""], /^--x is a number of px from 0 to 1079/);
+  refused(["--y", ""], /^--y is a number of px from 1 to 1920/);
+  refused(["--max-width", "", "--x", "100"], /^--max-width is a number of px from 1 to 1080/);
+  refused(["--font-size", "0x10"], /^--font-size is a number of px/);
+  refused(["--lines", ""], /^--lines is 1 or 2\.$/);
   assert.equal(fs.existsSync(path.join(dir, "out")), false);
+});
+
+// ---- in a browser -------------------------------------------------------------------------------
+
+// The machine's Chrome: CHROME, else the usual names on the PATH, else one puppeteer or
+// HyperFrames downloaded (as platform-zones finds its own).
+function chromePath() {
+  if (process.env.CHROME) return process.env.CHROME;
+  for (const dir of (process.env.PATH || "").split(path.delimiter)) for (const name of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"]) if (fs.existsSync(path.join(dir, name))) return path.join(dir, name);
+  for (const base of [path.join(os.homedir(), ".cache", "puppeteer", "chrome-headless-shell"), path.join(os.homedir(), ".cache", "hyperframes", "chrome", "chrome-headless-shell"), path.join(os.homedir(), ".cache", "puppeteer", "chrome")]) {
+    for (const v of fs.existsSync(base) ? fs.readdirSync(base).sort().reverse() : []) {
+      for (const p of [path.join(base, v, "chrome-headless-shell-linux64", "chrome-headless-shell"), path.join(base, v, "chrome-linux64", "chrome")]) if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+const CHROME = chromePath();
+
+// A built captions file laid out in Chrome: its template in a frame, gsap as a stub, in a host
+// that sets `box-sizing: border-box` on everything (as `project` writes one) or sets nothing.
+// The style's font is loaded before the captions' own script fits the groups (else they would be
+// fitted in a stand-in font). Per group: { text, size, lines, box: [left, top, right, bottom] in
+// px of the frame }; null when Chrome gave nothing, "no font" when the font did not come.
+function laidOut(t, html, borderBox) {
+  const template = html.match(/<template>([\s\S]*)<\/template>/)[1], [, w, h] = template.match(/data-width="(\d+)" data-height="(\d+)"/);
+  const [, family, weight] = template.match(/font-family: "([^"]+)", sans-serif; font-weight: (\d+);/);
+  const page = `<!doctype html><html><head><meta charset="utf-8">${[...html.matchAll(/<link [^>]*>/g)].map((m) => m[0]).join("")}
+<style>${borderBox ? "* { margin: 0; padding: 0; box-sizing: border-box; }" : "html, body { margin: 0; }"} #frame { position: relative; width: ${w}px; height: ${h}px; overflow: hidden; }</style>
+<script>window.__timelines = {}; var tl = { set: function () { return tl; }, to: function () { return tl; }, fromTo: function () { return tl; } }; window.gsap = { timeline: function () { return tl; } };</script>
+</head><body><div id="frame"></div><pre id="out"></pre>
+<script>
+var font = '${weight} 100px "${family}"', out = document.getElementById("out"), frame = document.getElementById("frame");
+function measured(n) {
+  if (!window.__timelines.captions && n < 400) return setTimeout(function () { measured(n + 1); }, 25);
+  var at = frame.getBoundingClientRect();
+  out.textContent = encodeURIComponent(JSON.stringify(Array.prototype.map.call(document.querySelectorAll(".cap-group"), function (el) {
+    var r = el.getBoundingClientRect(), tops = {};
+    Array.prototype.forEach.call(el.querySelectorAll(".cap-word"), function (c) { tops[Math.round(c.getBoundingClientRect().top)] = 1; });
+    return { text: el.textContent, size: parseFloat(getComputedStyle(el).fontSize), lines: Object.keys(tops).length, box: [r.left - at.left, r.top - at.top, r.right - at.left, r.bottom - at.top].map(Math.round) };
+  })));
+}
+function laid() {
+  if (!document.fonts.check(font)) { out.textContent = encodeURIComponent(JSON.stringify("no font")); return; }
+  frame.appendChild(document.createRange().createContextualFragment(${JSON.stringify(template).replace(/<\//g, "<\\/")}));
+  measured(0);
+}
+document.fonts.load(font).then(laid, laid);
+</script></body></html>`;
+  const file = path.join(folder(t), "page.html");
+  fs.writeFileSync(file, page);
+  const r = spawnSync(CHROME, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", `--window-size=${w},${h}`, "--virtual-time-budget=15000", "--dump-dom", pathToFileURL(file).href], { encoding: "utf8", timeout: 90e3, maxBuffer: 1 << 28 });
+  const out = r.stdout?.match(/<pre id="out">([^<]+)<\/pre>/)?.[1];
+  return out ? JSON.parse(decodeURIComponent(out)) : null;
+}
+
+test("in Chrome: the review's sentences stand in the lines and at the size asked for, every box inside its area", { skip: noZones || (!CHROME && "no Chrome on this machine (CHROME names one)") }, (t) => {
+  const cases = [
+    { words: NARROW, opts: ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420"] },
+    { words: NARROW, opts: ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420", "--font-size", "110"] },
+    { words: ONE_LINE, opts: ["--style", "clean", "--size", "1080x1920", "--lines", "1"] },
+    { words: BIG_BOX, opts: ["--style", "clean", "--size", "1920x1080", "--x", "1000", "--max-width", "824", "--align", "left", "--font-size", "110"] },
+    { words: BIG_BOX, opts: ["--style", "clean", "--size", "1920x1080", "--x", "1000", "--max-width", "824", "--align", "right", "--font-size", "110"] },
+    { words: SAID, opts: ["--style", "karaoke", "--size", "1080x1350", "--max-width", "540", "--align", "left", "--font-size", "84"] },
+    { words: SAID, opts: ["--style", "wipe", "--size", "1920x1080", "--x", "704", "--max-width", "1120", "--align", "left", "--font-size", "138"] },
+  ];
+  for (const c of cases) for (const borderBox of [false, true]) {
+    const b = built(t, c.opts, wordsOf(c.words)), seen = laidOut(t, b.html, borderBox), name = `${c.opts.join(" ")}${borderBox ? ", a border-box host" : ""}`;
+    if (!seen) return t.skip(`Chrome did not lay the page out (${name})`);
+    if (seen === "no font") return t.skip(`the style's font did not load, no network? (${name})`);
+    assert.equal(seen.length, b.data.groups.length, name);
+    const left = b.data.left, right = b.data.left + b.data.maxWidth, height = Number(c.opts[c.opts.indexOf("--size") + 1].split("x")[1]);
+    seen.forEach((g, i) => {
+      const alone = b.data.groups[i].words.length === 1;
+      assert.ok(g.lines <= b.data.lines || alone, `${name}: "${g.text}" stands in ${g.lines} lines`);
+      if (!alone) assert.equal(g.size, b.data.size, `${name}: "${g.text}" is set at ${g.size} px`);
+      assert.ok(g.box[0] >= Math.floor(left) - 1 && g.box[2] <= Math.ceil(right) + 1, `${name}: the box of "${g.text}" (x ${g.box[0]}–${g.box[2]}) leaves the area x ${left}–${right}`);
+      assert.equal(g.box[3], height - b.data.bottom, `${name}: "${g.text}" ends at y ${g.box[3]}`);
+    });
+  }
 });

@@ -210,10 +210,11 @@ function cmdBox(file, phrases, opts) {
 // Where the caller wants the captions (--x, --y, --max-width, --align, --font-size, --lines), as
 // writeCaptions takes it; nothing without any of them: then they go where platform-zones says.
 function placeOf(opts, [width, height]) {
+  // (digits only: an empty value, as an unset shell variable leaves it, is no 0)
   const px = (name, from, to) => {
     if (opts[name] === undefined) return undefined;
-    const v = Number(opts[name]);
-    if (opts[name] === true || !Number.isFinite(v) || v < from || v > to) fail(`--${name} is a number of px from ${from} to ${to} in this ${width}×${height} frame.`);
+    const v = /^\d+(\.\d+)?$/.test(String(opts[name])) ? Number(opts[name]) : NaN;
+    if (!(v >= from && v <= to)) fail(`--${name} is a number of px from ${from} to ${to} in this ${width}×${height} frame.`);
     return v;
   };
   const place = { left: px("x", 0, width - 1), bottom: px("y", 1, height), width: px("max-width", 1, width), size: px("font-size", 1, height) };
@@ -226,18 +227,27 @@ function placeOf(opts, [width, height]) {
 // for whom the captions are placed, in a sentence
 const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}: the lowest line ends at y ${z.centred[1] + z.centred[3]}, centred on the frame, at most ${z.centred[2]} px wide.`;
 
-// where the caller placed them, and whether that is clear of the apps: the area is the caller's
-// to choose, so what leaves the safe box is said, not refused
-function placedAs(a, z, [width, height], platforms) {
+// Where the caller placed them, and whether that is clear of the apps: the area is the caller's
+// to choose, so what leaves the frame or the safe box is said in one sentence, not refused. The
+// area is judged as a style's box or a card fills it (r.area.top: its padding and border too).
+// In a width, in lines or at a size of the caller's own, also which words are wider than a line
+// (they stand alone, set smaller), and that a card is never cut to an area.
+function placedAs(r, z, [width, height], platforms) {
+  const a = r.area, round = (x) => +x.toFixed(3);
   const who = `${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}`;
   const span = ([x, y, w, h]) => `x ${x}–${x + w}, y ${y}–${y + h}`;
-  const said = `Placed where asked: the lowest line ends at y ${a.bottom}, ${{ left: "left-aligned", center: "centred", right: "right-aligned" }[a.align]} in x ${a.left}–${a.left + a.width} (at most ${a.width} px wide), ${a.lines === 1 ? "one line" : "up to two lines"} of ${a.size} px type.`;
+  const said = [`Placed where asked: the lowest line ends at y ${a.bottom}, ${{ left: "left-aligned", center: "centred", right: "right-aligned" }[a.align]} in x ${a.left}–${round(a.left + a.width)} (at most ${a.width} px wide), ${a.lines === 1 ? "one line" : "up to two lines"} of ${a.size} px type.`];
   let c;
   try { c = checkBox(width, height, platforms, [a.left, a.top, a.width, a.bottom - a.top]); } catch (e) { fail(e.message); }
   const past = Object.entries(c.outside).map(([side, by]) => `${by} px past the ${side}`).join(", ");
-  if (c.inside && c.offFrame <= 0.001) return `${said}\nThat is inside the ${past ? "stretch above the buttons" : "safe box"} of ${who}.`;
+  const off = [a.left + a.width > width ? `${round(a.left + a.width - width)} px past its right edge` : "", a.top < 0 ? `${-a.top} px above its top` : ""].filter(Boolean).join(", ");
   const under = [...new Set(c.covered.map((k) => k.what))];
-  return `${said}\n! That leaves the safe box of ${who} (${span(z.safe)}): ${past || "it is off the frame"}${under.length ? `, where the apps lay ${under.join("; ")} over the captions` : ", into the margin the guides keep"}.`;
+  if (c.inside && !off) said.push(`That is inside the ${past ? "stretch above the buttons" : "safe box"} of ${who}.`);
+  else said.push(`! That leaves ${off ? `the frame (${off}: not in the video) and ` : ""}the safe box of ${who} (${span(z.safe)}): ${past}${under.length ? `, where the apps lay ${under.join("; ")} over the captions` : ", into the margin the guides keep"}.`);
+  const wide = [...new Set(r.wide)];
+  if (wide.length) said.push(`  Wider than a line of this area at ${a.size} px, so each alone and set smaller: ${wide.slice(0, 8).map((w) => `"${w}"`).join(", ")}${wide.length > 8 ? ", …" : ""}.`);
+  if (a.own && r.cards) said.push(`  A card keeps its words together whatever the area (${r.cards} here): it shrinks to the lines asked for and takes another line where it cannot.`);
+  return said.join("\n");
 }
 
 function captionsFor(words, folder, opts, size, duration) {
@@ -248,7 +258,7 @@ function captionsFor(words, folder, opts, size, duration) {
   let z;
   try { z = zones(size[0], size[1], platformList(opts.platform)); } catch (e) { fail(e.message); }
   const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z, place });
-  return { ...r, style: s, brand, zones: z, placed: place ? placedAs(r.area, z, size, platformList(opts.platform)) : placedFor(z) };
+  return { ...r, style: s, brand, zones: z, placed: place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z) };
 }
 
 function cmdBuild(file, folder, opts) {

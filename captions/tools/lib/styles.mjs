@@ -9,10 +9,9 @@
 //           shadow, box; gap (the room between words: the active word grows by `grow` into it)
 //   motion: in (how a group or a word appears), active (how the word being said stands out),
 //           out (how a group goes)
-//   advance: how wide a character of the look is, in em of its size, the gaps between words and a
-//           pill's padding included: nine in ten groups of eight characters or more are narrower
-//           (measured in Chrome on German and English sentences, 2026-11-17). Only for captions
-//           the caller placed: how many characters fit a line of its area.
+//
+// A style's font and weight have their characters' widths in widths.mjs (for captions the caller
+// placed: whether a group fits its lines): measure a new font there.
 
 export const STYLES = {
   hormozi: {
@@ -22,7 +21,6 @@ export const STYLES = {
     look: { font: "Montserrat", weight: 900, size: 96, case: "upper", color: "#FFFFFF", accent: "#FFE500", highlight: "#3CFF5A",
       stroke: 9, strokeColor: "#000000", shadow: "0 8px 0 rgba(0,0,0,0.85)", spacing: "0.01em", lineHeight: 1.05, gap: "0.32em", grow: 1.08 },
     motion: { in: "pop", active: "color-scale", out: "cut" },
-    advance: 0.77,
   },
   karaoke: {
     label: "Karaoke pill",
@@ -31,7 +29,6 @@ export const STYLES = {
     look: { font: "Poppins", weight: 800, size: 72, case: "none", color: "#FFFFFF", accent: "#7C3AED", highlight: "#FFE500",
       stroke: 0, strokeColor: "#000000", shadow: "0 4px 18px rgba(0,0,0,0.55)", spacing: "0", lineHeight: 1.15, pill: true },
     motion: { in: "rise", active: "pill", out: "fade" },
-    advance: 0.7,
   },
   wipe: {
     label: "Wipe",
@@ -40,7 +37,6 @@ export const STYLES = {
     look: { font: "Poppins", weight: 800, size: 76, case: "upper", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFD700", dim: "rgba(255,255,255,0.62)",
       stroke: 0, strokeColor: "#000000", shadow: "0 4px 0 rgba(0,0,0,0.82), 0 12px 30px rgba(0,0,0,0.78)", spacing: "0.02em", lineHeight: 1.08 },
     motion: { in: "wipe", active: "dim-after", out: "wipe" },
-    advance: 0.68,
   },
   clean: {
     label: "Clean subtitles",
@@ -49,7 +45,6 @@ export const STYLES = {
     look: { font: "Inter", weight: 600, size: 52, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFE500",
       stroke: 0, strokeColor: "#000000", shadow: "none", spacing: "0", lineHeight: 1.3, box: "rgba(0,0,0,0.62)" },
     motion: { in: "fade", active: "none", out: "fade" },
-    advance: 0.54,
   },
 };
 
