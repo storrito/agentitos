@@ -35,6 +35,8 @@ Before step 3 you know: the frame; the platforms the person named (none named: n
 - **Captions are one line** (`--text caption`): in published Shorts three of four caption blocks are one line of about three words. Two lines (`caption:2`) only when the person asks for longer lines.
 - **A hook has two kinds.** A short text on the chest that shows for the first second or two, where the captions stand afterwards: what published Shorts do, and what `--text hook` tries first. A card across the top that stays (a reply to a comment, a part of a series): `--text hook:card`.
 
+What published Shorts do is what is usual, not what is shown to work: in that study nothing set the videos that did well apart from the others.
+
 ### 2. Mark the faces, or the screen's region
 
 ```bash
@@ -104,7 +106,7 @@ To captions:
 node <skill>/tools/place.mjs captions placement/<name> --candidate N
 ```
 
-It prints the options for captions' `build` and `project` that set the captions into the candidate's caption area (`--y`, `--max-width`, `--font-size`, `--lines`, and `--x`, `--align` for a column at one side). The area is as tall as the tallest block of captions' styles at that type; a style that pads more needs `--set caption.padEm=…` in `place`. captions answers "Placed where asked: …" when it took them. When it answers nothing of the kind, its version does not know them and the captions stand on the safe box's bottom whatever is there: say so, never move the picture to make room.
+It prints the options for captions' `build` and `project` that set the captions into the candidate's caption area (`--y`, `--max-width`, `--font-size`, `--lines`, and `--x`, `--align` for a column at one side). The area is as tall as the tallest block of captions' styles at that type; a style that pads more needs `--set caption.padEm=…` in `place`, and a card of captions' own (`box`) `--set caption.padEm=0.8`. captions answers "Placed where asked: …" when it took them. When it answers nothing of the kind, its version does not know them and the captions stand on the safe box's bottom whatever is there: say so, never move the picture to make room.
 
 ## UI in the chat
 

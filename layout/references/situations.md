@@ -189,13 +189,15 @@ named or a weight changed moves them.
   the height always. One caption line stays below the chin while the chin is above about 65 % of
   the height (60 % for two lines), which agrees in direction with the 67 % at which published
   captions leave that place. Else it goes above the head, which needs the hairline at 21 % (one
-  line) or 26 % (two). A hook as text stands below the chin in 52 % of the cells and above the
-  head in 47 %. A zoom of 1.02–1.29× where the face only just leaves the safe box. From a face
-  55 % tall (captions or a hook), 40 % (a hook and two lines) only a smaller picture passes.
-- **Wide into 9:16.** From 1080 lines the frame is filled (1.78×, soft) in 60 % of the cells, a
-  band stands in 40 %. From 720 lines filling is forbidden (2.67×): the 4:5 band, then the
+  line) or 26 % (two). A hook as text stands below the chin in 54 % of the cells and above the
+  head in 46 %. A zoom of 1.02–1.29× where the face only just leaves the safe box. From a face
+  55 % tall (one caption line or a hook), 50 % (two lines), 40 % (a hook and two lines) only a
+  smaller picture passes.
+- **Wide into 9:16.** From 1080 lines the frame is filled (1.78×, soft) in 67 % of the cells
+  with one caption line, 60 % with two, 49 % with a hook and two; a band stands in the rest.
+  From 720 lines filling is forbidden (2.67×): the 4:5 band, then the
   square, then the whole picture as a strip.
-- **Upright into 16:9.** The panel in 81 % of the cells; a 16:9 crop (1.78×, a third of the take's
+- **Upright into 16:9.** The panel in 78–83 % of the cells; a 16:9 crop (1.78×, a third of the take's
   height) only for a face of 15–20 %. Nobody judged that crop against the panel.
 - **Wide into 16:9.** Unchanged in 88 % of the cells with captions, 80 % with a hook. Captions at
   the bottom on the middle while the chin is above about 77 % of the height (72 % for two lines),
