@@ -1,11 +1,3 @@
-// Two people, each in one part of the frame.
-//
-//   splitFits(ctx, kind, people) → [candidate]   kind: "stacked" | "side-by-side"
-
-import { EPS, X1, Y1, clipBox, hullOf } from "./boxes.mjs";
-import { evaluate, cmpRank } from "./evaluate.mjs";
-import { holdAxis } from "./fits.mjs";
-
 // Two people, each in one part of the frame: stacked (one above the other, the captions on the
 // seam between them, as platform-zones' pattern "Two people stacked") or side by side. Each part
 // is a crop of its person's source around the face: covering its part at the smallest scale that
@@ -13,6 +5,13 @@ import { holdAxis } from "./fits.mjs";
 // person of the same source out; smaller than covering (ground beside it, under what the apps
 // cover where that helps) only where no covering scale up to the forbidden enlargement does.
 //   people: [{ src, own }] (own: the faces of that source this person is; none: all of them)
+//
+//   splitFits(ctx, kind, people) → [candidate]   kind: "stacked" | "side-by-side"
+
+import { EPS, X1, Y1, clipBox, hullOf } from "./boxes.mjs";
+import { evaluate, cmpRank } from "./evaluate.mjs";
+import { holdAxis } from "./fits.mjs";
+
 export function splitFits(ctx, kind, people) {
   const { W, H, Z, D, cap, hook, tall } = ctx, S = Z.safe;
   const halves = kind === "stacked" ? [[0, 0, W, H / 2], [0, H / 2, W, H / 2]] : [[0, 0, W / 2, H], [W / 2, 0, W / 2, H]];

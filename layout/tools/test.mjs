@@ -24,11 +24,11 @@ import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2), QUICK = args.includes("--quick"), given = args.find((a) => !a.startsWith("--"));
+try { zonesTool(); } catch (e) { console.error(e.message); process.exit(1); }
+if (!QUICK && !chromePath()) { console.error("The checker needs Chrome: set CHROME=/path/to/chrome, or run the tests that need none with --quick."); process.exit(1); }
 const OUT = given || fs.mkdtempSync(path.join(os.tmpdir(), "layout-test-"));
 fs.mkdirSync(OUT, { recursive: true });
 const HAND = JSON.parse(fs.readFileSync(path.join(HERE, "hand.json"), "utf8"));
-try { zonesTool(); } catch (e) { console.error(e.message); process.exit(1); }
-if (!QUICK && !chromePath()) { console.error("The checker needs Chrome: set CHROME=/path/to/chrome, or run the tests that need none with --quick."); process.exit(1); }
 
 let failed = 0, passed = 0;
 const rows = [];
@@ -77,7 +77,7 @@ function handPage(p, file) {
     else parts.push(`<div class="big" style="left:${x.left}px;top:${x.top}px;font-size:${x.font}px">${x.lines.join("<br>")}</div>`);
   }
   fs.writeFileSync(file, `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>
-<div id="frame" data-composition-id="probe" data-width="${W}" data-height="${H}">
+<div id="frame" data-composition-id="layout" data-width="${W}" data-height="${H}">
 ${parts.join("")}
 </div></body></html>`);
   return file;

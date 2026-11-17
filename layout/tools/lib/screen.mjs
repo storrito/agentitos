@@ -1,12 +1,3 @@
-// A screen recording in a frame: the region that matters, large enough to read, and a webcam's
-// face as a circle in a free corner.
-//
-//   screenFits(ctx, webcam, notes) → [candidate]   webcam: { size, face } | null
-
-import { X1, Y1, area, inter, contains, clipBox, grow, clamp, r1, r2 } from "./boxes.mjs";
-import { evaluate } from "./evaluate.mjs";
-import { holdAxis } from "./fits.mjs";
-
 // A screen recording with the region that matters (and, with a webcam, its face as a circle).
 // The screen lies between the text's bands (the hook at the top, the captions ending on the safe
 // box's bottom: a screen's own text would show through them) and runs to the frame's edges where
@@ -20,6 +11,13 @@ import { holdAxis } from "./fits.mjs";
 // gap to it: it takes the room above, below or beside the circle. Of the corners, the first at
 // which the screen still fills the frame around the region; where the region fits beside no
 // corner's circle, the circle is made smaller (down to circle.min).
+//
+//   screenFits(ctx, webcam, notes) → [candidate]   webcam: { size, face } | null
+
+import { X1, Y1, area, inter, contains, clipBox, grow, clamp, r1, r2 } from "./boxes.mjs";
+import { evaluate } from "./evaluate.mjs";
+import { holdAxis } from "./fits.mjs";
+
 export function screenFits(ctx, webcam, notes) {
   const { W, H, Z, D, sw, sh, cap, hook, tall } = ctx, S = Z.safe, g = D.gap;
   const main = ctx.sources[0], R = main.faces[0];

@@ -2,6 +2,8 @@
 // the frame as a root with data-composition-id, the still as an <img> at its place (clipped to its
 // window, over a blurred darker copy where ground shows), every face marked data-zone="face", the
 // text as elements. Without a still the picture is a drawn surface with each face as an oval.
+// Each face's box (a screen's region) is outlined with dashes, so that whoever looks sees whether
+// the box was read right; an outline changes nothing of what the checker measures.
 // The words are placeholders of the usual length: two caption lines, a hook of two lines.
 //
 //   renderPage(candidate, result, { still | stills, page }) → html
@@ -32,6 +34,7 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
 .ph.scr i{border-radius:6px;background:#fff;box-shadow:0 0 0 4px #2a78d6}
 .cam{position:absolute;border-radius:50%;background:radial-gradient(circle at 50% 42%,#e2b79a 0 22%,#5f7388 23%);box-shadow:0 0 0 6px #fff}
 [data-zone=face]{position:absolute}
+[data-zone=face]:not(.cam){outline:3px dashed rgba(255,255,255,.95);box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .cap{position:absolute;text-align:center;line-height:${D.caption.line}}
 .cap span{background:rgba(0,0,0,.74);padding:.06em .34em;border-radius:14px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .card{position:absolute;background:#fff;color:#14181d;border-radius:28px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:${D.hookCard.line}}
@@ -63,7 +66,7 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
   }
   const meta = { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, ...(c.parts ? { parts: c.parts } : {}), faceInFrame: c.faceInFrame, text: c.text.map(({ role, where, box }) => ({ role, where, box })), problems: c.problems };
   return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>
-<div id="frame" data-composition-id="probe" data-width="${W}" data-height="${H}">
+<div id="frame" data-composition-id="layout" data-width="${W}" data-height="${H}">
 ${parts.join("\n")}
 </div>
 <script type="application/json" id="placement">${JSON.stringify(meta).replace(/</g, "\\u003c")}</script>

@@ -19,7 +19,7 @@ Requirements: Node 20+, no npm packages. agentitos' [platform-zones](../platform
 
 No tool of this collection sees a face. Each skill that frames people (clips, best-takes, screencast-cut) has its own rule for where the picture goes, and the captions always end on the safe box's bottom, which in a close selfie is the speaker's chin. This skill is the step between knowing what a recording is and building a video from it:
 
-1. [footage-kind](../footage-kind/) names the situation (a talking head, two people in one picture, a desktop with a webcam; it is on a branch of its own, draft pull request 58, and not needed to run this).
+1. footage-kind names the situation (a talking head, two people in one picture, a desktop with a webcam). It is on a branch of its own, draft pull request 58, and not needed to run this: an agent's look at a frame tells as much.
 2. An agent reads the boxes of the faces, or of a screen's region, off `grid`'s picture.
 3. `place` computes the candidates, `page` shows them and has platform-zones check them, the agent chooses, by [`references/situations.md`](references/situations.md) where two fit.
 4. The numbers go to the skill that builds the video, and `captions` prints the options for [captions](../captions/).

@@ -17,7 +17,7 @@ export const DEFAULTS = {
   // (at least minEm wide: 12 em holds about 21 letters)
   caption: { font: { tall: 56, wide: 50 }, line: 1.32, minEm: 12, maxEm: 24 },
   // hook in an upright frame: a card of two lines across `wide`, 3.1 em tall; it may shrink to
-  // minFont where the room above the head is short (the hand probe went from 76 to 66 px)
+  // minFont where the room above the head is short (laid out by hand on a still, it went from 76 to 66 px)
   hookCard: { font: 76, minFont: 64, heightEm: 3.1, line: 1.14 },
   // hook in a wide frame: two big lines beside the face or the panel, 10 em wide (about 20
   // letters), 2.25 em tall (two lines of 1.08 and the descenders)
