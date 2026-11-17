@@ -261,6 +261,8 @@ function cmdPage(o) {
   const [folder] = o._;
   const res = readPlacement(folder, "page");
   const picks = pick(res, o.candidate, 3);
+  const chrome = chromePath();
+  if (!chrome) fail("page needs Chrome, to measure the candidates' pages and to take their pictures: set CHROME=/path/to/chrome. Until then the candidates carry only the solver's own verdict.");
   const sources = res.sources || [{ size: res.source }];
   // the stills: one frame per source, copied beside the pages so that their links hold
   if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
@@ -272,7 +274,6 @@ function cmdPage(o) {
     if (err) fail(`ffmpeg could not take a frame of ${input}: ${err}`);
     return out;
   });
-  const chrome = chromePath();
   console.log(`${res.frame} ${res.size.join("×")} for ${res.platforms.join(", ")}${stills.length ? `, on a frame of ${o.still.map(rel).join(" and ")}${o.at !== undefined ? ` at ${o.at} s` : ""}` : ", on a drawn surface with each face as an oval (--still <video|image> shows the recording)"}`);
   let differ = 0;
   for (const i of picks) {
@@ -280,7 +281,7 @@ function cmdPage(o) {
     fs.writeFileSync(page, renderPage(c, res, { stills: stills.length ? stills : null, page }));
     let checked;
     try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { fail(e.message); }
-    const shot = chrome && picture(chrome, page, png, res.size);
+    const shot = picture(chrome, page, png, res.size);
     const cmp = compare(c, checked);
     console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}`);

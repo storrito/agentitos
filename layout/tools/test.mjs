@@ -20,13 +20,14 @@ import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { solve } from "./lib/solve.mjs";
-import { askZones, checkPage, chromePath } from "./lib/zones.mjs";
+import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2), QUICK = args.includes("--quick"), given = args.find((a) => !a.startsWith("--"));
 const OUT = given || fs.mkdtempSync(path.join(os.tmpdir(), "layout-test-"));
 fs.mkdirSync(OUT, { recursive: true });
 const HAND = JSON.parse(fs.readFileSync(path.join(HERE, "hand.json"), "utf8"));
+try { zonesTool(); } catch (e) { console.error(e.message); process.exit(1); }
 if (!QUICK && !chromePath()) { console.error("The checker needs Chrome: set CHROME=/path/to/chrome, or run the tests that need none with --quick."); process.exit(1); }
 
 let failed = 0, passed = 0;
