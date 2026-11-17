@@ -30,7 +30,10 @@ It builds no video and decides nothing. It computes every way the picture and th
 
 The situation is footage-kind's name for the recording (a talking head upright or wide, two people in one picture, a desktop with a webcam, …), or your own look at one frame: is the subject a face, several faces, or a screen. A recording with neither (footage of a thing, a voice alone, text) has nothing to place here: its layouts are platform-zones' patterns.
 
-Before step 3 you know: the frame; the platforms the person named (none named: name none, the frame's usual ones stand in); how many caption lines (two, or one where the picture is tight); whether there is a hook. Ask only for what the skill that called you has not settled.
+Before step 3 you know: the frame; the platforms the person named (none named: name none, the frame's usual ones stand in); whether the video has captions and a hook. Ask only for what the skill that called you has not settled.
+
+- **Captions are one line** (`--text caption`): in published Shorts three of four caption blocks are one line of about three words. Two lines (`caption:2`) only when the person asks for longer lines.
+- **A hook has two kinds.** A short text on the chest that shows for the first second or two, where the captions stand afterwards: what published Shorts do, and what `--text hook` tries first. A card across the top that stays (a reply to a comment, a part of a series): `--text hook:card`.
 
 ### 2. Mark the faces, or the screen's region
 
@@ -42,30 +45,33 @@ One frame with a line every 10 %, each labelled with its px in the source. No to
 
 - **A face** runs from the hairline to the chin and from cheek to cheek. Not the hair, the ears or the neck: the solver keeps its own margins around the box, and a generous box leaves the text no place.
 - **A face that moves** (a nod, a lean, a walk): the grid at three to five moments spread over the clip, among them the highest and the lowest the head gets, each box as `--face-at <s>:x,y,w,h`. In a calm take of eight seconds the top of the head moved 22 px and came within 8 px of the caption above it: a face read at one moment has no reserve.
-- **Several people**: one `--face` each. They count from 1 in the order you give them.
+- **Several people**: one `--face` each. They count from 1 in the order you give them. Every `--face-at` of one source is one and the same face: two people who both move go into a file, one list of moments per person (`[[{"t": 0, "box": [x, y, w, h]}, …], […]]`), as `--face-track <file.json>`.
 - **A screen**: the part that matters at this moment as `--region`, and how tall a capital letter of its smallest text is, in px of the source, as `--min-text-height`. A webcam recorded as a file of its own: its face, read off a grid of that file, as a `--face` after a second `--source`.
 
 ### 3. Place
 
 ```bash
-node <skill>/tools/place.mjs place placement/<name> --frame 9:16 --source 1080x1920 --face 300,570,600,900 --text caption:2 [--text hook] [--platform reels,tiktok]
+node <skill>/tools/place.mjs place placement/<name> --frame 9:16 --source 1080x1920 --face 300,570,600,900 --text caption [--text hook] [--platform reels,tiktok]
 ```
 
 | the recording | options |
 | --- | --- |
 | several people in one picture | `--face … --face …`; `--speaker 2` when only that person is to be cropped on |
 | two people as two files | `--source 1280x720 --face … --source 1920x1080 --face …` |
-| a face that moves | `--face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …` |
+| a face that moves | `--face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …`, or `--face-track file.json` |
 | a screen, with or without a webcam | `--source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--source 1280x720 --face …]` |
 
-Every `--face`, `--face-at` and `--region` belongs to the `--source` before it. `--frame` is `9:16`, `4:5`, `1:1`, `16:9` or a size as `1080x1920`.
+Every `--face`, `--face-at` and `--region` belongs to the `--source` before it. `--frame` is `9:16`, `4:5`, `1:1`, `16:9` or a size as `720x1280`: type and margins are in proportion to the frame.
 
 It prints the candidates, the first the one it would take, and writes them to `placement/<name>/placement.json`. Each has a mark, its fit, where the face and each text land in the frame, its problems, and why it stands where it stands.
 
 - `✓` passes. `!` passes with a soft problem (the picture enlarged over 1.5×, a face in the safe box's margin, text a feed's crop cuts). `–` leaves a need unmet: a text found no free place, or a screen's text is too small to read. `✗` fails: a face or text under what an app covers, text on a face, the picture enlarged over 2×.
 - The fits: `full` (the picture covers the frame as it is), `zoom` (larger, moved), `inset` (the whole picture smaller over a ground), `crop` (a wide picture cut around the face: filling the frame, or as a `4:5`, `1:1` or free `band` with ground above and below), `panel` (an upright picture at one side of a wide frame, the text beside it), `stacked` and `side-by-side` (two people, each in one half; stacked, the captions stand on the seam), `screen-zoom` (the region at the smallest size at which its text reads), `screen-fit` (as large as its room allows, where that is less), `screen-whole`.
 - Read the `note:` lines. They say what the candidates cannot: a face that moves far, a crop that no scale allows, a region that cannot be read at any size the frame leaves it. For a face that moves, the lines under them name the moment that decides the placement: without that moment the first candidate would be another.
-- No candidate with `✓` or `!`: the needs do not fit this picture. Ask for less (one caption line, no hook), name the platform, or take a layout that gives the text its own area; never take a `✗`.
+- **Several people and no `--speaker`:** the candidates that show everyone stand first, the crops on one person behind them whatever they cost. Who speaks is yours to say, part by part; published podcast clips cut to whoever speaks more often than they show both.
+- **A `note:` under a candidate** says that its caption area is narrower than a long word at that type: captions will set such a word smaller for its moment.
+- **A face over a third of the frame tall with the chin below two thirds of its height** is a take filmed too close: only the wall above the head is free, and the text goes there. That is the answer for this take, not a good layout. Tell the person that more distance to the camera gives what published videos show: a face a quarter of the frame tall, the captions on the chest.
+- No candidate with `✓` or `!`: the needs do not fit this picture. Ask for less (no hook, or `hook:card`), name the platform, or take a layout that gives the text its own area; never take a `✗`.
 
 ### 4. Look, and choose
 
@@ -78,9 +84,9 @@ The first three candidates (or the ones named), each as a page of one frame (`ca
 Open every picture. The order is a suggestion from measurements, the choice is yours:
 
 - **Never a candidate the checker fails.** A line "They differ" means the page measured otherwise than the solver computed: find out why before you take it.
-- **What no measurement here knows.** Whether the picture behind a text is calm: the solver sees boxes, no pixels, and a caption on a patterned shirt or a hook on a bright window passes every check. Whether you read the face's box right: the dashed box on the picture is the face as you gave it, and when it does not sit on the face from hairline to chin and cheek to cheek, read it again and place again. How wide the video's own words are: the pages show placeholder words, a caption block is taken as wide as its area and a hook as two lines of about twenty letters.
+- **What no measurement here knows.** Whether the picture behind a text is calm: the solver sees boxes, no pixels, and a caption on a patterned shirt or a hook on a bright window passes every check. Whether you read the face's box right: the dashed box on the picture is the face as you gave it, and when it does not sit on the face from hairline to chin and cheek to cheek, read it again and place again. How wide the video's own words are: the pages show placeholder words (caption lines of three words, a hook of two short lines), and a block is taken as wide as its area.
 - **Candidates less than a point apart** (`cost` in the reasons) are not told apart by anything measured: the weights come from one judged case and guesses. Choose between them by the pictures.
-- **Where two fit, read `<skill>/references/situations.md` before choosing.** It says which layout is for which situation and which part of a video, what real footage showed (the two 16:9 layouts of an upright take pass every check and look weak as videos), and which numbers nobody tested.
+- **Where two fit, read `<skill>/references/situations.md` before choosing.** It says which layout is for which situation and which part of a video, what 240 published Shorts do (usual, never proven to work), what our own footage showed (the two 16:9 layouts of an upright take pass every check and look weak as videos), and which numbers nobody tested. A screen with the face in a panel below it, the common layout in published Shorts, is not built here.
 - A layout is for one part of a video. A hook that stays three seconds needs its room for three seconds: place the part with the hook and the part after it separately, and take the same picture placement for both where one candidate serves both.
 
 ### 5. Hand over
@@ -89,8 +95,8 @@ To the skill that builds the video, from the chosen candidate in `placement.json
 
 - `scale`, `left`, `top`: the source is drawn `scale` times its size with its top left corner at `left`, `top`. `window`: the part of the frame the sharp picture fills; outside it lies ground (the pages use a blurred, darker copy of the picture that covers the frame).
 - `parts` (stacked, side by side): the same for each half, with the `source` it shows, clipped to its `window`.
-- `circle`: the webcam's circle (`box`), and `crop`, the square of the webcam's picture it shows.
-- `text`: the `box` of the hook (`style` `card`: a card of two lines; `big`: two big lines) with its `font` in px, and of the captions.
+- `circle`: the webcam's circle (`box`, in px of the frame), and `crop`, the square of the webcam's picture it shows, in px of the webcam's picture.
+- `text`: the `box` of the hook with its `font` in px (`style` `text`: two lines of big type with no card; `card`: a card of two lines; `big`: two big lines beside the picture in 16:9), and of the captions.
 
 To captions:
 
@@ -98,7 +104,7 @@ To captions:
 node <skill>/tools/place.mjs captions placement/<name> --candidate N
 ```
 
-It prints the options for captions' `build` and `project` that set the captions into the candidate's caption area (`--y`, `--max-width`, `--font-size`, `--lines`, and `--x`, `--align` for a column at one side). captions answers "Placed where asked: …" when it took them. When it answers nothing of the kind, its version does not know them and the captions stand on the safe box's bottom whatever is there: say so, never move the picture to make room.
+It prints the options for captions' `build` and `project` that set the captions into the candidate's caption area (`--y`, `--max-width`, `--font-size`, `--lines`, and `--x`, `--align` for a column at one side). The area is as tall as the tallest block of captions' styles at that type; a style that pads more needs `--set caption.padEm=…` in `place`. captions answers "Placed where asked: …" when it took them. When it answers nothing of the kind, its version does not know them and the captions stand on the safe box's bottom whatever is there: say so, never move the picture to make room.
 
 ## UI in the chat
 
