@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
 import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
-import { KINDS, MAX_SECONDS, longest, arrange, ranges } from "./lib/moments.mjs";
+import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing } from "./lib/moments.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -283,66 +283,38 @@ function cut(dir, a, b, c) {
 // channels' own editors cut them (clips-eval, 2026-11-17: their passages have a median of 60 s
 // in the episode, and they cut a median of 10 s of words out of the inside). The length a short
 // may have comes with --max-seconds; a passage up to 1.7 times that long is returned whole, with
-// the sentences that can go marked (`drop`). It is scored 0–2 on five points (it opens cold, it
-// holds one idea, it ends on a finished thought, it leans on nothing said before, its length),
-// and one under KEEP of 10 is listed as weak. The model also counts what the episode holds
-// (claims, stories, numbers, mistakes, how-tos, answers: under four in all it is too thin for
-// clips), writes an on-screen hook for a moment whose first line is weak, and names the ideas
-// spread too far over the episode to cut, to be recorded anew.
+// the sentences that can go marked (`drop`). The model lists its moments as they come in the
+// episode and then orders them, best first, no two equal: a score of points out of 10 gave all
+// 77 moments of the first measurement 8 to 10 and ordered nothing. What can be counted (a
+// question at the start, a conjunction in the middle of a turn, the voices, the length against
+// the limit) the tool counts itself (`checks`). The model also counts what the episode holds
+// (claims, stories, numbers, mistakes, how-tos, answers, exchanges: under four in all it is too
+// thin for clips), writes an on-screen hook for a moment whose first line does not hook, names
+// the sentence with the strongest line (`payoff`), and the ideas spread too far over the episode
+// to cut, to be recorded anew. "Stands alone" is judged for the channel's own followers: the
+// names in the video's title and description count as introduced.
 export const MOMENTS_MODEL = "google/gemini-3.8-flash";
-const POINT = { type: "integer" };
 const MOMENTS_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["inventory", "moments", "ideas"],
+  type: "object", additionalProperties: false, required: ["inventory", "moments", "order", "ideas"],
   properties: {
     inventory: { type: "object", additionalProperties: false, required: KINDS, properties: Object.fromEntries(KINDS.map((k) => [k, { type: "integer" }])) },
     moments: { type: "array", items: {
       type: "object", additionalProperties: false,
-      required: ["first", "last", "kind", "title", "why", "cold", "one", "ends", "alone", "payoff", "drop", "hook", "crosstalk"],
+      required: ["first", "last", "kind", "title", "why", "payoff", "drop", "hook", "crosstalk"],
       properties: {
         first: { type: "integer" }, last: { type: "integer" }, kind: { type: "string", enum: KINDS },
         title: { type: "string" }, why: { type: "string" },
-        cold: POINT, one: POINT, ends: POINT, alone: POINT,
         payoff: { type: "integer" }, drop: { type: "array", items: { type: "integer" } },
         hook: { type: "string" }, crosstalk: { type: "boolean" },
       },
     } },
+    order: { type: "array", items: { type: "integer" } },
     ideas: { type: "array", items: {
       type: "object", additionalProperties: false, required: ["title", "sentences", "why"],
       properties: { title: { type: "string" }, sentences: { type: "array", items: { type: "integer" } }, why: { type: "string" } },
     } },
   },
 };
-
-// The transcript comes first and the task after it: a second run on the same episode (another
-// --max-seconds, another --count) then reads the transcript from the provider's cache.
-function momentsPrompt(episode, text, count, limit) {
-  const cap = longest(limit);
-  return `${text}
-That was the transcript of "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line:
-\`<number> [<from>–<to>] <voice>: <words>\`. Pick the ${count} best moments for vertical shorts (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers, best first.
-
-First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered).
-
-A moment is one whole passage of the episode, a range of whole sentences, first..last, cut straight from it: the whole arc, not its core. It is one of the pieces above (its kind).
-- Where it starts: at the sentence that opens the passage. An answer begins at its question, with the sentence or two its asker needs to set the question up; never at the answer alone, and never at the punchline without what leads up to it. A story or a claim nobody asked for begins at its own first sentence. A first sentence that only goes on from the one before ("or then there's …", "and that is why …") is no start: go back to where that thought begins.
-- One topic: a follow-up question on the same subject belongs to the passage; a question that opens another subject ends it before that question.
-- Where it ends: after its last conclusion, when the talk turns to something else: after the lesson that follows the story, the second beat that tops the punchline, the last point of the answer. Not after the first finished thought and not after the first laugh, when the speaker goes on to say what it means or adds the line that lands.
-- payoff: the number of the one sentence in it that carries its strongest line (the punchline, the number, the confession, the sentence one would quote); an editor may open the short with it.
-
-A short may be up to ${limit} seconds here. A whole passage takes what it takes, from 15 seconds up; most take 30 to ${limit}. Never cut a passage down to make it fit: when the whole arc is longer than ${limit} seconds (up to ${cap}), return it whole and list in drop the numbers of the sentences inside it that an editor would cut out to bring it to ${limit} seconds or under: an aside, a repetition, a second example, a detour, people talking at once; never its first or last sentence, the question, a step the story needs or the payoff. For an arc of ${limit} seconds or less, drop is empty. A passage that needs more than ${cap} seconds is no moment: it belongs to the ideas below.
-
-Score how well it stands alone, 0 to 2 on each point, strictly: a 2 is earned, and most moments lose a point somewhere:
-- cold: its first sentence makes sense to someone who saw nothing before and works as a hook in its first three seconds (a question, a surprising claim, a vivid image, a number); 0 when it opens on "and", "so", "yeah", "like I said", small talk, or a "he", "it" or "this" nobody introduced;
-- one: it holds one idea, complete, no "and also";
-- ends: it stops where the passage ends, on a finished thought (the last conclusion, the line that lands), not mid-list or on "and then";
-- alone: it leans on nothing outside it: no "as I said earlier", "in this episode", "this guest", "the next part".
-A host's question followed by the answer is fine. Concrete and visual beats abstract. Prefer moments spoken by one voice at a time: a stretch of one- and two-word sentences flipping between voices is people talking at once; where a moment has a few seconds of it, set crosstalk true.
-When the best start of a moment is weak (cold under 2), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
-
-Moments do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, the four points, payoff, drop, the hook, crosstalk.
-
-Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.`;
-}
 
 function momentsOptions(rest) {
   const opts = {};
@@ -396,17 +368,9 @@ async function moments(dir, ...rest) {
   const pieces = Object.values(inventory).reduce((a, b) => a + (Number(b) || 0), 0);
   const ideas = (answer.ideas || []).map((d) => ({ ...d, sentences: (d.sentences || []).filter((k) => sentences[k]),
     at: (d.sentences || []).filter((k) => sentences[k]).map((k) => mmss(sentences[k].start)) }));
-  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify({ limit, inventory, moments: picked, ideas }, null, 1));
-
-  console.log(`Inside: ${KINDS.map((k) => `${inventory[k] || 0} ${k === "how-to" ? "how-tos" : k === "story" ? "stories" : k + "s"}`).join(", ")}`
-    + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : ""));
-  console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.score}/10${m.weak ? " weak" : ""} · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
-    + (m.over ? `\n   ${m.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : "")
-    + (m.moved ? `\n   starts at the question before it (the model began at sentence ${m.moved.from})` : "")
-    + `\n   „${m.opening}“\n   ${m.why}`
-    + (m.payoff != null ? `\n   strongest line (${m.payoff}): „${sentences[m.payoff].text}“` : "") + (m.hook ? `\n   hook on screen: „${m.hook}“` : "")).join("\n"));
-  if (ideas.length) console.log(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
-  const over = picked.filter((m) => m.over).length;
+  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify({ limit, count, inventory, moments: picked, ideas }, null, 1));
+  console.log(listing({ limit, count, inventory, moments: picked, ideas }, sentences, pieces));
+  const over = picked.filter((m) => m.checks.over).length;
   console.log(`${picked.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${(j.usage?.cost ?? 0).toFixed(4)}. `
     + (over ? `${over} are whole passages longer than ${limit} s: where the platforms allow it, run moments again with a higher --max-seconds; else leave their marked sentences out (clips.mjs prepare … --drop <sentences>). ` : "")
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);

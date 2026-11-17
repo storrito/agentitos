@@ -2,27 +2,24 @@
 // passage is held against, what goes when its marked sentences are dropped, and the list as
 // moments.json holds it. All of it from the sentences: their words, voices and times.
 //
-//   arrange(answer, sentences, { limit })   → the moments of moments.json from the model's answer
+//   arrange(answer, sentences, { limit })   → the moments of moments.json from the model's answer, in its order
+//   orderOf(answer)                         → the model's order as indexes into its moments, each once
 //   questionStart(sentences, first, floor)  → the sentence a moment starts at: an answer at its question
 //   checks(sentences, first, last, limit)   → { question, conjunction, voices, over }
 //   dropSpans(sentences, first, last, drop) → [[from, to], …] in the episode's seconds
 //   keepsWithout(words, said, spans)        → the word ranges of a cut clip that stay
 //   numbers("229-234,240") / ranges([…])    → [229, …, 234, 240] and back
+//   momentsPrompt(episode, text, count, limit) → what the model is asked
+//   listing(moments.json, sentences, pieces) → the list `moments` prints
 
-export const KINDS = ["claim", "story", "number", "mistake", "how-to", "answer"];
+// an exchange: a quick back-and-forth with a laugh, where the change of voices is the point
+export const KINDS = ["claim", "story", "number", "mistake", "how-to", "answer", "exchange"];
 // 59 s fits every post type Storrito offers (an Instagram Story takes 60 s)
 export const MAX_SECONDS = 59;
 // A whole passage may be this much longer than the limit and is still returned, to be shortened
 // from the inside: the editors' passages of the first measurement ran to 98 s in the episode for
 // shorts of about a minute (clips-eval, 2026-11-17).
 export const longest = (limit) => Math.round(limit * 1.7);
-// a moment under KEEP of 10 is listed as weak
-export const KEEP = 7;
-
-const point = (v) => Math.max(0, Math.min(2, Math.round(Number(v) || 0)));
-// 2 from 20 s, 1 from 15 s
-const lengthPoint = (s) => (s >= 20 ? 2 : s >= 15 ? 1 : 0);
-
 // a question of another voice this many seconds before a moment's first sentence belongs to it
 export const QUESTION_WITHIN = 15;
 
@@ -30,6 +27,10 @@ export const QUESTION_WITHIN = 15;
 const CONJUNCTIONS = new Set(["and", "or", "but", "so", "because", "cuz", "cause", "nor", "plus", "then", "also",
   "und", "oder", "aber", "denn", "weil", "sondern", "doch", "dann", "sowie"]);
 const firstWord = (text) => (String(text).toLowerCase().match(/[\p{L}]+/u) || [""])[0];
+const mmss = (t) => {
+  const s = Math.max(0, Math.floor(t)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
+};
 export const isQuestion = (s) => /\?["”“'’)\]]*\s*$/.test(s.text);
 const sameVoice = (a, b) => (a.speaker ?? null) === (b.speaker ?? null);
 // a "mhm", a "yeah", a laugh: under 1.5 s it takes no turn (the framing moves on none either)
@@ -152,14 +153,31 @@ export function keepsWithout(words, said, spans = []) {
   return { keeps, inside, left };
 }
 
-// The moments of moments.json from the model's answer, best first: whole sentences that exist,
-// an answer started at its question (`moved` says from where), at most longest(limit) seconds
-// (the end trimmed sentence by sentence, as rarely as the model returns more), overlapping no
-// moment before it in the model's list. `drop` stays only inside a moment that is over the
-// limit and never holds its payoff; `kept` is its length without those sentences.
+// The model's `order`: the numbers of its moments (1 for the first it listed), best first. A
+// number twice or out of the list counts once or not at all; a moment it left out comes after
+// the others, in the order it was listed. → indexes into answer.moments, best first
+export function orderOf(answer) {
+  const n = Array.isArray(answer.moments) ? answer.moments.length : 0;
+  const seen = new Set();
+  for (const v of Array.isArray(answer.order) ? answer.order : []) {
+    const k = Math.round(Number(v)) - 1;
+    if (k >= 0 && k < n) seen.add(k);
+  }
+  for (let k = 0; k < n; k++) seen.add(k);
+  return [...seen];
+}
+
+// The moments of moments.json from the model's answer, in the model's order (`rank` 1, 2, …, no
+// two the same): whole sentences that exist, an answer started at its question (`moved` says from
+// where), at most longest(limit) seconds (the end trimmed sentence by sentence, as rarely as the
+// model returns more), overlapping no moment ranked before it. `drop` stays only inside a moment
+// that is over the limit and never holds its payoff; `kept` is its length without those
+// sentences; `checks` what the tool counts about it (see checks above).
 export function arrange(answer, sentences, { limit = MAX_SECONDS } = {}) {
   const taken = new Set();
-  return (Array.isArray(answer.moments) ? answer.moments : []).flatMap((m) => {
+  const listed = Array.isArray(answer.moments) ? answer.moments : [];
+  return orderOf(answer).flatMap((index) => {
+    const m = listed[index];
     let first = Math.max(0, Math.round(Number(m.first))), last = Math.min(sentences.length - 1, Math.round(Number(m.last)));
     if (!(first <= last)) return [];
     for (let k = first; k <= last; k++) if (taken.has(k)) return [];
@@ -176,14 +194,76 @@ export function arrange(answer, sentences, { limit = MAX_SECONDS } = {}) {
       ? [...new Set((Array.isArray(m.drop) ? m.drop : []).filter((k) => Number.isInteger(k) && k > first && k < last && k !== payoff))].sort((a, b) => a - b)
       : [];
     const gone = dropSpans(sentences, first, last, drop).reduce((a, [from, to]) => a + to - from, 0);
-    const points = { cold: point(m.cold), one: point(m.one), ends: point(m.ends), alone: point(m.alone), length: lengthPoint(seconds) };
-    const score = Object.values(points).reduce((a, b) => a + b, 0);
     return [{
       first, last, kind: KINDS.includes(m.kind) ? m.kind : "claim", title: m.title || "", why: m.why || "",
-      score, points, weak: score < KEEP, payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
+      payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
       start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds, kept: Math.round(s1.end - s0.start - gone),
-      over: Math.max(0, seconds - limit),
+      checks: checks(sentences, first, last, limit),
       ...(first !== asked ? { moved: { from: asked, why: "question" } } : {}),
     }];
-  }).sort((a, b) => b.score - a.score);
+  }).map((m, k) => ({ rank: k + 1, ...m }));
+}
+
+// The transcript comes first and the task after it: a second run on the same episode (another
+// --max-seconds, another --count) then reads the transcript from the provider's cache.
+export function momentsPrompt(episode, text, count, limit) {
+  const cap = longest(limit);
+  const description = String(episode.description || "").trim();
+  return `${text}
+That was the transcript of "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line:
+\`<number> [<from>–<to>] <voice>: <words>\`.${description ? `
+The video's description, as the channel's followers see it:
+"""
+${description}
+"""` : ""}
+Pick the ${count} best moments for vertical shorts of this channel (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers.
+
+First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered; also one its followers are curious about, how someone lives or works or what a thing is, without a punchline), exchanges (a quick back-and-forth with a laugh: teasing, a joke two people build, a reaction to what is in front of them).
+
+A moment is one whole passage of the episode, a range of whole sentences, first..last, cut straight from it: the whole arc, not its core. It is one of the pieces above (its kind).
+- Where it starts: at the sentence that opens the passage. An answer begins at its question, with the sentence or two its asker needs to set the question up; never at the answer alone, and never at the punchline without what leads up to it. A story or a claim nobody asked for begins at its own first sentence; an exchange at the line that sets it off. A first sentence that only goes on from the one before ("or then there's …", "and that is why …") is no start: go back to where that thought begins.
+- One topic: a follow-up question on the same subject belongs to the passage; a question that opens another subject ends it before that question.
+- Where it ends: after its last conclusion, when the talk turns to something else: after the lesson that follows the story, the second beat that tops the punchline, the last point of the answer, the laugh that closes the exchange. Not after the first finished thought and not after the first laugh, when the speaker goes on to say what it means or adds the line that lands.
+- payoff: the number of the one sentence in it that carries its strongest line (the punchline, the number, the confession, the sentence one would quote); an editor may open the short with it.
+
+A short may be up to ${limit} seconds here. A whole passage takes what it takes, from 15 seconds up; most take 30 to ${limit}. Never cut a passage down to make it fit: when the whole arc is longer than ${limit} seconds (up to ${cap}), return it whole and list in drop the numbers of the sentences inside it that an editor would cut out to bring it to ${limit} seconds or under: an aside, a repetition, a second example, a detour, people talking at once; never its first or last sentence, the question, a step the story needs or the payoff. For an arc of ${limit} seconds or less, drop is empty. A passage that needs more than ${cap} seconds is no moment: it belongs to the ideas below.
+
+A moment stands alone for this channel's own followers: they know the host, the show and its format, and everyone the title or the description names, so such a name needs no introduction. It must lean on nothing else said in the episode: no "as I said earlier", "that story", "in this episode", no "he", "it" or "this" from before the moment. A host's question followed by the answer is fine.
+An exchange changes voices every few seconds: that is what it is, not a fault. Set crosstalk true only where people talk over each other so that words are lost.
+When the first sentence of a moment does not hook on its own in its first three seconds (it opens on small talk, "so", "yeah", or a set-up that only pays off later), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
+
+List the moments in the order they come in the episode; they do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, payoff, drop, the hook, crosstalk.
+
+Then order: the numbers of your moments in that list (1 for the first listed), best first, every one once. First is the one this channel's editor would post first: what its followers stop for and send on (a confession or a surprise about someone they follow, a joke that lands, a claim against the usual advice, a number that shocks, a question they have asked themselves, answered), concrete before abstract, and working from its first line to its last. No two are equal: decide.
+
+Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.`;
+}
+
+// What the checks say about a moment, for the list: only what needs a look
+export function checkNotes(m, limit) {
+  const c = m.checks || {};
+  return [
+    c.question ? "opens with a question" : null,
+    c.conjunction ? "opens on a conjunction in the middle of a turn: read the sentence before it" : null,
+    c.voices > 1 ? `${c.voices} voices` : null,
+    c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : null,
+  ].filter(Boolean).join("; ");
+}
+
+// The list moments prints: what is inside, the moments best first (the first `count` the picks,
+// the rest fillers), the ideas to record anew
+export function listing({ limit, count, inventory, moments: picked, ideas }, sentences, pieces) {
+  const lines = [`Inside: ${KINDS.map((k) => `${inventory[k] || 0} ${k === "how-to" ? "how-tos" : k === "story" ? "stories" : k + "s"}`).join(", ")}`
+    + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : "")];
+  picked.forEach((m, k) => {
+    if (k === count && picked.length > count) lines.push(`Fillers, weaker than the ${count} above:`);
+    const notes = checkNotes(m, limit);
+    lines.push(`${m.rank}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
+      + (notes ? `\n   ${notes}` : "")
+      + (m.moved ? `\n   starts at the question before it (the model began at sentence ${m.moved.from})` : "")
+      + `\n   „${sentences[m.first].text}“\n   ${m.why}`
+      + (m.payoff != null ? `\n   strongest line (${m.payoff}): „${sentences[m.payoff].text}“` : "") + (m.hook ? `\n   hook on screen: „${m.hook}“` : ""));
+  });
+  if (ideas.length) lines.push(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
+  return lines.join("\n");
 }

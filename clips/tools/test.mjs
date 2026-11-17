@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, orderOf, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -27,7 +27,7 @@ function transcript(lines) {
   });
 }
 // what a model answers for one moment
-const moment = (first, last, more = {}) => ({ first, last, kind: "story", title: "t", why: "w", cold: 2, one: 2, ends: 2, alone: 2, payoff: last, drop: [], hook: "", crosstalk: false, ...more });
+const moment = (first, last, more = {}) => ({ first, last, kind: "story", title: "t", why: "w", payoff: last, drop: [], hook: "", crosstalk: false, ...more });
 
 // a host's question after a pause, an answer with an aside in the middle, the lesson at the end
 const INTERVIEW = transcript([
@@ -56,7 +56,7 @@ test("a passage longer than the limit is returned whole, with the sentences that
   const [m] = arrange({ moments: [moment(1, 7, { drop: [4, 5] })] }, INTERVIEW);
   assert.deepEqual([m.first, m.last], [1, 7]);
   assert.equal(m.seconds, 71);
-  assert.equal(m.over, 71 - MAX_SECONDS);
+  assert.equal(m.checks.over, 71 - MAX_SECONDS);
   assert.deepEqual(m.drop, [4, 5]);
   // the two asides go from where the first starts to where sentence 6 starts: 17.4 of 71.2 s
   assert.equal(m.kept, 54);
@@ -64,7 +64,7 @@ test("a passage longer than the limit is returned whole, with the sentences that
 
 test("with a higher limit the same passage fits and nothing is marked", () => {
   const [m] = arrange({ moments: [moment(1, 7, { drop: [4, 5] })] }, INTERVIEW, { limit: 90 });
-  assert.equal(m.over, 0);
+  assert.equal(m.checks.over, 0);
   assert.deepEqual(m.drop, []);
   assert.equal(m.kept, m.seconds);
 });
@@ -134,6 +134,69 @@ test("prepare refuses sentences to drop that are not inside the moment, before a
     assert.ok(!fs.existsSync(path.join(dir, "01")));
   }
   fs.rmSync(dir, { recursive: true });
+});
+
+test("prepare refuses a payoff that is not a kept sentence of the moment, before anything is cut", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-test-"));
+  fs.writeFileSync(path.join(dir, "words.json"), "[]");
+  fs.writeFileSync(path.join(dir, "sentences.json"), JSON.stringify(INTERVIEW));
+  for (const args of [["--payoff", "9"], ["--payoff", "line"], ["--payoff", "4", "--drop", "4-5"]]) {
+    const r = run("clips.mjs", ["prepare", dir, path.join(dir, "01"), "1-7", ...args]);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /^--payoff \S+: one sentence number of 1-7 that is not dropped, as moments\.json gives it/);
+    assert.ok(!fs.existsSync(path.join(dir, "01")));
+  }
+  fs.rmSync(dir, { recursive: true });
+});
+
+test("the moments come in the model's order, ranked 1, 2, … with no two the same", () => {
+  // listed as they come in the episode, ordered best first: the later passage first
+  const out = arrange({ moments: [moment(1, 3), moment(6, 7), moment(8, 9)], order: [3, 1, 2] }, INTERVIEW, { limit: 90 });
+  assert.deepEqual(out.map((m) => [m.rank, m.first, m.last]), [[1, 8, 9], [2, 1, 3], [3, 6, 7]]);
+  assert.ok(out.every((m) => !("score" in m) && !("weak" in m) && !("points" in m)));
+  // a number twice or out of the list counts once or not at all; one left out comes last, as listed
+  assert.deepEqual(orderOf({ moments: [{}, {}, {}, {}], order: [2, 2, 9, 0, 4] }), [1, 3, 0, 2]);
+  assert.deepEqual(orderOf({ moments: [{}, {}] }), [0, 1]);
+  assert.deepEqual(orderOf({}), []);
+  // of two that overlap, the one ordered first stays, wherever it was listed
+  const two = arrange({ moments: [moment(1, 7), moment(6, 9)], order: [2, 1] }, INTERVIEW, { limit: 90 });
+  assert.deepEqual(two.map((m) => [m.rank, m.first, m.last]), [[1, 6, 9]]);
+});
+
+test("each moment carries the checks the tool counts, an exchange is a kind of its own", () => {
+  const [m] = arrange({ moments: [moment(1, 7, { kind: "exchange" })] }, INTERVIEW);
+  assert.equal(m.kind, "exchange");
+  assert.ok(KINDS.includes("exchange"));
+  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12 });
+  assert.equal(arrange({ moments: [moment(2, 3, { kind: "banter" })] }, INTERVIEW)[0].kind, "claim");
+});
+
+test("the prompt holds the description for the channel's followers, the limit and the order to give", () => {
+  const ep = { title: "Julia Garner Eats Spicy Wings", channel: "First We Feast", description: "Julia Garner (Ozark, Weapons) takes on the wings." };
+  const p = momentsPrompt(ep, "0 [0:00–0:04] A: Hi.\n", 5, 59);
+  assert.ok(p.startsWith("0 [0:00–0:04] A: Hi.\n"), "the transcript first, for the provider's cache");
+  assert.ok(p.includes(`The video's description, as the channel's followers see it:\n"""\nJulia Garner (Ozark, Weapons) takes on the wings.\n"""`));
+  assert.match(p, /everyone the title or the description names, so such a name needs no introduction/);
+  assert.match(p, /Pick the 5 best moments .* and 3 more as fillers/);
+  assert.match(p, /up to 59 seconds here/);
+  assert.ok(p.includes(`(up to ${longest(59)})`));
+  assert.match(p, /exchanges \(a quick back-and-forth with a laugh/);
+  assert.match(p, /Then order: .* best first, every one once/);
+  assert.doesNotMatch(p, /Score|0 to 2/);
+  assert.doesNotMatch(momentsPrompt({ title: "T" }, "", 3, 90), /The video's description/);
+});
+
+test("the list shows the moments best first, the fillers apart, and only the checks that need a look", () => {
+  const ms = arrange({ moments: [moment(1, 7, { drop: [4, 5], hook: "He nearly drowned" }), moment(8, 9)], order: [1, 2] }, INTERVIEW);
+  const out = listing({ limit: 59, count: 1, inventory: { story: 2, answer: 1 }, moments: ms, ideas: [] }, INTERVIEW, 3);
+  const lines = out.split("\n");
+  assert.match(lines[0], /^Inside: 0 claims, 2 stories, 0 numbers, 0 mistakes, 0 how-tos, 1 answers, 0 exchanges — too thin/);
+  assert.equal(lines[1], "1. 1-7 [0:07, 71 s] story · t");
+  assert.equal(lines[2], "   opens with a question; 2 voices; 12 s over the 59: 54 s without the sentences 4-5");
+  assert.ok(out.includes("strongest line (7): „That is when I learned to say no to a director.“"));
+  assert.ok(out.includes("hook on screen: „He nearly drowned“"));
+  assert.match(out, /\nFillers, weaker than the 1 above:\n2\. 8-9 /);
+  assert.doesNotMatch(out, /\/10|\bweak\b/);
 });
 
 test("a key that OpenRouter turns away is told from everything else, and said in one sentence", async () => {
