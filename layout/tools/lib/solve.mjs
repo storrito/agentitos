@@ -13,8 +13,8 @@
 //       set       { "dotted.key": value } over the defaults; weights: readWeights(file)
 //   trackFace(moments) → a moving face's hull and usual box
 //
-// A candidate: { fit, scale, left, top, window, faceInFrame, text: [{ role, where, box, … }],
-//   problems, hard, soft, unmet, terms, cost, score, why, behind }
+// A candidate: { fit, scale, left, top, window, faceInFrame, text: [{ role, where, box, font,
+//   style, … }], problems, hard, soft, unmet, notes?, terms, cost, score, why, behind }
 //   fit    "full" | "zoom" | "inset" | "crop" (crop: "9:16" | "4:5" | "1:1" | "band"; speaker: N for
 //          a crop on one of several people) | "panel" (side) | "stacked" | "side-by-side" (parts:
 //          [{ source, scale, left, top, window }], seam) | "screen-zoom" | "screen-fit" |
@@ -23,8 +23,11 @@
 //          window: what of the frame the sharp picture fills (the rest is ground)
 //   where  "above-head" | "below-chin" | "beside" | "between" (two faces) | "seam" (two stacked
 //          parts) | "band-below" | "band-above" (on the ground) | "free" (no face)
-//   cost   the ranking's points, smaller first, with its terms; hard problems and unmet needs rank
-//          before it (weights.json says how)
+//   style  "cap" (captions) | "text" (a hook as two lines of big type) | "card" (a hook as a card
+//          across the top) | "big" (a hook as two big lines beside the picture, 16:9)
+//   cost   the ranking's points, smaller first, with its terms; a hard problem, an unmet need
+//          and, with no speaker named, a person left out rank before it (weights.json says how)
+//   notes  what the caller should know of this candidate: a caption area narrower than a long word
 
 import { X1, Y1, area, hullOf, median, r1, r2, pct } from "./boxes.mjs";
 import { DEFAULTS, merged, scaled } from "./defaults.mjs";

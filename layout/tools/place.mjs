@@ -16,6 +16,7 @@
 //        the candidates, ranked, into <folder>/placement.json
 //        several people:    --face … --face … [--speaker 2]  |  --source A --face … --source B --face …
 //        a face that moves: --face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …  |  --face-track file.json
+//                           (every --face-at of one source is the same face; two that move: one list each in the file)
 //        a screen:          --source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--readable 24]
 //                           [--face … | --source 1280x720 --face …]   (the webcam: a circle in a free corner)
 //        the ranking:       [--weights file.json] [--set weights.enlarge.costAtForbidden=5] [--set hookCard.minFont=76]
@@ -156,7 +157,7 @@ function printResult(res) {
 function cmdPlace(o) {
   const usage = `${self()} place <folder> --frame 9:16 --source 1080x1920 --face x,y,w,h [--face …] [--text caption] [--text hook] [--platform reels,tiktok] [--json]
   several people:    [--speaker N]  |  --source WxH --face … --source WxH --face …   (two files)
-  a face that moves: --face-at seconds:x,y,w,h …  |  --face-track file.json
+  a face that moves: --face-at seconds:x,y,w,h …   (one face per source; two that move: --face-track file.json, a list of moments each)
   a screen:          --source WxH --region x,y,w,h --min-text-height N [--readable N] [--face … | --source WxH --face …   (the webcam)]
   the ranking:       [--weights file.json] [--set weights.enlarge.softFrom=1.4]
 The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
@@ -240,7 +241,7 @@ function cmdGrid(o) {
   console.log(`${out}: ${rel(input)}${o.at !== undefined ? ` at ${o.at} s` : ""}, ${w}×${h}, with a line every 10 %: every ${Math.round(w / 10)} px across and every ${Math.round(h / 10)} px down${labelled ? ", each labelled with its px in the source" : " (this ffmpeg draws no text: count the lines)"}; the red lines are the middle.`);
   console.log(`Look at it and read off, in px of the source (x,y of the top left corner, then width,height):`);
   console.log(`  a face: from the hairline to the chin, from cheek to cheek (not the hair, the ears or the neck)   → --face x,y,w,h`);
-  console.log(`  a face that moves: the grid at several moments (--at), one box each   → --face-at <seconds>:x,y,w,h`);
+  console.log(`  a face that moves: the grid at several moments (--at), one box each   → --face-at <seconds>:x,y,w,h (all of them are one face)`);
   console.log(`  a screen: the part that matters → --region x,y,w,h, and how tall a capital letter of its smallest text is → --min-text-height <px>`);
   console.log(`Then: ${self()} place <folder> --frame 9:16 --source ${w}x${h} --face … --text caption`);
 }
