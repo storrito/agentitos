@@ -5,9 +5,11 @@
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
-//   node tools/episode.mjs moments <dir> [--count N]
-//        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (about ten
-//        cents an hour), best first, at most 59 s each: <dir>/moments.json and a short list to read
+//   node tools/episode.mjs moments <dir> [--count N] [--max-seconds N]
+//        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (five to
+//        nine cents an hour), best first, each a whole passage: <dir>/moments.json and a short list
+//        to read. --max-seconds is how long a short may be (59: it fits every post type); a passage
+//        that is longer is returned whole, with the sentences that can go marked (`drop`)
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
 //        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
@@ -30,6 +32,7 @@ import { execFileSync } from "node:child_process";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
+import { KINDS, MAX_SECONDS, longest, arrange, ranges } from "./lib/moments.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -253,31 +256,33 @@ function cut(dir, a, b, c) {
 
 // ---------------------------------------------------------------- moments
 // The candidates for shorts, picked by a model that reads the whole episode once (Gemini through
-// OpenRouter, some ten cents and a minute or two for an hour), so that the agent does not: what it reads stays in every later step
-// of its chat and makes each of them slower and dearer.
+// OpenRouter, five to nine cents and a minute or two for an hour), so that the agent does not:
+// what it reads stays in every later step of its chat and makes each of them slower and dearer.
 //
-// A moment must stand alone: it is scored 0–2 on five points (it opens cold, it holds one idea,
-// it ends on a finished thought, it leans on nothing said before, its length), and one under
-// KEEP of 10 is listed as weak. The model also counts what the episode holds (claims, stories,
-// numbers, mistakes, how-tos, answers: under four in all it is too thin for clips), writes an
-// on-screen hook for a moment whose first line is weak, and names the ideas spread too far
-// over the episode to cut, to be recorded anew.
+// A moment is a whole passage, from the sentence that opens it to its last conclusion, as the
+// channels' own editors cut them (clips-eval, 2026-11-17: their passages have a median of 60 s
+// in the episode, and they cut a median of 10 s of words out of the inside). The length a short
+// may have comes with --max-seconds; a passage up to 1.7 times that long is returned whole, with
+// the sentences that can go marked (`drop`). It is scored 0–2 on five points (it opens cold, it
+// holds one idea, it ends on a finished thought, it leans on nothing said before, its length),
+// and one under KEEP of 10 is listed as weak. The model also counts what the episode holds
+// (claims, stories, numbers, mistakes, how-tos, answers: under four in all it is too thin for
+// clips), writes an on-screen hook for a moment whose first line is weak, and names the ideas
+// spread too far over the episode to cut, to be recorded anew.
 export const MOMENTS_MODEL = "google/gemini-3.8-flash";
-export const KEEP = 7;
-const KINDS = ["claim", "story", "number", "mistake", "how-to", "answer"];
 const POINT = { type: "integer" };
-const point = (v) => Math.max(0, Math.min(2, Math.round(Number(v) || 0)));
 const MOMENTS_SCHEMA = {
   type: "object", additionalProperties: false, required: ["inventory", "moments", "ideas"],
   properties: {
     inventory: { type: "object", additionalProperties: false, required: KINDS, properties: Object.fromEntries(KINDS.map((k) => [k, { type: "integer" }])) },
     moments: { type: "array", items: {
       type: "object", additionalProperties: false,
-      required: ["first", "last", "kind", "title", "why", "cold", "one", "ends", "alone", "hook", "crosstalk"],
+      required: ["first", "last", "kind", "title", "why", "cold", "one", "ends", "alone", "drop", "hook", "crosstalk"],
       properties: {
         first: { type: "integer" }, last: { type: "integer" }, kind: { type: "string", enum: KINDS },
         title: { type: "string" }, why: { type: "string" },
         cold: POINT, one: POINT, ends: POINT, alone: POINT,
+        drop: { type: "array", items: { type: "integer" } },
         hook: { type: "string" }, crosstalk: { type: "boolean" },
       },
     } },
@@ -288,36 +293,57 @@ const MOMENTS_SCHEMA = {
   },
 };
 
-// 2 from 20 to 59 s, 1 from 15 s (59 s at most: it fits every post type Storrito offers)
-const lengthPoint = (s) => (s >= 20 ? 2 : s >= 15 ? 1 : 0);
+// The transcript comes first and the task after it: a second run on the same episode (another
+// --max-seconds, another --count) then reads the transcript from the provider's cache.
+function momentsPrompt(episode, text, count, limit) {
+  const cap = longest(limit);
+  return `${text}
+That was the transcript of "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line:
+\`<number> [<from>–<to>] <voice>: <words>\`. Pick the ${count} best moments for vertical shorts (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers, best first.
+
+First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered).
+
+A moment is one whole passage of the episode, a range of whole sentences, first..last, cut straight from it: the whole arc, not its core. It runs from the sentence that opens the passage (the question that sets it off, or the first sentence of the story or the claim) to its last conclusion: the lesson after the story, the second beat after the punchline, the last point of the answer before the talk turns to something else. Do not stop after the first finished thought when the speaker goes on to say what it means, and do not start on the payoff without what leads up to it. It is one of the pieces above (its kind).
+
+A short may be up to ${limit} seconds here. A whole passage takes what it takes, from 15 seconds up; most take 30 to ${limit}. Never cut a passage down to make it fit: when the whole arc is longer than ${limit} seconds (up to ${cap}), return it whole and list in drop the numbers of the sentences inside it that an editor would cut out to bring it to ${limit} seconds or under: an aside, a repetition, a second example, a detour, people talking at once; never its first or last sentence, the question, a step the story needs or the payoff. For an arc of ${limit} seconds or less, drop is empty. A passage that needs more than ${cap} seconds is no moment: it belongs to the ideas below.
+
+Score how well it stands alone, 0 to 2 on each point, strictly: a 2 is earned, and most moments lose a point somewhere:
+- cold: its first sentence makes sense to someone who saw nothing before and works as a hook in its first three seconds (a question, a surprising claim, a vivid image, a number); 0 when it opens on "and", "so", "yeah", "like I said", small talk, or a "he", "it" or "this" nobody introduced;
+- one: it holds one idea, complete, no "and also";
+- ends: it stops where the passage ends, on a finished thought (the last conclusion, the line that lands), not mid-list or on "and then";
+- alone: it leans on nothing outside it: no "as I said earlier", "in this episode", "this guest", "the next part".
+A host's question followed by the answer is fine. Concrete and visual beats abstract. Prefer moments spoken by one voice at a time: a stretch of one- and two-word sentences flipping between voices is people talking at once; where a moment has a few seconds of it, set crosstalk true.
+When the best start of a moment is weak (cold under 2), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
+
+Moments do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, the four points, drop, the hook, crosstalk.
+
+Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.`;
+}
+
+function momentsOptions(rest) {
+  const opts = {};
+  for (let i = 0; i < rest.length; i += 2) {
+    const k = { "--count": "count", "--max-seconds": "limit" }[rest[i]];
+    const v = Number(rest[i + 1]);
+    if (!k) fail(`Unknown option ${rest[i]}: episode.mjs moments <dir> [--count N] [--max-seconds N]`);
+    if (!Number.isInteger(v) || v < 1) fail(`${rest[i]} takes a whole number: episode.mjs moments <dir> [--count N] [--max-seconds N]`);
+    opts[k] = v;
+  }
+  if (opts.limit != null && (opts.limit < 15 || opts.limit > 600)) fail(`--max-seconds ${opts.limit}: a short is 15 to 600 seconds long (59 fits every post type; Reels, TikTok and Shorts take more).`);
+  return opts;
+}
 
 async function moments(dir, ...rest) {
-  if (!dir) fail("episode.mjs moments <dir> [--count N]");
+  if (!dir) fail("episode.mjs moments <dir> [--count N] [--max-seconds N]");
+  const given = momentsOptions(rest);
   const or = await openrouter();
   if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): read sentences.txt yourself and pick the moments.");
   const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
   const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
   const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
-  const i = rest.indexOf("--count");
-  const count = i >= 0 ? Number(rest[i + 1]) : Math.max(3, Math.min(10, Math.round((episode.duration || 600) / 540)));
-  const prompt = `This is the transcript of "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line:
-\`<number> [<from>–<to>] <voice>: <words>\`. Pick the ${count} best moments for vertical shorts (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers, best first.
-
-First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered).
-
-A moment is a range of whole sentences, first..last, cut straight from the episode: **at most 59 seconds** from the start of the first to the end of the last, best 25–50. It is one of those pieces (its kind). Score how well it stands alone, 0 to 2 on each point, strictly: a 2 is earned, and most moments lose a point somewhere:
-- cold: its first sentence makes sense to someone who saw nothing before and works as a hook in its first three seconds (a question, a surprising claim, a vivid image, a number); 0 when it opens on "and", "so", "yeah", "like I said", small talk, or a "he", "it" or "this" nobody introduced;
-- one: it holds one idea, complete, no "and also";
-- ends: it stops on a finished thought, right after its payoff (a punchline, an insight, a striking number, an emotional turn), not mid-list or on "and then";
-- alone: it leans on nothing outside it: no "as I said earlier", "in this episode", "this guest", "the next part".
-A host's question followed by the answer is fine. Concrete and visual beats abstract. Prefer moments spoken by one voice at a time: a stretch of one- and two-word sentences flipping between voices is people talking at once; where a moment has a few seconds of it, set crosstalk true.
-When the best start of a moment is weak (cold under 2), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
-
-Moments do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, the four points, the hook, crosstalk.
-
-Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.
-
-${text}`;
+  const count = given.count ?? Math.max(3, Math.min(10, Math.round((episode.duration || 600) / 540)));
+  const limit = given.limit ?? MAX_SECONDS;
+  const prompt = momentsPrompt(episode, text, count, limit);
   log(`episode: picking moments (${MOMENTS_MODEL}) …`);
   let j;
   for (let attempt = 1; ; attempt++) {
@@ -339,33 +365,23 @@ ${text}`;
     }
   }
   const answer = JSON.parse(String(j.choices[0].message.content).replace(/^```(json)?\s*|\s*```$/g, ""));
-  // whole sentences that exist, at most 59 seconds (the end trimmed sentence by sentence), no overlap
-  const taken = new Set();
-  const picked = (answer.moments || []).flatMap((m) => {
-    let first = Math.max(0, m.first), last = Math.min(sentences.length - 1, m.last);
-    while (last > first && sentences[last].end - sentences[first].start > 59) last--;
-    if (!(first <= last) || sentences[last].end - sentences[first].start > 59) return [];
-    for (let k = first; k <= last; k++) if (taken.has(k)) return [];
-    for (let k = first; k <= last; k++) taken.add(k);
-    const s0 = sentences[first], s1 = sentences[last], seconds = Math.round(s1.end - s0.start);
-    const points = { cold: point(m.cold), one: point(m.one), ends: point(m.ends), alone: point(m.alone), length: lengthPoint(seconds) };
-    const score = Object.values(points).reduce((a, b) => a + b, 0);
-    return [{ first, last, kind: m.kind, title: m.title, why: m.why, score, points, weak: score < KEEP, hook: m.hook || "", crosstalk: m.crosstalk,
-      start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds,
-      opening: s0.text, link: episode.id ? `https://youtu.be/${episode.id}?t=${Math.floor(s0.start)}` : null }];
-  }).sort((a, b) => b.score - a.score);
+  const picked = arrange(answer, sentences, { limit }).map((m) => ({ ...m, opening: sentences[m.first].text,
+    link: episode.id ? `https://youtu.be/${episode.id}?t=${Math.floor(m.start)}` : null }));
   const inventory = answer.inventory || {};
   const pieces = Object.values(inventory).reduce((a, b) => a + (Number(b) || 0), 0);
   const ideas = (answer.ideas || []).map((d) => ({ ...d, sentences: (d.sentences || []).filter((k) => sentences[k]),
     at: (d.sentences || []).filter((k) => sentences[k]).map((k) => mmss(sentences[k].start)) }));
-  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify({ inventory, moments: picked, ideas }, null, 1));
+  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify({ limit, inventory, moments: picked, ideas }, null, 1));
 
   console.log(`Inside: ${KINDS.map((k) => `${inventory[k] || 0} ${k === "how-to" ? "how-tos" : k === "story" ? "stories" : k + "s"}`).join(", ")}`
     + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : ""));
   console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.score}/10${m.weak ? " weak" : ""} · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
+    + (m.over ? `\n   ${m.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : "")
     + `\n   „${m.opening}“\n   ${m.why}` + (m.hook ? `\n   hook on screen: „${m.hook}“` : "")).join("\n"));
   if (ideas.length) console.log(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
+  const over = picked.filter((m) => m.over).length;
   console.log(`${picked.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${(j.usage?.cost ?? 0).toFixed(4)}. `
+    + (over ? `${over} are whole passages longer than ${limit} s: where the platforms allow it, run moments again with a higher --max-seconds; else leave their marked sentences out (clips.mjs prepare … --drop <sentences>). ` : "")
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
 }
 
@@ -373,4 +389,4 @@ const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
 else if (command === "moments") await moments(...args);
-else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] | cut <dir> <first>-<last> <clip.mp4>");
+else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>");
