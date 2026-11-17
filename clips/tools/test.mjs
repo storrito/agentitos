@@ -181,7 +181,7 @@ test("the prompt holds the description for the channel's followers, the limit an
   assert.match(p, /up to 59 seconds here/);
   assert.ok(p.includes(`(up to ${longest(59)})`));
   assert.match(p, /exchanges \(a quick back-and-forth with a laugh/);
-  assert.match(p, /Then order: .* best first, every one once/);
+  assert.match(p, /List the moments best first, no two equal: decide\./);
   assert.doesNotMatch(p, /Score|0 to 2/);
   assert.doesNotMatch(momentsPrompt({ title: "T" }, "", 3, 90), /The video's description/);
 });

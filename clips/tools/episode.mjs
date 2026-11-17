@@ -295,7 +295,7 @@ function cut(dir, a, b, c) {
 // names in the video's title and description count as introduced.
 export const MOMENTS_MODEL = "google/gemini-3.8-flash";
 const MOMENTS_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["inventory", "moments", "order", "ideas"],
+  type: "object", additionalProperties: false, required: ["inventory", "moments", "ideas"],
   properties: {
     inventory: { type: "object", additionalProperties: false, required: KINDS, properties: Object.fromEntries(KINDS.map((k) => [k, { type: "integer" }])) },
     moments: { type: "array", items: {
@@ -308,7 +308,6 @@ const MOMENTS_SCHEMA = {
         hook: { type: "string" }, crosstalk: { type: "boolean" },
       },
     } },
-    order: { type: "array", items: { type: "integer" } },
     ideas: { type: "array", items: {
       type: "object", additionalProperties: false, required: ["title", "sentences", "why"],
       properties: { title: { type: "string" }, sentences: { type: "array", items: { type: "integer" } }, why: { type: "string" } },
