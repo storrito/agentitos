@@ -304,6 +304,19 @@ t("the hand cases keep the winners written down for them (hand.json: what the ha
   return `${HAND.winners.length} cases: ${by("hand")} laid out by hand, ${by("judged")} judged by people, ${by("solver")} only the solver's`;
 });
 
+t("the size of a face is a target, not a reward: as tall as published talking heads keep theirs (23–34 % of the frame's height, the middle half of 109 measured Shorts) it costs nothing, smaller 0.3 points a per cent, larger 0.05; so the wide take in 4:5 no longer fills the frame at 1.875× for the larger face, the crisp square band leads", () => {
+  const W8 = DEFAULTS.weights.subject;
+  ok(W8.from === 23 && W8.to === 34 && W8.smaller === 0.3 && W8.larger === 0.05, `the band: ${JSON.stringify(W8)}`);
+  const sub = (h) => { const fh = h / 100 * 1920, fw = 0.7 * fh; return solve({ zones: Z916, source: SRC1, faces: [[540 - fw / 2, 700 - 0.42 * fh, fw, fh]], needs: [cap(1)] }).candidates.find((c) => c.fit === "full"); };
+  const [small, usual, close] = [18, 28, 44].map(sub);
+  near(small.terms.subject, 0.3 * 5, 0.01, "a face 18 % tall"); near(usual.terms.subject, 0, 0.001, "a face 28 % tall"); near(close.terms.subject, 0.05 * 10, 0.01, "a face 44 % tall");
+  ok(!usual.hard && !usual.unmet.length && usual.text[0].where === "below-chin", "the usual face does not pass unchanged with its caption below the chin");
+  const res = solve({ zones: Z45, source: SRCW, faces: [FACEW], needs: [cap(2)] }), [first, second] = res.candidates;
+  ok(first.fit === "crop" && first.crop === "1:1" && !first.soft && second.fit === "full" && second.enlargement === 1.88, `4:5: ${res.candidates.slice(0, 2).map(nameOf).join(", ")}`);
+  ok(!first.terms.subject && second.terms.subject < 0.05, `the faces' sizes cost ${first.terms.subject} and ${second.terms.subject}: neither is far from the band`);
+  return `18 %: +${small.terms.subject}, 28 %: ${usual.terms.subject}, 44 %: +${close.terms.subject}; the wide take in 4:5: ${nameOf(first)} (cost ${first.cost}) before ${nameOf(second)} (${second.cost})`;
+});
+
 t("one term changed changes the order: with enlargement at 5 points at the limit the crisp square leads", () => {
   const res = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], set: { "weights.enlarge.costAtForbidden": 5 } });
   ok(res.candidates[0].crop === "1:1" && res.candidates[1].crop === "4:5", `the order is ${res.candidates.map(nameOf).join(", ")}`);
@@ -394,9 +407,10 @@ t("two people as two files (1280×720 and 1920×1080): stacked in 9:16 with the 
   ok(b.candidates.length === 1 && sb.fit === "side-by-side" && !sb.hard && !sb.unmet.length, `16:9: ${b.candidates.map(nameOf)}: ${JSON.stringify(sb.problems)}`);
   ok(X1(sb.faceInFrame[0]) <= 960 && sb.faceInFrame[1][0] >= 960 && sb.faceInFrame.every((f) => inside(Z169.safe, f)), "16:9: a face is out of its half or the safe box");
   ok(sb.text.every((q) => sb.faceInFrame.every((f) => !overlap(q.box, f))), "16:9: text lies on a face");
-  // the smaller face is brought towards the larger one's size
+  // neither file is enlarged into what is soft only to make the faces alike: the smaller face is
+  // already as tall as published talking heads keep theirs, and a larger one earns nothing
   const hs = sb.faceInFrame.map((f) => f[3]);
-  ok(Math.max(...hs) / Math.min(...hs) < 1.1, `16:9: the faces are ${hs.map(Math.round).join(" and ")} px tall`);
+  ok(sb.parts.every((q) => q.scale <= DEFAULTS.weights.enlarge.softFrom + 1e-6) && 100 * Math.min(...hs) / 1080 >= DEFAULTS.weights.subject.from, `16:9: scales ${sb.parts.map((q) => q.scale).join(" and ")}, the faces ${hs.map(Math.round).join(" and ")} px tall`);
   const c = solve({ zones: Z11, sources, needs: [cap(1)] });
   ok(c.candidates.map((q) => q.fit).sort().join() === "side-by-side,stacked" && c.candidates.every((q) => !q.hard && !q.unmet.length), `1:1: ${c.candidates.map(nameOf)}`);
   agree(st, a, "files-916-stacked"); agree(sb, b, "files-169-side"); c.candidates.forEach((q) => agree(q, c, `files-11-${q.fit}`));

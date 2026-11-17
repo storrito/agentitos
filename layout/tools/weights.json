@@ -1,6 +1,6 @@
 {
-  "about": "The terms of the ranking in place.mjs, read once at start. Another file for one run: --weights file.json; one term: --set weights.enlarge.softFrom=1.4. Every term is { value, unit, says }; only value is read. Three things rank before any cost. A candidate with a hard problem stands behind every candidate without one. One that leaves a need unmet (a text without a place, a screen's text too small to read) stands behind every one that meets them all. And where the caller names no speaker, a crop that leaves a person out of the picture stands behind every candidate that shows them all: whom to leave out is the caller's decision (--speaker), no weight makes it. Among the rest the smaller cost wins: cost = enlargement + ground + soft problems + text away + hook smaller - subject, all in points. One point is what ten per cent of the frame as ground costs with these values. Two candidates of the same cost: the one nearer to the fit's usual hold (centred) comes first.",
-  "basis": "Set by hand on 2026-11-17 from one judged case (a 1280x720 wide take into 9:16, stills looked at by people: 1.5x crisp, 1.875x mildly soft but fine, 2.67x too soft to publish, the whole picture as a strip leaves the person tiny) and from stills of one upright phone take laid out by hand, whose winners they keep. The rest are guesses, each marked in its term. To be set from measurements of published videos.",
+  "about": "The terms of the ranking in place.mjs, read once at start. Another file for one run: --weights file.json; one term: --set weights.enlarge.softFrom=1.4. Every term is { value, unit, says }; only value is read. Three things rank before any cost. A candidate with a hard problem stands behind every candidate without one. One that leaves a need unmet (a text without a place, a screen's text too small to read) stands behind every one that meets them all. And where the caller names no speaker, a crop that leaves a person out of the picture stands behind every candidate that shows them all: whom to leave out is the caller's decision (--speaker), no weight makes it. Among the rest the smaller cost wins: cost = enlargement + ground + subject (a face smaller or larger than published talking heads keep theirs) + soft problems + text away + hook smaller, all in points. One point is what ten per cent of the frame as ground costs with these values. Two candidates of the same cost: the one nearer to the fit's usual hold (centred) comes first.",
+  "basis": "Set by hand on 2026-11-17 from one judged case (a 1280x720 wide take into 9:16, stills looked at by people: 1.5x crisp, 1.875x mildly soft but fine, 2.67x too soft to publish, the whole picture as a strip leaves the person tiny), from stills of one upright phone take laid out by hand, and, for the size of a face, from a measurement of 240 published Shorts. The rest are guesses, each marked in its term. The measurement says what creators do, not what works.",
   "enlarge": {
     "softFrom": {
       "value": 1.5,
@@ -15,19 +15,34 @@
     "costAtForbidden": {
       "value": 3,
       "unit": "points",
-      "says": "What enlargement costs at forbiddenFrom; from softFrom it rises to this in a straight line (1.875x costs 2.25 with these three values). Over about 3.8 the crisp square would pass the mildly soft 4:5 crop in the judged case."
+      "says": "What enlargement costs at forbiddenFrom; from softFrom it rises to this in a straight line (1.875x costs 2.25 with these three values). Over about 3.3 the crisp square would pass the mildly soft 4:5 crop in the judged case: the two are a quarter of a point apart, and nobody judged which of them should lead."
     }
   },
   "subject": {
-    "worth": {
+    "from": {
+      "value": 23,
+      "unit": "per cent of the frame's height",
+      "says": "A face at least this tall, and at most `to`, costs nothing: it is the band published talking heads keep. Hairline to chin measured 23.2 / 26.1 / 33.6 % of the frame's height (first quartile, median, third) in 49 talking heads and 23.1 / 28.7 / 33.7 % in 60 podcast clips, of 240 published Shorts (layout study of 2026-11-17, its findings, section 5; the boxes were checked by eye). This is what is usual, not what works: nothing in that study separates the videos that did well from the others."
+    },
+    "to": {
+      "value": 34,
+      "unit": "per cent of the frame's height",
+      "says": "The band's upper end: the third quartile of the same measurement (33.6 and 33.7 %). A larger face earns nothing: before the study the ranking rewarded a face up to 50 % of the frame's height, which no published video supports."
+    },
+    "smaller": {
       "value": 0.3,
       "unit": "points per per cent of the frame's height",
-      "says": "What a larger subject is worth: taken off the cost for every per cent of the frame's height the face is tall (the smallest face of several, its usual size when it moves; a screen region: the per cent of the frame's width or height it spans, whichever is more)."
+      "says": "What a face smaller than the band costs, for every per cent it falls short of `from` (the smallest face of several, its usual size when it moves). Set so that the judged order of the wide take comes out: the whole picture as a strip, the person 11 % of the frame tall, stands behind both crops."
     },
-    "enough": {
+    "larger": {
+      "value": 0.05,
+      "unit": "points per per cent of the frame's height",
+      "says": "What a face larger than the band costs, for every per cent over `to`: a sixth of `smaller`. Small on purpose: a close take zoomed in a little to clear the apps' buttons must still stand before the same take made smaller over a ground, as the layout made by hand has it (at 0.1 the smaller picture with slivers of ground led by a hair). A guess: no case decides it."
+    },
+    "regionEnough": {
       "value": 50,
-      "unit": "per cent of the frame's height",
-      "says": "Over this a larger subject is worth no more (a face half the frame tall is close enough). A guess: no case decides it yet."
+      "unit": "per cent of the frame's width or height",
+      "says": "A screen's region has no measured band. It is the better the more of the frame's width or height it spans (whichever is more), up to this share; every per cent short of it costs `smaller`. A guess: no case decides it."
     }
   },
   "ground": {

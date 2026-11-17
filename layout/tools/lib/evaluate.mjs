@@ -95,18 +95,22 @@ export function evaluate(ctx, p) {
   // terms of weights.json:
   //   enlargement  0 up to enlarge.softFrom, rising to enlarge.costAtForbidden at enlarge.forbiddenFrom
   //   ground       ground.cost for every per cent of the frame the sharp picture does not fill
-  //   subject      subject.worth off for every per cent of the frame's height the face is tall (at most subject.enough)
+  //   subject      nothing while the face is as tall as published talking heads keep theirs (subject.from to
+  //                subject.to per cent of the frame's height); subject.smaller for every per cent it falls
+  //                short of that, subject.larger for every per cent over it. No reward for a larger face.
   //   soft         soft.cost for every soft problem other than enlargement
   //   text, hook   text.away for every step a text stands from its usual place, text.hookSmaller for a hook under its size
   // Last, among equals: the hold nearest the fit's usual one.
   const softOther = problems.filter((q) => q.level === "soft" && q.code !== "enlarged").length;
-  // the subject's size: the face's height in per cent of the frame's; a screen region: the per
-  // cent of the frame's width or height it spans, whichever is more
-  const share = Math.min(Wt.subject.enough, screen ? 100 * Math.max(faces[0].box[2] / W, faces[0].box[3] / H) : 100 * c.faceHeight / H);
+  // the subject's size: the face's height in per cent of the frame's (the smallest of several, its
+  // usual size when it moves). A screen region has no measured band: the per cent of the frame's
+  // width or height it spans, whichever is more, is the better the larger, up to subject.regionEnough.
+  const size = screen ? 100 * Math.max(faces[0].box[2] / W, faces[0].box[3] / H) : 100 * c.faceHeight / H, SU = Wt.subject;
+  const subject = screen ? SU.smaller * Math.max(0, SU.regionEnough - size) : faces.length ? SU.smaller * Math.max(0, SU.from - size) + SU.larger * Math.max(0, size - SU.to) : 0;
   c.terms = {
     enlargement: Math.max(0, (p.s - EN.softFrom) / (EN.forbiddenFrom - EN.softFrom)) * EN.costAtForbidden,
     ground: Wt.ground.cost * 100 * c.ground,
-    subject: -Wt.subject.worth * share,
+    subject,
     soft: Wt.soft.cost * softOther,
     text: Wt.text.away * c.textPenalty,
     hook: c.fullSize ? 0 : Wt.text.hookSmaller,

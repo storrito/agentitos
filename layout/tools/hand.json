@@ -210,7 +210,7 @@
   {"case": "P1 4:5, hook + 2 lines", "take": "p1", "frame": "4:5", "text": ["hook", "caption:2"], "first": "inset 0.64×", "basis": "solver"},
   {"case": "P1 1:1, 2 caption lines", "take": "p1", "frame": "1:1", "text": ["caption:2"], "first": "crop band 0.7×", "basis": "solver"},
   {"case": "P1 1:1, hook + 2 lines", "take": "p1", "frame": "1:1", "text": ["hook", "caption:2"], "first": "inset 0.56×", "basis": "solver"},
-  {"case": "P2 4:5, 2 caption lines", "take": "p2", "frame": "4:5", "text": ["caption:2"], "first": "full 1.88×", "basis": "solver"},
+  {"case": "P2 4:5, 2 caption lines", "take": "p2", "frame": "4:5", "text": ["caption:2"], "first": "crop 1:1 1.5×", "basis": "solver"},
   {"case": "P2 4:5, hook + 2 lines", "take": "p2", "frame": "4:5", "text": ["hook", "caption:2"], "first": "crop band 1.48×", "basis": "solver"},
   {"case": "P2 1:1, 2 caption lines", "take": "p2", "frame": "1:1", "text": ["caption:2"], "first": "full 1.5×", "basis": "solver"},
   {"case": "P2 1:1, hook + 2 lines", "take": "p2", "frame": "1:1", "text": ["hook", "caption:2"], "first": "crop band 1.11×", "basis": "solver"}

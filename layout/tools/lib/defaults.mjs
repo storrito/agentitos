@@ -72,7 +72,7 @@ export const DEFAULTS = {
 // { value, says }: here only the values, checked, so that a file with a term missing or misspelt
 // fails here and not as a NaN in a candidate's cost.
 export const WEIGHTS_FILE = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "weights.json");
-const TERMS = ["enlarge.softFrom", "enlarge.forbiddenFrom", "enlarge.costAtForbidden", "subject.worth", "subject.enough", "ground.cost", "soft.cost", "text.away", "text.hookSmaller"];
+const TERMS = ["enlarge.softFrom", "enlarge.forbiddenFrom", "enlarge.costAtForbidden", "subject.from", "subject.to", "subject.smaller", "subject.larger", "subject.regionEnough", "ground.cost", "soft.cost", "text.away", "text.hookSmaller"];
 export function readWeights(file = WEIGHTS_FILE) {
   let raw;
   try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { throw new Error(`The weights file ${file} cannot be read (${e.message}): it is JSON like tools/weights.json, every term { "value": … }.`); }
@@ -83,6 +83,7 @@ export function readWeights(file = WEIGHTS_FILE) {
     if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`${file}: ${k} needs a number as its value, as in tools/weights.json.`);
   }
   if (!(w.enlarge.forbiddenFrom > w.enlarge.softFrom)) throw new Error(`${file}: enlarge.forbiddenFrom must be over enlarge.softFrom.`);
+  if (!(w.subject.to >= w.subject.from)) throw new Error(`${file}: subject.to must not be under subject.from.`);
   return w;
 }
 DEFAULTS.weights = readWeights();
@@ -122,5 +123,6 @@ export function merged(base, over) {
   for (const k of POSITIVE) if (!(at(k) > 0)) throw new Error(`"${k}" must be over 0: with ${at(k)} the search would not end.`);
   if (!(out.zoomStep < 1 && out.insetStep < 1 && out.insetMin <= 1 && out.panelMin <= 1)) throw new Error(`zoomStep, insetStep, insetMin and panelMin are shares of a scale: under 1 (0.01 is a step of one per cent).`);
   if (!(out.weights.enlarge.forbiddenFrom > out.weights.enlarge.softFrom)) throw new Error(`weights.enlarge.forbiddenFrom must be over weights.enlarge.softFrom.`);
+  if (!(out.weights.subject.to >= out.weights.subject.from)) throw new Error(`weights.subject.to must not be under weights.subject.from.`);
   return out;
 }

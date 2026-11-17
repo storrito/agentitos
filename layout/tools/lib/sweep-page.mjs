@@ -135,7 +135,7 @@ export function buildHtml(data) {
   <p>A candidate with a hard problem ranks behind every one without, one that leaves a text without a place behind every one that places it. After that points count (fewer is better), from <code>${esc(against ? against.weights : "weights.json")}</code>:</p>
   <ul class="plain">
     <li><b>Enlargement:</b> free up to ${num(W9.enlarge.softFrom, 2)}×, over it a soft problem with a cost that rises in a straight line to ${num(W9.enlarge.costAtForbidden, 1)} points at ${num(W9.enlarge.forbiddenFrom, 2)}×; over that forbidden. (People judged stills of one take: 1.5× crisp, 1.875× mildly soft but fine, 2.67× too soft to publish.)</li>
-    <li><b>The subject's size:</b> ${num(W9.subject.worth, 2)} points off for every per cent of the frame's height the face is tall, up to ${W9.subject.enough} %.</li>
+    <li><b>The subject's size:</b> nothing for a face ${W9.subject.from}–${W9.subject.to} % of the frame's height tall, as published talking heads keep theirs; ${num(W9.subject.smaller, 2)} points for every per cent it falls short of that, ${num(W9.subject.larger, 2)} for every per cent over it. No reward for a larger face.</li>
     <li><b>Visible ground:</b> ${num(W9.ground.cost, 2)} points for every per cent of the frame the sharp picture does not fill.</li>
     <li><b>Small terms:</b> ${num(W9.soft.cost, 2)} for a soft problem, ${num(W9.text.away, 2)} for every step a text stands from its usual place, ${num(W9.text.hookSmaller, 2)} for a hook made smaller.</li>
   </ul>
