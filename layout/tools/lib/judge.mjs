@@ -11,12 +11,18 @@
 
 import { EPS, X1, Y1, area, inter, contains, pct } from "./boxes.mjs";
 
+// A box this close to an edge of a zone counts as on it: platform-zones' checker takes 2 px off
+// every side before it judges (the rounding of fonts and transforms), and so does this, so that
+// the two never differ about a box a pixel past a line.
+const SLACK = 2;
+const within = (b) => { const x = Math.max(0, Math.min(SLACK, (b[2] - 1) / 2)), y = Math.max(0, Math.min(SLACK, (b[3] - 1) / 2)); return [b[0] + x, b[1] + y, b[2] - 2 * x, b[3] - 2 * y]; };
+
 export function judge(Z, items) {
   const [W, H] = Z.size, frame = [0, 0, W, H];
   const out = [];
   for (const it of items) {
-    const b = it.box, a = area(b);
-    if (a <= 0) continue;
+    if (area(it.box) <= 0) continue;
+    const b = within(it.box), a = area(b);
     const inFrame = inter(b, frame);
     const off = 1 - inFrame / a;
     if (off > 0.001) out.push({ level: "hard", code: "off-frame", kind: it.kind, of: it.label, what: `${pct(off)} outside the frame` });
@@ -27,7 +33,7 @@ export function judge(Z, items) {
       const past = { left: s[0] - b[0], top: s[1] - b[1], right: X1(b) - X1(s), bottom: Y1(b) - Y1(s) };
       out.push({ level: "soft", code: "margin", kind: it.kind, of: it.label, what: `in the safe box's margin (${Object.entries(past).filter(([, v]) => v > EPS).map(([k, v]) => `${Math.round(v)} px past the ${k}`).join(", ")})` });
     }
-    const ink = it.ink || b, inkIn = inter(ink, frame);
+    const ink = it.ink ? within(it.ink) : b, inkIn = inter(ink, frame);
     if (inkIn) for (const c of Z.crops) {
       const share = 1 - inter(ink, c.box) / inkIn;
       if (share > 0.001) out.push({ level: "soft", code: "crop", kind: it.kind, of: it.label, what: `${pct(share)} cut where ${c.where} shows ${c.ratio}` });

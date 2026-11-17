@@ -27,7 +27,7 @@
 //          before it (weights.json says how)
 
 import { X1, Y1, area, hullOf, median, r1, r2, pct } from "./boxes.mjs";
-import { DEFAULTS, merged } from "./defaults.mjs";
+import { DEFAULTS, merged, scaled } from "./defaults.mjs";
 import { cmpRank } from "./evaluate.mjs";
 import { pictureFits } from "./fits.mjs";
 import { splitFits } from "./parts.mjs";
@@ -92,8 +92,8 @@ export function solve(args) {
 }
 
 function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null }) {
-  const D = merged(weights ? { ...DEFAULTS, weights } : DEFAULTS, set);
   const [W, H] = Z.size;
+  const D = scaled(merged(weights ? { ...DEFAULTS, weights } : DEFAULTS, set), Z.size);
   let count = 0;
   const srcs = (sources || [{ size: source, faces, region, minTextHeight }]).map((q) => {
     // a screen recording: its region is what the placement holds; a face given with it is the webcam's

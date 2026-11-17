@@ -6,11 +6,15 @@
 //   readWeights(file)     the ranking's terms from a weights file (tools/weights.json: every term
 //                         { value, says }), as their values; DEFAULTS.weights holds the skill's own
 //   merged(base, over)    base with { "dotted.key": value } laid over it
+//   scaled(D, size)       the defaults for a frame of that size: what is in px grows and shrinks
+//                         with the frame
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Every size in px here is for a frame 1080 px on its shorter side (1080×1920, 1080×1350,
+// 1080×1080, 1920×1080): `scaled` brings it to the frame asked for.
 export const DEFAULTS = {
   // captions: N lines, set as the captions skill sets them (line height 1.32, a dark plate per line),
   // centred on the frame and as wide as `centred` (at most maxEm), or in a column beside a face
@@ -73,6 +77,21 @@ export function readWeights(file = WEIGHTS_FILE) {
   return w;
 }
 DEFAULTS.weights = readWeights();
+
+// The sizes in px for a frame of another size than 1080 on its shorter side: a video of 720×1280
+// is shown as large as one of 1080×1920, so its type and margins are two thirds as many px.
+// Without this, text set for 1080 ran out of a smaller frame. Type is whole px.
+const PX = ["caption.font.tall", "caption.font.wide", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
+export function scaled(D, [W, H]) {
+  const k = Math.min(W, H) / 1080;
+  if (Math.abs(k - 1) < 1e-9) return D;
+  const out = structuredClone(D);
+  for (const key of PX) {
+    const keys = key.split("."), o = keys.slice(0, -1).reduce((x, q) => x[q], out), v = o[keys.at(-1)] * k;
+    o[keys.at(-1)] = /font/i.test(key) ? Math.max(1, Math.round(v)) : v;
+  }
+  return out;
+}
 
 // base with { "dotted.key": value } laid over it. A key must name a default that is there and
 // keep its kind: a misspelt key would change nothing without a word, and a step of 0 or a text

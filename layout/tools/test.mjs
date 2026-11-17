@@ -552,7 +552,9 @@ console.log("\nA source of a shape between the frames'");
 t("a 3:4 take (1080×1440) into 9:16 with two caption lines, the face low and to the right: at the frame's width the whole take leaves the face under the apps' buttons, and no crop holds it; the take a little smaller passes, and is listed. Over a grid of faces (3:4 into 9:16, 5:4 into 1:1; a hook and two lines): wherever a smaller whole take holds the face and the text, the solver lists a candidate that passes", () => {
   const res = solve({ zones: Z916, source: [1080, 1440], faces: [[389, 634, 518, 720]], needs: [cap(2)] }), first = res.candidates[0];
   ok(first.fit === "inset" && !first.hard && !first.unmet.length && first.scale < 1, `the first is ${nameOf(first)}: ${JSON.stringify(first.problems)}`);
-  ok(inside(Z916.safe, first.faceInFrame[0]), "the face is not in the safe box");
+  // in the safe box as the checker counts it: up to 2 px past an edge is on it
+  const [fx, fy, fw, fh] = first.faceInFrame[0];
+  ok(inside(Z916.safe, [fx + 2, fy + 2, fw - 4, fh - 4]), `the face is not in the safe box: ${first.faceInFrame[0]}`);
   agree(first, res, "between-inset");
   // the search an independent review ran: every scale down to half, every place down the frame
   let faces = 0, none = 0, missed = [];
@@ -578,6 +580,44 @@ t("a 3:4 take (1080×1440) into 9:16 with two caption lines, the face low and to
   }
   ok(!missed.length, `${missed.length} faces have no passing candidate though a smaller whole take passes:\n${missed.slice(0, 5).join("\n")}`);
   return `${nameOf(first)} at ${first.left}/${first.top}; ${faces} faces on the grid, ${none} without any candidate that passes, none of them rescued by a smaller take`;
+});
+
+// =============================================================================================
+console.log("\nA frame of another size, and boxes a pixel past a line");
+// =============================================================================================
+t("a frame of 720×1280 is laid out as one of 1080×1920, two thirds the size: the same fits, the picture and the text at two thirds of their px, the type two thirds as large (text set for 1080 once ran out of the smaller frame)", () => {
+  const needs = [hook, cap(2)], small = solve({ zones: askZones("720x1280"), source: SRC1, faces: [FACE1], needs }), large = run1(Z916, needs);
+  ok(small.size.join("×") === "720×1280" && small.candidates.length === large.candidates.length, `${small.candidates.length} candidates in ${small.size.join("×")}, ${large.candidates.length} in 1080×1920`);
+  small.candidates.forEach((c, i) => {
+    const big = large.candidates[i];
+    ok(c.fit === big.fit && c.unmet.join() === big.unmet.join() && !!c.hard === !!big.hard && c.text.length === big.text.length, `candidate ${i + 1}: ${nameOf(c)} against ${nameOf(big)}`);
+    near(c.zoom, big.zoom, 0.011, `candidate ${i + 1}: the picture's size against covering`);
+    c.text.forEach((x, k) => {
+      const y = big.text[k];
+      near(x.font, y.font * 2 / 3, 1, `candidate ${i + 1}: the ${x.role}'s type`);
+      x.box.forEach((v, q) => near(v, y.box[q] * 2 / 3, 8, `candidate ${i + 1}: the ${x.role}'s box`));
+    });
+    agree(c, small, `small-frame-${i + 1}-${c.fit}`);
+  });
+  const c = small.candidates[0];
+  return `first ${nameOf(c)}, captions at ${c.text.find((x) => x.role === "caption").font} px, hook at ${c.text.find((x) => x.role === "hook").font} px`;
+});
+
+if (!QUICK) t("a box up to 2 px past an edge of a zone counts as on it, for the solver as for the checker: three cases in which the solver alone reported a face 2 px in the safe box's margin, or a feed cutting under a tenth of a per cent of it, now get the same findings from both, candidate by candidate", () => {
+  const moving = (list) => list.map(([tt, box]) => ({ t: tt, box }));
+  const cases = [
+    ["margin", askZones("4:5"), [640, 360], [moving([[0, [434, 72, 110, 168]], [1.5, [399, 68, 110, 168]], [3, [408, 53, 110, 168]], [4.5, [409, 67, 110, 168]], [6, [410, 64, 110, 168]]]), [258, 14, 32, 38]], [cap(1)]],
+    ["grid-cut", askZones("4:5"), [720, 1280], [moving([[0, [81, 472, 374, 444]], [1.5, [21, 575, 374, 444]], [3, [70, 537, 374, 444]]])], [hook, cap(2)]],
+    ["feed-cut", Z916, [3840, 2160], [[2716, 1010, 768, 1034]], [hook]],
+  ];
+  const diff = [];
+  let n = 0;
+  for (const [name, zones, source, faces, needs] of cases) {
+    const res = solve({ zones, source, faces, needs });
+    res.candidates.forEach((c, i) => { const v = verify(c, res, `slack-${name}-${i + 1}-${c.fit}`); n++; if (!v.cmp.agree) diff.push(`${name} ${i + 1} ${nameOf(c)}: ${JSON.stringify(v.cmp)}`); });
+  }
+  ok(!diff.length, diff.join("\n"));
+  return `${n} pages`;
 });
 
 // =============================================================================================
