@@ -78,6 +78,12 @@ const cam = r.files[0], written = fs.readFileSync(at("out", "phonecam", "footage
 check("a file that names its phone is a camera, sure, named P1, whatever its picture measures", cam.kind === "camera" && cam.sure && named(r).includes("P1"), [cam.kind, cam.sure, named(r), cam.picture?.band]);
 check("the place a phone wrote into its file is nowhere in footage.json, only that there is one", cam.facts.located === true && !/12\.3456|098\.7654/.test(written) && !("tags" in cam.facts), [cam.facts.located, /12\.3456/.test(written)]);
 
+// the same picture without the phone's tags (a copy a messenger made): the calm wall is asked about, not taken for a caption band
+fs.mkdirSync(at("phonecopy"), { recursive: true });
+ff("-i", at("phonecam", "PXL_test.mp4"), "-map_metadata", "-1", "-c", "copy", at("phonecopy", "copy.mp4"));
+r = look("phonecopy");
+check("a speaker under a calm wall, without tags, is still a camera with P1 first, F2 only as a question", r.files[0].kind === "camera" && named(r)[0] === "P1" && named(r).includes("F2") && r.files[0].open.some((q) => /strip/.test(q)), [r.files[0].kind, named(r), r.files[0].picture?.band, r.files[0].picture?.still]);
+
 r = look("bars");
 check("black bars above and below make a finished video, named F2", kind(r, "bars.mp4") === "finished" && named(r).includes("F2"), [kind(r, "bars.mp4"), r.files[0].picture?.bars]);
 
@@ -88,6 +94,35 @@ check("its rhythm counts as pauses", r.files[0].sound.pauses >= 6, r.files[0].so
 r = look("stills");
 check("a picture and a text are a still and text, together O3", kind(r, "shot.png") === "still" && kind(r, "notes.txt") === "text" && named(r).includes("O3"), [kind(r, "shot.png"), kind(r, "notes.txt"), named(r)]);
 check("a still in a phone screen's shape is called a likely screenshot", /screenshot/.test(r.files.find((f) => f.name === "shot.png").evidence.join(" ")), r.files.find((f) => f.name === "shot.png").evidence);
+
+// `hear`, with a stand-in for transcribe (no key, no model): it writes 100 words, with --speakers
+// 60 of voice A and 40 of voice B, none at all when STUB_WORDS=0, and notes the tags of the piece it was given
+const stub = at("stub-transcribe.mjs");
+fs.writeFileSync(stub, `import fs from "node:fs"; import { spawnSync } from "node:child_process";
+const a = process.argv.slice(2), out = a[a.indexOf("--out") + 1], voices = a.includes("--speakers"), n = process.env.STUB_WORDS === "0" ? 0 : 100;
+const tags = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", a[0]], { encoding: "utf8" }).stdout).format.tags || {};
+fs.writeFileSync(process.env.STUB_NOTE, JSON.stringify(tags));
+const words = Array.from({ length: n }, (_, i) => ({ text: "wort" + i, start: i * 0.3, end: i * 0.3 + 0.2, ...(voices ? { speaker: i < 60 ? "A" : "B" } : { kind: "word" }) }));
+if (!voices && n) words.push({ text: "äh", start: 31, end: 31.2, kind: "filler" }, { text: "[lacht]", start: 32, end: 32.5, kind: "event" });
+fs.writeFileSync(out, JSON.stringify({ engine: "stub", cost: 0.001, words }));
+console.log("stub wrote " + out);
+`);
+const hear = (name, env = {}) => {
+  const h = spawnSync("node", [tool, "hear", at("out", name)], { encoding: "utf8", env: { ...process.env, TRANSCRIBE: stub, STUB_NOTE: at("piece-tags.json"), ...env } });
+  if (h.status !== 0) { console.error(`kind.mjs hear failed on ${name}: ${h.stdout}${h.stderr}`); process.exit(1); }
+  return JSON.parse(fs.readFileSync(at("out", name, "footage.json"), "utf8"));
+};
+fs.mkdirSync(at("talk"), { recursive: true });
+fs.copyFileSync(at("cameras", "cam-a.mp4"), at("talk", "talk.mp4"));
+look("talk");
+r = hear("talk");
+check("what was heard is written to the file: words a minute, voices, the first words", r.files[0].heard?.speech === true && r.files[0].heard.speakers.length === 2 && /^heard /.test(r.files[0].evidence.at(-1)), r.files[0].heard);
+check("two voices heard in one wide camera are named with G1, and P2 stays first: the second may be off camera", named(r)[0] === "P2" && /2 voices heard/.test(r.recordings[0].situations.find((x) => x.id === "G1").why), r.recordings[0].situations);
+r = hear("phonecam");
+const sent = fs.readFileSync(at("piece-tags.json"), "utf8");
+check("the piece given to transcribe carries none of the file's tags", !/12\.3456|TestPhone|TestMaker|location/i.test(sent), sent);
+r = hear("voice", { STUB_WORDS: "0" });
+check("sound without words in the part heard is named O5 first", named(r)[0] === "O5" && r.files[0].heard.speech === false, [named(r), r.files[0].heard]);
 
 if (!process.argv[2]) fs.rmSync(dir, { recursive: true, force: true });
 console.log(failed ? `\n${failed} check(s) failed.` : "\nAll checks passed.");

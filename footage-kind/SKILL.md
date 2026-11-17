@@ -20,7 +20,7 @@ metadata:
 
 Your folder: `kind/<name>/`, `<name>` one short slug of the job.
 
-Needs Node 20+ and ffmpeg (with ffprobe). No model, no key. When ffmpeg is missing, say so in one sentence; never install it.
+Needs Node 20+ and ffmpeg (with ffprobe). `look` uses no model and no key. `hear` needs agentitos' transcribe skill beside this one and what that needs (OpenRouter). When something is missing, say so in one sentence; never install it.
 
 ## From files to a situation
 
@@ -39,17 +39,25 @@ Open every sheet it names (twelve frames spread over the video) and answer each 
 - A webcam before a calm or blurred background measures like a screen. When a file is "probably" a camera or a screen, the sheet tells at a glance.
 - It has no eyes for faces: how many people are in a camera's picture, and whether they speak to it, you see on the sheet.
 - It reads no text in the picture: burned-in captions, a logo or a watermark you see on the sheet.
-- Speech and sung music both pause. When it matters (sound alone, or a video whose sound may be music), agentitos' transcribe says which, and how many speak.
+- Whether a recording is spoken it only guesses from the pauses in its sound, and it cannot count voices: the next step hears.
 
-### 3. Name it
+### 3. Hear, where the situation hangs on it
+
+```bash
+node <skill>/tools/kind.mjs hear kind/<name>
+```
+
+For a camera or a sound file whose situation depends on whether it is spoken and by how many: a talking head or footage without speech, one person or a conversation, a voice or music. Skip it when every recording is a screen. It gives a minute of each recording's sound to transcribe, cut without the file's tags, for about a cent and a half a recording, and prints the situations again: with the words a minute, the voices and the first words heard in each file's evidence. Two things it cannot tell: words that are sung from words that are spoken, and a person who says nothing in that minute.
+
+### 4. Name it
 
 Read `<skill>/references/situations.md` before naming a situation. Name one for every recording, and one for all files together when it fits (a speaker with material beside it, nothing but stills, nothing but text). A file whose kind you corrected changes its recording's situation: derive it again from the table, not from what `look` printed.
 
-### 4. Say it and hand over
+### 5. Say it and hand over
 
 Tell the person what they brought, one sentence per recording in their words ("a recording of your screen with your webcam, three minutes, and four screenshots"), and what can be made of it with which skill (the table's last column). Where the table says "none yet", say that no skill makes that video yet and what the nearest one would make of it instead. Ask only when two readings remain after the look, and ask about the thing, never about an id ("Is the second file the same conversation from another camera?").
 
-Then go on with that skill's SKILL.md. Pass it what you found, so that it does not ask again: which file is which, which belong together and each file's start (`starts`, in seconds on the recording's clock).
+Then go on with that skill's SKILL.md. Pass it what you found, so that it does not ask again: which file is which, which belong together, each file's start (`starts`, in seconds on the recording's clock) and how many voices were heard.
 
 ## UI in the chat
 

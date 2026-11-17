@@ -9,12 +9,17 @@
 // the sheets.
 //
 //   node kind.mjs look <out-folder> <file|folder>…
+//   node kind.mjs hear <out-folder> [--seconds 60]
 //
-// Needs ffmpeg and ffprobe. No model, no key.
+// `look` needs ffmpeg and ffprobe: no model, no key. `hear` is the step it cannot do by measuring:
+// whether a recording is spoken and by how many. It gives a minute of each recording's sound,
+// without the file's tags, to agentitos' transcribe (OpenRouter, about a cent and a half a
+// recording) and says the situations again with what was heard.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const VIDEO = /\.(mp4|mov|m4v|webm|mkv|avi|mts)$/i, AUDIO = /\.(m4a|mp3|wav|aac|ogg|opus|flac)$/i;
 const IMAGE = /\.(jpe?g|png|webp|heic|avif|gif)$/i, TEXT = /\.(txt|md|url|html?|pdf|docx?|csv)$/i;
@@ -201,7 +206,8 @@ function sound(env) {
   }
   return { level, silent: false, busy: round(busy / env.length), pauses: round((gaps / (env.length * HOP)) * 60, 1) };
 }
-const speaks = (f) => !!f.sound && !f.sound.silent && f.sound.pauses >= 6;
+// whether a file is spoken: what transcribe heard of its recording, else the pause count's guess
+const speaks = (f) => (f.heard ? f.heard.speech : !!f.sound && !f.sound.silent && f.sound.pauses >= 6);
 
 // Whether two sounds are one recording: their log loudness laid onto each other, first coarsely
 // (0.1 s, up to a minute either way), then exactly. Returns { score, shift }: a's time is b's time
@@ -332,9 +338,6 @@ function suggest(name, f, pic, snd) {
     if (pic.frozen >= 0.9 && pic.cuts > 0) open.push("Whole pictures that stand and then change at once: slides?");
     open.push("Is a small face fixed in a corner (a webcam recorded into the screen)?");
     if (ratio < 1) open.push("A screen that stands upright: a phone's screen cropped to 9:16, or a finished vertical video of text?");
-  } else if (pic && pic.still < 0.5 && pic.band) {
-    kind = "finished";
-    open.push(`The strip along the ${pic.band.edge} that never moves: a caption band, a card, a background? Then it is a laid-out video; if it is only a calm part of one shot (a table, a wall), it is a camera's picture.`);
   } else if (inset) {
     kind = "desktop-screen";
     open.push(`The part that always moves (${inset.where}): a webcam or a speaker's picture recorded into a screen or into slides?`);
@@ -346,6 +349,10 @@ function suggest(name, f, pic, snd) {
     if (pic?.regions.length >= 2) open.push("Several separate parts move and the rest stands: the tiles of a video call, or people before a calm background?");
     if (kind === "camera") open.push("If a camera: one person speaking to it, two or more, hands and a thing?");
   }
+  // A strip that stands while the rest moves is a caption band or a card of a laid-out video as
+  // often as a calm wall over a speaker's head (four phone takes were called finished for theirs):
+  // it is asked, never decided.
+  if (kind === "camera" && pic?.band && pic.still < 0.5) open.push(`The strip along the ${pic.band.edge} that never moves (${pct(pic.band.share)} of the frame): a calm part of the shot (a wall, a table), or a caption band or a card, which makes it a laid-out video?`);
   return { kind, sure, evidence: ev, open, inset: kind === "desktop-screen" && inset ? inset.where : null };
 }
 
@@ -354,7 +361,7 @@ function situations(files) {
   const of = (k) => files.filter((f) => f.kind === k);
   const cams = of("camera"), desk = of("desktop-screen"), phone = of("phone-screen"), fin = of("finished"), aud = of("audio");
   const out = [], add = (id, why) => { if (!out.some((s) => s.id === id)) out.push({ id, why }); };
-  const speech = files.some(speaks);
+  const speech = files.some(speaks), heard = files.find((f) => f.heard)?.heard, voices = heard?.speakers?.length || 0;
   if (desk.length && cams.length) add("B2", "a desktop's screen and a camera of one recording");
   if (phone.length && (cams.length || aud.length)) add("B5", "a phone's screen and a face or a voice of one recording");
   if (!desk.length && !phone.length && cams.length >= 2) add("G2", "several cameras of one recording: one a person, or angles of one scene");
@@ -369,13 +376,18 @@ function situations(files) {
     const c = cams[0], tall = c.facts.height > c.facts.width, cut = c.picture?.cuts >= 6;
     if (!speech) add("D3", `a camera without speech: footage of a thing or a place${cut ? ", several shots in one file" : ""}`);
     add(tall ? "P1" : "P2", `one camera, ${tall ? "upright" : "wide"}: if one person speaks to it`);
-    if (!tall) add("G1", "if two people sit in it");
+    if (!tall) add("G1", voices >= 2 ? `${voices} voices heard: if both are in the picture (an interviewer off camera leaves it one person)` : "if two people sit in it");
     if (!tall && c.picture?.regions.length >= 2 && c.picture.still >= 0.5) add("G3", "if the separate parts that move are a video call's tiles");
     add("D1", "if it shows hands and a thing");
     if (cut) add("F2", "cut together from several shots: an edited video, if it also carries text or music");
+    if (c.picture?.band && c.picture.still < 0.5) add("F2", "if the strip that never moves is a caption band or a card: a laid-out video");
   }
-  if (fin.length) add("F2", "a finished video: one of our renders, bars, or a strip that never moves");
-  if (aud.length && files.length === aud.length) { add("O1", "sound without a picture: if it is a voice"); add("O5", "if it is music"); }
+  if (fin.length) add("F2", "a finished video: one of our renders, or black bars around a picture of another shape");
+  if (aud.length && files.length === aud.length) {
+    if (heard && !speech) { add("O5", "no words in the part heard: music or noise"); add("O1", "if a voice comes in later"); }
+    else if (heard) { add("O1", `${voices > 1 ? `${voices} voices` : "a voice"} without a picture`); add("O5", "if the words are sung"); }
+    else { add("O1", "sound without a picture: if it is a voice"); add("O5", "if it is music"); }
+  }
   return out;
 }
 
@@ -442,14 +454,21 @@ function look(outDir, sources) {
     }
     const first = Math.min(...members.map((i) => start.get(i) ?? 0));
     members.forEach((i) => { files[i].recording = n + 1; if (members.length > 1) files[i].starts = round((start.get(i) ?? 0) - first, 2); });
-    const mine = members.map((i) => files[i]);
-    return { n: n + 1, files: mine.map((f) => f.name), open: mine.filter((f) => !f.sure).map((f) => f.name), together: members.length > 1 ? "the same sound" : null,
-      score: members.length > 1 ? Math.min(...links.filter((l) => members.includes(l.a) && members.includes(l.b)).map((l) => l.score)) : null, situations: situations(mine) };
+    return { n: n + 1, files: members.map((i) => files[i].name), together: members.length > 1 ? "the same sound" : null,
+      score: members.length > 1 ? Math.min(...links.filter((l) => members.includes(l.a) && members.includes(l.b)).map((l) => l.score)) : null };
   });
+  conclude(outDir, files, recordings);
+}
+
+// What each recording and all files together may be, from the files as they are now (their kinds,
+// and what was heard of them): written to footage.json and printed.
+function conclude(outDir, files, recordings, cost) {
+  const by = (name) => files.find((x) => x.name === name), has = (r, kind) => r.files.some((nm) => by(nm).kind === kind);
+  for (const r of recordings) { const mine = r.files.map(by); r.situations = situations(mine); r.open = mine.filter((f) => !f.sure).map((f) => f.name); }
 
   // the whole delivery: recordings that may belong together without a shared sound, a speaker with
   // material beside it, nothing but pictures or text
-  const whole = [], by = (name) => files.find((x) => x.name === name), has = (r, kind) => r.files.some((nm) => by(nm).kind === kind);
+  const whole = [];
   const media = files.filter((f) => f.recording), extras = files.filter((f) => f.kind === "still" || (f.recording && f.kind !== "audio" && !speaks(f)));
   const talk = recordings.filter((r) => r.files.some((nm) => speaks(by(nm))));
   for (const [screen, id] of [["desktop-screen", "B2"], ["phone-screen", "B5"]]) {
@@ -476,9 +495,69 @@ function look(outDir, sources) {
   for (const w of whole) lines.push(`all together may be: ${w.id} (${w.why})`);
   console.log(lines.join("\n"));
   console.log(`\nWritten: ${path.join(outDir, "footage.json")} and ${files.filter((f) => f.sheet).length} sheet(s).`);
+  if (cost != null) console.log(`Heard through transcribe for $${cost.toFixed(4)}.`);
   console.log("Next: open every sheet, answer the ? lines from what you see, and name each recording's situation with references/situations.md. These are suggestions from measurements: the sheets decide.");
+  if (cost == null && files.some((f) => f.sound && !f.sound.silent)) console.log(`When it matters whether a recording is spoken, and by how many: node kind.mjs hear ${outDir} (agentitos' transcribe on a minute of each, about a cent and a half a recording).`);
+}
+
+// ---- hear ----
+
+// A minute of each recording's sound through agentitos' transcribe: its words (Scribe), and when
+// it is spoken, its voices (Gemini). Of several files with the same sound one is heard: sound
+// alone before a video's, then the longest. The piece is cut here and carries none of the file's
+// tags: only the sound leaves the machine.
+function hear(outDir, seconds) {
+  const file = path.join(outDir || "", "footage.json");
+  if (!outDir || !fs.existsSync(file)) fail("usage: node kind.mjs hear <out-folder> [--seconds 60], after `look` wrote its footage.json there.");
+  if (!(seconds >= 10 && seconds <= 300)) fail("--seconds is how much of each recording is heard, from 10 to 300.");
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const tool = [process.env.TRANSCRIBE, path.join(here, "../../transcribe/tools/transcribe.mjs"), "/home/sprite/skills/transcribe/tools/transcribe.mjs"].find((p) => p && fs.existsSync(p));
+  if (!tool) fail("Hearing needs agentitos' transcribe skill beside this one (or TRANSCRIBE naming its tools/transcribe.mjs).");
+  const report = JSON.parse(fs.readFileSync(file, "utf8")), by = (name) => report.files.find((x) => x.name === name);
+  let cost = 0;
+  for (const r of report.recordings) {
+    const sounding = r.files.map(by).filter((f) => f.sound && !f.sound.silent);
+    if (!sounding.length) continue;
+    const src = sounding.sort((a, b) => (a.kind === "audio" ? 0 : 1) - (b.kind === "audio" ? 0 : 1) || b.facts.duration - a.facts.duration)[0];
+    // a long recording is heard a little way in, past a greeting or an intro
+    const len = Math.min(seconds, src.facts.duration), from = src.facts.duration > len * 1.5 ? Math.min(src.facts.duration * 0.15, 30) : 0;
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "footage-kind-")), piece = path.join(tmp, "piece.mp3");
+    try {
+      process.stderr.write(`hearing ${src.name} …\n`);
+      const cut = run("ffmpeg", ["-v", "error", "-y", "-ss", String(from), "-t", String(len), "-i", src.file, "-vn", "-map_metadata", "-1", "-map_chapters", "-1", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "48k", piece], { encoding: "utf8" });
+      if (cut.status !== 0) fail(`ffmpeg could not cut a piece of ${src.name} to hear: ${(cut.stderr || "").trim().split("\n").pop()}`);
+      const say = (out, ...more) => {
+        const t = run("node", [tool, piece, "--out", path.join(tmp, out), ...more], { encoding: "utf8" });
+        if (t.status !== 0) fail(`transcribe could not hear ${src.name}: ${(t.stdout || t.stderr || "").trim().split("\n").pop()}`);
+        const j = JSON.parse(fs.readFileSync(path.join(tmp, out), "utf8"));
+        cost += j.cost || 0;
+        return j.words || [];
+      };
+      const words = say("words.json"), spoken = words.filter((w) => (w.kind || "word") === "word");
+      const heard = { from: round(from, 1), seconds: round(len, 1), words: spoken.length, wordsPerMinute: Math.round(spoken.length / (len / 60)), fillers: words.filter((w) => w.kind === "filler").length,
+        noises: [...new Set(words.filter((w) => w.kind === "event").map((w) => w.text))].slice(0, 6), text: spoken.slice(0, 40).map((w) => w.text).join(" ") };
+      // spoken: 40 words a minute and more (talk runs at 110 to 170; a word here and there is no talk)
+      heard.speech = heard.wordsPerMinute >= 40;
+      if (heard.speech) {
+        const per = {};
+        for (const w of say("voices.json", "--speakers")) if (w.speaker) per[w.speaker] = (per[w.speaker] || 0) + 1;
+        const all = Object.values(per).reduce((a, b) => a + b, 0);
+        // a voice counts with a tenth of the words and five of them: fewer is a mishearing or a call from off
+        heard.speakers = Object.entries(per).filter(([, n]) => n >= 5 && n / all >= 0.1).map(([voice, n]) => ({ voice, share: round(n / all) }));
+      }
+      const line = `heard ${heard.seconds} s from ${heard.from} s: ${heard.words} words (${heard.wordsPerMinute} a minute)${heard.speakers ? `, ${heard.speakers.length} voice${heard.speakers.length === 1 ? "" : "s"}` : ""}${heard.noises.length ? `, noises ${heard.noises.join(" ")}` : ""}${heard.text ? `: "${heard.text.slice(0, 140)}"` : ""}`;
+      for (const f of r.files.map(by)) {
+        f.heard = heard;
+        f.evidence = [...f.evidence.filter((e) => !e.startsWith("heard ")), line];
+        f.open = f.open.filter((q) => !q.startsWith("Speech or music?"));
+        if (f.kind === "audio" && heard.speech) f.open.push("Spoken or sung? The words alone do not tell.");
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+  conclude(outDir, report.files, report.recordings, cost);
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "look") look(rest[0], rest.slice(1));
-else fail("usage: node kind.mjs look <out-folder> <file|folder>…");
+else if (cmd === "hear") hear(rest[0], rest.includes("--seconds") ? Number(rest[rest.indexOf("--seconds") + 1]) : 60);
+else fail("usage: node kind.mjs look <out-folder> <file|folder>… | hear <out-folder> [--seconds 60]");
