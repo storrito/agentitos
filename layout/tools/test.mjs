@@ -533,6 +533,40 @@ if (!QUICK) t("4:5 and 1:1: every candidate of both takes with captions, a hook,
 });
 
 // =============================================================================================
+console.log("\nA source of a shape between the frames'");
+// =============================================================================================
+t("a 3:4 take (1080×1440) into 9:16 with two caption lines, the face low and to the right: at the frame's width the whole take leaves the face under the apps' buttons, and no crop holds it; the take a little smaller passes, and is listed. Over a grid of faces (3:4 into 9:16, 5:4 into 1:1; a hook and two lines): wherever a smaller whole take holds the face and the text, the solver lists a candidate that passes", () => {
+  const res = solve({ zones: Z916, source: [1080, 1440], faces: [[389, 634, 518, 720]], needs: [cap(2)] }), first = res.candidates[0];
+  ok(first.fit === "inset" && !first.hard && !first.unmet.length && first.scale < 1, `the first is ${nameOf(first)}: ${JSON.stringify(first.problems)}`);
+  ok(inside(Z916.safe, first.faceInFrame[0]), "the face is not in the safe box");
+  agree(first, res, "between-inset");
+  // the search an independent review ran: every scale down to half, every place down the frame
+  let faces = 0, none = 0, missed = [];
+  for (const [Z, [sw, sh]] of [[Z916, [1080, 1440]], [Z11, [1200, 1080]]]) {
+    const [W, H] = Z.size, needs = [hook, cap(2)], sc = Math.min(W / sw, H / sh);
+    for (let hp = 20; hp <= 60; hp += 10) for (let ey = 25; ey <= 65; ey += 10) for (const ox of [-0.1, 0, 0.1]) {
+      const fh = hp / 100 * sh, fw = 0.72 * fh, face = [sw / 2 + ox * sw - fw / 2, ey / 100 * sh - 0.42 * fh, fw, fh].map(Math.round);
+      if (fw > sw * 0.95 || face[0] < 0 || face[1] < 0 || X1(face) > sw || Y1(face) > sh) continue;
+      faces++;
+      const r = solve({ zones: Z, source: [sw, sh], faces: [face], needs });
+      if (r.candidates.some((c) => !c.hard && !c.unmet.length)) continue;
+      none++;
+      const ctx = { W, H, Z, D: r.defaults, sw, sh, s0: Math.max(W / sw, H / sh), faces: [face], fb: [face[0], face[1], X1(face), Y1(face)], tall: W <= H, speakerNamed: false, cap: cap(2), hook, readable: 24 };
+      search: for (let k = 1; k <= 50; k++) {
+        const sx = sc * (1 - k * 0.01);
+        for (let top = 0; top <= H - sx * sh; top += 8) for (const left of [(W - sx * sw) / 2, Z.safe[0], X1(Z.safe) - sx * sw]) {
+          if (left < 0 || left + sx * sw > W) continue;
+          const c = evaluate(ctx, { fit: "inset", s: sx, left, top, win: [left, top, sx * sw, sx * sh] });
+          if (!c.hard && !c.unmet.length) { missed.push(`${Z.frame} ← ${sw}×${sh}, face ${face}: an inset ${r2(sx)}× at ${Math.round(left)}/${top} passes`); break search; }
+        }
+      }
+    }
+  }
+  ok(!missed.length, `${missed.length} faces have no passing candidate though a smaller whole take passes:\n${missed.slice(0, 5).join("\n")}`);
+  return `${nameOf(first)} at ${first.left}/${first.top}; ${faces} faces on the grid, ${none} without any candidate that passes, none of them rescued by a smaller take`;
+});
+
+// =============================================================================================
 console.log("\nThe commands of place.mjs");
 // =============================================================================================
 const TOOL = path.join(HERE, "place.mjs");

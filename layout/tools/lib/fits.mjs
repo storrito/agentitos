@@ -184,13 +184,16 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       between();
     } else if (same) { if (textOpen) scanDown("inset", s0, D.insetMin, "inside", "inside"); }   // smaller on every side: only for the text's sake
     else if (rs > rf) {
-      // a source wider than the frame: crops as bands across an upright frame, and the whole source
+      // a source wider than the frame's shape: crops as bands across an upright frame, and the whole source
       if (ctx.tall) for (const r of D.bands) {
         const wh = W / ratioOf(r);
         if (wh < H - 1 && rs > ratioOf(r) * 1.02) out.push(bestVariant(ctx, "crop", wh / sh, "cover", "inside", { aroundFace: true, ratio: r }));
       }
       between();
       out.push(bestVariant(ctx, "inset", sc, "inside", "inside"));
+      // where neither a crop nor the whole source at the frame's width holds the faces and the
+      // text, a smaller whole source may: a face near the source's edge comes into the safe box
+      if (!out.some(met)) scanDown("inset", sc, D.insetMin, "inside", "inside");
     } else if (!ctx.tall) scanDown("panel", sc, D.panelMin, "inside", "inside", { sides: true }); // a frame wider than the source: a panel at one side
     else {
       // an upright source in a frame less upright (4:5, 1:1): between covering and whole, the
