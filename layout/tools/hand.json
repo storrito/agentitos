@@ -197,7 +197,7 @@
   {"case": "P1 9:16, 2 caption lines", "take": "p1", "frame": "9:16", "text": ["caption:2"], "first": "inset 0.98×", "basis": "solver"},
   {"case": "P1 9:16, card", "take": "p1", "frame": "9:16", "text": ["hook:card"], "first": "zoom 1.07×", "basis": "hand"},
   {"case": "P1 9:16, card + 1 line", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:1"], "first": "inset 0.88×", "basis": "solver"},
-  {"case": "P1 9:16, card + 2 lines", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:2"], "first": "inset 0.75×", "basis": "solver"},
+  {"case": "P1 9:16, card + 2 lines", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:2"], "first": "inset 0.76×", "basis": "solver"},
   {"case": "P1 16:9, 1 caption line", "take": "p1", "frame": "16:9", "text": ["caption:1"], "first": "panel left 0.56×", "basis": "hand"},
   {"case": "P1 16:9, card + 2 lines", "take": "p1", "frame": "16:9", "text": ["hook:card", "caption:2"], "first": "panel left 0.56×", "basis": "hand"},
   {"case": "P2 9:16, 1 caption line", "take": "p2", "frame": "9:16", "text": ["caption:1"], "first": "crop 4:5 1.88×", "basis": "solver"},

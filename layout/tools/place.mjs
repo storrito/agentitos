@@ -146,6 +146,7 @@ function printResult(res) {
     (c.others || []).forEach((f) => console.log(`   (${f.of}, not held: ${boxText(f.box)}, ${pct(f.shows)} of it shows)`));
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}${t.role === "hook" ? `, ${t.style === "text" ? "text" : t.style === "card" ? "a card" : "big lines"} at ${t.font} px${t.shrunk ? " (shrunk)" : ""}` : `, ${plural(t.lines, "line")} at ${t.font} px`}`);
     for (const q of c.problems) console.log(`   ${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of}: ${q.what}`);
+    for (const n of c.notes || []) console.log(`   note: ${n}`);
     console.log(`   why: ${c.why.join("; ")}${c.behind ? `; ${c.behind}` : ""}`);
   });
 }
@@ -358,11 +359,12 @@ function cmdCaptions(o) {
   // rounded into the area: the lowest line ends no lower, the lines run no wider
   const opts = { ...(centred ? {} : { x: Math.ceil(t.box[0]) }), y: Math.floor(Y1(t.box) + 1e-6), "max-width": Math.floor(t.box[2] + 1e-6), ...(centred ? {} : { align: t.align === "center" ? "centre" : t.align }), "font-size": t.font, lines: t.lines };
   const args = Object.entries(opts).flatMap(([k, v]) => [`--${k}`, String(v)]);
-  if (o.json) return console.log(JSON.stringify({ candidate: i + 1, fit: c.fit, where: t.where, box: t.box, options: opts, args }, null, 1));
+  if (o.json) return console.log(JSON.stringify({ candidate: i + 1, fit: c.fit, where: t.where, box: t.box, options: opts, args, ...(c.notes ? { notes: c.notes } : {}) }, null, 1));
   console.log(`${what}: ${plural(t.lines, "caption line")} ${t.where}, ${boxText(t.box)}, ${t.font} px type, ${centred ? "centred on the frame" : `${t.align === "center" ? "centred" : `${t.align}-aligned`} in a column`}.`);
   console.log(`For agentitos' captions (build or project), with its --size ${res.size.join("x")}:`);
   console.log(`  ${args.join(" ")}`);
   if (c.hard) console.log(`! This candidate fails (${c.problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ")}): its caption area is only as good as the candidate.`);
+  for (const n of c.notes || []) console.log(`! ${n[0].toUpperCase()}${n.slice(1)}.`);
   if (t.lines > 2) console.log(`! captions sets at most two lines: place again with --text caption:2.`);
   console.log(`captions answers "Placed where asked: …" when it took them. A captions that answers nothing of the kind does not know these options and sets the lowest line on the safe box's bottom whatever is there: look at its frame then.`);
 }

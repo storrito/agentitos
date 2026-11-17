@@ -17,18 +17,27 @@ import { fileURLToPath } from "node:url";
 // 1080×1080, 1920×1080): `scaled` brings it to the frame asked for.
 export const DEFAULTS = {
   // Captions: N lines, centred on the frame and as wide as `centred` (at most maxEm), or in a
-  // column beside a face. Their area holds what agentitos' captions builds into it: lines 1.32 em
-  // apart (its widest style sets them 1.3 apart) and, around them, the padding of a style's box:
-  // padEm is the 0.22 em above and below of its style `clean`, the largest of its styles. Without
-  // it the built box left the area at the top by a fifth of a line. A caller whose style pads
-  // more says so: --set caption.padEm=0.6.
+  // column beside a face. Their area is as tall as the block agentitos' captions takes for the
+  // tallest of its styles at the type and line count handed over (the figures read off its
+  // render.mjs and styles.mjs, twelve styles, 2026-11-17: a block is its lines, a style's line
+  // height apart, and what a style's box adds above and below them):
+  //   line   1.3: the lines of its style `clean`
+  //   padEm  0.44: the 0.22 em of padding above and below `clean`'s box. One line of `clean` is
+  //          the tallest block of all (1.74 em); two lines of `clean` and two of `label` (lines
+  //          1.42 em apart, each in a box padded 0.1 em) are alike (3.04 em).
+  // Without the padding the built box left the area at the top by a fifth of a line. A caller
+  // whose style pads more says so: --set caption.padEm=0.6.
   //   font.tall  type in upright frames: a line 4.0 % of a 9:16 frame's height, the median of
   //              the captions burned into 188 published Shorts (middle half 3.2–4.9 %; layout
   //              study of 240 Shorts, 2026-11-17). It says what is usual, not what works.
   //   font.wide  type in 16:9: a guess, no published video was measured in that frame
   //   minWidth   a caption area is never narrower: in upright frames half the frame, the
   //              Shorts' median block; in 16:9 a column that holds about 21 letters
-  caption: { font: { tall: 77, wide: 50 }, line: 1.32, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24 },
+  //   longWord   the width in em a long word needs in an area: fourteen letters of 0.57 em
+  //              (`clean`'s type) and the 1 em `clean`'s box takes at its sides. A narrower
+  //              area is handed over with a note: captions sets a word that is wider than a
+  //              line smaller for its moment.
+  caption: { font: { tall: 77, wide: 50 }, line: 1.3, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24, longWord: 9 },
   // A hook in an upright frame has two kinds; without one named (--text hook) the first is tried
   // first and the second where the first finds no room.
   // hookText: a short text in the middle of the frame, on the chest, where the captions stand

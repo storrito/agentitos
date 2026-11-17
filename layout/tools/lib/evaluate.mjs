@@ -62,6 +62,10 @@ export function evaluate(ctx, p) {
   else if (p.s > EN.softFrom + 1e-9) problems.push({ level: "soft", code: "enlarged", kind: "picture", of: "picture", what: `the source's pixels are enlarged ${r2(p.s)}× (over ${EN.softFrom}×: soft)` });
   for (const role of text.unmet) problems.push({ level: "unmet", code: "no-room", kind: "text", of: role, what: `no free place for the ${role === "caption" ? `${ctx.cap.lines} caption line${ctx.cap.lines > 1 ? "s" : ""}` : "hook"}` });
   if (unread) problems.push({ level: "unmet", code: "small", kind: "picture", of: "screen text", what: `the smallest text is ${r1(textPx)} px tall in the frame, under the ${r1(ctx.readable)} px that read` });
+  // A caption area narrower than a long word needs at its type is handed over with a word of it:
+  // captions sets a word that is wider than a line smaller for its moment, and in a narrow area
+  // its grouping can leave a short word alone before a long one.
+  const narrow = text.placed.filter((t) => t.role === "caption" && t.box[2] < D.caption.longWord * t.font - EPS).map((t) => `the captions' area is ${Math.round(t.box[2])} px wide: at ${t.font} px type a word of over ${Math.max(1, Math.floor((t.box[2] / t.font - 1) / 0.57))} letters is wider than a line of it, and captions sets such a word smaller for its moment`);
   const c = {
     fit: p.fit,
     scale: +p.s.toFixed(4),
@@ -78,6 +82,7 @@ export function evaluate(ctx, p) {
     ...(leftOut ? { leftOut } : {}),
     text: text.placed.map((t) => ({ ...t, box: t.box.map(r1), ink: t.ink.map(r1) })),
     problems,
+    ...(narrow.length ? { notes: narrow } : {}),
     hard: problems.filter((q) => q.level === "hard").length,
     soft: problems.filter((q) => q.level === "soft").length,
     unmet: [...text.unmet, ...(unread ? ["readable"] : [])],

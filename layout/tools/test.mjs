@@ -118,7 +118,7 @@ const Z916 = askZones("9:16"), Z169 = askZones("16:9");
 // The hand set its captions in 56 px type with no box around them. Where the solver is compared
 // with the hand's numbers it runs with that type; everywhere else with the skill's own (a line
 // as tall as published Shorts set theirs, and room for the padding of a caption style's box).
-const HAND_TYPE = { "caption.font.tall": 56, "caption.padEm": 0 };
+const HAND_TYPE = { "caption.font.tall": 56, "caption.line": 1.32, "caption.padEm": 0 };
 const run1 = (zones, text, set) => solve({ zones, source: SRC1, faces: [FACE1], needs: text, set: { ...HAND_TYPE, ...set } });
 const plain1 = (zones, text) => solve({ zones, source: SRC1, faces: [FACE1], needs: text });
 // hook: the kind the solver tries first (a short text in the middle, then the card); card: the
@@ -187,7 +187,7 @@ t("hook plus two caption lines: no full or zoom fits; 0.82 is the first inset th
 });
 
 t("the hand's insets, placed as the hand placed them, pass in the solver's geometry", () => {
-  const ctxOf = (text) => { const D = structuredClone(DEFAULTS); D.caption.font.tall = HAND_TYPE["caption.font.tall"]; D.caption.padEm = 0; return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
+  const ctxOf = (text) => { const D = structuredClone(DEFAULTS); D.caption.font.tall = HAND_TYPE["caption.font.tall"]; D.caption.line = HAND_TYPE["caption.line"]; D.caption.padEm = 0; return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
   const a = evaluate(ctxOf([cap(2)]), { fit: "inset", s: 0.9, left: 54, top: 97, win: [54, 97, 972, 1728] });
   ok(!a.hard && !a.unmet.length && a.text[0].where === "above-head", `0.9 with two lines: ${JSON.stringify(a.problems)}`);
   const b = evaluate(ctxOf([card, cap(2)]), { fit: "inset", s: 0.82, left: 97, top: 215, win: [97, 215, 885.6, 1574.4] });
@@ -724,8 +724,9 @@ if (!QUICK) t("grid draws its lines over a frame of a video at the source's size
   return "grid.jpg, candidate-1 and candidate-3 as pages and pictures";
 });
 
-t("the caption area holds the box captions builds into it, its padding included. With the options the tool prints, captions' style clean (lines 1.3 em apart, 0.22 em of padding above and below: the largest box of its styles, the figures copied from its styles) ends inside the area in the three places an independent review measured it 20–24 px out at the top: above the head, below the chin, beside the panel; and a caller whose style pads more says so with caption.padEm", () => {
-  const CLEAN = { line: 1.3, pad: 0.44 };
+t("the caption area holds the block captions builds into it. With the options the tool prints, the block of each of captions' twelve styles (its lines a style's line height apart, and what a style's box adds above and below: figures copied from its styles) ends inside the area, in the three places an independent review measured the style clean 20–24 px out at the top: above the head, below the chin, beside the panel. The area is exactly as tall as the tallest of them; a caller whose style pads more says so with caption.padEm; and an area narrower than a long word needs at its type says so in the candidate's notes", () => {
+  // [line height, what the style's box adds above and below its lines, in em]
+  const STYLES = { hormozi: [1.05, 0], karaoke: [1.15, 0], wipe: [1.08, 0], clean: [1.3, 0.44], bold: [1.15, 0], outline: [1.16, 0], impact: [1.02, 0], single: [1.05, 0], fill: [1.18, 0], label: [1.42, 0.2], editorial: [1.3, 0], subtitle: [1.25, 0] };
   const cases = [
     ["above the head", ["--frame", "9:16", "--source", "1080x1920", "--face", "300,570,600,900", "--text", "caption:1"], "above-head"],
     ["below the chin", ["--frame", "9:16", "--source", "1080x1920", "--face", "340,400,400,560", "--text", "caption:2"], "below-chin"],
@@ -738,16 +739,24 @@ t("the caption area holds the box captions builds into it, its padding included.
     ok(r.status === 0, `${name}: ${r.stderr}`);
     const j = JSON.parse(cli("captions", dir, "--json").stdout), o = j.options;
     ok(j.where === where, `${name}: the captions stand ${j.where}`);
-    // what captions sets from these options: its box ends at --y and is this tall
-    const built = o.lines * o["font-size"] * CLEAN.line + CLEAN.pad * o["font-size"], top = o.y - built;
-    ok(top >= j.box[1] - 0.5 && o.y <= j.box[1] + j.box[3] + 0.5, `${name}: the box captions builds spans y ${r2(top)}–${o.y}, the area y ${j.box[1]}–${r2(j.box[1] + j.box[3])}`);
-    ok(o["max-width"] <= j.box[2] + 0.5 && (o.x === undefined || o.x >= j.box[0] - 0.5), `${name}: the box is wider than the area`);
+    // what captions sets from these options: its block ends at --y and is this tall
+    const tall = Object.entries(STYLES).map(([style, [line, around]]) => [style, (o.lines * line + around) * o["font-size"]]).sort((a, b) => b[1] - a[1]);
+    for (const [style, built] of tall) ok(o.y - built >= j.box[1] - 0.5 && o.y <= j.box[1] + j.box[3] + 0.5, `${name}: the block of ${style} spans y ${r2(o.y - built)}–${o.y}, the area y ${j.box[1]}–${r2(j.box[1] + j.box[3])}`);
+    near(j.box[3], tall[0][1], 0.2, `${name}: the area's height against the tallest block (${tall[0][0]})`);
+    ok(o["max-width"] <= j.box[2] + 0.5 && (o.x === undefined || o.x >= j.box[0] - 0.5), `${name}: the block is wider than the area`);
+    ok(!j.notes, `${name}: a note though the area holds a long word: ${j.notes}`);
     // a style with more padding: the area grows by it
     r = cli("place", dir, ...args, "--set", "caption.padEm=0.8", "--json");
     const more = JSON.parse(r.stdout).candidates.find((c) => c.text.some((x) => x.role === "caption")).text.find((x) => x.role === "caption");
-    near(more.box[3], (more.lines * 1.32 + 0.8) * more.font, 0.2, `${name}: the area's height with caption.padEm=0.8`);
-    out.push(`${name}: box y ${Math.round(top)}–${o.y} in the area y ${Math.round(j.box[1])}–${Math.round(j.box[1] + j.box[3])}`);
+    near(more.box[3], (more.lines * DEFAULTS.caption.line + 0.8) * more.font, 0.2, `${name}: the area's height with caption.padEm=0.8`);
+    out.push(`${name}: the tallest block (${tall[0][0]}) y ${Math.round(o.y - tall[0][1])}–${o.y} in the area y ${Math.round(j.box[1])}–${Math.round(j.box[1] + j.box[3])}`);
   }
+  // Pinterest's buttons leave the centred box 690 px: at 77 px type under the 9 em a long word needs
+  const dir = path.join(OUT, "cli-box-narrow");
+  const r = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", "340,400,400,560", "--text", "caption", "--platform", "pinterest");
+  const j = JSON.parse(cli("captions", dir, "--json").stdout);
+  ok(r.status === 0 && j.options["max-width"] < 9 * 77 && j.notes?.length === 1 && /a word of over \d+ letters is wider than a line/.test(j.notes[0]) && /note: the captions' area/.test(r.stdout), `the narrow area: ${j.options["max-width"]} px wide, notes ${JSON.stringify(j.notes)}`);
+  out.push(`for Pinterest an area of ${j.options["max-width"]} px, with a note`);
   return out.join("; ");
 });
 
