@@ -23,7 +23,7 @@ Every file you read stays in the conversation and slows each later step. So: don
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` and `captions` skills beside this one, and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the webcam face and the captions' key words, well under a cent. The words come from rragent's `transcribe` tool. Nothing to `npm install`; when something is missing, say so in one sentence.
+Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` and `captions` skills beside this one, and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the webcam face and the captions' key words, well under a cent, and for the words (ElevenLabs Scribe through agentitos' `transcribe` skill beside this one, about half a cent a minute). Nothing to `npm install`; when something is missing, say so in one sentence.
 
 ## From the recording to the video
 
@@ -45,13 +45,13 @@ It converts about a minute of three sources in 30 s. Your bash stops a command a
 
 ### 2. The words
 
-Call the **`transcribe` tool** with `file: screencast/<name>/source/voice.m4a`, `words: true`, `names:` the product, brand, accounts and people that may be said, `out: notes/screencast-<name>/voice.md`, then
-
 ```bash
-node <skill>/tools/screencast.mjs words screencast/<name> artifacts/notes/screencast-<name>/voice.words.json
+node <skill>/tools/screencast.mjs transcribe screencast/<name>
 ```
 
-(Without `words` in your transcribe tool: `screencast.mjs transcribe screencast/<name>`, which needs agentitos' `transcribe` skill beside this one.) It writes `source/brief.md`: every sentence with its word numbers and how much each source moves.
+ElevenLabs Scribe writes every word with its start and end, and every time is checked against the voice: the few the recognizer misplaced are moved to where the voice is, and its line says how many and which spots stay doubtful. It writes `source/brief.md`: every sentence with its word numbers and how much each source moves. Names Scribe misheard (the product, an account) you correct in `cut.json`'s `"fixes"` by word number; their times stay.
+
+Words from somewhere else go in with `screencast.mjs words screencast/<name> <words.json>`, but only with a start and an end per word: one time per word (start = end) is refused, since no cut can be placed by it. rragent's `transcribe` tool (asked for `words`) writes such a file, every word with its start and end where the sound has them: it goes in as it is.
 
 ### 3. The cut
 

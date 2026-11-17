@@ -116,7 +116,8 @@ if (opt.plan) {
   const { width, height } = frameSize();
   const title = opt.title === true ? "" : opt.title || (raw.title ?? path.basename(pos[0], ".json"));
   let words = normalizeTranscript(raw, { keepFillers: !!opt["keep-fillers"] });
-  if (typeof opt.audio === "string" && !opt["no-align"]) {
+  // a transcript whose word edges the sound has set already (the transcribe skill's edges: "sound") is not snapped again
+  if (typeof opt.audio === "string" && !opt["no-align"] && raw.edges !== "sound") {
     const al = alignToAudio(words, opt.audio);
     words = al.words;
     console.error(`align: snapped ${al.moved} of ${words.length} word onsets to the audio`);
