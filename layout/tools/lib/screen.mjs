@@ -17,12 +17,13 @@
 import { X1, Y1, area, inter, contains, clipBox, grow, clamp, r1, r2 } from "./boxes.mjs";
 import { evaluate } from "./evaluate.mjs";
 import { holdAxis } from "./fits.mjs";
+import { captionHeight } from "./text.mjs";
 
 export function screenFits(ctx, webcam, notes) {
   const { W, H, Z, D, sw, sh, cap, hook, tall } = ctx, S = Z.safe, g = D.gap;
   const main = ctx.sources[0], R = main.faces[0];
   const sRead = main.minText ? Math.ceil(ctx.readable / main.minText * 1e4) / 1e4 : 0;
-  const capH = cap ? cap.lines * (tall ? D.caption.font.tall : D.caption.font.wide) * D.caption.line : 0;
+  const capH = captionHeight(ctx);
   const top0 = hook ? (tall ? (Z.wide || S)[1] + D.hookCard.font * D.hookCard.heightEm : S[1] + D.hookBig.font * D.hookBig.heightEm) + g : 0;
   const bottom0 = cap ? Y1(S) - capH - g : H;
   const bleed = [0, top0, W, bottom0 - top0];

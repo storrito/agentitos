@@ -5,6 +5,7 @@
 //   layoutText(ctx, faces, keep, win, isWin, { seam }) → { placed: [{ role, where, on, box, ink,
 //       lines, font, style, align, shrunk? }], unmet: [role], penalty, fullSize }
 //   keepOut(face, D) → the face's box with its margins: what text stays out of
+//   captionHeight(ctx) → how tall the captions' area is: its lines and the padding of a style's box
 
 import { EPS, X1, Y1, area, inter, contains, grow } from "./boxes.mjs";
 
@@ -12,6 +13,8 @@ import { EPS, X1, Y1, area, inter, contains, grow } from "./boxes.mjs";
 // font's metrics as measure.js reads them (Noto Sans 800: ascent 1.069, descent 0.293, ascenders
 // 0.76, descenders 0.24 em); checked to ±3 px against what platform-zones measured on the layouts made by hand
 const inkRows = (top, n, L, f) => [top + (L / 2 - 0.372) * f, top + (n - 1) * L * f + (L / 2 + 0.628) * f];
+
+export const captionHeight = ({ cap, D, tall }) => (cap ? (cap.lines * D.caption.line + D.caption.padEm) * (tall ? D.caption.font.tall : D.caption.font.wide) : 0);
 
 export function keepOut(f, D) {
   const up = Math.max(D.free.aboveMin, D.free.above * f[3]);
@@ -86,13 +89,13 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
   // where captions may stand, in the order they are tried
   const capOpts = [];
   if (cap) {
-    const f = tall ? D.caption.font.tall : D.caption.font.wide, h = cap.lines * f * D.caption.line;
-    const w = Math.min(C[2], D.caption.maxEm * f, Math.max(D.caption.minEm * f, 2 * Math.min(W / 2 - cx0, cx1 - W / 2))), x = W / 2 - w / 2;
+    const f = tall ? D.caption.font.tall : D.caption.font.wide, h = captionHeight(ctx);
+    const w = Math.min(C[2], D.caption.maxEm * f, Math.max(tall ? D.caption.minWidth.tall : D.caption.minWidth.wide, 2 * Math.min(W / 2 - cx0, cx1 - W / 2))), x = W / 2 - w / 2;
     const mk = (box, align, zone, pref) => ({ role: "caption", style: "cap", lines: cap.lines, font: f, box, align, zone, pref });
     if (opts.seam != null) capOpts.push({ ...mk([x, opts.seam - h / 2, w, h], "center", C, 0), seam: true });                  // on the seam between two stacked parts
     capOpts.push(mk([x, Y1(S) - h, w, h], "center", C, 0));                                                // lowest line on the safe box's bottom
     if (isWin && Y1(win) < Y1(S) - EPS) capOpts.push(mk([x, Y1(win) - D.edgePad - h, w, h], "center", C, 1)); // in the picture, at its bottom
-    if (!tall) for (const col of columns(D.caption.minEm * f)) capOpts.push(mk([col.x, Y1(S) - h, Math.min(col.w, D.caption.maxEm * f), h], "left", S, 2));
+    if (!tall) for (const col of columns(D.caption.minWidth.wide)) capOpts.push(mk([col.x, Y1(S) - h, Math.min(col.w, D.caption.maxEm * f), h], "left", S, 2));
     if (topKeep !== null) capOpts.push(mk([x, topKeep - h, w, h], "center", C, 3));                         // directly above the head
     if (isWin && win[1] > S[1] + EPS) capOpts.push(mk([x, win[1] - g - h, w, h], "center", C, 4));            // on the ground above the picture
   }
@@ -146,7 +149,8 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
       ? (!faces.length ? "free" : Y1(t.box) <= top + EPS ? "above-head" : y >= chin - EPS ? "below-chin" : between ? "between" : "beside")
       : (Y1(t.box) <= win[1] + EPS ? "band-above" : y >= Y1(win) - EPS ? "band-below" : "beside");
     const L = t.style === "card" ? D.hookCard.line : t.style === "big" ? D.hookBig.line : D.caption.line;
-    const rows = inkRows(t.style === "card" ? y + (h - 2 * L * t.font) / 2 : y, t.lines, L, t.font);
+    // a card's lines stand in its middle; the captions' lines inside the padding of their box
+    const rows = inkRows(t.style === "card" ? y + (h - 2 * L * t.font) / 2 : t.style === "cap" ? y + D.caption.padEm * t.font / 2 : y, t.lines, L, t.font);
     return { role: t.role, where, on: onPicture ? "picture" : "ground", box: [x, y, w, h], ink: [x, rows[0], w, rows[1] - rows[0]], lines: t.lines, font: t.font, style: t.style, align: t.align, ...(t.role === "hook" && !t.full ? { shrunk: true } : {}) };
   });
   const roles = placed.map((t) => t.role);

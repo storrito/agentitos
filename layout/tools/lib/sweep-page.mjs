@@ -43,7 +43,7 @@ export function buildHtml(data) {
   }
 
   // ---- the thresholds, per case -------------------------------------------------------------
-  const capFont = (tall) => (tall ? D.caption.font.tall : D.caption.font.wide), capH = (n, tall) => n * capFont(tall) * D.caption.line;
+  const capFont = (tall) => (tall ? D.caption.font.tall : D.caption.font.wide), capH = (n, tall) => (n * D.caption.line + D.caption.padEm) * capFont(tall);
   const rules = {};
   {
     // (a) upright into 9:16
@@ -119,7 +119,7 @@ export function buildHtml(data) {
     const besideFull = part("d", "hook", (q) => mid(q) && q.fit === "full" && hook(q).where === "beside");
     rules.d = [
       ["Unchanged", `the picture passes in ${share(n.cap1.fits.full, n.cap1.cells)} of the cells with captions and in ${share(n.hook.fits.full, n.hook.cells)} with a hook: up to ${n.cap1.allFullUpTo} % face height always (captions), up to ${n.hook.allFullUpTo} % with a hook too. The face must lie between ${pH(s[1])} and ${pH(s[1] + s[3])}.`],
-      ["Captions below or beside:", `They stand at the bottom on the frame's middle as long as there is room under the chin; else they move into a column beside the face (at least ${D.caption.minEm * capFont(false)} px wide), seldom above the head. In the grid, with the face in the middle: below up to a chin at ${belowMax(c1)} % of the frame's height, beside from ${elseMin(c1)} % (one line); ${belowMax(c2)} % and ${elseMin(c2)} % (two). The span comes from the margin under the chin, which grows with the face. A face that sits to one side leaves the frame's middle free for longer.`],
+      ["Captions below or beside:", `They stand at the bottom on the frame's middle as long as there is room under the chin; else they move into a column beside the face (at least ${D.caption.minWidth.wide} px wide), seldom above the head. In the grid, with the face in the middle: below up to a chin at ${belowMax(c1)} % of the frame's height, beside from ${elseMin(c1)} % (one line); ${belowMax(c2)} % and ${elseMin(c2)} % (two). The span comes from the margin under the chin, which grows with the face. A face that sits to one side leaves the frame's middle free for longer.`],
       ["Hook:", `Two big lines need ${hb.minFont * hb.widthEm} px of width and ${Math.round(hb.minFont * hb.heightEm)} px of height. They stand above the head from a hairline at ${num(Math.min(...hk.filter((q) => hook(q).where === "above-head").map(top)))} % of the frame's height. With it higher they stand beside the face: unchanged that works with the face in the middle up to ${besideFull.length ? Math.max(...besideFull.map((q) => q.h)) : "–"} % face height, above that a zoom (${zooms ? `${num(zooms[0], 2)}× to ${num(zooms[1], 2)}×` : "none in this grid"}) pushes the face to the side.`],
       ["Smaller", `the picture gets only in ${share(n.hook.fits.inset || 0, n.hook.cells)} of the cells with a hook (${share(n.cap1.fits.inset || 0, n.cap1.cells)} with captions): with a large face at the very top or the very bottom of the picture${n.hook.insetRange ? `, to between ${num(n.hook.insetRange[0], 2)} and ${num(n.hook.insetRange[1], 2)} of its size` : ""}.`],
     ];

@@ -115,7 +115,12 @@ console.log(`P1: ${HAND.takes.p1.what.split(":")[0].toLowerCase()}, source ${HAN
 // =============================================================================================
 const SRC1 = HAND.takes.p1.source, FACE1 = HAND.takes.p1.face;
 const Z916 = askZones("9:16"), Z169 = askZones("16:9");
-const run1 = (zones, text, set) => solve({ zones, source: SRC1, faces: [FACE1], needs: text, set });
+// The hand set its captions in 56 px type with no box around them. Where the solver is compared
+// with the hand's numbers it runs with that type; everywhere else with the skill's own (a line
+// as tall as published Shorts set theirs, and room for the padding of a caption style's box).
+const HAND_TYPE = { "caption.font.tall": 56, "caption.padEm": 0 };
+const run1 = (zones, text, set) => solve({ zones, source: SRC1, faces: [FACE1], needs: text, set: { ...HAND_TYPE, ...set } });
+const plain1 = (zones, text) => solve({ zones, source: SRC1, faces: [FACE1], needs: text });
 const cap = (n) => ({ role: "caption", lines: n }), hook = { role: "hook" };
 
 t("one caption line: the zoom wins, ≈ 1.07 at about −76/−134, text above the head", () => {
@@ -180,7 +185,7 @@ t("hook plus two caption lines: no full or zoom fits; 0.82 is the first inset th
 });
 
 t("the hand's insets, placed as the hand placed them, pass in the solver's geometry", () => {
-  const ctxOf = (text) => { const D = structuredClone(DEFAULTS); return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
+  const ctxOf = (text) => { const D = structuredClone(DEFAULTS); D.caption.font.tall = HAND_TYPE["caption.font.tall"]; D.caption.padEm = 0; return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
   const a = evaluate(ctxOf([cap(2)]), { fit: "inset", s: 0.9, left: 54, top: 97, win: [54, 97, 972, 1728] });
   ok(!a.hard && !a.unmet.length && a.text[0].where === "above-head", `0.9 with two lines: ${JSON.stringify(a.problems)}`);
   const b = evaluate(ctxOf([hook, cap(2)]), { fit: "inset", s: 0.82, left: 97, top: 215, win: [97, 215, 885.6, 1574.4] });
@@ -211,7 +216,7 @@ if (!QUICK) t("solver and checker give the same verdict on the eight hand pages,
 console.log(`\nP2: ${HAND.takes.p2.what.split(":")[0].toLowerCase()}, source ${HAND.takes.p2.source.join("×")}, face x 558–735, y 100–348`);
 // =============================================================================================
 const SRC2 = HAND.takes.p2.source, FACE2 = HAND.takes.p2.face;
-const run2 = (zones, text) => solve({ zones, source: SRC2, faces: [FACE2], needs: text });
+const run2 = (zones, text) => solve({ zones, source: SRC2, faces: [FACE2], needs: text, set: HAND_TYPE });
 const pages2 = HAND.takes.p2.pages.map((p) => [p.name, handBoxes(p)]);
 const handOf = (pred) => pages2.find(([, p]) => p.W < p.H && pred(p));
 const scaleOf = (p) => p.picture[2] / SRC2[0];
@@ -404,7 +409,7 @@ console.log("\nA face that moves: its box at several moments");
 t("the upright take's face dips at 2.5 s (70 px lower, the chin at 1540 of 1920): the hull holds for the whole clip, it is 1.08× as tall as the usual box, the zoom no longer fits and a smaller picture leads; the moment at 2.5 s decides, and no text touches the face at any moment", () => {
   const at = [[0, FACE1], [1.2, [305, 572, 600, 900]], [2.5, [300, 640, 600, 900]], [3.8, [298, 568, 600, 900]], [5, FACE1]].map(([tt, box]) => ({ t: tt, box }));
   const res = solve({ zones: Z916, source: SRC1, faces: [at], needs: [cap(1)] }), c = res.candidates[0], tr = res.tracks[0];
-  const still = run1(Z916, [cap(1)]).candidates[0];
+  const still = plain1(Z916, [cap(1)]).candidates[0];
   ok(still.fit === "zoom", "the still face no longer takes the zoom");
   ok(tr.moments === 5 && tr.usual.join() === "300,570,600,900" && tr.hull.join() === "298,568,607,972", `usual ${tr.usual}, hull ${tr.hull}`);
   near(tr.growth.height, 1.08, 0.005, "the hull's height over the usual box's"); near(tr.growth.width, 1.01, 0.005, "the hull's width over the usual box's");
@@ -427,7 +432,7 @@ t("the upright take's face dips at 2.5 s (70 px lower, the chin at 1540 of 1920)
 
 t("a face that only sways (12 px across, 10 px down) keeps the still face's fit, the zoom a little larger (every px the cheek moves towards the buttons costs 0.6 % of zoom); a face that crosses the picture is reported as moving far", () => {
   const sway = [0, 1, 2, 3].map((i) => ({ t: i, box: [300 + (i % 2 ? 6 : -6), 570 + (i > 1 ? 5 : -5), 600, 900] }));
-  const res = solve({ zones: Z916, source: SRC1, faces: [sway], needs: [cap(1)] }), c = res.candidates[0], still = run1(Z916, [cap(1)]).candidates[0];
+  const res = solve({ zones: Z916, source: SRC1, faces: [sway], needs: [cap(1)] }), c = res.candidates[0], still = plain1(Z916, [cap(1)]).candidates[0];
   ok(c.fit === still.fit && c.scale >= still.scale && c.scale - still.scale <= 0.05 && !c.hard && !c.unmet.length, `swaying: ${nameOf(c)} against ${nameOf(still)}`);
   const far = solve({ zones: Z169, source: SRC2P, faces: [[{ t: 0, box: [300, 300, 220, 300] }, { t: 4, box: [1300, 320, 220, 300] }]], needs: [cap(1)] });
   ok(far.tracks[0].growth.area > 2 && far.notes.some((n) => /moves far/.test(n)), `growth ${JSON.stringify(far.tracks[0].growth)}`);
@@ -485,8 +490,8 @@ t("with a webcam: the circle (238 px, 22 % of the width) stands bottom left abov
   return `circle ${k.d} px ${k.corner} at y ${Math.round(k.box[1])}–${Math.round(Y1(k.box))}, region y ${Math.round(r[1])}–${Math.round(Y1(r))}; region at the bottom left: circle ${k2.corner}`;
 });
 
-t("with a hook and two caption lines the 480×400 region at 1.71× leaves the circle no corner: that candidate fails, and the largest scale with the circle (1.51×, text 21 px) is listed as not readable; in 16:9 and 4:5 the circle stands top right or, where the region is, top left", () => {
-  const res = screenOf(Z916, [60, 620, 480, 400], [hook, cap(2)], { cam: "same" });
+t("with a hook and a caption line the 480×400 region at 1.71× leaves the circle no corner: that candidate fails, and the largest scale with the circle (1.53×, text 21 px) is listed as not readable; in 16:9 and 4:5 the circle stands top right or, where the region is, top left", () => {
+  const res = screenOf(Z916, [60, 620, 480, 400], [hook, cap(1)], { cam: "same" });
   const zoom = res.candidates.find((q) => q.fit === "screen-zoom"), fit = res.candidates.find((q) => q.fit === "screen-fit");
   ok(zoom.hard && zoom.problems.some((q) => q.code === "circle-on-region"), "the 1.71× candidate does not fail on the circle");
   ok(fit && !fit.hard && fit.unmet.join() === "readable" && fit.circle.covers === 0 && !overlap(fit.circle.box, fit.faceInFrame[0]), `the fallback: ${JSON.stringify(fit?.problems)}`);
@@ -503,32 +508,26 @@ t("with a hook and two caption lines the 480×400 region at 1.71× leaves the ci
 // =============================================================================================
 console.log("\nFrames 4:5 (1080×1350) and 1:1 (1080×1080)");
 // =============================================================================================
-const first = (zones, source, face, needs) => { const res = solve({ zones, source, faces: [face], needs }); return [res.candidates[0], res]; };
 
-t("4:5: the upright take passes unchanged with two caption lines above the head; with a hook as well the first is a band 0.85× down the frame (ground at its sides), hook and captions above the head. The wide take fills the frame at 1.875× (soft) before the crisp square band; with a hook a band of 1.48× stands at the bottom and the hook on the ground above it", () => {
-  const [a] = first(Z45, SRC1, FACE1, [cap(2)]), [b] = first(Z45, SRC1, FACE1, [hook, cap(2)]), [c, cr] = first(Z45, SRCW, FACEW, [cap(2)]), [d] = first(Z45, SRCW, FACEW, [hook, cap(2)]);
-  ok(a.fit === "full" && !a.hard && !a.unmet.length && !a.soft && a.text[0].where === "above-head", `upright, captions: ${nameOf(a)} ${JSON.stringify(a.problems)}`);
-  ok(b.fit === "crop" && b.crop === "band" && !b.hard && !b.unmet.length && b.text.every((q) => q.where === "above-head"), `upright, hook + captions: ${nameOf(b)}`);
-  near(b.scale, 0.85, 0.011, "the band's scale"); ok(b.window[1] === 0 && b.window[3] === 1350 && b.window[2] < 1080, `the band's window: ${b.window}`);
-  ok(c.enlargement === 1.88 && !c.hard && !c.unmet.length && c.ground === 0 && c.text[0].where === "below-chin", `wide, captions: ${nameOf(c)}`);
-  const sq = cr.candidates.find((q) => q.crop === "1:1");
-  ok(sq && !sq.soft && cr.candidates.indexOf(sq) > 0 && sq.scale === 1.5, "wide: the square band is not second and crisp");
-  ok(d.fit === "crop" && d.crop === "band" && !d.hard && !d.unmet.length && d.text.find((q) => q.role === "hook").where === "band-above", `wide, hook + captions: ${nameOf(d)}`);
-  ok([a, b, c, d].every((q) => q.faceInFrame.every((f) => inside(Z45.safe, f))), "a face leaves the safe box");
-  return `${nameOf(a)}; ${nameOf(b)} (${Math.round(b.ground * 100)} % ground); ${nameOf(c)}; ${nameOf(d)} (${Math.round(d.ground * 100)} % ground)`;
-});
-
-t("1:1: the upright take's face (900 px) is taller than the room text leaves: a band 0.8× down the frame holds two caption lines above the head, and only the whole take smaller (0.52×) holds a hook too. The wide take fills the frame at 1.5× with the captions under the chin; with a hook a band of 1.11× stands at the bottom. Centred text is at most 810 px wide: inside what the profile grid's 3:4 crop shows", () => {
-  const [a] = first(Z11, SRC1, FACE1, [cap(2)]), [b] = first(Z11, SRC1, FACE1, [hook, cap(2)]), [c] = first(Z11, SRCW, FACEW, [cap(2)]), [d] = first(Z11, SRCW, FACEW, [hook, cap(2)]);
-  ok(a.fit === "crop" && a.crop === "band" && !a.hard && !a.unmet.length && a.text[0].where === "above-head", `upright, captions: ${nameOf(a)}`);
-  near(a.scale, 0.8, 0.011, "the band's scale");
-  ok(b.fit === "inset" && !b.hard && !b.unmet.length && b.scale < 0.5625 && b.scale > 0.5, `upright, hook + captions: ${nameOf(b)}`);
-  ok(c.fit === "full" && c.scale === 1.5 && !c.hard && !c.unmet.length && !c.soft, `wide, captions: ${nameOf(c)} ${JSON.stringify(c.problems)}`);
-  ok(d.fit === "crop" && d.crop === "band" && !d.hard && !d.unmet.length, `wide, hook + captions: ${nameOf(d)}`);
-  const grid = Z11.crops.find((q) => q.ratio === "3:4");
-  ok(grid && [a, b, c, d].every((q) => q.text.every((x) => x.box[0] >= grid.box[0] - 0.1 && X1(x.box) <= X1(grid.box) + 0.1)), "centred text is wider than the grid's crop");
-  ok(Z11.wide === null && Z45.wide === null, "the feed frames have a wide stretch now: read layouts.md again");
-  return `${nameOf(a)} (${Math.round(a.ground * 100)} % ground); ${nameOf(b)}; ${nameOf(c)}; ${nameOf(d)}`;
+t("4:5 and 1:1, both takes, with two caption lines and with a hook as well: the first candidate that passes holds every face in the safe box and sets no text on a face, and centred text stays inside what the profile grid's 3:4 crop shows (in the square at most 810 px wide); where none passes (the upright take's face is 900 px tall: a hook and two lines find no room beside it in a square) the first says which need is unmet. Which fit leads in each case is written down in hand.json", () => {
+  const out = [];
+  for (const [Z, fr] of [[Z45, "4:5"], [Z11, "1:1"]]) for (const [tag, source, face] of [["upright", SRC1, FACE1], ["wide", SRCW, FACEW]]) for (const needs of [[cap(2)], [hook, cap(2)]]) {
+    const res = solve({ zones: Z, source, faces: [face], needs }), c = res.candidates[0], what = `${fr}, the ${tag} take, ${needs.length > 1 ? "hook and " : ""}two lines`;
+    if (c.hard || c.unmet.length) {
+      ok(!res.candidates.some((q) => !q.hard && !q.unmet.length), `${what}: a candidate that passes stands behind one that does not`);
+      ok(!c.hard && c.unmet.length, `${what}: the first is ${nameOf(c)} with ${JSON.stringify(c.problems)}`);
+      out.push(`${fr} ${tag}${needs.length > 1 ? " + hook" : ""}: none passes (${c.unmet.join(", ")} unmet)`);
+      continue;
+    }
+    const [fx, fy, fw, fh] = c.faceInFrame[0];
+    ok(inside(Z.safe, [fx + 2, fy + 2, fw - 4, fh - 4]), `${what}: the face leaves the safe box`);
+    ok(c.text.length === needs.length && c.text.every((x) => !overlap(x.box, c.faceInFrame[0])), `${what}: text lies on the face`);
+    const grid = Z.crops.find((q) => q.ratio === "3:4");
+    if (grid) ok(c.text.every((x) => x.align !== "center" || (x.box[0] >= grid.box[0] - 0.1 && X1(x.box) <= X1(grid.box) + 0.1)), `${what}: centred text is wider than the grid's crop`);
+    out.push(`${fr} ${tag}${needs.length > 1 ? " + hook" : ""}: ${nameOf(c)}`);
+  }
+  ok(Z11.crops.some((q) => q.ratio === "3:4") && Z11.wide === null && Z45.wide === null, "the feed frames have a wide stretch now, or the square no grid crop: read platform-zones' layouts.md again");
+  return out.join("; ");
 });
 
 if (!QUICK) t("4:5 and 1:1: every candidate of both takes with captions, a hook, and both, as a page: the checker passes what the solver passes, with the same findings", () => {
@@ -586,7 +585,7 @@ t("a 3:4 take (1080×1440) into 9:16 with two caption lines, the face low and to
 console.log("\nA frame of another size, and boxes a pixel past a line");
 // =============================================================================================
 t("a frame of 720×1280 is laid out as one of 1080×1920, two thirds the size: the same fits, the picture and the text at two thirds of their px, the type two thirds as large (text set for 1080 once ran out of the smaller frame)", () => {
-  const needs = [hook, cap(2)], small = solve({ zones: askZones("720x1280"), source: SRC1, faces: [FACE1], needs }), large = run1(Z916, needs);
+  const needs = [hook, cap(2)], small = solve({ zones: askZones("720x1280"), source: SRC1, faces: [FACE1], needs }), large = plain1(Z916, needs);
   ok(small.size.join("×") === "720×1280" && small.candidates.length === large.candidates.length, `${small.candidates.length} candidates in ${small.size.join("×")}, ${large.candidates.length} in 1080×1920`);
   small.candidates.forEach((c, i) => {
     const big = large.candidates[i];
@@ -638,7 +637,7 @@ t("place writes the candidates into the caller's folder, and captions turns a ca
   ok(res.candidates[0].fit === "zoom" && res.asked.frame === "9:16", "placement.json does not hold the candidates");
   r = cli("captions", a, "--json");
   const up = JSON.parse(r.stdout);
-  ok(up.args.join(" ") === "--y 456 --max-width 696 --font-size 56 --lines 1", `9:16: ${up.args.join(" ")}`);
+  ok(up.args.join(" ") === "--y 456 --max-width 696 --font-size 77 --lines 1", `9:16: ${up.args.join(" ")}`);
   r = cli("place", b, "--frame", "16:9", "--source", SRC1.join("x"), "--face", boxArg(FACE1), "--text", "hook", "--text", "caption:2", "--json");
   ok(r.status === 0 && JSON.parse(r.stdout).candidates[0].fit === "panel", `place --json: ${r.stderr}`);
   r = cli("captions", b, "--candidate", "1");
@@ -674,6 +673,33 @@ if (!QUICK) t("grid draws its lines over a frame of a video at the source's size
   const e = cli("page", dir, "--still", wide);
   ok(e.status === 1 && /another shape/.test(e.stderr), `a wide still for an upright source: ${e.stderr || e.stdout}`);
   return "grid.jpg, candidate-1 and candidate-3 as pages and pictures";
+});
+
+t("the caption area holds the box captions builds into it, its padding included. With the options the tool prints, captions' style clean (lines 1.3 em apart, 0.22 em of padding above and below: the largest box of its styles, the figures copied from its styles) ends inside the area in the three places an independent review measured it 20–24 px out at the top: above the head, below the chin, beside the panel; and a caller whose style pads more says so with caption.padEm", () => {
+  const CLEAN = { line: 1.3, pad: 0.44 };
+  const cases = [
+    ["above the head", ["--frame", "9:16", "--source", "1080x1920", "--face", "300,570,600,900", "--text", "caption:1"], "above-head"],
+    ["below the chin", ["--frame", "9:16", "--source", "1080x1920", "--face", "340,400,400,560", "--text", "caption:2"], "below-chin"],
+    ["beside the panel", ["--frame", "16:9", "--source", "1080x1920", "--face", "300,570,600,900", "--text", "caption:2", "--text", "hook"], "beside"],
+  ];
+  const out = [];
+  for (const [name, args, where] of cases) {
+    const dir = path.join(OUT, `cli-box-${where}`);
+    let r = cli("place", dir, ...args);
+    ok(r.status === 0, `${name}: ${r.stderr}`);
+    const j = JSON.parse(cli("captions", dir, "--json").stdout), o = j.options;
+    ok(j.where === where, `${name}: the captions stand ${j.where}`);
+    // what captions sets from these options: its box ends at --y and is this tall
+    const built = o.lines * o["font-size"] * CLEAN.line + CLEAN.pad * o["font-size"], top = o.y - built;
+    ok(top >= j.box[1] - 0.5 && o.y <= j.box[1] + j.box[3] + 0.5, `${name}: the box captions builds spans y ${r2(top)}–${o.y}, the area y ${j.box[1]}–${r2(j.box[1] + j.box[3])}`);
+    ok(o["max-width"] <= j.box[2] + 0.5 && (o.x === undefined || o.x >= j.box[0] - 0.5), `${name}: the box is wider than the area`);
+    // a style with more padding: the area grows by it
+    r = cli("place", dir, ...args, "--set", "caption.padEm=0.8", "--json");
+    const more = JSON.parse(r.stdout).candidates.find((c) => c.text.some((x) => x.role === "caption")).text.find((x) => x.role === "caption");
+    near(more.box[3], (more.lines * 1.32 + 0.8) * more.font, 0.2, `${name}: the area's height with caption.padEm=0.8`);
+    out.push(`${name}: box y ${Math.round(top)}–${o.y} in the area y ${Math.round(j.box[1])}–${Math.round(j.box[1] + j.box[3])}`);
+  }
+  return out.join("; ");
 });
 
 t("what the tool cannot do with its input it says in one sentence: a file where the folder goes, a face track that holds no boxes, a step of 0 (which once ran without end), a default that is not there, a CHROME that names no file", () => {

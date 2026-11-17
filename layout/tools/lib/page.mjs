@@ -4,7 +4,7 @@
 // text as elements. Without a still the picture is a drawn surface with each face as an oval.
 // Each face's box (a screen's region) is outlined with dashes, so that whoever looks sees whether
 // the box was read right; an outline changes nothing of what the checker measures.
-// The words are placeholders of the usual length: two caption lines, a hook of two lines.
+// The words are placeholders of the usual length: caption lines of three words, a hook of two lines.
 //
 //   renderPage(candidate, result, { still | stills, page }) → html
 //     still: a picture file (stills: one per source); page: where the html will lie, so that the
@@ -13,7 +13,9 @@
 import path from "node:path";
 import { r1 } from "./boxes.mjs";
 
-const CAP_LINES = ["eure Instagram-Storys", "für die ganze Woche", "ganz einfach vorplanen", "mit einem Klick"];
+// A caption line of three words, as most are in published Shorts (the median of 188): the type
+// is so large that the centred area of the usual vertical platforms holds about sixteen letters.
+const CAP_LINES = ["plan your week", "of Stories", "in one sitting", "with one click"];
 const HOOK_LINES = ["Storys für die ganze", "Woche vorplanen"];
 export function renderPage(c, res, { still = null, stills = null, page = null } = {}) {
   const [W, H] = res.size, D = res.defaults;
@@ -59,8 +61,8 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
   for (const t of c.text) {
     const [x, y, w, h] = t.box;
     if (t.style === "cap") {
-      const lines = t.lines === 1 ? [CAP_LINES[1]] : Array.from({ length: t.lines }, (_, i) => CAP_LINES[i % CAP_LINES.length]);
-      parts.push(`<div class="cap" style="left:${x}px;width:${w}px;bottom:${r1(H - y - h)}px;font-size:${t.font}px;text-align:${t.align};white-space:nowrap">${lines.map((l) => `<span>${l}</span>`).join("<br>")}</div>`);
+      const lines = Array.from({ length: t.lines }, (_, i) => CAP_LINES[i % CAP_LINES.length]);
+      parts.push(`<div class="cap" style="left:${x}px;width:${w}px;bottom:${r1(H - y - h + D.caption.padEm * t.font / 2)}px;font-size:${t.font}px;text-align:${t.align};white-space:nowrap">${lines.map((l) => `<span>${l}</span>`).join("<br>")}</div>`);
     } else if (t.style === "card") parts.push(`<div class="card" style="${st(t.box)};font-size:${t.font}px">${HOOK_LINES.join("<br>")}</div>`);
     else parts.push(`<div class="big" style="left:${x}px;top:${y}px;width:${w}px;font-size:${t.font}px;text-align:${t.align}">${HOOK_LINES.join("<br>")}</div>`);
   }

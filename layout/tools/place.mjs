@@ -8,7 +8,8 @@
 //        one frame with a line every 10 %, labelled in px of the source: no tool here sees a
 //        face, an agent reads the boxes off this picture
 //   node place.mjs place <folder> --frame 9:16 --source 1080x1920 --face 300,570,600,900
-//                  [--text caption:2] [--text hook] [--platform reels,tiktok] [--json]
+//                  [--text caption] [--text hook] [--platform reels,tiktok] [--json]
+//        (--text caption: one caption line, as most published Shorts set theirs; caption:2 for two)
 //        the candidates, ranked, into <folder>/placement.json
 //        several people:    --face … --face … [--speaker 2]  |  --source A --face … --source B --face …
 //        a face that moves: --face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …  |  --face-track file.json
@@ -107,7 +108,7 @@ function parseNeeds(list) {
     const [role, n] = String(t).split(":");
     if (role === "caption" || role === "captions") return { role: "caption", lines: Math.max(1, Number(n) || 1) };
     if (role === "hook") return { role: "hook" };
-    fail(`--text is caption:N (N lines of captions) or hook, not "${t}".`);
+    fail(`--text is caption (one line of captions), caption:2 (two) or hook, not "${t}".`);
   });
 }
 const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v);
@@ -149,7 +150,7 @@ function printResult(res) {
 // ---- place ----
 
 function cmdPlace(o) {
-  const usage = `${self()} place <folder> --frame 9:16 --source 1080x1920 --face x,y,w,h [--face …] [--text caption:2] [--text hook] [--platform reels,tiktok] [--json]
+  const usage = `${self()} place <folder> --frame 9:16 --source 1080x1920 --face x,y,w,h [--face …] [--text caption] [--text hook] [--platform reels,tiktok] [--json]
   several people:    [--speaker N]  |  --source WxH --face … --source WxH --face …   (two files)
   a face that moves: --face-at seconds:x,y,w,h …  |  --face-track file.json
   a screen:          --source WxH --region x,y,w,h --min-text-height N [--readable N] [--face … | --source WxH --face …   (the webcam)]
@@ -237,7 +238,7 @@ function cmdGrid(o) {
   console.log(`  a face: from the hairline to the chin, from cheek to cheek (not the hair, the ears or the neck)   → --face x,y,w,h`);
   console.log(`  a face that moves: the grid at several moments (--at), one box each   → --face-at <seconds>:x,y,w,h`);
   console.log(`  a screen: the part that matters → --region x,y,w,h, and how tall a capital letter of its smallest text is → --min-text-height <px>`);
-  console.log(`Then: ${self()} place <folder> --frame 9:16 --source ${w}x${h} --face … --text caption:2`);
+  console.log(`Then: ${self()} place <folder> --frame 9:16 --source ${w}x${h} --face … --text caption`);
 }
 
 // ---- page ----
@@ -349,7 +350,7 @@ function cmdCaptions(o) {
   const [i] = pick(res, o.candidate, 1), c = res.candidates[i];
   const t = c.text.find((q) => q.role === "caption");
   const what = `Candidate ${i + 1} (${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`})`;
-  if (!t) fail(res.needs.some((n) => n.role === "caption") ? `${what} has no place for the captions asked for: take a candidate that has one (✓ or ! in ${self()} place), or fewer lines.` : `The placement asked for no captions: run ${self()} place ${folder} … again with --text caption:2.`);
+  if (!t) fail(res.needs.some((n) => n.role === "caption") ? `${what} has no place for the captions asked for: take a candidate that has one (✓ or ! in ${self()} place), or fewer lines.` : `The placement asked for no captions: run ${self()} place ${folder} … again with --text caption.`);
   const centred = t.align === "center" && Math.abs(t.box[0] + t.box[2] / 2 - res.size[0] / 2) < 1;
   // rounded into the area: the lowest line ends no lower, the lines run no wider
   const opts = { ...(centred ? {} : { x: Math.ceil(t.box[0]) }), y: Math.floor(Y1(t.box) + 1e-6), "max-width": Math.floor(t.box[2] + 1e-6), ...(centred ? {} : { align: t.align === "center" ? "centre" : t.align }), "font-size": t.font, lines: t.lines };
@@ -368,4 +369,4 @@ if (cmd === "grid") cmdGrid(parseArgs(cmd, rest));
 else if (cmd === "place") cmdPlace(parseArgs(cmd, rest));
 else if (cmd === "page") cmdPage(parseArgs(cmd, rest));
 else if (cmd === "captions") cmdCaptions(parseArgs(cmd, rest));
-else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption:2] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1]`);
+else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1]`);

@@ -16,10 +16,19 @@ import { fileURLToPath } from "node:url";
 // Every size in px here is for a frame 1080 px on its shorter side (1080×1920, 1080×1350,
 // 1080×1080, 1920×1080): `scaled` brings it to the frame asked for.
 export const DEFAULTS = {
-  // captions: N lines, set as the captions skill sets them (line height 1.32, a dark plate per line),
-  // centred on the frame and as wide as `centred` (at most maxEm), or in a column beside a face
-  // (at least minEm wide: 12 em holds about 21 letters)
-  caption: { font: { tall: 56, wide: 50 }, line: 1.32, minEm: 12, maxEm: 24 },
+  // Captions: N lines, centred on the frame and as wide as `centred` (at most maxEm), or in a
+  // column beside a face. Their area holds what agentitos' captions builds into it: lines 1.32 em
+  // apart (its widest style sets them 1.3 apart) and, around them, the padding of a style's box:
+  // padEm is the 0.22 em above and below of its style `clean`, the largest of its styles. Without
+  // it the built box left the area at the top by a fifth of a line. A caller whose style pads
+  // more says so: --set caption.padEm=0.6.
+  //   font.tall  type in upright frames: a line 4.0 % of a 9:16 frame's height, the median of
+  //              the captions burned into 188 published Shorts (middle half 3.2–4.9 %; layout
+  //              study of 240 Shorts, 2026-11-17). It says what is usual, not what works.
+  //   font.wide  type in 16:9: a guess, no published video was measured in that frame
+  //   minWidth   a caption area is never narrower: in upright frames half the frame, the
+  //              Shorts' median block; in 16:9 a column that holds about 21 letters
+  caption: { font: { tall: 77, wide: 50 }, line: 1.32, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24 },
   // hook in an upright frame: a card of two lines across `wide`, 3.1 em tall; it may shrink to
   // minFont where the room above the head is short (laid out by hand on a still, it went from 76 to 66 px)
   hookCard: { font: 76, minFont: 64, heightEm: 3.1, line: 1.14 },
@@ -81,7 +90,7 @@ DEFAULTS.weights = readWeights();
 // The sizes in px for a frame of another size than 1080 on its shorter side: a video of 720×1280
 // is shown as large as one of 1080×1920, so its type and margins are two thirds as many px.
 // Without this, text set for 1080 ran out of a smaller frame. Type is whole px.
-const PX = ["caption.font.tall", "caption.font.wide", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
+const PX = ["caption.font.tall", "caption.font.wide", "caption.minWidth.tall", "caption.minWidth.wide", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
 export function scaled(D, [W, H]) {
   const k = Math.min(W, H) / 1080;
   if (Math.abs(k - 1) < 1e-9) return D;

@@ -11,12 +11,13 @@
 import { EPS, X1, Y1, clipBox, hullOf } from "./boxes.mjs";
 import { evaluate, cmpRank } from "./evaluate.mjs";
 import { holdAxis } from "./fits.mjs";
+import { captionHeight } from "./text.mjs";
 
 export function splitFits(ctx, kind, people) {
   const { W, H, Z, D, cap, hook, tall } = ctx, S = Z.safe;
   const halves = kind === "stacked" ? [[0, 0, W, H / 2], [0, H / 2, W, H / 2]] : [[0, 0, W / 2, H], [W / 2, 0, W / 2, H]];
   const seam = kind === "stacked" ? H / 2 : null;
-  const capH = cap ? cap.lines * (tall ? D.caption.font.tall : D.caption.font.wide) * D.caption.line : 0;
+  const capH = captionHeight(ctx);
   // the hook's room above the heads of the upper row: at its size, at its smallest, none kept
   const hookTop = tall ? (Z.wide || S)[1] : S[1];
   const hookHs = !hook ? [0] : tall ? [D.hookCard.font * D.hookCard.heightEm, D.hookCard.minFont * D.hookCard.heightEm, 0] : [D.hookBig.font * D.hookBig.heightEm, D.hookBig.minFont * D.hookBig.heightEm, 0];

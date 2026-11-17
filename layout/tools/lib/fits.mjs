@@ -13,6 +13,7 @@
 
 import { EPS, X1, Y1, clamp, ratioOf, r2 } from "./boxes.mjs";
 import { evaluate, cmpRank } from "./evaluate.mjs";
+import { captionHeight } from "./text.mjs";
 
 // The placements a fit allows along one axis. `cover`: the picture covers the frame's length;
 // `inside`: it lies inside it. pick(t): the offset nearest to t at which the faces lie in the safe
@@ -58,7 +59,7 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
   // smaller than the frame: ending above the captions, starting below the hook
   const eyes = fb ? fb[1] + D.eyes * (fb[3] - fb[1]) : 0;
   const ys = [fb && extra.aroundFace && modeY === "cover" ? H / 3 - s * eyes : centredY, Infinity, -Infinity];
-  const capH = cap ? cap.lines * (tall ? D.caption.font.tall : D.caption.font.wide) * D.caption.line : 0;
+  const capH = captionHeight(ctx);
   if (cap && fb) ys.push(Y1(S) - capH - Math.max(D.free.belowMin, D.free.below * s * (fb[3] - fb[1])) - s * fb[3]);
   if (modeY === "inside") {
     if (cap) ys.push(Y1(S) - capH - g - s * sh);
