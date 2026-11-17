@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+// How a recording is placed in a frame, and where text can go: computed from where the faces (or
+// the part of a screen that matters) are and from what the apps cover, judged, ranked, with the
+// reasons. It builds no video and chooses nothing: an agent gets candidates and a still of each
+// to look at, and chooses. The zones always come from agentitos' platform-zones.
+//
+//   node place.mjs grid <video|image> <out.jpg> [--at <s>]
+//        one frame with a line every 10 %, labelled in px of the source: no tool here sees a
+//        face, an agent reads the boxes off this picture
+//   node place.mjs place <folder> --frame 9:16 --source 1080x1920 --face 300,570,600,900
+//                  [--text caption:2] [--text hook] [--platform reels,tiktok] [--json]
+//        the candidates, ranked, into <folder>/placement.json
+//        several people:    --face … --face … [--speaker 2]  |  --source A --face … --source B --face …
+//        a face that moves: --face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …  |  --face-track file.json
+//        a screen:          --source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--readable 24]
+//                           [--face … | --source 1280x720 --face …]   (the webcam: a circle in a free corner)
+//        the ranking:       [--weights file.json] [--set weights.enlarge.costAtForbidden=5] [--set hookCard.minFont=76]
+//                           [--all]   (every fit, also where the unchanged picture passes)
+//   node place.mjs page <folder> [--candidate 1,2,3 | all] [--still <video|image>]… [--at <s>]
+//        each candidate as a page of one frame (candidate-N.html) with a picture of it
+//        (candidate-N.png), and what platform-zones' layout check says of the page
+//   node place.mjs captions <folder> [--candidate 1] [--json]
+//        the options that make agentitos' captions set its captions into the candidate's
+//        caption area
+//
+// Boxes are x,y,w,h in px of the source: a face from the hairline to the chin and from cheek to
+// cheek. Every --face, --face-at, --face-track and --region belongs to the --source before it.
+// What a candidate holds: lib/solve.mjs.
+
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+import { Y1, boxText, pct } from "./lib/boxes.mjs";
+import { readWeights } from "./lib/defaults.mjs";
+import { compare } from "./lib/judge.mjs";
+import { renderPage } from "./lib/page.mjs";
+import { solve } from "./lib/solve.mjs";
+import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
+
+const fail = (msg) => { console.error(msg); process.exit(1); };
+const rel = (p) => path.relative(process.cwd(), p) || ".";
+const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// ---- options ----
+
+const FLAGS = new Set(["json", "all"]);
+const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still"]);
+const OPTIONS = {
+  grid: ["at"],
+  place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
+  page: ["candidate", "still", "at"],
+  captions: ["candidate", "json"],
+};
+function parseArgs(cmd, argv) {
+  const o = { _: [], order: [] };
+  for (const k of MANY) o[k] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) { o._.push(a); continue; }
+    const k = a.slice(2);
+    if (!OPTIONS[cmd].includes(k)) fail(`${cmd} has no option --${k}: it takes ${OPTIONS[cmd].map((x) => `--${x}`).join(", ")}.`);
+    if (FLAGS.has(k)) { o[k] = true; continue; }
+    const v = argv[++i];
+    if (v === undefined) fail(`--${k} needs a value.`);
+    if (MANY.has(k)) { o[k].push(v); o.order.push([k, v]); } else o[k] = v;
+  }
+  return o;
+}
+
+// the sources in the order given: every --face belongs to the --source before it (faces before the
+// first --source: to the first)
+function parseSources(o) {
+  const sources = [], early = [];
+  const box = (f, what) => { const b = String(f).split(",").map(Number); if (b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[2] <= 0 || b[3] <= 0) fail(`--${what} is x,y,w,h in px of the source, as 300,570,600,900.`); return b; };
+  for (const [k, v] of o.order) {
+    if (k === "source") { const m = String(v).match(/^(\d+)x(\d+)$/); if (!m || !+m[1] || !+m[2]) fail(`--source is width x height, as 1080x1920.`); sources.push({ size: [+m[1], +m[2]], faces: sources.length ? [] : early.splice(0) }); }
+    else if (k === "face") (sources.at(-1)?.faces || early).push(box(v, "face"));
+    else if (k === "region") { if (!sources.length) fail("--region comes after the --source it is a part of."); sources.at(-1).region = box(v, "region"); sources.at(-1).minTextHeight = Number(o["min-text-height"]) || 0; }
+    else if (k === "face-at") {
+      // the face's box at one moment: every --face-at of one source is the same, moving face
+      const i = String(v).indexOf(":"), t = Number(String(v).slice(0, i));
+      if (i < 1 || !Number.isFinite(t)) fail(`--face-at is seconds:x,y,w,h, as 2.5:310,560,600,900.`);
+      const faces = sources.at(-1)?.faces || early;
+      let track = faces.find((f) => f.cli);
+      if (!track) faces.push((track = Object.assign([], { cli: true })));
+      track.push({ t, box: box(String(v).slice(i + 1), "face-at") });
+    } else if (k === "face-track") {
+      // a file: one moving face [{ t, box }, …], or several [[…], […]] or { faces: [[…], […]] }
+      let j;
+      try { j = JSON.parse(fs.readFileSync(v, "utf8")); } catch (e) { fail(`--face-track ${v} cannot be read (${e.message}): it is a JSON list of { "t": seconds, "box": [x, y, w, h] }.`); }
+      const tracks = Array.isArray(j) ? (Array.isArray(j[0]) ? j : [j]) : j.faces;
+      if (!Array.isArray(tracks)) fail(`--face-track ${v}: a list of { t, box }, or { faces: [[…], …] } for several faces.`);
+      (sources.at(-1)?.faces || early).push(...tracks);
+    }
+  }
+  return sources;
+}
+function parseNeeds(list) {
+  return list.map((t) => {
+    const [role, n] = String(t).split(":");
+    if (role === "caption" || role === "captions") return { role: "caption", lines: Math.max(1, Number(n) || 1) };
+    if (role === "hook") return { role: "hook" };
+    fail(`--text is caption:N (N lines of captions) or hook, not "${t}".`);
+  });
+}
+const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v);
+
+// ---- what is printed ----
+
+const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.side ? ` ${c.side}` : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
+const markOf = (c) => (c.hard ? "✗" : c.unmet.length ? "–" : c.soft ? "!" : "✓");
+
+function printResult(res) {
+  const [W, H] = res.size;
+  console.log(`${res.frame} ${W}×${H} for ${res.platforms.join(", ")}${res.fallback ? " (no platform named: the usual ones of this frame)" : ""}`);
+  const srcLine = (q, i, n) => `source${n > 1 ? ` ${i + 1}` : ""} ${q.size.join("×")}, ${plural(q.faces.length, "face")}${q.faces.length ? ` (${q.faces.map((f) => boxText(f)).join("; ")})` : ""}`;
+  console.log(`${res.screen ? `screen ${res.source.join("×")}, region ${boxText(res.screen.region)} (${res.screen.region[2]}×${res.screen.region[3]})${res.screen.minTextHeight ? `, smallest text ${res.screen.minTextHeight} px (reads from ${res.screen.readable} px in this frame)` : ""}` : (res.sources || [{ size: res.source, faces: res.faces }]).map((q, i, l) => srcLine(q, i, l.length)).join("; ")}; text: ${res.needs.length ? res.needs.map((n) => (n.role === "caption" ? plural(n.lines, "caption line") : "hook")).join(" + ") : "none"}`);
+  for (const n of res.notes) console.log(`note: ${n}`);
+  for (const tr of res.tracks || []) {
+    console.log(`face ${tr.face}: usual box ${boxText(tr.usual)}, hull ${boxText(tr.hull)}; its edges come from: top ${tr.edges.top} s, bottom ${tr.edges.bottom} s, left ${tr.edges.left} s, right ${tr.edges.right} s`);
+    if (!tr.decides.length) console.log(`   no single moment decides: with any one of them left out the first candidate stays (${tr.placed})`);
+    tr.decides.forEach((d, i) => console.log(`   ${i ? "also" : "decides"}: the box at ${d.t} s (the hull's ${d.edges.join(" and ")}): without it the first would be ${d.without}${i ? "" : ` instead of ${tr.placed}`}`));
+  }
+  res.candidates.forEach((c, i) => {
+    if (c.parts) {
+      console.log(`\n${i + 1}. ${markOf(c)} ${c.fit}  score ${c.score}`);
+      c.parts.forEach((q, k) => console.log(`   part ${k + 1}  ${boxText(q.window)}: source ${q.source} at scale ${q.scale}, left ${q.left}, top ${q.top}${q.smaller ? " (does not fill its part: ground beside it)" : ""}`));
+      if (c.ground) console.log(`   ${pct(c.ground)} ground`);
+    } else {
+      console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}  scale ${c.scale} (${c.zoom}× of covering) at left ${c.left}, top ${c.top}  score ${c.score}`);
+      if (c.ground) console.log(`   picture ${boxText(c.window)}, ${pct(c.ground)} ground`);
+    }
+    c.faceInFrame.forEach((f) => console.log(`   ${res.screen ? "region " : "face   "} ${boxText(f)} (${Math.round(f[2])}×${Math.round(f[3])})${c.textHeight != null ? `, smallest text ${c.textHeight} px` : ""}`));
+    if (c.circle) console.log(`   webcam  circle ${c.circle.d} px ${c.circle.corner}, ${boxText(c.circle.box)}${c.circle.crop ? `; shows ${boxText(c.circle.crop)} of the webcam's picture at ${c.circle.enlargement}×, the face ${c.circle.faceHeight} px tall` : ""}`);
+    (c.others || []).forEach((f) => console.log(`   (${f.of}, not held: ${boxText(f.box)}, ${pct(f.shows)} of it shows)`));
+    for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}${t.role === "hook" ? `, ${t.font} px${t.shrunk ? " (shrunk)" : ""}` : `, ${plural(t.lines, "line")}`}`);
+    for (const q of c.problems) console.log(`   ${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of}: ${q.what}`);
+    console.log(`   why: ${c.why.join("; ")}${c.behind ? `; ${c.behind}` : ""}`);
+  });
+}
+
+// ---- place ----
+
+function cmdPlace(o) {
+  const usage = `${self()} place <folder> --frame 9:16 --source 1080x1920 --face x,y,w,h [--face …] [--text caption:2] [--text hook] [--platform reels,tiktok] [--json]
+  several people:    [--speaker N]  |  --source WxH --face … --source WxH --face …   (two files)
+  a face that moves: --face-at seconds:x,y,w,h …  |  --face-track file.json
+  a screen:          --source WxH --region x,y,w,h --min-text-height N [--readable N] [--face … | --source WxH --face …   (the webcam)]
+  the ranking:       [--weights file.json] [--set weights.enlarge.softFrom=1.4]
+The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
+  const [folder] = o._;
+  const sources = parseSources(o);
+  if (!folder || o._.length > 1 || !o.frame || !sources.length) fail(usage);
+  if (!/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame)) fail(`--frame is a ratio or a size, as 9:16 or 1080x1920.`);
+  const platforms = platformList(o.platform);
+  let res;
+  try {
+    res = solve({
+      zones: askZones(o.frame, platforms), sources, needs: parseNeeds(o.text),
+      speaker: o.speaker !== undefined ? Number(o.speaker) : null,
+      set: { ...(o.readable !== undefined ? { "readable.height": Number(o.readable) } : {}), ...Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as weights.enlarge.softFrom=1.4.`); return [s.slice(0, i), num(s.slice(i + 1))]; })) },
+      all: !!o.all, weights: o.weights ? readWeights(o.weights) : null,
+    });
+  } catch (e) { fail(e.message); }
+  // what page and captions need to go on from the file alone
+  res.asked = { frame: o.frame, platforms };
+  fs.mkdirSync(folder, { recursive: true });
+  const file = path.join(folder, "placement.json");
+  fs.writeFileSync(file, JSON.stringify(res, null, 1));
+  if (o.json) return console.log(JSON.stringify(res, null, 1));
+  printResult(res);
+  const pass = res.candidates.filter((c) => !c.hard && !c.unmet.length).length;
+  console.log(`\n${file}: ${plural(res.candidates.length, "candidate")}, ${pass} without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.`);
+  console.log(`The order is a suggestion from measurements. Look before you choose: ${self()} page ${rel(folder)} --still <video|image> writes the first three as pictures and has platform-zones check them.`);
+}
+
+// ---- grid ----
+
+// the picture's size as shown (a phone's rotation applied)
+function probe(file) {
+  if (!fs.existsSync(file)) fail(`There is no ${file}.`);
+  const r = spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", file], { encoding: "utf8" });
+  if (r.error?.code === "ENOENT") fail("ffprobe is missing: install ffmpeg (it brings ffprobe), then run this again.");
+  let v;
+  try { v = JSON.parse(r.stdout).streams.find((s) => s.codec_type === "video"); } catch { v = null; }
+  if (r.status !== 0 || !v) fail(`${file} is no video or image ffprobe can read.`);
+  const turned = Math.abs(Number(v.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ?? v.tags?.rotate ?? 0)) % 180 === 90;
+  return turned ? [v.height, v.width] : [v.width, v.height];
+}
+
+// one frame of a video (or an image) as a JPEG, without any of the file's tags: a phone writes
+// the place it filmed at into its files, and that never goes into a folder that is passed on
+function frameOf(input, out, at, filters = []) {
+  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+  // no picture of an earlier run passes for this one's
+  fs.rmSync(out, { force: true });
+  const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...(at !== undefined ? ["-ss", String(at)] : []), "-i", input, "-frames:v", "1", ...(filters.length ? ["-vf", filters.join(",")] : []), "-map_metadata", "-1", "-q:v", "3", "-update", "1", out], { encoding: "utf8" });
+  if (r.error?.code === "ENOENT") fail("ffmpeg is missing: install ffmpeg, then run this again.");
+  return r.status === 0 && fs.existsSync(out) ? null : (r.stderr || "").trim().split("\n").slice(-2).join(" ") || (at !== undefined ? `there is no picture at ${at} s` : "it wrote no picture");
+}
+
+function cmdGrid(o) {
+  const [input, out] = o._;
+  if (!input || !out || o._.length > 2) fail(`${self()} grid <video|image> <out.jpg> [--at <s>]`);
+  const [w, h] = probe(input);
+  const t = Math.max(2, Math.round(Math.min(w, h) / 360)), size = Math.max(16, Math.round(Math.min(w, h) / 36));
+  // a line every tenth, each a dark line under a yellow one so that it shows on any picture; the
+  // two middle lines red, to count from
+  const lines = [], labels = [];
+  for (let i = 1; i < 10; i++) {
+    const x = Math.round(i * w / 10), y = Math.round(i * h / 10), colour = i === 5 ? "red@0.9" : "yellow@0.85";
+    lines.push(`drawbox=x=${x - t}:y=0:w=${2 * t}:h=${h}:color=black@0.45:t=fill`, `drawbox=x=0:y=${y - t}:w=${w}:h=${2 * t}:color=black@0.45:t=fill`);
+    lines.push(`drawbox=x=${x - Math.floor(t / 2)}:y=0:w=${t}:h=${h}:color=${colour}:t=fill`, `drawbox=x=0:y=${y - Math.floor(t / 2)}:w=${w}:h=${t}:color=${colour}:t=fill`);
+    const text = (s, lx, ly) => `drawtext=text='${s}':x=${lx}:y=${ly}:fontsize=${size}:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=${Math.round(size / 5)}`;
+    labels.push(text(x, x + t + 4, t + 4), text(y, t + 4, y + t + 4));
+  }
+  // an ffmpeg without text (no freetype) still draws the lines
+  let labelled = true, err = frameOf(input, out, o.at, [...lines, ...labels]);
+  if (err) { labelled = false; err = frameOf(input, out, o.at, lines); }
+  if (err) fail(`ffmpeg could not draw the grid: ${err}`);
+  console.log(`${out}: ${rel(input)}${o.at !== undefined ? ` at ${o.at} s` : ""}, ${w}×${h}, with a line every 10 %: every ${Math.round(w / 10)} px across and every ${Math.round(h / 10)} px down${labelled ? ", each labelled with its px in the source" : " (this ffmpeg draws no text: count the lines)"}; the red lines are the middle.`);
+  console.log(`Look at it and read off, in px of the source (x,y of the top left corner, then width,height):`);
+  console.log(`  a face: from the hairline to the chin, from cheek to cheek (not the hair, the ears or the neck)   → --face x,y,w,h`);
+  console.log(`  a face that moves: the grid at several moments (--at), one box each   → --face-at <seconds>:x,y,w,h`);
+  console.log(`  a screen: the part that matters → --region x,y,w,h, and how tall a capital letter of its smallest text is → --min-text-height <px>`);
+  console.log(`Then: ${self()} place <folder> --frame 9:16 --source ${w}x${h} --face … --text caption:2`);
+}
+
+// ---- page ----
+
+function readPlacement(folder, cmd) {
+  if (!folder) fail(`${self()} ${cmd} <folder>: the folder ${self()} place wrote into.`);
+  const file = path.join(folder, "placement.json");
+  if (!fs.existsSync(file)) fail(`There is no ${file}: run ${self()} place ${folder} … first.`);
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { fail(`${file} cannot be read (${e.message}): run ${self()} place ${folder} … again.`); }
+}
+
+// which candidates, from 1: "2", "1,3", "all"; none: the first `first`
+function pick(res, value, first) {
+  const n = res.candidates.length;
+  if (!n) fail("The placement has no candidate.");
+  if (value === undefined) return Array.from({ length: Math.min(first, n) }, (_, i) => i);
+  if (value === "all") return res.candidates.map((_, i) => i);
+  const list = String(value).split(",").map((s) => Number(s.trim()));
+  for (const k of list) if (!Number.isInteger(k) || k < 1 || k > n) fail(`There is no candidate ${k}: the placement has ${n} (1–${n}).`);
+  return list.map((k) => k - 1);
+}
+
+// a picture of a page as Chrome shows it at the frame's size
+function picture(chrome, page, png, [W, H]) {
+  fs.rmSync(png, { force: true });
+  // Chrome puts a socket into TMPDIR, at most 107 bytes long: a deep TMPDIR gets the system's
+  const env = (process.env.TMPDIR || "/tmp").length > 60 ? { ...process.env, TMPDIR: "/tmp" } : process.env;
+  spawnSync(chrome, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files", `--window-size=${W},${H}`, "--virtual-time-budget=5000", `--screenshot=${path.resolve(png)}`, pathToFileURL(path.resolve(page)).href], { encoding: "utf8", env, timeout: 90e3 });
+  return fs.existsSync(png);
+}
+
+function cmdPage(o) {
+  const [folder] = o._;
+  const res = readPlacement(folder, "page");
+  const picks = pick(res, o.candidate, 3);
+  const sources = res.sources || [{ size: res.source }];
+  // the stills: one frame per source, copied beside the pages so that their links hold
+  if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
+  const stills = o.still.map((input, i) => {
+    const [w, h] = probe(input), [sw, sh] = sources[i].size;
+    if (Math.abs((w / h) / (sw / sh) - 1) > 0.02) fail(`${input} is ${w}×${h}; the placement was made for a source of ${sw}×${sh}, another shape: give the recording the boxes were read from.`);
+    const out = path.join(folder, i ? `still-${i + 1}.jpg` : "still.jpg");
+    const err = frameOf(input, out, o.at);
+    if (err) fail(`ffmpeg could not take a frame of ${input}: ${err}`);
+    return out;
+  });
+  const chrome = chromePath();
+  console.log(`${res.frame} ${res.size.join("×")} for ${res.platforms.join(", ")}${stills.length ? `, on a frame of ${o.still.map(rel).join(" and ")}${o.at !== undefined ? ` at ${o.at} s` : ""}` : ", on a drawn surface with each face as an oval (--still <video|image> shows the recording)"}`);
+  let differ = 0;
+  for (const i of picks) {
+    const c = res.candidates[i], page = path.join(folder, `candidate-${i + 1}.html`), png = path.join(folder, `candidate-${i + 1}.png`);
+    fs.writeFileSync(page, renderPage(c, res, { stills: stills.length ? stills : null, page }));
+    let checked;
+    try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { fail(e.message); }
+    const shot = chrome && picture(chrome, page, png, res.size);
+    const cmp = compare(c, checked);
+    console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
+    for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}`);
+    console.log(`   solver:  ${c.problems.length ? c.problems.map((q) => `${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of} ${q.what}`).join("; ") : "✓ no problem"}`);
+    console.log(`   checker: ${checked.findings.length ? checked.findings.map((f) => `${f.level} ${f.kind === "text" ? `"${f.label}"` : f.label} ${f.what}`).join("; ") : "✓ nothing under the apps' buttons, nothing on top of each other"}`);
+    if (!cmp.verdictAgrees) { differ++; console.log(`   ✗ They differ: ${checked.ok ? "the checker passes what the solver fails" : "the checker fails what the solver passes"} (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}). The checker measured the page: do not take this candidate without looking at why.`); }
+    else if (!cmp.agree) console.log(`   They agree on the verdict and differ in a finding (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}).`);
+  }
+  console.log(`\nLook at ${picks.length > 1 ? "each picture" : "the picture"} before you choose. What no measurement here knows: whether the picture behind a text is calm (the solver sees boxes, no pixels), whether the box of a face was read right, and how wide the video's own words are: the pages show placeholder words, a caption block is taken as wide as its area and a hook line as ten letters' widths.`);
+  console.log(`Chosen: ${self()} captions ${rel(folder)} --candidate N gives the options for agentitos' captions; scale, left, top, window and the text's boxes of the candidate are in ${rel(path.join(folder, "placement.json"))} for the skill that builds the video.`);
+  if (differ) process.exitCode = 1;
+}
+
+// ---- captions ----
+
+function cmdCaptions(o) {
+  const [folder] = o._;
+  const res = readPlacement(folder, "captions");
+  const [i] = pick(res, o.candidate, 1), c = res.candidates[i];
+  const t = c.text.find((q) => q.role === "caption");
+  const what = `Candidate ${i + 1} (${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`})`;
+  if (!t) fail(res.needs.some((n) => n.role === "caption") ? `${what} has no place for the captions asked for: take a candidate that has one (✓ or ! in ${self()} place), or fewer lines.` : `The placement asked for no captions: run ${self()} place ${folder} … again with --text caption:2.`);
+  const centred = t.align === "center" && Math.abs(t.box[0] + t.box[2] / 2 - res.size[0] / 2) < 1;
+  // rounded into the area: the lowest line ends no lower, the lines run no wider
+  const opts = { ...(centred ? {} : { x: Math.ceil(t.box[0]) }), y: Math.floor(Y1(t.box) + 1e-6), "max-width": Math.floor(t.box[2] + 1e-6), ...(centred ? {} : { align: t.align === "center" ? "centre" : t.align }), "font-size": t.font, lines: t.lines };
+  const args = Object.entries(opts).flatMap(([k, v]) => [`--${k}`, String(v)]);
+  if (o.json) return console.log(JSON.stringify({ candidate: i + 1, fit: c.fit, where: t.where, box: t.box, options: opts, args }, null, 1));
+  console.log(`${what}: ${plural(t.lines, "caption line")} ${t.where}, ${boxText(t.box)}, ${t.font} px type, ${centred ? "centred on the frame" : `${t.align === "center" ? "centred" : `${t.align}-aligned`} in a column`}.`);
+  console.log(`For agentitos' captions (build or project), with its --size ${res.size.join("x")}:`);
+  console.log(`  ${args.join(" ")}`);
+  if (c.hard) console.log(`! This candidate fails (${c.problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ")}): its caption area is only as good as the candidate.`);
+  if (t.lines > 2) console.log(`! captions sets at most two lines: place again with --text caption:2.`);
+  console.log(`captions answers "Placed where asked: …" when it took them. A captions that answers nothing of the kind does not know these options and sets the lowest line on the safe box's bottom whatever is there: look at its frame then.`);
+}
+
+const [cmd, ...rest] = process.argv.slice(2);
+if (cmd === "grid") cmdGrid(parseArgs(cmd, rest));
+else if (cmd === "place") cmdPlace(parseArgs(cmd, rest));
+else if (cmd === "page") cmdPage(parseArgs(cmd, rest));
+else if (cmd === "captions") cmdCaptions(parseArgs(cmd, rest));
+else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption:2] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1]`);
