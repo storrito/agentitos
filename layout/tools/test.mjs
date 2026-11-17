@@ -332,7 +332,7 @@ t("two people in one wide picture into 9:16, two caption lines: a crop on each, 
   ok(!st.others, "the other person shows in a half");
   ok(st.parts[0].scale === st.parts[1].scale, "the two halves of one picture have two scales");
   ok(whole.faceInFrame.length === 2 && !whole.hard, "the whole picture does not hold both");
-  ok(on[0].faceInFrame.length === 1 && on[0].leftOut === 1 && on[0].terms.people === DEFAULTS.weights.people.leftOut, "a crop on one does not count the other as left out");
+  ok(on[0].faceInFrame.length === 1 && on[0].leftOut === 1 && on.every((q) => res.candidates.indexOf(q) > res.candidates.indexOf(whole)), "a crop on one does not stand behind the candidates that show both");
   agree(st, res, "two-916-stacked"); agree(on[0], res, "two-916-crop-on-1"); agree(whole, res, "two-916-whole");
   return `stacked at ${st.parts[0].scale}×, faces ${st.faceHeight} px, caption y ${Math.round(cp.box[1])}–${Math.round(Y1(cp.box))}; then ${res.candidates.slice(1, 4).map((c) => `${nameOf(c)}${c.speaker ? ` on face ${c.speaker}` : ""}`).join(", ")}`;
 });
@@ -342,13 +342,27 @@ t("--speaker 2: only the crops on the second person are listed, leaving the firs
   const crops = res.candidates.filter((c) => c.speaker);
   ok(crops.length === 3 && crops.every((c) => c.speaker === 2), `crops on: ${crops.map((c) => c.speaker)}`);
   const first = res.candidates[0];
-  ok(first.fit === "crop" && first.crop === "9:16" && first.speaker === 2 && !first.terms.people, `the first is ${nameOf(first)}`);
+  ok(first.fit === "crop" && first.crop === "9:16" && first.speaker === 2 && first.leftOut === 1, `the first is ${nameOf(first)}`);
   ok(Math.abs(first.faceInFrame[0][0] + first.faceInFrame[0][2] / 2 - 540) < 1, "the speaker is not on the frame's middle");
   ok(res.candidates[1].fit === "stacked", `the second is ${nameOf(res.candidates[1])}`);
   let thrown = false; try { solve({ zones: Z916, source: SRC2P, faces: TWO, needs: [], speaker: 3 }); } catch { thrown = true; }
   ok(thrown, "a speaker that is not there is accepted");
   agree(first, res, "two-916-speaker-2");
   return `${nameOf(first)} on face 2, cost ${first.cost}; stacked ${res.candidates[1].cost}`;
+});
+
+t("two people far apart, one larger (1920×1080 into 9:16, one caption line), no speaker named: the stacked candidate that shows both leads, though the crop on the larger face (1.78×, soft, the other person left out) costs less; whom to leave out is the caller's to say, and with --speaker 2 that crop leads", () => {
+  const faces = [[230, 536, 248, 303], [1353, 195, 297, 384]];
+  const res = solve({ zones: Z916, source: SRC2P, faces, needs: [cap(1)] }), first = res.candidates[0];
+  const crop = res.candidates.find((c) => c.fit === "crop" && c.crop === "9:16" && c.speaker === 2);
+  ok(first.fit === "stacked" && !first.hard && !first.unmet.length && !first.soft && first.faceInFrame.length === 2, `the first is ${nameOf(first)}${first.speaker ? ` on face ${first.speaker}` : ""}`);
+  ok(crop && crop.leftOut === 1 && !crop.hard && crop.cost < first.cost, `the crop on face 2: ${crop ? `cost ${crop.cost} against ${first.cost}` : "not listed"}`);
+  const all = res.candidates.filter((c) => !c.hard && !c.unmet.length), shown = all.filter((c) => !c.leftOut), out = all.filter((c) => c.leftOut);
+  ok(shown.length && out.length && Math.max(...shown.map((c) => res.candidates.indexOf(c))) < Math.min(...out.map((c) => res.candidates.indexOf(c))), "a candidate that leaves a person out stands before one that shows both");
+  ok(/leaves a person out/.test(crop.behind) && res.notes.some((n) => /--speaker/.test(n)), `the crop says: ${crop.behind}`);
+  const named = solve({ zones: Z916, source: SRC2P, faces, needs: [cap(1)], speaker: 2 }).candidates[0];
+  ok(named.fit === "crop" && named.crop === "9:16" && named.speaker === 2, `with --speaker 2 the first is ${nameOf(named)}`);
+  return `stacked (cost ${first.cost}) before the crop on face 2 (cost ${crop.cost}); with --speaker 2: ${nameOf(named)}`;
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {

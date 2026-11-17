@@ -135,7 +135,7 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
         const f = main.faces[k], q = pictureFits({ ...ctx, fb: [f[0], f[1], X1(f), Y1(f)], own: [k], speaker: k }, { cropsOnly: true });
         out.push(...q.out); notes.push(...q.notes.map((n) => `a crop on face ${k + 1}: ${n}`));
       }
-      if (speaker == null) notes.push(`no speaker named: the crops on one person are listed for each of the ${main.faces.length}, and leaving the others out costs ${D.weights.people.leftOut} points a person (--speaker N: only that one, at no cost)`);
+      if (speaker == null) notes.push(`no speaker named: the crops on one person are listed for each of the ${main.faces.length}, behind every candidate that shows them all: whom to leave out is yours to say (--speaker N lists only that person's crops, ranked with the rest)`);
       if (main.faces.length === 2 && ctx.tall) {
         const order = [0, 1].sort((a, b) => main.faces[a][0] + main.faces[a][2] / 2 - main.faces[b][0] - main.faces[b][2] / 2);
         out.push(...splitFits(ctx, "stacked", order.map((i) => ({ src: 0, own: [i] }))));
@@ -182,12 +182,12 @@ function why(c, ctx) {
   out.push(`cost ${c.cost} (${costText(c.terms)})`);
   return out;
 }
-const TERM = { enlargement: "enlargement", ground: "ground", subject: "subject", people: "left out", soft: "soft problems", text: "text away", hook: "hook smaller" };
+const TERM = { enlargement: "enlargement", ground: "ground", subject: "subject", soft: "soft problems", text: "text away", hook: "hook smaller" };
 const signed = (v) => `${v < 0 ? "−" : "+"}${Math.abs(v)}`;
 const costText = (terms) => Object.entries(terms).filter(([, v]) => v).map(([k, v]) => `${TERM[k]} ${signed(v)}`).join(", ") || "no term";
-const CRIT = ["it has a hard problem", "it leaves a need unmet"];
+const CRIT = ["it has a hard problem", "it leaves a need unmet", "it leaves a person out and no speaker is named"];
 function behind(c, top) {
-  for (let i = 0; i < 2; i++) if (c.rank[i] !== top.rank[i]) return `behind the first because ${CRIT[i]}`;
+  for (let i = 0; i < CRIT.length; i++) if (c.rank[i] !== top.rank[i]) return `behind the first because ${CRIT[i]}`;
   const d = Math.round((c.cost - top.cost) * 1000) / 1000;
   if (!d) return c.variant !== top.variant ? "equal in cost to the first, further from the usual hold" : "equal to the first";
   // the terms that put it behind, the largest first

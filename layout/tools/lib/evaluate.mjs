@@ -89,12 +89,13 @@ export function evaluate(ctx, p) {
     textPenalty: text.penalty,
     variant: p.variant || 0,
   };
-  // The ranking. First: no hard problem; then: every need met. Then the cost in points, smaller
-  // first, from the terms of weights.json:
+  // The ranking. First: no hard problem; then: every need met; then, where the caller named no
+  // speaker: nobody left out of the picture (whom a crop on one of several people leaves out is
+  // the caller's decision, never the ranking's). Then the cost in points, smaller first, from the
+  // terms of weights.json:
   //   enlargement  0 up to enlarge.softFrom, rising to enlarge.costAtForbidden at enlarge.forbiddenFrom
   //   ground       ground.cost for every per cent of the frame the sharp picture does not fill
   //   subject      subject.worth off for every per cent of the frame's height the face is tall (at most subject.enough)
-  //   left out     people.leftOut for every person a crop on another leaves out (nothing when the caller named the speaker)
   //   soft         soft.cost for every soft problem other than enlargement
   //   text, hook   text.away for every step a text stands from its usual place, text.hookSmaller for a hook under its size
   // Last, among equals: the hold nearest the fit's usual one.
@@ -106,14 +107,13 @@ export function evaluate(ctx, p) {
     enlargement: Math.max(0, (p.s - EN.softFrom) / (EN.forbiddenFrom - EN.softFrom)) * EN.costAtForbidden,
     ground: Wt.ground.cost * 100 * c.ground,
     subject: -Wt.subject.worth * share,
-    people: ctx.speakerNamed ? 0 : Wt.people.leftOut * leftOut,
     soft: Wt.soft.cost * softOther,
     text: Wt.text.away * c.textPenalty,
     hook: c.fullSize ? 0 : Wt.text.hookSmaller,
   };
   for (const k of Object.keys(c.terms)) c.terms[k] = Math.round(c.terms[k] * 1000) / 1000 || 0;
   c.cost = Math.round(Object.values(c.terms).reduce((a, b) => a + b, 0) * 1000) / 1000;
-  c.rank = [c.hard ? 1 : 0, c.unmet.length, Math.round(c.cost * 1000), c.variant];
+  c.rank = [c.hard ? 1 : 0, c.unmet.length, leftOut && !ctx.speakerNamed ? 1 : 0, Math.round(c.cost * 1000), c.variant];
   return c;
 }
 

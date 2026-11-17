@@ -59,7 +59,7 @@ export const DEFAULTS = {
 // { value, says }: here only the values, checked, so that a file with a term missing or misspelt
 // fails here and not as a NaN in a candidate's cost.
 export const WEIGHTS_FILE = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "weights.json");
-const TERMS = ["enlarge.softFrom", "enlarge.forbiddenFrom", "enlarge.costAtForbidden", "subject.worth", "subject.enough", "ground.cost", "people.leftOut", "soft.cost", "text.away", "text.hookSmaller"];
+const TERMS = ["enlarge.softFrom", "enlarge.forbiddenFrom", "enlarge.costAtForbidden", "subject.worth", "subject.enough", "ground.cost", "soft.cost", "text.away", "text.hookSmaller"];
 export function readWeights(file = WEIGHTS_FILE) {
   let raw;
   try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { throw new Error(`The weights file ${file} cannot be read (${e.message}): it is JSON like tools/weights.json, every term { "value": … }.`); }
