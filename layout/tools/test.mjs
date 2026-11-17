@@ -121,7 +121,9 @@ const Z916 = askZones("9:16"), Z169 = askZones("16:9");
 const HAND_TYPE = { "caption.font.tall": 56, "caption.padEm": 0 };
 const run1 = (zones, text, set) => solve({ zones, source: SRC1, faces: [FACE1], needs: text, set: { ...HAND_TYPE, ...set } });
 const plain1 = (zones, text) => solve({ zones, source: SRC1, faces: [FACE1], needs: text });
-const cap = (n) => ({ role: "caption", lines: n }), hook = { role: "hook" };
+// hook: the kind the solver tries first (a short text in the middle, then the card); card: the
+// card across the top, which is what the hand laid out
+const cap = (n) => ({ role: "caption", lines: n }), hook = { role: "hook" }, card = { role: "hook", kind: "card" };
 
 t("one caption line: the zoom wins, ≈ 1.07 at about −76/−134, text above the head", () => {
   const res = run1(Z916, [cap(1)]), c = res.candidates[0];
@@ -153,31 +155,31 @@ t("unchanged, captions at the safe box's bottom lie on the face (the hand's page
   ok(found.some((q) => q.code === "covered" && q.kind === "face"), "the solver sees no covered face");
 });
 
-t("the zoom holds one caption line or the hook, not both", () => {
+t("the zoom holds one caption line or the card, not both", () => {
   const z = (text) => run1(Z916, text).candidates.find((q) => q.fit === "zoom");
-  const a = z([hook]), b = z([hook, cap(1)]), c2 = z([cap(2)]);
-  ok(!a.hard && !a.unmet.length && a.text[0].where === "above-head", "the hook alone does not fit above the head");
-  ok(b.unmet.length === 1, `hook and caption both fit in the zoom: ${JSON.stringify(b.text.map((q) => q.role))}`);
-  side("P1 zoom 1.07, hook alone", "card 196 px tall at 66 px", `card ${a.text[0].box[3]} px tall at ${a.text[0].font} px`);
-  side("P1 zoom 1.07, hook + captions", "not both", `not both (${b.unmet.join(", ")} without a place)`);
+  const a = z([card]), b = z([card, cap(1)]), c2 = z([cap(2)]);
+  ok(!a.hard && !a.unmet.length && a.text[0].where === "above-head", "the card alone does not fit above the head");
+  ok(b.unmet.length === 1, `card and caption both fit in the zoom: ${JSON.stringify(b.text.map((q) => q.role))}`);
+  side("P1 zoom 1.07, card alone", "card 196 px tall at 66 px", `card ${a.text[0].box[3]} px tall at ${a.text[0].font} px`);
+  side("P1 zoom 1.07, card + captions", "not both", `not both (${b.unmet.join(", ")} without a place)`);
   side("P1 zoom 1.07, caption lines above the head", "one (two only at 0.9)", c2.unmet.length ? "one" : `two fit too (y ${Math.round(c2.text[0].box[1])}–${Math.round(c2.text[0].box[1] + c2.text[0].box[3])}, safe box from ${Z916.safe[1]})`);
-  return `hook alone at ${a.text[0].font} px; with a caption line: ${b.unmet.join(", ")} without a place`;
+  return `card alone at ${a.text[0].font} px; with a caption line: ${b.unmet.join(", ")} without a place`;
 });
 
 t("hook plus two caption lines: no full or zoom fits; 0.82 is the first inset that holds both at the card's size", () => {
-  const res = run1(Z916, [hook, cap(2)]);
-  for (const c of res.candidates.filter((q) => q.fit !== "inset")) ok(c.hard || c.unmet.length, `${c.fit} fits hook plus captions`);
+  const res = run1(Z916, [card, cap(2)]);
+  for (const c of res.candidates.filter((q) => q.fit !== "inset")) ok(c.hard || c.unmet.length, `${c.fit} fits card plus captions`);
   const top = res.candidates[0], fullSize = res.candidates.find((q) => q.fit === "inset" && q.fullSize);
   ok(top.fit === "inset", `the winner is ${top.fit}`);
   ok(fullSize, "no inset holds the card at its size");
   near(fullSize.scale, 0.82, 0.005, "the inset with the card at its size"); near(fullSize.left, 97, 1, "left"); near(fullSize.top, 215, 1, "top");
   ok(fullSize.text.every((q) => q.where === "above-head"), "not all text is above the head");
   // the same, the card not allowed to shrink: 0.82 is then the first of all
-  const fixed = run1(Z916, [hook, cap(2)], { "hookCard.minFont": DEFAULTS.hookCard.font }).candidates[0];
+  const fixed = run1(Z916, [card, cap(2)], { "hookCard.minFont": DEFAULTS.hookCard.font }).candidates[0];
   ok(fixed.fit === "inset", `with a fixed card the winner is ${fixed.fit}`); near(fixed.scale, 0.82, 0.005, "with a fixed card");
   // and without the 20 px the hand kept under the chin
-  const noPad = run1(Z916, [hook, cap(2)], { "hookCard.minFont": DEFAULTS.hookCard.font, facePad: 0 }).candidates[0];
-  side("P1 9:16, hook + 2 caption lines", "inset 0.82 at 97/215, card 240 px (76 px), all above the head", `inset ${fullSize.scale} at ${fullSize.left}/${fullSize.top}, card ${fullSize.text.find((q) => q.role === "hook").box[3]} px (76 px), all above the head`);
+  const noPad = run1(Z916, [card, cap(2)], { "hookCard.minFont": DEFAULTS.hookCard.font, facePad: 0 }).candidates[0];
+  side("P1 9:16, card + 2 caption lines", "inset 0.82 at 97/215, card 240 px (76 px), all above the head", `inset ${fullSize.scale} at ${fullSize.left}/${fullSize.top}, card ${fullSize.text.find((q) => q.role === "hook").box[3]} px (76 px), all above the head`);
   side("  the solver's first", "(the hand shrank the card to 66 px only in the zoom)", `inset ${top.scale} at ${top.left}/${top.top} with the card at ${top.text.find((q) => q.role === "hook").font} px`);
   side("  without the 20 px under the chin", "–", `inset ${noPad.scale}`);
   if (!QUICK) for (const [c, n] of [[top, "p1-hook2-first"], [fullSize, "p1-hook2-fullsize"]]) { const v = verify(c, res, n); ok(v.r.ok, `the checker fails ${n}`); ok(v.cmp.agree, `solver and checker differ on ${n}: ${JSON.stringify(v.cmp)}`); }
@@ -188,9 +190,9 @@ t("the hand's insets, placed as the hand placed them, pass in the solver's geome
   const ctxOf = (text) => { const D = structuredClone(DEFAULTS); D.caption.font.tall = HAND_TYPE["caption.font.tall"]; D.caption.padEm = 0; return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
   const a = evaluate(ctxOf([cap(2)]), { fit: "inset", s: 0.9, left: 54, top: 97, win: [54, 97, 972, 1728] });
   ok(!a.hard && !a.unmet.length && a.text[0].where === "above-head", `0.9 with two lines: ${JSON.stringify(a.problems)}`);
-  const b = evaluate(ctxOf([hook, cap(2)]), { fit: "inset", s: 0.82, left: 97, top: 215, win: [97, 215, 885.6, 1574.4] });
-  ok(!b.hard && !b.unmet.length && b.fullSize, `0.82 with hook and two lines: ${JSON.stringify(b.problems)}`);
-  const c = evaluate(ctxOf([hook, cap(2)]), { fit: "inset", s: 0.9, left: 54, top: 97, win: [54, 97, 972, 1728] });
+  const b = evaluate(ctxOf([card, cap(2)]), { fit: "inset", s: 0.82, left: 97, top: 215, win: [97, 215, 885.6, 1574.4] });
+  ok(!b.hard && !b.unmet.length && b.fullSize, `0.82 with card and two lines: ${JSON.stringify(b.problems)}`);
+  const c = evaluate(ctxOf([card, cap(2)]), { fit: "inset", s: 0.9, left: 54, top: 97, win: [54, 97, 972, 1728] });
   ok(c.unmet.length || !c.fullSize, "0.9 holds the card at its size and two lines");
   const res2 = run1(Z916, [cap(2)]), first2 = res2.candidates[0];
   // where the solver goes further than the hand (two lines above the head in the zoom), the checker decides
@@ -199,7 +201,7 @@ t("the hand's insets, placed as the hand placed them, pass in the solver's geome
 });
 
 t("16:9: the whole take as a panel on the left passes, text beside it", () => {
-  const res = run1(Z169, [hook, cap(2)]), c = res.candidates[0];
+  const res = run1(Z169, [card, cap(2)]), c = res.candidates[0];
   ok(c.fit === "panel" && c.side === "left", `the winner is ${c.fit} ${c.side || ""}`);
   near(c.window[2], 607.5, 0.6, "panel width"); near(c.window[3], 1080, 0.6, "panel height");
   ok(!c.hard && !c.unmet.length && c.text.every((q) => q.where === "beside"), `the panel: ${JSON.stringify(c.problems)}`);
@@ -255,7 +257,7 @@ if (!QUICK) t("solver and checker give the same verdict on the six hand pages, a
 if (!QUICK) t("the solver's candidates for the wide take pass the checker where the solver passes them", () => {
   const diff = [];
   let n = 0;
-  for (const [Z, text, tag] of [[Z916, [cap(2)], "916-cap2"], [Z916, [hook, cap(2)], "916-hook-cap2"], [Z169, [hook, cap(1)], "169-hook-cap1"]]) {
+  for (const [Z, text, tag] of [[Z916, [cap(2)], "916-cap2"], [Z916, [card, cap(2)], "916-card-cap2"], [Z169, [card, cap(1)], "169-card-cap1"]]) {
     const res = run2(Z, text);
     res.candidates.forEach((c, i) => {
       const v = verify(c, res, `p2-${tag}-${i + 1}-${c.fit}`);
@@ -275,7 +277,7 @@ const SRCW = SRC2, FACEW = FACE2;
 const Z45 = askZones("4:5"), Z11 = askZones("1:1");
 const ZONES = { "9:16": Z916, "16:9": Z169, "4:5": Z45, "1:1": Z11 };
 const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.side ? ` ${c.side}` : ""} ${r2(c.enlargement)}×`;
-const needsOf = (list) => list.map((x) => (x === "hook" ? hook : cap(Number(x.split(":")[1]))));
+const needsOf = (list) => list.map((x) => (x === "hook" ? hook : x === "hook:card" ? card : cap(Number(x.split(":")[1]))));
 const table = [];
 
 t("the judged wide take (1280×720 into 9:16, two caption lines): the 4:5 crop (1.875×, soft) first, the square (1.5×, no problem) second, the whole picture as a strip third, the 2.67× crop fails", () => {
@@ -324,15 +326,47 @@ t("one term changed changes the order: with enlargement at 5 points at the limit
   ok(!far.hard, "with the limit at 3× the 2.67× crop still fails");
 });
 
+const X1 = (b) => b[0] + b[2], Y1 = (b) => b[1] + b[3];
+const inside = (o, i) => i[0] >= o[0] - 0.1 && i[1] >= o[1] - 0.1 && X1(i) <= X1(o) + 0.1 && Y1(i) <= Y1(o) + 0.1;
+const overlap = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > 0.1 && Math.min(Y1(a), Y1(b)) - Math.max(a[1], b[1]) > 0.1;
+const agree = (c, res, name) => { if (QUICK) return; const v = verify(c, res, name); ok(v.r.ok === !c.hard, `${name}: the checker ${v.r.ok ? "passes" : "fails"} it, the solver ${c.hard ? "fails" : "passes"} it`); ok(v.cmp.agree, `${name}: solver and checker differ: ${JSON.stringify(v.cmp)}`); };
+
+// =============================================================================================
+console.log("\nA hook: a short text in the middle, or a card across the top");
+// =============================================================================================
+t("a hook in an upright frame is tried first as published Shorts set it: a short text below the chin, its block 12.4 % of the frame's height tall, at most as wide as the centred box, its middle near 53 % of the height; with captions it stands above them. A face so close that nothing is free below the chin takes the text above the head, smaller; hook:card asks for the card across the top (which the hand laid out), hook:text never falls back to it; a screen and two stacked people keep the card, and 16:9 its big lines", () => {
+  // a face as most published talking heads frame it: 28 % of the height, the chin at half height
+  const usual = [340, 420, 400, 540], text = { role: "hook", kind: "text" };
+  const one = solve({ zones: Z916, source: SRC1, faces: [usual], needs: [hook] }).candidates[0], h = one.text[0];
+  ok(one.fit === "full" && !one.hard && !one.unmet.length && !one.soft, `the usual face with a hook: ${nameOf(one)} ${JSON.stringify(one.problems)}`);
+  ok(h.style === "text" && h.where === "below-chin" && h.font === DEFAULTS.hookText.font && !h.shrunk, `the hook: ${h.style} ${h.where} at ${h.font} px`);
+  near(h.box[3] / 1920, 0.124, 0.001, "the block's height in the frame's"); near(h.box[0] + h.box[2] / 2, 540, 0.1, "the block's middle across");
+  ok(h.box[2] <= Z916.centred[2] + 0.1 && h.box[2] <= 0.72 * 1080 + 0.1, `the block is ${h.box[2]} px wide`);
+  const mid = (h.box[1] + h.box[3] / 2) / 1920;
+  ok(mid >= 0.53 - 0.001 && mid <= 0.65 && h.box[1] >= Y1(one.faceInFrame[0]), `the block's middle is at ${Math.round(100 * mid)} % of the height`);
+  const both = solve({ zones: Z916, source: SRC1, faces: [usual], needs: [hook, cap(1)] }), b = both.candidates[0], bh = b.text.find((x) => x.role === "hook"), bc = b.text.find((x) => x.role === "caption");
+  ok(b.fit === "full" && !b.unmet.length && bh.style === "text" && bh.where === "below-chin" && bc.where === "below-chin" && Y1(bh.box) <= bc.box[1] - both.defaults.gap + 0.1 && Math.abs(Y1(bc.box) - Y1(Z916.safe)) < 0.6, `hook and caption: hook y ${bh.box[1]}–${Y1(bh.box)}, caption y ${bc.box[1]}–${Y1(bc.box)}`);
+  agree(one, solve({ zones: Z916, source: SRC1, faces: [usual], needs: [hook] }), "hook-text"); agree(b, both, "hook-text-caption");
+  // the close take of the hand cases: the chin at 77 % of the height
+  const close = (need) => solve({ zones: Z916, source: SRC1, faces: [FACE1], needs: [need] }).candidates.find((c) => c.fit === "zoom");
+  const ct = close(hook).text[0], cc = close(card).text[0], only = close(text).text[0];
+  ok(ct.style === "text" && ct.where === "above-head" && ct.shrunk && ct.font >= DEFAULTS.hookText.minFont, `the close take's hook: ${ct.style} ${ct.where} at ${ct.font} px`);
+  ok(cc.style === "card" && cc.where === "above-head" && cc.font === 66 && only.style === "text", `asked for: ${cc.style} at ${cc.font} px, ${only.style}`);
+  const none = solve({ zones: Z916, source: SRC1, faces: [FACE1], needs: [text, cap(2)] }).candidates.find((c) => c.fit === "zoom");
+  ok(none.unmet.length && none.text.every((x) => x.style !== "card"), "hook:text fell back to a card");
+  // a screen, two people stacked, a wide frame
+  const scr = solve({ zones: Z916, sources: [{ size: [1920, 1080], region: [700, 300, 480, 300], minTextHeight: 14 }], needs: [hook, cap(1)] }).candidates[0];
+  const two = solve({ zones: Z916, source: [1920, 1080], faces: [[420, 300, 220, 300], [1280, 320, 220, 300]], needs: [hook, cap(1)] }).candidates.find((c) => c.fit === "stacked");
+  const wide = solve({ zones: Z169, source: SRC1, faces: [FACE1], needs: [hook] }).candidates[0];
+  ok(scr.text.find((x) => x.role === "hook").style === "card" && two.text.find((x) => x.role === "hook")?.style === "card" && wide.text[0].style === "big", `a screen: ${scr.text.map((x) => x.style)}, stacked: ${two.text.map((x) => x.style)}, 16:9: ${wide.text[0].style}`);
+  return `the usual face: text at ${h.font} px, y ${Math.round(h.box[1])}–${Math.round(Y1(h.box))} (its middle at ${Math.round(100 * mid)} %); with a caption line y ${Math.round(bh.box[1])}–${Math.round(Y1(bh.box))} above y ${Math.round(bc.box[1])}–${Math.round(Y1(bc.box))}; the close take: text above the head at ${ct.font} px, the card at ${cc.font} px`;
+});
+
 // =============================================================================================
 console.log("\nSeveral faces: one box each");
 // =============================================================================================
 // two people in one wide picture: 1920×1080, the left one's face x 420–640, the right one's x 1280–1500
 const SRC2P = [1920, 1080], TWO = [[420, 300, 220, 300], [1280, 320, 220, 300]];
-const X1 = (b) => b[0] + b[2], Y1 = (b) => b[1] + b[3];
-const inside = (o, i) => i[0] >= o[0] - 0.1 && i[1] >= o[1] - 0.1 && X1(i) <= X1(o) + 0.1 && Y1(i) <= Y1(o) + 0.1;
-const overlap = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > 0.1 && Math.min(Y1(a), Y1(b)) - Math.max(a[1], b[1]) > 0.1;
-const agree = (c, res, name) => { if (QUICK) return; const v = verify(c, res, name); ok(v.r.ok === !c.hard, `${name}: the checker ${v.r.ok ? "passes" : "fails"} it, the solver ${c.hard ? "fails" : "passes"} it`); ok(v.cmp.agree, `${name}: solver and checker differ: ${JSON.stringify(v.cmp)}`); };
 
 t("two people in one wide picture into 9:16, two caption lines: a crop on each, both stacked and the whole picture are candidates; stacked leads: each face in its half and in the safe box, the caption on the seam, neither person in the other's half", () => {
   const res = solve({ zones: Z916, source: SRC2P, faces: TWO, needs: [cap(2)] });
@@ -599,7 +633,8 @@ t("a 3:4 take (1080×1440) into 9:16 with two caption lines, the face low and to
 console.log("\nA frame of another size, and boxes a pixel past a line");
 // =============================================================================================
 t("a frame of 720×1280 is laid out as one of 1080×1920, two thirds the size: the same fits, the picture and the text at two thirds of their px, the type two thirds as large (text set for 1080 once ran out of the smaller frame)", () => {
-  const needs = [hook, cap(2)], small = solve({ zones: askZones("720x1280"), source: SRC1, faces: [FACE1], needs }), large = plain1(Z916, needs);
+  // (the card: the hook as text sits on a threshold in this take, where a rounded px of type swaps two places)
+  const needs = [card, cap(2)], small = solve({ zones: askZones("720x1280"), source: SRC1, faces: [FACE1], needs }), large = plain1(Z916, needs);
   ok(small.size.join("×") === "720×1280" && small.candidates.length === large.candidates.length, `${small.candidates.length} candidates in ${small.size.join("×")}, ${large.candidates.length} in 1080×1920`);
   small.candidates.forEach((c, i) => {
     const big = large.candidates[i];
@@ -731,6 +766,8 @@ t("what the tool cannot do with its input it says in one sentence: a file where 
     e = cli("place", dir, ...face, "--set", set);
     sentence(e, `--set ${set}`); ok(says.test(e.stderr), `--set ${set}: ${e.stderr}`);
   }
+  e = cli("place", dir, ...face, "--text", "hook:banner");
+  sentence(e, "--text hook:banner"); ok(/hook:text or hook:card/.test(e.stderr), `--text hook:banner: ${e.stderr}`);
   ok(!fs.existsSync(path.join(dir, "placement.json")), "a placement was written for input that was refused");
   ok(cli("place", dir, ...face, "--set", "insetStep=0.02").status === 0, "a step of 2 % is refused");
   e = cliWith({ CHROME: path.join(OUT, "no-chrome-here") }, "page", dir);

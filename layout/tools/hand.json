@@ -1,5 +1,5 @@
 {
- "about": "The cases laid out by hand that tools/test.mjs compares the solver with: two takes, each as the numbers of its layouts (the frame, where the sharp picture lies, the faces, the text), never as pictures: the tests draw a placeholder. picture: the source's box in the frame; window: what of it shows where it is clipped; a caption block: left, width, the distance of its bottom from the frame's bottom, its type and lines. winners: what the solver puts first for each case with the weights of tools/weights.json; basis says who stands behind it: hand (the layout made by hand on the still), judged (people compared stills), solver (nobody has looked: it only keeps a change of the weights from passing unseen).",
+ "about": "The cases laid out by hand that tools/test.mjs compares the solver with: two takes, each as the numbers of its layouts (the frame, where the sharp picture lies, the faces, the text), never as pictures: the tests draw a placeholder. picture: the source's box in the frame; window: what of it shows where it is clipped; a caption block: left, width, the distance of its bottom from the frame's bottom, its type and lines. winners: what the solver puts first for each case with the weights of tools/weights.json and the skill's own type sizes (card: the hook as a card across the top, which the hand laid out; hook: as the solver tries it first, a short text in the middle); basis says who stands behind it: hand (the layout made by hand on the still), judged (people compared stills), solver (nobody has looked: it only keeps a change of the weights from passing unseen).",
  "takes": {
   "p1": {
    "what": "An upright phone take, 1080×1920: one person speaking to the phone from close by, the face large, the eyes at half the height, the chin at 77 % of it. Laid out by hand on one still on 2026-11-16.",
@@ -195,24 +195,28 @@
  "winners": [
   {"case": "P1 9:16, 1 caption line", "take": "p1", "frame": "9:16", "text": ["caption:1"], "first": "zoom 1.07×", "basis": "hand"},
   {"case": "P1 9:16, 2 caption lines", "take": "p1", "frame": "9:16", "text": ["caption:2"], "first": "inset 0.98×", "basis": "solver"},
-  {"case": "P1 9:16, hook", "take": "p1", "frame": "9:16", "text": ["hook"], "first": "zoom 1.07×", "basis": "hand"},
-  {"case": "P1 9:16, hook + 1 line", "take": "p1", "frame": "9:16", "text": ["hook", "caption:1"], "first": "inset 0.88×", "basis": "solver"},
-  {"case": "P1 9:16, hook + 2 lines", "take": "p1", "frame": "9:16", "text": ["hook", "caption:2"], "first": "inset 0.75×", "basis": "solver"},
+  {"case": "P1 9:16, card", "take": "p1", "frame": "9:16", "text": ["hook:card"], "first": "zoom 1.07×", "basis": "hand"},
+  {"case": "P1 9:16, card + 1 line", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:1"], "first": "inset 0.88×", "basis": "solver"},
+  {"case": "P1 9:16, card + 2 lines", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:2"], "first": "inset 0.75×", "basis": "solver"},
   {"case": "P1 16:9, 1 caption line", "take": "p1", "frame": "16:9", "text": ["caption:1"], "first": "panel left 0.56×", "basis": "hand"},
-  {"case": "P1 16:9, hook + 2 lines", "take": "p1", "frame": "16:9", "text": ["hook", "caption:2"], "first": "panel left 0.56×", "basis": "hand"},
+  {"case": "P1 16:9, card + 2 lines", "take": "p1", "frame": "16:9", "text": ["hook:card", "caption:2"], "first": "panel left 0.56×", "basis": "hand"},
   {"case": "P2 9:16, 1 caption line", "take": "p2", "frame": "9:16", "text": ["caption:1"], "first": "crop 4:5 1.88×", "basis": "solver"},
   {"case": "P2 9:16, 2 caption lines", "take": "p2", "frame": "9:16", "text": ["caption:2"], "first": "crop 4:5 1.88×", "basis": "judged"},
-  {"case": "P2 9:16, hook", "take": "p2", "frame": "9:16", "text": ["hook"], "first": "crop 4:5 1.88×", "basis": "solver"},
-  {"case": "P2 9:16, hook + 2 lines", "take": "p2", "frame": "9:16", "text": ["hook", "caption:2"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 9:16, card", "take": "p2", "frame": "9:16", "text": ["hook:card"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 9:16, card + 2 lines", "take": "p2", "frame": "9:16", "text": ["hook:card", "caption:2"], "first": "crop 4:5 1.88×", "basis": "solver"},
   {"case": "P2 16:9, 1 caption line", "take": "p2", "frame": "16:9", "text": ["caption:1"], "first": "full 1.5×", "basis": "hand"},
-  {"case": "P2 16:9, hook + 1 line", "take": "p2", "frame": "16:9", "text": ["hook", "caption:1"], "first": "zoom 1.59×", "basis": "solver"},
+  {"case": "P2 16:9, card + 1 line", "take": "p2", "frame": "16:9", "text": ["hook:card", "caption:1"], "first": "zoom 1.59×", "basis": "solver"},
   {"case": "P1 4:5, 2 caption lines", "take": "p1", "frame": "4:5", "text": ["caption:2"], "first": "crop 4:5 1×", "basis": "solver"},
-  {"case": "P1 4:5, hook + 2 lines", "take": "p1", "frame": "4:5", "text": ["hook", "caption:2"], "first": "inset 0.64×", "basis": "solver"},
+  {"case": "P1 4:5, card + 2 lines", "take": "p1", "frame": "4:5", "text": ["hook:card", "caption:2"], "first": "inset 0.64×", "basis": "solver"},
   {"case": "P1 1:1, 2 caption lines", "take": "p1", "frame": "1:1", "text": ["caption:2"], "first": "crop band 0.7×", "basis": "solver"},
-  {"case": "P1 1:1, hook + 2 lines", "take": "p1", "frame": "1:1", "text": ["hook", "caption:2"], "first": "inset 0.56×", "basis": "solver"},
+  {"case": "P1 1:1, card + 2 lines", "take": "p1", "frame": "1:1", "text": ["hook:card", "caption:2"], "first": "inset 0.56×", "basis": "solver"},
   {"case": "P2 4:5, 2 caption lines", "take": "p2", "frame": "4:5", "text": ["caption:2"], "first": "crop 1:1 1.5×", "basis": "solver"},
-  {"case": "P2 4:5, hook + 2 lines", "take": "p2", "frame": "4:5", "text": ["hook", "caption:2"], "first": "crop band 1.48×", "basis": "solver"},
+  {"case": "P2 4:5, card + 2 lines", "take": "p2", "frame": "4:5", "text": ["hook:card", "caption:2"], "first": "crop band 1.48×", "basis": "solver"},
   {"case": "P2 1:1, 2 caption lines", "take": "p2", "frame": "1:1", "text": ["caption:2"], "first": "full 1.5×", "basis": "solver"},
-  {"case": "P2 1:1, hook + 2 lines", "take": "p2", "frame": "1:1", "text": ["hook", "caption:2"], "first": "crop band 1.11×", "basis": "solver"}
+  {"case": "P2 1:1, card + 2 lines", "take": "p2", "frame": "1:1", "text": ["hook:card", "caption:2"], "first": "crop band 1.11×", "basis": "solver"},
+  {"case": "P2 9:16, hook", "take": "p2", "frame": "9:16", "text": ["hook"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 9:16, hook + 1 line", "take": "p2", "frame": "9:16", "text": ["hook", "caption:1"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P1 9:16, hook", "take": "p1", "frame": "9:16", "text": ["hook"], "first": "inset 0.98×", "basis": "solver"},
+  {"case": "P1 9:16, hook + 1 line", "take": "p1", "frame": "9:16", "text": ["hook", "caption:1"], "first": "inset 0.9×", "basis": "solver"}
  ]
 }

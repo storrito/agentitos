@@ -25,9 +25,10 @@ export function keepOut(f, D) {
 
 // faces: the boxes text is named by (above the head, below the chin); keep: what text stays out of
 // (a face with its margins, another person's visible part, a screen region, a webcam's circle);
-// opts.seam: the y of the seam between two stacked parts, where captions stand first
+// opts.seam: the y of the seam between two stacked parts, where captions stand first; opts.card:
+// a hook is a card at the top whatever kind was asked for (a screen, two people in two parts)
 export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
-  const { W, Z, D, tall, cap, hook } = ctx;
+  const { W, H, Z, D, tall, cap, hook } = ctx;
   const S = Z.safe, C = Z.centred, g = D.gap;
   const want = (cap ? 1 : 0) + (hook ? 1 : 0);
   if (!want) return { placed: [], unmet: [], penalty: 0, fullSize: true };
@@ -100,34 +101,63 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
     if (isWin && win[1] > S[1] + EPS) capOpts.push(mk([x, win[1] - g - h, w, h], "center", C, 4));            // on the ground above the picture
   }
 
+  // The type a hook is set in at its full size, by its style
+  const base = (style) => (style === "text" ? D.hookText.font : style === "card" ? D.hookCard.font : D.hookBig.font);
   const placeHook = (placed) => {
-    const opts = [];
+    const list = [];
     if (tall) {
-      // a card across `wide` (without one: across `centred`, in the upper half), from its top
-      const hc = D.hookCard, z0 = Z.wide || [C[0], S[1], C[2], S[3] / 2];
-      const zx0 = Math.max(z0[0], cx0), zx1 = Math.min(X1(z0), cx1);
-      const zone = zx1 - zx0 >= 10 * hc.font ? [zx0, z0[1], zx1 - zx0, z0[3]] : z0;
-      const tops = [zone[1]];
-      if (isWin && win[1] > zone[1] + EPS) tops.push(win[1] + D.edgePad);
-      tops.forEach((top, i) => {
-        const font = Math.min(hc.font, Math.floor((reach(zone[0], X1(zone), top, Y1(zone), placed) - top) / hc.heightEm + 1e-6));
-        if (font >= hc.minFont) opts.push({ role: "hook", style: "card", lines: 2, font, box: [zone[0], top, zone[2], font * hc.heightEm], align: "center", zone, pref: i, full: font >= hc.font });
-      });
+      // Two kinds (DEFAULTS.hookText, hookCard). A screen and two people in two parts keep the
+      // card: their middle is the picture itself, or the seam where the captions stand.
+      const kind = opts.card ? "card" : hook.kind || null;
+      if (kind !== "card") {
+        const ht = D.hookText, w = Math.min(ht.width * W, C[2], cx1 - cx0), x = W / 2 - w / 2;
+        const over = (b) => X1(b) > x + EPS && b[0] < x + w - EPS;
+        const fit = (room) => Math.min(ht.font, Math.floor(room / ht.heightEm + 1e-6));
+        // below the chin: its middle at `centre` of the frame's height, or as high under the chin
+        // as the face leaves free; it ends above the captions or the safe box's bottom
+        const top = Math.max(ht.centre * H - ht.font * ht.heightEm / 2, ...keep.filter(over).map((k) => Y1(k)));
+        let font = fit(reach(x, x + w, top, Y1(S), placed) - top);
+        if (font >= ht.minFont) list.push({ role: "hook", style: "text", lines: 2, font, box: [x, top, w, font * ht.heightEm], align: "center", zone: C, pref: 0, full: font >= ht.font, order: 0 });
+        // above the head, and above captions that stand there
+        if (topKeep !== null) {
+          const bottom = Math.min(topKeep, ...placed.filter((q) => over(q.box) && q.box[1] < topKeep).map((q) => q.box[1] - g));
+          font = fit(bottom - S[1]);
+          if (font >= ht.minFont) list.push({ role: "hook", style: "text", lines: 2, font, box: [x, bottom - font * ht.heightEm, w, font * ht.heightEm], align: "center", zone: C, pref: 1, full: font >= ht.font, order: 0 });
+        }
+      }
+      if (kind !== "text") {
+        // a card across `wide` (without one: across `centred`, in the upper half), from its top
+        const hc = D.hookCard, z0 = Z.wide || [C[0], S[1], C[2], S[3] / 2];
+        const zx0 = Math.max(z0[0], cx0), zx1 = Math.min(X1(z0), cx1);
+        const zone = zx1 - zx0 >= 10 * hc.font ? [zx0, z0[1], zx1 - zx0, z0[3]] : z0;
+        const tops = [zone[1]];
+        if (isWin && win[1] > zone[1] + EPS) tops.push(win[1] + D.edgePad);
+        tops.forEach((top, i) => {
+          const font = Math.min(hc.font, Math.floor((reach(zone[0], X1(zone), top, Y1(zone), placed) - top) / hc.heightEm + 1e-6));
+          // asked for, the card stands at its usual place; taken because the text found none, two steps from it
+          if (font >= hc.minFont) list.push({ role: "hook", style: "card", lines: 2, font, box: [zone[0], top, zone[2], font * hc.heightEm], align: "center", zone, pref: (kind === "card" ? 0 : 2) + i, full: font >= hc.font, order: 1 });
+        });
+      }
     } else {
       // two big lines: beside the face or the picture, else across the top
       const hb = D.hookBig;
       for (const col of columns(hb.widthEm * hb.minFont)) {
         const bottom = reach(col.x, col.x + col.w, S[1], Y1(S), placed);
         const font = Math.floor(Math.min(hb.font, col.w / hb.widthEm, (bottom - S[1]) / hb.heightEm) + 1e-6);
-        if (font >= hb.minFont) opts.push({ role: "hook", style: "big", lines: 2, font, box: [col.x, S[1] + (bottom - S[1] - font * hb.heightEm) / 4, font * hb.widthEm, font * hb.heightEm], align: "left", zone: S, pref: 0, full: font >= hb.font });
+        if (font >= hb.minFont) list.push({ role: "hook", style: "big", lines: 2, font, box: [col.x, S[1] + (bottom - S[1] - font * hb.heightEm) / 4, font * hb.widthEm, font * hb.heightEm], align: "left", zone: S, pref: 0, full: font >= hb.font, order: 0 });
       }
       const w0 = Math.min(C[2], hb.widthEm * hb.font);
       const bottom = reach(W / 2 - w0 / 2, W / 2 + w0 / 2, S[1], Y1(S), placed);
       const font = Math.floor(Math.min(hb.font, C[2] / hb.widthEm, (bottom - S[1]) / hb.heightEm) + 1e-6);
-      if (font >= hb.minFont) opts.push({ role: "hook", style: "big", lines: 2, font, box: [W / 2 - font * hb.widthEm / 2, S[1], font * hb.widthEm, font * hb.heightEm], align: "center", zone: S, pref: 1, full: font >= hb.font });
+      if (font >= hb.minFont) list.push({ role: "hook", style: "big", lines: 2, font, box: [W / 2 - font * hb.widthEm / 2, S[1], font * hb.widthEm, font * hb.heightEm], align: "center", zone: S, pref: 1, full: font >= hb.font, order: 0 });
     }
-    return opts.filter((o) => free(o.box, o.zone, placed)).sort((a, b) => b.font - a.font || a.pref - b.pref)[0] || null;
+    // The text before the card. Among the text's places the usual one first (under the chin, then
+    // above the head); among a card's or big lines' places the one that holds the larger type.
+    return list.filter((o) => free(o.box, o.zone, placed)).sort((a, b) => a.order - b.order || (a.style === "text" ? a.pref - b.pref || b.font - a.font : b.font - a.font || a.pref - b.pref))[0] || null;
   };
+  // how good a hook's place is, to choose among the captions' places: the text before the card,
+  // then the larger type against the style's own
+  const hookWorth = (hk) => (hk ? 2 - hk.order + hk.font / base(hk.style) / 2 : 0);
 
   let best = null;
   for (const c of cap ? [...capOpts, null] : [null]) {
@@ -135,8 +165,8 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
     const placed = c ? [c] : [];
     const hk = hook ? placeHook(placed) : null;
     if (hk) placed.push(hk);
-    const arr = { placed, met: placed.length, hookFont: hk ? hk.font : 0, penalty: placed.reduce((s, q) => s + q.pref, 0) };
-    if (!best || arr.met > best.met || (arr.met === best.met && arr.hookFont > best.hookFont)) best = arr;
+    const arr = { placed, met: placed.length, hook: hookWorth(hk), penalty: placed.reduce((s, q) => s + q.pref, 0) };
+    if (!best || arr.met > best.met || (arr.met === best.met && arr.hook > best.hook)) best = arr;
     if (best.met === want && (!hook || best.placed.at(-1).full)) break;
   }
 
@@ -148,9 +178,9 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
     const where = t.seam ? "seam" : onPicture
       ? (!faces.length ? "free" : Y1(t.box) <= top + EPS ? "above-head" : y >= chin - EPS ? "below-chin" : between ? "between" : "beside")
       : (Y1(t.box) <= win[1] + EPS ? "band-above" : y >= Y1(win) - EPS ? "band-below" : "beside");
-    const L = t.style === "card" ? D.hookCard.line : t.style === "big" ? D.hookBig.line : D.caption.line;
-    // a card's lines stand in its middle; the captions' lines inside the padding of their box
-    const rows = inkRows(t.style === "card" ? y + (h - 2 * L * t.font) / 2 : t.style === "cap" ? y + D.caption.padEm * t.font / 2 : y, t.lines, L, t.font);
+    const L = t.style === "card" ? D.hookCard.line : t.style === "text" ? D.hookText.line : t.style === "big" ? D.hookBig.line : D.caption.line;
+    // a card's and a hook text's lines stand in the middle of their block; the captions' lines inside the padding of their box
+    const rows = inkRows(t.style === "card" || t.style === "text" ? y + (h - 2 * L * t.font) / 2 : t.style === "cap" ? y + D.caption.padEm * t.font / 2 : y, t.lines, L, t.font);
     return { role: t.role, where, on: onPicture ? "picture" : "ground", box: [x, y, w, h], ink: [x, rows[0], w, rows[1] - rows[0]], lines: t.lines, font: t.font, style: t.style, align: t.align, ...(t.role === "hook" && !t.full ? { shrunk: true } : {}) };
   });
   const roles = placed.map((t) => t.role);

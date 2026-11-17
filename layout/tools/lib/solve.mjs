@@ -164,7 +164,7 @@ function ranked(ctx, out, notes, { needs, srcs }) {
   };
 }
 
-const textLine = (t) => `${t.role === "caption" ? `${t.lines} caption line${t.lines > 1 ? "s" : ""}` : `hook ${t.style === "card" ? "card" : "lines"} at ${t.font} px${t.shrunk ? " (smaller than its size)" : ""}`} ${t.where}`;
+const textLine = (t) => `${t.role === "caption" ? `${t.lines} caption line${t.lines > 1 ? "s" : ""}` : `hook ${t.style === "card" ? "card" : t.style === "text" ? "text" : "lines"} at ${t.font} px${t.shrunk ? " (smaller than its size)" : ""}`} ${t.where}`;
 function why(c, ctx) {
   const D = ctx.D, out = [];
   const hard = c.problems.filter((q) => q.level === "hard");

@@ -29,8 +29,20 @@ export const DEFAULTS = {
   //   minWidth   a caption area is never narrower: in upright frames half the frame, the
   //              Shorts' median block; in 16:9 a column that holds about 21 letters
   caption: { font: { tall: 77, wide: 50 }, line: 1.32, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24 },
-  // hook in an upright frame: a card of two lines across `wide`, 3.1 em tall; it may shrink to
-  // minFont where the room above the head is short (laid out by hand on a still, it went from 76 to 66 px)
+  // A hook in an upright frame has two kinds; without one named (--text hook) the first is tried
+  // first and the second where the first finds no room.
+  // hookText: a short text in the middle of the frame, on the chest, where the captions stand
+  //   once it is gone. What published Shorts do: of 85 with a hook text at the first second (of
+  //   240; 31–43 % of the videos, the model mixed hook and first caption up in 2 of 20 checked)
+  //   its middle lies at 53 % of the frame's height (middle half 26–65 %), the block is 12.4 %
+  //   of the height tall and 72 % of the width wide, about six words, and in three of four it is
+  //   gone by the next frame looked at. Two lines at `font`, `heightEm` tall together (238 px:
+  //   12.4 % of 1920), `width` of the frame wide but never wider than `centred`, its middle at
+  //   `centre` of the frame's height where the face leaves that free. Usual, not proven to work.
+  // hookCard: a card of two lines across `wide`, 3.1 em tall: platform-zones' pattern "Hook +
+  //   talking head", a sketch. It may shrink to minFont where the room above the head is short
+  //   (laid out by hand on a still, it went from 76 to 66 px).
+  hookText: { font: 96, minFont: 72, heightEm: 2.48, line: 1.14, width: 0.72, centre: 0.53 },
   hookCard: { font: 76, minFont: 64, heightEm: 3.1, line: 1.14 },
   // hook in a wide frame: two big lines beside the face or the panel, 10 em wide (about 20
   // letters), 2.25 em tall (two lines of 1.08 and the descenders)
@@ -91,7 +103,7 @@ DEFAULTS.weights = readWeights();
 // The sizes in px for a frame of another size than 1080 on its shorter side: a video of 720×1280
 // is shown as large as one of 1080×1920, so its type and margins are two thirds as many px.
 // Without this, text set for 1080 ran out of a smaller frame. Type is whole px.
-const PX = ["caption.font.tall", "caption.font.wide", "caption.minWidth.tall", "caption.minWidth.wide", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
+const PX = ["caption.font.tall", "caption.font.wide", "caption.minWidth.tall", "caption.minWidth.wide", "hookText.font", "hookText.minFont", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
 export function scaled(D, [W, H]) {
   const k = Math.min(W, H) / 1080;
   if (Math.abs(k - 1) < 1e-9) return D;

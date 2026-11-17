@@ -34,7 +34,7 @@ export function evaluate(ctx, p) {
     });
   });
   const keep = [...faces.map((f) => (f.screen ? grow(f.box, D.gap) : keepOut(f.box, D))), ...others.map((o) => keepOut(o.box, D)), ...(p.circle ? [grow(p.circle.box, D.gap)] : [])];
-  const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null });
+  const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null, card: split || !!sources[0].screen });
   const problems = judge(Z, [
     ...faces.map((f) => ({ kind: "face", label: f.label, box: f.box })),
     ...(p.circle ? [{ kind: "face", label: "webcam", box: p.circle.box }] : []),

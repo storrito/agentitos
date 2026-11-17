@@ -9,7 +9,10 @@
 //        face, an agent reads the boxes off this picture
 //   node place.mjs place <folder> --frame 9:16 --source 1080x1920 --face 300,570,600,900
 //                  [--text caption] [--text hook] [--platform reels,tiktok] [--json]
-//        (--text caption: one caption line, as most published Shorts set theirs; caption:2 for two)
+//        (--text caption: one caption line, as most published Shorts set theirs; caption:2 for two.
+//         --text hook: in an upright frame a short text in the middle, where the captions stand
+//         afterwards, as published Shorts set it, else a card across the top; hook:text and
+//         hook:card name one of the two)
 //        the candidates, ranked, into <folder>/placement.json
 //        several people:    --face … --face … [--speaker 2]  |  --source A --face … --source B --face …
 //        a face that moves: --face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …  |  --face-track file.json
@@ -107,8 +110,8 @@ function parseNeeds(list) {
   return list.map((t) => {
     const [role, n] = String(t).split(":");
     if (role === "caption" || role === "captions") return { role: "caption", lines: Math.max(1, Number(n) || 1) };
-    if (role === "hook") return { role: "hook" };
-    fail(`--text is caption (one line of captions), caption:2 (two) or hook, not "${t}".`);
+    if (role === "hook" && (n === undefined || n === "text" || n === "card")) return { role: "hook", ...(n ? { kind: n } : {}) };
+    fail(`--text is caption (one line of captions), caption:2 (two), hook (a short text in the middle, else a card at the top), hook:text or hook:card, not "${t}".`);
   });
 }
 const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v);
@@ -122,7 +125,7 @@ function printResult(res) {
   const [W, H] = res.size;
   console.log(`${res.frame} ${W}×${H} for ${res.platforms.join(", ")}${res.fallback ? " (no platform named: the usual ones of this frame)" : ""}`);
   const srcLine = (q, i, n) => `source${n > 1 ? ` ${i + 1}` : ""} ${q.size.join("×")}, ${plural(q.faces.length, "face")}${q.faces.length ? ` (${q.faces.map((f) => boxText(f)).join("; ")})` : ""}`;
-  console.log(`${res.screen ? `screen ${res.source.join("×")}, region ${boxText(res.screen.region)} (${res.screen.region[2]}×${res.screen.region[3]})${res.screen.minTextHeight ? `, smallest text ${res.screen.minTextHeight} px (reads from ${res.screen.readable} px in this frame)` : ""}` : (res.sources || [{ size: res.source, faces: res.faces }]).map((q, i, l) => srcLine(q, i, l.length)).join("; ")}; text: ${res.needs.length ? res.needs.map((n) => (n.role === "caption" ? plural(n.lines, "caption line") : "hook")).join(" + ") : "none"}`);
+  console.log(`${res.screen ? `screen ${res.source.join("×")}, region ${boxText(res.screen.region)} (${res.screen.region[2]}×${res.screen.region[3]})${res.screen.minTextHeight ? `, smallest text ${res.screen.minTextHeight} px (reads from ${res.screen.readable} px in this frame)` : ""}` : (res.sources || [{ size: res.source, faces: res.faces }]).map((q, i, l) => srcLine(q, i, l.length)).join("; ")}; text: ${res.needs.length ? res.needs.map((n) => (n.role === "caption" ? plural(n.lines, "caption line") : n.kind ? `hook as ${n.kind}` : "hook")).join(" + ") : "none"}`);
   for (const n of res.notes) console.log(`note: ${n}`);
   for (const tr of res.tracks || []) {
     console.log(`face ${tr.face}: usual box ${boxText(tr.usual)}, hull ${boxText(tr.hull)}; its edges come from: top ${tr.edges.top} s, bottom ${tr.edges.bottom} s, left ${tr.edges.left} s, right ${tr.edges.right} s`);
@@ -141,7 +144,7 @@ function printResult(res) {
     c.faceInFrame.forEach((f) => console.log(`   ${res.screen ? "region " : "face   "} ${boxText(f)} (${Math.round(f[2])}×${Math.round(f[3])})${c.textHeight != null ? `, smallest text ${c.textHeight} px` : ""}`));
     if (c.circle) console.log(`   webcam  circle ${c.circle.d} px ${c.circle.corner}, ${boxText(c.circle.box)}${c.circle.crop ? `; shows ${boxText(c.circle.crop)} of the webcam's picture at ${c.circle.enlargement}×, the face ${c.circle.faceHeight} px tall` : ""}`);
     (c.others || []).forEach((f) => console.log(`   (${f.of}, not held: ${boxText(f.box)}, ${pct(f.shows)} of it shows)`));
-    for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}${t.role === "hook" ? `, ${t.font} px${t.shrunk ? " (shrunk)" : ""}` : `, ${plural(t.lines, "line")}`}`);
+    for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}${t.role === "hook" ? `, ${t.style === "text" ? "text" : t.style === "card" ? "a card" : "big lines"} at ${t.font} px${t.shrunk ? " (shrunk)" : ""}` : `, ${plural(t.lines, "line")} at ${t.font} px`}`);
     for (const q of c.problems) console.log(`   ${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of}: ${q.what}`);
     console.log(`   why: ${c.why.join("; ")}${c.behind ? `; ${c.behind}` : ""}`);
   });
@@ -337,7 +340,7 @@ function cmdPage(o) {
     else if (!cmp.agree) console.log(`   They agree on the verdict and differ in a finding (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}).`);
   }
   save();
-  console.log(`\nLook at ${picks.length > 1 ? "each picture" : "the picture"} before you choose. What no measurement here knows: whether the picture behind a text is calm (the solver sees boxes, no pixels), whether the box of a face was read right, and how wide the video's own words are: the pages show placeholder words, a caption block is taken as wide as its area and a hook line as ten letters' widths.`);
+  console.log(`\nLook at ${picks.length > 1 ? "each picture" : "the picture"} before you choose. What no measurement here knows: whether the picture behind a text is calm (the solver sees boxes, no pixels), whether the box of a face was read right, and how wide the video's own words are: the pages show placeholder words (caption lines of three words, a hook of two short lines), and a block is taken as wide as its area.`);
   console.log(`Chosen: ${self()} captions ${rel(folder)} --candidate N gives the options for agentitos' captions; scale, left, top, window and the text's boxes of the candidate are in ${rel(path.join(folder, "placement.json"))} for the skill that builds the video.`);
   if (differ) process.exitCode = 1;
 }

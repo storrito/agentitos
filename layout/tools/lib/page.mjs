@@ -16,7 +16,10 @@ import { r1 } from "./boxes.mjs";
 // A caption line of three words, as most are in published Shorts (the median of 188): the type
 // is so large that the centred area of the usual vertical platforms holds about sixteen letters.
 const CAP_LINES = ["plan your week", "of Stories", "in one sitting", "with one click"];
-const HOOK_LINES = ["Storys für die ganze", "Woche vorplanen"];
+// a hook of about six words in two lines, as the median hook text of published Shorts has
+// (a card and big lines hold about eighteen letters a line, the text in the middle about thirteen:
+// its type is larger and it stands between the apps' buttons)
+const HOOK_LINES = ["Plan a whole week", "of Stories at once"], HOOK_TEXT = ["Plan a week", "of Stories"];
 export function renderPage(c, res, { still = null, stills = null, page = null } = {}) {
   const [W, H] = res.size, D = res.defaults;
   const font = `"Noto Sans","DejaVu Sans","Liberation Sans",sans-serif`;
@@ -40,6 +43,7 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
 .cap{position:absolute;text-align:center;line-height:${D.caption.line}}
 .cap span{background:rgba(0,0,0,.74);padding:.06em .34em;border-radius:14px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .card{position:absolute;background:#fff;color:#14181d;border-radius:28px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:${D.hookCard.line}}
+.hooktext{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;line-height:${D.hookText.line};white-space:nowrap;-webkit-text-stroke:.06em #14181d;paint-order:stroke fill;text-shadow:0 4px 18px rgba(0,0,0,.6)}
 .big{position:absolute;line-height:${D.hookBig.line};white-space:nowrap;text-shadow:0 2px 18px rgba(0,0,0,.55)}`;
   const st = (b) => `left:${r1(b[0])}px;top:${r1(b[1])}px;width:${r1(b[2])}px;height:${r1(b[3])}px`;
   const parts = [];
@@ -63,7 +67,8 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
     if (t.style === "cap") {
       const lines = Array.from({ length: t.lines }, (_, i) => CAP_LINES[i % CAP_LINES.length]);
       parts.push(`<div class="cap" style="left:${x}px;width:${w}px;bottom:${r1(H - y - h + D.caption.padEm * t.font / 2)}px;font-size:${t.font}px;text-align:${t.align};white-space:nowrap">${lines.map((l) => `<span>${l}</span>`).join("<br>")}</div>`);
-    } else if (t.style === "card") parts.push(`<div class="card" style="${st(t.box)};font-size:${t.font}px">${HOOK_LINES.join("<br>")}</div>`);
+    } else if (t.style === "text") parts.push(`<div class="hooktext" style="${st(t.box)};font-size:${t.font}px">${HOOK_TEXT.join("<br>")}</div>`);
+    else if (t.style === "card") parts.push(`<div class="card" style="${st(t.box)};font-size:${t.font}px">${HOOK_LINES.join("<br>")}</div>`);
     else parts.push(`<div class="big" style="left:${x}px;top:${y}px;width:${w}px;font-size:${t.font}px;text-align:${t.align}">${HOOK_LINES.join("<br>")}</div>`);
   }
   const meta = { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, ...(c.parts ? { parts: c.parts } : {}), faceInFrame: c.faceInFrame, text: c.text.map(({ role, where, box }) => ({ role, where, box })), problems: c.problems };

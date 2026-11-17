@@ -53,14 +53,23 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
   // horizontally: the picture centred (a crop: the face centred); in a wide frame also the face as
   // far left and right as the fit allows, which frees a column beside it
   const faceX = fb && extra.aroundFace ? W / 2 - s * (fb[0] + fb[2]) / 2 : centredX;
-  let xs = extra.sides ? [-Infinity, Infinity] : tall ? [faceX] : [faceX, -Infinity, Infinity];
+  let xs = extra.sides ? [-Infinity, Infinity] : tall && !extra.across ? [faceX] : [faceX, -Infinity, Infinity];
   // vertically: centred (a crop that may choose: eyes on the upper third), the face as low and as
   // high as the fit allows, the chin just high enough for the captions below it, and for a picture
   // smaller than the frame: ending above the captions, starting below the hook
   const eyes = fb ? fb[1] + D.eyes * (fb[3] - fb[1]) : 0;
   const ys = [fb && extra.aroundFace && modeY === "cover" ? H / 3 - s * eyes : centredY, Infinity, -Infinity];
   const capH = captionHeight(ctx);
-  if (cap && fb) ys.push(Y1(S) - capH - Math.max(D.free.belowMin, D.free.below * s * (fb[3] - fb[1])) - s * fb[3]);
+  const under = fb ? Math.max(D.free.belowMin, D.free.below * s * (fb[3] - fb[1])) : 0;
+  if (cap && fb) ys.push(Y1(S) - capH - under - s * fb[3]);
+  // and for a hook as text: the chin just high enough for it below, alone and above the captions;
+  // the head just low enough for it above, at its size and at its smallest
+  if (hook && tall && hook.kind !== "card" && fb) {
+    const ht = D.hookText, hookH = ht.font * ht.heightEm, over = Math.max(D.free.aboveMin, D.free.above * s * (fb[3] - fb[1]));
+    ys.push(Y1(S) - hookH - under - s * fb[3]);
+    if (cap) ys.push(Y1(S) - capH - g - hookH - under - s * fb[3]);
+    ys.push(S[1] + hookH + over - s * fb[1], S[1] + ht.minFont * ht.heightEm + over - s * fb[1]);
+  }
   if (modeY === "inside") {
     if (cap) ys.push(Y1(S) - capH - g - s * sh);
     if (hook && tall) { const top = (Z.wide || S)[1]; ys.push(top + D.hookCard.font * D.hookCard.heightEm + g, top + D.hookCard.minFont * D.hookCard.heightEm + g); }
@@ -203,6 +212,10 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       out.push(bestVariant(ctx, "inset", sc, "inside", "inside"));
       if (!out.some(met)) scanDown("inset", sc, D.insetMin, "inside", "inside");
     }
+    // Still nothing that passes, in an upright frame: the whole picture smaller and also at the
+    // left and the right of the safe box, where so far it stood only in the frame's middle. A
+    // face at one side of the picture then leaves the frame's middle to the text.
+    if (!cropsOnly && ctx.tall && !out.some(met)) scanDown("inset", same ? s0 : sc, D.insetMin, "inside", "inside", { across: true });
   }
 
   return { out, notes };
