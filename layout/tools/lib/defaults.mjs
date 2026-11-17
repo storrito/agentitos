@@ -143,6 +143,8 @@ export function merged(base, over) {
   const at = (k) => k.split(".").reduce((o, key) => o?.[key], out);
   for (const k of POSITIVE) if (!(at(k) > 0)) throw new Error(`"${k}" must be over 0: with ${at(k)} the search would not end.`);
   if (!(out.zoomStep < 1 && out.insetStep < 1 && out.insetMin <= 1 && out.panelMin <= 1)) throw new Error(`zoomStep, insetStep, insetMin and panelMin are shares of a scale: under 1 (0.01 is a step of one per cent).`);
+  // a step of a millionth searched for longer than anyone waits
+  if (!(out.zoomStep >= 0.001 && out.insetStep >= 0.001)) throw new Error(`zoomStep and insetStep are at least 0.001, a tenth of a per cent: a finer step makes the search run for minutes.`);
   if (!(out.weights.enlarge.forbiddenFrom > out.weights.enlarge.softFrom)) throw new Error(`weights.enlarge.forbiddenFrom must be over weights.enlarge.softFrom.`);
   if (!(out.weights.subject.to >= out.weights.subject.from)) throw new Error(`weights.subject.to must not be under weights.subject.from.`);
   return out;

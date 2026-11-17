@@ -105,6 +105,13 @@ function parseSources(o) {
       (sources.at(-1)?.faces || early).push(...tracks);
     }
   }
+  // a box past the source's edge places a face that is not there
+  for (const q of sources) {
+    const [sw, sh] = q.size;
+    for (const b of [...q.faces.flatMap((f) => (typeof f[0] === "number" ? [f] : f.map((m) => m.box))), ...(q.region ? [q.region] : [])]) {
+      if (b[0] < 0 || b[1] < 0 || b[0] + b[2] > sw || b[1] + b[3] > sh) fail(`The box ${b.join(",")} reaches past the source of ${sw}×${sh}: a face or region the picture's edge cuts ends at that edge, read it again off the grid.`);
+    }
+  }
   return sources;
 }
 function parseNeeds(list) {
@@ -306,24 +313,27 @@ function cmdPage(o) {
   // the stills: one frame per source, copied beside the pages so that their links hold
   if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
   const outs = o.still.map((_, i) => path.join(folder, i ? `still-${i + 1}.jpg` : "still.jpg"));
+  const before = readWritten(folder);
   o.still.forEach((input, i) => {
     const [w, h] = probe(input), [sw, sh] = sources[i].size;
     if (Math.abs((w / h) / (sw / sh) - 1) > 0.02) fail(`${input} is ${w}×${h}; the placement was made for a source of ${sw}×${sh}, another shape: give the recording the boxes were read from.`);
     const over = outs.findIndex((out, k) => k !== i && sameFile(input, out));
     if (over >= 0) fail(`${input} is where the frame of ${o.still[over]} goes: copy it out of ${folder} first, or give the stills in the order they lie there.`);
+    // a file of that name that page did not write is the caller's: never written over
+    if (fs.existsSync(outs[i]) && !sameFile(input, outs[i]) && !before.includes(path.basename(outs[i]))) fail(`${outs[i]} is a file of yours, where page puts the frame of ${input}: move it out of ${folder}, or pass it as --still.`);
   });
   // what an earlier call wrote here goes, except a frame that is passed in again now
-  const before = readWritten(folder);
   clearWritten(folder, before, o.still);
   const written = [], save = () => fs.writeFileSync(path.join(folder, "placement.json"), JSON.stringify({ ...res, written }, null, 1));
   const stills = o.still.map((input, i) => {
     // a frame that already lies where it belongs is used as it is, and stays the caller's unless an earlier call made it
     if (sameFile(input, outs[i])) { if (before.includes(path.basename(outs[i]))) written.push(path.basename(outs[i])); return outs[i]; }
     const err = frameOf(input, outs[i], o.at);
-    if (err) fail(`ffmpeg could not take a frame of ${input}: ${err}`);
+    if (err) { save(); fail(`ffmpeg could not take a frame of ${input}: ${err}`); }
     written.push(path.basename(outs[i]));
     return outs[i];
   });
+  save();
   console.log(`${res.frame} ${res.size.join("×")} for ${res.platforms.join(", ")}${stills.length ? `, on a frame of ${o.still.map(rel).join(" and ")}${o.at !== undefined ? ` at ${o.at} s` : ""}` : ", on a drawn surface with each face as an oval (--still <video|image> shows the recording)"}`);
   let differ = 0;
   for (const i of picks) {

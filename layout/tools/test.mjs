@@ -760,7 +760,7 @@ t("the caption area holds the block captions builds into it. With the options th
   return out.join("; ");
 });
 
-t("what the tool cannot do with its input it says in one sentence: a file where the folder goes, a face track that holds no boxes, a step of 0 (which once ran without end), a default that is not there, a CHROME that names no file", () => {
+t("what the tool cannot do with its input it says in one sentence: a file where the folder goes, a face track that holds no boxes, a step of 0 (which once ran without end) or of a millionth (which ran for minutes), a default that is not there, a face past the source's edge, a CHROME that names no file", () => {
   const dir = path.join(OUT, "cli-bad"), file = path.join(OUT, "a-file.txt"), track = path.join(OUT, "track.json");
   fs.writeFileSync(file, "not a folder\n");
   const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1)];
@@ -771,10 +771,15 @@ t("what the tool cannot do with its input it says in one sentence: a file where 
     e = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face-track", track);
     sentence(e, `--face-track holding ${bad}`); ok(/--face-track/.test(e.stderr), `--face-track holding ${bad}: ${e.stderr}`);
   }
-  for (const [set, says] of [["insetStep=0", /must be over 0/], ["zoomStep=0", /must be over 0/], ["insetStpe=0.02", /no default "insetStpe"/], ["caption.font.tall=large", /is a number/], ["caption=3", /group of defaults/]]) {
+  for (const [set, says] of [["insetStep=0", /must be over 0/], ["zoomStep=0", /must be over 0/], ["insetStep=0.0000001", /at least 0\.001/], ["insetStpe=0.02", /no default "insetStpe"/], ["caption.font.tall=large", /is a number/], ["caption=3", /group of defaults/]]) {
     e = cli("place", dir, ...face, "--set", set);
     sentence(e, `--set ${set}`); ok(says.test(e.stderr), `--set ${set}: ${e.stderr}`);
   }
+  // a face past the source's edge (once placed as if it were there)
+  e = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", "2000,3000,10,10");
+  sentence(e, "a face outside the source"); ok(/reaches past the source of 1080×1920/.test(e.stderr), `a face outside the source: ${e.stderr}`);
+  e = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face-at", "0:300,570,600,900", "--face-at", "2:600,570,600,900");
+  sentence(e, "a moment of a moving face past the source's edge"); ok(/reaches past/.test(e.stderr), `a moving face past the edge: ${e.stderr}`);
   e = cli("place", dir, ...face, "--text", "hook:banner");
   sentence(e, "--text hook:banner"); ok(/hook:text or hook:card/.test(e.stderr), `--text hook:banner: ${e.stderr}`);
   ok(!fs.existsSync(path.join(dir, "placement.json")), "a placement was written for input that was refused");
@@ -783,7 +788,7 @@ t("what the tool cannot do with its input it says in one sentence: a file where 
   sentence(e, "page with a CHROME that is not there"); ok(/CHROME names/.test(e.stderr), `CHROME=/nowhere: ${e.stderr}`);
 });
 
-if (!QUICK) t("a file the caller passes in is never removed or written over: grid onto its own input is refused, a still that already lies in the placement's folder is used as it is; and a second place clears the pages and pictures of the placement before, and nothing else in the folder", () => {
+if (!QUICK) t("a file the caller passes in is never removed or written over: grid onto its own input is refused, a still that already lies in the placement's folder is used as it is, a file of the caller's under the frame's name is refused, not written over; and a second place clears the pages and pictures of the placement before, and nothing else in the folder", () => {
   const dir = path.join(OUT, "cli-files"), photo = path.join(OUT, "photo.jpg"), note = path.join(dir, "notes.txt"), own = path.join(dir, "grid.jpg");
   spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1080x1920", "-frames:v", "1", photo]);
   const bytes = (f) => fs.readFileSync(f).toString("base64");
@@ -802,6 +807,15 @@ if (!QUICK) t("a file the caller passes in is never removed or written over: gri
   r = cli("page", dir, "--still", still, "--candidate", "2");
   ok(r.status === 0 && fs.existsSync(still) && bytes(still) === frame, `page --still <folder>/still.jpg: exit ${r.status}, ${r.stderr}; the still is ${fs.existsSync(still) ? "there" : "gone"}`);
   ok(fs.existsSync(path.join(dir, "candidate-2.png")) && !fs.existsSync(path.join(dir, "candidate-1.html")) && !fs.existsSync(path.join(dir, "candidate-3.png")), "page left pages of its earlier call beside the one asked for");
+  // a file of the caller's that bears the frame's name, not passed in: refused, not written over
+  const mine = path.join(dir, "still.jpg");
+  cli("place", dir, ...face, "--text", "caption:1");
+  fs.copyFileSync(photo, mine);
+  const other = path.join(OUT, "other.jpg");
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=1080x1920", "-frames:v", "1", other]);
+  e = cli("page", dir, "--still", other);
+  sentence(e, "page --still <another file> beside a still.jpg of the caller's"); ok(/is a file of yours/.test(e.stderr) && bytes(mine) === before, `a still.jpg of the caller's: ${e.stderr}; it is ${bytes(mine) === before ? "kept" : "changed"}`);
+  fs.rmSync(mine);
   // a new placement: the old one's pages and frame go, what the caller put there stays
   cli("page", dir, "--still", photo);
   r = cli("place", dir, ...face, "--text", "hook");
