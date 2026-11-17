@@ -536,7 +536,10 @@ if (!QUICK) t("4:5 and 1:1: every candidate of both takes with captions, a hook,
 console.log("\nThe commands of place.mjs");
 // =============================================================================================
 const TOOL = path.join(HERE, "place.mjs");
-const cli = (...a) => spawnSync(process.execPath, [TOOL, ...a], { encoding: "utf8" });
+const cli = (...a) => spawnSync(process.execPath, [TOOL, ...a], { encoding: "utf8", timeout: 120e3 });
+const cliWith = (env, ...a) => spawnSync(process.execPath, [TOOL, ...a], { encoding: "utf8", timeout: 120e3, env: { ...process.env, ...env } });
+// one sentence for the caller: exit code 1, something said, no stack trace
+const sentence = (e, what) => ok(e.status === 1 && e.stderr.trim() && !/\n\s+at /.test(e.stderr) && e.stderr.trim().split("\n").length <= 6, `${what}: exit ${e.status}${e.error ? ` (${e.error.code})` : ""}, ${e.stderr}`);
 const boxArg = (b) => b.join(",");
 
 t("place writes the candidates into the caller's folder, and captions turns a candidate's caption area into the captions skill's options: one line above the head of the upright take (--y, --max-width, --font-size, --lines), a left-aligned column beside the panel in 16:9 (--x, --align left as well)", () => {
@@ -583,6 +586,77 @@ if (!QUICK) t("grid draws its lines over a frame of a video at the source's size
   const e = cli("page", dir, "--still", wide);
   ok(e.status === 1 && /another shape/.test(e.stderr), `a wide still for an upright source: ${e.stderr || e.stdout}`);
   return "grid.jpg, candidate-1 and candidate-3 as pages and pictures";
+});
+
+t("what the tool cannot do with its input it says in one sentence: a file where the folder goes, a face track that holds no boxes, a step of 0 (which once ran without end), a default that is not there, a CHROME that names no file", () => {
+  const dir = path.join(OUT, "cli-bad"), file = path.join(OUT, "a-file.txt"), track = path.join(OUT, "track.json");
+  fs.writeFileSync(file, "not a folder\n");
+  const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1)];
+  let e = cli("place", file, ...face);
+  sentence(e, "place <a file>"); ok(/is a file/.test(e.stderr) && fs.readFileSync(file, "utf8") === "not a folder\n", `place <a file>: ${e.stderr}`);
+  for (const bad of ["null", "[null]", "{\"faces\": [[{\"t\": 0, \"box\": [1, 2, 3]}]]}", "[{\"t\": \"soon\", \"box\": [1, 2, 3, 4]}]"]) {
+    fs.writeFileSync(track, bad);
+    e = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face-track", track);
+    sentence(e, `--face-track holding ${bad}`); ok(/--face-track/.test(e.stderr), `--face-track holding ${bad}: ${e.stderr}`);
+  }
+  for (const [set, says] of [["insetStep=0", /must be over 0/], ["zoomStep=0", /must be over 0/], ["insetStpe=0.02", /no default "insetStpe"/], ["caption.font.tall=large", /is a number/], ["caption=3", /group of defaults/]]) {
+    e = cli("place", dir, ...face, "--set", set);
+    sentence(e, `--set ${set}`); ok(says.test(e.stderr), `--set ${set}: ${e.stderr}`);
+  }
+  ok(!fs.existsSync(path.join(dir, "placement.json")), "a placement was written for input that was refused");
+  ok(cli("place", dir, ...face, "--set", "insetStep=0.02").status === 0, "a step of 2 % is refused");
+  e = cliWith({ CHROME: path.join(OUT, "no-chrome-here") }, "page", dir);
+  sentence(e, "page with a CHROME that is not there"); ok(/CHROME names/.test(e.stderr), `CHROME=/nowhere: ${e.stderr}`);
+});
+
+if (!QUICK) t("a file the caller passes in is never removed or written over: grid onto its own input is refused, a still that already lies in the placement's folder is used as it is; and a second place clears the pages and pictures of the placement before, and nothing else in the folder", () => {
+  const dir = path.join(OUT, "cli-files"), photo = path.join(OUT, "photo.jpg"), note = path.join(dir, "notes.txt"), own = path.join(dir, "grid.jpg");
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1080x1920", "-frames:v", "1", photo]);
+  const bytes = (f) => fs.readFileSync(f).toString("base64");
+  const before = bytes(photo);
+  let e = cli("grid", photo, photo);
+  sentence(e, "grid photo.jpg photo.jpg"); ok(fs.existsSync(photo) && bytes(photo) === before, "grid onto its input removed or changed the input");
+  const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1)];
+  cli("place", dir, ...face, "--text", "caption:1");
+  fs.writeFileSync(note, "mine\n");
+  ok(cli("grid", photo, own).status === 0, "grid into the placement's folder failed");
+  let r = cli("page", dir, "--still", photo);
+  const pages = ["candidate-1.html", "candidate-1.png", "candidate-2.html", "candidate-2.png", "candidate-3.html", "candidate-3.png"];
+  ok(r.status === 0 && [...pages, "still.jpg"].every((f) => fs.existsSync(path.join(dir, f))), `page: ${r.stderr || r.stdout}`);
+  // the frame page put there, passed in again
+  const still = path.join(dir, "still.jpg"), frame = bytes(still);
+  r = cli("page", dir, "--still", still, "--candidate", "2");
+  ok(r.status === 0 && fs.existsSync(still) && bytes(still) === frame, `page --still <folder>/still.jpg: exit ${r.status}, ${r.stderr}; the still is ${fs.existsSync(still) ? "there" : "gone"}`);
+  ok(fs.existsSync(path.join(dir, "candidate-2.png")) && !fs.existsSync(path.join(dir, "candidate-1.html")) && !fs.existsSync(path.join(dir, "candidate-3.png")), "page left pages of its earlier call beside the one asked for");
+  // a new placement: the old one's pages and frame go, what the caller put there stays
+  cli("page", dir, "--still", photo);
+  r = cli("place", dir, ...face, "--text", "hook");
+  ok(r.status === 0, `the second place: ${r.stderr}`);
+  const left = fs.readdirSync(dir).sort().join(", ");
+  ok(left === "grid.jpg, notes.txt, placement.json", `after the second place the folder holds ${left}`);
+  ok(fs.readFileSync(note, "utf8") === "mine\n", "the caller's file was changed");
+  return "the input kept, the old pages cleared, the caller's files left";
+});
+
+if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
+  const dir = path.join(OUT, "cli-chromes");
+  cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), "--text", "caption:1");
+  // the Chrome platform-zones finds, and a full Chromium where playwright put one (its window counts its bars)
+  const pw = path.join(os.homedir(), ".cache", "ms-playwright");
+  const others = (fs.existsSync(pw) ? fs.readdirSync(pw) : []).filter((n) => /^chromium-\d+$/.test(n)).map((n) => path.join(pw, n, "chrome-linux64", "chrome")).filter((f) => fs.existsSync(f)).slice(-1);
+  const pixel = (f, x, y) => spawnSync("ffmpeg", ["-v", "error", "-i", f, "-vf", `crop=1:1:${x}:${y}`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]).stdout.toString("hex");
+  const seen = [];
+  for (const chrome of [null, ...others]) {
+    const r = chrome ? cliWith({ CHROME: chrome }, "page", dir, "--candidate", "1") : cli("page", dir, "--candidate", "1");
+    const png = path.join(dir, "candidate-1.png");
+    ok(r.status === 0 && fs.existsSync(png), `page with ${chrome || "the Chrome found"}: ${r.stderr || r.stdout}`);
+    const size = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", png], { encoding: "utf8" }).stdout.trim();
+    ok(size === "1080,1920", `the picture with ${chrome || "the Chrome found"} is ${size}`);
+    // the drawn surface runs to the frame's bottom: its lowest rows are its colour, not black
+    for (const [x, y] of [[540, 1915], [10, 1850], [1070, 1900]]) ok(parseInt(pixel(png, x, y), 16) > 0x202020, `with ${chrome || "the Chrome found"} the picture is black at ${x},${y} (${pixel(png, x, y)})`);
+    seen.push(chrome ? path.basename(path.dirname(path.dirname(chrome))) : "the Chrome found");
+  }
+  return seen.join(", ");
 });
 
 if (table.length) {

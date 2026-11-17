@@ -74,13 +74,25 @@ export function readWeights(file = WEIGHTS_FILE) {
 }
 DEFAULTS.weights = readWeights();
 
+// base with { "dotted.key": value } laid over it. A key must name a default that is there and
+// keep its kind: a misspelt key would change nothing without a word, and a step of 0 or a text
+// where a number belongs would have the searches run without end.
+const POSITIVE = ["zoomStep", "insetStep", "insetMin", "panelMin", "zoomMax", "caption.line", "readable.height", "readable.per", "weights.enlarge.softFrom"];
 export function merged(base, over) {
   const out = structuredClone(base);
   for (const [k, v] of Object.entries(over || {})) {
     const keys = k.split(".");
     let o = out;
-    for (const key of keys.slice(0, -1)) o = o[key] ??= {};
+    for (const key of keys.slice(0, -1)) o = o && typeof o === "object" ? o[key] : undefined;
+    const old = o && typeof o === "object" ? o[keys.at(-1)] : undefined;
+    if (old === undefined) throw new Error(`There is no default "${k}" to set: the defaults are in tools/lib/defaults.mjs, the ranking's terms (weights.…) in tools/weights.json.`);
+    if (old && typeof old === "object") throw new Error(`"${k}" is a group of defaults, set one of its values: ${Array.isArray(old) ? "a list cannot be set from here" : Object.keys(old).map((x) => `${k}.${x}`).join(", ")}.`);
+    if (typeof old === "number" && !(typeof v === "number" && Number.isFinite(v) && v >= 0)) throw new Error(`"${k}" is a number, not under 0: ${JSON.stringify(v)} is none.`);
     o[keys.at(-1)] = v;
   }
+  const at = (k) => k.split(".").reduce((o, key) => o?.[key], out);
+  for (const k of POSITIVE) if (!(at(k) > 0)) throw new Error(`"${k}" must be over 0: with ${at(k)} the search would not end.`);
+  if (!(out.zoomStep < 1 && out.insetStep < 1 && out.insetMin <= 1 && out.panelMin <= 1)) throw new Error(`zoomStep, insetStep, insetMin and panelMin are shares of a scale: under 1 (0.01 is a step of one per cent).`);
+  if (!(out.weights.enlarge.forbiddenFrom > out.weights.enlarge.softFrom)) throw new Error(`weights.enlarge.forbiddenFrom must be over weights.enlarge.softFrom.`);
   return out;
 }

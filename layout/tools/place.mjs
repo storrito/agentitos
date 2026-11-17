@@ -35,6 +35,7 @@ import { Y1, boxText, pct } from "./lib/boxes.mjs";
 import { readWeights } from "./lib/defaults.mjs";
 import { compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
+import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
 
@@ -42,6 +43,9 @@ const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// whether two paths are one file: a file the caller passed in is never removed or written over
+const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+const sameFile = (a, b) => real(a) === real(b);
 
 // ---- options ----
 
@@ -90,8 +94,9 @@ function parseSources(o) {
       // a file: one moving face [{ t, box }, …], or several [[…], […]] or { faces: [[…], […]] }
       let j;
       try { j = JSON.parse(fs.readFileSync(v, "utf8")); } catch (e) { fail(`--face-track ${v} cannot be read (${e.message}): it is a JSON list of { "t": seconds, "box": [x, y, w, h] }.`); }
-      const tracks = Array.isArray(j) ? (Array.isArray(j[0]) ? j : [j]) : j.faces;
-      if (!Array.isArray(tracks)) fail(`--face-track ${v}: a list of { t, box }, or { faces: [[…], …] } for several faces.`);
+      const tracks = Array.isArray(j) ? (Array.isArray(j[0]) ? j : [j]) : j && Array.isArray(j.faces) ? j.faces : null;
+      const moment = (m) => m && typeof m === "object" && typeof m.t === "number" && Number.isFinite(m.t) && Array.isArray(m.box) && m.box.length === 4 && m.box.every((x) => typeof x === "number" && Number.isFinite(x)) && m.box[2] > 0 && m.box[3] > 0;
+      if (!tracks || !tracks.length || tracks.some((t) => !Array.isArray(t) || !t.length || !t.every(moment))) fail(`--face-track ${v}: one moving face is a list of { "t": seconds, "box": [x, y, w, h] } with numbers in it; several faces are a list of such lists, or { "faces": [[…], …] }.`);
       (sources.at(-1)?.faces || early).push(...tracks);
     }
   }
@@ -153,6 +158,7 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   const [folder] = o._;
   const sources = parseSources(o);
   if (!folder || o._.length > 1 || !o.frame || !sources.length) fail(usage);
+  if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) fail(`${folder} is a file: place writes its placement.json into a folder, name one.`);
   if (!/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame)) fail(`--frame is a ratio or a size, as 9:16 or 1080x1920.`);
   const platforms = platformList(o.platform);
   let res;
@@ -166,9 +172,13 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   } catch (e) { fail(e.message); }
   // what page and captions need to go on from the file alone
   res.asked = { frame: o.frame, platforms };
-  fs.mkdirSync(folder, { recursive: true });
   const file = path.join(folder, "placement.json");
-  fs.writeFileSync(file, JSON.stringify(res, null, 1));
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    // the pages and pictures of the placement that was here before belong to its candidates, not to these
+    clearWritten(folder, readWritten(folder));
+    fs.writeFileSync(file, JSON.stringify(res, null, 1));
+  } catch (e) { fail(`${file} cannot be written (${e.code || e.message}): name a folder of yours.`); }
   if (o.json) return console.log(JSON.stringify(res, null, 1));
   printResult(res);
   const pass = res.candidates.filter((c) => !c.hard && !c.unmet.length).length;
@@ -193,6 +203,7 @@ function probe(file) {
 // one frame of a video (or an image) as a JPEG, without any of the file's tags: a phone writes
 // the place it filmed at into its files, and that never goes into a folder that is passed on
 function frameOf(input, out, at, filters = []) {
+  if (sameFile(input, out)) return "it would write over the file it reads";
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   // no picture of an earlier run passes for this one's
   fs.rmSync(out, { force: true });
@@ -204,6 +215,7 @@ function frameOf(input, out, at, filters = []) {
 function cmdGrid(o) {
   const [input, out] = o._;
   if (!input || !out || o._.length > 2) fail(`${self()} grid <video|image> <out.jpg> [--at <s>]`);
+  if (sameFile(input, out)) fail(`${out} is the file to read: give the picture with the grid another name.`);
   const [w, h] = probe(input);
   const t = Math.max(2, Math.round(Math.min(w, h) / 360)), size = Math.max(16, Math.round(Math.min(w, h) / 36));
   // a line every tenth, each a dark line under a yellow one so that it shows on any picture; the
@@ -237,6 +249,21 @@ function readPlacement(folder, cmd) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { fail(`${file} cannot be read (${e.message}): run ${self()} place ${folder} … again.`); }
 }
 
+// What page wrote into a placement's folder (the pages, their pictures, the frames of the
+// recording) is listed in placement.json, so that exactly these files are removed when the
+// placement is made anew or other candidates are shown: never a file of another name, never one
+// the caller passes in.
+const OURS = /^(candidate-\d+\.(html|png)|still(-\d+)?\.jpg)$/;
+function readWritten(folder) {
+  try { const w = JSON.parse(fs.readFileSync(path.join(folder, "placement.json"), "utf8")).written; return Array.isArray(w) ? w.filter((n) => typeof n === "string" && OURS.test(n)) : []; } catch { return []; }
+}
+function clearWritten(folder, written, keep = []) {
+  for (const name of written) {
+    const file = path.join(folder, name);
+    if (fs.existsSync(file) && !keep.some((k) => sameFile(k, file))) fs.rmSync(file, { force: true });
+  }
+}
+
 // which candidates, from 1: "2", "1,3", "all"; none: the first `first`
 function pick(res, value, first) {
   const n = res.candidates.length;
@@ -248,13 +275,18 @@ function pick(res, value, first) {
   return list.map((k) => k - 1);
 }
 
-// a picture of a page as Chrome shows it at the frame's size
+// A picture of a page as Chrome shows it, of the frame's size. The window is taller than the frame
+// and the picture cut back to it: a Chrome that counts its own bars into the window shows less
+// of the page than the window is high, and a picture of the frame's height would end in black.
+const BARS = 240;
 function picture(chrome, page, png, [W, H]) {
   fs.rmSync(png, { force: true });
   // Chrome puts a socket into TMPDIR, at most 107 bytes long: a deep TMPDIR gets the system's
   const env = (process.env.TMPDIR || "/tmp").length > 60 ? { ...process.env, TMPDIR: "/tmp" } : process.env;
-  spawnSync(chrome, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files", `--window-size=${W},${H}`, "--virtual-time-budget=5000", `--screenshot=${path.resolve(png)}`, pathToFileURL(path.resolve(page)).href], { encoding: "utf8", env, timeout: 90e3 });
-  return fs.existsSync(png);
+  spawnSync(chrome, ["--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars", "--allow-file-access-from-files", `--window-size=${W},${H + BARS}`, "--virtual-time-budget=5000", `--screenshot=${path.resolve(png)}`, pathToFileURL(path.resolve(page)).href], { encoding: "utf8", env, timeout: 90e3 });
+  if (cutPng(png, H)) return true;
+  fs.rmSync(png, { force: true });
+  return false;
 }
 
 function cmdPage(o) {
@@ -263,16 +295,28 @@ function cmdPage(o) {
   const picks = pick(res, o.candidate, 3);
   const chrome = chromePath();
   if (!chrome) fail("page needs Chrome, to measure the candidates' pages and to take their pictures: set CHROME=/path/to/chrome. Until then the candidates carry only the solver's own verdict.");
+  if (!fs.existsSync(chrome)) fail(`CHROME names ${chrome}, and there is no such file: set it to a Chrome's path, or unset it to have one found.`);
   const sources = res.sources || [{ size: res.source }];
   // the stills: one frame per source, copied beside the pages so that their links hold
   if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
-  const stills = o.still.map((input, i) => {
+  const outs = o.still.map((_, i) => path.join(folder, i ? `still-${i + 1}.jpg` : "still.jpg"));
+  o.still.forEach((input, i) => {
     const [w, h] = probe(input), [sw, sh] = sources[i].size;
     if (Math.abs((w / h) / (sw / sh) - 1) > 0.02) fail(`${input} is ${w}×${h}; the placement was made for a source of ${sw}×${sh}, another shape: give the recording the boxes were read from.`);
-    const out = path.join(folder, i ? `still-${i + 1}.jpg` : "still.jpg");
-    const err = frameOf(input, out, o.at);
+    const over = outs.findIndex((out, k) => k !== i && sameFile(input, out));
+    if (over >= 0) fail(`${input} is where the frame of ${o.still[over]} goes: copy it out of ${folder} first, or give the stills in the order they lie there.`);
+  });
+  // what an earlier call wrote here goes, except a frame that is passed in again now
+  const before = readWritten(folder);
+  clearWritten(folder, before, o.still);
+  const written = [], save = () => fs.writeFileSync(path.join(folder, "placement.json"), JSON.stringify({ ...res, written }, null, 1));
+  const stills = o.still.map((input, i) => {
+    // a frame that already lies where it belongs is used as it is, and stays the caller's unless an earlier call made it
+    if (sameFile(input, outs[i])) { if (before.includes(path.basename(outs[i]))) written.push(path.basename(outs[i])); return outs[i]; }
+    const err = frameOf(input, outs[i], o.at);
     if (err) fail(`ffmpeg could not take a frame of ${input}: ${err}`);
-    return out;
+    written.push(path.basename(outs[i]));
+    return outs[i];
   });
   console.log(`${res.frame} ${res.size.join("×")} for ${res.platforms.join(", ")}${stills.length ? `, on a frame of ${o.still.map(rel).join(" and ")}${o.at !== undefined ? ` at ${o.at} s` : ""}` : ", on a drawn surface with each face as an oval (--still <video|image> shows the recording)"}`);
   let differ = 0;
@@ -280,8 +324,9 @@ function cmdPage(o) {
     const c = res.candidates[i], page = path.join(folder, `candidate-${i + 1}.html`), png = path.join(folder, `candidate-${i + 1}.png`);
     fs.writeFileSync(page, renderPage(c, res, { stills: stills.length ? stills : null, page }));
     let checked;
-    try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { fail(e.message); }
+    try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { written.push(path.basename(page)); save(); fail(e.message); }
     const shot = picture(chrome, page, png, res.size);
+    written.push(path.basename(page), ...(shot ? [path.basename(png)] : []));
     const cmp = compare(c, checked);
     console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}`);
@@ -290,6 +335,7 @@ function cmdPage(o) {
     if (!cmp.verdictAgrees) { differ++; console.log(`   ✗ They differ: ${checked.ok ? "the checker passes what the solver fails" : "the checker fails what the solver passes"} (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}). The checker measured the page: do not take this candidate without looking at why.`); }
     else if (!cmp.agree) console.log(`   They agree on the verdict and differ in a finding (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}).`);
   }
+  save();
   console.log(`\nLook at ${picks.length > 1 ? "each picture" : "the picture"} before you choose. What no measurement here knows: whether the picture behind a text is calm (the solver sees boxes, no pixels), whether the box of a face was read right, and how wide the video's own words are: the pages show placeholder words, a caption block is taken as wide as its area and a hook line as ten letters' widths.`);
   console.log(`Chosen: ${self()} captions ${rel(folder)} --candidate N gives the options for agentitos' captions; scale, left, top, window and the text's boxes of the candidate are in ${rel(path.join(folder, "placement.json"))} for the skill that builds the video.`);
   if (differ) process.exitCode = 1;

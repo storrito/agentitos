@@ -37,7 +37,7 @@ import { screenFits } from "./screen.mjs";
 // face that moves). A moving face is held by the hull of its boxes, so that the placement and the
 // text hold for the whole clip; its usual box (the median of each edge) says how large it is.
 export function trackFace(moments) {
-  const at = moments.map((m) => ({ t: Number(m.t), box: m.box.map(Number) })).sort((a, b) => a.t - b.t);
+  const at = (Array.isArray(moments) ? moments : []).map((m) => ({ t: Number(m?.t ?? NaN), box: (Array.isArray(m?.box) ? m.box : []).map(Number) })).sort((a, b) => a.t - b.t);
   if (!at.length || at.some((m) => !Number.isFinite(m.t) || m.box.length !== 4 || m.box.some((v) => !Number.isFinite(v)) || m.box[2] <= 0 || m.box[3] <= 0)) throw new Error("A moving face is a list of { t, box: [x, y, w, h] } with one moment at least.");
   const h = hullOf(at.map((m) => m.box)), hull = [h[0], h[1], h[2] - h[0], h[3] - h[1]];
   const e = [median(at.map((m) => m.box[0])), median(at.map((m) => m.box[1])), median(at.map((m) => X1(m.box))), median(at.map((m) => Y1(m.box)))];
