@@ -50,14 +50,14 @@ export function buildHtml(data) {
     const z = S.a, [W, H] = z.size, s = z.safe, w = z.wide, n = z.needs;
     const pH = (px) => `${num(100 * px / H)} % of the frame's height (${Math.round(px)} px)`;
     const below = (lines, fh) => 100 * (s[1] + s[3] - capH(lines, true) - Math.max(D.free.belowMin, D.free.below * fh * H / 100)) / H;
-    const hookMin = D.hookCard.minFont * D.hookCard.heightEm, hookFull = D.hookCard.font * D.hookCard.heightEm, up = D.free.aboveMin;
+    const hookMin = D.hookText.minFont * D.hookText.heightEm, hookFull = D.hookText.font * D.hookText.heightEm, up = D.free.aboveMin;
     const zooms = mm(["cap1", "cap2", "hook", "hookcap2"].flatMap((k) => n[k].zoomRange || []));
     rules.a = [
       ["Unchanged", `the picture passes as long as the face lies in the safe box and the text has room: the hairline no higher than ${pH(s[1])}, the chin no lower than ${pH(s[1] + s[3])}, the right cheek not past ${num(100 * (s[0] + s[2]) / W)} % of the width (${s[0] + s[2]} px), the left one not before ${num(100 * s[0] / W)} % (${s[0]} px). Up to ${n.cap1.allFullUpTo} % face height that holds for every cell of the grid (one or two caption lines); in all for ${share(n.cap1.fits.full, n.cap1.cells)} of the cells with one line, ${share(n.hookcap2.fits.full, n.hookcap2.cells)} with a hook plus two lines.`],
       ["Captions below or above:", `They stay below the chin as long as there is room under it down to the safe box's bottom: the chin at ${num(below(1, 50))}–${num(below(1, 15))} % of the frame's height at most for one line (a large to a small face), ${num(below(2, 50))}–${num(below(2, 15))} % for two. With the chin lower they stand above the head. In the grid: below up to a chin at ${num(n.cap1.chin.below[1])} %, above from ${num(n.cap1.chin.above[0])} % (one line); ${num(n.cap2.chin.below[1])} % and ${num(n.cap2.chin.above[0])} % (two).`],
-      ["Room above the head", `needs the hairline at ${pH(s[1] + capH(1, true) + up)} at least for one line, ${pH(s[1] + capH(2, true) + up)} for two, ${pH(w[1] + hookMin + up)} for the hook card at its smallest (${D.hookCard.minFont} px type; ${num(100 * (w[1] + hookFull + up) / H)} % at its full ${D.hookCard.font} px), ${pH(w[1] + hookMin + D.gap + capH(2, true) + up)} for a hook plus two lines (${num(100 * (w[1] + hookFull + D.gap + capH(2, true) + up) / H)} % with the full card). With the eyes at 25–30 % of the height the card lacks this room even with a small face.`],
+      ["Room above the head", `needs the hairline at ${pH(s[1] + capH(1, true) + up)} at least for one caption line, ${pH(s[1] + capH(2, true) + up)} for two, ${pH(s[1] + hookMin + up)} for a hook as text at its smallest (${D.hookText.minFont} px type; ${num(100 * (s[1] + hookFull + up) / H)} % at its full ${D.hookText.font} px). A hook goes there only where nothing is free below the chin.`],
       ["A zoom", `wins where the face only just leaves the safe box or sits a little too high: ${num(zooms[0], 2)}× to ${num(zooms[1], 2)}× in the grid. It does not help when the face and the text together are taller than the safe box (${s[3]} px): zooming makes the face larger.`],
-      ["Only smaller", `(the picture smaller over a blurred ground) does it pass from ${n.cap1.onlySmallerFrom} % face height with captions, from ${n.hook.onlySmallerFrom} % with a hook, from ${n.hookcap2.onlySmallerFrom} % with a hook plus two lines. In the grid the picture shrinks to between ${num(n.cap1.insetRange[1], 2)} and ${num(n.cap2.insetRange[0], 2)} of its size (captions) and down to ${num(n.hookcap2.insetRange[0], 2)} (a hook plus lines). With the head very high (the eyes at 25 %) the picture moves down and the card stands on the ground above it.`],
+      ["Only smaller", `(the picture smaller over a blurred ground) does it pass from ${n.cap1.onlySmallerFrom} % face height with captions, from ${n.hook.onlySmallerFrom} % with a hook, from ${n.hookcap2.onlySmallerFrom} % with a hook plus two lines. In the grid the picture shrinks to between ${num(n.cap1.insetRange[1], 2)} and ${num(n.cap2.insetRange[0], 2)} of its size (captions) and down to ${num(n.hookcap2.insetRange[0], 2)} (a hook plus lines). With the head very high (the eyes at 25 %) the picture moves down and the hook stands on the ground above it.`],
     ];
   }
   // what the cells of one case say, in general terms: which kind wins how often, by text need, by
@@ -86,12 +86,13 @@ export function buildHtml(data) {
       ["By text need:", needs.map((n) => `${n.name}: ${shares(part(id, n.id))}`).join("; ") + "."],
       ["Filling the frame, by face height", `(the picture's middle, a zoom or a crop around the face, no ground). ${sizeLine("cap1", "One caption line")}; ${sizeLine("hookcap2", "a hook plus two lines")}.`],
       ["Captions:", `${places("caption")}.`],
-      ["Hook:", `${places("hook")}; at its full size in ${share(fullHook, hooks.length)} of the cells with a hook.`],
+      ["Hook:", `${places("hook")}; ${[["text", "as a short text"], ["card", "as a card across the top"], ["big", "as two big lines"]].map(([st, says]) => [says, hooks.filter((q) => hook(q).style === st).length]).filter(([, n]) => n).map(([says, n]) => `${says} in ${share(n, hooks.length)}`).join(", ")} of the cells with a hook; at its full size in ${share(fullHook, hooks.length)}.`],
     ];
   };
   {
     // (b) wide into 9:16: the general lines, and what a source of 720 lines changes
     const fullS = 1920 / 720, bandS = 1350 / 720, sqS = 1080 / 720;
+    rules.a.push(general("a")[4]);
     rules.b = [...general("b"),
       ["With 720 lines", `(a source of 1280×720, the still people judged) the crop that fills the frame would be enlarged ${num(fullS, 2)}× and drops out (over ${W8.enlarge.forbiddenFrom}×). Then the 4:5 band leads (${num(bandS, 2)}×, mildly soft, ${num(Math.max(0, bandS - W8.enlarge.softFrom) / (W8.enlarge.forbiddenFrom - W8.enlarge.softFrom) * W8.enlarge.costAtForbidden, 2)} points) before the square (${num(sqS, 1)}×, crisp) and the whole picture as a strip.`]];
   }
@@ -263,8 +264,8 @@ ${weightsCard}
   <h2>Assumptions</h2>
   <ul class="plain">
     <li>A face is ${num(data.face.aspect, 2)} times as wide as it is tall (hairline to chin, cheek to cheek), its eyes ${Math.round(100 * data.face.eyes)} % below its top.</li>
-    <li>Captions: ${D.caption.font.tall} px type in 9:16, 4:5 and 1:1, ${D.caption.font.wide} px in 16:9, line height ${num(D.caption.line, 2)}, set on the frame's middle and as wide as the centred safe box (in 1:1 at most as wide as the profile grid's 3:4 crop shows).</li>
-    <li>A hook in 9:16: a card of two lines across the wide stretch, ${D.hookCard.font} px type, which may shrink to ${D.hookCard.minFont} px; in 4:5 and 1:1 (no wide stretch) the same card at the top of the safe box. In 16:9: two big lines, ${D.hookBig.font} px, down to ${D.hookBig.minFont} px.</li>
+    <li>Captions: ${D.caption.font.tall} px type in 9:16, 4:5 and 1:1 (a line 4 % of a 9:16 frame's height, as published Shorts set theirs), ${D.caption.font.wide} px in 16:9, lines ${num(D.caption.line, 2)} em apart with ${num(D.caption.padEm, 2)} em around them for a style's box, set on the frame's middle and as wide as the centred safe box (in 1:1 at most as wide as the profile grid's 3:4 crop shows).</li>
+    <li>A hook in 9:16, 4:5 and 1:1: first a short text of two lines below the chin (${D.hookText.font} px type, down to ${D.hookText.minFont} px; its middle at ${Math.round(100 * D.hookText.centre)} % of the frame's height where the face leaves that free, above the captions), as published Shorts set it; then the same above the head; then a card of two lines across the top (${D.hookCard.font} px, down to ${D.hookCard.minFont} px). In 16:9: two big lines, ${D.hookBig.font} px, down to ${D.hookBig.minFont} px.</li>
     <li>Free means: not in the face and not in its margin. Above the hairline ${Math.round(100 * D.free.above)} % of the face's height (at least ${D.free.aboveMin} px), below the chin ${Math.round(100 * D.free.below)} % (at least ${D.free.belowMin} px), beside the cheeks ${Math.round(100 * D.free.beside)} % of the face's width. Whether the wall there is calm the solver does not see.</li>
     <li>Enlarging the source's pixels over ${num(D.weights.enlarge.softFrom, 2)}× is a soft problem, over ${D.weights.enlarge.forbiddenFrom}× a hard one. The weights were set by hand from one judged still, not yet from measurements of published videos.</li>
     <li>The zones come from platform-zones at every run, the solver holds none of their numbers. Made ${esc(data.made)}.</li>
