@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, dropSpans, keepsWithout, numbers, ranges, longest, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -22,17 +22,17 @@ function transcript(lines) {
   let t = 0;
   return lines.map(([seconds, speaker, text, at]) => {
     const start = at ?? t;
-    t = start + seconds + 0.2;
-    return { start, end: start + seconds, speaker, text };
+    t = +(start + seconds + 0.2).toFixed(3);
+    return { start, end: +(start + seconds).toFixed(3), speaker, text };
   });
 }
 // what a model answers for one moment
-const moment = (first, last, more = {}) => ({ first, last, kind: "story", title: "t", why: "w", cold: 2, one: 2, ends: 2, alone: 2, drop: [], hook: "", crosstalk: false, ...more });
+const moment = (first, last, more = {}) => ({ first, last, kind: "story", title: "t", why: "w", cold: 2, one: 2, ends: 2, alone: 2, payoff: last, drop: [], hook: "", crosstalk: false, ...more });
 
-// a host's question, an answer with an aside in the middle, the lesson at the end: 80 s
+// a host's question after a pause, an answer with an aside in the middle, the lesson at the end
 const INTERVIEW = transcript([
   [4, "A", "Welcome back to the show."],                               // 0
-  [6, "A", "What was the hardest scene you ever shot?"],                // 1
+  [6, "A", "What was the hardest scene you ever shot?", 7],             // 1
   [10, "B", "The one in the river, without a doubt."],                  // 2
   [12, "B", "We had three days and the water was freezing."],           // 3
   [9, "B", "By the way, the catering on that film was great."],         // 4  an aside
@@ -155,4 +155,74 @@ test("a key that OpenRouter turns away is told from everything else, and said in
   assert.equal(rejectedIn('The transcription with google/gemini-3.5-transcribe failed (OpenRouter 401: {"error":{"message":"User not found.","code":401}}); check OPENROUTER_API_KEY'), "401");
   assert.equal(rejectedIn("OpenRouter 429: rate limited"), null);
   assert.match(REJECTED("401 User not found."), /^OpenRouter turned the key away \(401 User not found\.\), so nothing was written: put a valid OPENROUTER_API_KEY/);
+});
+
+test("an answer starts at its question, with what the asker says to set it up", () => {
+  const [m] = arrange({ moments: [moment(2, 7)] }, INTERVIEW);
+  assert.deepEqual([m.first, m.last], [1, 7]);
+  assert.deepEqual(m.moved, { from: 2, why: "question" });
+  assert.equal(m.start, 7);
+  // from the middle of the answer too, as long as only the answering voice spoke since the question
+  assert.equal(questionStart(INTERVIEW.slice(0, 3).concat(transcript([[3, "B", "It was cold.", 23.4]])), 3), 1);
+  // "So in that film you play a diver." before the question belongs to it; the greeting 3 s earlier does not
+  const setUp = transcript([[3, "A", "Good to have you."], [5, "A", "So in that film you play a diver.", 6], [4, "A", "How long can you hold your breath?"], [8, "B", "Four minutes, on a good day."]]);
+  assert.equal(questionStart(setUp, 3), 1);
+  assert.equal(arrange({ moments: [moment(3, 3)] }, setUp)[0].first, 1);
+});
+
+test("a start that answers no question stays where the model put it", () => {
+  const at = (lines, first, floor) => questionStart(transcript(lines), first, floor);
+  // the moment opens with the question itself
+  assert.equal(questionStart(INTERVIEW, 1), 1);
+  // what the other voice said last is no question
+  assert.equal(at([[5, "A", "That is a wild story."], [9, "B", "You know what I read in the comments all the time."]], 1), 1);
+  // the question is more than 15 s back
+  assert.equal(at([[5, "A", "What happened on that day?"], [16, "B", "Well, it started in the morning."], [9, "B", "Then the storm came."]], 2), 2);
+  // a remark of the asker stands between the question and the start
+  assert.equal(at([[4, "A", "Is that really true?"], [3, "B", "Yes."], [3, "A", "I never knew that."], [8, "B", "Nobody did, we kept it quiet."]], 3), 3);
+  // a "Really?" is a reaction, not a question to answer
+  assert.equal(at([[9, "B", "We sold the company in a week."], [1, "A", "Really?"], [8, "B", "Yes, to the first one who asked."]], 2), 2);
+  // a "mhm" of the asker in the answer does not hide the question
+  assert.equal(at([[4, "A", "How did you start out?"], [5, "B", "With nothing, honestly."], [0.6, "A", "Mhm."], [7, "B", "I slept in the office."]], 3), 0);
+  // the voice asks itself
+  assert.equal(at([[4, "B", "Why did we do that?"], [7, "B", "Because nobody stopped us."]], 1), 1);
+  // YouTube's captions: no voices, nobody is known to ask
+  assert.equal(at([[4, null, "How did you start out?"], [7, null, "With nothing, honestly."]], 1), 1);
+  // the question belongs to another moment
+  assert.equal(at([[4, "A", "How did you start out?"], [7, "B", "With nothing, honestly."]], 1, 1), 1);
+  const taken = arrange({ moments: [moment(0, 1), moment(2, 7)] }, INTERVIEW, { limit: 200 });
+  assert.deepEqual(taken.map((m) => [m.first, m.last, m.moved]).sort(), [[0, 1, undefined], [2, 7, undefined]]);
+});
+
+test("a conjunction counts as one in the middle of a voice's turn, not where it opens a turn", () => {
+  const talk = transcript([
+    [5, "A", "So in that film you play a diver."],         // 0  opens the talk
+    [6, "B", "I do, and I nearly drowned."],                // 1
+    [5, "B", "And then they asked for another take."],      // 2  goes on in B's turn
+    [0.5, "A", "Mhm."],                                     // 3
+    [6, "B", "Or we would have lost the light."],           // 4  goes on over the "mhm"
+    [4, "A", "But you did it anyway?"],                     // 5  opens A's turn
+    [5, "B", "So I did it, yes.", 60],                      // 6  after a long pause: a new start
+  ]);
+  assert.deepEqual(talk.map((_, k) => continues(talk, k)), [false, false, true, false, true, false, false]);
+});
+
+test("the checks count how a moment opens, its voices and its length against the limit", () => {
+  assert.deepEqual(checks(INTERVIEW, 1, 7), { question: true, conjunction: false, voices: 2, over: 12 });
+  assert.deepEqual(checks(INTERVIEW, 2, 7, 90), { question: false, conjunction: false, voices: 1, over: 0 });
+  // the question comes in the asker's second sentence; a voice that only says "mhm" is not counted
+  const setUp = transcript([[5, "A", "So in that film you play a diver."], [4, "A", "How long can you hold your breath?"], [8, "B", "Four minutes."], [0.6, "C", "Wow."]]);
+  assert.deepEqual(checks(setUp, 0, 3), { question: true, conjunction: false, voices: 2, over: 0 });
+  // a question the other voice asks later is not how the moment opens
+  const later = transcript([[6, "B", "We sold it in a week."], [4, "A", "To whom?"], [5, "B", "And nobody knew."]]);
+  assert.equal(checks(later, 0, 2).question, false);
+  assert.equal(checks(later, 2, 2).conjunction, false);
+});
+
+test("the payoff is a sentence of the moment and is never dropped", () => {
+  const [m] = arrange({ moments: [moment(1, 7, { payoff: 5, drop: [4, 5] })] }, INTERVIEW);
+  assert.equal(m.payoff, 5);
+  assert.deepEqual(m.drop, [4]);
+  assert.equal(arrange({ moments: [moment(1, 7, { payoff: 9 })] }, INTERVIEW)[0].payoff, null);
+  assert.equal(arrange({ moments: [moment(2, 7, { payoff: 1 })] }, INTERVIEW)[0].payoff, 1);
 });

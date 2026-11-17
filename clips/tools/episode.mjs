@@ -297,12 +297,12 @@ const MOMENTS_SCHEMA = {
     inventory: { type: "object", additionalProperties: false, required: KINDS, properties: Object.fromEntries(KINDS.map((k) => [k, { type: "integer" }])) },
     moments: { type: "array", items: {
       type: "object", additionalProperties: false,
-      required: ["first", "last", "kind", "title", "why", "cold", "one", "ends", "alone", "drop", "hook", "crosstalk"],
+      required: ["first", "last", "kind", "title", "why", "cold", "one", "ends", "alone", "payoff", "drop", "hook", "crosstalk"],
       properties: {
         first: { type: "integer" }, last: { type: "integer" }, kind: { type: "string", enum: KINDS },
         title: { type: "string" }, why: { type: "string" },
         cold: POINT, one: POINT, ends: POINT, alone: POINT,
-        drop: { type: "array", items: { type: "integer" } },
+        payoff: { type: "integer" }, drop: { type: "array", items: { type: "integer" } },
         hook: { type: "string" }, crosstalk: { type: "boolean" },
       },
     } },
@@ -323,7 +323,11 @@ That was the transcript of "${episode.title}" (${episode.channel || "a podcast"}
 
 First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered).
 
-A moment is one whole passage of the episode, a range of whole sentences, first..last, cut straight from it: the whole arc, not its core. It runs from the sentence that opens the passage (the question that sets it off, or the first sentence of the story or the claim) to its last conclusion: the lesson after the story, the second beat after the punchline, the last point of the answer before the talk turns to something else. Do not stop after the first finished thought when the speaker goes on to say what it means, and do not start on the payoff without what leads up to it. It is one of the pieces above (its kind).
+A moment is one whole passage of the episode, a range of whole sentences, first..last, cut straight from it: the whole arc, not its core. It is one of the pieces above (its kind).
+- Where it starts: at the sentence that opens the passage. An answer begins at its question, with the sentence or two its asker needs to set the question up; never at the answer alone, and never at the punchline without what leads up to it. A story or a claim nobody asked for begins at its own first sentence. A first sentence that only goes on from the one before ("or then there's …", "and that is why …") is no start: go back to where that thought begins.
+- One topic: a follow-up question on the same subject belongs to the passage; a question that opens another subject ends it before that question.
+- Where it ends: after its last conclusion, when the talk turns to something else: after the lesson that follows the story, the second beat that tops the punchline, the last point of the answer. Not after the first finished thought and not after the first laugh, when the speaker goes on to say what it means or adds the line that lands.
+- payoff: the number of the one sentence in it that carries its strongest line (the punchline, the number, the confession, the sentence one would quote); an editor may open the short with it.
 
 A short may be up to ${limit} seconds here. A whole passage takes what it takes, from 15 seconds up; most take 30 to ${limit}. Never cut a passage down to make it fit: when the whole arc is longer than ${limit} seconds (up to ${cap}), return it whole and list in drop the numbers of the sentences inside it that an editor would cut out to bring it to ${limit} seconds or under: an aside, a repetition, a second example, a detour, people talking at once; never its first or last sentence, the question, a step the story needs or the payoff. For an arc of ${limit} seconds or less, drop is empty. A passage that needs more than ${cap} seconds is no moment: it belongs to the ideas below.
 
@@ -335,7 +339,7 @@ Score how well it stands alone, 0 to 2 on each point, strictly: a 2 is earned, a
 A host's question followed by the answer is fine. Concrete and visual beats abstract. Prefer moments spoken by one voice at a time: a stretch of one- and two-word sentences flipping between voices is people talking at once; where a moment has a few seconds of it, set crosstalk true.
 When the best start of a moment is weak (cold under 2), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
 
-Moments do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, the four points, drop, the hook, crosstalk.
+Moments do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, the four points, payoff, drop, the hook, crosstalk.
 
 Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.`;
 }
@@ -398,7 +402,9 @@ async function moments(dir, ...rest) {
     + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : ""));
   console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.score}/10${m.weak ? " weak" : ""} · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
     + (m.over ? `\n   ${m.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : "")
-    + `\n   „${m.opening}“\n   ${m.why}` + (m.hook ? `\n   hook on screen: „${m.hook}“` : "")).join("\n"));
+    + (m.moved ? `\n   starts at the question before it (the model began at sentence ${m.moved.from})` : "")
+    + `\n   „${m.opening}“\n   ${m.why}`
+    + (m.payoff != null ? `\n   strongest line (${m.payoff}): „${sentences[m.payoff].text}“` : "") + (m.hook ? `\n   hook on screen: „${m.hook}“` : "")).join("\n"));
   if (ideas.length) console.log(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
   const over = picked.filter((m) => m.over).length;
   console.log(`${picked.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${(j.usage?.cost ?? 0).toFixed(4)}. `
