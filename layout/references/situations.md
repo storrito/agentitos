@@ -48,8 +48,9 @@ below rests on them.**
   at about 82 %, two caption lines at 90 %. For Instagram Reels alone the take passed unchanged:
   name the platform when it is known.
 - **In the video the margin was 8 px** (measured: four test videos of 7.7 s from the same take,
-  2026-11-17; 36 stills checked, none failing). The top of the hair moved between y 448 and 470,
-  the caption box ended at 440. A face read at one moment has no reserve: read it at several.
+  2026-11-17; 36 stills checked, none failing). The top of the hair moved between y 448 and 470
+  of the frame, the caption box above it ended at 440. A face read at one moment has no reserve:
+  read it at several.
 - **The two 16:9 layouts of an upright take passed every check and looked weak as videos**
   (measured: the same four videos, looked at by people). The big words beside the panel were
   restless, and after the hook the area beside the panel stood empty. Take them only when 16:9 is
