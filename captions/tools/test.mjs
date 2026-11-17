@@ -228,11 +228,11 @@ test("review 1: a narrow area holds every group in two lines, line by line, and 
   const narrow = built(t, ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420"], wordsOf(NARROW));
   assert.deepEqual(texts(narrow.data), ["For that", "I use", "Storrito,", "which runs", "in the", "browser", "and needs", "no app."]);
   for (const text of texts(narrow.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 96) <= 2, `"${text}" takes more than two lines of 420 px at 96 px`);
-  assert.match(narrow.said, /\n {2}Wider than a line of this area at 96 px, so each alone and set smaller: "Storrito,", "browser"\.\n/);
+  assert.match(narrow.said, /\n {2}Wider than a line of this area at 96 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "browser"\.\n/);
   const named = built(t, ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420", "--font-size", "110"], wordsOf(NARROW));
   assert.deepEqual(texts(named.data), ["For that", "I use", "Storrito,", "which", "runs", "in the", "browser", "and needs", "no app."]);
   for (const text of texts(named.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 110) <= 2, `"${text}" takes more than two lines of 420 px at 110 px`);
-  assert.match(named.said, /at 110 px, so each alone and set smaller: "Storrito,", "which", "browser"\./);
+  assert.match(named.said, /at 110 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "which", "browser"\./);
 });
 
 test("review 2: without a named size the groups set at the style's size, not at the least it shrinks to; a card stays whole and the tool says so", { skip: noZones }, (t) => {
@@ -256,7 +256,7 @@ test("review 3: the area holds a style's box whole, and the warning judges the b
   assert.match(left.html, /if \(el\.classList\.contains\("cap-card"\) \|\| el\.classList\.contains\("boxed"\)\) \{/);
   assert.deepEqual(texts(left.data), ["That is", "straightforward,", "and it works", "automatically."]);
   assert.match(left.said, /\nThat is inside the safe box of /);
-  assert.match(left.said, /set smaller: "straightforward,", "automatically\."\./);
+  assert.match(left.said, /hyphen\): "straightforward,", "automatically\."\./);
   // captions nobody placed keep the box they had
   assert.match(built(t, ["--style", "clean", "--size", "1920x1080"], wordsOf(BIG_BOX)).html, /#root \.cap-group\.boxed \{ width: fit-content;[^}]*\}\n[\s\S]*if \(el\.classList\.contains\("cap-card"\)\) \{/);
   // the letters of one line end inside the safe box, the box around them does not

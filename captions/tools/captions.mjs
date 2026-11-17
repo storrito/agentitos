@@ -231,7 +231,7 @@ const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(
 // to choose, so what leaves the frame or the safe box is said in one sentence, not refused. The
 // area is judged as a style's box or a card fills it (r.area.top: its padding and border too).
 // In a width, in lines or at a size of the caller's own, also which words are wider than a line
-// (they stand alone, set smaller), and that a card is never cut to an area.
+// (each stands alone, set smaller or broken at its hyphen), and that a card is never cut to an area.
 function placedAs(r, z, [width, height], platforms) {
   const a = r.area, round = (x) => +x.toFixed(3);
   const who = `${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}`;
@@ -245,7 +245,7 @@ function placedAs(r, z, [width, height], platforms) {
   if (c.inside && !off) said.push(`That is inside the ${past ? "stretch above the buttons" : "safe box"} of ${who}.`);
   else said.push(`! That leaves ${off ? `the frame (${off}: not in the video) and ` : ""}the safe box of ${who} (${span(z.safe)}): ${past}${under.length ? `, where the apps lay ${under.join("; ")} over the captions` : ", into the margin the guides keep"}.`);
   const wide = [...new Set(r.wide)];
-  if (wide.length) said.push(`  Wider than a line of this area at ${a.size} px, so each alone and set smaller: ${wide.slice(0, 8).map((w) => `"${w}"`).join(", ")}${wide.length > 8 ? ", …" : ""}.`);
+  if (wide.length) said.push(`  Wider than a line of this area at ${a.size} px, so each stands alone, set smaller (or broken at its hyphen): ${wide.slice(0, 8).map((w) => `"${w}"`).join(", ")}${wide.length > 8 ? ", …" : ""}.`);
   if (a.own && r.cards) said.push(`  A card keeps its words together whatever the area (${r.cards} here): it shrinks to the lines asked for and takes another line where it cannot.`);
   return said.join("\n");
 }

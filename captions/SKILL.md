@@ -48,10 +48,10 @@ The person attaches a video, named in their message as `video: uploads/<file>`. 
 - `--y <px>`: the y, counted from the frame's top, at which the lowest line ends. Needed when the safe box's bottom lies on what must be seen: in a close selfie it is the chin, and the free picture is the wall above the head.
 - `--x <px>` and `--max-width <px>`: where the captions' area starts from the left and how wide it is. Needed when the free area lies at one side: the speaker as a tall panel on the left of a 16:9 frame, a screen beside the face. `--max-width` alone stays centred on the frame; `--x` alone reaches to the right edge of the platforms' centred box.
 - `--align left|centre|right`: the lines inside that area. Left (or right) when the area begins beside something, so that every group starts at the same edge; for captions centred on the frame, leave it out.
-- `--font-size <px>`: the type's size instead of the style's (`--size` is the frame's size). Needed when the area is much larger or smaller than the strip the styles are made for: the free half of a wide frame carries type twice as large. A size that is named is kept: the groups are cut shorter until they fit their lines at it.
+- `--font-size <px>`: the type's size instead of the style's (`--size` is the frame's size). Needed when the area is much larger or smaller than the strip the styles are made for: the free half of a wide frame carries type twice as large. In a width, in lines or at a size of your own the groups are cut so that each stands in its lines at the type's size; a word wider than a line stands alone and smaller, and the tool names it: give more width or a smaller size when it matters.
 - `--lines 1|2`: one line when the area is low: a strip of wall above a head, a bar under a screen.
 
-The tool answers where it put them and whether that is inside the safe box of the platforms; a line that begins with `!` says how far the area leaves it and what the apps lay there. It builds all the same: the place is the caller's.
+The tool answers where it put them and whether that is inside the safe box of the platforms; a line that begins with `!` says how far the area leaves it (or the frame) and what the apps lay there. It builds all the same: the place is the caller's. The area holds a style's box whole, its padding too. A card (`box`) is never cut to an area: it keeps its words together and may take another line.
 
 ## Captions for another skill
 
