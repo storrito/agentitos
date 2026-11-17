@@ -1,0 +1,66 @@
+{
+  "about": "The terms of the ranking in place.mjs, read once at start. Another file for one run: --weights file.json; one term: --set weights.enlarge.softFrom=1.4. Every term is { value, unit, says }; only value is read. A candidate with a hard problem ranks behind every candidate without one, and one that leaves a need unmet (a text without a place, a screen's text too small to read) behind every one that meets them all. Among the rest the smaller cost wins: cost = enlargement + ground + left out + soft problems + text away + hook smaller - subject, all in points. One point is what ten per cent of the frame as ground costs with these values. Two candidates of the same cost: the one nearer to the fit's usual hold (centred) comes first.",
+  "basis": "Set by hand on 2026-11-17 from one judged case (a 1280x720 wide take into 9:16, stills looked at by people: 1.5x crisp, 1.875x mildly soft but fine, 2.67x too soft to publish, the whole picture as a strip leaves the person tiny) and from stills of one upright phone take laid out by hand, whose winners they keep. The rest are guesses, each marked in its term. To be set from measurements of published videos.",
+  "enlarge": {
+    "softFrom": {
+      "value": 1.5,
+      "unit": "x of the source's pixels",
+      "says": "Up to here enlarging the source costs nothing and is no problem; over it the candidate carries a soft problem and the cost starts. 1.5x was judged crisp."
+    },
+    "forbiddenFrom": {
+      "value": 2,
+      "unit": "x of the source's pixels",
+      "says": "Over this a candidate has a hard problem and ranks behind every candidate without one. 1.875x was judged fine and 2.67x too soft to publish; nothing between them was judged, 2 is a guess between them."
+    },
+    "costAtForbidden": {
+      "value": 3,
+      "unit": "points",
+      "says": "What enlargement costs at forbiddenFrom; from softFrom it rises to this in a straight line (1.875x costs 2.25 with these three values). Over about 3.8 the crisp square would pass the mildly soft 4:5 crop in the judged case."
+    }
+  },
+  "subject": {
+    "worth": {
+      "value": 0.3,
+      "unit": "points per per cent of the frame's height",
+      "says": "What a larger subject is worth: taken off the cost for every per cent of the frame's height the face is tall (the smallest face of several, its usual size when it moves; a screen region: the per cent of the frame's width or height it spans, whichever is more)."
+    },
+    "enough": {
+      "value": 50,
+      "unit": "per cent of the frame's height",
+      "says": "Over this a larger subject is worth no more (a face half the frame tall is close enough). A guess: no case decides it yet."
+    }
+  },
+  "ground": {
+    "cost": {
+      "value": 0.1,
+      "unit": "points per per cent of the frame",
+      "says": "What visible ground costs: for every per cent of the frame that the sharp picture does not fill (the blurred copy behind a smaller picture, a band above and below a crop, the side of a panel)."
+    }
+  },
+  "people": {
+    "leftOut": {
+      "value": 3,
+      "unit": "points per person",
+      "says": "What it costs to leave a person out of the picture (a crop on one of two) when the caller names no speaker; with --speaker it costs nothing. A guess: no case decides it yet."
+    }
+  },
+  "soft": {
+    "cost": {
+      "value": 0.5,
+      "unit": "points per soft problem",
+      "says": "What a soft problem other than enlargement costs: a face or text in the safe box's margin, cut by a feed's crop, another person's face cut by a crop's edge."
+    }
+  },
+  "text": {
+    "away": {
+      "value": 0.05,
+      "unit": "points per step",
+      "says": "What it costs to set a text away from its usual place (captions: at the safe box's bottom, then in the picture's bottom, beside the face, above the head, on the ground above; hook: at the top). Small on purpose: it only orders holds of the same picture."
+    },
+    "hookSmaller": {
+      "value": 0.02,
+      "unit": "points",
+      "says": "What a hook set smaller than its size costs. Small on purpose: the larger picture with a smaller hook comes before the smaller picture with the full one; both are listed."
+    }
+  }
+}
