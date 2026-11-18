@@ -12,8 +12,9 @@
 // Who sits where: the clip goes to Gemini through OpenRouter (small, with its sound, and who
 // speaks when after the transcript), with stills of every shot (its first frame, its middle, its
 // last, and one every three seconds of a long shot): for each shot its kind and, on every still,
-// every face with the voice it speaks with; and any cut the frames did not show (a possible cut
-// of lib/cuts.mjs near one it names counts). Two cents a clip, asked once: the answer is kept
+// every face with the voice it speaks with, the box of its eyes, nose and mouth and where it
+// looks; and any cut the frames did not show (a possible cut of lib/cuts.mjs near one it names
+// counts). Three to seven cents a clip, asked once: the answer is kept
 // next to the video (<video>.people.json). Without OpenRouter (OPENROUTER_API_KEY, or the Sprites
 // gateway's OpenRouter connection) nothing is cut: the footage stays centred.
 //
@@ -137,6 +138,8 @@ export function stillsOf(shots, fps) {
 }
 
 const BOX = { type: "array", items: { type: "number" }, description: "[ymin, xmin, ymax, xmax] in thousandths of the image (0-1000)" };
+// where a face points, as seen in the picture
+const LOOKS = ["left", "right", "camera"];
 const SCHEMA = {
   type: "object", additionalProperties: false, required: ["shots", "missed_cuts"],
   properties: {
@@ -156,8 +159,8 @@ const SCHEMA = {
           properties: {
             still: { type: "string" },
             faces: { type: "array", items: {
-              type: "object", additionalProperties: false, required: ["person", "box_2d"],
-              properties: { person: { type: "integer" }, box_2d: BOX },
+              type: "object", additionalProperties: false, required: ["person", "box_2d", "features_2d", "looks"],
+              properties: { person: { type: "integer" }, box_2d: BOX, features_2d: BOX, looks: { type: "string", enum: LOOKS } },
             } },
           },
         } },
@@ -192,8 +195,9 @@ const ask = async (or, content, log) => {
 };
 
 // the shots and the faces in them, from Gemini; kept in <video>.people.json:
-// { version: 2, model, cost, shots: [{ start, end, kind, subject, people: [{ who, speaker }],
-//   stills: [{ t, faces: [{ person, box_2d }] }] }], missed: [s] }
+// { version: 3, model, cost, shots: [{ start, end, kind, subject, people: [{ who, speaker }],
+//   stills: [{ t, faces: [{ person, box_2d, features_2d, looks }] }] }], missed: [s] } (version 2:
+//   the faces without features_2d and looks)
 export async function locate(video, words, shots, meta, { log = () => {} } = {}) {
   const cache = video.replace(/\.[^.]+$/, "") + ".people.json";
   if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return JSON.parse(fs.readFileSync(cache, "utf8"));
@@ -232,7 +236,7 @@ Then, for each shot above, in this order (its number in "shot"):
 - material: true when the picture is mainly something shown or talked about (slides, a screen, a document, a product, a photo, footage), with any person of the conversation small beside or inside it (a speaker inset beside slides); false when it is mainly the people;
 - its subject: the box of what must stay visible for the shot to make sense (the photo with everyone in it, both feeds, the scene; for "people" the people);
 - its people: everyone visible in it, people in photos and footage included: who they are (a name or a short description, the same words for the same person in every shot) and the voice label they speak with (null if they do not speak in the clip);
-- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0) and the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture).
+- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0); box_2d, the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture); features_2d, the smallest box holding its eyes, its nose with the tip and its mouth (from the eyebrows to the lower lip; in a three-quarter view or a profile only the eye that is seen and the nose's tip, wherever they are; only what is in the picture); looks: where the face points, as seen in the image: "left" or "right" (towards that side of the image: a three-quarter view or a profile), "camera" when it faces the camera or nearly.
 Boxes are [ymin, xmin, ymax, xmax] in thousandths of the picture (0–1000, from its top and its left edge).
 missed_cuts: the time in seconds of every cut you see in the video that does not lie between two of the listed shots; none: an empty list.`;
     const content = [{ type: "text", text: prompt }, { type: "video_url", video_url: { url: `data:video/mp4;base64,${fs.readFileSync(small).toString("base64")}` } }];
@@ -247,7 +251,7 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
     const ans = JSON.parse(text.replace(/^```(json)?\s*|\s*```$/g, ""));
     const byId = Object.fromEntries(stills.map((s) => [s.id, s]));
     const people = {
-      version: 2, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
+      version: 3, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
       shots: shots.map((s, k) => {
         // the shot's own entry: the one holding most of its stills (a model may count shots from 0)
         const own = (a) => (a.stills || []).filter((y) => byId[y.still]?.shot === k).length;
@@ -265,7 +269,7 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
               if (!p) return null;
               let i = people.findIndex((q) => (p.speaker != null ? q.speaker === p.speaker : q.who === p.who));
               if (i < 0) i = people.push(p) - 1;
-              return { person: i, box_2d: f.box_2d };
+              return { ...f, person: i };
             }).filter(Boolean);
           }
           return [];
@@ -298,10 +302,49 @@ function pixels(b, { width, height }, { order = "yx" } = {}) {
   return { x: ((l + r) / 2) * width, y: ((t + bo) / 2) * height, w: (r - l) * width, h: (bo - t) * height };
 }
 
+// eyes, nose and mouth (the model's features_2d) as shares of the face's box, measured from its
+// middle, and where the face points (lean: -1 left, 1 right, 0 the camera): { l, r, t, b, lean },
+// or null where the answer has none or one that does not lie in the face. A face the model says
+// looks at the camera with its features to one side of its box leans that way, less than halfway
+// (holdOf's rule of the window's middle is for a face the model says looks to one side)
+// (on twenty stills it called three three-quarter views "camera")
+export function partsOf(face, feat, looks) {
+  if (!face || !feat) return null;
+  const l = (feat.x - feat.w / 2 - face.x) / face.w, r = (feat.x + feat.w / 2 - face.x) / face.w;
+  const t = (feat.y - feat.h / 2 - face.y) / face.h, b = (feat.y + feat.h / 2 - face.y) / face.h;
+  // a box mostly beside the face, or the whole face or a dot, is not the features
+  if (Math.abs((l + r) / 2) > 0.5 || Math.abs((t + b) / 2) > 0.5 || r - l < 0.08 || r - l > 1.1) return null;
+  const c = (v) => +Math.min(0.6, Math.max(-0.6, v)).toFixed(3);
+  const lean = looks === "left" ? -1 : looks === "right" ? 1 : Math.min(0.45, Math.max(-0.45, l + r));
+  return { l: c(l), r: c(r), t: c(t), b: c(b), lean: +lean.toFixed(2) };
+}
+
+// the features of a face at t: between two stills that have them on the straight line (still
+// while the head does not turn, from the one to the other when it does), the head's own place
+// from the track; before the first and after the last as there
+const anchors = new WeakMap();
+function partsAt(track, t) {
+  let a = anchors.get(track);
+  if (!a) anchors.set(track, (a = track.filter((s) => s.parts && !s.absent)));
+  if (!a.length) return null;
+  if (t <= a[0].t) return a[0].parts;
+  if (t >= a[a.length - 1].t) return a[a.length - 1].parts;
+  const k = a.findIndex((s) => s.t >= t), p = a[k - 1].parts, q = a[k].parts, f = (t - a[k - 1].t) / (a[k].t - a[k - 1].t);
+  const mix = (key) => p[key] + (q[key] - p[key]) * f;
+  return { l: mix("l"), r: mix("r"), t: mix("t"), b: mix("b"), lean: mix("lean") };
+}
+// a face with its features in the footage's pixels: feat { x0, x1, y0, y1, lean }
+const withParts = (person, f) => {
+  if (!f) return f;
+  const p = partsAt(person.track, f.t);
+  if (!p) return f;
+  return { ...f, feat: { x0: f.x + p.l * f.w, x1: f.x + p.r * f.w, y0: f.y + p.t * f.h, y1: f.y + p.b * f.h, lean: p.lean } };
+};
+
 // an answer of the first kind (one face per person and shot, the shots' times the model's own)
 // in the form of the second: each face a still at the middle of its shot
 function current(people) {
-  if (people?.version === 2) return people;
+  if (people?.version >= 2) return people;
   return {
     version: 1, model: people?.model, cost: people?.cost ?? 0, missed: [],
     shots: (people?.shots || []).filter((s) => Number.isFinite(s.start)).map((s) => ({
@@ -343,7 +386,8 @@ export function shotsOf(answer, shots, meta) {
         const key = keyOf(p);
         let person = persons.find((q) => q.key === key);
         if (!person) persons.push((person = { key, who: p.who, speaker: p.speaker == null ? null : String(p.speaker), track: [] }));
-        samples.push([person, { t: st.t, ...box }]);
+        const parts = partsOf(box, pixels(f.features_2d, meta), f.looks);
+        samples.push([person, { t: st.t, ...box, ...(parts ? { parts } : {}) }]);
       }
     }
     for (const [person, sample] of samples) if (!person.track.some((x) => Math.abs(x.t - sample.t) < 1e-3)) person.track.push(sample);
@@ -377,8 +421,11 @@ export function shotsOf(answer, shots, meta) {
 // where a person's face is at t: between two stills on the straight line, before the first and
 // after the last as there
 // export: a person out of the picture (on a still without them, and no longer followed in the
-// frames) has no face: null
+// frames) has no face: null. With `feat` where the answer has the features (withParts)
 export function faceAt(person, t) {
+  return withParts(person, headAt(person, t));
+}
+function headAt(person, t) {
   const tr = person.track;
   if (!tr?.length) return null;
   const at = (s) => (s.absent ? null : { ...s, t });
@@ -401,7 +448,7 @@ export function seenFace(person, t) {
   const f = faceAt(person, t);
   if (f) return f;
   const seen = person.track.filter((x) => !x.absent).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0];
-  return seen ? { ...seen } : null;
+  return seen ? withParts(person, { ...seen }) : null;
 }
 
 // who is shown from when: at every moment the voice heard most within 1.2 s around it, a lead
