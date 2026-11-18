@@ -20,6 +20,11 @@ const ADVANCES = {
   "Playfair Display 600 italic": [255,297,359,630,590,786,848,215,385,385,488,579,275,505,267,463,603,362,524,507,529,467,553,498,564,541,300,307,596,654,598,470,858,645,663,685,756,621,581,727,791,373,668,718,598,900,806,761,625,815,695,576,673,690,651,955,727,712,656,342,491,342,530,744,322,547,532,453,566,456,335,464,558,316,293,540,293,840,596,516,573,537,455,407,348,587,527,681,552,482,457,343,352,342,647,645,761,690,547,516,587,587,631,645,645,645,645,645,902,685,621,621,621,621,373,373,373,373,756,806,761,761,761,761,761,690,690,690,712,642,547,547,547,547,547,709,453,456,456,456,456,315,315,315,315,515,596,516,516,516,516,516,587,587,587,482,573,482,982,757,576,407,656,457,712,645,547,645,547,645,547,685,453,685,453,756,566,756,566,621,456,621,456,621,456,621,456,727,464,373,315,373,315,599,316,806,596,806,596,761,516,761,516,695,455,576,407,576,407,673,348,690,587,690,587,690,587,656,457,656,457,281,474,563,562,374,372,456,445,443,275,262,259,703,984,828,279,435,334,636,656,752,463,553,915,690,1144,502,643,623],
 };
 
+// A pill's padding left and right of its word, and how far a margin draws it back (em): the pill
+// reaches into the gaps between words instead of widening them, and a word takes 2 × (pad − pull)
+// of room beyond its letters (render.mjs writes both into the style rules).
+export const PILL = { pad: 0.22, pull: 0.14 };
+
 // measure(look) → { word(text, key), space }: the width of a word and of the gap between two, in
 // the type's size, as the look sets them: its case, its letter spacing, a pill's padding, the
 // gap its words keep, and for a key word the typeface and size the look gives key words
@@ -37,7 +42,7 @@ export function measure(look) {
   const word = (text, key) => {
     // (a key word in a typeface of its own has no letter spacing: render.mjs sets it to 0)
     const own = key && keyTable, widths = own ? keyAt : at, between = own ? 0 : spacing, other = own ? usual * (look.keyScale || 1) : usual;
-    let width = look.pill ? 0.16 : 0;   // a pill's padding less the margin that draws it back (render.mjs PILL)
+    let width = look.pill ? 2 * (PILL.pad - PILL.pull) : 0;   // what a pill's padding leaves once its margin has drawn it back
     // (a soft hyphen, where the caller lets a long word break, is not drawn)
     for (const ch of look.case === "upper" ? text.toUpperCase() : text) if (ch !== "\u00AD") width += (widths.get(ch) ?? (ch.codePointAt(0) > 0x2e7f ? (own ? look.keyScale || 1 : 1) : other)) + between;
     return width;

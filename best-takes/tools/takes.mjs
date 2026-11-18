@@ -415,7 +415,9 @@ function srt(words) {
       cues.push(cue);
     }
     cue.words.push(w);
-    cue.text = cue.text ? `${cue.text} ${w.text}` : w.text;
+    // (a soft hyphen in a long word is where the captions in the picture may break it: no part of the text)
+    const text = w.text.replace(/\u00AD/g, "");
+    cue.text = cue.text ? `${cue.text} ${text}` : text;
   }
   const ts = (t) => {
     const ms = Math.round(t * 1000), h = Math.floor(ms / 3600e3), m = Math.floor(ms / 60e3) % 60, sec = Math.floor(ms / 1000) % 60;

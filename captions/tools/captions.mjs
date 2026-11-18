@@ -80,7 +80,8 @@ function probe(file) {
 const readWords = (file) => {
   if (!fs.existsSync(file)) fail(`There is no ${file}.`);
   const j = JSON.parse(fs.readFileSync(file, "utf8"));
-  const words = (Array.isArray(j) ? j : j.words || []).filter((w) => w && String(w.text ?? "").trim() && w.end >= w.start);
+  // (a word's text is text: a number written without quotes, {"text": 2024}, is taken as its digits)
+  const words = (Array.isArray(j) ? j : j.words || []).filter((w) => w && String(w.text ?? "").trim() && w.end >= w.start).map((w) => (typeof w.text === "string" ? w : { ...w, text: String(w.text) }));
   if (!words.length) fail(`${file} holds no timed words: {"words": [{"text", "start", "end"}, …]}.`);
   return { doc: Array.isArray(j) ? { words: j } : j, words };
 };
@@ -262,7 +263,9 @@ function captionsFor(words, folder, opts, size, duration) {
   const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z, place });
   // (a brand's colour that the key words could not carry: said in a line of its own, before where they are placed)
   const kept = r.kept ? `  (the brand's ${r.kept.primary} ${r.kept.why}: ${r.kept.what} keep the style's ${r.kept.highlight})\n` : "";
-  return { ...r, style: s, brand, zones: z, placed: kept + (place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z)) };
+  // (the words a style in capitals keeps small letters in: the caller sees them and can undo one by writing it otherwise)
+  const small = r.small.length ? `  (in capitals but for small letters that would say something else: ${[...new Set(r.small)].slice(0, 8).map((w) => `"${w}"`).join(", ")}${new Set(r.small).size > 8 ? ", …" : ""})\n` : "";
+  return { ...r, style: s, brand, zones: z, placed: kept + small + (place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z)) };
 }
 
 function cmdBuild(file, folder, opts) {
@@ -271,7 +274,7 @@ function cmdBuild(file, folder, opts) {
   const size = sizeOf(opts, doc.width && doc.height ? [doc.width, doc.height] : null) || fail("Give --size (width x height): the words carry no frame size.");
   const duration = Number(opts.duration) || doc.duration || Math.ceil(words.at(-1).end + 1);
   const r = captionsFor(words, path.resolve(folder), opts, size, duration);
-  console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary && !r.kept ? `, ${{ key: "key words", both: "accent and key words" }[r.style.look.brand] || "accent"} ${r.brand.primary}` : ""}${r.brand?.family ? `, font ${r.brand.family}` : ""}`);
+  console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary && !r.kept ? `, ${{ key: "key words", both: "accent and key words" }[r.style.look.brand] || "accent"} ${r.brand.primary}` : ""}${r.brand?.family && !r.style.look.ownFont ? `, font ${r.brand.family}` : ""}`);
   console.log(r.placed);
   console.log(`Mount it in the host composition, inside its root:\n  ${mount({ dir: path.basename(folder), width: size[0], height: size[1], duration, track: Number(opts.track) || 9 })}`);
 }

@@ -20,8 +20,8 @@
 //           brand: which colour takes a brand's primary: "accent" (the default: the word being
 //           said), "key" (the key words, in a style where no word lights up), "both"
 //           ownFont: the style is its typeface; a brand gives it its colour, never its font
-//   motion: in (how a group or a word appears: punch, rise, fade, wipe, cut; pop is a punch
-//           that starts transparent: a frame without a caption at every change), active (how the word
+//   motion: in (how a group or a word appears: punch, rise, fade, wipe, cut; a group never
+//           starts transparent and at a smaller size both: a frame would show no caption), active (how the word
 //           being said stands out: color-scale, pill, dim-after, fill, none), out (how a group
 //           goes: fade, wipe, cut)
 //
