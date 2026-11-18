@@ -4,11 +4,12 @@
 // hook card. Made for agents: each step prints what to do next.
 //
 //   node tools/clips.mjs prepare <episode> <clip> <first>-<last> [--out <composition>] [--platform reels,tiktok]
-//        [--hook "…"] [--title "…"] [--brand brand/DESIGN.md]
+//        [--hook "…"] [--title "…"] [--brand brand/DESIGN.md] [--target <s>]
 //        <episode> is the folder of episode.mjs fetch; the sentences first..last are cut from it
 //        (<clip>/clip.mp4), framed on whoever speaks (<clip>/framed.mp4, tools/frame.mjs), and
 //        handed to agentitos' best-takes (<clip>/takes/): every word written down again, closer,
-//        tight pauses, one keep of the whole moment in <clip>/takes/cut.json
+//        tight pauses, one keep of the whole moment in <clip>/takes/cut.json. A moment longer than
+//        --target (59 s) is said, and best-takes' check names it until the cut fits
 //   node tools/clips.mjs reframe <clip> [--whole <s>,…] [--follow <s>,…]
 //        the framing again (no new cost: who sits where is kept), the shot at each <s> (seconds of
 //        <clip>/clip.mp4, as framed.sheet.jpg lists them) shown whole or following who speaks; the
@@ -22,7 +23,7 @@
 //        Sprite), at most 4
 //   node tools/clips.mjs render-all <clips.json> <folder> [--jobs N]
 //        render for every clip, <folder>/<clip's folder name>.mp4, one after the other: a
-//        HyperFrames render already keeps every core busy, two at once only on 8 GB and more
+//        HyperFrames render already keeps every core busy, two at once only on 16 GB and more
 //        (two on a 4 GB Sprite filled its memory and took longer than one by one)
 //
 // The edit itself is best-takes' (build, check, captions; its README): this tool only sets it up
@@ -36,7 +37,9 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs"];
+const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "target"];
+// the longest a short may be (every post type Storrito offers takes it), unless --target says more
+const LONGEST = 59;
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -119,6 +122,7 @@ function prepare(episode, dir, range, opts) {
   const sentences = read(path.join(episode, "sentences.json"));
   // where the moment's first and last sentence are in the clip
   const said = [sentences[a].start - from, sentences[b].end - from];
+  const longest = Number(opts.target) || LONGEST;
 
   // its words with their speakers, timed in the clip, for the framing
   const words = read(path.join(episode, "words.json"))
@@ -140,7 +144,8 @@ function prepare(episode, dir, range, opts) {
   }
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
-  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", ...Object.entries(opts).filter(([k]) => !["whole", "follow"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
+  // --target: best-takes' check names a cut longer than the short may be
+  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", ...(opts.target ? [] : ["--target", String(longest)]), ...Object.entries(opts).filter(([k]) => !["whole", "follow"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
   writeStill(dir);
 
@@ -158,7 +163,8 @@ function prepare(episode, dir, range, opts) {
 
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
-  if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (each shot: the footage left, the frame right). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
+  if (said[1] - said[0] > longest + 0.5) console.log(`⚠ The moment is ${Math.round(said[1] - said[0])} s long, over the ${longest} s a short may be here (pauses cut, it stays over): leave sentences out in cut.json before you build; best-takes' check names it until it fits.`);
+  if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (one row per shot: the footage with the window in yellow, the frame at the shot's first, middle and last frame; red where a face is at an edge, as framing listed with ⚠). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
   node ${t} captions ${d} --style <style>${opts.platform ? "" : " --platform <platforms>"}${opts.brand ? ` --brand ${opts.brand}` : ""}
