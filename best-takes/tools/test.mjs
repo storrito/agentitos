@@ -276,3 +276,17 @@ test("raise moderate: a head the frame cuts already is not pushed further up to 
   assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: [192, 1440, 696, 0].map((v, i) => (i === 3 ? 134 : i === 1 ? 1306 : v)), safeTop: 250, raise: "moderate" }), 0.32 * 1920 > (1.12 * (60 + 0.65 * 1500) - 1306) / 0.12 ? 0.32 * 1920 : (1.12 * (60 + 0.65 * 1500) - 1306) / 0.12);
   assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 }), Math.min(1920, (1.12 * (60 + 0.42 * 1500) - 250) / 0.12));
 });
+
+test("with the eyes, nose and mouth known (faces.json feat), the mouth line is their bottom: the check counts the seconds on it, and a moderate punch-in keeps it above the captions", () => {
+  const clips = { 1: { file: "01.mp4" } };
+  // the box runs to 1600, the features end at 1280, just above the captions at 1306
+  const face = { who: "A", box: [140, 300, 800, 1300], feat: [340, 700, 400, 580] };
+  const faces = { "01.mp4": { size: [1080, 1920], faces: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, boxes: [face] })) } };
+  const piece = { clip: 1, in: 0, out: 3, start: 0, duration: 3 };
+  const on = textOnFaces({ pieces: [piece], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 3 }], frame: FRAME });
+  assert.ok(on[0].seconds >= 2.9 && on[0].mouth === 0, JSON.stringify(on));
+  const y = punchOrigin({ faces: [{ box: face.box, feat: face.feat }], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250, raise: "moderate" });
+  assert.ok(y + (1280 - y) * 1.12 <= CAP[1] + 1e-6, `the mouth line after the punch-in: ${y + (1280 - y) * 1.12}`);
+  const pushed = textOnFaces({ pieces: [{ ...piece, scale: 1.12, origin: 614.4 }], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 3 }], frame: FRAME });
+  assert.ok(pushed[0].mouth >= 2.9, `grown from a third from the top, the mouth reaches the captions: ${JSON.stringify(pushed)}`);
+});

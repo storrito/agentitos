@@ -56,23 +56,28 @@ const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.
 // inside, nor from below a third from the top where the frame cuts the head already; the mouth line (MOUTH of the box from its top, as layout takes it) is kept above the
 // captions before anything else.
 export const EYES = 0.42, ABOVE = 0.35, MOUTH = 0.65;
+// the mouth line: the bottom of the eyes, nose and mouth where faces.json has them (feat), else MOUTH of the box
+export const mouthOf = (b, feat) => (feat ? feat[1] + feat[3] : b[1] + MOUTH * b[3]);
 export function punchOrigin({ faces, scale, frame: [W, H], cap, safeTop = 0, raise = "full" }) {
   const low = ORIGIN_Y * H;
   if (!cap || !(scale > 1)) return low;
   const top = cap[1], from = (v, at) => (scale * v - at) / (scale - 1);
   let y = low, most = H, mouth = low;
-  for (const b of faces) {
+  for (const face of faces) {
+    // a box, or { box, feat } with the face's eyes, nose and mouth
+    const b = Array.isArray(face) ? face : face.box, feat = Array.isArray(face) ? null : face.feat;
     if (b[0] + b[2] <= cap[0] || b[0] >= cap[0] + cap[2]) continue;
     // only a face above the captions' middle: one below them (captions above a head) is not pushed into them by growing upwards
     if (b[1] + b[3] / 2 > top + cap[3] / 2) continue;
     const chin = b[1] + b[3] + Math.max(BELOW_MIN, BELOW * b[3]);
     y = Math.max(y, from(chin, top));
-    most = Math.min(most, from(b[1] + EYES * b[3], safeTop));
+    most = Math.min(most, from(feat ? feat[1] : b[1] + EYES * b[3], safeTop));
     if (raise === "moderate") {
       // a head inside the frame stays inside; one the frame cuts already is not cut further to free a chin
       const head = b[1] - ABOVE * b[3];
       most = Math.min(most, head >= 0 ? from(head, 0) : low);
-      if (b[1] + MOUTH * b[3] <= top) mouth = Math.max(mouth, from(b[1] + MOUTH * b[3], top));
+      const line = mouthOf(b, feat);
+      if (line <= top) mouth = Math.max(mouth, from(line, top));
     }
   }
   return Math.max(low, mouth, Math.min(H, y, most));
@@ -90,18 +95,22 @@ export function textOnFaces({ pieces, clips, faces, texts, frame, step = 0.1 }) 
     const file = clips[p.clip]?.file, list = faces?.[file];
     if (!list) continue;
     const tf = p.in + (t - p.start) * (p.rate || 1);
-    const boxes = facesAt(list, tf).map((f) => ({ who: f.who, box: scaled(toFrame(f.box, list.size, frame), p.scale || 1, [frame[0] / 2, p.origin ?? ORIGIN_Y * frame[1]]) }));
+    const at = (b) => scaled(toFrame(b, list.size, frame), p.scale || 1, [frame[0] / 2, p.origin ?? ORIGIN_Y * frame[1]]);
+    const boxes = facesAt(list, tf).map((f) => ({ who: f.who, box: at(f.box), ...(f.feat ? { feat: at(f.feat) } : {}) }));
     for (const x of texts) {
       if (t < x.from || t >= x.to) continue;
       for (const f of boxes) {
         if (!(overlap(x.box, f.box) > 1)) continue;
         const share = Math.min(1, Math.max(0, (f.box[1] + f.box[3] - Math.max(x.box[1], f.box[1])) / f.box[3]));
+        // on the mouth or above: the text reaches above the mouth line
+        const onMouth = x.box[1] < mouthOf(f.box, f.feat) && overlap(x.box, [f.box[0], f.box[1], f.box[2], mouthOf(f.box, f.feat) - f.box[1]]) > 1;
         const key = `${x.role}|${f.who}`;
-        const g = found.get(key) || { role: x.role, who: f.who, from: t, to: t, seconds: 0, share: 0 };
+        const g = found.get(key) || { role: x.role, who: f.who, from: t, to: t, seconds: 0, share: 0, mouth: 0 };
         g.to = t + step; g.seconds += step; g.share = Math.max(g.share, share);
+        if (onMouth) g.mouth += step;
         found.set(key, g);
       }
     }
   }
-  return [...found.values()].map((g) => ({ ...g, from: +g.from.toFixed(1), to: +g.to.toFixed(1), seconds: +g.seconds.toFixed(1), share: Math.round(g.share * 100) / 100 }));
+  return [...found.values()].map((g) => ({ ...g, from: +g.from.toFixed(1), to: +g.to.toFixed(1), seconds: +g.seconds.toFixed(1), mouth: +g.mouth.toFixed(1), share: Math.round(g.share * 100) / 100 }));
 }

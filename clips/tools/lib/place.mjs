@@ -103,7 +103,7 @@ export function facesFile(shots, { size = [1080, 1920], step = 0.1 } = {}) {
   for (const s of shots) for (const f of s.faces) for (const m of f.track) {
     const t = +m.t.toFixed(3);
     if (!at.has(t)) at.set(t, []);
-    at.get(t).push({ who: f.who, box: m.box.map((v) => Math.round(v)) });
+    at.get(t).push({ who: f.who, box: m.box.map((v) => Math.round(v)), ...(m.feat ? { feat: m.feat.map((v) => Math.round(v)) } : {}) });
   }
   return { size, step, faces: [...at.entries()].sort((a, b) => a[0] - b[0]).map(([t, boxes]) => ({ t, boxes })) };
 }

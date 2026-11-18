@@ -5,7 +5,8 @@
 // other, and a piece raised by its `lift`.
 //
 //   framedShots(framed, { outW, outH, step, height, unlifted }) → [{ shot, start, end, kind, picture, faces:
-//       [{ who, speaker, track: [{ t, box: [x, y, w, h] }] }], room }]  (px of the frame,
+//       [{ who, speaker, track: [{ t, box: [x, y, w, h], feat? }] }], room }]  (px of the frame, feat:
+//       the box of eyes, nose and mouth where the framing has them;
 //       seconds of the clip; picture: the part of the frame the sharp picture fills; room: how
 //       far the shot's picture may be raised, { free, ground }: by moving the window down in
 //       the footage, and over a ground)
@@ -14,6 +15,15 @@
 import { faceAt, windowAt, roomBelow, FIT_TOP, FIT_BOTTOM, PANEL, SEAM } from "../frame.mjs";
 
 const box = (f) => [f.x - f.w / 2, f.y - f.h / 2, f.w, f.h];
+// the eyes, nose and mouth (the framing's feat, from the model's features_2d) as a box
+const featBox = (f) => (f?.feat ? [f.feat.x0, f.feat.y0, f.feat.x1 - f.feat.x0, f.feat.y1 - f.feat.y0] : null);
+// a face drawn through: its box, and its features' box the same way (kept whole: they are inside the box)
+const drawn = (p, f, crop, rect, whole = false) => {
+  const b = f && through(box(f), crop, rect, whole);
+  if (!b) return null;
+  const fb = featBox(f), ft = fb && through(fb, crop, rect, true);
+  return { who: p.who ?? p.speaker, speaker: p.speaker, box: b, ...(ft ? { feat: ft } : {}) };
+};
 
 // a face's box in the footage drawn through a crop (x, y, w, h of the footage) into a rectangle
 // of the frame (X, Y, W, H): scaled as the crop is, cut off where the rectangle ends (null when
@@ -47,9 +57,8 @@ export function inFrame(w, shot, t, { outW, outH }) {
       const rect = [0, i ? panelH + SEAM : 0, outW, panelH];
       for (const p of people) {
         if (w.speakers?.[i] != null && p.speaker !== w.speakers[i]) continue;
-        const f = faceAt(p, t);
-        const b = f && through(box(f), crop, rect);
-        if (b) out.push({ who: p.who ?? p.speaker, speaker: p.speaker, box: b });
+        const d = drawn(p, faceAt(p, t), crop, rect);
+        if (d) out.push(d);
       }
     });
     return out;
@@ -57,9 +66,8 @@ export function inFrame(w, shot, t, { outW, outH }) {
   if (w.fit) {
     const rect = fitRect(w.fit, { outW, outH });
     for (const p of people) {
-      const f = faceAt(p, t);
-      const b = f && through(box(f), w.fit, rect);
-      if (b) out.push({ who: p.who ?? p.speaker, speaker: p.speaker, box: b });
+      const d = drawn(p, faceAt(p, t), w.fit, rect);
+      if (d) out.push(d);
     }
     return out;
   }
@@ -68,9 +76,8 @@ export function inFrame(w, shot, t, { outW, outH }) {
   // the picture over a ground
   const rect = [0, -lift, outW, outH];
   for (const p of people) {
-    const f = faceAt(p, t);
-    const b = f && through(box(f), win, rect, true);
-    if (b) out.push({ who: p.who ?? p.speaker, speaker: p.speaker, box: b });
+    const d = drawn(p, faceAt(p, t), win, rect, true);
+    if (d) out.push(d);
   }
   return out;
 }
@@ -101,7 +108,7 @@ export function framedShots(framed, { outW = 1080, outH = 1920, step = 0.1, heig
       for (const t of ts) for (const f of inFrame(w, s, t, { outW, outH })) {
         const key = `${f.speaker ?? ""}|${f.who ?? ""}`;
         if (!tracks.has(key)) tracks.set(key, { who: f.who, speaker: f.speaker, track: [] });
-        tracks.get(key).track.push({ t: +t.toFixed(3), box: f.box });
+        tracks.get(key).track.push({ t: +t.toFixed(3), box: f.box, ...(f.feat ? { feat: f.feat } : {}) });
       }
     }
     const lift = pieces.find((w) => w.lift)?.lift;

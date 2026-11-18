@@ -65,6 +65,13 @@ export const MOUTH = 0.65;
 // the face's box and the margin layout keeps above a head for the hair, DEFAULTS.free.above, stay
 // below the frame's top); full: until the eyes reach the safe box's top, the head cut by the frame.
 export const RAISE = ["moderate", "full"];
+// Where a caller knows a face's eyes, nose and mouth (`feat`, a box of its own: clips' framing has
+// them from the model's features_2d), they are taken instead of the shares of the box: the mouth
+// line is the features' bottom, the eyes their top.
+const mouthOf = (f) => (f.feat ? Y1(f.feat) : f.box[1] + MOUTH * f.box[3]);
+const eyesOf = (f, D) => (f.feat ? f.feat[1] : f.box[1] + D.eyes * f.box[3]);
+// the part of a face (its box raised by lift) from its top down to its mouth line
+const upper = (f, lift) => [f.box[0], f.box[1] - lift, f.box[2], mouthOf(f) - f.box[1]];
 
 const r0 = (v) => Math.round(v);
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -76,7 +83,7 @@ function momentsOf(shot) {
   if (!ts.length) return [];
   return ts.map((t, i) => {
     const a = i ? (ts[i - 1] + t) / 2 : shot.start, b = i < ts.length - 1 ? (t + ts[i + 1]) / 2 : shot.end;
-    const faces = shot.faces.map((f) => ({ who: f.who, box: (f.track.find((m) => Math.abs(m.t - t) < 1e-6) || nearest(f.track, t))?.box })).filter((f) => f.box);
+    const faces = shot.faces.map((f) => { const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t); return m?.box ? { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}) } : null; }).filter(Boolean);
     return { t, dt: Math.max(0, b - a), faces };
   });
 }
@@ -98,7 +105,7 @@ function maxLift(shot, moments, ctx) {
   const ground = room.ground != null ? Math.max(0, room.ground) : ctx.H - Y1(ctx.Z.safe);
   let most = free + ground, by = "room";
   for (const m of moments) for (const f of m.faces) {
-    const eyes = f.box[1] + ctx.D.eyes * f.box[3] - ctx.Z.safe[1];
+    const eyes = eyesOf(f, ctx.D) - ctx.Z.safe[1];
     if (eyes < most) { most = eyes; by = "eyes"; }
     if (ctx.raise !== "full") {
       const head = f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3]);
@@ -130,13 +137,13 @@ function shotUnder(cap, moments, most, D, exact = false) {
       on = true;
       const b = up(f.box, lift);
       // the part of the box above its mouth line
-      if (inter([b[0], b[1], b[2], MOUTH * b[3]], cap) > 0) onMouth = true;
+      if (inter(upper(f, lift), cap) > 0) onMouth = true;
       // how deep into the face from its chin: a share of its height (0 where the box is not reached)
       const s = inter(b, cap) > 0 ? Math.min(1, Math.max(0, (Y1(b) - Math.max(cap[1], b[1])) / b[3])) : 0;
       share = Math.max(share, s);
       const w = who.get(f.who) || { who: f.who, seconds: 0, share: 0, mouth: 0, from: m.t, to: m.t };
       w.seconds += m.dt; w.share = Math.max(w.share, s); w.from = Math.min(w.from, m.t); w.to = Math.max(w.to, m.t);
-      if (inter([b[0], b[1], b[2], MOUTH * b[3]], cap) > 0) w.mouth += m.dt;
+      if (inter(upper(f, lift), cap) > 0) w.mouth += m.dt;
       who.set(f.who, w);
     }
     if (on) seconds += m.dt;
@@ -226,7 +233,12 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       const faces = [], keep = [];
       for (const s of over) for (const m of s.moments) {
         if (m.t < from - 0.05 || m.t > to + 0.05) continue;
-        for (const f of m.faces) { const b = up(f.box, lifts[s.i]); faces.push(b); keep.push(keepOut(b, D)); }
+        for (const f of m.faces) {
+          const b = up(f.box, lifts[s.i]);
+          faces.push(b); keep.push(keepOut(b, D));
+          // eyes, nose and mouth where known (inside the box; kept apart in case a box was cut short)
+          if (f.feat) keep.push(grow(up(f.feat, lifts[s.i]), D.gap));
+        }
       }
       const r = layoutText({ ...ctx, cap: null, hook: hook.kind ? { kind: hook.kind } : {} }, faces, keep, [0, 0, W, H], false, { placed: best ? [best.box] : [] });
       return r.placed[0] ? { ...r.placed[0], over: over.map((s) => s.i) } : null;
@@ -281,7 +293,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       const span = `Shot ${s.n ?? i + 1} (${r1(s.start)}–${r1(s.end)} s)`;
       if (r.mouth > 0.05) {
         out.chin = false;
-        conflicts.push(`${span}: the captions reach ${who}'s mouth for ${r1(r.mouth)} s (above ${Math.round(MOUTH * 100)} % of the face's box) even at ${best.font} px on the safe box's bottom. What would avoid it: a cut to another shot here, a smaller picture for this shot, or --raise full (the head cut by the frame's top).`);
+        conflicts.push(`${span}: the captions reach ${who}'s mouth for ${r1(r.mouth)} s (the bottom of its eyes, nose and mouth, or ${Math.round(MOUTH * 100)} % of the face's box where those are not known) even at ${best.font} px on the safe box's bottom. What would avoid it: a cut to another shot here, a smaller picture for this shot, or --raise full (the head cut by the frame's top).`);
       } else if (r.who.length && r.share === 0 && best.box[1] + best.box[3] / 2 < Math.min(...s.moments.flatMap((m) => m.faces.map((f) => f.box[1] + f.box[3] / 2)))) {
         // above the face, within the margin kept for the hair: no face covered
         notes.push(`${span}: the captions stand above ${who}'s face, on the hair, for ${r1(r.seconds)} s.`);

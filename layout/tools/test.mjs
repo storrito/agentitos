@@ -1204,6 +1204,15 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(low.conflicts.some((c) => /reach A's mouth .*--raise full/.test(c)) || low.caption.box[1] + low.caption.box[3] <= 500, JSON.stringify([low.caption, low.conflicts]));
     ok(!low.conflicts.some((c) => /below the mouth/.test(c)), JSON.stringify(low.conflicts));
   });
+  t("where the caller knows the eyes, nose and mouth (feat), the mouth line is their bottom, not a share of the box: a mouth low in its box keeps the captions lower or smaller, one high in it lets them stand on the chin", () => {
+    const box = [140, 330, 800, 1500], track = (feat) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) });
+    // the features ending at 1250 (the mouth high in its box, 61 %): the usual type clears it
+    const high = textOverTime({ zones: Z9, shots: [shot(0, 4, [track([300, 700, 480, 550])])], needs: cap });
+    ok(high.caption.font === DEFAULTS.caption.font.tall && !high.conflicts.length, JSON.stringify([high.caption, high.conflicts]));
+    // the features ending at 1400 (the mouth low, 71 %): no type clears it on the safe box's bottom: said as a mouth conflict
+    const low = textOverTime({ zones: Z9, shots: [shot(0, 4, [track([300, 760, 480, 640])])], needs: cap });
+    ok(low.conflicts.some((c) => /reach A's mouth .*eyes, nose and mouth/.test(c)) || low.caption.box[1] + low.caption.box[3] <= 330, JSON.stringify([low.caption, low.conflicts]));
+  });
   t("a hook over a picture that is not calm (the caller says hook.calm false: a wide shot with hands, a photo) is a card in the text's place, and says why", () => {
     const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: [...cap, { role: "hook", start: 0, end: 3, calm: false }] });
     ok(r.hook.kind === "card" && r.hook.where === "below-chin" && /not calm/.test(r.hook.kindWhy), JSON.stringify(r.hook));
