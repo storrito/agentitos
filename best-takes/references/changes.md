@@ -6,7 +6,7 @@ What to do when the person asks for a change to the cut. After each: build again
 | --- | --- |
 | "Put back the sentence about …" | find its words in the brief, add or widen a keep |
 | "Take the first attempt of …" | swap the two ranges in `cut.json` |
-| "Shorter" / "at most 30 s" | `build … --target 30`, drop the weakest parts first, keep the opening and the end |
+| "Shorter" / "at most 30 s" | `build … --target 30` on the cut without slips, repeats and ähs (nothing dropped for length yet), then `check`: over by up to half, drop what repeats, then the weakest parts, keep the opening and the end; when it says this is no matter of cutting, ask as in SKILL.md's "Too long to cut" (a script of 30 s to record again, or the strongest parts anyway) |
 | "Start with …" | move that keep to the top |
 | "The pauses are too short / too long" | `--pause 1.5` (only pauses over 1.5 s are touched), or `"pauses": "keep"` on that keep (its pauses play as they are) |
 | "Tighter" / "faster, like a reel" | `--pauses tight`: every pause over 0.4 s goes (with `--pause 0.7` only those over 0.7 s), whatever the picture shows (a talking head; not for a demo whose waits show something) |
