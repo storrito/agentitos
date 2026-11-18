@@ -489,7 +489,9 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   const capOut = best ? {
     box: best.box, font: best.font, lines: best.lines, align: "center", least: tall ? D.caption.font.least : null,
     middle: Math.round(((best.box[1] + best.box[3] / 2) / H) * 1000) / 10,
-    where: aboveHeads(best.box, list) ? "above-head" : "below-chin",
+    // no-face: the clip shows no face at all (a screen, a product, b-roll): nothing keeps the
+    // captions from where published Shorts set them, as low as the safe box allows
+    where: !list.some((s) => s.moments.some((m) => m.faces.length)) ? "no-face" : aboveHeads(best.box, list) ? "above-head" : "below-chin",
     // agentitos' captions: the lowest line ends at y, at most max-width wide, centred
     options: { y: r0(Y1(best.box)), "max-width": Math.floor(best.box[2]), "font-size": best.font, lines: best.lines },
     seconds: r1(best.touch), lifted: best.per.filter((r) => r.lift > 0).length,

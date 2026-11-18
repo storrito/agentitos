@@ -543,7 +543,7 @@ function cmdText(o) {
   if (o.json) return console.log(JSON.stringify(res, null, 1));
   const c = res.caption;
   console.log(`${res.frame} for ${res.platforms.join(", ")}, ${plural(shots.length, "shot")}`);
-  if (c) console.log(`captions: one place for the clip, ${plural(c.lines, "line")} of ${c.font} px, ${boxText(c.box)} (its middle at ${c.middle} % of the height, ${c.where}); ${c.seconds ? `on a face for ${c.seconds} s` : "on no face"}${c.lifted ? `, ${plural(c.lifted, "shot")} raised for it` : ""}`);
+  if (c) console.log(`captions: one place for the clip, ${plural(c.lines, "line")} of ${c.font} px, ${boxText(c.box)} (its middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the clip: where published Shorts set them, as low as the safe box allows" : c.where}); ${c.seconds ? `on a face for ${c.seconds} s` : "on no face"}${c.lifted ? `, ${plural(c.lifted, "shot")} raised for it` : ""}`);
   for (const s of res.shots) {
     // the seconds on each part, the part named; a ✗ only where something can still be done
     const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s${t.lipEst ? ` (${t.lipEst} s of it an estimate ${stillsText(t.stills)})` : ""}` : ""].filter(Boolean).join(", ");

@@ -141,7 +141,9 @@ export function placeSheet(framed, rows, text, file, { size = [1080, 1920], fps 
         const boxes = [];
         for (const f of r.facesAt(t)) boxes.push(draw(f, "red@0.9", 2));
         if (text.caption) boxes.push(draw(text.caption.box, "yellow", 4));
-        if (text.hook && t >= text.hook.start && t <= text.hook.end) boxes.push(draw(text.hook.box, "cyan", 4));
+        // the hook also on the first frame of the shot it begins in (it begins with the cut's first
+        // word, a little after the shot's first frame): else a long first shot never shows it
+        if (text.hook && ((t >= text.hook.start && t <= text.hook.end) || (j === 0 && text.hook.start >= r.start && text.hook.start < r.end))) boxes.push(draw(text.hook.box, "cyan", 4));
         const on = j === 1 ? `${r.n}  ${r.start.toFixed(1)}-${r.end.toFixed(1)} s${r.lift ? `  raised ${r.lift} px` : ""}${r.touch ? `  ${r.touch}` : ""}` : ["first", "", "last"][j];
         chains.push(`[${n}:v]scale=${w}:${h},setsar=1,${boxes.join(",")}${boxes.length ? "," : ""}drawtext=text='${label(on)} ${t.toFixed(2)}':x=6:y=h-24:fontsize=14:fontcolor=white:box=1:boxcolor=${/^ON /.test(r.touch) ? "red" : "black"}@0.8:boxborderw=3[c${i}_${j}]`);
         n++;

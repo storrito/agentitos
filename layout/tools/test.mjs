@@ -1281,6 +1281,14 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(at(n).on.lip === 0 && at(n + 1).on.lip > 0, JSON.stringify([n, at(n).on, at(n + 1).on]));
     return `none: lip ${none.shots[0].on.lip} s; head: lip ${head.shots[0].on.lip} s; a lip that clears at ${n} px (of ${some.caption.font})`;
   });
+  t("a clip without a face (a screen shown whole, b-roll): the captions stand on the safe box's bottom at the usual type and say why (no-face), the hook in the middle, a card where the picture is not calm", () => {
+    const r = textOverTime({ zones: Z9, shots: [{ start: 0, end: 30, picture: [0, 392, 1080, 676], faces: [], room: null }], needs: [...cap, { role: "hook", start: 0.4, end: 3.4, calm: false }] });
+    ok(r.caption.where === "no-face" && r.caption.options.y === safeBottom && r.caption.font === DEFAULTS.caption.font.tall && !r.conflicts.length && !r.notes.length, JSON.stringify([r.caption, r.notes, r.conflicts]));
+    ok(r.hook && r.hook.kind === "card" && r.hook.box[1] + r.hook.box[3] <= r.caption.box[1] && /not calm/.test(r.hook.kindWhy), JSON.stringify(r.hook));
+    const face = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: cap });
+    ok(face.caption.where === "below-chin", face.caption.where);
+    return `captions y ${r.caption.box[1]}–${r.caption.options.y}, hook ${r.hook.kind} y ${r.hook.box[1]}–${r.hook.box[1] + r.hook.box[3]}`;
+  });
   t("a lower lip from features that are an estimate between two stills (the caller's between) is said as one, with the stills: a mouth that opens there is not seen", () => {
     const run = (between) => textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520], ...(between && i > 5 && i < 35 ? { between: [0.5, 3.5] } : {}) })) }])], needs: cap });
     const est = run(true), plain = run(false), note = (r) => r.notes.find((x) => /lower lip for/.test(x)) || "";
