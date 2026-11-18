@@ -275,3 +275,21 @@ test("someone standing up, or a hand waved in front of the lens, is no sure cut:
     assert.deepEqual(findCuts(smallFrames(hand), FPS).filter((c) => c.sure), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a white flash inside one shot is no cut; a flash between two different pictures is one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // the reviewer's 49g frames 1984/1991: the picture flashes white and fades back, a little brighter
+    const flash = (file, second) => spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=320x180:r=${FPS}:d=4`, "-f", "lavfi", "-i", `${second}=s=320x180:r=${FPS}:d=4`,
+      "-filter_complex", `[0:v]trim=0:2,setpts=PTS-STARTPTS[a];[1:v]trim=2:4,setpts=PTS-STARTPTS,eq=brightness=0.06[b];[a][b]concat=n=2:v=1[ab];`
+        + `[ab]geq=lum='if(between(T,1.96,2.24),255-(abs(T-2.04)*900),lum(X,Y))':cb='cb(X,Y)':cr='cr(X,Y)',format=yuv420p[v]`,
+      "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", file], { encoding: "utf8" });
+    const same = path.join(dir, "same.mp4"), other = path.join(dir, "other.mp4");
+    let r = flash(same, "testsrc2");
+    assert.equal(r.status, 0, r.stderr);
+    r = flash(other, "smptehdbars");
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(findCuts(smallFrames(same), FPS).filter((c) => c.sure), []);
+    assert.equal(findCuts(smallFrames(other), FPS).filter((c) => c.sure).length, 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

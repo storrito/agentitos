@@ -10,7 +10,8 @@
 // is the camera panning; one that changes only part of the picture (someone standing up), or
 // whose picture comes back within a second (a hand waved in front of the lens), is a movement.
 // Those, and a change that is small, are only "possible": a cut only where a model watching the
-// clip names one within a second of it. The cut is placed on the first frame of the stretch that looks more
+// clip names one within a second of it. A flash inside one shot (white or black for a few
+// frames, then the same picture) is no cut at all. The cut is placed on the first frame of the stretch that looks more
 // like the shot after it than like the shot before.
 
 import { spawnSync } from "node:child_process";
@@ -28,6 +29,9 @@ const HARD = 12, SURE = 35, POSSIBLE = 9, OVER_MOTION = 2.2;
 const SPREAD = 0.3;
 // a picture is the same again when it differs by less than this share of the change
 const BACK = 0.35;
+// a picture after a flash is the one before when the two correlate this much (one shot: 0.70;
+// a hard cut between two shots of the same person: 0.62)
+const SAME_LOOK = 0.66;
 
 // every frame of the video as a small grey picture, in the order shown, none doubled or left out;
 // `frames.times` holds each frame's own time (seconds from the file's start, as ffmpeg's filters
@@ -89,13 +93,47 @@ export function findCuts(frames, fps) {
       found.push({ frame: at, from: s, to: i, change: +D[i].toFixed(1), sure: !moved && !part && !back && D[i] >= (k === 1 ? HARD : SURE) });
     }
   }
-  return found.sort((a, b) => a.frame - b.frame);
+  return flashesOut(found.sort((a, b) => a.frame - b.frame), frames, fps);
 }
 
 // does the picture before frame `from` come back within a second after frame `to`?
 function returns(frames, from, to, fps, change) {
   for (let k = to + 1; k < Math.min(frames.length, to + 1 + fps); k++) if (diff(frames[from], frames[k]) < BACK * change) return true;
   return false;
+}
+
+// two changes within a second, after which the picture is the one before the first: a frame
+// or two of something else inside one shot, or a flash (white or black between, the picture
+// after the same as before but for its brightness). Neither is a cut; a flash between two
+// different pictures is one cut, at its peak
+const mean = (f) => f.reduce((n, v) => n + v, 0) / f.length;
+export function likeness(a, b) {
+  const ma = mean(a), mb = mean(b);
+  let ab = 0, aa = 0, bb = 0;
+  for (let i = 0; i < a.length; i++) { const x = a[i] - ma, y = b[i] - mb; ab += x * y; aa += x * x; bb += y * y; }
+  return ab / Math.sqrt(aa * bb + 1e-9);
+}
+function flashesOut(cuts, frames, fps) {
+  const out = [];
+  for (let k = 0; k < cuts.length; k++) {
+    const a = cuts[k], b = cuts[k + 1];
+    if (b && b.frame - a.frame <= fps) {
+      const before = frames[a.from - 1], after = frames[b.to];
+      const same = diff(before, after) < BACK * Math.min(a.change, b.change);
+      const between = frames.slice(a.from, b.from + 1).map(mean), lit = Math.max(...between), dark = Math.min(...between);
+      const flash = (lit > 200 && mean(before) < 180 && mean(after) < 180) || (dark < 16 && mean(before) > 30 && mean(after) > 30);
+      if (same || (flash && likeness(before, after) >= SAME_LOOK)) { k++; continue; }
+      // a flash between two pictures: one cut, at its brightest (or darkest) frame
+      if (flash) {
+        const peak = a.from + between.indexOf(lit > 200 ? lit : dark);
+        out.push({ frame: peak, from: a.from, to: b.to, change: Math.max(a.change, b.change), sure: a.sure || b.sure });
+        k++;
+        continue;
+      }
+    }
+    out.push(a);
+  }
+  return out;
 }
 
 // how much the least changed third of the picture changed: the 30th percentile of the mean
