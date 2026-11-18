@@ -7,7 +7,7 @@
 | `hormozi` Hormozi | big capitals, white with a black outline | 1–3 | turns yellow and grows | green |
 | `outline` Outline | heavy sentence case, white with a thick black outline | 1–3 | nothing | yellow |
 | `impact` Impact | tall narrow capitals with a dark edge | 2–3 | nothing | the whole caption that holds one stands in lime |
-| `single` One word | one big heavy word, punching in | 1 | it is the only one | yellow |
+| `single` One word | one big heavy word, punching in; a word too short to be read comes with the one beside it ("für die") | 1 | it is the only one | yellow |
 | `bold` Bold words | bold sentence case, white, soft shadow, nothing behind | 2–3 | nothing | yellow |
 | `karaoke` Karaoke pill | bold sentence case, white | 3–4 | sits on a violet pill | yellow |
 | `fill` Karaoke fill | bold sentence case on two lines, waiting words dim | 4–5 | lights up yellow, stays white once said | stay yellow |
