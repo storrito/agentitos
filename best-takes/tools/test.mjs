@@ -94,6 +94,25 @@ test("tight: every pause goes, whatever the picture shows", () => {
   assert.equal(pauseOf(r).why, "cut (tight)");
 });
 
+test("a line played twice: a keep with \"again\" opens with words a later keep plays where they were said; without it, one sentence", () => {
+  const tight = { ...settings, pauses: "tight" };
+  const twice = plan(words, { keep: [{ words: "17-19", again: true }, { words: "0-25" }] }, tight, voices, null);
+  assert.deepEqual(twice.errors, []);
+  assert.deepEqual(twice.pieces[0].words, [17, 18, 19]);
+  assert.equal(twice.pieces[0].start, 0);
+  // the words of the line twice in the text, first at the top, then where they were said
+  const at = twice.words.filter((w) => w.i === 18).map((w) => w.start);
+  assert.equal(at.length, 2);
+  assert.ok(at[0] < 1.5 && at[1] > at[0] + 5, `${at}`);
+  // nothing counted as left out
+  assert.ok(!twice.removed.some((x) => x.kind === "dropped"));
+  const once = plan(words, { keep: [{ words: "17-19" }, { words: "0-25" }] }, tight, voices, null);
+  assert.match(once.errors.join("\n"), /word 17 .* is in keep 1 already .*"again": true/);
+  // a line in an "again" keep that no other keep plays is still played, not "left out"
+  const alone = plan(words, { keep: [{ words: "17-19", again: true }, { words: "0-10" }] }, tight, voices, null);
+  assert.ok(!alone.removed.some((x) => x.kind === "dropped" && x.words[0] <= 19 && x.words[1] >= 17));
+});
+
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
 

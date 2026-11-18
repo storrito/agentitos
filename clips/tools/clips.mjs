@@ -4,12 +4,16 @@
 // hook card. Made for agents: each step prints what to do next.
 //
 //   node tools/clips.mjs prepare <episode> <clip> <first>-<last> [--out <composition>] [--platform reels,tiktok]
-//        [--hook "…"] [--title "…"] [--brand brand/DESIGN.md] [--target <s>]
+//        [--hook "…"] [--title "…"] [--brand brand/DESIGN.md] [--drop <sentences>] [--payoff <sentence>]
 //        <episode> is the folder of episode.mjs fetch; the sentences first..last are cut from it
 //        (<clip>/clip.mp4), framed on whoever speaks (<clip>/framed.mp4, tools/frame.mjs), and
 //        handed to agentitos' best-takes (<clip>/takes/): every word written down again, closer,
-//        tight pauses, one keep of the whole moment in <clip>/takes/cut.json. A moment longer than
-//        --target (59 s) is said, and best-takes' check names it until the cut fits
+//        tight pauses, one keep of the whole moment in <clip>/takes/cut.json. --drop 229-234,240
+//        (sentence numbers inside the moment, as moments.json marks them for a passage that is
+//        over the limit) leaves those sentences out: the clip still holds the whole stretch, the
+//        keeps in cut.json go around them. --payoff 262 (the moment's `payoff` in moments.json)
+//        prints that sentence's words in the clip, to open the short with it spoken; cut.json
+//        stays the moment in its order
 //   node tools/clips.mjs reframe <clip> [--whole <s>,…] [--follow <s>,…]
 //        the framing again (no new cost: who sits where is kept), the shot at each <s> (seconds of
 //        <clip>/clip.mp4, as framed.sheet.jpg lists them) shown whole or following who speaks; the
@@ -27,7 +31,7 @@
 //        the built preview rendered with HyperFrames, brought to −14 LUFS, subtitles beside it
 //   node tools/clips.mjs prepare-all <episode> <clips.json> [--platform …] [--brand …] [--jobs N]
 //        prepare for every clip of clips.json side by side ([{"clip": "work/01", "range": "478-484",
-//        "out": "artifacts/clips/composition/01-…", "title": "…", "hook": "…"}, …]); each one's
+//        "out": "artifacts/clips/composition/01-…", "title": "…", "hook": "…", "drop": "480-481", "payoff": 482}, …]); each one's
 //        output as it finishes; as many at a time as the memory holds (about 1.5 GB each: 2 on a
 //        Sprite), at most 4
 //   node tools/clips.mjs render-all <clips.json> <folder> [--jobs N]
@@ -46,12 +50,10 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { framedShots } from "./lib/faces.mjs";
 import { spanOf, hookSpan, shotsInput, facesFile, placeSheet, toOutput } from "./lib/place.mjs";
-import { lengthNote } from "./lib/length.mjs";
+import { numbers, ranges, cutKeeps, dropNote, sentenceWords, openingNote, lengthNote, playedSeconds, MAX_SECONDS } from "./lib/moments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "target", "caption-y", "font-size", "lift", "raise", "lines"];
-// the longest a short may be (every post type Storrito offers takes it), unless --target says more
-const LONGEST = 59;
+const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "drop", "payoff", "max-seconds", "caption-y", "font-size", "lift", "raise", "lines"];
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -112,8 +114,19 @@ const probe = (file) => {
 
 // ---------------------------------------------------------------------------------- prepare
 function prepare(episode, dir, range, opts) {
-  if (!episode || !dir || !/^\d+-\d+$/.test(range || "")) fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …]");
+  if (!episode || !dir || !/^\d+-\d+$/.test(range || "")) fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] [--drop <sentences>] [--payoff <sentence>] [--max-seconds <s>]");
   if (!fs.existsSync(path.join(episode, "words.json"))) fail(`No ${rel(path.join(episode, "words.json"))}: first node ${rel(path.join(HERE, "episode.mjs"))} fetch <url|file> ${rel(episode)}.`);
+  const [a, b] = range.split("-").map(Number);
+  const sentences = read(path.join(episode, "sentences.json"));
+  // the sentences to leave out, checked before anything is cut or paid for
+  const drop = opts.drop ? numbers(opts.drop) : [];
+  if (!drop || drop.some((k) => k <= a || k >= b)) fail(`--drop ${opts.drop}: sentence numbers inside ${range}, never its first or last sentence, as in --drop ${a + 1}${b - a > 2 ? `-${a + 2}` : ""}.`);
+  const payoff = opts.payoff == null ? null : Number(opts.payoff);
+  if (payoff != null && (!Number.isInteger(payoff) || payoff < a || payoff > b || drop.includes(payoff))) fail(`--payoff ${opts.payoff}: one sentence number of ${range} that is not dropped, as moments.json gives it (its "payoff").`);
+  // the limit the moments were found for travels with them: moments.json's, or --max-seconds
+  const found = path.join(episode, "moments.json");
+  const limit = opts["max-seconds"] != null ? Number(opts["max-seconds"]) : fs.existsSync(found) ? Number(read(found).limit) || MAX_SECONDS : MAX_SECONDS;
+  if (!(limit >= 15 && limit <= 600)) fail(`--max-seconds ${opts["max-seconds"]}: how long the short may be, 15 to 600 seconds, as moments was run with.`);
   const takes = takesTool();
   if (!takes) fail("This needs agentitos' best-takes skill beside this one (or BEST_TAKES_TOOL naming its tools/takes.mjs).");
   const td = path.join(dir, "takes");
@@ -130,11 +143,8 @@ function prepare(episode, dir, range, opts) {
     fs.writeFileSync(path.join(dir, "clip.json"), JSON.stringify({ ...read(path.join(dir, "clip.json")), range }));
   }
   const { from, to } = read(path.join(dir, "clip.json"));
-  const [a, b] = range.split("-").map(Number);
-  const sentences = read(path.join(episode, "sentences.json"));
   // where the moment's first and last sentence are in the clip
   const said = [sentences[a].start - from, sentences[b].end - from];
-  const longest = Number(opts.target) || LONGEST;
 
   // its words with their speakers, timed in the clip, for the framing
   const words = read(path.join(episode, "words.json"))
@@ -156,30 +166,37 @@ function prepare(episode, dir, range, opts) {
   }
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
-  // --target: best-takes' check names a cut longer than the short may be
-  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", ...(opts.target ? [] : ["--target", String(longest)]), ...Object.entries(opts).filter(([k]) => !["whole", "follow", "caption-y", "font-size", "lift", "raise", "lines"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
+  // the limit as best-takes' target: its check says when the cut, opening and all, is longer
+  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", "--target", String(limit), ...Object.entries(opts).filter(([k]) => !["whole", "follow", "drop", "payoff", "max-seconds", "caption-y", "font-size", "lift", "raise", "lines"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
   writeStill(dir);
 
   // the whole moment as one keep: the words heard within its first and last sentence (the cut's
   // air may hold the tail of the sentence before or the start of the one after; the episode's
-  // times are a tenth of a second off at most)
+  // times are a tenth of a second off at most). With --drop, a keep on each side of the
+  // sentences left out: best-takes plays the keeps in their order, with a jump cut between them.
   const { words: heard } = read(path.join(td, "source", "words.json"));
   const spoken = heard.filter((w) => w.kind === "word" || w.kind === "filler");
-  const inside = spoken.filter((w) => (w.start + w.end) / 2 >= said[0] - 0.25 && (w.start + w.end) / 2 <= said[1] + 0.25);
+  const { keeps, inside, plan, gone, folded } = cutKeeps(spoken, sentences, a, b, drop, from, said);
   if (!inside.length) fail(`✗ No word heard in the moment's sentences in ${rel(video)}: look at ${rel(path.join(td, "source", "brief.md"))} and write ${rel(path.join(td, "cut.json"))} yourself.`);
+  if (!keeps.length) fail(`✗ --drop ${opts.drop} leaves no word of the moment: drop fewer sentences (rm -r ${rel(td)}, then prepare again).`);
   const first = inside[0].i, last = inside.at(-1).i;
   const outside = spoken.filter((w) => w.i < first || w.i > last).map((w) => `${w.i} "${w.text}"`);
   const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
-  fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify({ keep: [{ words: `${first}-${last}`, why: "the moment" }] }, null, 1) + "\n");
+  fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify({ keep: keeps.map(([x, y], k) => ({ words: x === y ? `${x}` : `${x}-${y}`,
+    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges([...plan.cut, ...plan.asides].sort((x, y) => x - y))} left out)` })) }, null, 1) + "\n");
 
   // where the text goes: one place for the captions, the shots raised that need it, the hook
   if (video === framed) { console.log(""); place(dir, {}, { build: false }); }
 
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
-  const long = lengthNote(said[1] - said[0], longest);
-  if (long) console.log(long);
+  if (drop.length) console.log(dropNote(plan, gone, folded, keeps, sentences));
+  // how long the moment plays as cut, against the limit it was found for
+  const estimate = playedSeconds(spoken, keeps);
+  const note = lengthNote(estimate, limit);
+  if (note) console.log(note);
+  if (payoff != null) console.log(openingNote(sentenceWords(spoken, sentences[payoff], from), payoff, { first: a, estimate, limit }));
   if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (one row per shot: the footage with the window in yellow, the frame at the shot's first, middle and last frame; red where eyes, nose or mouth are at an edge, as framing listed with ⚠; an ear or a cheek at the edge of a close-up is listed with · and is fine). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
@@ -439,7 +456,7 @@ async function many(list, jobs, argsOf) {
 }
 
 function readPlan(file) {
-  if (!file || !fs.existsSync(file)) fail(`There is no ${file || "clips.json"}: [{"clip": "work/01", "range": "478-484", "out": "…", "title": "…", "hook": "…"}, …]`);
+  if (!file || !fs.existsSync(file)) fail(`There is no ${file || "clips.json"}: [{"clip": "work/01", "range": "478-484", "out": "…", "title": "…", "hook": "…", "drop": "480-481"}, …]`);
   const list = read(file);
   if (!Array.isArray(list) || !list.length || list.some((c) => !c.clip)) fail(`${file}: a list of clips, each with its "clip" folder.`);
   return list;
@@ -453,7 +470,7 @@ async function prepareAll(episode, file, opts) {
   const jobs = Number(opts.jobs || Math.max(1, Math.min(4, Math.floor(os.totalmem() / 1.5e9))));
   console.log(`Preparing ${list.length} clips, ${Math.min(jobs, list.length)} at a time …`);
   const r = await many(list, jobs, (c) => ["prepare", episode, c.clip, c.range, ...shared,
-    ...["out", "title", "hook"].flatMap((k) => (c[k] ? [`--${k}`, c[k]] : []))]);
+    ...["out", "title", "hook", "drop", "payoff", "max-seconds"].flatMap((k) => (c[k] != null && c[k] !== "" ? [`--${k}`, String(c[k])] : []))]);
   const bad = r.filter((x) => !x.ok);
   console.log(`\n${r.length - bad.length} of ${r.length} prepared${bad.length ? `; ✗ ${bad.map((x) => x.clip).join(", ")}: see above, then prepare those one by one` : ""}. Next, for each: read its brief, then build, captions and check as each one says.`);
   if (bad.length) process.exit(1);
@@ -478,4 +495,4 @@ else if (command === "render") render(pos[0], pos[1]);
 else if (command === "place") place(pos[0], opts);
 else if (command === "prepare-all") await prepareAll(pos[0], pos[1], opts);
 else if (command === "render-all") await renderAll(pos[0], pos[1], opts);
-else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise head|mouth|full] [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>] [--hook text|card] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
+else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] [--drop <sentences>] [--payoff <sentence>] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise head|mouth|full] [--caption-y <px>] [--font-size <px>] [--lines 1|2] [--lift <s>:<px>] [--hook text|card] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
