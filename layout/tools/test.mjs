@@ -466,6 +466,15 @@ t("a third of a face's height above its box is kept clear of text, for the skull
   return `the card ends at y ${Math.round(Y1(card.box))}, the skull's top at y ${Math.round(skull)}`;
 });
 
+t("one picture, one size of stacked: the two men at a table came out stacked at 1.05× with a hook and at 0.52× without one (faces 12 and 6 % of the frame's height), as the search for a scale stopped at the smallest that holds both; now it goes on up to where the smaller face is as tall as published faces are, without enlarging past the soft limit, and the ranking chooses. Without the hook the picture is never smaller than with it, with --speaker the same as without", () => {
+  const st = (needs, speaker = null) => solve({ zones: Z916, source: [3840, 2160], faces: TABLE, needs, speaker }).candidates.find((c) => c.fit === "stacked");
+  const withHook = st([cap(1), hook]), without = st([cap(1)]), named = st([cap(1)], 2);
+  ok(!without.hard && !without.unmet.length && without.parts[0].scale >= withHook.parts[0].scale && without.parts[0].scale <= DEFAULTS.weights.enlarge.softFrom + 1e-9, `with the hook ${withHook.parts[0].scale}×, without ${without.parts[0].scale}×`);
+  ok(named.parts[0].scale === without.parts[0].scale, `with --speaker 2 ${named.parts[0].scale}×, without ${without.parts[0].scale}×`);
+  ok(100 * without.faceHeight / 1920 >= 14, `the faces are ${without.faceHeight} px tall`);
+  return `with the hook ${withHook.parts[0].scale}× (faces ${withHook.faceHeight} px), without ${without.parts[0].scale}× (${without.faceHeight} px)`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);

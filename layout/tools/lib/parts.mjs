@@ -60,15 +60,30 @@ export function splitFits(ctx, kind, people) {
   };
   // the scales the persons `ks` may share, each a way to hold them: covering their parts (up from
   // the covering scale while every face fits its room, at most to where enlargement is forbidden);
-  // the same, leaving uncovered what the apps' bars cover; smaller than covering. The ranking
-  // chooses among them.
+  // the same, leaving uncovered what the apps' bars cover; smaller than covering. Of the covering
+  // scales that hold, the smallest and the largest up to where the smallest face is as tall as
+  // published faces are (subject.from) without enlarging the source past softFrom: the search
+  // once stopped at the smallest, so that the same two people came out half as large when no
+  // hook asked for a larger scale. The ranking chooses among them.
   const scalesFor = (ks, hookH) => {
     const cover = Math.max(...ks.map((k) => Math.max(halves[k][2] / persons[k].size[0], halves[k][3] / persons[k].size[1])));
     const step = D.zoomStep * cover, lim = Math.max(cover, D.weights.enlarge.forbiddenFrom);
+    const smallest = Math.min(...ks.map((k) => persons[k].fb[3] - persons[k].fb[1]));
+    const upTo = Math.max(cover, Math.min(D.weights.enlarge.softFrom, D.weights.subject.from / 100 * H / smallest));
     const at = (s, loose) => ks.map((k) => place(k, s, hookH, loose));
     const ways = [];
-    for (const loose of [false, true]) for (let s = cover; s <= lim * (1 + 1e-9); s += step) { const q = at(s, loose); if (q.every((x) => x.ok)) { ways.push(q); break; } if (q.some((x) => !x.fits)) break; }
-    for (let i = 1; i <= 60 && ways.length < 2; i++) { const q = at(cover * (1 - i * D.insetStep), true); if (q.every((x) => x.ok)) { ways.push(q); break; } }
+    let modes = 0;
+    for (const loose of [false, true]) {
+      let first = null, large = null;
+      for (let s = cover; s <= lim * (1 + 1e-9); s += step) {
+        const q = at(s, loose);
+        if (q.every((x) => x.ok)) { first ||= q; if (s <= upTo * (1 + 1e-9)) large = q; else break; }
+        else if (first && s > upTo) break;
+        if (q.some((x) => !x.fits)) break;
+      }
+      if (first) { modes++; ways.push(first); if (large && large !== first) ways.push(large); }
+    }
+    for (let i = 1; i <= 60 && modes < 2; i++) { const q = at(cover * (1 - i * D.insetStep), true); if (q.every((x) => x.ok)) { ways.push(q); break; } }
     return ways.length ? ways : [at(cover, false)];
   };
   const builds = (hookH) => {
