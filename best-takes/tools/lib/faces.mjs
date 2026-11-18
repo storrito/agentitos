@@ -58,6 +58,8 @@ const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.
 export const EYES = 0.42, ABOVE = 0.35, MOUTH = 0.65;
 // the mouth line: the bottom of the eyes, nose and mouth where faces.json has them (feat), else MOUTH of the box
 export const mouthOf = (b, feat) => (feat ? feat[1] + feat[3] : b[1] + MOUTH * b[3]);
+// the nose line (layout's): 70 % of the way down the eyes, nose and mouth, else 55 % of the box
+export const noseOf = (b, feat) => (feat ? feat[1] + 0.7 * feat[3] : b[1] + 0.55 * b[3]);
 export function punchOrigin({ faces, scale, frame: [W, H], cap, safeTop = 0, raise = "full" }) {
   const low = ORIGIN_Y * H;
   if (!cap || !(scale > 1)) return low;
@@ -104,13 +106,15 @@ export function textOnFaces({ pieces, clips, faces, texts, frame, step = 0.1 }) 
         const share = Math.min(1, Math.max(0, (f.box[1] + f.box[3] - Math.max(x.box[1], f.box[1])) / f.box[3]));
         // on the mouth or above: the text reaches above the mouth line
         const onMouth = x.box[1] < mouthOf(f.box, f.feat) && overlap(x.box, [f.box[0], f.box[1], f.box[2], mouthOf(f.box, f.feat) - f.box[1]]) > 1;
+        const onNose = x.box[1] < noseOf(f.box, f.feat) && overlap(x.box, [f.box[0], f.box[1], f.box[2], noseOf(f.box, f.feat) - f.box[1]]) > 1;
         const key = `${x.role}|${f.who}`;
-        const g = found.get(key) || { role: x.role, who: f.who, from: t, to: t, seconds: 0, share: 0, mouth: 0 };
+        const g = found.get(key) || { role: x.role, who: f.who, from: t, to: t, seconds: 0, share: 0, mouth: 0, nose: 0 };
         g.to = t + step; g.seconds += step; g.share = Math.max(g.share, share);
         if (onMouth) g.mouth += step;
+        if (onNose) g.nose += step;
         found.set(key, g);
       }
     }
   }
-  return [...found.values()].map((g) => ({ ...g, from: +g.from.toFixed(1), to: +g.to.toFixed(1), seconds: +g.seconds.toFixed(1), mouth: +g.mouth.toFixed(1), share: Math.round(g.share * 100) / 100 }));
+  return [...found.values()].map((g) => ({ ...g, from: +g.from.toFixed(1), to: +g.to.toFixed(1), seconds: +g.seconds.toFixed(1), mouth: +g.mouth.toFixed(1), nose: +g.nose.toFixed(1), share: Math.round(g.share * 100) / 100 }));
 }

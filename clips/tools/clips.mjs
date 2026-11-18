@@ -318,12 +318,14 @@ function place(dir, opts, { build = true } = {}) {
     const k = index[i], mid = (x.start + x.end) / 2, sh = lifted.find((q) => mid >= q.start && mid < q.end) || lifted[k] || { faces: [] };
     const touch = x.touches.map((t) => `${t.who} ${sec(t.seconds)} s`).join(", ");
     const mouth = x.touches.some((t) => t.mouth > 0.05);
-    console.log(`  ${String(k + 1).padStart(2)}. ${sec(x.start)}–${sec(x.end)} s  ${x.lift ? `raised ${x.lift} px${x.ground ? `, a blurred band of ${x.ground} px at the bottom (under the apps' text from y ${text.safe[1] + text.safe[3]})` : ""}${x.fixed ? " as you fixed it" : ""}` : "as framed"}; captions ${!touch ? "on no face" : mouth ? `✗ on the mouth of ${touch}` : x.chin ? `on the chin or neck of ${touch}, not avoidable without cutting the head or a smaller picture` : `✗ on ${touch}`}`);
+    console.log(`  ${String(k + 1).padStart(2)}. ${sec(x.start)}–${sec(x.end)} s  ${x.lift ? `raised ${x.lift} px${x.ground ? `, a blurred band of ${x.ground} px at the bottom (under the apps' text from y ${text.safe[1] + text.safe[3]})` : ""}${x.fixed ? " as you fixed it" : ""}` : "as framed"}; captions ${!touch ? "on no face" : x.lip ? `on the chin of ${touch}, the lower lip ${sec(x.lip)} s: not avoidable at a readable size` : mouth ? `✗ on the nose or eyes of ${touch}` : x.chin ? `on the chin or neck of ${touch}, not avoidable without cutting the head or a smaller picture` : `✗ on ${touch}`}`);
     const facesAt = (t) => { const out = []; for (const f of sh.faces) { let best = null; for (const m of f.track) if (!best || Math.abs(m.t - t) < Math.abs(best.t - t)) best = m; if (best && Math.abs(best.t - t) < 0.3) out.push(best.box); } return out; };
-    return { n: k + 1, start: x.start, end: x.end, lift: x.lift, touch: !touch ? "" : mouth ? `ON THE MOUTH ${touch}` : x.chin ? `on the chin ${touch}` : `ON A FACE ${touch}`, facesAt };
+    return { n: k + 1, start: x.start, end: x.end, lift: x.lift, touch: !touch ? "" : x.lip ? `on chin and lip ${touch}` : mouth ? `ON THE NOSE ${touch}` : x.chin ? `on the chin ${touch}` : `ON A FACE ${touch}`, facesAt };
   });
   for (const c of text.conflicts) console.log(`✗ ${c}`);
   for (const n of text.notes.filter((n) => !/chin or neck/.test(n))) console.log(`note: ${n}`);
+  const lips = text.shots.filter((x) => x.lip);
+  if (lips.length) console.log(`On the lower lip, not avoidable at a readable size (${text.caption.font} px; the low end of published captions is ${text.caption.least} px): ${lips.map((x) => `${sec(x.start)}–${sec(x.end)} s ${sec(x.lip)} s`).join(", ")}. Nothing to fix; --raise full, a cut to another shot, or --font-size by hand would avoid it.`);
   for (const f of fs.readdirSync(dir)) if (/^placed\.sheet(-\d+)?\.jpg$/.test(f)) fs.rmSync(path.join(dir, f));
   const sheets = placeSheet(path.join(dir, "framed.mp4"), rows, { caption: text.caption, hook: text.hook ? { ...text.hook, end: text.hook.until } : null }, path.join(dir, "placed.sheet.jpg"), { fps: 25 });
   if (sheets.failed) console.log(`(ffmpeg drew no sheet: ${sheets.failed})`);

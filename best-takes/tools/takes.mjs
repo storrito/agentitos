@@ -486,11 +486,12 @@ function cmdCheck(dir) {
     const on = textOnFaces({ pieces: e.pieces, clips, faces, texts, frame: [e.width, e.height] }), chin = [];
     for (const x of on.filter((q) => q.seconds >= 0.3)) {
       // above the mouth line (MOUTH of the box from its top) is the mouth, the nose, the eyes
-      const mouth = x.mouth >= 0.3;
-      if (x.role !== "hook" && !mouth) { chin.push(`${x.who ?? "a face"} ${x.seconds} s`); continue; }
-      warnings.push(`the ${x.role === "hook" ? "hook" : "captions' area"} lies on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)}, up to ${Math.round(x.share * 100)} % of its height up from the chin${mouth ? ` (on the mouth or above for ${x.mouth} s)` : ""}: ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "a place clear of it from the skill that laid the frame out (clips: place: a smaller type, another height), or a cut to another shot there"}`);
+      // the nose and the eyes are a fault; the chin and the lower lip are what a readable caption over a tight close-up leaves
+      const mouth = x.nose >= 0.3;
+      if (x.role !== "hook" && !mouth) { chin.push(`${x.who ?? "a face"} ${x.seconds} s${x.mouth >= 0.1 ? ` (the lower lip ${x.mouth} s)` : ""}`); continue; }
+      warnings.push(`the ${x.role === "hook" ? "hook" : "captions' area"} lies on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)}, up to ${Math.round(x.share * 100)} % of its height up from the chin${mouth ? ` (on the nose or the eyes for ${x.nose} s)` : ""}: ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "a place clear of it from the skill that laid the frame out (clips: place: a smaller type, another height), or a cut to another shot there"}`);
     }
-    if (chin.length) console.log(`\nText and faces: the captions lie on the chin or neck, below the mouth, of ${chin.join(", ")} (the skill that framed the video says where that is not avoidable without cutting a head).`);
+    if (chin.length) console.log(`\nText and faces: the captions lie on the chin or neck of ${chin.join(", ")}, never on the nose or the eyes (the skill that framed the video says where that is not avoidable at a readable size or without cutting a head).`);
     else if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
   }
   const over = overTarget(e.duration, s.target);

@@ -37,7 +37,12 @@ export const DEFAULTS = {
   //              (`clean`'s type) and the 1 em `clean`'s box takes at its sides. A narrower
   //              area is handed over with a note: captions sets a word that is wider than a
   //              line smaller for its moment.
-  caption: { font: { tall: 77, wide: 50 }, line: 1.3, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24, longWord: 9 },
+  //   least      the smallest type the captions may be set in to clear a face, in upright frames:
+  //              the low end of what published captions use. layout-data/report/findings.md, 188
+  //              Shorts with captions: "Zeilenhöhe im Median 4,0 % der Bildhöhe (mittlere Hälfte
+  //              3,2–4,9 %)", a line 3.2 % of the frame's height, 61 px in 1920. Below it a clip's
+  //              every caption pays for a few tight shots.
+  caption: { font: { tall: 77, wide: 50, least: 61 }, line: 1.3, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24, longWord: 9 },
   // A hook in an upright frame has two kinds; without one named (--text hook) the first is tried
   // first and the second where the first finds no room.
   // hookText: a short text in the middle of the frame, on the chest, where the captions stand
@@ -149,7 +154,7 @@ DEFAULTS.weights = readWeights();
 // The sizes in px for a frame of another size than 1080 on its shorter side: a video of 720×1280
 // is shown as large as one of 1080×1920, so its type and margins are two thirds as many px.
 // Without this, text set for 1080 ran out of a smaller frame. Type is whole px.
-const PX = ["caption.font.tall", "caption.font.wide", "caption.minWidth.tall", "caption.minWidth.wide", "hookText.font", "hookText.minFont", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
+const PX = ["caption.font.tall", "caption.font.wide", "caption.font.least", "caption.minWidth.tall", "caption.minWidth.wide", "hookText.font", "hookText.minFont", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
 export function scaled(D, [W, H]) {
   const k = Math.min(W, H) / 1080;
   if (Math.abs(k - 1) < 1e-9) return D;

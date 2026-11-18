@@ -35,8 +35,9 @@ export const COSTS = {
   // its height: on the chin alone a little, on the mouth (a quarter up) much more
   touch: 10, cover: 30,
   // a second in which the captions reach above a face's mouth line (MOUTH): never taken while a
-  // smaller type or another height avoids it
-  mouth: 1000,
+  // smaller type (down to caption.font.least) or another height avoids it; above its nose line
+  // (NOSE: the nose and the eyes) never while any place avoids it
+  mouth: 1000, nose: 100000,
   // raising a shot's picture, for every second of it and every tenth of the frame's height: by
   // moving its window in the footage (the face higher in the picture, nothing else changes), and
   // over a ground (a band of the blurred picture at the bottom, under the apps' bottom)
@@ -56,6 +57,10 @@ export const USUAL = [0.6, 0.75];
 // smaller type the captions may take where it clears a face: 90 % and 80 % of the usual (the
 // published middle half is 3.2–4.9 % of the height, the usual 4 %)
 export const SMALLER = [0.9, 0.8, 0.7];
+// The eyes and the nose are a hard limit at every size: the line through a face's nose, 70 % of the
+// way down its eyes, nose and mouth (feat: the eyes at its top, the mouth at its bottom; a guess
+// from that box), else 55 % of the face's box from its top (ten points above MOUTH).
+export const NOSE_IN_FEAT = 0.7, NOSE = 0.55;
 // The mouth line, a share of a face's box from its top: text below it lies on the chin or the neck,
 // above it on the mouth, the nose or the eyes. On eleven stills of the five passages (2026-11-18)
 // the mouth of a model's box (forehead to chin, followed in the frames) lay at 65–85 % of its
@@ -72,6 +77,8 @@ const mouthOf = (f) => (f.feat ? Y1(f.feat) : f.box[1] + MOUTH * f.box[3]);
 const eyesOf = (f, D) => (f.feat ? f.feat[1] : f.box[1] + D.eyes * f.box[3]);
 // the part of a face (its box raised by lift) from its top down to its mouth line
 const upper = (f, lift) => [f.box[0], f.box[1] - lift, f.box[2], mouthOf(f) - f.box[1]];
+const noseOf = (f) => (f.feat ? f.feat[1] + NOSE_IN_FEAT * f.feat[3] : f.box[1] + NOSE * f.box[3]);
+const above = (f, lift) => [f.box[0], f.box[1] - lift, f.box[2], noseOf(f) - f.box[1]];
 
 const r0 = (v) => Math.round(v);
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -128,16 +135,17 @@ function shotUnder(cap, moments, most, D, exact = false) {
     else below = true;
   }
   const lift = exact ? most : Math.min(most, Math.ceil(need));
-  let seconds = 0, share = 0, mouth = 0;
+  let seconds = 0, share = 0, mouth = 0, nose = 0;
   const who = new Map();
   for (const m of moments) {
-    let on = false, onMouth = false;
+    let on = false, onMouth = false, onNose = false;
     for (const f of m.faces) {
       if (inter(keepOut(up(f.box, lift), D), cap) <= 0) continue;
       on = true;
       const b = up(f.box, lift);
       // the part of the box above its mouth line
       if (inter(upper(f, lift), cap) > 0) onMouth = true;
+      if (inter(above(f, lift), cap) > 0) onNose = true;
       // how deep into the face from its chin: a share of its height (0 where the box is not reached)
       const s = inter(b, cap) > 0 ? Math.min(1, Math.max(0, (Y1(b) - Math.max(cap[1], b[1])) / b[3])) : 0;
       share = Math.max(share, s);
@@ -148,8 +156,9 @@ function shotUnder(cap, moments, most, D, exact = false) {
     }
     if (on) seconds += m.dt;
     if (onMouth) mouth += m.dt;
+    if (onNose) nose += m.dt;
   }
-  return { lift: Math.max(0, lift), need: Math.ceil(need), seconds, share, mouth, below, who: [...who.values()] };
+  return { lift: Math.max(0, lift), need: Math.ceil(need), seconds, share, mouth, nose, below, who: [...who.values()] };
 }
 
 // whether captions stand above the heads more often than below the chins
@@ -182,7 +191,9 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   const candidates = [];
   if (cap) {
     const f0 = tall ? D.caption.font.tall : D.caption.font.wide;
-    const fonts = fixed.font ? [fixed.font] : [f0, ...SMALLER.map((k) => Math.round(f0 * k))];
+    // smaller type down to the low end of published captions (caption.font.least), never below: a
+    // size given by hand (--font-size) is taken as it is
+    const fonts = fixed.font ? [fixed.font] : [f0, ...SMALLER.map((k) => Math.round(f0 * k)).filter((f) => f >= (tall ? D.caption.font.least : 0))];
     const cx0 = Math.max(0, ...Z.crops.map((c) => c.box[0])), cx1 = Math.min(W, ...Z.crops.map((c) => X1(c.box)));
     for (const font of fonts) {
       const Df = { ...D, caption: { ...D.caption, font: { tall: font, wide: font } } };
@@ -193,20 +204,20 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       if (fixed.y == null) for (let y = Y1(S); y - h >= S[1] - EPS; y -= step) ys.push(y);
       for (const yb of ys) {
         const box = [W / 2 - w / 2, yb - h, w, h];
-        let cost = 0, touch = 0, cover = 0, liftCost = 0, mouth = 0;
+        let cost = 0, touch = 0, cover = 0, liftCost = 0, mouth = 0, nose = 0;
         const per = list.map((s) => {
           // a lift the caller fixed stands as given
           const r = shotUnder(box, s.moments, s.most, D, s.forced);
           const free = Math.min(r.lift, Math.max(0, s.room?.free || 0)), ground = r.lift - free;
           const k = s.weight / Math.max(1e-6, s.end - s.start);
           const sec = r.seconds * k;
-          touch += sec; cover += sec * r.share; mouth += r.mouth * k;
+          touch += sec; cover += sec * r.share; mouth += r.mouth * k; nose += r.nose * k;
           liftCost += s.weight * (free * costs.liftFree + ground * costs.liftGround) / (0.1 * H);
           return { ...r, seconds: sec, free, ground };
         });
         const mid = (yb - h / 2) / H;
         const away = Math.max(0, USUAL[0] - mid, mid - USUAL[1]) * 100;
-        cost = touch * costs.touch + cover * costs.cover + mouth * costs.mouth + liftCost + (away * costs.away + (f0 - font) * costs.smaller) * total / 10;
+        cost = touch * costs.touch + cover * costs.cover + mouth * costs.mouth + nose * costs.nose + liftCost + (away * costs.away + (f0 - font) * costs.smaller) * total / 10;
         candidates.push({ box: box.map(r1), font, lines: cap.lines, cost, touch, cover, mouth, liftCost, away, per });
       }
     }
@@ -291,9 +302,13 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     if (best && r.seconds > 0.05) {
       const who = [...new Set(r.who.map((w) => w.who))].join(" and "), short = r.need - r.lift;
       const span = `Shot ${s.n ?? i + 1} (${r1(s.start)}–${r1(s.end)} s)`;
-      if (r.mouth > 0.05) {
+      if (r.nose > 0.05) {
         out.chin = false;
-        conflicts.push(`${span}: the captions reach ${who}'s mouth for ${r1(r.mouth)} s (the bottom of its eyes, nose and mouth, or ${Math.round(MOUTH * 100)} % of the face's box where those are not known) even at ${best.font} px on the safe box's bottom. What would avoid it: a cut to another shot here, a smaller picture for this shot, or --raise full (the head cut by the frame's top).`);
+        conflicts.push(`${span}: the captions reach ${who}'s nose or eyes for ${r1(r.nose)} s wherever they stand. What would avoid it: a cut to another shot here, a smaller picture for this shot, or --raise full.`);
+      } else if (r.mouth > 0.05) {
+        // on the lower lip at a readable size: said, not a fault
+        out.chin = true; out.lip = r1(r.mouth);
+        notes.push(`${span}: the captions lie on ${who}'s chin for ${r1(r.seconds)} s and on the lower lip for ${r1(r.mouth)} s: not avoidable at a readable size (${best.font} px; the low end of published captions is ${D.caption.font.least} px)${s.by === "head" ? " without cutting the head" : ""}. Remedies: --raise full (the head cut by the frame), a cut to another shot, or a smaller type by hand (--font-size).`);
       } else if (r.who.length && r.share === 0 && best.box[1] + best.box[3] / 2 < Math.min(...s.moments.flatMap((m) => m.faces.map((f) => f.box[1] + f.box[3] / 2)))) {
         // above the face, within the margin kept for the hair: no face covered
         notes.push(`${span}: the captions stand above ${who}'s face, on the hair, for ${r1(r.seconds)} s.`);
@@ -313,7 +328,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   for (const c of changes) notes.push(`Shot ${list[c.shot].n ?? c.shot + 1} (${r1(c.start)}–${r1(c.end)} s) would keep its captions off the face with a place of its own (y ${r0(c.box[1])}–${r0(Y1(c.box))}), saving ${c.saves} s: proposed, not taken; a place that changes at a cut costs the reading the one place gives.`);
 
   const capOut = best ? {
-    box: best.box, font: best.font, lines: best.lines, align: "center",
+    box: best.box, font: best.font, lines: best.lines, align: "center", least: tall ? D.caption.font.least : null,
     middle: Math.round(((best.box[1] + best.box[3] / 2) / H) * 1000) / 10,
     where: aboveHeads(best.box, list) ? "above-head" : "below-chin",
     // agentitos' captions: the lowest line ends at y, at most max-width wide, centred

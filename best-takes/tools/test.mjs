@@ -339,5 +339,5 @@ test("with the eyes, nose and mouth known (faces.json feat), the mouth line is t
   const y = punchOrigin({ faces: [{ box: face.box, feat: face.feat }], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250, raise: "moderate" });
   assert.ok(y + (1280 - y) * 1.12 <= CAP[1] + 1e-6, `the mouth line after the punch-in: ${y + (1280 - y) * 1.12}`);
   const pushed = textOnFaces({ pieces: [{ ...piece, scale: 1.12, origin: 614.4 }], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 3 }], frame: FRAME });
-  assert.ok(pushed[0].mouth >= 2.9, `grown from a third from the top, the mouth reaches the captions: ${JSON.stringify(pushed)}`);
+  assert.ok(pushed[0].mouth >= 2.9 && pushed[0].nose === 0, `grown from a third from the top, the mouth (not the nose) reaches the captions: ${JSON.stringify(pushed)}`);
 });
