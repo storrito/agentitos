@@ -51,7 +51,7 @@ node <skill>/tools/screencast.mjs transcribe screencast/<name>
 
 ElevenLabs Scribe writes every word with its start and end, and every time is checked against the voice: the few the recognizer misplaced are moved to where the voice is, and its line says how many and which spots stay doubtful. It writes `source/brief.md`: every sentence with its word numbers and how much each source moves. Names Scribe misheard (the product, an account) you correct in `cut.json`'s `"fixes"` by word number; their times stay.
 
-Words from somewhere else go in with `screencast.mjs words screencast/<name> <words.json>`, but only with a start and an end per word: one time per word (start = end) is refused, since no cut can be placed by it. rragent's `transcribe` tool (asked for `words`) writes such a file, every word with its start and end where the sound has them: it goes in as it is.
+Words from somewhere else go in with `screencast.mjs words screencast/<name> <words.json>`, but only with a start and an end per word: one time per word (start = end) is refused, since no cut can be placed by it. agentitos' `transcribe` skill writes such a file (`"edges": "sound"`: every word with its start and end where the sound has them), and it goes in as it is. rragent's own `transcribe` tool writes the text of a recording only, no word times: it is no source of words for a cut.
 
 ### 3. The cut
 
