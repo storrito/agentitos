@@ -1266,6 +1266,22 @@ t("a face that moves is held by its hull: the panel holds every moment's box, it
   }
 });
 
+t("the face's target is one number (--set beside.face): the b-roll session's upright close-up with a card of 700×330 has its face at 18 % in the panel; at 0.22 it is 22 % and the reason names the target asked for; in 16:9 the column takes it too, and says where the footage gives no more without enlarging past 1.5×; under the 12 % floor and over what any panel holds (0.45 in 9:16: at most 25 %) it says so in one sentence", () => {
+  const close = { source: [1080, 1920], face: [80, 250, 445, 580], material: { min: [700, 330] } };
+  near(beside(Z916, close).candidates[0].speaker.facePct, 18, 0.2, "the usual target");
+  const big = beside(Z916, { ...close, set: { "beside.face": 0.22 } }).candidates[0];
+  ok(big.fit === "beside-above" && !big.hard && !big.unmet.length, JSON.stringify(big.problems)); near(big.speaker.facePct, 22, 0.2, "the target asked for");
+  ok(big.why.some((w) => /22 % is the target asked for \(beside\.face; the usual is 18 % below a screen\)/.test(w)), big.why.join(" | "));
+  const col = beside(Z169, { set: { "beside.face": 0.3 } }).candidates[0];
+  ok(col.fit === "beside-column" && col.why.some((w) => /30 % is the target asked for .*no more without enlarging past 1\.5×/.test(w)), col.why.join(" | "));
+  const base = ["--frame", "9:16", "--source", "1080x1920", "--face", "80,250,445,580", "--material-min", "700x330", "--text", "caption", "--set"];
+  for (const [v, says] of [["beside.face=0.1", /from 0\.12 .* to 0\.5; 0\.1 is outside that\./], ["beside.face=0.45", /^A face of 45 % .* fits no panel in 9:16 .*: at most \d+ % \(--set beside\.face=0\.\d+\); ask for a smaller face or a smaller field\.$/]]) {
+    const e = cli("beside", path.join(OUT, "beside-face"), ...base, v);
+    sentence(e, v); ok(says.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
+  }
+  return `22 %: face ${big.speaker.faceHeight} px, field ${Math.round(big.material.field[2])}×${Math.round(big.material.field[3])}`;
+});
+
 t("beside's input it cannot use it says in one sentence: no material need, a hook, two faces, a bad --before", () => {
   const dir = path.join(OUT, "beside-bad"), base = ["--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195"];
   for (const [extra, says] of [[[], /needs what the material needs/], [["--material-min", "600x340", "--text", "hook"], /captions only/], [["--material-min", "600x340", "--face", "100,100,50,50"], /one speaker/], [["--material-min", "600x340", "--before", "1,2"], /--before is scale,left,top/], [["--material-min", "600x340", "--material-ratio", "wide"], /--material-ratio is/]]) {
