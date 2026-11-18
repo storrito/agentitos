@@ -210,11 +210,32 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     if (!fld) { notes.push("no circle: the frame leaves the material no room beside it"); return null; }
     most.pip = fld.field;
     // the speaker: a square around the face, pipCrop faces tall, its eyes where the circle beside a
-    // screen has them (0.42 of the square down)
-    const side = Math.min(sw, sh, B.pipCrop * hull[3]);
-    const crop = [clamp(hull[0] + hull[2] / 2 - side / 2, 0, sw - side), clamp(hull[1] + D.eyes * hull[3] - 0.42 * side, 0, sh - side), side, side];
-    const s = d / side;
-    return build("pip", { field: fld.field, area: [0, 0, W, H], speaker: { s, left: C[0] - crop[0] * s, top: C[1] - crop[1] * s, win: C, ok: true, field: C, shape: "circle", corner, crop }, caption: cap ? caption(Y1(S) - capH, "below") : null });
+    // screen has them (0.42 of the square down); kept inside the footage where the face and the
+    // margin above the head then still lie in the disc, else on the face with ground where the
+    // footage ends (a face at the footage's edge)
+    const side = B.pipCrop * hull[3], s = d / side;
+    const at = (c) => ({ s, left: C[0] - c[0] * s, top: C[1] - c[1] * s, field: C, shape: "circle", corner, crop: c, ok: true });
+    const centred = [hull[0] + hull[2] / 2 - side / 2, hull[1] + D.eyes * hull[3] - 0.42 * side, side, side];
+    const inside = side <= Math.min(sw, sh) ? [clamp(centred[0], 0, sw - side), clamp(centred[1], 0, sh - side), side, side] : centred;
+    let q = at(inside);
+    if (outOfDisc(q).length) q = at(centred);
+    q.win = clipBox([q.left, q.top, s * sw, s * sh], C) || C;
+    return build("pip", { field: fld.field, area: [0, 0, W, H], speaker: q, caption: cap ? caption(Y1(S) - capH, "below") : null });
+  }
+
+  // What of a face (its hull, and the margin kept above a head) lies outside a circle's disc: the
+  // corners of the face's box and the top of the head, in px of the frame
+  function outOfDisc(q) {
+    const f = inFrame(q.s, q.left, q.top, hull), r = q.field[2] / 2, [cx, cy] = mid(q.field);
+    const out = (x, y) => Math.hypot(x - cx, y - cy) > r + 0.5;
+    const miss = [];
+    if ([[f[0], f[1]], [X1(f), f[1]], [f[0], Y1(f)], [X1(f), Y1(f)]].some(([x, y]) => out(x, y))) {
+      let n = 0;
+      for (let i = 0; i < 20; i++) for (let j = 0; j < 20; j++) if (out(f[0] + (i + 0.5) * f[2] / 20, f[1] + (j + 0.5) * f[3] / 20)) n++;
+      miss.push(`${Math.max(1, Math.round(n / 4))} % of the face's box lies outside the circle`);
+    }
+    if (out(f[0] + f[2] / 2, f[1] - above(f[3]))) miss.push("the top of the head lies outside the circle");
+    return miss;
   }
 
   // ---- column (16:9): the speaker at one side over the frame's height, the material beside ----
@@ -262,7 +283,8 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // what only the solver knows: the face cut by its own field, enlargement, the captions in the
     // margin kept above a head, the material's field under its smallest size, a panel's face small
     const cut = 1 - inter(faceBox, sp.field) / area(faceBox);
-    if (cut > 0.001) problems.push({ level: "hard", code: "cut", kind: "face", of: "speaker", what: `${pct(cut)} cut off by the edge of the speaker's field` });
+    if (sp.shape === "circle") { const miss = outOfDisc(sp); if (miss.length) problems.push({ level: "hard", code: "cut", kind: "face", of: "speaker", what: `${miss.join(", and ")}: the circle cuts the face` }); }
+    else if (cut > 0.001) problems.push({ level: "hard", code: "cut", kind: "face", of: "speaker", what: `${pct(cut)} cut off by the edge of the speaker's field` });
     const scales = [["speaker", s], ...(mat.fixed ? [["material", p.field[2] / mat.fixed[0]]] : [])];
     for (const [of, v] of scales) {
       if (v > forbidden + 1e-9) problems.push({ level: "hard", code: "enlarged", kind: "picture", of, what: `the ${of}'s pixels are enlarged ${r2(v)}× (over ${forbidden}×: too soft to publish)` });

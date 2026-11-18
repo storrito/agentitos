@@ -1262,6 +1262,19 @@ t("the column never enlarges the footage past the soft limit to cover itself (an
   return fitsOf(r);
 });
 
+t("the circle is judged as a disc, with the margin above a head (an independent review: 724×720 with the face at the footage's left edge had 26 % of the face's box outside the disc and passed; 40 random circles had the head's top outside): its crop stays on the face, ground where the footage ends, and over faces at every edge no circle that passes leaves a face corner or the head's top outside its disc", () => {
+  const inDisc = (c) => { const f = c.faceInFrame[1], b = c.speaker.field, r = b[2] / 2, cx = b[0] + r, cy = b[1] + r, top = f[1] - Math.max(DEFAULTS.free.aboveMin, DEFAULTS.free.above * f[3]); return [[f[0], f[1]], [f[0] + f[2], f[1]], [f[0], f[1] + f[3]], [f[0] + f[2], f[1] + f[3]], [f[0] + f[2] / 2, top]].every(([x, y]) => Math.hypot(x - cx, y - cy) <= r + 1); };
+  const pip = beside(Z916, { source: [724, 720], face: [0, 150, 180, 195] }).candidates.find((c) => c.arrangement === "pip");
+  ok(inDisc(pip) && !pip.hard && pip.speaker.ground > 0, JSON.stringify(pip.speaker));
+  let n = 0;
+  for (const Z of [Z916, Z45, Z169]) for (const face of [[0, 0, 180, 195], [1100, 0, 180, 195], [0, 525, 180, 195], [1100, 525, 180, 195], [555, 0, 180, 195], [400, 300, 300, 420]]) {
+    const c = beside(Z, { face }).candidates.find((k) => k.arrangement === "pip");
+    if (!c.hard) { ok(inDisc(c), `${Z.frame} ${face}: the face leaves the disc: ${JSON.stringify(c.faceInFrame[1])} in ${c.speaker.field}`); n++; }
+    else ok(c.problems.some((q) => q.code === "cut" && /circle/.test(q.what)), `${Z.frame} ${face}: ${JSON.stringify(c.problems)}`);
+  }
+  return `${n} circles pass, all inside their disc`;
+});
+
 t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
   const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
   ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);
