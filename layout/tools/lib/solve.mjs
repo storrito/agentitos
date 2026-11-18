@@ -141,6 +141,13 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
       if (speaker == null) notes.push(`no speaker named: the crops on one person are listed for each of the ${main.faces.length}, behind every candidate that shows them all: whom to leave out is yours to say (--speaker N lists only that person's crops, ranked with the rest)`);
       if (main.faces.length === 2 && ctx.tall) {
         const order = [0, 1].sort((a, b) => main.faces[a][0] + main.faces[a][2] / 2 - main.faces[b][0] - main.faces[b][2] / 2);
+        // two who stand close together belong in one picture: stacked is listed behind every
+        // candidate that shows both in one
+        const [a, b] = order.map((i) => main.faces[i]), gap = b[0] - X1(a), width = Math.max(a[2], b[2]);
+        if (gap <= D.together * width) {
+          ctx.close = true;
+          notes.push(`faces 1 and 2 stand close together (their boxes ${Math.max(0, Math.round(gap))} px apart, ${r2(Math.max(0, gap) / width)}× the wider face's width; close is up to ${D.together}×): one picture holds both, so stacked, which would split them into two halves of the same shot, is listed behind every candidate that shows both in one picture. Stacking is for people far apart or filmed apart`);
+        }
         out.push(...splitFits(ctx, "stacked", order.map((i) => ({ src: 0, own: [i] }))));
       } else if (main.faces.length > 2) notes.push(`stacked parts are built for two people, not for ${main.faces.length}`);
     }
@@ -188,7 +195,7 @@ function why(c, ctx) {
 const TERM = { enlargement: "enlargement", ground: "ground", subject: "subject", soft: "soft problems", text: "text away", hook: "hook smaller" };
 const signed = (v) => `${v < 0 ? "−" : "+"}${Math.abs(v)}`;
 const costText = (terms) => Object.entries(terms).filter(([, v]) => v).map(([k, v]) => `${TERM[k]} ${signed(v)}`).join(", ") || "no term";
-const CRIT = ["it has a hard problem", "it leaves a need unmet", "it leaves a person out and no speaker is named"];
+const CRIT = ["it has a hard problem", "it leaves a need unmet", "it leaves a person out and no speaker is named", "it splits two people who stand close together into two parts"];
 function behind(c, top) {
   for (let i = 0; i < CRIT.length; i++) if (c.rank[i] !== top.rank[i]) return `behind the first because ${CRIT[i]}`;
   const d = Math.round((c.cost - top.cost) * 1000) / 1000;

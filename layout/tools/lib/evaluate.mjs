@@ -122,7 +122,9 @@ export function evaluate(ctx, p) {
   };
   for (const k of Object.keys(c.terms)) c.terms[k] = Math.round(c.terms[k] * 1000) / 1000 || 0;
   c.cost = Math.round(Object.values(c.terms).reduce((a, b) => a + b, 0) * 1000) / 1000;
-  c.rank = [c.hard ? 1 : 0, c.unmet.length, leftOut && !ctx.speakerNamed ? 1 : 0, Math.round(c.cost * 1000), c.variant];
+  // two people of one picture who stand close together, split into two parts (solve.mjs: ctx.close)
+  if (split && ctx.close && parts.every((q) => q.src === 0)) c.splitsClose = true;
+  c.rank = [c.hard ? 1 : 0, c.unmet.length, leftOut && !ctx.speakerNamed ? 1 : 0, c.splitsClose ? 1 : 0, Math.round(c.cost * 1000), c.variant];
   return c;
 }
 

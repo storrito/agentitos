@@ -94,6 +94,10 @@ Three things rank before any cost. A candidate with a hard problem stands behind
 
 **They rest on one judged case, one measurement and guesses.** The case: a 1280×720 take of one person into 9:16 with two caption lines, stills looked at by people: the 4:5 crop at 1.875× first, the square at 1.5× second, the whole picture as a strip third (the person tiny), the crop that fills the frame at 2.67× too soft to publish. The two crops are a quarter of a point apart. The measurement: how tall a face is in published Shorts. It replaced a reward for a larger face up to half the frame's height, which nothing published supports. It says what creators do, not what works: in that study nothing separates the videos that did well from the others (5 of 69 comparisons under p = 0.05, 3.5 expected by chance). There is no term for how much of the picture a crop cuts away. Candidates less than a point apart are not told apart by anything measured.
 
+**Some figures rest on the first use on real footage** (2026-11-18: an agent placed twelve recordings by the documents alone, and what it found wrong was fixed). They are defaults in `tools/lib/defaults.mjs`, each with its source, and rest on these twelve cases only:
+
+- `together` (2): two people of one picture whose faces' boxes are at most two widths of the wider face apart stand close together. Stacked would split them into two halves of the same shot; it stands behind every candidate that shows both in one picture (walking side by side: 1.0–2.3 widths; four in a row with room between them: 2.2–3.8; two at a table: 12.9).
+
 The type sizes come from the same study (a caption line 4 % of the frame's height, one line; a hook text 12.4 % of the height tall in the middle of the frame): they are defaults in `tools/lib/defaults.mjs`, each with its source. [`references/situations.md`](references/situations.md) has the figures with their counts.
 
 ### The sweep

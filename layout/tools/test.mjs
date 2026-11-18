@@ -417,6 +417,23 @@ t("two people far apart, one larger (1920×1080 into 9:16, one caption line), no
   return `stacked (cost ${first.cost}) before the crop on face 2 (cost ${crop.cost}); with --speaker 2: ${nameOf(named)}`;
 });
 
+// The first use on real footage (2026-11-18, layout-proben/skill-real): two women walking shoulder
+// to shoulder towards a camera that follows them, a 4K b-roll, boxes read at 2.5, 4.5 and 6.5 s.
+const WALK = [[{ t: 2.5, box: [1990, 640, 125, 200] }, { t: 4.5, box: [2000, 655, 190, 190] }, { t: 6.5, box: [2055, 645, 150, 200] }],
+  [{ t: 2.5, box: [2430, 670, 145, 185] }, { t: 4.5, box: [2485, 645, 155, 200] }, { t: 6.5, box: [2450, 665, 140, 190] }]];
+
+t("two people who walk shoulder to shoulder (their faces' boxes 1.05 face widths apart; close is up to 2) are shown in one picture: stacked, which split them into two halves of the same shot and came first, now stands behind every candidate that shows both in one picture and says why; two people 2.9 widths apart are still stacked first", () => {
+  const res = solve({ zones: Z916, source: [3840, 2160], faces: WALK, needs: [cap(1)] }), first = res.candidates[0];
+  const st = res.candidates.find((c) => c.fit === "stacked");
+  ok(first.fit === "crop" && !first.hard && !first.unmet.length && first.faceInFrame.length + (first.others || []).filter((o) => o.shows >= 0.999).length === 2, `the first is ${nameOf(first)}`);
+  ok(st && st.splitsClose && /splits two people who stand close together/.test(st.behind), `stacked: ${st && st.behind}`);
+  ok(res.candidates.filter((c) => !c.hard && !c.unmet.length && !c.leftOut && c.fit !== "stacked").every((c) => res.candidates.indexOf(c) < res.candidates.indexOf(st)), "a candidate that shows both in one picture stands behind stacked");
+  ok(res.notes.some((n) => /stand close together .*1\.05× the wider face's width/.test(n)), `the notes: ${res.notes.join(" | ")}`);
+  const apart = solve({ zones: Z916, source: SRC2P, faces: TWO, needs: [cap(1)] });
+  ok(apart.candidates[0].fit === "stacked" && !apart.notes.some((n) => /close together/.test(n)), `two people 2.9 widths apart: ${nameOf(apart.candidates[0])}`);
+  return `${nameOf(first)} first, stacked ${res.candidates.indexOf(st) + 1}.`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   const res = solve({ zones: Z169, source: SRC2P, faces: TWO, needs: [hook, cap(2)] }), c = res.candidates[0];
   ok(c.fit === "full" && !c.hard && !c.unmet.length && c.faceInFrame.length === 2, `the first is ${nameOf(c)}: ${JSON.stringify(c.problems)}`);

@@ -78,6 +78,15 @@ export const DEFAULTS = {
   // a face that moves: when the hull of its boxes has over `far` times its usual box's area, the
   // result says that one placement for the whole clip holds the face small
   track: { far: 2 },
+  // Two people in one picture who stand close together belong in one picture: stacked splits
+  // them into two halves of the same shot, each half showing a shoulder of the other. They stand
+  // close when the gap between their faces' boxes is at most `together` times the wider face's
+  // width. Shoulder to shoulder the faces' centres are about a shoulder's width apart, three
+  // faces wide, and the gap two. Taken from the first use on real footage (2026-11-18): two people
+  // walking side by side left 1.0–2.3 widths between their faces, four walking in a row with
+  // room between them 2.2–3.8, two at a table 12.9; the made-up two people of the tests, who are
+  // meant to be stacked, 2.9. Twelve cases, no published video measured.
+  together: 2,
   // a screen recording: its smallest text that must be read is at least `height` px tall (its
   // letters: a capital's height) in a frame `per` px wide, in proportion in a wider or narrower
   // frame. 24 px in 1080: 2.2 % of the frame's width, about a 33 px font, 12 pt on a phone that
