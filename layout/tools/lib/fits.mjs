@@ -53,7 +53,7 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
   const centredX = (W - s * sw) / 2, centredY = (H - s * sh) / 2;
   // horizontally: the picture centred (a crop: the face centred); in a wide frame also the face as
   // far left and right as the fit allows, which frees a column beside it
-  const faceX = fb && extra.aroundFace ? W / 2 - s * (fb[0] + fb[2]) / 2 : centredX;
+  const faceX = fb && extra.aroundFace ? (extra.onSafe ? S[0] + S[2] / 2 : W / 2) - s * (fb[0] + fb[2]) / 2 : centredX;
   let xs = extra.sides ? [-Infinity, Infinity] : extra.centre ? [centredX] : tall && !extra.across ? [faceX] : [faceX, -Infinity, Infinity];
   // vertically: centred (a crop that may choose: eyes on the upper third), the face as low and as
   // high as the fit allows, the chin just high enough for the captions below it, and for a picture
@@ -165,25 +165,13 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
         // the smallest zoom is a candidate where the faces need one (a crop always is)
         if (first && (!same || need > s0 + 1e-9)) out.push(first);
         if (hit && hit !== first && textUnmet) out.push(hit);
-        // A crop closer in: from a source with pixels to spare (4K into 1080 px), covering the frame
-        // leaves the face small. The closest crop that brings the smallest face towards the size
-        // published faces have (subject.from), without enlarging the source past softFrom and with
-        // every face still in the safe box; where the text finds no room there, a little less close.
-        if (!same && first && first.faceHeight) {
-          const per = first.faceHeight / first.scale, want = D.weights.subject.from / 100 * H / per;
-          const top = Math.min(want, D.weights.enlarge.softFrom, most);
-          for (let s = top; s > first.scale + step; s -= step) {
-            const c = bestVariant(ctx, name, s, "cover", "cover", { aroundFace: true, ratio: Z.frame });
-            if (clean(c)) { c.closer = true; out.push(c); break; }
-          }
-        }
       }
     }
     // a picture smaller than the frame over a ground. How small: down to insetMin of where it
     // starts, and further while the smallest face is still insetFace % of the frame's height (the
     // lower end of what published faces are): a take with a large face finds room for its text
     // only well below half its size
-    const faceSrc = faces.length ? Math.min(...faces.map((f) => f[3])) : 0;
+    const faceSrc = ctx.faces.length ? Math.min(...(ctx.own ? ctx.own.map((k) => ctx.faces[k]) : ctx.faces).map((f) => f[3])) : 0;
     const floorOf = (from) => (faceSrc ? Math.min(D.insetMin, D.insetFace / 100 * H / faceSrc / from) : D.insetMin);
     const scanDown = (fit, from, floor, modeX, modeY, extra) => {
       let best = null, firstMet = null, firstFull = null;
@@ -247,6 +235,26 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
     if (!cropsOnly && ctx.tall && !out.some(met)) scanDown("inset", same ? s0 : sc, floorOf(same ? s0 : sc), "inside", "inside", { across: true });
   }
 
+  // Closer in: from a source with pixels to spare (4K into 1080 px), covering the frame leaves
+  // the face small. The closest crop (or, from a source of the frame's shape, zoom) that brings
+  // the face whose size counts towards the size published faces have (subject.from), without
+  // enlarging the source past softFrom, every face in the safe box with the margins kept beside
+  // and above a head (a head at the box's very edge has its hair at the frame's edge); where the
+  // text finds no room there, a little less close.
+  if (fb && (!same || s0 < 1 - 1e-9) && !(cropsOnly && same)) {
+    const src = ctx.sources?.[0], held = ctx.own ? ctx.own.map((k) => ctx.faces[k]) : ctx.faces;
+    const idx = ctx.own || (ctx.speakerFace != null ? [ctx.speakerFace] : ctx.faces.map((_, k) => k));
+    const per = Math.min(...idx.map((k) => (src?.heights ? src.heights[k] : ctx.faces[k][3])));
+    const maxW = Math.max(...held.map((f) => f[2])), maxH = Math.max(...held.map((f) => f[3]));
+    const room = Math.min(S[2] / (fb[2] - fb[0] + 2 * D.free.beside * maxW), S[3] / (fb[3] - fb[1] + D.free.above * maxH));
+    const need = Math.max(s0, minScale(W, sw, fb[0], fb[2], S[0], X1(S)), minScale(H, sh, fb[1], fb[3], S[1], Y1(S)));
+    const top = Math.min(D.weights.subject.from / 100 * H / per, D.weights.enlarge.softFrom, room), step = D.zoomStep * s0;
+    for (let s = top; s > need + step; s -= step) {
+      // (on the safe box's middle, where the margins beside the heads have room on both sides)
+      const c = bestVariant(ctx, same ? "zoom" : "crop", s, "cover", "cover", { aroundFace: true, onSafe: true, ratio: same ? undefined : Z.frame });
+      if (clean(c)) { c.closer = true; out.push(c); break; }
+    }
+  }
   // The text in the bands: where the picture stands smaller than an upright frame, the same
   // picture with the hook and the captions on the ground above and below it, so that the agent
   // can choose a calm band over the picture's own (candidate.groundShows says what lies there).

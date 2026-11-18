@@ -569,6 +569,16 @@ t("on the picture of one moment a face that moves shows its box at that moment, 
   return `face 1 at 4.5 s: ${boxes[0].map(Math.round).join(",")}`;
 });
 
+t("closer in also from a source of the frame's shape with pixels to spare (4K into a 16:9 frame of 1920, upright 4K into 9:16): a zoom closer brings the face to the usual size; a crop closer on two people leaves the margins beside their heads inside the safe box (the walking pair's faces stood on both of its edges, hair at the frame's edge)", () => {
+  const wide = solve({ zones: Z169, source: [3840, 2160], faces: [[1800, 700, 220, 300]], needs: [cap(1)] }).candidates[0];
+  const up = solve({ zones: Z916, source: [2160, 3840], faces: [[900, 1500, 330, 460]], needs: [cap(1)] }).candidates[0];
+  for (const [what, c, H] of [["16:9", wide, 1080], ["9:16", up, 1920]]) ok(c.fit === "zoom" && c.closer && !c.hard && !c.unmet.length && 100 * c.faceHeight / H >= DEFAULTS.weights.subject.from - 0.5, `${what}: ${nameOf(c)}, face ${c.faceHeight} px`);
+  const walk = solve({ zones: Z916, source: [3840, 2160], faces: WALK, needs: [cap(1)] }).candidates.find((c) => c.closer);
+  const S = Z916.safe, side = (f) => DEFAULTS.free.beside * f[2];
+  ok(walk && walk.faceInFrame.every((f) => f[0] - side(f) >= S[0] - 0.5 && X1(f) + side(f) <= X1(S) + 0.5), `the walking pair: ${walk && walk.faceInFrame.map((f) => f.map(Math.round)).join(" | ")}`);
+  return `16:9 ${wide.scale}×, 9:16 ${up.scale}×; the pair ${walk.scale}×`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);
