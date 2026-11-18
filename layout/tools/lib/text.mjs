@@ -12,7 +12,7 @@ import { EPS, X1, Y1, area, inter, contains, grow } from "./boxes.mjs";
 // where the letters of n lines are inside their block (line height L em, font f px), from the
 // font's metrics as measure.js reads them (Noto Sans 800: ascent 1.069, descent 0.293, ascenders
 // 0.76, descenders 0.24 em); checked to ±3 px against what platform-zones measured on the layouts made by hand
-const inkRows = (top, n, L, f) => [top + (L / 2 - 0.372) * f, top + (n - 1) * L * f + (L / 2 + 0.628) * f];
+export const inkRows = (top, n, L, f) => [top + (L / 2 - 0.372) * f, top + (n - 1) * L * f + (L / 2 + 0.628) * f];
 
 export const captionHeight = ({ cap, D, tall }) => (cap ? (cap.lines * D.caption.line + D.caption.padEm) * (tall ? D.caption.font.tall : D.caption.font.wide) : 0);
 

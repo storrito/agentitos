@@ -14,6 +14,12 @@
 //         afterwards, as published Shorts set it, else a card across the top; hook:text and
 //         hook:card name one of the two)
 //        the candidates, ranked, into <folder>/placement.json
+//   node place.mjs beside <folder> --frame 9:16 --source 1280x720 --face 555,150,180,195
+//                  --material-min 600x340 [--material-ratio 16:9 | --material 1920x1080]
+//                  [--text caption] [--before scale,left,top] [--platform …] [--json]
+//        material (a card, a quote, a screenshot, a clip) beside a speaker who stays in the
+//        picture: a field for the material, a field and a crop for the speaker, the captions,
+//        and the numbers of the change from the speaker full-frame (lib/beside.mjs)
 //        several people:    --face … --face … [--speaker 2]  |  --source A --face … --source B --face …
 //        a face that moves: --face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …  |  --face-track file.json
 //                           (every --face-at of one source is the same face; two that move: one list each in the file)
@@ -45,6 +51,9 @@ import { renderPage } from "./lib/page.mjs";
 import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
+import { besideSolve, printBeside } from "./lib/beside.mjs";
+import { areaFile, areaOfStyle } from "./lib/caption-area.mjs";
+import { renderBeside } from "./lib/beside-page.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -59,6 +68,7 @@ const sameFile = (a, b) => real(a) === real(b);
 const FLAGS = new Set(["json", "all"]);
 const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still", "at"]);
 const OPTIONS = {
+  beside: ["frame", "source", "face", "face-at", "face-track", "material", "material-min", "material-ratio", "text", "caption-area", "caption-style", "before", "platform", "set", "json"],
   grid: ["at"],
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
@@ -128,7 +138,7 @@ const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinit
 
 // ---- what is printed ----
 
-const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}${c.side ? ` ${c.side}` : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
+const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}${c.side ? ` ${c.side}` : ""}${typeof c.speaker === "number" ? ` on face ${c.speaker}` : ""}`;
 const markOf = (c) => (c.hard ? "✗" : c.unmet.length ? "–" : c.soft ? "!" : "✓");
 
 function printResult(res) {
@@ -203,6 +213,74 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   // why none passes, where the reason is one: the screen's text too small is not helped by less text
   if (!pass && res.screen && res.candidates.every((c) => c.hard || c.unmet.includes("readable"))) console.log(`None passes because the screen's text does not read at any size the frame leaves the region: take a narrower region${res.notes.find((n) => /A narrower region reads/.test(n)) ? ` (${res.notes.find((n) => /A narrower region reads/.test(n)).match(/at most \d+×\d+ px of the source/)[0]})` : ""}, not less text.`);
   console.log(`The order is a suggestion from measurements. Look before you choose: ${self()} page ${rel(folder)} --still <video|image> writes the first three as pictures and has platform-zones check them.`);
+}
+
+// ---- beside ----
+
+// Material beside the speaker: a command of its own, not an option of place. Its input is no
+// second recording with boxes but what the material needs (a field of a smallest size, a shape,
+// or a picture's size), and its answer is no placement of a source but a field for each of the
+// two and the change from the speaker full-frame. Its candidates carry the keys page and captions
+// read, so both work on its folder as on place's.
+function cmdBeside(o) {
+  const usage = `${self()} beside <folder> --frame 9:16 --source WxH --face x,y,w,h (or --face-at s:x,y,w,h …) --material-min WxH [--material-ratio 16:9 | --material WxH] [--text caption] [--before scale,left,top] [--platform reels,tiktok] [--json]`;
+  const [folder] = o._;
+  // --face assumed: a caller without a face's box gets the usual framing of a talking head (the
+  // face a fifth of the frame tall, in the middle across, its middle a third down, as the source
+  // covers the frame), marked as assumed
+  const assumed = o.order.some(([k, v]) => k === "face" && v === "assumed");
+  if (assumed) {
+    const src = o.order.find(([k]) => k === "source")?.[1], m = String(src || "").match(/^(\d+)x(\d+)$/);
+    if (!m || !/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame || "")) fail(usage);
+    const [W, H] = askZones(o.frame, platformList(o.platform)).size, sw = +m[1], sh = +m[2], k = Math.max(W / sw, H / sh);
+    const h = 0.2 * H, w = 0.75 * h, fx = (W / 2 - w / 2 - (W - k * sw) / 2) / k, fy = (H / 3 - h / 2 - (H - k * sh) / 2) / k;
+    const box = [Math.max(0, fx), Math.max(0, fy), Math.min(w / k, sw), Math.min(h / k, sh)].map((v) => Math.round(v));
+    o.order = o.order.map(([kk, v]) => (kk === "face" && v === "assumed" ? [kk, box.join(",")] : [kk, v]));
+  }
+  const sources = parseSources(o);
+  if (!folder || o._.length > 1 || !o.frame || !sources.length) fail(usage);
+  if (sources.length > 1 || sources[0].faces.length !== 1) fail(`beside places one speaker from one recording: give one --source and one --face (or the moments of one face as --face-at), read off ${self()} grid.`);
+  if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) fail(`${folder} is a file: beside writes its placement.json into a folder, name one.`);
+  if (!/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame)) fail(`--frame is a ratio or a size, as 9:16 or 1080x1920.`);
+  const size = (v, what) => { const m = String(v).match(/^(\d+)x(\d+)$/); if (!m || !+m[1] || !+m[2]) fail(`--${what} is width x height in px, as 600x340.`); return [+m[1], +m[2]]; };
+  const material = { min: o["material-min"] !== undefined ? size(o["material-min"], "material-min") : null, fixed: o.material !== undefined ? size(o.material, "material") : null };
+  if (o["material-ratio"] !== undefined) {
+    const v = String(o["material-ratio"]), m = v.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/), r = m ? +m[1] / +m[2] : Number(v);
+    if (!(r > 0) || !Number.isFinite(r)) fail(`--material-ratio is the shape the material prefers, as 16:9, 1:1 or 1.5.`);
+    if (material.fixed) fail(`--material gives a picture's size, which is its shape: leave out --material-ratio.`);
+    material.ratio = r;
+  }
+  if (!material.min && !material.fixed) fail(`beside needs what the material needs: --material-min WxH, the smallest field it reads in (px of the frame), or --material WxH, the size of a picture or clip of fixed size.`);
+  const needs = parseNeeds(o.text);
+  if (needs.some((n) => n.role === "hook")) fail(`beside sets captions only (--text caption or caption:2): a hook stands before the material shows, place it with ${self()} place.`);
+  let before = null;
+  if (o.before !== undefined) {
+    const b = String(o.before).split(",").map(Number);
+    if (![3, 7].includes(b.length) || b.some((v) => !Number.isFinite(v)) || !(b[0] > 0) || (b.length === 7 && !(b[5] > 0 && b[6] > 0))) fail(`--before is scale,left,top of the speaker just before, as place hands them over (1.875,-660,0), and its window as x,y,w,h after them where it did not fill the frame (1.875,-660,0,0,285,1080,1350).`);
+    before = { scale: b[0], left: b[1], top: b[2], ...(b.length === 7 ? { window: b.slice(3) } : {}) };
+  }
+  const platforms = platformList(o.platform);
+  // the captions' band as captions builds it: its area.json, or a style it measures
+  if (o["caption-area"] !== undefined && o["caption-style"] !== undefined) fail(`--caption-area and --caption-style both give the captions' band: give one.`);
+  let res, captionArea = null;
+  try {
+    const zones = askZones(o.frame, platforms);
+    if (o["caption-area"] !== undefined) captionArea = areaFile(o["caption-area"]);
+    else if (o["caption-style"] !== undefined) captionArea = areaOfStyle(o["caption-style"], needs.find((n) => n.role === "caption")?.lines, zones.size, platforms);
+    res = besideSolve({
+      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
+      set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
+    });
+  } catch (e) { fail(e.message); }
+  res.asked = { frame: o.frame, platforms };
+  const file = path.join(folder, "placement.json");
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    clearWritten(folder, readWritten(folder));
+    fs.writeFileSync(file, JSON.stringify(res, null, 1));
+  } catch (e) { fail(`${file} cannot be written (${e.code || e.message}): name a folder of yours.`); }
+  if (o.json) return console.log(JSON.stringify(res, null, 1));
+  printBeside(res, self(), rel(folder));
 }
 
 // ---- grid ----
@@ -331,7 +409,7 @@ function cmdPage(o) {
     if (ats.length !== o.still.length) fail(`The placement has 1 source and ${o.still.length} pictures: if they are moments of a face that moves, give an --at for each, in the same order (--still a.jpg --at 2.5 --still b.jpg --at 4.5).`);
     views = o.still.map((f, k) => ({ at: ats[k], inputs: [f], seek: false }));
   } else {
-    const order = res.screen ? (sources.length > 1 ? "the screen's, then the webcam's" : "the screen's") : sources.length > 1 ? "the first --source's, then the second's" : "the recording's";
+    const order = res.kind === "beside" ? "the speaker's, then the material as a picture" : res.screen ? (sources.length > 1 ? "the screen's, then the webcam's" : "the screen's") : sources.length > 1 ? "the first --source's, then the second's" : "the recording's";
     if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}${res.sources?.some((q) => q.baked) ? " (the webcam baked into the screen shows in the screen's still)" : ""}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many; give ${sources.length > 1 ? "one --still per source, in their order" : "one --still"}: ${order}${(res.tracks || []).length ? " (a face that moves: a video, or one picture per moment with an --at each)" : ""}.`);
     const moving = [...new Set((res.tracks || []).flatMap((t) => t.times || []))].sort((a, b) => a - b);
     const moments = ats.length ? ats : o.still.some((f) => !image(f)) && moving.length > 1 ? moving : [undefined];
@@ -341,7 +419,8 @@ function cmdPage(o) {
   views.forEach((v) => { v.outs = v.inputs.map((_, i) => path.join(folder, `still${i ? `-${i + 1}` : ""}${tag(v)}.jpg`)); });
   const before = readWritten(folder), inputs = views.flatMap((v) => v.inputs);
   for (const v of views) v.inputs.forEach((input, i) => {
-    const [w, h] = probe(input), [sw, sh] = sources[i].size;
+    // (material that is laid out into its field may come as a picture of any shape)
+    const [w, h] = probe(input), [sw, sh] = sources[i].size || [w, h];
     if (Math.abs((w / h) / (sw / sh) - 1) > 0.02) fail(`${input} is ${w}×${h}; the placement was made for a source of ${sw}×${sh}, another shape: give the recording the boxes were read from.`);
     const over = views.flatMap((x) => x.outs).findIndex((out) => out !== v.outs[i] && sameFile(input, out));
     if (over >= 0) fail(`${input} is where page puts another frame: copy it out of ${folder} first, or give the stills in the order they lie there.`);
@@ -364,7 +443,7 @@ function cmdPage(o) {
   let differ = 0;
   for (const i of picks) for (const v of views) {
     const c = res.candidates[i], page = path.join(folder, `candidate-${i + 1}${tag(v)}.html`), png = path.join(folder, `candidate-${i + 1}${tag(v)}.png`);
-    fs.writeFileSync(page, renderPage(c, res, { stills: v.stills.length ? v.stills : null, page, at: v.at ?? null }));
+    fs.writeFileSync(page, (res.kind === "beside" ? renderBeside : renderPage)(c, res, { stills: v.stills.length ? v.stills : null, page, at: v.at ?? null }));
     let checked;
     try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { written.push(path.basename(page)); save(); fail(e.message); }
     const shot = picture(chrome, page, png, res.size);
@@ -410,8 +489,9 @@ function cmdCaptions(o) {
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
-if (cmd === "grid") cmdGrid(parseArgs(cmd, rest));
+if (cmd === "beside") cmdBeside(parseArgs(cmd, rest));
+else if (cmd === "grid") cmdGrid(parseArgs(cmd, rest));
 else if (cmd === "place") cmdPlace(parseArgs(cmd, rest));
 else if (cmd === "page") cmdPage(parseArgs(cmd, rest));
 else if (cmd === "captions") cmdCaptions(parseArgs(cmd, rest));
-else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1]`);
+else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1] | beside <folder> --frame 9:16 --source WxH --face x,y,w,h --material-min WxH [--text caption]`);
