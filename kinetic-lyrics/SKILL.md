@@ -148,10 +148,11 @@ The moments:
    [:p [:em "„Du hast morgens einen Kuchen gebacken …“"]]
    [:small "A riddle with a surprising answer, the punchline at the end."] " "
    [:a {:href "https://youtu.be/STqnETZ9kRc?t=4004"} "▶ watch on YouTube"]]]
- [:p "The first four are the strongest. How many should it be?"]
+ [:p "How many should it be?"]
  [:button {:send "Take 4 shorts"} "4"] " "
  [:button {:send "Take all 6 shorts"} "All 6"] " "
- [:button {:send "Take only the best 2"} "2"]]
+ [:button {:send "Take 2 shorts"} "2"]
+ [:p [:small "Or name the ones you want."]]]
 ```
 
 The platforms, from publish-video's `accounts`:
