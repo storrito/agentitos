@@ -107,7 +107,7 @@ What it gave for the wide interview of the first use on real footage (1280×720,
 
 `screen-stacked`, given the card as a 1920×1080 screen, had put it 828 px wide (x 60–888) and failed it as too small to read, and offered only a circle in the other frames. With `--material 1920x1080` beside gives it 960×540 in 9:16.
 
-Every candidate's `change` holds `before` and `after` (`scale`, `left`, `top`, `window`, `face`; `round` for the circle), `face` (`dx`, `dy`, `zoom`) and `says`; SKILL.md says what a calling skill does at the change.
+Every candidate's `change` holds `before` and `after` (`scale`, `left`, `top`, `window`, `face`; `round` for the circle), `face` (`dx`, `dy`, `zoom`) and `says`; SKILL.md says what a calling skill does at the change. From the first video built with it (b-roll's draft pull request 80; 9:16 and 16:9 looked at, 4:5 and 1:1 only computed): captions moved with the picture crossed the speaker's eyes for about 0.2 s, so that skill fades them out and in at their new place in the middle of the change, moves the picture in a straight line over 0.5 s, and keeps the ground around the speaker opaque from the start, its opening moving with the video. Experience from one video, not a measured rule.
 
 ## Two checks
 
