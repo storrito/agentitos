@@ -21,7 +21,7 @@
 //                                         project: the video with its captions mounted
 //   node tools/captions.mjs srt <words.json> <file.srt>   the captions as a subtitle file
 //
-// Options: --style hormozi|karaoke|wipe|clean (default hormozi)   --size 1080x1920 (else the video's)
+// Options: --style <name> (default hormozi; `styles` lists them)   --size 1080x1920 (else the video's)
 //   --duration <s> (else the last word's end + 1 s)   --brand brand/DESIGN.md (its colour and font)
 //   --product "Storrito" (mark: the name to stand out)   --model <OpenRouter id> (mark)
 //   --track <n> (build: the mount's track, default 9)
@@ -29,6 +29,19 @@
 //   over it, from agentitos' platform-zones skill; none: the usual platforms of the frame)
 //   --fit cover|contain (project: a video of another shape than --size fills the frame, cut at its
 //   edges, or fits into it with bars; default cover)
+//
+// Where the captions go (build, project), in px of the frame, for a caller that knows a better
+// place than the bottom of the platforms' safe box (it looked at the frames, or laid the frame
+// out). Each on its own; what is not given stays as it is:
+//   --y <px> (the y, from the frame's top, at which their lowest line ends)
+//   --x <px> (where their area starts from the left; without it the area is centred on the frame)
+//   --max-width <px> (how wide they may be; without it as wide as the platforms' centred box, or
+//   with --x up to that box's right edge)
+//   --align left|centre|right (the lines in that area; default centre)
+//   --font-size <px> (the type's size instead of the style's; --size is the frame's)
+//   --lines 1|2 (how many lines a group may have; default 2)
+// The tool puts them there and says in one line when the area leaves the platforms' safe box. It
+// never chooses the place.
 //
 // words.json: {"words": [{"text": "Hello", "start": 0.12, "end": 0.48, "highlight": true}, …]} or the
 // array alone, times in seconds in the video the captions go on. A run of words with the same
@@ -42,7 +55,7 @@ import { writeCaptions, mount, brandOf, ID } from "./lib/render.mjs";
 import { srt } from "./lib/srt.mjs";
 import { mark, MARK_MODEL } from "./lib/mark.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
-import { zones, platformList } from "./lib/zones.mjs";
+import { zones, checkBox, platformList } from "./lib/zones.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -67,7 +80,8 @@ function probe(file) {
 const readWords = (file) => {
   if (!fs.existsSync(file)) fail(`There is no ${file}.`);
   const j = JSON.parse(fs.readFileSync(file, "utf8"));
-  const words = (Array.isArray(j) ? j : j.words || []).filter((w) => w && String(w.text ?? "").trim() && w.end >= w.start);
+  // (a word's text is text: a number written without quotes, {"text": 2024}, is taken as its digits)
+  const words = (Array.isArray(j) ? j : j.words || []).filter((w) => w && String(w.text ?? "").trim() && w.end >= w.start).map((w) => (typeof w.text === "string" ? w : { ...w, text: String(w.text) }));
   if (!words.length) fail(`${file} holds no timed words: {"words": [{"text", "start", "end"}, …]}.`);
   return { doc: Array.isArray(j) ? { words: j } : j, words };
 };
@@ -94,7 +108,7 @@ function withoutGhosts(words) {
 }
 
 function cmdStyles() {
-  for (const [name, s] of Object.entries(STYLES)) console.log(`${name.padEnd(8)} ${s.label}: ${s.about}\n         ${s.look.font} ${s.look.weight}, up to ${s.group.words} words at once`);
+  for (const [name, s] of Object.entries(STYLES)) console.log(`${name.padEnd(9)} ${s.label}: ${s.about}\n          ${s.look.font} ${s.look.weight}${s.look.keyFont ? `, key words in ${s.look.keyFont}` : ""}, ${s.group.words === 1 ? "one word" : `up to ${s.group.words} words`} at once`);
   console.log(`\nNext: node ${self()} build <words.json> <folder> --style <name>`);
 }
 
@@ -194,17 +208,64 @@ function cmdBox(file, phrases, opts) {
   console.log(`Next: node ${self()} build ${rel(path.resolve(file))} <folder> --style <name> (or project), and look at each box in the preview.`);
 }
 
+// Where the caller wants the captions (--x, --y, --max-width, --align, --font-size, --lines), as
+// writeCaptions takes it; nothing without any of them: then they go where platform-zones says.
+function placeOf(opts, [width, height]) {
+  // (digits only: an empty value, as an unset shell variable leaves it, is no 0)
+  const px = (name, from, to) => {
+    if (opts[name] === undefined) return undefined;
+    const v = /^\d+(\.\d+)?$/.test(String(opts[name])) ? Number(opts[name]) : NaN;
+    if (!(v >= from && v <= to)) fail(`--${name} is a number of px from ${from} to ${to} in this ${width}×${height} frame.`);
+    return v;
+  };
+  const place = { left: px("x", 0, width - 1), bottom: px("y", 1, height), width: px("max-width", 1, width), size: px("font-size", 1, height) };
+  if (opts.align !== undefined) place.align = { left: "left", centre: "center", center: "center", right: "right" }[opts.align] || fail("--align is left, centre or right.");
+  if (opts.lines !== undefined) place.lines = [1, 2].find((l) => String(l) === String(opts.lines)) || fail("--lines is 1 or 2.");
+  for (const key of Object.keys(place)) if (place[key] === undefined) delete place[key];
+  return Object.keys(place).length ? place : undefined;
+}
+
 // for whom the captions are placed, in a sentence
 const placedFor = (z) => `Placed clear of ${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}: the lowest line ends at y ${z.centred[1] + z.centred[3]}, centred on the frame, at most ${z.centred[2]} px wide.`;
+
+// Where the caller placed them, and whether that is clear of the apps: the area is the caller's
+// to choose, so what leaves the frame or the safe box is said in one sentence, not refused. The
+// area is judged as a style's box or a card fills it (r.area.top: its padding and border too).
+// In a width, in lines or at a size of the caller's own, also which words are wider than a line
+// (each stands alone, set smaller or broken at its hyphen), and that a card is never cut to an area.
+function placedAs(r, z, [width, height], platforms) {
+  const a = r.area, round = (x) => +x.toFixed(3);
+  const who = `${z.platforms.map((p) => p.name).join(", ")}${z.fallback ? " (no --platform: the usual ones of this frame)" : ""}`;
+  const span = ([x, y, w, h]) => `x ${x}–${x + w}, y ${y}–${y + h}`;
+  const said = [`Placed where asked: the lowest line ends at y ${a.bottom}, ${{ left: "left-aligned", center: "centred", right: "right-aligned" }[a.align]} in x ${a.left}–${round(a.left + a.width)} (at most ${a.width} px wide), ${a.lines === 1 ? "one line" : "up to two lines"} of ${a.size} px type.`];
+  let c;
+  try { c = checkBox(width, height, platforms, [a.left, a.top, a.width, a.bottom - a.top]); } catch (e) { fail(e.message); }
+  const past = Object.entries(c.outside).map(([side, by]) => `${by} px past the ${side}`).join(", ");
+  const off = [a.left + a.width > width ? `${round(a.left + a.width - width)} px past its right edge` : "", a.top < 0 ? `${-a.top} px above its top` : ""].filter(Boolean).join(", ");
+  const under = [...new Set(c.covered.map((k) => k.what))];
+  if (c.inside && !off) said.push(`That is inside the ${past ? "stretch above the buttons" : "safe box"} of ${who}.`);
+  else said.push(`! That leaves ${off ? `the frame (${off}: not in the video) and ` : ""}the safe box of ${who} (${span(z.safe)}): ${past}${under.length ? `, where the apps lay ${under.join("; ")} over the captions` : ", into the margin the guides keep"}.`);
+  const wide = [...new Set(r.wide)];
+  if (wide.length) said.push(`  Wider than a line of this area at ${a.size} px, so each stands alone, set smaller (or broken at its hyphen): ${wide.slice(0, 8).map((w) => `"${w}"`).join(", ")}${wide.length > 8 ? ", …" : ""}.`);
+  const joined = [...new Set(r.joined)];
+  if (joined.length) said.push(`  A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: ${joined.slice(0, 8).map((w) => `"${w}"`).join(", ")}${joined.length > 8 ? ", …" : ""}.`);
+  if (a.own && r.cards) said.push(`  A card keeps its words together whatever the area (${r.cards} here): it shrinks to the lines asked for and takes another line where it cannot.`);
+  return said.join("\n");
+}
 
 function captionsFor(words, folder, opts, size, duration) {
   const s = style(opts.style || "hormozi");
   const brand = opts.brand ? brandOf(opts.brand) : null;
   if (opts.brand && !brand) console.log(`  (no ${opts.brand}: the style's own colours and font)`);
+  const place = placeOf(opts, size);
   let z;
   try { z = zones(size[0], size[1], platformList(opts.platform)); } catch (e) { fail(e.message); }
-  const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z });
-  return { ...r, style: s, brand, zones: z };
+  const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z, place });
+  // (a brand's colour that the key words could not carry: said in a line of its own, before where they are placed)
+  const kept = r.kept ? `  (the brand's ${r.kept.primary} ${r.kept.why}: ${r.kept.what} keep the style's ${r.kept.highlight})\n` : "";
+  // (the words a style in capitals keeps small letters in: the caller sees them and can undo one by writing it otherwise)
+  const small = r.small.length ? `  (in capitals but for small letters that would say something else: ${[...new Set(r.small)].slice(0, 8).map((w) => `"${w}"`).join(", ")}${new Set(r.small).size > 8 ? ", …" : ""})\n` : "";
+  return { ...r, style: s, brand, zones: z, placed: kept + small + (place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z)) };
 }
 
 function cmdBuild(file, folder, opts) {
@@ -213,8 +274,8 @@ function cmdBuild(file, folder, opts) {
   const size = sizeOf(opts, doc.width && doc.height ? [doc.width, doc.height] : null) || fail("Give --size (width x height): the words carry no frame size.");
   const duration = Number(opts.duration) || doc.duration || Math.ceil(words.at(-1).end + 1);
   const r = captionsFor(words, path.resolve(folder), opts, size, duration);
-  console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary ? `, accent ${r.brand.primary}` : ""}${r.brand?.family ? `, font ${r.brand.family}` : ""}`);
-  console.log(placedFor(r.zones));
+  console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary && !r.kept ? `, ${{ key: "key words", both: "accent and key words" }[r.style.look.brand] || "accent"} ${r.brand.primary}` : ""}${r.brand?.family && !r.style.look.ownFont ? `, font ${r.brand.family}` : ""}`);
+  console.log(r.placed);
   console.log(`Mount it in the host composition, inside its root:\n  ${mount({ dir: path.basename(folder), width: size[0], height: size[1], duration, track: Number(opts.track) || 9 })}`);
 }
 
@@ -262,7 +323,7 @@ function cmdProject(video, file, folder, opts) {
   fs.writeFileSync(path.join(out, "hyperframes.json"), JSON.stringify({ $schema: "https://hyperframes.heygen.com/schema/hyperframes.json", paths: { assets: "assets" }, media: { autoProxy: true } }, null, 2) + "\n");
   const shape = Math.abs(p.width / p.height - size[0] / size[1]) > 0.01 ? `, the ${p.width}×${p.height} video ${fit === "cover" ? "cut to fill it" : "fitted in with bars"}` : "";
   console.log(`${rel(out)}: ${size.join("×")}${shape}, ${p.duration.toFixed(1)} s, captions ${r.style.label} in ${r.groups} groups → index.html (the video) and ${ID}/index.html (the captions)`);
-  console.log(placedFor(r.zones));
+  console.log(r.placed);
 }
 
 function cmdSrt(file, out) {

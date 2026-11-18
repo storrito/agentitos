@@ -70,7 +70,7 @@ Read `<skill>/references/changes.md` before making a change they ask for. Change
 
 ### Captions in the picture
 
-When they ask for captions in the picture ("Untertitel ins Bild", "like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for explainers). Then
+When they ask for captions in the picture ("Untertitel ins Bild", "like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Bold words** (two or three bold words, white, nothing behind them), **Karaoke pill**, **Wipe**, **Label** (a white box a line, the words turn black as they are said), **Editorial** (quiet, the key words in a serif italic), **Clean subtitles** (whole phrases on a soft box, for explainers). As `--style` they are `hormozi`, `bold`, `karaoke`, `wipe`, `label`, `editorial`, `clean`; a person who names another look gets it from captions' other styles (`outline`, `impact`, `single`, `fill`, `subtitle`). Then
 
 ```bash
 node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<name>"] [--brand brand/DESIGN.md] [--platform <reels, tiktok, shorts, story, …>]

@@ -27,7 +27,7 @@ node tools/launch.mjs voices [--model <id>]                     speech models, p
 node tools/launch.mjs sample <work> --text "…" --voices a,b [--model <id>] [--out <folder>]
 node tools/launch.mjs voice <work> <script.json> <composition>  the lines spoken, every word timed
 node tools/launch.mjs words <work> <composition>                the voice's words at their times in the film
-node tools/launch.mjs captions <work> <composition> --style hormozi|karaoke|wipe|clean [--mark]
+node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
 node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--vocals] [--under 17]
 node tools/launch.mjs image <out.png> --prompt "…" [--ratio 9:16] [--ref <image>]…
 node tools/launch.mjs finish <video.mp4>                        −14 LUFS, as the platforms play
