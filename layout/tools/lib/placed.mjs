@@ -259,7 +259,9 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         for (const g of returns) {
           const want = Math.max(...g.map((i) => raw[i].lift));
           for (const i of g) if (!list[i].forced && raw[i].lift < want) {
-            const r = shotUnder(box, list[i].moments, Math.min(want, raw[i].past || g.some((j) => raw[j].past) ? list[i].beyond : list[i].most), D, true);
+            // (past its own head's top only where its own mouth or lower lip would be under the captions)
+            const own = raw[i].past || raw[i].mouth + raw[i].lip + raw[i].nose > 0;
+            const r = shotUnder(box, list[i].moments, Math.min(want, own ? list[i].beyond : list[i].most), D, true);
             raw[i] = { ...r, need: raw[i].need, needMouth: raw[i].needMouth, past: r.lift > list[i].most, below: raw[i].below, returned: true };
           }
         }
