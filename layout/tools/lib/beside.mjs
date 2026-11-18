@@ -143,7 +143,9 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const w = Math.min(room[2], room[3] * mat.ratio, mat.fixed ? mat.fixed[0] * soft : Infinity), h = w / mat.ratio;
     return [room[0] + (room[2] - w) / 2, room[1] + (room[3] - h) / 2, w, h];
   };
-  const meets = (f) => !mat.min || (f[2] >= mat.min[0] - 0.5 && f[3] >= mat.min[1] - 0.5);
+  // (without a smallest size asked for, a field under a tenth of the frame's shorter side is none)
+  const least = 0.1 * Math.min(W, H);
+  const meets = (f) => (mat.min ? f[2] >= mat.min[0] - 0.5 && f[3] >= mat.min[1] - 0.5 : f[2] >= least && f[3] >= least);
   // The best field in the stretches given: inside the safe box (or the wide stretch above the
   // buttons), inside what every feed's crop shows where the field keeps its smallest size there.
   // One that has its smallest size first, then the larger.
@@ -327,6 +329,9 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   const c0 = Math.max(W / sw, H / sh), ox = (W - c0 * sw) / 2, oy = (H - c0 * sh) / 2;
   const hostOf = (s, l, t) => ({ scale: r4(s / c0), left: r1(l - (s / c0) * ox), top: r1(t - (s / c0) * oy) });
 
+  // a field in tenths of a px; a picture of fixed size keeps its own shape through the rounding
+  const fieldOut = (f) => { if (!mat.fixed) return f.map(r1); const h = r1(f[3]); return [r1(f[0]), r1(f[1]), r1(h * mat.ratio), h]; };
+
   // ---- one candidate, judged and costed ----
   function build(arr, p) {
     const sp = p.speaker, s = sp.s;
@@ -348,7 +353,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
       else if (v > soft + 1e-9) problems.push({ level: "soft", code: "enlarged", kind: "picture", of, what: `the ${of}'s pixels are enlarged ${r2(v)}× (over ${soft}×: soft)` });
     }
     if (p.caption && inter(p.caption.box, keepOut(faceBox, D)) > 0) problems.push({ level: "unmet", code: "no-room", kind: "text", of: "caption", what: "lies in the margin kept around the speaker's face: no free place for the captions" });
-    if (!meets(p.field)) problems.push({ level: "unmet", code: "small", kind: "picture", of: "material", what: `its field is ${Math.floor(p.field[2])}×${Math.floor(p.field[3])} px, under the ${mat.min[0]}×${mat.min[1]} it needs` });
+    if (!meets(p.field)) problems.push({ level: "unmet", code: "small", kind: "picture", of: "material", what: `its field is ${Math.floor(p.field[2])}×${Math.floor(p.field[3])} px, ${mat.min ? `under the ${mat.min[0]}×${mat.min[1]} it needs` : `under a tenth of the frame's shorter side (${Math.round(least)} px): no field to show it in`}` });
     const faceH = s * usual[3], small = arr !== "pip" && faceH < B.faceMin * H - 1;
     // the face's target: what was asked (or the usual one), what was given, and what held it back
     const short = p.target != null && faceH < (p.target - 0.005) * H;
@@ -383,7 +388,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const dx = r1(fx - bx), dy = r1(fy - by);
     const c = {
       fit: `beside-${arr}`, arrangement: arr, ...(p.side ? { side: p.side, looks: p.looks } : {}),
-      material: { field: p.field.map(r1), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
+      material: { field: fieldOut(p.field), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
       speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), ...(faceAssumed ? { assumed: true } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
       captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band, ...(p.caption.lineBox ? { lineBox: true } : {}) } : null,
       ...(p.seam != null ? { seam: r1(p.seam) } : {}),

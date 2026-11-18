@@ -1418,6 +1418,12 @@ t("filling the column counts as the face's base size does: with b-roll's setting
   ok(d.speaker.scale === 1.5 && d.speaker.ground === 0, JSON.stringify(d.speaker.window));
 });
 
+t("a picture of fixed size keeps its own shape in every field, and no field is a sliver: an independent review's input (16:9 for YouTube, 1080×1080, a face 41 % asked for, a 1920×1080 picture, a two-line caption area across the frame's foot) gave the panel's material a field of 1.8×1 px, of shape 1.800", () => {
+  const r = besideSolve({ zones: askZones("16:9", ["youtube"]), source: [1080, 1080], face: [401, 179, 503, 584], material: { fixed: [1920, 1080] }, needs: [cap(2)], set: { "beside.face": 0.41 }, captionArea: { left: 96, width: 1728, bottom: 930, top: 728, size: 96, lines: 2, from: "test" } });
+  for (const c of r.candidates) { const [, , w, h] = c.material.field; ok(Math.abs(w / h / (16 / 9) - 1) < 0.002 && h >= 108 - 0.5, `${c.fit}: ${c.material.field}`); }
+  return r.candidates.map((c) => `${c.fit} ${Math.round(c.material.field[2])}×${Math.round(c.material.field[3])}`).join(", ");
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {
