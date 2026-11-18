@@ -55,10 +55,12 @@ if (v) {
 
 const lang = typeof opt.lang === "string" ? opt.lang : "auto";
 console.error("clip: transcribing with ElevenLabs Scribe (OpenRouter) …");
-let words, seconds;
-try { ({ words, duration: seconds } = await transcribeFile(wav, { speakers: true, lang, log: console.error })); } catch (e) { fail(`transcription failed: ${e.message}`); }
+let words, seconds, edges;
+try { ({ words, duration: seconds, edges } = await transcribeFile(wav, { speakers: true, lang, log: console.error })); } catch (e) { fail(`transcription failed: ${e.message}`); }
 if (!words.length) fail("no speech found");
-fs.writeFileSync(path.join(out, "transcript.json"), JSON.stringify(words, null, 1));
+// in the transcribe skill's shape: edges "sound" says the sound has set the words' edges, so that
+// build.mjs does not align them a second time
+fs.writeFileSync(path.join(out, "transcript.json"), JSON.stringify({ ...(edges === "sound" ? { edges } : {}), words }, null, 1));
 const text = words.map((w) => w.text).join(" ");
 console.log(JSON.stringify({
   duration: +Number(seconds).toFixed(2), video: !!v, width: v?.width ?? null, height: v?.height ?? null,

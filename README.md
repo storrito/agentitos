@@ -33,7 +33,7 @@ Paths in a `SKILL.md` are written as `<skill>/…`, relative to the skill's fold
 
 ## Models: OpenRouter, with a key or through the Sprites gateway
 
-Agents that call a model (a transcription, a vision model, a proposal) go through [OpenRouter](https://openrouter.ai): with `OPENROUTER_API_KEY` in the environment, or else, on a [Sprite](https://sprites.dev), through the gateway's OpenRouter connection, which adds the key itself (an [rragent](https://github.com/storrito/rragent) agent there often has none of its own). Each such agent finds it with its own small `openrouter.mjs`: the key first, else the `openrouter` connection that `http://sprite.internal/v1/gateway/list` names, else none. The gateway takes a request of up to about 7 MB, OpenRouter about 50 MB: sound goes through it as MP3 at 48 kbit/s in pieces of five minutes, and a request with a video says so when it is too large.
+Agents that call a model (a transcription, a vision model, a proposal) go through [OpenRouter](https://openrouter.ai): with `OPENROUTER_API_KEY` in the environment, or else, on a [Sprite](https://sprites.dev), through the gateway's OpenRouter connection, which adds the key itself (an [rragent](https://github.com/storrito/rragent) agent there often has none of its own). Each such agent finds it with its own small `openrouter.mjs`: the key first, else the `openrouter` connection that `http://sprite.internal/v1/gateway/list` names, else none. The gateway answered 6 MB and refused 8 MB on 2026-10-23, and answered bodies of up to 21.7 MB on 2026-11-18 (OpenRouter itself takes about 50 MB): sound goes through it as MP3 at 48 kbit/s in pieces of five minutes, and a request with a video says so when it is too large.
 
 ## The brand kit
 

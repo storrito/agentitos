@@ -9,8 +9,10 @@
 //                  …/api/v1 or the connection's …/v1, no slash at the end)
 //   need(what)   → the same, or a throw that says how to get one
 //
-// The gateway takes a request of up to about 7 MB (measured 2026-10-23: 6 MB answered, 8 MB
-// "413 request body too large"); OpenRouter itself about 50 MB.
+// The gateway took a request of up to about 7 MB on 2026-10-23 (6 MB answered, 8 MB "413 request
+// body too large"); on 2026-11-18 it answered Scribe bodies of 12, 13.7, 17.1 and 21.7 MB (25 to
+// 64 s each). GATEWAY_MAX stays the earlier, smaller measure, which other skills' copies guard
+// with; OpenRouter itself takes about 50 MB.
 
 export const GATEWAY_MAX = 7e6;
 

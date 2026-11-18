@@ -45,9 +45,11 @@ const wordsOf = (d) => (Array.isArray(d) ? d : d.words);
 
 // ---------------------------------------------------------------- 1. transcript
 const cache = opt.transcript || audio.replace(/\.[^.]+$/, "") + ".words.json";
-let words;
+let words, edges;
 if (fs.existsSync(cache)) {
-  words = wordsOf(JSON.parse(fs.readFileSync(cache, "utf8")));
+  const raw = JSON.parse(fs.readFileSync(cache, "utf8"));
+  words = wordsOf(raw);
+  edges = Array.isArray(raw) ? undefined : raw.edges;
   console.error(`highlight: transcript ${path.basename(cache)} (${words.length} words)`);
 } else {
   console.error("highlight: transcribing with ElevenLabs Scribe (OpenRouter) …");
@@ -58,7 +60,7 @@ if (fs.existsSync(cache)) {
     console.error(`highlight: ${e.message}`);
     process.exit(1);
   }
-  words = result.words;
+  ({ words, edges } = result);
   fs.writeFileSync(cache, JSON.stringify(result));
 }
 
@@ -134,7 +136,9 @@ const voices = new Map();
 for (const w of words.slice(a.first, b.last + 1)) if (w.speaker != null && !voices.has(w.speaker)) voices.set(w.speaker, String.fromCharCode(65 + voices.size));
 const clip = words.slice(a.first, b.last + 1).map((w) => ({ ...w, start: +(w.start - t0).toFixed(3), end: +(w.end - t0).toFixed(3),
   ...(w.speaker != null ? { speaker: voices.get(w.speaker) } : {}) }));
-fs.writeFileSync(path.join(opt.out, "transcript.json"), JSON.stringify(clip, null, 0));
+// the transcribe skill's shape: edges "sound" (the edges the sound set stay on it in the cut clip),
+// so that build.mjs does not align them a second time
+fs.writeFileSync(path.join(opt.out, "transcript.json"), JSON.stringify({ ...(edges === "sound" ? { edges } : {}), words: clip }, null, 0));
 const gaps = clip.slice(1).filter((w, i) => w.start - clip[i].end > 3).map((w) => +w.start.toFixed(1));
 fs.writeFileSync(path.join(opt.out, "highlight.json"), JSON.stringify({
   source: path.basename(audio), from: +t0.toFixed(3), to: +t1.toFixed(3), title: best.title, why: best.why,

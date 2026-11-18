@@ -6,19 +6,26 @@
 // a fingerprint from the sound of its own words: how high it speaks (the median of log2 F0 and its
 // spread over the voiced frames) and how it sounds (mean and deviation of MFCC 1–19 over the
 // frames with speech), each number brought to mean 0 and deviation 1 over the recording's voices.
-// The pieces in order: two people known and two voices in the piece, the one of the two ways
-// round with the smaller distance; one voice, the nearer person. This holds only for two people:
-// a recording qualifies when every piece names two voices at most (one with under 5 s of speech
-// does not count, its words go to the nearer person), and a decision is trusted when the worse
-// way is 1.15 times as far as the better. Else there are no speakers from here: the caller sends
-// long requests instead.
-// Measured 2026-11-17 on 16 two-voice recordings (12 to 27 minutes, ten-minute pieces): 13
-// qualify, 21 of 21 decisions right, 99.0 % of the words with the right speaker, which is what
-// each piece alone gives; the margin sends 2 of the 13 to the long requests (their decisions were
-// right). Of 12 recordings with more voices 11 are refused by the two voices a piece; the twelfth,
-// a meeting of four, by the margin. One voice: 8 pieces, 68 minutes, never split. The numbers
-// are those of the Python the rule was measured with (torchaudio's MFCC, the same pitch): this
-// file gives the same frames and, on those recordings, the same margins to 0.0001.
+// This holds only for two people: a recording qualifies when every piece names two voices at most
+// (one with under 5 s of speech does not count, its words go to the nearer person). The first
+// piece with two voices gives the two people; every other piece is put to them, two voices the
+// way round with the smaller distance, one voice the nearer person. A decision is trusted when
+// the worse way is 1.15 times as far as the better, and when every voice sounds like the person
+// it is put to: within APART of them by the numbers themselves (`far`), else it is someone else.
+// Pieces of one voice each, without one of two: one person only when each is within APART.
+// Else there are no speakers from here: the caller sends long requests instead.
+// Measured 2026-11-18 (for the second commit of PR #64): on cached ten-minute pieces of 16
+// two-voice recordings 11 give speakers (the same 11 as without the distance), 17 of 17 decisions
+// right, 99.02 % of the words with the right speaker, which is what each piece alone gives; of
+// 12 with more voices none, of 4 with one voice all, as one person. On the live answers in
+// five-minute pieces (as on a Sprite) 12 of 16, 41 of 41 decisions right, 98.7 % (ceiling
+// 98.6 %); without the distance 13 (the 13th, 1.63 apart, was decided right). Made-up recordings
+// of real voices, a two-voice piece of a meeting and then someone else alone or beside one of
+// the two: 78 of 78 refused (without the distance 32 slip). What it cannot see: someone else
+// within APART of one of the two people (none in those 78; real voices of someone else lay at
+// least 0.89 from the nearer person, voices of the same person up to 1.86 from themselves).
+// The fingerprints are those of the Python the rule was first measured with (torchaudio's MFCC,
+// the same pitch): this file gives the same frames and the same margins to 0.0001.
 //
 // By the words, for long requests (a request keeps its voices apart by itself): a piece after
 // the first is heard from five minutes before its start, and a voice of it is the person of the
@@ -28,13 +35,16 @@
 //   framesOf(file)                            → the same of a file (ffmpeg, streamed)
 //   fingerprints(sound, pieces)              → [{ piece, voice, words, seconds, f0, mfcc }]
 //   bySound(fingerprints)                    → { person, people, margin, decisions } | { why }
-//   byWords(parts, overlap)                  → person: Map "<piece>:<voice>" → number
+//   byWords(parts, overlap)                  → { person: Map "<piece>:<voice>" → number, gaps }
+//   byTime(words, theirs)                    → the words with the speakers of another transcription
 //   named(pieces, person)                    → { words, people }: speaker "A", "B", … by first word
 //
 // `pieces` are the words each piece owns, [{ text, start, end, kind, voice }] in seconds of the
 // recording; `parts` are { start, words } with everything a piece heard.
 
 import { spawn } from "node:child_process";
+import os from "node:os";
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 
 export const SR = 16000;
 const HOP = 160;                 // 10 ms: a frame of the sound
@@ -43,6 +53,8 @@ const COEF = 19;
 const PWIN = 640, PFFT = 1024;   // pitch: 40 ms, lags 40–266 (400 to 60 Hz)
 const LAG0 = 40, LAG1 = 267;
 const BLOCK = 6000;              // frames kept per block (a minute)
+const CUT = BLOCK * HOP;         // the samples a block's frames start in
+const OVER = PWIN - HOP;         // and the 480 after them its last pitch reads, the next block's first
 
 export const LITTLE = 5;         // seconds of speech under which a voice does not count
 export const MARGIN = 1.15;      // the worse way round is this many times as far as the better
@@ -51,23 +63,26 @@ export const key = (k, voice) => `${k}:${voice}`;
 // ---------------------------------------------------------------- the sound
 
 // The transform of n complex numbers, n a product of 4s, 2s and 5s (in that order): the
-// transforms of every p-th number, joined p at a time. → (re, im, outRe, outIm)
+// transforms of every p-th number, joined p at a time. → { order, join }: the numbers put in
+// R, I as `order` says (R[i] = re[order[i]]), join(R, I) makes R, I their transform
 function fourier(n, factors) {
   const cos = new Float64Array(n), sin = new Float64Array(n);
   for (let i = 0; i < n; i++) { cos[i] = Math.cos((2 * Math.PI * i) / n); sin[i] = -Math.sin((2 * Math.PI * i) / n); }
   const rest = factors.map((_, f) => factors.slice(f + 1).reduce((x, y) => x * y, 1));
-  // every p stretches of m numbers into one, each turned by its step (`st` of the n-th of a turn)
-  function two(R, I, st, m) {
+  // every p stretches of m numbers into one, each turned by its step (`st` of the n-th of a turn);
+  // `tw` holds the turns of a join in the order they are used: for each u, cos and sin of u·st,
+  // 2u·st, … (p - 1)u·st
+  function two(R, I, tw, m) {
     for (let o = 0; o < n; o += 2 * m) for (let u = 0; u < m; u++) {
-      const a = o + u, b = a + m, c = cos[u * st], s = sin[u * st];
+      const a = o + u, b = a + m, c = tw[2 * u], s = tw[2 * u + 1];
       const tr = R[b] * c - I[b] * s, ti = R[b] * s + I[b] * c;
       R[b] = R[a] - tr; I[b] = I[a] - ti; R[a] += tr; I[a] += ti;
     }
   }
-  function four(R, I, st, m) {
+  function four(R, I, tw, m) {
     for (let o = 0; o < n; o += 4 * m) for (let u = 0; u < m; u++) {
-      const a = o + u, b = a + m, c = b + m, d = c + m;
-      const c1 = cos[u * st], s1 = sin[u * st], c2 = cos[2 * u * st], s2 = sin[2 * u * st], c3 = cos[3 * u * st], s3 = sin[3 * u * st];
+      const a = o + u, b = a + m, c = b + m, d = c + m, t = 6 * u;
+      const c1 = tw[t], s1 = tw[t + 1], c2 = tw[t + 2], s2 = tw[t + 3], c3 = tw[t + 4], s3 = tw[t + 5];
       const r0 = R[b] * c1 - I[b] * s1, i0 = R[b] * s1 + I[b] * c1;
       const r1 = R[c] * c2 - I[c] * s2, i1 = R[c] * s2 + I[c] * c2;
       const r2 = R[d] * c3 - I[d] * s3, i2 = R[d] * s3 + I[d] * c3;
@@ -78,12 +93,12 @@ function fourier(n, factors) {
       R[b] = r5 + i4; I[b] = i5 - r4; R[d] = r5 - i4; I[d] = i5 + r4;
     }
   }
-  function five(R, I, st, m) {
-    const yar = cos[st * m], yai = sin[st * m], ybr = cos[2 * st * m], ybi = sin[2 * st * m];
+  function five(R, I, tw, m) {
+    const st = n / (5 * m), yar = cos[st * m], yai = sin[st * m], ybr = cos[2 * st * m], ybi = sin[2 * st * m];
     for (let o = 0; o < n; o += 5 * m) for (let u = 0; u < m; u++) {
-      const a = o + u, b = a + m, c = b + m, d = c + m, e = d + m;
-      const c1 = cos[u * st], s1 = sin[u * st], c2 = cos[2 * u * st], s2 = sin[2 * u * st];
-      const c3 = cos[3 * u * st], s3 = sin[3 * u * st], c4 = cos[4 * u * st], s4 = sin[4 * u * st];
+      const a = o + u, b = a + m, c = b + m, d = c + m, e = d + m, t = 8 * u;
+      const c1 = tw[t], s1 = tw[t + 1], c2 = tw[t + 2], s2 = tw[t + 3];
+      const c3 = tw[t + 4], s3 = tw[t + 5], c4 = tw[t + 6], s4 = tw[t + 7];
       const r0 = R[a], i0 = I[a];
       const r1 = R[b] * c1 - I[b] * s1, i1 = R[b] * s1 + I[b] * c1;
       const r2 = R[c] * c2 - I[c] * s2, i2 = R[c] * s2 + I[c] * c2;
@@ -106,29 +121,34 @@ function fourier(n, factors) {
     const p = factors[f], m = rest[f];
     for (let q = 0; q < p; q++) { if (m === 1) order[o + q] = at + q * st; else place(at + q * st, o + q * m, st * p, f + 1); }
   })(0, 0, 1, 0);
-  factors.forEach((p, f) => joins.unshift([p === 4 ? four : p === 5 ? five : two, n / (p * rest[f]), rest[f]]));
-  return (xr, xi, R, I) => {
-    for (let i = 0; i < n; i++) { R[i] = xr[order[i]]; I[i] = xi[order[i]]; }
-    for (const [join, st, m] of joins) join(R, I, st, m);
-  };
+  factors.forEach((p, f) => {
+    const m = rest[f], st = n / (p * m), tw = new Float64Array(2 * (p - 1) * m);
+    for (let u = 0; u < m; u++) for (let q = 1; q < p; q++) { tw[2 * ((p - 1) * u + q - 1)] = cos[q * u * st]; tw[2 * ((p - 1) * u + q - 1) + 1] = sin[q * u * st]; }
+    joins.unshift([p === 4 ? four : p === 5 ? five : two, tw, m]);
+  });
+  return { order, join: (R, I) => { for (const [join, tw, m] of joins) join(R, I, tw, m); } };
 }
 
 // The transform of n real numbers (n even) from one of n/2 complex ones: the even numbers as
-// the real parts, the odd ones as the imaginary. → (x, re, im): the bins 0 … `bins` - 1 of x
-function spectrum(n, factors, bins = n / 2 + 1) {
-  const m = n / 2, half = fourier(m, factors);
+// the real parts, the odd ones as the imaginary. → (x, re, im): the bins 0 … `bins` - 1 of x;
+// `real`: re only (im is left as it is)
+function spectrum(n, factors, bins = n / 2 + 1, real = false) {
+  const m = n / 2, { order, join } = fourier(m, factors);
   const cos = Float64Array.from({ length: m + 1 }, (_, k) => Math.cos((2 * Math.PI * k) / n));
   const sin = Float64Array.from({ length: m + 1 }, (_, k) => Math.sin((2 * Math.PI * k) / n));
-  const er = new Float64Array(m), ei = new Float64Array(m), zr = new Float64Array(m), zi = new Float64Array(m);
+  // where in x each number is read, in the transform's order; the two bins each bin is made of
+  const from = Int32Array.from(order, (o) => 2 * o);
+  const lo = Int32Array.from({ length: bins }, (_, k) => k % m), hi = Int32Array.from({ length: bins }, (_, k) => (m - k) % m);
+  const zr = new Float64Array(m), zi = new Float64Array(m);
   return (x, re, im) => {
-    for (let i = 0; i < m; i++) { er[i] = x[2 * i]; ei[i] = x[2 * i + 1]; }
-    half(er, ei, zr, zi);
+    for (let i = 0; i < m; i++) { const j = from[i]; zr[i] = x[j]; zi[i] = x[j + 1]; }
+    join(zr, zi);
     for (let k = 0; k < bins; k++) {
-      const a = k % m, b = (m - k) % m;
+      const a = lo[k], b = hi[k];
       // the even numbers' transform and the odd numbers', turned by the half step between them
-      const evr = (zr[a] + zr[b]) / 2, evi = (zi[a] - zi[b]) / 2, odr = (zi[a] + zi[b]) / 2, odi = (zr[b] - zr[a]) / 2;
+      const evr = (zr[a] + zr[b]) / 2, odr = (zi[a] + zi[b]) / 2, odi = (zr[b] - zr[a]) / 2;
       re[k] = evr + cos[k] * odr + sin[k] * odi;
-      im[k] = evi + cos[k] * odi - sin[k] * odr;
+      if (!real) im[k] = (zi[a] - zi[b]) / 2 + cos[k] * odi - sin[k] * odr;
     }
   };
 }
@@ -153,38 +173,46 @@ function melBands() {
 
 const hann = (n) => Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / n));
 
-// The sound as it streams: push() takes samples (−1 … 1) in any portions, done() gives what is
-// kept of it, per 10 ms frame: the loudness, the 40 mel bands in hundredths of a dB (80 bytes a
-// frame, 29 MB an hour: the cosine transform is taken when a voice's frames are read, for the
-// floor under the loudest band is known only at the end), F0 and whether it has a pitch.
-export function listen() {
-  const spec = spectrum(WIN, [4, 2, 5, 5]), bands = melBands();
-  const wide = spectrum(PFFT, [4, 4, 4, 4, 2]), lags = spectrum(PFFT, [4, 4, 4, 4, 2], LAG1);
-  const w400 = hann(WIN), w640 = hann(PWIN);
-  const x = new Float64Array(WIN), xr = new Float64Array(WIN / 2 + 1), xi = new Float64Array(WIN / 2 + 1);
-  const px = new Float64Array(PFFT), pr = new Float64Array(PFFT / 2 + 1), pi = new Float64Array(PFFT / 2 + 1);
-  const mel = [], rms = [], f0 = [], sure = [];
-  let rest = new Float32Array(0), frames = 0, pitched = 0, loudest = -Infinity;
-  const block = (list, make, t) => (list[Math.floor(t / BLOCK)] ??= make());
+// the transforms, windows and scratch rows of one thread, made at its first block
+let kit = null;
+function tools() {
+  return (kit ??= {
+    spec: spectrum(WIN, [4, 2, 5, 5]), bands: melBands(),
+    wide: spectrum(PFFT, [4, 4, 4, 4, 2]), lags: spectrum(PFFT, [4, 4, 4, 4, 2], LAG1, true),
+    w400: hann(WIN), w640: hann(PWIN),
+    x: new Float64Array(WIN), xr: new Float64Array(WIN / 2 + 1), xi: new Float64Array(WIN / 2 + 1), power: new Float64Array(WIN / 2 + 1),
+    px: new Float64Array(PFFT), pr: new Float64Array(PFFT / 2 + 1), pi: new Float64Array(PFFT / 2 + 1),
+  });
+}
 
-  // loudness and mel bands of the 25 ms from sample `at` of `s`
-  function timbre(s, at) {
+// The frames of one block of the sound: `s` holds the samples from its first frame on, the
+// block's CUT and the OVER after them where there are (fewer at the end of the sound). A frame
+// has a loudness and mel bands when its 25 ms are in `s`, a pitch when its 40 ms are: the last
+// frames of the sound have the one and not the other. Depends on `s` alone, so the blocks can be
+// worked in any order and on any thread. → { rms, mel, f0, sure, timbre, pitched, loudest }
+function blockOf(s) {
+  const { spec, bands, wide, lags, w400, w640, x, xr, xi, power, px, pr, pi } = tools();
+  const rms = new Float32Array(BLOCK), mel = new Int16Array(BLOCK * MELS), f0 = new Float32Array(BLOCK), sure = new Uint8Array(BLOCK);
+  let timbre = 0, pitched = 0, loudest = -Infinity;
+  for (let at = 0; timbre < BLOCK && at + WIN <= s.length; at += HOP, timbre++) {
+    // loudness and mel bands of the 25 ms from sample `at`
     let sq = 0;
     for (let i = 0; i < WIN; i++) { const v = s[at + i]; sq += v * v; x[i] = v * w400[i]; }
     spec(x, xr, xi);
-    const t = frames++, row = block(mel, () => new Int16Array(BLOCK * MELS), t), o = (t % BLOCK) * MELS;
-    block(rms, () => new Float32Array(BLOCK), t)[t % BLOCK] = Math.sqrt(sq / WIN);
+    rms[timbre] = Math.sqrt(sq / WIN);
+    // the power of a bin once, for the two bands it is in
+    for (let b = 0; b <= WIN / 2; b++) power[b] = xr[b] * xr[b] + xi[b] * xi[b];
+    const o = timbre * MELS;
     for (let j = 0; j < MELS; j++) {
       const { first, w } = bands[j];
       let e = 0;
-      for (let i = 0; i < w.length; i++) { const b = first + i; e += w[i] * (xr[b] * xr[b] + xi[b] * xi[b]); }
+      for (let i = 0; i < w.length; i++) e += w[i] * power[first + i];
       const db = 10 * Math.log10(Math.max(e, 1e-10));
       if (db > loudest) loudest = db;
-      row[o + j] = Math.round(db * 100);
+      mel[o + j] = Math.round(db * 100);
     }
-  }
-  // F0 of the 40 ms from sample `at`: the strongest lag of its autocorrelation
-  function pitch(s, at) {
+    if (at + PWIN > s.length) continue;
+    // F0 of the 40 ms from sample `at`: the strongest lag of its autocorrelation
     let mean = 0;
     for (let i = 0; i < PWIN; i++) mean += s[at + i];
     mean /= PWIN;
@@ -198,36 +226,65 @@ export function listen() {
     const all = Math.max(pr[0] / PFFT, 1e-9);
     let best = LAG0;
     for (let lag = LAG0 + 1; lag < LAG1; lag++) if (pr[lag] > pr[best]) best = lag;
-    const t = pitched++;
-    block(f0, () => new Float32Array(BLOCK), t)[t % BLOCK] = SR / best;
-    block(sure, () => new Uint8Array(BLOCK), t)[t % BLOCK] = pr[best] / PFFT / all > 0.5 ? 1 : 0;
+    f0[pitched] = SR / best;
+    sure[pitched++] = pr[best] / PFFT / all > 0.5 ? 1 : 0;
   }
+  return { rms, mel, f0, sure, timbre, pitched, loudest };
+}
 
+// Streamed samples cut into the blocks blockOf takes: each block its CUT samples and the OVER
+// after them, which are the next block's first too. → { push(samples), end() }; each block goes
+// to block(s, k) as it is full, the rest at end(): the last block, and after it one more when
+// the samples past its CUT still hold a frame's 25 ms (a frame without a pitch). fresh() gives
+// the row for the next block (one given back may be used again: every sample of it is written).
+function cutter(block, fresh = () => new Float32Array(CUT + OVER)) {
+  let s = fresh(), have = 0, k = 0;
   return {
     push(samples) {
-      let s = samples;
-      if (rest.length) { s = new Float32Array(rest.length + samples.length); s.set(rest); s.set(samples, rest.length); }
-      let at = 0;
-      for (; at + PWIN <= s.length; at += HOP) { timbre(s, at); pitch(s, at); }
-      rest = s.slice(at);
+      for (let i = 0; i < samples.length;) {
+        const n = Math.min(samples.length - i, s.length - have);
+        s.set(samples.subarray(i, i + n), have);
+        have += n; i += n;
+        if (have === s.length) { const next = fresh(); next.set(s.subarray(CUT)); block(s, k++); s = next; have = OVER; }
+      }
     },
-    done() {
-      // the last frames are too short for a pitch; their loudness still counts
-      for (let at = 0; at + WIN <= rest.length; at += HOP) timbre(rest, at);
-      rest = new Float32Array(0);
-      const flat = (list, n) => { const out = new Float32Array(n); for (let t = 0; t < n; t++) out[t] = list[Math.floor(t / BLOCK)][t % BLOCK]; return out; };
-      const loud = flat(rms, frames);
-      // speech is above 8 % of loud speech (the 95th percentile of the loudness)
-      const step = Math.max(1, Math.floor(frames / 200000));
-      const some = Float32Array.from({ length: Math.ceil(frames / step) }, (_, i) => loud[i * step]).sort();
-      const n = pitched, gate = 0.08 * quantile(some, 0.95);
-      return {
-        frames: n, floor: Math.round((loudest - 80) * 100),
-        speech: (t) => loud[t] > gate,
-        pitch: (t) => (sure[Math.floor(t / BLOCK)][t % BLOCK] && loud[t] > gate ? f0[Math.floor(t / BLOCK)][t % BLOCK] : 0),
-        bands: (t) => mel[Math.floor(t / BLOCK)].subarray((t % BLOCK) * MELS, (t % BLOCK) * MELS + MELS),
-      };
+    end() {
+      if (have >= WIN) block(s.slice(0, have), k++);
+      if (have - CUT >= WIN) block(s.slice(CUT, have), k++);
     },
+  };
+}
+
+// What is kept of the sound, from its blocks in order: the counts, the gate of speech and the
+// floor under the loudest band are the whole recording's.
+function kept(blocks) {
+  let frames = 0, pitched = 0, loudest = -Infinity;
+  for (const b of blocks) { frames += b.timbre; pitched += b.pitched; if (b.loudest > loudest) loudest = b.loudest; }
+  const loud = new Float32Array(frames);
+  blocks.forEach((b, k) => loud.set(b.rms.subarray(0, b.timbre), k * BLOCK));
+  // speech is above 8 % of loud speech (the 95th percentile of the loudness)
+  const step = Math.max(1, Math.floor(frames / 200000));
+  const some = Float32Array.from({ length: Math.ceil(frames / step) }, (_, i) => loud[i * step]).sort();
+  const gate = 0.08 * quantile(some, 0.95);
+  const of = (t) => blocks[Math.floor(t / BLOCK)];
+  return {
+    frames: pitched, floor: Math.round((loudest - 80) * 100),
+    speech: (t) => loud[t] > gate,
+    pitch: (t) => (of(t).sure[t % BLOCK] && loud[t] > gate ? of(t).f0[t % BLOCK] : 0),
+    bands: (t) => of(t).mel.subarray((t % BLOCK) * MELS, (t % BLOCK) * MELS + MELS),
+  };
+}
+
+// The sound as it streams: push() takes samples (−1 … 1, kept as 32-bit floats) in any
+// portions, done() gives what is kept of it, per 10 ms frame: the loudness, the 40 mel bands in
+// hundredths of a dB (80 bytes a frame, 29 MB an hour: the cosine transform is taken when a
+// voice's frames are read, for the floor under the loudest band is known only at the end), F0
+// and whether it has a pitch. On this thread; framesOf works the same blocks on others.
+export function listen() {
+  const blocks = [], cut = cutter((s) => blocks.push(blockOf(s)));
+  return {
+    push(samples) { cut.push(samples); },
+    done() { cut.end(); return kept(blocks); },
   };
 }
 
@@ -238,25 +295,101 @@ function quantile(sorted, q) {
   return sorted[lo] + (at - lo) * (sorted[hi] - sorted[lo]);
 }
 
-// The sound of a file, read as ffmpeg decodes it (never the whole recording in memory).
+// threads that work the blocks of a file: one core is left to the rest of the tool and ffmpeg
+const WORKERS = Math.max(1, Math.min(4, os.availableParallelism() - 1));
+
+// The sound of a file, read as ffmpeg decodes it (never the whole recording in memory), on a
+// thread of its own (this file is what it runs): whatever this thread is busy with does not keep
+// the sound waiting. Its blocks are joined as listen() joins them.
 export function framesOf(file) {
   return new Promise((resolve, reject) => {
-    const ear = listen();
-    let odd = null, err = "";
-    const p = spawn("ffmpeg", ["-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", String(SR), "-f", "s16le", "-"], { stdio: ["ignore", "pipe", "pipe"] });
+    const reader = new Worker(new URL(import.meta.url), { workerData: { voices: "reader", file } });
+    let settled = false;
+    reader.on("message", (m) => {
+      settled = true;
+      reader.terminate();
+      if (m.error) reject(new Error(m.error)); else resolve(kept(m.blocks));
+    });
+    reader.on("error", (e) => { if (!settled) { settled = true; reject(e); } });
+    reader.on("exit", (code) => { if (!settled) { settled = true; reject(new Error(`the sound of ${file} could not be read: its thread stopped (exit ${code})`)); } });
+  });
+}
+
+// The blocks of a file: the reading thread cuts ffmpeg's samples into blocks, up to WORKERS
+// threads work them (this file again), each the next block that waits. ffmpeg waits while more
+// than two blocks a thread are not yet worked (4 MB each); a block's samples come back with its
+// frames and hold the next block's (a thread that hardly allocates would keep them a long time).
+// → the blocks in order
+function blocksOf(file) {
+  return new Promise((resolve, reject) => {
+    const blocks = [], waiting = [], idle = [], crew = [], spare = [];
+    let odd = null, err = "", sent = 0, back = 0, ended = false, settled = false, p = null, samples = new Float32Array(0);
+    const settle = (e, sound) => {
+      if (settled) return;
+      settled = true;
+      for (const w of crew) w.terminate();
+      if (e) { p?.kill(); reject(e); } else resolve(sound);
+    };
+    const finished = () => { if (ended && back === sent) settle(null, blocks); };
+    // a thread takes the next block that waits, or waits itself
+    const next = (w) => {
+      const job = waiting.shift();
+      if (job) w.postMessage(job, [job.s.buffer]); else idle.push(w);
+    };
+    const hire = () => {
+      const w = new Worker(new URL(import.meta.url), { workerData: { voices: "blocks" } });
+      w.on("message", ({ s, ...b }) => {
+        if (settled) return;
+        if (s.length === CUT + OVER) spare.push(s);
+        blocks[b.k] = b; back++;
+        if (sent - back <= 2 * WORKERS) p.stdout.resume();
+        next(w);
+        finished();
+      });
+      w.on("error", (e) => settle(e));
+      w.on("exit", (code) => { if (!settled) settle(new Error(`the sound of ${file} could not be worked: a thread stopped (exit ${code})`)); });
+      crew.push(w);
+      return w;
+    };
+    const cut = cutter((s, k) => {
+      waiting.push({ k, s }); sent++;
+      if (idle.length) next(idle.pop());
+      else if (crew.length < WORKERS) next(hire());
+      if (sent - back > 2 * WORKERS) p.stdout.pause();
+    }, () => spare.pop() ?? new Float32Array(CUT + OVER));
+    p = spawn("ffmpeg", ["-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", String(SR), "-f", "s16le", "-"], { stdio: ["ignore", "pipe", "pipe"] });
     p.stderr.on("data", (d) => { err += d; });
     p.stdout.on("data", (chunk) => {
+      if (settled) return;
       const buf = odd ? Buffer.concat([odd, chunk]) : chunk, n = buf.length >> 1;
-      const samples = new Float32Array(n);
+      // one row for the samples of every chunk: the cutter copies them at once
+      if (samples.length < n) samples = new Float32Array(n);
       for (let i = 0; i < n; i++) samples[i] = buf.readInt16LE(2 * i) / 32768;
       odd = buf.length & 1 ? buf.subarray(buf.length - 1) : null;
-      ear.push(samples);
+      try { cut.push(samples.subarray(0, n)); } catch (e) { settle(e); }
     });
-    p.on("error", (e) => reject(e.code === "ENOENT" ? new Error("ffmpeg is missing: this tool needs ffmpeg on the PATH") : e));
+    p.on("error", (e) => settle(e.code === "ENOENT" ? new Error("ffmpeg is missing: this tool needs ffmpeg on the PATH") : e));
     p.on("close", (code) => {
-      if (code) return reject(new Error(`ffmpeg could not read the sound of ${file}: ${err.trim().split("\n").pop() || `exit ${code}`}`));
-      resolve(ear.done());
+      if (code) return settle(new Error(`ffmpeg could not read the sound of ${file}: ${err.trim().split("\n").pop() || `exit ${code}`}`));
+      if (settled) return;
+      try { cut.end(); } catch (e) { return settle(e); }
+      ended = true;
+      finished();
     });
+  });
+}
+
+// As one of framesOf's threads: the one that reads a file, all its blocks out when they are
+// worked (or what went wrong); one that works blocks, a block in and its frames out. The rows
+// are handed over, not copied.
+const rows = (b) => [b.rms.buffer, b.mel.buffer, b.f0.buffer, b.sure.buffer];
+if (!isMainThread && workerData?.voices === "reader") {
+  blocksOf(workerData.file).then((blocks) => parentPort.postMessage({ blocks }, blocks.flatMap(rows)), (e) => parentPort.postMessage({ error: e.message }));
+}
+if (!isMainThread && workerData?.voices === "blocks") {
+  parentPort.on("message", ({ k, s }) => {
+    const b = blockOf(s);
+    parentPort.postMessage({ k, ...b, s }, [...rows(b), s.buffer]);
   });
 }
 
@@ -317,58 +450,100 @@ function vectors(fps) {
   rows.forEach((r, i) => { if (r) for (let d = 0; d < dims; d++) mu[d] += (r[d] * fps[i].seconds) / total; });
   rows.forEach((r, i) => { if (r) for (let d = 0; d < dims; d++) sd[d] += ((r[d] - mu[d]) ** 2 * fps[i].seconds) / total; });
   return fps.map((f, i) => ({ piece: f.piece, voice: f.voice, id: key(f.piece, f.voice), seconds: f.seconds, ok: !!rows[i],
-    x: Float64Array.from({ length: dims }, (_, d) => (rows[i] ? (rows[i][d] - mu[d]) / (Math.sqrt(sd[d]) + 1e-9) : 0)) }));
+    x: Float64Array.from({ length: dims }, (_, d) => (rows[i] ? (rows[i][d] - mu[d]) / (Math.sqrt(sd[d]) + 1e-9) : 0)),
+    raw: rows[i] ? Float64Array.from(rows[i]) : null }));
 }
 
 const dist = (a, b) => { let s = 0; for (let d = 0; d < a.length; d++) s += (a[d] - b[d]) ** 2; return Math.sqrt(s / a.length); };
 
-// One piece's voices (one or two) against the people known (one or two): [person of each voice
-// (the number after the known ones: someone new), the worse distance, the better one]
+// How far apart two voices are by the numbers themselves, not by the recording's own spread
+// (which makes any two voices look apart when there are only two): each number in units of how
+// much the voices of a recording spread around its mean, pooled over the 361 voices of 32
+// recordings (two voices, more, one; 2026-11-18). On those, a voice of one of the two people of a
+// two-voice piece lies at a median 0.58 from that person's voice in another piece (95 % under
+// 1.12), a voice of someone else at least 0.89 from the nearer of the two (median 1.41).
+const SPREAD = [0.2531, 0.1533, 6.57, 7.731, 4.384, 4.743, 3.772, 3.484, 2.332, 2.547, 2.61, 2.042, 2.141, 1.912, 1.65, 1.676, 1.348, 1.287, 1.235, 1.34,
+  1.14, 3.679, 2.242, 1.327, 1.336, 1.108, 0.7611, 0.7231, 0.6409, 0.6752, 0.5791, 0.5817, 0.5523, 0.5324, 0.5516, 0.677, 0.6387, 0.6597, 0.6988, 0.6753];
+const far = (a, b) => { let s = 0; for (let d = 0; d < a.length; d++) s += ((a[d] - b[d]) / SPREAD[d]) ** 2; return Math.sqrt(s / a.length); };
+// a voice farther than this from the person it would be is someone else
+export const APART = 1.1;
+
+// A person as the voices given to them so far: their mean, weighted by seconds, in both scales
+const person0 = (v) => ({ x: Float64Array.from(v.x), raw: Float64Array.from(v.raw), weight: v.seconds });
+function join(p, v) {
+  const w = p.weight + v.seconds;
+  p.x = p.x.map((c, d) => (c * p.weight + v.x[d] * v.seconds) / w);
+  p.raw = p.raw.map((c, d) => (c * p.weight + v.raw[d] * v.seconds) / w);
+  p.weight = w;
+}
+
+// One piece's voices (one or two) against the two people known: [person of each voice, the worse
+// distance, the better one]
 function decide(known, xs) {
-  if (known.length === 2 && xs.length === 2) {
-    const straight = dist(xs[0], known[0]) + dist(xs[1], known[1]), cross = dist(xs[0], known[1]) + dist(xs[1], known[0]);
+  if (xs.length === 2) {
+    const straight = dist(xs[0], known[0].x) + dist(xs[1], known[1].x), cross = dist(xs[0], known[1].x) + dist(xs[1], known[0].x);
     return straight <= cross ? [[0, 1], cross, straight] : [[1, 0], straight, cross];
   }
-  if (known.length === 2) {
-    const d = [dist(xs[0], known[0]), dist(xs[0], known[1])];
-    return [[d[1] < d[0] ? 1 : 0], Math.max(...d), Math.min(...d)];
-  }
-  if (xs.length === 2) {
-    // one person known, two voices: the nearer voice is that person, the other someone new
-    const d = [dist(xs[0], known[0]), dist(xs[1], known[0])];
-    return [d[1] < d[0] ? [1, 0] : [0, 1], Math.max(...d), Math.min(...d)];
-  }
-  return [[0], null, null];   // one known, one voice: nothing to choose between
+  const d = [dist(xs[0], known[0].x), dist(xs[0], known[1].x)];
+  return [[d[1] < d[0] ? 1 : 0], Math.max(...d), Math.min(...d)];
 }
 
 // The people of a recording's voices from their fingerprints, or why there are none from here.
-//   → { person: Map "<piece>:<voice>" → 0 | 1, people, margin (the smallest, null without a
-//       decision), decisions: [{ piece, voices, margin }] }   or   { why }
-export function bySound(fps, { little = LITTLE, margin = MARGIN } = {}) {
+//   → { person: Map "<piece>:<voice>" → 0 | 1 | …, people, margin (the smallest, null without a
+//       decision), decisions: [{ piece, voices, margin, apart }] }   or   { why, decisions }
+// One piece (one request, which keeps its voices apart by itself): its voices with 5 s of speech
+// or more are its people; one with less is the nearest of them when it sounds like them (within
+// APART), else a person of its own (a short question in a clip). Several pieces: the first piece
+// that names two voices gives the two people, and every other piece (in order, those before it
+// too) is put to them: two voices the one way round that is nearer, one voice the nearer person.
+// A voice farther than APART from the person it would be is someone new, a third: no speakers
+// from here. With no piece of two voices every piece names one: one person when each is within
+// APART of the person so far, else they cannot be told apart from two who take turns.
+export function bySound(fps, { little = LITTLE, margin = MARGIN, apart = APART } = {}) {
   const vec = vectors(fps);
   const pieces = [...new Set(vec.map((v) => v.piece))].sort((a, b) => a - b);
   const strong = (k) => vec.filter((v) => v.piece === k && v.ok && v.seconds >= little);
+  const nearest = (v, known) => known.reduce((b, p, i) => (dist(v.x, p.x) < dist(v.x, known[b].x) ? i : b), 0);
+  const person = new Map(), decisions = [];
+  if (pieces.length === 1) {
+    const vs = strong(pieces[0]), most = [...vec].filter((v) => v.ok).sort((a, b) => b.seconds - a.seconds);
+    const known = (vs.length ? vs : most.slice(0, 1)).map((v, i) => { person.set(v.id, i); return person0(v); });
+    for (const v of vec) {
+      if (person.has(v.id)) continue;
+      if (!v.ok || !known.length) { person.set(v.id, known.reduce((b, p, i) => (p.weight > known[b].weight ? i : b), 0)); continue; }
+      const p = nearest(v, known);
+      if (far(v.raw, known[p].raw) <= apart) person.set(v.id, p);
+      else { person.set(v.id, known.length); known.push(person0(v)); }
+    }
+    return { person, people: Math.max(1, known.length), margin: null, decisions };
+  }
   for (const k of pieces) {
     const n = strong(k).length;
     if (n > 2) return { why: `piece ${k + 1} names ${n} voices, and the voices of short pieces are told to be the same people only for two` };
   }
-  const known = [], weight = [], person = new Map(), decisions = [];
-  for (const k of pieces) {
-    const vs = strong(k);
-    if (!vs.length) continue;
-    let to;
-    if (!known.length) to = vs.map((_, i) => i);
-    else {
-      const [mapping, worse, better] = decide(known, vs.map((v) => v.x));
-      to = mapping;
-      decisions.push({ piece: k, voices: vs.length, margin: worse == null ? null : worse / Math.max(better, 1e-9) });
+  const anchor = pieces.find((k) => strong(k).length === 2);
+  let known = [];
+  if (anchor === undefined) {
+    // one voice a piece (or none)
+    for (const k of pieces) for (const v of strong(k)) {
+      if (!known.length) { known.push(person0(v)); person.set(v.id, 0); continue; }
+      const d = far(v.raw, known[0].raw);
+      decisions.push({ piece: k, voices: 1, margin: null, apart: d });
+      if (d > apart) return { why: `every piece names one voice, and that of piece ${k + 1} sounds unlike those before (${d.toFixed(2)} apart, over ${apart}): one person cannot be told from two who take turns`, decisions };
+      join(known[0], v); person.set(v.id, 0);
     }
-    vs.forEach((v, i) => {
-      const p = to[i];
-      if (p === known.length) { known.push(Float64Array.from(v.x)); weight.push(v.seconds); }
-      else { known[p] = known[p].map((c, d) => (c * weight[p] + v.x[d] * v.seconds) / (weight[p] + v.seconds)); weight[p] += v.seconds; }
-      person.set(v.id, p);
-    });
+  } else {
+    known = strong(anchor).map((v, i) => { person.set(v.id, i); return person0(v); });
+    for (const k of [anchor, ...pieces.filter((k) => k !== anchor)]) {
+      const vs = strong(k);
+      if (!vs.length || k === anchor) continue;
+      const [to, worse, better] = decide(known, vs.map((v) => v.x));
+      // someone new: a voice that sounds unlike the person it would be
+      const d = Math.max(...vs.map((v, i) => far(v.raw, known[to[i]].raw)));
+      decisions.push({ piece: k, voices: vs.length, margin: worse / Math.max(better, 1e-9), apart: d });
+      if (d > apart) return { why: `a voice of piece ${k + 1} sounds unlike both people of the pieces before (${d.toFixed(2)} apart, over ${apart}): someone else, and the voices of short pieces are told to be the same people only for two`, decisions };
+      vs.forEach((v, i) => { join(known[to[i]], v); person.set(v.id, to[i]); });
+    }
   }
   const margins = decisions.map((d) => d.margin).filter((m) => m != null);
   const least = margins.length ? Math.min(...margins) : null;
@@ -380,7 +555,7 @@ export function bySound(fps, { little = LITTLE, margin = MARGIN } = {}) {
   // fingerprint, the person of their piece's voice with the most speech
   for (const v of vec) {
     if (person.has(v.id)) continue;
-    if (v.ok && known.length) { person.set(v.id, known.length === 2 && dist(v.x, known[1]) < dist(v.x, known[0]) ? 1 : 0); continue; }
+    if (v.ok && known.length) { person.set(v.id, nearest(v, known)); continue; }
     const same = strong(v.piece).sort((a, b) => b.seconds - a.seconds)[0];
     person.set(v.id, same ? person.get(same.id) : 0);
   }
@@ -421,9 +596,11 @@ export function shared(before, after, person) {
 // A voice of a later part is the person it shares the most words with in the stretch both
 // heard (two at least, a person one voice at most). One voice left without a person, when one
 // person is left without a voice, is that person: someone who said nothing in the overlap. Any
-// other is someone new.
+// other is someone new. Where no voice of a part is linked at all (the stretch both heard holds
+// music, an ad, nobody), every voice after it is someone new, and the people may be too many:
+// `gaps` names those stretches, [from, to) in seconds.   → { person, gaps }
 export function byWords(parts, overlap) {
-  const person = new Map();
+  const person = new Map(), gaps = [];
   let n = 0;
   parts.forEach((part, k) => {
     const mine = part.words.filter(said);
@@ -438,10 +615,35 @@ export function byWords(parts, overlap) {
       }
       const free = voices.filter((v) => !found.has(v)), unheard = [...new Set(person.values())].filter((p) => ![...found.values()].includes(p));
       if (free.length === 1 && unheard.length === 1) found.set(free[0], unheard[0]);
+      if (!found.size && voices.length) gaps.push([part.start - overlap, part.start]);
     }
     for (const v of voices) person.set(key(k, v), found.has(v) ? found.get(v) : n++);
   });
-  return person;
+  return { person, gaps };
+}
+
+// The speakers another transcription gave its own words (Gemini's, to a tenth of a second) laid on
+// these words by their times: a word takes the speaker of the one of `theirs` it overlaps most,
+// else of the nearest within a second, else none; A, B, … again by first word.  → the words
+export function byTime(words, theirs) {
+  const ts = theirs.filter((t) => t.speaker && Number.isFinite(t.start)).sort((a, b) => a.start - b.start);
+  const names = new Map();
+  let from = 0;
+  return words.map(({ voice, speaker, ...w }) => {
+    while (from < ts.length && ts[from].start < w.start - 30) from++;
+    let best = null, most = 0, near = 1;
+    for (let j = from; j < ts.length && ts[j].start <= w.end + 1; j++) {
+      const t = ts[j], over = Math.min(w.end, t.end) - Math.max(w.start, t.start);
+      if (over > most) { most = over; best = t.speaker; }
+      else if (most <= 0) { const gap = Math.max(t.start - w.end, w.start - t.end, 0); if (gap < near) { near = gap; best = t.speaker; } }
+    }
+    if (!best) return w;
+    if (!names.has(best) && w.kind !== "event") names.set(best, letter(names.size));
+    return { ...w, speaker: best };
+  }).map((w) => {
+    if (w.speaker && !names.has(w.speaker)) names.set(w.speaker, letter(names.size));
+    return w.speaker ? { ...w, speaker: names.get(w.speaker) } : w;
+  });
 }
 
 // ---------------------------------------------------------------- the words with their speakers

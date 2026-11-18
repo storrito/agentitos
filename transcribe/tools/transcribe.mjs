@@ -15,20 +15,25 @@
 //                Scribe names the voice of every word within a request. Where that makes the
 //                speakers without another request, the words carry speaker "A", "B", … in the
 //                order they first speak: a recording of one piece, or one whose pieces name two
-//                voices at most and whose sound tells surely which voice is whose
-//                (lib/voices.mjs). Else they carry none, and the line says why
+//                voices at most and whose sound puts every voice to one of two people, near
+//                enough to be that one and far enough from the other (lib/voices.mjs). Else
+//                they carry none, and the line says why. The sound is read on other threads
+//                while the pieces are with the model
 //   --speakers   the speakers are wanted: the same, and where the pieces' voices cannot be told
 //                to be the same people the recording is written down once more in long requests
-//                (three quarters of an hour each, which keep their voices apart by themselves;
-//                where those fail, the words stay without speakers and the line says why)
+//                (three quarters of an hour each, which keep their voices apart by themselves).
+//                Where those fail, for any reason, the speakers are Gemini's, as --speakers gave
+//                them before, laid on Scribe's words by their times (speakers.by "gemini" and
+//                why); where that fails too, the words come without speakers and the line says why
 //   --speakers gemini   Gemini 3.5 Transcribe instead, as --speakers was before: tenths of a
 //                second, no kinds, no check against the sound; words [{ text, start, end, speaker }]
-//   --speakers-n N   with --speakers: how many voices there are, when the person knows; from
-//                three on the long requests at once
+//   --speakers-n N   with --speakers: how many voices there are, when the person knows; 1: every
+//                word is A, no further request; from three on the long requests at once
 //   --lang de    the language spoken (default: the model hears it)
 //
 // Writes { engine, model, duration, cost, speakers, timing, edges, words } to --out (times in
-// seconds of the file; speakers: { by, people, … } when the words carry them; timing: how many
+// seconds of the file; speakers: { by, people, … } when the words carry them, with `unlinked`
+// [{ from, to }] where long requests shared no words and the people may be too many; timing: how many
 // words the sound confirmed, moved and still contradicts, and how many
 // had an edge set by it; edges: "sound" says the words' edges lie on the sound, so that a skill
 // taking them corrects nothing a second time) and prints one
@@ -38,9 +43,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { scribe, plan, SCRIBE_MODEL, BEFORE } from "./lib/scribe.mjs";
+import { scribe, SCRIBE_MODEL, BEFORE } from "./lib/scribe.mjs";
 import { gemini, atMost, STT_MODEL } from "./lib/gemini.mjs";
-import { framesOf, fingerprints, bySound, byWords, named, key } from "./lib/voices.mjs";
+import { framesOf, fingerprints, bySound, byWords, byTime, named } from "./lib/voices.mjs";
 import { envelopeOf, threshold, bare, check, repair } from "./lib/timing.mjs";
 import { hearAgain } from "./lib/again.mjs";
 import { edged } from "./lib/edges.mjs";
@@ -84,23 +89,31 @@ function soundOf(file) {
 // told to be the same people by their sound, which holds for two (lib/voices.mjs).
 const NONE = "the model named no voices";
 const voiced = (parts) => parts.some((p) => p.own.some((w) => w.voice != null));
+const first = (e) => String(e?.message ?? e).split("\n")[0].replace(/\.$/, "");
 async function peopleOf(parts, frames) {
   const pieces = parts.map((p) => p.own);
   if (!voiced(parts)) return { why: NONE };
-  if (parts.length === 1) return { person: asHeard(pieces[0]) };
   const sound = await frames;
   if (sound.failed) return { why: sound.failed };
+  // one request keeps its voices apart by itself: its voices that say little go to the nearest
+  // of those that say more, as across pieces (the same rule, lib/voices.mjs)
   const r = bySound(fingerprints(sound, pieces));
-  return r.why ? r : { person: r.person, linked: "sound", ...(r.margin == null ? {} : { margin: +r.margin.toFixed(2) }) };
+  if (r.why || parts.length === 1) return r.why ? r : { person: r.person };
+  return { person: r.person, linked: "sound", ...(r.margin == null ? {} : { margin: +r.margin.toFixed(2) }) };
 }
-// the voices of one request as they are
-const asHeard = (words) => new Map([...new Set(words.filter((w) => w.voice != null).map((w) => w.voice))].map((v, i) => [key(0, v), i]));
 
 // Scribe's words, with who speaks them where that can be told (`sure`: at the price of a second
-// transcription in long requests). → { words, cost, speakers: { by, people, … } | null, why }
+// transcription). → { words, cost, speakers: { by, people, … } | null, why }
 async function heard(sure) {
   let cost = 0, short = null;
-  const first = (e) => String(e.message).split("\n")[0].replace(/\.$/, "");
+  // the sound's fingerprints are taken while the pieces are with the model (lib/voices.mjs, off
+  // the main thread), once, whichever way the speakers come
+  let frames = null;
+  const sound = () => (frames ??= framesOf(file).catch((e) => ({ failed: first(e) })));
+  const shortPieces = async (listen = true) => {
+    if (!short) { if (listen) sound(); short = await scribe(file, duration, { lang: opts.lang, log }); cost += short.cost; }
+    return short;
+  };
   const done = (x, found) => {
     let { words, people } = named(x.parts.map((p) => p.own), found.person);
     // more voices than the person said there are: their words to the nearest of those that say most
@@ -108,30 +121,57 @@ async function heard(sure) {
     const { person, ...how } = found;
     return { words, cost, speakers: people ? { by: "scribe", people, pieces: x.parts.length, ...how } : null, why: people ? "" : NONE };
   };
+  // one voice, as the person said: every word is that one's, nothing to link
+  if (sure && voices === 1) {
+    const x = await shortPieces(false);
+    return { words: x.words.map((w) => ({ ...w, speaker: "A" })), cost, speakers: { by: "speakers-n", people: 1 }, why: "" };
+  }
   // the short pieces first, unless three people or more are known to speak: of those they
   // could not say who is who
+  let why = "";
   if (!(sure && voices >= 3)) {
-    // the sound's fingerprints are taken while the pieces are with the model
-    const frames = (await plan(duration)).starts.length > 1 ? framesOf(file).catch((e) => ({ failed: first(e) })) : null;
-    short = await scribe(file, duration, { lang: opts.lang, log });
-    cost += short.cost;
-    const found = await peopleOf(short.parts, frames);
-    if (found.person) return done(short, found);
-    // long requests would name no voices either
-    if (!sure || found.why === NONE) return { words: short.words, cost, speakers: null, why: found.why };
-    log(`  transcribe: ${found.why}; once more in long requests, which keep their voices apart …`);
+    const x = await shortPieces();
+    const found = await peopleOf(x.parts, sound());
+    if (found.person) return done(x, found);
+    if (!sure) return { words: x.words, cost, speakers: null, why: found.why };
+    why = found.why;
   }
-  let x;
-  try { x = await scribe(file, duration, { lang: opts.lang, log, long: true }); } catch (e) {
-    // a long request is a body of 22 MB, which a gateway may refuse (413): the words of the
-    // short pieces still stand, without speakers
-    if (!short && !/OpenRouter 413\b/.test(first(e))) throw e;
-    if (!short) { short = await scribe(file, duration, { lang: opts.lang, log }); cost += short.cost; }
-    return { words: short.words, cost, speakers: null, why: `the long requests failed (${first(e).slice(0, 120)})` };
+  // the long requests, which keep their voices apart by themselves; they would name no voices
+  // where the short ones named none
+  if (why !== NONE) {
+    if (why) log(`  transcribe: ${why}; once more in long requests, which keep their voices apart …`);
+    try {
+      sound();
+      const x = await scribe(file, duration, { lang: opts.lang, log, long: true });
+      cost += x.cost;
+      if (voiced(x.parts)) {
+        if (x.parts.length > 1) {
+          const { person, gaps } = byWords(x.parts, BEFORE);
+          return done(x, { person, linked: "overlap", ...(gaps.length ? { unlinked: gaps.map(([from, to]) => ({ from: +from.toFixed(1), to: +to.toFixed(1) })) } : {}) });
+        }
+        const found = await peopleOf(x.parts, sound());
+        if (found.person) return done(x, found);
+        why = found.why;
+      } else why = NONE;
+    } catch (e) {
+      // a long request is a body of 22 MB, which a gateway may refuse (413), or it may fail
+      // otherwise: what the others answered is paid, and the words come from the short pieces
+      cost += e.cost ?? 0;
+      why = `the long requests failed (${first(e).slice(0, 120)})`;
+    }
   }
-  cost += x.cost;
-  if (!voiced(x.parts)) return { words: x.words, cost, speakers: null, why: NONE };
-  return done(x, x.parts.length === 1 ? { person: asHeard(x.parts[0].own) } : { person: byWords(x.parts, BEFORE), linked: "overlap" });
+  // the last way: Gemini's speakers, as --speakers was before, laid on Scribe's words by their times
+  const x = await shortPieces(false);
+  log(`  transcribe: ${why}; the speakers from ${STT_MODEL} instead …`);
+  try {
+    const g = await gemini(file, duration, { lang: opts.lang || "auto", speakers: true, voices, log });
+    cost += g.cost;
+    const words = byTime(x.words, g.words), people = new Set(words.map((w) => w.speaker).filter(Boolean)).size;
+    if (people) return { words, cost, speakers: { by: "gemini", people, because: why }, why: "" };
+    return { words: x.words, cost, speakers: null, why: `${why}, and ${STT_MODEL} named no voices either` };
+  } catch (e) {
+    return { words: x.words, cost, speakers: null, why: `${why}, and ${STT_MODEL} failed too (${first(e).slice(0, 120)})` };
+  }
 }
 
 const [pos, opts] = parse(process.argv.slice(2));
@@ -192,9 +232,14 @@ const n = (kind) => r.words.filter((w) => w.kind === kind).length;
 const said = engine === "gemini" ? `${r.words.length} words` : `${n("word")} words, ${n("filler")} fillers, ${n("event")} noises`;
 const who = [...new Set(r.words.map((w) => w.speaker).filter(Boolean))].sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
 const shape = engine === "gemini" ? "{text, start, end, speaker}" : who.length ? "{text, start, end, kind, speaker}" : "{text, start, end, kind}";
-// why Scribe's words carry no speakers, and what gets them
-const unnamed = engine === "gemini" || r.speakers || !r.words.length ? "" : ` Who speaks is not in it: ${r.why}`
-  + (opts.speakers ? "." : "; --speakers gets it, with a second transcription in long requests.");
+// why Scribe's words carry no speakers, and what gets them; where the speakers came from
+// another way than the default's, or may be too many
+const sp = r.speakers || {};
+const unnamed = engine === "gemini" || !r.words.length ? ""
+  : sp.by === "gemini" ? ` Who speaks is ${STT_MODEL}'s, laid on these words by their times: ${sp.because}.`
+  : sp.unlinked ? ` Who speaks may be fewer people than ${sp.people}: the long requests share no words between ${sp.unlinked.map((u) => `${clock(u.from)} and ${clock(u.to)}`).join(", ")}, so the voices before and after are not linked there.`
+  : r.speakers ? ""
+  : ` Who speaks is not in it: ${r.why}` + (opts.speakers ? "." : r.why === NONE ? `; --speakers gets it from ${STT_MODEL}, a second transcription.` : "; --speakers gets it, with a second transcription in long requests.");
 // what the check against the sound found, in a sentence
 const at = (i) => `"${r.words[i].text}" at ${clock(r.words[i].start)}`;
 const timed = !timing ? "" : ` Timings checked against the sound: ${(timing.inVoice * 100).toFixed(1)} % of the words lie where the voice is`

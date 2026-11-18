@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 import { envelopeOf, smooth, threshold, voiced, islands, bare, check, repair, HOP } from "./lib/timing.mjs";
 import { stretches, adopt, hearAgain } from "./lib/again.mjs";
 import { quietLevels, edged } from "./lib/edges.mjs";
-import { cut, LONG, BEFORE } from "./lib/scribe.mjs";
-import { listen, framesOf, fingerprints, bySound, shared, byWords, named, key, SR } from "./lib/voices.mjs";
+import { cut, scribe, LONG, BEFORE } from "./lib/scribe.mjs";
+import { listen, framesOf, fingerprints, bySound, shared, byWords, byTime, named, key, SR, APART } from "./lib/voices.mjs";
 
 // loudness in 10 ms frames: quiet room noise, voice where `parts` say ([from, to, level])
 function sound(seconds, parts) {
@@ -262,7 +262,7 @@ test("a doubtful stretch is cut out, heard again and its times put on the record
 // ---------------------------------------------------------------- who speaks
 
 // made-up voices: a pitch (Hz), and where the overtones are strongest (Hz)
-const VOICES = { ann: [118, 700], ben: [205, 2200], cyd: [160, 1300] };
+const VOICES = { ann: [118, 700], ben: [205, 2200], cyd: [160, 1300], dan: [125, 900] };
 // the same numbers at every run
 function dice(seed) {
   let a = seed;
@@ -364,8 +364,39 @@ test("one voice is one person, whatever number a piece gives it", () => {
   assert.equal(r.why, undefined);
   assert.equal(r.people, 1);
   assert.equal(r.margin, null);
-  assert.deepEqual(r.decisions, [{ piece: 1, voices: 1, margin: null }, { piece: 2, voices: 1, margin: null }]);
+  assert.deepEqual(r.decisions.map((d) => [d.piece, d.voices, d.margin]), [[1, 1, null], [2, 1, null]]);
+  assert.ok(r.decisions.every((d) => d.apart < APART), JSON.stringify(r.decisions));
   assert.ok(named(pieces, r.person).words.every((w) => w.speaker === "A"));
+});
+
+// what the reviewer found: a voice that is someone else was put to the nearer person unchecked
+test("someone else is not taken for one of two people: no speakers from the pieces then", () => {
+  const { samples, said } = talk(160, [["ann", 0, 40], ["ben", 40, 80], ...inTurns(["ann", "ben"], 80, 120), ...inTurns(["ann", "cyd"], 120, 160)]);
+  const frames = framesFrom(samples), at = (from, to, numbers) => heardAs(said, from, to, numbers);
+  const why = (pieces) => bySound(fingerprints(frames, pieces)).why;
+  // one voice a piece, two people who take turns: not one person, and not told
+  assert.match(why([at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" })]), /^every piece names one voice, and that of piece 2 sounds unlike/);
+  // the same once a piece names both: the pieces before it are put to them
+  const both = bySound(fingerprints(frames, [at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" }), at(80, 120, { ann: "1", ben: "0" })]));
+  assert.equal(both.why, undefined);
+  assert.deepEqual(["0:0", "1:0", "2:1", "2:0"].map((id) => both.person.get(id)), [1, 0, 1, 0]);
+  // a third person beside one of the two, or alone: someone else
+  assert.match(why([at(80, 120, { ann: "0", ben: "1" }), at(120, 160, { ann: "0", cyd: "1" })]), /^a voice of piece 2 sounds unlike both people/);
+  assert.match(why([at(80, 120, { ann: "0", ben: "1" }), at(120, 160, { cyd: "0" })]), /^a voice of piece 2 sounds unlike both people/);
+  // four people, two a piece
+  const { samples: s4, said: w4 } = talk(80, [...inTurns(["ann", "ben"], 0, 40), ...inTurns(["cyd", "dan"], 40, 80)]);
+  const four = fingerprints(framesFrom(s4), [heardAs(w4, 0, 40, { ann: "0", ben: "1" }), heardAs(w4, 40, 80, { cyd: "0", dan: "1" })]);
+  assert.match(bySound(four).why, /^a voice of piece 2 sounds unlike both people/);
+});
+
+test("one request: its voices with 5 s of speech are its people, one with less the nearest of them when it sounds like them", () => {
+  const { samples, said } = talk(64, [...inTurns(["ann", "ben"], 0, 40), ["ann", 40, 42], ["cyd", 42, 44], ...inTurns(["ann", "ben"], 44, 64)]);
+  // the request heard ann's two seconds as a voice of its own, and cyd's
+  const words = said.map(({ who, ...w }, i) => ({ ...w, kind: "word", voice: who === "ben" ? "1" : who === "cyd" ? "3" : w.start >= 40 && w.start < 42 ? "2" : "0" }));
+  const r = bySound(fingerprints(framesFrom(samples), [words]));
+  assert.equal(r.why, undefined);
+  assert.equal(r.people, 3);
+  assert.deepEqual(["0:0", "0:1", "0:2", "0:3"].map((id) => r.person.get(id)), [0, 1, 0, 2]);
 });
 
 test("voices too close to tell whose is whose leave the speakers to the long requests", () => {
@@ -395,18 +426,32 @@ test("the voices of long pieces are the people who wrote the same words where bo
   const first = { start: 0, words: heardAs(said, 0, 110, { ann: "0", ben: "1" }) };
   // the second piece owns from 100 s, is heard from 70 s, a tenth of a second off, and numbers the other way round
   const second = { start: 100, words: heardAs(said, 70, 200, { ann: "1", ben: "0", cyd: "2" }).map((w) => ({ ...w, start: w.start + 0.1, end: w.end + 0.1 })) };
-  const person = byWords([first, second], 30);
+  const { person, gaps } = byWords([first, second], 30);
   assert.deepEqual(["0:0", "0:1", "1:1", "1:0", "1:2"].map((id) => person.get(id)), [0, 1, 0, 1, 2]);
+  assert.deepEqual(gaps, []);
   // each word once: the first piece's up to 105 s, the second's from there
   const { words, people } = named([first.words.filter((w) => w.start < 105), second.words.filter((w) => w.start >= 105)], person);
   assert.equal(people, 3);
   assert.deepEqual(words.map((w) => w.speaker), said.map((w) => ({ ann: "A", ben: "B", cyd: "C" })[w.who]));
   // someone who said nothing in the stretch both heard: the one voice left is the one person left
   const quiet = { start: 100, words: [...heardAs(said, 70, 100, { ann: "5", ben: "5" }), ...heardAs(said, 100, 120, { ann: "5", ben: "7" })] };
-  assert.deepEqual(["1:5", "1:7"].map((id) => byWords([first, quiet], 30).get(id)), [0, 1]);
+  assert.deepEqual(["1:5", "1:7"].map((id) => byWords([first, quiet], 30).person.get(id)), [0, 1]);
   // two voices left: both someone new
   const crowd = { start: 100, words: [...quiet.words, ...heardAs(said, 120, 130, { ann: "8", ben: "8", cyd: "8" })] };
-  assert.deepEqual(["1:5", "1:7", "1:8"].map((id) => byWords([first, crowd], 30).get(id)), [0, 2, 3]);
+  assert.deepEqual(["1:5", "1:7", "1:8"].map((id) => byWords([first, crowd], 30).person.get(id)), [0, 2, 3]);
+  // nobody speaks where both heard (music, an ad): every voice after it is new, and the stretch is named
+  const silent = { start: 100, words: heardAs(said, 100, 200, { ann: "1", ben: "0", cyd: "2" }) };
+  const apart = byWords([{ start: 0, words: heardAs(said, 0, 70, { ann: "0", ben: "1" }) }, silent], 30);
+  assert.deepEqual(["1:1", "1:0", "1:2"].map((id) => apart.person.get(id)), [2, 3, 4]);
+  assert.deepEqual(apart.gaps, [[70, 100]]);
+});
+
+test("another transcription's speakers are laid on the words by their times", () => {
+  const words = [word("so", 1.0, 1.3), word("yes", 1.32, 1.6), { ...word("[laughs]", 2.0, 2.5, "event") }, word("right", 3.0, 3.4), word("late", 9.0, 9.2)];
+  // Gemini's: a tenth of a second off, its own letters, one word it did not hear
+  const theirs = [{ text: "so", start: 1.0, end: 1.3, speaker: "B" }, { text: "yes", start: 1.3, end: 1.7, speaker: "A" }, { text: "right", start: 3.1, end: 3.3, speaker: "B" }];
+  assert.deepEqual(byTime(words, theirs).map((w) => w.speaker), ["A", "B", "B", "A", undefined]);
+  assert.deepEqual(Object.keys(byTime(words, theirs)[0]), ["text", "start", "end", "kind", "speaker"]);
 });
 
 test("a word is shared once, with the nearest; a noise takes its voice's speaker and names nobody", () => {
@@ -446,6 +491,26 @@ test("the fingerprints of a file, read through ffmpeg, are those of its samples"
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("a file of more than a block, worked on other threads, gives exactly the frames listen() gives", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  try {
+    // 70 s: a block of a minute and a part of one, the last frame with a timbre and no pitch
+    wav(path.join(dir, "talk.wav"), talk(70, inTurns(["ann", "ben"], 0, 70)).samples);
+    const sound = await framesOf(path.join(dir, "talk.wav"));
+    // the samples as ffmpeg gives them, to listen() in portions of odd sizes
+    const data = fs.readFileSync(path.join(dir, "talk.wav")).subarray(44), samples = new Float32Array(data.length >> 1);
+    for (let i = 0; i < samples.length; i++) samples[i] = data.readInt16LE(2 * i) / 32768;
+    const ear = listen();
+    for (let i = 0, n = 777; i < samples.length; i += n, n = n === 777 ? 50001 : 777) ear.push(samples.subarray(i, i + n));
+    const heard = ear.done();
+    assert.deepEqual([sound.frames, sound.floor], [heard.frames, heard.floor]);
+    assert.equal(sound.frames, 6997);
+    for (let t = 0; t <= sound.frames; t++) {
+      if (sound.speech(t) !== heard.speech(t) || !sound.bands(t).every((v, j) => v === heard.bands(t)[j]) || (t < sound.frames && !Object.is(sound.pitch(t), heard.pitch(t)))) assert.fail(`frame ${t} differs`);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // ---------------------------------------------------------------- the tool, with a stand-in for the gateway
 
 const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), "transcribe.mjs");
@@ -453,11 +518,14 @@ const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), "transcribe
 // A stand-in for the Sprites gateway on this machine: it lists an OpenRouter connection and
 // answers a transcription with what of `said` lies in the piece it was sent, the voices
 // numbered as `numbers(from)` says. Which piece it was sent it tells by the piece's length:
-// `pieces` are [from, seconds]. A piece longer than `most` seconds it refuses as too large.
-// → { url, asked: [{ model, from, seconds, diarize }], close() }
-async function gateway(said, pieces, numbers, most = Infinity) {
-  const asked = [];
+// `pieces` are [from, seconds]. A piece longer than `most` seconds it refuses as too large;
+// `how.refuse(q)` → [status, text, ms] refuses others, `how.hold(q)` → ms waits before answering.
+// → { url, asked: [{ model, from, seconds, diarize }], gone: requests whose sender hung up, close() }
+async function gateway(said, pieces, numbers, most = Infinity, how = {}) {
+  const asked = [], sockets = new Set();
+  let gone = 0;
   const server = http.createServer((req, res) => {
+    res.on("close", () => { if (!res.writableFinished) gone++; });
     if (req.method === "GET") return res.end(JSON.stringify({ connections: [{ provider: "openrouter", id: "c1" }] }));
     const chunks = [];
     req.on("data", (c) => chunks.push(c));
@@ -471,20 +539,28 @@ async function gateway(said, pieces, numbers, most = Infinity) {
       probe.on("close", () => {
         fs.rmSync(dir, { recursive: true, force: true });
         const seconds = Number(length), [from, whole] = [...pieces].sort((a, b) => Math.abs(a[1] - seconds) - Math.abs(b[1] - seconds))[0];
-        asked.push({ model: body.model, from, seconds: whole, diarize: body.diarize === true });
+        const q = { model: body.model, from, seconds: whole, diarize: body.diarize === true };
+        asked.push(q);
         // a piece of no known length (a stretch heard again): refused
         if (Math.abs(whole - seconds) > 2) { res.statusCode = 400; return res.end("{}"); }
         if (seconds > most) { res.statusCode = 413; return res.end("request body too large"); }
+        const no = how.refuse?.(q);
+        if (no) return setTimeout(() => { res.statusCode = no[0]; res.end(no[1]); }, no[2] ?? 0);
         const names = numbers(from);
         const words = said.filter((w) => w.start >= from && w.start < from + seconds)
           .map((w) => ({ word: w.text, start: +(w.start - from).toFixed(3), end: +(w.end - from).toFixed(3), speaker: names[w.who], ...(w.text.startsWith("[") ? { type: "audio_event" } : {}) }));
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ usage: { cost: 0.001 }, words }));
+        setTimeout(() => {
+          if (res.destroyed) return;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ usage: { cost: 0.001 }, words }));
+        }, how.hold?.(q) ?? 0).unref();
       });
     });
   });
+  server.on("connection", (s) => { sockets.add(s); s.on("close", () => sockets.delete(s)); });
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
-  return { url: `http://127.0.0.1:${server.address().port}`, asked, close: () => new Promise((ok) => server.close(ok)) };
+  return { url: `http://127.0.0.1:${server.address().port}`, asked, get gone() { return gone; },
+    close: () => new Promise((ok) => { for (const s of sockets) s.destroy(); server.close(ok); }) };
 }
 
 // the tool run as a program → { code, line: its last line on stdout, log, json: what it wrote }
@@ -592,14 +668,16 @@ test("three voices: no speakers and no further request, unless --speakers asks f
     assert.deepEqual([...new Set(two.json.words.map((w) => w.speaker))].sort(), ["A", "B"]);
     assert.equal(two.json.words.length, said.length);
 
-    // a gateway that refuses the long request: the words of the short pieces, and why they name nobody
-    for (const [r, gate, asked] of [[small, gates[4], [150, 310, 450]], [small3, gates[5], [150, 310, 450]]]) {
+    // a gateway that refuses the long request: the words of the short pieces, and Gemini's speakers
+    // on them, as --speakers gave them before (also with three people known: no exit 1)
+    for (const [r, gate] of [[small, gates[4]], [small3, gates[5]]]) {
       assert.equal(r.code, 0, r.line);
-      assert.deepEqual(lengths(gate), asked);
-      assert.equal(r.json.speakers, undefined);
+      assert.deepEqual(gate.asked.map((q) => [q.model, q.seconds]).sort(), [[SCRIBE, 150], [SCRIBE, 310], [SCRIBE, 450], ["google/gemini-3.5-transcribe", 150], ["google/gemini-3.5-transcribe", 320]].sort());
+      assert.deepEqual(r.json.speakers, { by: "gemini", people: 3, because: "the long requests failed (OpenRouter 413: request body too large)" });
+      assert.equal(r.json.cost, 0.004);
       assert.equal(r.json.words.length, said.length);
-      assert.ok(r.json.words.every((w) => !("speaker" in w)));
-      assert.match(r.line, /Who speaks is not in it: the long requests failed \(OpenRouter 413: request body too large\)\./);
+      r.json.words.forEach((w, i) => assert.equal(w.speaker, letters[said[i].who], `word ${i}`));
+      assert.match(r.line, /Who speaks is google\/gemini-3.5-transcribe's, laid on these words by their times: the long requests failed \(OpenRouter 413: request body too large\)\./);
       assert.equal(r.json.edges, "sound");
     }
   } finally {
@@ -620,5 +698,137 @@ test("the flags: --speakers-n goes with --speakers, --speakers takes scribe or g
     const half = await run(dir, "c", [file, "--speakers", "--speakers-n", "1.5"]);
     assert.deepEqual([half.code, half.line], [1, "--speakers-n is a whole number of voices, e.g. --speakers-n 2."]);
     assert.equal(alone.json ?? what.json ?? half.json, null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+const GEMINI = "google/gemini-3.5-transcribe";
+
+test("one request: a voice that only makes noise is nobody, its people are those of the pieces' rule", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  const { samples, said } = talk(60, inTurns(["ann", "ben"], 0, 60));
+  // music under a word, which the request names as a third voice
+  said.splice(6, 0, { text: "[music]", start: 2.31, end: 2.39, who: "band" });
+  const gate = await gateway(said, [[0, 60]], () => ({ ann: 0, ben: 1, band: 2 }));
+  try {
+    const file = path.join(dir, "talk.wav");
+    wav(file, samples);
+    const r = await run(dir, "one", [file], gate.url);
+    assert.equal(r.code, 0, r.line);
+    assert.deepEqual(gate.asked.map((q) => q.seconds), [60]);
+    assert.deepEqual(r.json.speakers, { by: "scribe", people: 2, pieces: 1 });
+    const music = r.json.words.find((w) => w.text === "[music]");
+    assert.equal(music.speaker, undefined);
+    r.json.words.filter((w) => w !== music).forEach((w, i) => assert.equal(w.speaker, said.filter((s) => s.who !== "band")[i].who === "ann" ? "A" : "B"));
+    assert.match(r.line, /, voices A B in 1:00 /);
+  } finally {
+    await gate.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--speakers-n 1: every word is A, from the short pieces alone", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  const { samples, said } = talk(450, [...inTurns(["ann", "ben"], 0, 300), ...inTurns(["ann", "ben", "cyd"], 300, 450)]);
+  const gate = await gateway(said, PIECES, (from) => (from ? { ann: 2, ben: 0, cyd: 1 } : { ann: 0, ben: 1, cyd: 2 }));
+  try {
+    const file = path.join(dir, "talk.wav");
+    wav(file, samples);
+    const r = await run(dir, "one", [file, "--speakers", "--speakers-n", "1"], gate.url);
+    assert.equal(r.code, 0, r.line);
+    assert.deepEqual(gate.asked.map((q) => q.seconds).sort((a, b) => a - b), [150, 310]);
+    assert.deepEqual(r.json.speakers, { by: "speakers-n", people: 1 });
+    assert.ok(r.json.words.every((w) => w.speaker === "A"));
+  } finally {
+    await gate.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("long requests that fail for another reason: Gemini's speakers; Gemini failing too: none, and the line says both", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  const { samples, said } = talk(450, [...inTurns(["ann", "ben"], 0, 300), ...inTurns(["ann", "ben", "cyd"], 300, 450)]);
+  const numbers = (from) => (from ? { ann: 2, ben: 0, cyd: 1 } : { ann: 0, ben: 1, cyd: 2 });
+  const long = (q) => (q.model === SCRIBE && q.seconds === 450 ? [400, "the provider is busy"] : null);
+  const gates = await Promise.all([gateway(said, PIECES, numbers, Infinity, { refuse: long }),
+    gateway(said, PIECES, numbers, Infinity, { refuse: (q) => long(q) || (q.model === GEMINI ? [400, "no such model"] : null) })]);
+  try {
+    const file = path.join(dir, "talk.wav");
+    wav(file, samples);
+    const [three, none] = await Promise.all([run(dir, "three", [file, "--speakers", "--speakers-n", "3"], gates[0].url), run(dir, "none", [file, "--speakers"], gates[1].url)]);
+    assert.equal(three.code, 0, three.line);
+    assert.deepEqual(three.json.speakers, { by: "gemini", people: 3, because: "the long requests failed (OpenRouter 400: the provider is busy)" });
+    assert.equal(none.code, 0, none.line);
+    assert.equal(none.json.speakers, undefined);
+    assert.ok(none.json.words.every((w) => !("speaker" in w)));
+    assert.equal(none.json.words.length, said.length);
+    assert.match(none.line, /Who speaks is not in it: the long requests failed \(OpenRouter 400: the provider is busy\), and google\/gemini-3.5-transcribe failed too \(OpenRouter 400: no such model\)\. /);
+    assert.match(none.log, /piece 2 names 3 voices.*once more in long requests/);
+  } finally {
+    await Promise.all(gates.map((g) => g.close()));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a piece that fails calls the others off: the tool does not wait for them", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  const { samples, said } = talk(450, inTurns(["ann", "ben"], 0, 450));
+  // the second piece is refused at once, the first would answer after a minute
+  const gate = await gateway(said, PIECES, () => ({ ann: 0, ben: 1 }), Infinity, { refuse: (q) => (q.seconds === 150 ? [400, "bad piece", 1500] : null), hold: () => 60e3 });
+  try {
+    const file = path.join(dir, "talk.wav");
+    wav(file, samples);
+    const t0 = Date.now(), r = await run(dir, "off", [file], gate.url);
+    assert.equal(r.code, 1);
+    assert.match(r.line, /^The transcription with elevenlabs\/scribe-v2 failed \(OpenRouter 400: bad piece\)/);
+    assert.ok(Date.now() - t0 < 20e3, `${Date.now() - t0} ms`);
+    assert.equal(gate.gone, 1);
+  } finally {
+    await gate.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("what the pieces answered before one failed is in the failure's cost", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  // with a key of its own: pieces of ten minutes, here two (12:30)
+  const gate = await gateway([], [[0, 610], [600, 150]], () => ({}), Infinity, { refuse: (q) => (q.from ? [400, "bad piece", 1500] : null) });
+  const keep = { key: process.env.OPENROUTER_API_KEY, base: process.env.OPENROUTER_BASE_URL };
+  try {
+    const file = path.join(dir, "quiet.wav");
+    wav(file, new Float32Array(750 * SR));
+    process.env.OPENROUTER_API_KEY = "test"; process.env.OPENROUTER_BASE_URL = `${gate.url}/api/v1`;
+    const e = await scribe(file, 750).then(() => null, (x) => x);
+    assert.match(e?.message, /^OpenRouter 400: bad piece/);
+    assert.equal(e.cost, 0.001);
+  } finally {
+    if (keep.key === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = keep.key;
+    if (keep.base === undefined) delete process.env.OPENROUTER_BASE_URL; else process.env.OPENROUTER_BASE_URL = keep.base;
+    await gate.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the last piece is heard to the real end of the file, past what its header says", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  const { samples, said } = talk(517, inTurns(["ann", "ben"], 0, 517));
+  try {
+    // an MP3 without a length in it whose first frames are of a higher rate: ffprobe reckons 391 s
+    // of 520; main heard it to the end in pieces of five minutes, one piece of 391 s would not
+    wav(path.join(dir, "talk.wav"), samples);
+    const enc = (args) => spawnSync("ffmpeg", ["-v", "error", "-y", ...args, "-ar", "16000", "-ac", "1", "-write_xing", "0", "-id3v2_version", "0"]).status;
+    assert.equal(enc(["-f", "lavfi", "-i", "anullsrc=r=16000:cl=mono", "-t", "3", "-b:a", "64k", path.join(dir, "a.mp3")]), 0);
+    assert.equal(enc(["-i", path.join(dir, "talk.wav"), "-b:a", "48k", path.join(dir, "b.mp3")]), 0);
+    fs.writeFileSync(path.join(dir, "talk.mp3"), Buffer.concat([fs.readFileSync(path.join(dir, "a.mp3")), fs.readFileSync(path.join(dir, "b.mp3"))]));
+    const told = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path.join(dir, "talk.mp3")], { encoding: "utf8" }).stdout);
+    assert.ok(told < 400, `ffprobe says ${told} s`);
+    const late = said.map((w) => ({ ...w, start: w.start + 3, end: w.end + 3 }));
+    const gate = await gateway(late, [[0, 520]], () => ({ ann: 0, ben: 1 }));
+    try {
+      const r = await run(dir, "tail", [path.join(dir, "talk.mp3")], gate.url);
+      assert.equal(r.code, 0, r.line);
+      assert.deepEqual(gate.asked.map((q) => q.seconds), [520]);
+      assert.equal(r.json.words.length, said.length);
+      assert.ok(r.json.words.at(-1).start > 500);
+    } finally { await gate.close(); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
