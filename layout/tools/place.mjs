@@ -30,7 +30,7 @@
 //        the options that make agentitos' captions set its captions into the candidate's
 //        caption area
 //   node place.mjs text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook]
-//                  [--platform …] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>]… [--json]
+//                  [--platform …] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>]… [--raise moderate|full] [--json]
 //        the picture is placed already (a clip's framing): where the text goes over all its shots,
 //        given every face over time; one place for the captions of the whole clip, how far each
 //        shot's picture is to be raised to clear it, the hook's place over its first seconds,
@@ -70,7 +70,7 @@ const OPTIONS = {
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
   captions: ["candidate", "json"],
-  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "set", "json"],
+  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "set", "json"],
 };
 function parseArgs(cmd, argv) {
   const o = { _: [], order: [] };
@@ -420,7 +420,7 @@ function cmdCaptions(o) {
 // ---- text: the picture placed already, faces over time ----
 
 function cmdText(o) {
-  const usage = `${self()} text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] [--platform reels,tiktok] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>] [--json]
+  const usage = `${self()} text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] [--platform reels,tiktok] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>] [--raise moderate|full] [--json]
   shots.json: {"shots": [{"start": 0, "end": 4.2, "faces": [{"who": "A", "track": [{"t": 0, "box": [x, y, w, h]}, …]}], "room": {"free": 0}}, …], "hook": {"start": 0, "end": 3}}
   (boxes in px of the frame as the picture stands; room: how far a shot's picture may be raised, null where not at all)`;
   const [folder] = o._;
@@ -436,7 +436,7 @@ function cmdText(o) {
     if (n.role !== "hook") return n;
     const h = input.hook;
     if (!h || !Number.isFinite(h.start) || !(h.end > h.start)) fail(`--text hook needs "hook": {"start": seconds, "end": seconds} in ${o.shots}: when the hook is shown, on the shots' clock.`);
-    return { ...n, start: h.start, end: h.end };
+    return { ...n, start: h.start, end: h.end, ...(h.calm === false ? { calm: false } : {}) };
   });
   const lifts = {};
   for (const v of o.lift) {
@@ -451,9 +451,10 @@ function cmdText(o) {
   let res;
   try {
     const Z = askZones(o.frame, platforms);
-    res = textOverTime({ zones: Z, shots, needs, fixed, set: Object.fromEntries(o.set.map((x) => { const i = x.indexOf("="); if (i < 1) fail(`--set is key=value, as caption.padEm=0.6.`); return [x.slice(0, i), num(x.slice(i + 1))]; })) });
+    if (o.raise !== undefined && !["moderate", "full"].includes(o.raise)) fail(`--raise is moderate (a shot raised only while the whole head stays in the picture; the default) or full (until the eyes reach the apps' top bar, the head cut by the frame).`);
+    res = textOverTime({ zones: Z, shots, needs, fixed, raise: o.raise || "moderate", set: Object.fromEntries(o.set.map((x) => { const i = x.indexOf("="); if (i < 1) fail(`--set is key=value, as caption.padEm=0.6.`); return [x.slice(0, i), num(x.slice(i + 1))]; })) });
   } catch (e) { fail(e.message); }
-  res.asked = { frame: o.frame, platforms, fixed };
+  res.asked = { frame: o.frame, platforms, fixed, raise: o.raise || "moderate" };
   const file = path.join(folder, "text.json");
   try { fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(file, JSON.stringify(res, null, 1)); } catch (e) { fail(`${file} cannot be written (${e.code || e.message}): name a folder of yours.`); }
   if (o.json) return console.log(JSON.stringify(res, null, 1));
@@ -462,9 +463,9 @@ function cmdText(o) {
   if (c) console.log(`captions: one place for the clip, ${plural(c.lines, "line")} of ${c.font} px, ${boxText(c.box)} (its middle at ${c.middle} % of the height, ${c.where}); ${c.seconds ? `on a face for ${c.seconds} s` : "on no face"}${c.lifted ? `, ${plural(c.lifted, "shot")} raised for it` : ""}`);
   for (const s of res.shots) {
     const on = s.touches.map((t) => `on ${t.who}'s face ${t.from}–${t.to} s (${t.seconds} s, up to ${Math.round(t.share * 100)} % of it)`).join("; ");
-    console.log(`  shot ${s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (${s.ground} over a ground)` : ""}${s.fixed ? ", as given" : ""}` : "as it stands"}${on ? `  ✗ ${on}` : ""}`);
+    console.log(`  shot ${s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : ""}` : "as it stands"}${on ? `  ${s.chin ? "on the chin" : "✗"} ${on}` : ""}`);
   }
-  if (res.hook) console.log(`hook: ${res.hook.kind === "card" ? "a card" : "a text"} at ${res.hook.font} px, ${res.hook.where}, ${boxText(res.hook.box)}, ${res.hook.start}–${res.hook.until} s${res.hook.why ? ` (${res.hook.why})` : ""}${res.hook.onFace?.seconds ? `  ✗ on a face for ${res.hook.onFace.seconds} s` : ""}`);
+  if (res.hook) console.log(`hook: ${res.hook.kind === "card" ? "a card" : "a text"} at ${res.hook.font} px, ${res.hook.where}, ${boxText(res.hook.box)}, ${res.hook.start}–${res.hook.until} s (${res.hook.kindWhy || ""}${res.hook.why ? `; ${res.hook.why}` : ""})${res.hook.onFace?.seconds ? `  ✗ on a face for ${res.hook.onFace.seconds} s` : ""}`);
   for (const x of res.conflicts) console.log(`✗ ${x}`);
   for (const n of res.notes) console.log(`note: ${n}`);
   console.log(`Other places it weighed: ${res.candidates.slice(1).map((k) => `${k.font} px with its middle at ${k.middle} % (on faces ${k.seconds} s, ${k.lifted} raised, cost ${k.cost})`).join("; ") || "none"}.`);

@@ -83,7 +83,17 @@ export function shotsInput(shots, span, hook = null) {
     index.push(k);
     list.push({ n: k + 1, start: s.start, end: s.end, weight: +weight.toFixed(3), picture: s.picture, faces: s.faces, room: s.room?.none ? null : { free: s.room?.free || 0 } });
   });
-  return { input: { shots: list, ...(hook ? { hook: { start: hook.start, end: hook.end } } : {}) }, index };
+  return { input: { shots: list, ...(hook ? { hook: { start: hook.start, end: hook.end, calm: calmBehind(shots, hook) } } : {}) }, index };
+}
+
+// Whether the picture behind a hook text is calm: the framing knows faces, not hands or things,
+// so only a close-up counts as calm (every shot under the hook follows a face at least CALM of
+// the frame's height tall: below its chin lies a shirt); a wider shot (hands, a table, bottles),
+// a shot shown whole (a photo, footage) or two panels is not, and gets a card in the text's place.
+export const CALM = 0.28;
+export function calmBehind(shots, hook, H = 1920) {
+  const under = shots.filter((s) => s.end > hook.start + 1e-3 && s.start < hook.end - 1e-3);
+  return under.length > 0 && under.every((s) => s.kind === "people" && Math.max(0, ...s.faces.flatMap((f) => f.track.filter((m) => m.t >= hook.start - 0.05 && m.t <= hook.end + 0.05).map((m) => m.box[3]))) >= CALM * H);
 }
 
 // every face of the framed clip in px of the frame, every `step` seconds: for best-takes, which
@@ -122,8 +132,8 @@ export function placeSheet(framed, rows, text, file, { size = [1080, 1920], fps 
         for (const f of r.facesAt(t)) boxes.push(draw(f, "red@0.9", 2));
         if (text.caption) boxes.push(draw(text.caption.box, "yellow", 4));
         if (text.hook && t >= text.hook.start && t <= text.hook.end) boxes.push(draw(text.hook.box, "cyan", 4));
-        const on = j === 1 ? `${r.n}  ${r.start.toFixed(1)}-${r.end.toFixed(1)} s${r.lift ? `  raised ${r.lift} px` : ""}${r.touch ? `  ON A FACE ${r.touch}` : ""}` : ["first", "", "last"][j];
-        chains.push(`[${n}:v]scale=${w}:${h},setsar=1,${boxes.join(",")}${boxes.length ? "," : ""}drawtext=text='${label(on)} ${t.toFixed(2)}':x=6:y=h-24:fontsize=14:fontcolor=white:box=1:boxcolor=${r.touch ? "red" : "black"}@0.8:boxborderw=3[c${i}_${j}]`);
+        const on = j === 1 ? `${r.n}  ${r.start.toFixed(1)}-${r.end.toFixed(1)} s${r.lift ? `  raised ${r.lift} px` : ""}${r.touch ? `  ${r.touch}` : ""}` : ["first", "", "last"][j];
+        chains.push(`[${n}:v]scale=${w}:${h},setsar=1,${boxes.join(",")}${boxes.length ? "," : ""}drawtext=text='${label(on)} ${t.toFixed(2)}':x=6:y=h-24:fontsize=14:fontcolor=white:box=1:boxcolor=${/^ON /.test(r.touch) ? "red" : "black"}@0.8:boxborderw=3[c${i}_${j}]`);
         n++;
       });
       chains.push(`[c${i}_0][c${i}_1][c${i}_2]hstack=inputs=3,pad=iw:ih+6:0:0:white[r${i}]`);

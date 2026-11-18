@@ -256,3 +256,17 @@ test("the hook stands where it is placed: a text without a card in the middle of
   assert.match(old.style, /left: 540px; top: 258px/);
   assert.match(old.style, /font-size: 72px/);
 });
+
+test("raise moderate: a punch-in keeps a whole head inside the frame and the mouth line above the captions", () => {
+  // a face whose chin is near the captions, its head's top 0.35 of it above its box, inside the frame
+  const face = [300, 450, 480, 900];
+  const full = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 });
+  const mod = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250, raise: "moderate" });
+  const head = 450 - 0.35 * 900;
+  assert.ok(mod <= full, `${mod} ${full}`);
+  assert.ok(mod + (head - mod) * 1.12 >= -1e-6, `the head's top after: ${mod + (head - mod) * 1.12}`);
+  // a mouth line just above the captions stays above them grown closer, whatever the head
+  const tight = [100, 160, 880, 1700], line = 160 + 0.65 * 1700;
+  const y = punchOrigin({ faces: [tight], scale: 1.12, frame: FRAME, cap: [192, 1306, 696, 134].map((v, i) => (i === 1 ? line + 10 : v)), safeTop: 250, raise: "moderate" });
+  assert.ok(y + (line - y) * 1.12 <= line + 10 + 1e-6, `mouth line after ${y + (line - y) * 1.12}`);
+});

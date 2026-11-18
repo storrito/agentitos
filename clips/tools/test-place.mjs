@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { shotsOf, windowsOf, raise, roomBelow, render } from "./frame.mjs";
 import { framedShots, inFrame, unlift, fitRect } from "./lib/faces.mjs";
-import { spanOf, toFramed, toOutput, hookSpan, shotsInput, facesFile } from "./lib/place.mjs";
+import { spanOf, toFramed, toOutput, hookSpan, shotsInput, facesFile, calmBehind } from "./lib/place.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -64,6 +64,15 @@ test("the faces of the framed clip in the frame: a close-up low, a shot shown wh
   assert.ok(file.faces.length >= 55 && file.faces.every((x) => x.boxes.length === 1), `${file.faces.length} moments`);
 });
 
+test("a hook text needs a calm picture behind it: only close-ups under all of its time are calm, a wide shot or a picture shown whole is not", () => {
+  const close = { start: 0, end: 3, kind: "people", faces: [{ track: [{ t: 1, box: [200, 300, 600, 700] }] }] };
+  const wide = { start: 3, end: 6, kind: "people", faces: [{ track: [{ t: 4, box: [450, 400, 180, 300] }] }] };
+  const whole = { start: 0, end: 3, kind: "whole", faces: [] };
+  assert.equal(calmBehind([close, wide], { start: 0, end: 2.5 }), true);
+  assert.equal(calmBehind([close, wide], { start: 0, end: 4.5 }), false);
+  assert.equal(calmBehind([whole, close], { start: 0, end: 2 }), false);
+});
+
 test("the clocks: a time of the cut on the framed clip and back, across a pause cut out; the hook's time on the framed clip", () => {
   const pieces = [{ in: 1, out: 3, start: 0, duration: 2, rate: 1 }, { in: 4, out: 8, start: 2, duration: 4, rate: 1 }];
   assert.equal(toFramed(2.5, pieces), 4.5);
@@ -101,13 +110,22 @@ test("place on a made-up clip: the close-up is raised over a ground, the caption
     fs.writeFileSync(path.join(dir, "takes", "cut.json"), JSON.stringify({ keep: [{ words: "0-1" }] }));
     // the framing again would need the model's answer next to the clip: given here
     fs.writeFileSync(path.join(dir, "clip.people.json"), JSON.stringify(ans));
-    const r = spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "place", dir], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" } });
+    const place = (...a) => spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "place", dir, ...a], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" } });
+    // moderate, the default: the close-up's head is at the frame's top already, so it is not raised, and its chin carries the captions
+    const r0 = place();
+    assert.equal(r0.status, 0, r0.stdout + r0.stderr);
+    assert.match(r0.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions (on the chin or neck of guest .*not avoidable without cutting the head|✗ on the mouth of guest)/);
+    assert.match(r0.stdout, /Raised moderately/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8")).raise, "moderate");
+    // full: raised over a ground, the band said
+    const r = place("--raise", "full");
     const said = r.stdout + r.stderr;
     assert.equal(r.status, 0, said);
-    assert.match(said, /The captions: one place for the clip, one line of 77 px, the lowest line at y 1440/);
-    assert.match(said, / 1\. 0\.0–3\.0 s {2}raised \d+ px \(\d+ over a ground/);
+    assert.match(said, /The captions: one place for the clip, one line of \d+ px, the lowest line at y 1440/);
+    assert.match(said, / 1\. 0\.0–3\.0 s {2}raised \d+ px, a blurred band of \d+ px at the bottom \(under the apps' text from y 1440\)/);
     const placed = JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8"));
-    assert.deepEqual(placed.caption, { y: 1440, "max-width": 696, "font-size": 77, lines: 1 });
+    assert.equal(placed.caption.y, 1440);
+    assert.equal(placed.raise, "full");
     assert.ok(placed.hook && ["text", "card"].includes(placed.hook.kind), JSON.stringify(placed.hook));
     const framedNow = JSON.parse(fs.readFileSync(path.join(dir, "framed.json"), "utf8"));
     assert.ok(framedNow.windows[0].lift?.ground > 0, "the close-up raised in framed.json");
@@ -116,12 +134,13 @@ test("place on a made-up clip: the close-up is raised over a ground, the caption
     const faces = JSON.parse(fs.readFileSync(path.join(td, "faces.json"), "utf8"))["01.mp4"];
     assert.ok(faces.faces.length > 50);
     assert.ok(fs.existsSync(path.join(dir, "placed.sheet.jpg")), said);
-    // fixed by the agent: the close-up not raised; kept for the next run
-    const r2 = spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "place", dir, "--lift", "1.5:0"], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" } });
+    // fixed by the agent: the close-up not raised; kept for the next run (as is --raise full)
+    const r2 = place("--lift", "1.5:0");
     assert.equal(r2.status, 0, r2.stdout + r2.stderr);
-    assert.match(r2.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions ✗ on guest/);
-    assert.match(r2.stdout, /✗ Shot 1 /);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8")).fixed.lifts["1.5"], 0);
+    assert.match(r2.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions (✗|on the chin)/);
+    const p2 = JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8"));
+    assert.equal(p2.fixed.lifts["1.5"], 0);
+    assert.equal(p2.raise, "full");
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "framed.json"), "utf8")).windows[0].lift, undefined);
   } finally { if (!process.env.KEEP) fs.rmSync(dir, { recursive: true, force: true }); }
 });

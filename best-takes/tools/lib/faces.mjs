@@ -51,21 +51,30 @@ const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.
 // captions' area.
 // It never grows from so low that a face's eyes (EYES of its box from the top) go above `safeTop`,
 // under the apps' top bar: there a chin on the captions is the lesser harm.
-export const EYES = 0.42;
-export function punchOrigin({ faces, scale, frame: [W, H], cap, safeTop = 0 }) {
+// raise "moderate" (place.json): it never grows from so low that the head's top (the box's top and
+// a margin of ABOVE of its height for the hair, layout's) goes over the frame's top, where it was
+// inside; the mouth line (MOUTH of the box from its top, as layout takes it) is kept above the
+// captions before anything else.
+export const EYES = 0.42, ABOVE = 0.35, MOUTH = 0.65;
+export function punchOrigin({ faces, scale, frame: [W, H], cap, safeTop = 0, raise = "full" }) {
   const low = ORIGIN_Y * H;
   if (!cap || !(scale > 1)) return low;
-  const top = cap[1];
-  let y = low, most = H;
+  const top = cap[1], from = (v, at) => (scale * v - at) / (scale - 1);
+  let y = low, most = H, mouth = low;
   for (const b of faces) {
     if (b[0] + b[2] <= cap[0] || b[0] >= cap[0] + cap[2]) continue;
     // only a face above the captions' middle: one below them (captions above a head) is not pushed into them by growing upwards
     if (b[1] + b[3] / 2 > top + cap[3] / 2) continue;
     const chin = b[1] + b[3] + Math.max(BELOW_MIN, BELOW * b[3]);
-    y = Math.max(y, (scale * chin - top) / (scale - 1));
-    most = Math.min(most, (scale * (b[1] + EYES * b[3]) - safeTop) / (scale - 1));
+    y = Math.max(y, from(chin, top));
+    most = Math.min(most, from(b[1] + EYES * b[3], safeTop));
+    if (raise === "moderate") {
+      const head = b[1] - ABOVE * b[3];
+      if (head >= 0) most = Math.min(most, from(head, 0));
+      if (b[1] + MOUTH * b[3] <= top) mouth = Math.max(mouth, from(b[1] + MOUTH * b[3], top));
+    }
   }
-  return Math.max(low, Math.min(H, y, most));
+  return Math.max(low, mouth, Math.min(H, y, most));
 }
 
 // the seconds in which a text lies on a face: texts [{ role, box, from, to }] on the cut's clock;

@@ -321,7 +321,7 @@ function cmdBuild(dir, opts) {
     if (!(scales[k] > 1)) return { ...p, scale: scales[k] };
     const list = faces?.[clips[p.clip].file], seen = [];
     if (list) for (let t = p.in; t <= p.out; t += 0.1) for (const f of facesAt(list, t)) seen.push(toFrame(f.box, list.size, [width, height]));
-    return { ...p, scale: scales[k], origin: +punchOrigin({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop }).toFixed(1) };
+    return { ...p, scale: scales[k], origin: +Math.min(height, punchOrigin({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop, raise: placed?.raise || "full" })).toFixed(1) };
   });
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, hook });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words

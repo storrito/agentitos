@@ -14,7 +14,7 @@
 //        the framing again (no new cost: who sits where is kept), the shot at each <s> (seconds of
 //        <clip>/clip.mp4, as framed.sheet.jpg lists them) shown whole or following who speaks; the
 //        edit in takes/ stays, its next build takes the new picture
-//   node tools/clips.mjs place <clip> [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>,…] [--hook text|card]
+//   node tools/clips.mjs place <clip> [--raise moderate|full] [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>,…] [--hook text|card]
 //        where the text goes over the framed clip: one place for the captions of the whole clip,
 //        each shot raised where its chin would reach into them (the framing again, no cost), the
 //        hook's place over its first seconds, all by agentitos' layout from every face over time;
@@ -48,7 +48,7 @@ import { framedShots } from "./lib/faces.mjs";
 import { spanOf, hookSpan, shotsInput, facesFile, placeSheet, toOutput } from "./lib/place.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "target", "caption-y", "font-size", "lift"];
+const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "target", "caption-y", "font-size", "lift", "raise"];
 // the longest a short may be (every post type Storrito offers takes it), unless --target says more
 const LONGEST = 59;
 
@@ -156,7 +156,7 @@ function prepare(episode, dir, range, opts) {
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
   // --target: best-takes' check names a cut longer than the short may be
-  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", ...(opts.target ? [] : ["--target", String(longest)]), ...Object.entries(opts).filter(([k]) => !["whole", "follow", "caption-y", "font-size", "lift"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
+  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", ...(opts.target ? [] : ["--target", String(longest)]), ...Object.entries(opts).filter(([k]) => !["whole", "follow", "caption-y", "font-size", "lift", "raise"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
   writeStill(dir);
 
@@ -237,7 +237,7 @@ function layoutTool() {
 }
 
 function place(dir, opts, { build = true } = {}) {
-  if (!dir) fail("clips.mjs place <clip> [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>,…] [--hook text|card]");
+  if (!dir) fail("clips.mjs place <clip> [--raise moderate|full] [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>,…] [--hook text|card]");
   const framedJson = path.join(dir, "framed.json"), td = path.join(dir, "takes");
   if (!fs.existsSync(path.join(td, "cut.json"))) fail(`${rel(dir)} is not prepared: clips.mjs prepare first.`);
   if (!fs.existsSync(framedJson)) {
@@ -253,6 +253,7 @@ function place(dir, opts, { build = true } = {}) {
   const fixed = { ...(prev.fixed || {}) };
   if (opts["caption-y"] !== undefined) fixed.y = opts["caption-y"] === "" ? undefined : Number(opts["caption-y"]);
   if (opts["font-size"] !== undefined) fixed.font = opts["font-size"] === "" ? undefined : Number(opts["font-size"]);
+  if (opts.raise !== undefined) { if (!["moderate", "full", ""].includes(opts.raise)) fail("--raise is moderate (a shot raised only while the whole head stays in the picture; the default) or full (until the eyes reach the apps' top bar, the head cut by the frame's top); \"\" gives back the default."); fixed.raise = opts.raise || undefined; }
   if (opts.hook !== undefined) { if (!["text", "card", ""].includes(opts.hook)) fail("--hook is text (a short text below the chin or above the head) or card (a card at the top); \"\" lets layout choose."); fixed.hook = opts.hook || undefined; }
   if (opts.lift !== undefined) for (const v of String(opts.lift).split(",").filter(Boolean)) {
     const m = v.match(/^(\d+(?:\.\d+)?):(\d+)$/);
@@ -279,7 +280,7 @@ function place(dir, opts, { build = true } = {}) {
     return `${k + 1}:${px}`;
   });
   const args = ["text", folder, "--frame", "1080x1920", "--shots", shotsFile, "--text", "caption", ...(hook ? ["--text", fixed.hook ? `hook:${fixed.hook}` : "hook"] : []),
-    ...(s.platform ? ["--platform", s.platform] : []), ...(fixed.y ? ["--caption-y", String(fixed.y)] : []), ...(fixed.font ? ["--font-size", String(fixed.font)] : []), ...lifts.flatMap((l) => ["--lift", l])];
+    ...(s.platform ? ["--platform", s.platform] : []), "--raise", fixed.raise || "moderate", ...(fixed.y ? ["--caption-y", String(fixed.y)] : []), ...(fixed.font ? ["--font-size", String(fixed.font)] : []), ...lifts.flatMap((l) => ["--lift", l])];
   const r = spawnSync(process.execPath, [tool, ...args], { encoding: "utf8" });
   if (r.status !== 0) fail(`✗ layout: ${(r.stderr || r.stdout).trim()}`);
   const text = read(path.join(folder, "text.json"));
@@ -301,29 +302,31 @@ function place(dir, opts, { build = true } = {}) {
   const hookOut = text.hook ? { kind: text.hook.kind, box: text.hook.box, font: text.hook.font, lines: text.hook.lines,
     // ended early at a cut: until then, on the cut's clock
     ...(text.hook.why && span.built ? { until: +toOutput(text.hook.until, span.pieces).toFixed(3) } : {}) } : null;
-  fs.writeFileSync(path.join(td, "place.json"), JSON.stringify({ by: "clips place", caption: text.caption?.options, ...(hookOut ? { hook: hookOut } : {}), fixed }, null, 1) + "\n");
+  fs.writeFileSync(path.join(td, "place.json"), JSON.stringify({ by: "clips place", raise: fixed.raise || "moderate", caption: text.caption?.options, ...(hookOut ? { hook: hookOut } : {}), fixed }, null, 1) + "\n");
   fs.writeFileSync(path.join(td, "source", "faces.json"), JSON.stringify({ "01.mp4": facesFile(lifted) }) + "\n");
 
   // the list
   const sec = (x) => `${x.toFixed(1)}`;
   console.log(`\nThe captions: one place for the clip, one line of ${text.caption.font} px, the lowest line at y ${text.caption.options.y} (their middle at ${text.caption.middle} % of the height, ${text.caption.where === "above-head" ? "above the heads" : "below the chins"}).`);
-  if (text.hook) console.log(`The hook: ${text.hook.kind === "card" ? "a card" : "a short text"} ${text.hook.where === "below-chin" ? "below the chin" : text.hook.where === "above-head" ? "above the head" : text.hook.where === "top" ? "at the top" : `(${text.hook.where})`}, y ${Math.round(text.hook.box[1])}–${Math.round(text.hook.box[1] + text.hook.box[3])}, ${text.hook.font} px${text.hook.why ? `; ${text.hook.why}` : ""}${text.hook.onFace?.seconds ? `; ✗ on a face for ${text.hook.onFace.seconds} s` : ""}.`);
+  if (text.hook) console.log(`The hook: ${text.hook.kind === "card" ? "a card" : "a short text"} ${text.hook.where === "below-chin" ? "below the chin" : text.hook.where === "above-head" ? "above the head" : text.hook.where === "top" ? "at the top" : `(${text.hook.where})`}, y ${Math.round(text.hook.box[1])}–${Math.round(text.hook.box[1] + text.hook.box[3])}, ${text.hook.font} px (${text.hook.kindWhy}${text.hook.kind === "card" && input.hook?.calm === false ? ": the shot under it is not a close-up, so hands or things may lie behind it" : ""})${text.hook.why ? `; ${text.hook.why}` : ""}${text.hook.onFace?.seconds ? `; ✗ on a face for ${text.hook.onFace.seconds} s` : ""}.`);
+  console.log(`Raised ${fixed.raise === "full" ? "fully: a shot goes up until the eyes reach the apps' top bar, the head may be cut by the frame's top (--raise full)" : "moderately: a shot goes up only while the whole head stays in the picture (--raise full raises further and cuts the head)"}.`);
   console.log(`Per shot of the cut (seconds of the clip, as the sheets list them):`);
   const rows = text.shots.map((x, i) => {
     // (the framing again found its shots anew: the one at this shot's middle)
     const k = index[i], mid = (x.start + x.end) / 2, sh = lifted.find((q) => mid >= q.start && mid < q.end) || lifted[k] || { faces: [] };
     const touch = x.touches.map((t) => `${t.who} ${sec(t.seconds)} s`).join(", ");
-    console.log(`  ${String(k + 1).padStart(2)}. ${sec(x.start)}–${sec(x.end)} s  ${x.lift ? `raised ${x.lift} px${x.ground ? ` (${x.ground} over a ground at the bottom)` : ""}${x.fixed ? " as you fixed it" : ""}` : "as framed"}; captions ${touch ? `✗ on ${touch}` : "on no face"}`);
+    const mouth = x.touches.some((t) => t.mouth > 0.05);
+    console.log(`  ${String(k + 1).padStart(2)}. ${sec(x.start)}–${sec(x.end)} s  ${x.lift ? `raised ${x.lift} px${x.ground ? `, a blurred band of ${x.ground} px at the bottom (under the apps' text from y ${text.safe[1] + text.safe[3]})` : ""}${x.fixed ? " as you fixed it" : ""}` : "as framed"}; captions ${!touch ? "on no face" : mouth ? `✗ on the mouth of ${touch}` : x.chin ? `on the chin or neck of ${touch}, not avoidable without cutting the head or a smaller picture` : `✗ on ${touch}`}`);
     const facesAt = (t) => { const out = []; for (const f of sh.faces) { let best = null; for (const m of f.track) if (!best || Math.abs(m.t - t) < Math.abs(best.t - t)) best = m; if (best && Math.abs(best.t - t) < 0.3) out.push(best.box); } return out; };
-    return { n: k + 1, start: x.start, end: x.end, lift: x.lift, touch: touch || "", facesAt };
+    return { n: k + 1, start: x.start, end: x.end, lift: x.lift, touch: !touch ? "" : mouth ? `ON THE MOUTH ${touch}` : x.chin ? `on the chin ${touch}` : `ON A FACE ${touch}`, facesAt };
   });
   for (const c of text.conflicts) console.log(`✗ ${c}`);
-  for (const n of text.notes) console.log(`note: ${n}`);
+  for (const n of text.notes.filter((n) => !/chin or neck/.test(n))) console.log(`note: ${n}`);
   for (const f of fs.readdirSync(dir)) if (/^placed\.sheet(-\d+)?\.jpg$/.test(f)) fs.rmSync(path.join(dir, f));
   const sheets = placeSheet(path.join(dir, "framed.mp4"), rows, { caption: text.caption, hook: text.hook ? { ...text.hook, end: text.hook.until } : null }, path.join(dir, "placed.sheet.jpg"), { fps: 25 });
   if (sheets.failed) console.log(`(ffmpeg drew no sheet: ${sheets.failed})`);
   if (sheets.length) console.log(`Look at ${sheets.map(rel).join(", ")}: per shot its first, middle and last frame, the captions' box yellow, the hook's cyan, the faces red (as the framing found them; best-takes' punch-ins keep the captions' line where it is).`);
-  console.log(`To change it: --caption-y <px> (where the lowest line ends) and --font-size <px> for the captions, --lift <second>:<px> for a shot (0: as framed), --hook text|card; each is kept for the next run, "" gives it back to layout.`);
+  console.log(`To change it: --raise full (close-ups raised until the eyes reach the apps' top bar, the head cut, the chin clear) or moderate, --caption-y <px> (where the lowest line ends) and --font-size <px> for the captions, --lift <second>:<px> for a shot (0: as framed), --hook text|card; each is kept for the next run, "" gives it back to layout.`);
   if (build && span.built) {
     const takes = takesTool();
     if (takes) run(takes, ["build", td]);
@@ -415,4 +418,4 @@ else if (command === "render") render(pos[0], pos[1]);
 else if (command === "place") place(pos[0], opts);
 else if (command === "prepare-all") await prepareAll(pos[0], pos[1], opts);
 else if (command === "render-all") await renderAll(pos[0], pos[1], opts);
-else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>] [--hook text|card] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
+else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise moderate|full] [--caption-y <px>] [--font-size <px>] [--lift <s>:<px>] [--hook text|card] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
