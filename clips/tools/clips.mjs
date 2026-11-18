@@ -27,7 +27,7 @@
 //        Sprite), at most 4
 //   node tools/clips.mjs render-all <clips.json> <folder> [--jobs N]
 //        render for every clip, <folder>/<clip's folder name>.mp4, one after the other: a
-//        HyperFrames render already keeps every core busy, two at once only on 8 GB and more
+//        HyperFrames render already keeps every core busy, two at once only on 16 GB and more
 //        (two on a 4 GB Sprite filled its memory and took longer than one by one)
 //
 // The edit itself is best-takes' (build, check, captions; its README): this tool only sets it up
@@ -183,7 +183,7 @@ function prepare(episode, dir, range, opts) {
   const note = lengthNote(estimate, limit);
   if (note) console.log(note);
   if (payoff != null) console.log(openingNote(sentenceWords(spoken, sentences[payoff], from), payoff, { first: a, estimate, limit }));
-  if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (each shot: the footage left, the frame right). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
+  if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (one row per shot: the footage with the window in yellow, the frame at the shot's first, middle and last frame; red where eyes, nose or mouth are at an edge, as framing listed with ⚠; an ear or a cheek at the edge of a close-up is listed with · and is fine). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
   node ${t} captions ${d} --style <style>${opts.platform ? "" : " --platform <platforms>"}${opts.brand ? ` --brand ${opts.brand}` : ""}
