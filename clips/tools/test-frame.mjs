@@ -97,6 +97,8 @@ test("a possible cut counts only where the model named one; no shot shorter than
   near(shots[1].start, 0.04 + 39.5 / FPS, 1e-3);
   assert.equal(shots[0].start, 0);
   near(shots[2].end, 0.04 + 150 / FPS, 1e-3);
+  // a possible cut confirmed a few frames before a sure one gives way to it
+  assert.deepEqual(shotsBetween([{ frame: 40, sure: false }, { frame: 43, sure: true }], 150, FPS).map((s) => s.first), [0, 43]);
 });
 
 const META = { width: 3840, height: 2160, fps: FPS };

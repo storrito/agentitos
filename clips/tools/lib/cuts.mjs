@@ -109,8 +109,15 @@ export function shotsBetween(cuts, frameCount, fps, { start = 0, shortest = 6 } 
   const done = Object.fromEntries(cuts.filter((c) => c.to != null).map((c) => [c.frame, c.to]));
   // and the first frame of the change that takes it out
   const begins = Object.fromEntries(cuts.filter((c) => c.from != null).map((c) => [c.frame, c.from]));
+  // of two cuts too close together the sure one stays (else the first)
+  const sure = new Set(cuts.filter((c) => c.sure !== false).map((c) => c.frame ?? c));
   const kept = [0];
-  for (const f of at) if (f - kept[kept.length - 1] >= shortest && frameCount - f >= shortest) kept.push(f);
+  for (const f of at) {
+    if (frameCount - f < shortest) continue;
+    const prev = kept[kept.length - 1];
+    if (f - prev >= shortest) kept.push(f);
+    else if (prev > 0 && sure.has(f) && !sure.has(prev)) kept[kept.length - 1] = f;
+  }
   const border = (f) => (f === 0 ? 0 : +(start + (f - 0.5) / fps).toFixed(4));
   return kept.map((f, k) => {
     const next = kept[k + 1] ?? frameCount;

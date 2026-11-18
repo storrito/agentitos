@@ -79,9 +79,11 @@ const PANEL = 0.36, SEAM = 6, PANEL_FACE_Y = 0.42, BANTER = 5, BANTER_TURNS = 3;
 export const KINDS = ["people", "split", "broll"];
 
 export const probe = (file) => {
-  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,start_time:format=duration", "-of", "json", file], { encoding: "utf8" }));
+  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,start_time:format=duration,start_time", "-of", "json", file], { encoding: "utf8" }));
   const [a, b] = String(j.streams[0].r_frame_rate || "25/1").split("/").map(Number);
-  return { width: j.streams[0].width, height: j.streams[0].height, fps: b ? a / b : 25, duration: Number(j.format.duration), start: Number(j.streams[0].start_time) || 0 };
+  return { width: j.streams[0].width, height: j.streams[0].height, fps: b ? a / b : 25, duration: Number(j.format.duration),
+    // the picture's start after the file's own (ffmpeg's filters count from the file's start)
+    start: Math.max(0, (Number(j.streams[0].start_time) || 0) - (Number(j.format.start_time) || 0)) };
 };
 
 // who speaks when: the transcript's words in turns of one voice (for the model to read)
@@ -117,7 +119,7 @@ export function stillsOf(shots, fps) {
     const a = Math.max(s.start + 1.5 / fps, s.settled ?? 0), b = Math.min(s.end - 1.5 / fps, (s.leaving ?? Infinity) - 0.5 / fps);
     const n = b - a < 0.5 ? 1 : Math.max(3, Math.ceil((b - a) / every) + 1);
     const ts = n === 1 ? [(s.start + s.end) / 2] : Array.from({ length: n }, (_, i) => a + ((b - a) * i) / (n - 1));
-    ts.forEach((t, i) => out.push({ shot: k, id: `${k + 1}${String.fromCharCode(97 + i)}`, t: +t.toFixed(3) }));
+    ts.forEach((t, i) => out.push({ shot: k, id: `${k + 1}.${i + 1}`, t: +t.toFixed(3) }));
   });
   return out;
 }
@@ -233,19 +235,32 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
     const people = {
       version: 2, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
       shots: shots.map((s, k) => {
-        const a = (ans.shots || []).find((x) => x.shot === k + 1) || (ans.shots || [])[k] || {};
-        return {
-          start: s.start, end: s.end, kind: a.kind, subject: a.subject, people: a.people || [],
-          stills: stills.filter((x) => x.shot === k).map((x) => ({ t: x.t, faces: ((a.stills || []).find((y) => y.still === x.id)?.faces) || [] })),
+        // the shot's own entry: the one holding most of its stills (a model may count shots from 0)
+        const own = (a) => (a.stills || []).filter((y) => byId[y.still]?.shot === k).length;
+        const a = [...(ans.shots || [])].sort((p, q) => own(q) - own(p))[0];
+        const entry = a && own(a) ? a : (ans.shots || []).find((x) => x.shot === k + 1) || {};
+        const people = [...(entry.people || [])];
+        // a still answered under another entry: its faces by who they are, added to this shot's people
+        const faces = (x) => {
+          for (const e of ans.shots || []) {
+            const st = (e.stills || []).find((y) => y.still === x.id);
+            if (!st) continue;
+            if (e === entry) return st.faces || [];
+            return (st.faces || []).map((f) => {
+              const p = (e.people || [])[f.person];
+              if (!p) return null;
+              let i = people.findIndex((q) => (p.speaker != null ? q.speaker === p.speaker : q.who === p.who));
+              if (i < 0) i = people.push(p) - 1;
+              return { person: i, box_2d: f.box_2d };
+            }).filter(Boolean);
+          }
+          return [];
         };
+        return { start: s.start, end: s.end, kind: entry.kind, subject: entry.subject, people,
+          stills: stills.filter((x) => x.shot === k).map((x) => ({ t: x.t, faces: faces(x) })) };
       }),
-      // stills the model put under another shot still count, by their time
       missed: (ans.missed_cuts || []).filter(Number.isFinite),
     };
-    for (const a of ans.shots || []) for (const st of a.stills || []) {
-      const x = byId[st.still];
-      if (x && x.shot !== (a.shot ?? 0) - 1) log(`frame: the model answered still ${st.still} under shot ${a.shot}: kept with its own shot`);
-    }
     fs.writeFileSync(cache, JSON.stringify(people, null, 1));
     log(`frame: ${people.shots.length} shot(s)${people.missed.length ? `, cuts named that the frames did not show at ${people.missed.map((t) => t.toFixed(1)).join(", ")} s` : ""}, $${people.cost.toFixed(4)}`);
     return people;
@@ -490,7 +505,7 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
         const span = Math.max(...g.at.map((f) => f.x + f.w / 2)) - Math.min(...g.at.map((f) => f.x - f.w / 2));
         const need = ((span / (1 - 2 * HOLD)) * ah) / aw;
         if (need > h) {
-          if (need <= hMax) { h = need; hold = "wider"; }
+          if (need <= hMax) { h = need; if (hold === "still") hold = "wider"; }
           else hold = "follows";
         }
       }
@@ -661,7 +676,8 @@ export function sheet(video, framed, windows, shots, edges, file, { fps = 25 } =
     const args = ["-v", "error", "-y"], chains = [];
     let n = 0;
     for (const { s, k } of rows) {
-      const ts = [s.start + 0.5 / fps + 0.002, (s.start + s.end) / 2, Math.min(s.end - 0.5 / fps, last) - 0.002];
+      // the shot's very first frame (its time less a hair: -ss gives the first frame from there)
+      const ts = [s.start === 0 ? 0 : s.start + 0.5 / fps - 0.002, (s.start + s.end) / 2, Math.min(s.end - 0.5 / fps, last) - 0.002];
       const mid = ts[1];
       const piece = windows.find((w) => w.start <= mid && w.end > mid) || windows.find((w) => w.shot === k);
       const rects = !piece ? [] : piece.fit ? [piece.fit] : piece.stack ? piece.stack : [windowAt(piece, mid)];
