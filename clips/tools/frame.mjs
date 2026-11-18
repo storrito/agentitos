@@ -69,7 +69,10 @@ const HOLD = 0.06, EDGE = 0.02;
 // window widths a second, and turns back no sooner than REST seconds after its last turn; of a
 // face wider than BIG of the window it holds the middle CORE of the face's width (the editors'
 // close-ups cut the ears too)
-const REST = 1, VMAX = 1.2, BIG = 0.5, CORE = 0.8, SLACK = 0.03;
+// CORE was chosen on the five passages of the three-way test (70 % let a nose or an eye go in
+// profile turns, 90 % made the window chase a swaying close-up): a default, FRAME_CORE changes it
+const REST = 1, VMAX = 1.2, BIG = 0.5, SLACK = 0.03;
+const CORE = Math.min(1, Math.max(0.5, Number(process.env.FRAME_CORE) || 0.8));
 // a face followed until here, then on a still without it: gone this long after it was last seen
 const ABSENT_GAP = 0.15;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
