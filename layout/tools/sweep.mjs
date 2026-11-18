@@ -8,6 +8,7 @@
 //   node sweep.mjs <folder> --weights mine.json   with other weights; the page then counts, per case, the
 //                                                 winners that differ from those of the skill's weights.json
 //   node sweep.mjs <folder> --no-check            without the checker (no Chrome)
+//   node sweep.mjs <folder> --jobs 1              the checker one run (one Chrome) at a time
 //   node sweep.mjs <folder> --html                only rebuild sweep.html from sweep.json
 //   --summary                                     also print the numbers behind the page's thresholds
 //
@@ -31,8 +32,11 @@ import { askZones, zonesTool } from "./lib/zones.mjs";
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const argv = process.argv.slice(2), flags = new Set(argv.filter((a) => a.startsWith("--")));
 const wi = argv.indexOf("--weights"), weightsFile = wi >= 0 ? argv[wi + 1] : null;
-const [folder] = argv.filter((a, i) => !a.startsWith("--") && (wi < 0 || i !== wi + 1));
-for (const f of flags) if (!["--weights", "--no-check", "--html", "--summary"].includes(f)) fail(`sweep has no option ${f}: it takes --weights <file.json>, --no-check, --html, --summary.`);
+// --jobs N: at most N checker runs (and Chrome pages) at once, for a machine that is busy otherwise
+const ji = argv.indexOf("--jobs"), jobs = ji >= 0 ? Number(argv[ji + 1]) : null;
+if (ji >= 0 && !(Number.isInteger(jobs) && jobs >= 1)) fail("--jobs is a whole number of checker runs at once, 1 or more.");
+const [folder] = argv.filter((a, i) => !a.startsWith("--") && (wi < 0 || i !== wi + 1) && (ji < 0 || i !== ji + 1));
+for (const f of flags) if (!["--weights", "--no-check", "--html", "--summary", "--jobs"].includes(f)) fail(`sweep has no option ${f}: it takes --weights <file.json>, --no-check, --html, --summary, --jobs <n>.`);
 if (!folder || (wi >= 0 && !weightsFile)) fail("node sweep.mjs <folder> [--weights file.json] [--no-check] [--html] [--summary]: the folder is yours, sweep.json and sweep.html go into it.");
 
 const CASES = [
@@ -104,7 +108,7 @@ const layout = async (file) => {
 async function checkBoxes(cells) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "layout-sweep-"));
   const t0 = Date.now();
-  const res = await pool(cells, Math.max(2, os.cpus().length - 2), async (c, k) => {
+  const res = await pool(cells, jobs || Math.max(2, os.cpus().length - 2), async (c, k) => {
     const boxes = [{ kind: "face", label: "face", box: c.faceInFrame }, ...c.text.map((t) => ({ kind: "text", label: t.role, box: t.ink, ...(t.align === "center" ? { centred: true } : {}) }))];
     const file = path.join(dir, `${k}.json`);
     fs.writeFileSync(file, JSON.stringify({ size: sizeOf(c), boxes }));
@@ -128,7 +132,7 @@ async function checkPages(cells, perGroup, defaults) {
     for (let i = 0; i < perGroup; i++) sample.push(part[Math.floor(i * step + step / 2)]);
   }
   const t0 = Date.now();
-  await pool(sample, 6, async (c) => {
+  await pool(sample, jobs || 6, async (c) => {
     const cs = CASES.find((q) => q.id === c.case);
     const file = path.join(dir, `${c.case}-${c.need}-h${c.h}-e${c.e}-o${c.o}.html`);
     fs.writeFileSync(file, renderPage({ ...c, faceInFrame: [c.faceInFrame] }, { size: sizeOf(c), source: cs.source, faces: [c.face], defaults }, { page: file }));
