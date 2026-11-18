@@ -50,11 +50,12 @@ should see: **the best take of every part, in the order of the story, without sl
    sentences are a retry or two different points, keep both and say so.
 5. **Few, whole pieces.** Ranges of whole sentences. Fillers ("äh", "ähm") inside a kept range
    are cut out by the tool, long pauses shortened: **never split a range around them**. A piece of one or two words between cuts sounds chopped: take the whole phrase.
-6. **Pauses follow the picture.** The tool looks at every pause: where the picture stands still
-   it cuts (a jump cut), where it moves (a click, a page that loads, scrolling) it keeps that
-   part, muted, and a long one plays faster (a timelapse). Leave pauses to it. Only when a
-   silence must play at its own speed although it is long (a camera held into the picture and
-   turned slowly, a reaction) does that keep get \`"pauses": "keep"\`.
+6. **Pauses follow the picture.** A pause that moves no more than the picture while the person
+   speaks (a face, the hand holding the phone) the tool cuts; where something moves clearly
+   more (a thing held into the picture, a click, a page that loads) it keeps that part, muted,
+   a long one as a timelapse. A silent moment worth seeing that it cannot measure (a look, a
+   reaction, a thing held still) is yours to mark: \`"pauses": "keep"\` on its keep (all its
+   pauses then play as they are).
 7. **A wait the speaker announces stays a wait.** "Let's wait until then", "wir warten kurz",
    "un momento", in any language: what follows is the time passing, and the viewer should feel
    it. Put the number of the announcing sentence's last word into \`"waits"\`; the tool then
@@ -86,9 +87,11 @@ ${rules(several, settings)}
 - **Events** like \`[Kamera klackert]\` are noises, not speech: they stay where they are, inside
   a kept range they play along.
 - **Pauses** ${settings.pauses === "tight" ? `longer than ${settings.pause} s inside a keep are cut to a breath, whatever the picture
-  shows (tight).` : `longer than ${settings.pause} s inside a keep: where the picture stands still they
-  are cut to about 0.3 s; where it moves, that part stays, muted, up to 2.5 s as it is, longer
-  in about a third of its time (2–6 s, at most ×10).`} \`"pauses": "keep"\` plays them as they are.
+  shows (tight).` : `longer than ${settings.pause} s inside a keep: where the picture moves no more than
+  while the person speaks they are cut to about 0.3 s; where something moves clearly more (4×,
+  on a screen any movement), that part stays, muted, up to 2.5 s as it is, longer in about a
+  third of its time (2–6 s, at most ×10). \`check\` says for each pause what it did and why.`}
+  \`"pauses": "keep"\` plays them as they are.
 - **Cut points** go into the quiet just before and after the kept words.
 - **Loudness**: each take is measured and brought to the same level (${settings.loudness} LUFS
   before the bus, ${settings.final} LUFS in the rendered video). For a part that should be quieter
