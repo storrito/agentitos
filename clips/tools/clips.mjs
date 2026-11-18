@@ -50,6 +50,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { framedShots } from "./lib/faces.mjs";
 import { spanOf, hookSpan, shotsInput, facesFile, placeSheet, toOutput } from "./lib/place.mjs";
+import { clipFixes } from "./lib/names.mjs";
 import { numbers, ranges, cutKeeps, dropNote, sentenceWords, openingNote, lengthNote, playedSeconds, MAX_SECONDS } from "./lib/moments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -183,8 +184,13 @@ function prepare(episode, dir, range, opts) {
   const first = inside[0].i, last = inside.at(-1).i;
   const outside = spoken.filter((w) => w.i < first || w.i > last).map((w) => `${w.i} "${w.text}"`);
   const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
+  // the names episode.mjs names corrected in the episode, on the clip's own words (best-takes wrote
+  // them anew): as "fixes", so that the captions and the subtitles spell them so
+  const listed = path.join(episode, "names.json");
+  const named = fs.existsSync(listed) ? clipFixes(heard, read(listed).entries || [], from, to - from) : null;
   fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify({ keep: keeps.map(([x, y], k) => ({ words: x === y ? `${x}` : `${x}-${y}`,
-    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges([...plan.cut, ...plan.asides].sort((x, y) => x - y))} left out)` })) }, null, 1) + "\n");
+    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges([...plan.cut, ...plan.asides].sort((x, y) => x - y))} left out)` })),
+    ...(named && Object.keys(named.fixes).length ? { fixes: named.fixes } : {}) }, null, 1) + "\n");
 
   // where the text goes: one place for the captions, the shots raised that need it, the hook
   if (video === framed) { console.log(""); place(dir, {}, { build: false }); }
@@ -192,13 +198,15 @@ function prepare(episode, dir, range, opts) {
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
   if (drop.length) console.log(dropNote(plan, gone, folded, keeps, sentences));
+  if (named?.found.length) console.log(`The names: ${named.found.map((f) => `"${f.heard}" → "${f.to}" (word${f.words.length > 1 ? "s" : ""} ${f.words.join(", ")})`).join(", ")} in cut.json "fixes", as the episode's names list has them.`);
+  if (named?.missed.length) console.log(`Not found in the clip's words: ${named.missed.map((m) => `"${m.to}" at ${m.at.toFixed(1)} s${m.heard ? ` (the clip heard "${m.heard}")` : ""}`).join(", ")}: read the brief there and fix the spelling in cut.json "fixes" yourself.`);
   // how long the moment plays as cut, against the limit it was found for
   const estimate = playedSeconds(spoken, keeps);
   const note = lengthNote(estimate, limit);
   if (note) console.log(note);
   if (payoff != null) console.log(openingNote(sentenceWords(spoken, sentences[payoff], from), payoff, { first: a, estimate, limit }));
   if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (one row per shot: the footage with the window in yellow, the frame at the shot's first, middle and last frame; red where eyes, nose or mouth are at an edge, as framing listed with ⚠; an ear or a cheek at the edge of a close-up is listed with · and is fine). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
-  console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
+  console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names the list did not hold in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
   node ${t} captions ${d} --style <style>${opts.platform ? "" : " --platform <platforms>"}${opts.brand ? ` --brand ${opts.brand}` : ""}
   node ${rel(path.join(HERE, "clips.mjs"))} place ${rel(dir)}   (again once the cut and its captions are built: the hook's time is the cut's, the area the style's; it builds again)
