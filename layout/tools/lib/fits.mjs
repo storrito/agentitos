@@ -241,7 +241,8 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
   // enlarging the source past softFrom, every face in the safe box with the margins kept beside
   // and above a head (a head at the box's very edge has its hair at the frame's edge); where the
   // text finds no room there, a little less close.
-  if (fb && (!same || s0 < 1 - 1e-9) && !(cropsOnly && same)) {
+  // (pixels to spare: the source covers the frame below 1×, a 4K picture in a 1080 frame)
+  if (fb && s0 < 1 - 1e-9 && !(cropsOnly && same)) {
     const src = ctx.sources?.[0], held = ctx.own ? ctx.own.map((k) => ctx.faces[k]) : ctx.faces;
     const idx = ctx.own || (ctx.speakerFace != null ? [ctx.speakerFace] : ctx.faces.map((_, k) => k));
     const per = Math.min(...idx.map((k) => (src?.heights ? src.heights[k] : ctx.faces[k][3])));
