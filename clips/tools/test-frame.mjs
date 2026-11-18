@@ -11,6 +11,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
 import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline } from "./frame.mjs";
+import { greyFrames, fillTrack } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const FPS = 25;
@@ -211,5 +212,27 @@ test("the rendered window keeps a moving box inside the frame, at the footage's 
       assert.equal(edge, 0, `frame ${i}: the box touches the edge`);
     }
     assert.ok(seen >= n - 3, `the box is in ${seen} of ${n} frames`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("between two stills the face is followed in the frames, where a straight line would lose it", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // a grey square on a dark picture goes right and comes back in 4 s: at both ends it is at the left
+    const video = path.join(dir, "swing.mp4");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=0x101010:s=1280x720:r=${FPS}:d=4`, "-f", "lavfi", "-i", `testsrc2=s=120x140:r=${FPS}:d=4`,
+      "-filter_complex", "[0:v][1:v]overlay=x='100+500*sin(PI*t/4)':y=200,format=yuv420p[v]", "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", video], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const at = (t) => ({ t, x: 160 + 500 * Math.sin((Math.PI * t) / 4), y: 270, w: 120, h: 140 });
+    const grey = greyFrames(video);
+    const track = fillTrack(grey, [at(0.2), at(3.8)], 0, 4);
+    assert.ok(track.length > 30, `${track.length} points`);
+    for (const t of [1, 2, 3]) near(faceAt({ track }, t).x, at(t).x, 40);
+    // the window built on it keeps the square inside at every point
+    const shots = [{ start: 0, end: 4, kind: "people", people: [{ who: "square", speaker: "A", track }], faces: [{ speaker: "A", who: "square", ...at(2) }] }];
+    const windows = windowsOf(shots, [{ t: 0, speaker: "A" }], { width: 1280, height: 720, fps: FPS, aspect: [9, 16] });
+    assert.equal(windows[0].hold, "follows");
+    const truth = [{ who: "square", speaker: "A", track: Array.from({ length: 37 }, (_, i) => at(0.2 + i * 0.1)) }];
+    assert.deepEqual(edgesOf(windows, [{ ...shots[0], people: truth }], { fps: FPS }).filter((e) => e.cut), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

@@ -19,9 +19,9 @@
 //
 // The window: in a shot the face of the voice speaking, a third from the top (the type is below);
 // a voice that speaks for less than a second and a half (a "ja", a laugh) moves nothing; a shot
-// of someone else (a reaction) shows them. The face is known on every still: the window holds it
-// at all of them, still where it can, wider where that is enough, else following it from still to
-// still. A face low in a wide shot (an empty wall above it) is brought up by a closer window, as
+// of someone else (a reaction) shows them. The face is known on every still, and between the
+// stills followed in the frames (lib/track.mjs, ten a second): the window holds it all through,
+// still where it can, wider where that is enough, else following it. A face low in a wide shot (an empty wall above it) is brought up by a closer window, as
 // far as the footage's sharpness allows. Within a shot the window pans in 0.4 s to another
 // speaker, at a cut it cuts. A wide shot (several people) from footage of 1440 lines and more is
 // cut closer.
@@ -50,6 +50,7 @@ import os from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
+import { greyFrames, fillTrack } from "./lib/track.mjs";
 
 export const FRAME_MODEL = "google/gemini-3.8-flash";
 import { openrouter, GATEWAY_MAX } from "./lib/openrouter.mjs";
@@ -62,6 +63,8 @@ const CLOSEST = 0.55, CLOSEST_LINES = 960;
 // the room a window keeps beside the face it holds (share of its width): to choose it, and to
 // warn of a face closer to the edge than EDGE
 const HOLD = 0.06, EDGE = 0.04;
+// a window that follows a face moves to where it is every FOLLOW seconds
+const FOLLOW = 0.4;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
 const STILL_EVERY = 3, STILLS_MAX = 60;
 // a face shown whole in a 9:16 frame is this share of the footage's height times 0.32: under
@@ -504,13 +507,20 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
         const lo = Math.min(...g.at.map((f) => f.x - f.w / 2)), hi = Math.max(...g.at.map((f) => f.x + f.w / 2));
         const fy = g.at.reduce((n, f) => n + f.y, 0) / g.at.length;
         if (hi - lo <= w * (1 - 2 * HOLD)) { push({ t: g.t0, x: clampX((lo + hi) / 2 - w / 2), y: clampY(fy - h * FACE_Y) }); continue; }
-        // following: at every still where the face is, straight from one to the next
-        push({ t: g.t0, x: clampX(g.at[0].x - w / 2), y: clampY(g.at[0].y - h * FACE_Y) });
+        // following: every FOLLOW seconds where the face is then (its path a little smoothed),
+        // straight from one to the next
+        const near = (t) => {
+          const xs = [-0.2, -0.1, 0, 0.1, 0.2].map((d) => faceAt(g.person, Math.min(g.t1, Math.max(g.t0, t + d))));
+          return { x: xs.reduce((n, f) => n + f.x, 0) / xs.length, y: xs.reduce((n, f) => n + f.y, 0) / xs.length };
+        };
+        const f0 = near(g.t0);
+        push({ t: g.t0, x: clampX(f0.x - w / 2), y: clampY(f0.y - h * FACE_Y) });
         let free = keys.length > 1 ? g.t0 + PAN : g.t0;
-        for (const f of g.at.slice(1)) {
-          if (f.t - free < 0.1) continue;
-          keys.push({ t: +free.toFixed(3), x: clampX(f.x - w / 2), y: clampY(f.y - h * FACE_Y), pan: +(f.t - free).toFixed(3), linear: true });
-          free = f.t;
+        for (let t = free + FOLLOW; t < g.t1 + FOLLOW - 1e-6; t += FOLLOW) {
+          const at = Math.min(t, g.t1), f = near(at);
+          if (at - free < 0.1) continue;
+          keys.push({ t: +free.toFixed(3), x: clampX(f.x - w / 2), y: clampY(f.y - h * FACE_Y), pan: +(at - free).toFixed(3), linear: true });
+          free = at;
         }
       }
       if (!keys.length) keys.push({ t: a, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) });
@@ -620,6 +630,16 @@ export function render(video, windows, out, { outW, outH, fps, start = 0 }) {
 const SAY = { people: "follows who speaks", stack: "the two who speak, one above the other", split: "split picture, shown whole", broll: "B-roll, shown whole" };
 const HOLDS = { still: "", wider: " (wider: the face moves)", follows: " (follows the face as it moves)" };
 const sideOf = { left: "left", right: "right", top: "top", bottom: "bottom" };
+// times as stretches: 9.6–10.4, 17.1
+export function spans(times, gap = 0.3) {
+  const out = [];
+  for (const t of [...new Set(times)].sort((a, b) => a - b)) {
+    const last = out[out.length - 1];
+    if (last && t - last[1] <= gap) last[1] = t;
+    else out.push([t, t]);
+  }
+  return out.map(([a, b]) => (b - a < 0.05 ? a.toFixed(1) : `${a.toFixed(1)}–${b.toFixed(1)}`));
+}
 export function edgeLine(e) {
   return `${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${sideOf[e.edge]} edge at ${e.t.toFixed(1)} s`;
 }
@@ -648,7 +668,7 @@ export function sheet(video, framed, windows, shots, edges, file, { fps = 25 } =
       const scale = H / meta.height;
       const boxes = rects.map((r) => `drawbox=x=${Math.round(r.x * scale)}:y=${Math.round(r.y * scale)}:w=${Math.round(r.w * scale)}:h=${Math.round(r.h * scale)}:color=yellow:t=3`).join(",");
       const flagged = edges.filter((e) => e.shot === k);
-      const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${[...new Set(flagged.map((e) => e.t.toFixed(1)))].slice(0, 4).join(" ")} s` : ""}`;
+      const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${spans(flagged.map((e) => e.t)).slice(0, 4).join(" ").replace(/–/g, " to ")} s` : ""}`;
       args.push("-ss", mid.toFixed(3), "-i", video);
       chains.push(`[${n}:v]scale=${SW}:${H},setsar=1${boxes ? "," + boxes : ""},drawtext=text='${text(label)}':x=8:y=8:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=4[c${k}_0]`);
       n++;
@@ -686,6 +706,9 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   // the cuts the model saw and the frames only hinted at
   shots = shotList(found, meta, people.missed || []);
   const seen = shotsOf(people, shots, meta);
+  // the faces between the stills, followed in the frames
+  const grey = greyFrames(video, { start: meta.start });
+  for (const s of seen) if (s.kind === "people") for (const p of s.people) p.track = fillTrack(grey, p.track, s.start, s.end);
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
   const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, outW });
   const edges = edgesOf(windows, seen, meta);
@@ -729,7 +752,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         const key = `${e.who}|${e.edge}|${e.cut}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const all = [...new Set(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}` === key).map((x) => x.t.toFixed(1)))];
+        const all = spans(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}` === key).map((x) => x.t));
         console.log(`     ⚠ ${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s`);
       }
     });
