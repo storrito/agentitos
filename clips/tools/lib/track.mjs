@@ -143,6 +143,24 @@ export function uncross(people) {
       if (o && iou(s, o) > 0.2) { crossing.get(people[i]).add(s.t.toFixed(2)); crossing.get(people[j]).add(s.t.toFixed(2)); }
     }
   }
+  // a still on which one face covers another: the frames cannot start from it, so each path
+  // next to it goes straight from still to still
+  const near = new Map(people.map((p) => [p, []]));
+  for (let i = 0; i < people.length; i++) for (let j = i + 1; j < people.length; j++) {
+    for (const s of people[i].track) {
+      if (!s.seen || s.absent) continue;
+      const o = people[j].track.find((x) => x.seen && !x.absent && Math.abs(x.t - s.t) < 1e-3);
+      if (o && iou(s, o) > 0.2) { near.get(people[i]).push(s.t); near.get(people[j]).push(s.t); }
+    }
+  }
+  for (const p of people) {
+    const seen = p.track.filter((s) => s.seen && !s.absent);
+    for (const t of near.get(p)) {
+      const k = seen.findIndex((x) => Math.abs(x.t - t) < 1e-3);
+      const from = seen[k - 1]?.t ?? -Infinity, to = seen[k + 1]?.t ?? Infinity;
+      for (const s of p.track) if (!s.seen && !s.absent && s.t > from && s.t < to) crossing.get(p).add(s.t.toFixed(2));
+    }
+  }
   for (const p of people) {
     const bad = crossing.get(p);
     if (!bad.size) continue;
