@@ -203,3 +203,53 @@ test("capitalised: Unicode's first letter, by the language; names and digits as 
   assert.equal(capitalised("東京"), "東京");
   assert.ok(endsSentence("Pixel.") && endsSentence("so?“") && endsSentence("»Ende.«") && !endsSentence("3.") && !endsSentence("z.B.") && !endsSentence("und,"));
 });
+
+// ------------------------------------------------------------------- text and faces (faces.json)
+import { punchOrigin, textOnFaces, toFrame } from "./lib/faces.mjs";
+import { hookCard } from "./lib/hook.mjs";
+
+const FRAME = [1080, 1920], CAP = [192, 1306, 696, 134];
+test("a punch-in grows from a third from the top while every chin clears the captions with room to spare", () => {
+  assert.equal(punchOrigin({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, cap: CAP }), 0.32 * 1920);
+});
+test("a punch-in on a face whose chin stands just above the captions grows from lower down, so that the chin and the margin below it stay above them", () => {
+  const face = [300, 600, 480, 640], chin = 600 + 640 + 0.08 * 640;
+  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP });
+  assert.ok(y > 0.32 * 1920, `origin ${y}`);
+  // the chin after the punch-in, grown from y
+  assert.ok(y + (chin - y) * 1.12 <= CAP[1] + 1e-6, `chin after ${y + (chin - y) * 1.12}`);
+});
+test("a punch-in on a face that lies on the captions already grows from the frame's bottom at most: the chin goes up, not down", () => {
+  const y = punchOrigin({ faces: [[100, 0, 880, 1700]], scale: 1.12, frame: FRAME, cap: CAP });
+  assert.equal(y, 1920);
+});
+test("without captions, or on a face below them (captions above a head), the punch-in grows from a third from the top", () => {
+  assert.equal(punchOrigin({ faces: [[300, 600, 480, 640]], scale: 1.12, frame: FRAME, cap: null }), 0.32 * 1920);
+  assert.equal(punchOrigin({ faces: [[355, 1000, 370, 400]], scale: 1.12, frame: FRAME, cap: [192, 700, 696, 134] }), 0.32 * 1920);
+});
+test("the check finds the seconds a text lies on a face, through the piece's punch-in, and how deep into the face from its chin", () => {
+  const clips = { 1: { file: "01.mp4" } };
+  const faces = { "01.mp4": { size: [1080, 1920], faces: Array.from({ length: 101 }, (_, i) => ({ t: i / 10, boxes: [{ who: "A", box: i < 50 ? [355, 300, 370, 500] : [300, 900, 480, 640] }] })) } };
+  const pieces = [{ clip: 1, in: 0, out: 10, start: 0, duration: 10 }];
+  const on = textOnFaces({ pieces, clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 10 }], frame: FRAME });
+  assert.equal(on.length, 1);
+  assert.ok(Math.abs(on[0].seconds - 5) < 0.21 && on[0].from >= 4.9, JSON.stringify(on));
+  assert.ok(Math.abs(on[0].share - (1540 - 1306) / 640) < 0.01, JSON.stringify(on));
+  // the same face punched in from a third from the top lies deeper on them; grown from below its chin, less
+  const punched = textOnFaces({ pieces: [{ ...pieces[0], scale: 1.12, origin: 614.4 }], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 10 }], frame: FRAME });
+  assert.ok(punched[0].share > on[0].share, JSON.stringify(punched));
+  assert.deepEqual(toFrame([0, 0, 540, 960], [540, 960], FRAME), [0, 0, 1080, 1920]);
+});
+test("the hook stands where it is placed: a text without a card in the middle of its box, or a card at its top; without a place, the card at the top of the centred box as before", () => {
+  const zones = { centred: [192, 250, 696, 1190] };
+  const text = hookCard({ text: "He wears the *robe*", until: 3, zones, out: os.tmpdir(), place: { kind: "text", box: [192, 900, 696, 238], font: 96 } });
+  assert.match(text.style, /top: 915\.3px/);
+  assert.doesNotMatch(text.style, /background: #FFFFFF/);
+  assert.match(text.style, /font-size: 96px/);
+  const card = hookCard({ text: "He wears the *robe*", until: 3, zones, out: os.tmpdir(), place: { kind: "card", box: [60, 250, 960, 236], font: 76 } });
+  assert.match(card.style, /left: 540px; top: 250px/);
+  assert.match(card.style, /background: #FFFFFF/);
+  const old = hookCard({ text: "He wears the *robe*", until: 3, zones, out: os.tmpdir() });
+  assert.match(old.style, /left: 540px; top: 258px/);
+  assert.match(old.style, /font-size: 72px/);
+});

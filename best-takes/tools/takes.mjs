@@ -61,6 +61,7 @@ import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
+import { readFaces, facesAt, toFrame, punchOrigin, textOnFaces } from "./lib/faces.mjs";
 import { brief, shown } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
@@ -249,6 +250,18 @@ function runCaptions(args) {
   return r.stdout;
 }
 
+// The captions' area as the built sub-composition sets it (its DATA): the lowest line's end, the
+// width, the type and the lines, a style's box around them; and when each group shows
+function captionArea(file, height) {
+  try {
+    const html = fs.readFileSync(file, "utf8");
+    const d = JSON.parse(html.match(/var DATA = (\{[\s\S]*?\});\n/)[1]);
+    const lh = d.look?.lineHeight || 1.2, pad = d.look?.box ? 0.44 * d.size : 0;
+    const bottom = height - d.bottom, h = d.lines * d.size * lh + pad;
+    return { area: [d.left, +(bottom - h).toFixed(1), d.maxWidth, +h.toFixed(1)], groups: d.groups.map((g) => [g.start, g.end]) };
+  } catch { return { area: null, groups: [] }; }
+}
+
 function cmdBuild(dir, opts) {
   if (!fs.existsSync(source(dir, "words.json"))) fail(`Run first: takes.mjs new ${rel(dir)} <video>`);
   const cutFile = path.join(dir, "cut.json");
@@ -267,29 +280,46 @@ function cmdBuild(dir, opts) {
   const out = path.resolve(s.out || path.join(dir, "composition"));
   const [width, height] = size(s, clips[r.pieces[0].clip]);
   const title = s.title || cut.title || path.basename(path.resolve(dir));
+  // where the text goes, when a skill laid the frame out against the faces (clips' place writes
+  // place.json: the captions' options for agentitos' captions, the hook's kind and box)
+  const placeFile = path.join(dir, "place.json");
+  let placed = null;
+  if (fs.existsSync(placeFile)) { try { placed = read(placeFile); } catch (e) { fail(`✗ ${rel(placeFile)} is no valid JSON: ${e.message}`); } }
   // the captions (cut.json "captions", see the captions command), on the cut's own words
-  let captions = null;
+  let captions = null, capArea = null, capGroups = [];
   fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
   if (cut.captions) {
     const file = captionWords(dir, r.words, cut.captions, { width, height, duration: r.duration });
+    const at = placed?.caption ? Object.entries(placed.caption).filter(([k, v]) => ["x", "y", "max-width", "align", "font-size", "lines"].includes(k) && v != null).flatMap(([k, v]) => [`--${k}`, String(v)]) : [];
     const said = runCaptions(["build", file, path.join(out, "captions"), "--style", cut.captions.style || "hormozi", ...(cut.captions.brand ? ["--brand", cut.captions.brand] : []),
       // a cut.json of before the setting kept the platform with its captions
-      ...(s.platform || cut.captions.platform ? ["--platform", platformList(s.platform || cut.captions.platform).join(",")] : [])]);
+      ...(s.platform || cut.captions.platform ? ["--platform", platformList(s.platform || cut.captions.platform).join(",")] : []), ...at]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
+    if (at.length && !/Placed where asked/.test(said)) console.log(`  (this captions skill does not know where to place them: they stand on the safe box's bottom, not where ${rel(placeFile)} says)`);
+    for (const line of said.split("\n").filter((l) => /^!|Wider than a line|A short word beside/.test(l.trim()))) console.log(`  captions: ${line.trim()}`);
+    ({ area: capArea, groups: capGroups } = captionArea(path.join(out, "captions", "index.html"), height));
   }
-  // the hook card, at the top of the box the platforms leave free
-  let hook = null;
+  // the hook: where place.json puts it, else a card at the top of the box the platforms leave free
+  let hook = null, hookEnds = null;
   if (s.hook) {
     let z;
     try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ The hook: ${e.message}`); }
     const brand = brandOf(s.brand) || brandOf(cut.captions?.brand);
     if (s.brand && !brand) console.log(`  (no ${s.brand}: the hook in its own colour and font)`);
-    hook = hookCard({ text: s.hook, until: hookUntil(r.words, r.duration), zones: z, brand, out });
+    // until the first sentence ends, or the cut at which place.json says it ends
+    hookEnds = placed?.hook?.until ? Math.min(hookUntil(r.words, r.duration), placed.hook.until) : hookUntil(r.words, r.duration);
+    hook = hookCard({ text: s.hook, until: hookEnds, zones: z, brand, out, place: placed?.hook || null });
   }
-  // closer at the jump cuts (--punch on)
+  // closer at the jump cuts (--punch on): grown from where no chin is pushed into the captions
   const still = fs.existsSync(source(dir, "still.json")) ? read(source(dir, "still.json")) : {};
   const scales = s.punch === "on" ? punches(r.pieces, { highlight: cut.captions?.highlight, still, clips }) : r.pieces.map(() => 1);
-  const pieces = r.pieces.map((p, k) => ({ ...p, scale: scales[k] }));
+  const faces = readFaces(dir);
+  const pieces = r.pieces.map((p, k) => {
+    if (!(scales[k] > 1)) return { ...p, scale: scales[k] };
+    const list = faces?.[clips[p.clip].file], seen = [];
+    if (list) for (let t = p.in; t <= p.out; t += 0.1) for (const f of facesAt(list, t)) seen.push(toFrame(f.box, list.size, [width, height]));
+    return { ...p, scale: scales[k], origin: +punchOrigin({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea }).toFixed(1) };
+  });
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, hook });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
   // are timed in it. The preview does not need it, so a failure is said and the build goes on
@@ -299,15 +329,21 @@ function cmdBuild(dir, opts) {
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
     out: rel(out), ...(voice ? { voice: rel(voice) } : {}), width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
-    pieces: r.pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
-      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}) }), keep: p.keep })),
+    pieces: pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
+      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}) }), keep: p.keep,
+      ...(p.scale > 1 ? { scale: p.scale, origin: p.origin ?? +(0.32 * height).toFixed(1) } : {}) })),
+    // where the text stands, in px of the frame: the captions' area, each group's time, the hook's box
+    text: { ...(capArea ? { caption: { box: capArea, groups: capGroups } } : {}), ...(hook ? { hook: { box: hook.box.map((v) => +v.toFixed(1)), start: 0, until: hookEnds, kind: placed?.hook?.kind || "card" } } : {}) },
     removed: r.removed, motion: r.motion, warnings: r.warnings, words: r.words,
   }, null, 1));
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
   if (voice) console.log(`Voice: ${rel(voice)}, the cut's sound as one file (each take at its level); the words in ${rel(path.join(dir, "edit.json"))} are timed in it`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
-  if (hook) console.log(`Hook: „${s.hook}“ until ${hookUntil(r.words, r.duration)} s`);
+  if (hook) console.log(`Hook: „${s.hook}“ until ${hookEnds} s, ${placed?.hook ? `${placed.hook.kind === "text" ? "a text" : "a card"} where ${rel(placeFile)} puts it` : "a card at the top"}`);
+  if (placed?.caption && cut.captions) console.log(`Captions placed as ${rel(placeFile)} says: ${Object.entries(placed.caption).map(([k, v]) => `--${k} ${v}`).join(" ")}`);
+  const moved = pieces.filter((p) => p.origin != null && p.origin > 0.32 * height + 0.5).length;
+  if (moved) console.log(`Punch: ${moved} piece(s) grow from lower down, so that no chin is pushed into the captions`);
   if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
   if (s.punch === "on") console.log(`Punch: ${scales.filter((v) => v > 1).length} of ${scales.length} pieces closer, at the jump cuts`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
@@ -394,6 +430,18 @@ function cmdCheck(dir) {
   if (levels.length) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
     console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; finish brings the rendered video to ${s.final} LUFS.`);
+  }
+  // text on a face, where the faces are known (source/faces.json, from the skill that framed the videos)
+  const faces = readFaces(dir);
+  if (faces && e.text) {
+    const texts = [...(e.text.caption ? e.text.caption.groups.map(([a, b]) => ({ role: "captions", box: e.text.caption.box, from: a, to: b })) : []),
+      ...(e.text.hook ? [{ role: "hook", box: e.text.hook.box, from: 0, to: e.text.hook.until }] : [])];
+    const on = textOnFaces({ pieces: e.pieces, clips, faces, texts, frame: [e.width, e.height] });
+    for (const x of on.filter((q) => q.seconds >= 0.3)) {
+      const deep = x.share >= 0.2 ? `${Math.round(x.share * 100)} % of its height up from the chin (the mouth and more)` : `the chin, ${Math.round(x.share * 100)} % of its height`;
+      warnings.push(`the ${x.role === "hook" ? "hook" : "captions' area"} lies on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)}, up to ${deep}: ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "a place clear of it from the skill that laid the frame out (clips: place, which raises that shot or sets the captions elsewhere), or a cut to another shot there"}`);
+    }
+    if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
   }
   if (s.target && e.duration > s.target + 0.5) warnings.push(`the cut is ${e.duration.toFixed(1)} s long, ${(e.duration - s.target).toFixed(1)} s over the ${s.target} s it should be at most`);
 
