@@ -27,9 +27,10 @@
 //   --fit cover|contain    a video of another shape fills the frame, or fits into it
 //   --target <s>       the longest the cut should be (the brief and the check use it)
 //   --pause <s>        pauses longer than this inside a keep are shortened (default 1, tight 0.4)
-//   --pauses picture|tight    a pause follows its picture (default: where it moves it stays,
-//                      muted, or plays faster), or every pause over --pause goes, whatever the
-//                      picture shows (tight: a talking head, a clip for a reel)
+//   --pauses picture|tight    a pause follows its picture (default: where it moves clearly more
+//                      than while speaking it stays, muted, or plays faster; else it goes), or
+//                      every pause over --pause goes, whatever the picture shows (tight: a clip
+//                      for a reel)
 //   --punch on|off     a jump cut inside a take goes in closer, or back out (default off): the
 //                      cut looks meant, and a key word of the captions lands closer; never where
 //                      source/still.json names the picture as one to leave whole
@@ -54,13 +55,13 @@ import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcri
 import { voiceTrack } from "./lib/tracks.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
 import { plan, range } from "./lib/cut.mjs";
-import { activity, moving } from "./lib/motion.mjs";
+import { activity } from "./lib/motion.mjs";
 import { writeComposition } from "./lib/composition.mjs";
 import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
-import { brief, shown } from "./brief.mjs";
+import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
 const FLAGS = ["off"];
@@ -256,10 +257,10 @@ function cmdBuild(dir, opts) {
   try { cut = read(cutFile); } catch (e) { fail(`✗ ${rel(cutFile)} is no valid JSON: ${e.message}`); }
   const s = settings(dir, opts);
   const { clips, words } = read(source(dir, "words.json"));
-  // where the picture moves in a pause, measured in the video itself; tight: no pause stays
+  // how much the picture moves in a stretch, measured in the video itself; tight: not needed
   const tight = s.pauses === "tight";
-  const moves = tight ? () => [] : (clip, from, to) => moving(activity(source(dir, clips[clip].file), from, to, clips[clip]), from, to);
-  const r = plan(words, cut, s, voicesOf(dir, clips), moves);
+  const motion = tight ? null : (clip, from, to) => activity(source(dir, clips[clip].file), from, to, clips[clip]);
+  const r = plan(words, cut, s, voicesOf(dir, clips), motion);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
 
@@ -300,7 +301,7 @@ function cmdBuild(dir, opts) {
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
     pieces: r.pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}) }), keep: p.keep })),
-    removed: r.removed, warnings: r.warnings, words: r.words,
+    removed: r.removed, motion: r.motion, warnings: r.warnings, words: r.words,
   }, null, 1));
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
@@ -351,7 +352,7 @@ function cmdCheck(dir) {
   console.log("As it plays:");
   e.pieces.forEach((p, k) => {
     if (p.shows) {
-      const what = p.wait ? (p.rate > 1 ? "the wait, as a timelapse" : "the wait, held before the cut") : "the picture moves";
+      const what = p.wait ? (p.rate > 1 ? "the wait, as a timelapse" : "the wait, held before the cut") : "something moves in the pause";
       console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${what}, ${(p.out - p.in).toFixed(1)} s ${p.rate > 1 ? `×${p.rate} in ${p.duration.toFixed(1)} s` : "as it is"}, muted)   (${where(p.clip, p.in)})`);
       return;
     }
@@ -376,12 +377,17 @@ function cmdCheck(dir) {
   if (!dropped.length) console.log("    no words");
   const snd = e.removed.filter((r) => r.kind === "filler"), pauses = e.removed.filter((r) => r.kind === "pause");
   if (snd.length) console.log(`    ${snd.length} fillers inside the keeps (${[...new Set(snd.map((r) => shown(words[r.words[0]])))].slice(0, 5).join(", ")})`);
+  // every pause the tool decided on, what it did and why, so that the agent can overrule it
   if (pauses.length) {
-    const shownOf = (r) => (r.moving || []).reduce((t, m) => t + m.to - m.from, 0);
-    const still = pauses.reduce((t, r) => t + r.to - r.from - shownOf(r), 0);
-    const fast = pauses.flatMap((r) => r.moving || []).filter((m) => m.rate > 1);
-    console.log(`    ${pauses.length} pauses over ${s.pause} s: ${still.toFixed(1)} s ${s.pauses === "tight" ? "cut out (tight)" : "where the picture stands still cut out"}` +
-      (fast.length ? `, ${fast.length} stretch${fast.length > 1 ? "es" : ""} where it moves played faster (${fast.map((m) => `${(m.to - m.from).toFixed(1)} s ×${m.rate}`).join(", ")})` : ""));
+    console.log(`\nPauses (over ${s.pause} s inside a keep, and the waits):`);
+    for (const [c, m] of Object.entries(e.motion || {})) {
+      console.log(`    ${several ? `video ${c}: ` : ""}while speaking ${(m.base * 100).toFixed(2)} % of the picture changes (${m.seconds.toFixed(0)} s measured${m.enough ? "" : ", too little speech: the keeps' pauses included"}); a pause shows something from ${(m.limit * 100).toFixed(2)} % on`);
+    }
+    for (const r of pauses) {
+      const shownTime = (r.moving || []).reduce((t, m) => t + m.to - m.from, 0);
+      console.log(`    ${where(r.clip, r.from)}–${clock(r.to)} (${(r.to - r.from).toFixed(1)} s, after word ${r.words[0]}): ${r.why ?? (shownTime ? "kept: the picture moves" : "cut")}`);
+    }
+    if (s.pauses !== "tight") console.log(`    (a pause cut that is worth seeing: "pauses": "keep" on its keep; a pause kept that shows nothing: end its keep before it, start the next after it)`);
   }
 
   const levels = [...new Set(e.pieces.map((p) => p.lufs).filter((l) => l != null))];
@@ -389,7 +395,8 @@ function cmdCheck(dir) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
     console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; finish brings the rendered video to ${s.final} LUFS.`);
   }
-  if (s.target && e.duration > s.target + 0.5) warnings.push(`the cut is ${e.duration.toFixed(1)} s long, ${(e.duration - s.target).toFixed(1)} s over the ${s.target} s it should be at most`);
+  const over = overTarget(e.duration, s.target);
+  if (over) warnings.push(over);
 
   // HyperFrames' own check of the project
   const [cmd, ...pre] = hyperframes();
@@ -415,7 +422,9 @@ function srt(words) {
       cues.push(cue);
     }
     cue.words.push(w);
-    cue.text = cue.text ? `${cue.text} ${w.text}` : w.text;
+    // (a soft hyphen in a long word is where the captions in the picture may break it: no part of the text)
+    const text = w.text.replace(/\u00AD/g, "");
+    cue.text = cue.text ? `${cue.text} ${text}` : text;
   }
   const ts = (t) => {
     const ms = Math.round(t * 1000), h = Math.floor(ms / 3600e3), m = Math.floor(ms / 60e3) % 60, sec = Math.floor(ms / 1000) % 60;

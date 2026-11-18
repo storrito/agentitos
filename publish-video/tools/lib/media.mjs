@@ -1,7 +1,8 @@
 // What a video file is and how it begins and ends, measured with ffprobe and ffmpeg; a sheet of its
 // frames to look at, with what the apps cover drawn in; a video fetched from a link; and the video
 // written again in the form Storrito or YouTube takes. Each ffmpeg seeks to the part it needs: none
-// decodes the whole picture except `prepare`, which writes the video once.
+// decodes the whole picture except `whole` (small, up to 10 minutes) and `prepare`, which writes the
+// video once.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -32,8 +33,11 @@ export function probe(file) {
   const ext = path.extname(file).slice(1).toLowerCase();
   const formats = String(j.format.format_name || "").split(",");
   const container = formats.includes("mp4") || formats.includes("mov") ? (ext === "mov" || ext === "qt" ? "mov" : "mp4") : formats[0];
+  // a phone writes the place of the recording into its file; only that it is there is kept, never where
+  const located = [j.format.tags, ...j.streams.map((s) => s.tags)].some((tags) => tags && Object.keys(tags).some((k) => /location|gps/i.test(k)));
   return {
     container,
+    located,
     bytes: Number(j.format.size) || fs.statSync(file).size,
     duration,
     width: rot === 90 ? v.height : v.width,
@@ -91,6 +95,49 @@ export function edges(file, info) {
     silentStart: info.sound ? +atStart(silent(head)).toFixed(2) : null,
     silentEnd: info.sound ? +atEnd(silent(tail)).toFixed(2) : null,
   };
+}
+
+// black stretches and flash frames anywhere in the picture: one ffmpeg over the whole video, picture
+// only and decoded small. Black: 0.3 s or more (`blackdetect`), leaving out what touches the very
+// start or end (`edges` reports that). A flash: a picture that stands for one or two frames between
+// two cuts (a white frame, a stray frame of another clip). scdet's `mafd` is each frame's mean
+// difference to the one before, in % of the full range; a cut is a frame whose mafd is at least
+// 12 and at least 4 times the median of the frames around it (±15, the frame's own ±2 left out),
+// so that fast motion, which changes every frame a lot, has no cuts; two cuts one or two frames
+// apart, with no cut right before or after them, are a flash; one cut alone is a hard cut.
+// Tried on made-up 8 s videos (a white frame and two white frames over testsrc2: mafd 42.6 against
+// a median of 0.5; two stray frames of smptehdbars between testsrc2 and mandelbrot: 25.8; a hard
+// cut between two still and between two moving pictures: one cut each, 21–26; a fast pan and
+// `life`, medians near 6: no cut) and on the lab's corpus (talks, Zoom calls, phone takes, NASA
+// b-roll, finished Stories with motion graphics; 20 videos): its hard cuts are 17–60, Zoom's
+// short speaker transitions up to 9 for three or more frames in a row, which made false flashes
+// at a threshold of 6 or less; at 12 no flash. Videos over 10 minutes are not measured (null): a
+// long YouTube video would be decoded whole.
+export function whole(file, info) {
+  if (info.duration > 600) return null;
+  const err = ffmpegErr(["-i", file, "-map", "0:v:0", "-an", "-vf", "scale=320:-2,format=yuv420p,blackdetect=d=0.3:pix_th=0.10,scdet=t=100,metadata=print:key=lavfi.scd.mafd", "-f", "null", "-"]);
+  const t = [], m = [];
+  for (const x of err.matchAll(/pts_time:(-?[\d.]+)\s*\n[^\n]*lavfi\.scd\.mafd=([\d.]+)/g)) { t.push(+x[1]); m.push(+x[2]); }
+  if (!m.length) return null;
+  const first = t[0], last = t[t.length - 1];
+  const black = [...err.matchAll(/black_start:([\d.]+) black_end:([\d.]+)/g)].map((x) => [+x[1], +x[2]])
+    .filter(([s, e]) => s > first + 0.05 && e < last - 0.05).map(([s, e]) => [+s.toFixed(2), +e.toFixed(2)]);
+  const around = (i) => {
+    const w = [];
+    for (let j = i - 15; j <= i + 15; j++) if (j >= 0 && j < m.length && Math.abs(j - i) > 2) w.push(m[j]);
+    w.sort((a, b) => a - b);
+    return w[w.length >> 1] ?? 0;
+  };
+  const cut = m.map((v, i) => v >= 12 && v >= 4 * Math.max(around(i), 0.5));
+  const c = (k) => !!cut[k];
+  const flashes = [];
+  for (let i = 0; i < m.length; i++) {
+    // two cuts one or two frames apart, alone: three or more in a row are a transition, not a flash
+    if (!c(i) || c(i - 1)) continue;
+    const j = c(i + 1) ? i + 1 : c(i + 2) ? i + 2 : 0;
+    if (j && !c(j + 1)) { flashes.push(+t[i].toFixed(2)); i = j; }
+  }
+  return { black, flashes };
 }
 
 function labelFont() {
@@ -177,6 +224,8 @@ export async function download(url, dir) {
 // A nearly 9:16 video (a phone's 9:19.5) is cropped to fill only with `crop`.
 // `loud` brings the sound to -14 LUFS (one pass of loudnorm), as the apps play it; `start` and
 // `end` (seconds) cut black or silence off its ends, which encodes the picture again.
+// The file's tags are left out either way (a phone's video names the place it was recorded at);
+// how the picture is turned stays, it is not a tag.
 export function prepare(input, out, info, { mode, pad = false, crop = false, loud = false, start = 0, end = null }) {
   const vf = [], said = [];
   let video = ["-c:v", "copy"];
@@ -208,7 +257,8 @@ export function prepare(input, out, info, { mode, pad = false, crop = false, lou
     : ["-c:a", "copy"];
   const tmp = `${out}.part.mp4`;
   fs.rmSync(tmp, { force: true });
-  const args = ["-v", "error", "-y", "-i", input, ...span, "-map", "0:v:0", ...(info.sound ? ["-map", "0:a:0"] : []), ...(vf.length ? ["-vf", vf.join(",")] : []), ...video, ...audio, "-movflags", "+faststart", tmp];
+  const args = ["-v", "error", "-y", "-i", input, ...span, "-map", "0:v:0", ...(info.sound ? ["-map", "0:a:0"] : []), "-map_metadata", "-1", ...(vf.length ? ["-vf", vf.join(",")] : []), ...video, ...audio, "-movflags", "+faststart", tmp];
+  if (info.located) said.push("the place it was recorded at taken out");
   const r = spawnSync("ffmpeg", args, { encoding: "utf8" });
   if (r.status || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); throw new Error(`ffmpeg could not write the video: ${(r.stderr || "").trim().split("\n").pop()}`); }
   fs.renameSync(tmp, out);

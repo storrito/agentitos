@@ -1,19 +1,21 @@
 // From cut.json (which words to keep, in which order) to the pieces of the cut: where each one
 // starts and ends in its video, where it sits in the cut, and how much louder or quieter it
 // has to be so that every take sounds equally loud. A pause inside a keep becomes what its
-// picture shows: where the picture stands still it goes (a jump cut), where it moves it stays,
-// muted, and a long stretch of it plays faster (a timelapse). A wait the speaker announced
+// picture shows: where it moves no more than while the person speaks it goes (a jump cut),
+// where something moves clearly more it stays, muted, and a long stretch of it plays faster (a
+// timelapse). A wait the speaker announced
 // ("let's wait until then", cut.json "waits") never goes: it plays as a timelapse when its
 // picture moves, else it holds a few seconds before the cut, so that the viewer feels the time
 // pass.
 
 import { cutBefore, cutAfter, loudness } from "./voice.mjs";
-import { speed, waitSpeed, WAIT_MOVING, WAIT_HOLD } from "./motion.mjs";
+import { speed, waitSpeed, WAIT_MOVING, WAIT_HOLD, SAMPLES, BASE_SECONDS, BASE_LONGEST, MOVING, moving, median, limit } from "./motion.mjs";
 
 // The spans of a wait from–to, as groups of the cut: the whole of it faster when its picture
-// moves; else the first WAIT_HOLD seconds as they are, then what moves.
-function waitGroups(clip, from, to, moves) {
-  const shown = moves(clip, from, to);
+// moves; else the first WAIT_HOLD seconds as they are, then what moves. A wait was announced,
+// so any movement counts, not only more than while speaking.
+function waitGroups(clip, from, to, motion) {
+  const shown = moving(motion(clip, from, to), from, to);
   const moved = shown.reduce((t, s) => t + s.to - s.from, 0);
   if (moved >= WAIT_MOVING * (to - from)) return [{ clip, from, to, rate: waitSpeed(to - from), wait: true }];
   const hold = Math.min(to, from + WAIT_HOLD);
@@ -30,13 +32,61 @@ export function range(r) {
 
 // words: every word, filler and noise of every video, numbered in one row (words.json)
 // voices: per video { env, thr, blocks, duration }
-// moves(clip, from, to): the spans of a pause in which the picture moves (motion.mjs), [] without
-// returns { pieces, removed, words (the cut's, timed in the cut), errors, warnings }
-export function plan(words, cut, settings, voices, moves = () => []) {
+// motion(clip, from, to): how much the picture moves from–to, [{ t, change }] (motion.mjs'
+// activity); without it (--pauses tight) no pause shows anything
+// returns { pieces, removed, words (the cut's, timed in the cut), motion (per video: how much
+// it moves while speaking), errors, warnings }
+export function plan(words, cut, settings, voices, motion = null) {
   const errors = [], warnings = [], removed = [];
   const fps = settings.fps, maxPause = settings.pause, target = settings.loudness;
   const used = new Map();
   const waits = new Set((cut.waits || []).map(Number));
+  const samples = motion || (() => []);
+
+  // How much a video's picture moves while its person speaks: the median over the words of its
+  // keeps, their pauses over maxPause left out; of long keeps the first part of each, together
+  // BASE_LONGEST seconds. With under BASE_SECONDS of speech, the median over those stretches
+  // whole, their pauses in. Measured the first time a pause of the video asks.
+  const bases = {};
+  const baseOf = (clip) => {
+    if (bases[clip]) return bases[clip];
+    const all = [], spoken = [];
+    const keeps = (cut.keep || []).map((keep) => {
+      const r = range(keep.words);
+      return r && r[1] < words.length ? words.slice(r[0], r[1] + 1).filter((w) => w.clip === clip) : [];
+    }).filter((items) => items.length);
+    const share = Math.min(1, BASE_LONGEST / keeps.reduce((t, items) => t + items.at(-1).end - items[0].start, 0));
+    for (const kept of keeps) {
+      const end = kept[0].start + share * (kept.at(-1).end - kept[0].start);
+      const items = kept.filter((w) => w.start < end);
+      const got = samples(clip, items[0].start, end);
+      all.push(...got);
+      // the stretches of speech: words with less than maxPause between them, as one
+      const talk = [];
+      for (const w of items) {
+        const last = talk.at(-1);
+        if (last && w.start - last[1] <= maxPause) last[1] = Math.max(last[1], w.end);
+        else talk.push([w.start, w.end]);
+      }
+      // a sample stands for the quarter second before it
+      spoken.push(...got.filter((s) => talk.some(([a, b]) => s.t - 1 / SAMPLES >= a - 0.01 && s.t <= b + 0.01)));
+    }
+    const enough = spoken.length >= BASE_SECONDS * SAMPLES;
+    const base = median(enough ? spoken : all);
+    return (bases[clip] = { base, limit: limit(base), seconds: (enough ? spoken : all).length / SAMPLES, enough });
+  };
+  // a pause the tool decided on, in a few words for check (what it did and why), once its
+  // pieces are known: { most: the most its picture changed, shown: spans that move, kept: s }
+  const decided = new Map();
+  const pauseWhy = (r, { most, shown, kept, fast }) => {
+    if (!motion) return "cut (tight)";
+    if (!shown) return most < MOVING ? "cut: the picture stands still" : "cut: the picture moves no more than while speaking";
+    if (!kept) return "cut: what moves in it is too short to show";
+    const { base, limit: least } = baseOf(r.clip);
+    return `${kept < r.to - r.from - 0.3 ? `${kept.toFixed(1)} s of it kept` : "kept"}${fast ? " as a timelapse" : ", muted"}: something moves in it` +
+      (least > MOVING ? ` (${(most / base).toFixed(1)}× as much as while speaking)` : "");
+  };
+  const waitWhy = (parts) => (parts.some((p) => p.rate > 1) ? "the wait: a timelapse, its picture moves" : `the wait: held ${WAIT_HOLD} s before the cut, its picture stands still`);
   let pieces = [];
   if (!Array.isArray(cut.keep) || !cut.keep.length) errors.push('cut.json has no "keep": list the word ranges to keep, in the order they play.');
   for (const i of waits) if (!(i >= 0 && i < words.length)) errors.push(`"waits": ${i} is no word number (0–${words.length - 1})`);
@@ -62,7 +112,8 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     // the kept words in groups that play without a cut: a cut where a filler ("äh") is left
     // out, and where a pause is longer than maxPause (unless the keep says "sounds": "keep" or
     // "pauses": "keep", which plays its pauses as they are); between two groups the spans of
-    // the pause in which the picture moves. Events ("[Kamera klackert]") stay.
+    // the pause in which the picture moves more than while speaking. Events ("[Kamera
+    // klackert]") stay.
     const groups = [];
     let cur = [];
     const close = () => { if (cur.length) groups.push(cur); cur = []; };
@@ -74,17 +125,22 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       }
       const last = cur.at(-1);
       if (last && waits.has(last.i) && w.start > last.end) {
-        const parts = waitGroups(w.clip, last.end, w.start, moves);
-        removed.push({ kind: "pause", wait: true, clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
+        const parts = waitGroups(w.clip, last.end, w.start, samples);
+        removed.push({ kind: "pause", wait: true, clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i], why: waitWhy(parts),
           moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
         close();
         groups.push(...parts);
       } else if (last && keep.pauses !== "keep" && w.start - last.end > maxPause) {
-        const shown = moves(w.clip, last.end, w.start);
-        removed.push({ kind: "pause", clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
-          moving: shown.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +speed(s.to - s.from).toFixed(2) })) });
+        // what moves more than while speaking
+        const least = motion ? baseOf(w.clip).limit : MOVING;
+        const got = samples(w.clip, last.end, w.start);
+        const shown = moving(got, last.end, w.start, least);
+        const pause = { kind: "pause", clip: w.clip, from: last.end, to: w.start, words: [last.i, w.i],
+          moving: shown.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +speed(s.to - s.from).toFixed(2) })) };
+        removed.push(pause);
+        decided.set(pause, { most: Math.max(0, ...got.map((s) => s.change)), shown: shown.length, kept: 0, fast: false });
         close();
-        for (const s of shown) groups.push({ clip: w.clip, from: s.from, to: s.to });
+        for (const s of shown) groups.push({ clip: w.clip, from: s.from, to: s.to, pause });
       }
       cur.push(w);
     }
@@ -95,8 +151,8 @@ export function plan(words, cut, settings, voices, moves = () => []) {
     const nextRange = range(cut.keep[k + 1]?.words);
     const next = nextRange && words[nextRange[0]];
     if (lastWord && waits.has(lastWord.i) && next && next.clip === lastWord.clip && next.start > lastWord.end + 0.5) {
-      const parts = waitGroups(lastWord.clip, lastWord.end, next.start - 0.3, moves);
-      removed.push({ kind: "pause", wait: true, clip: lastWord.clip, from: lastWord.end, to: next.start, words: [lastWord.i, next.i],
+      const parts = waitGroups(lastWord.clip, lastWord.end, next.start - 0.3, samples);
+      removed.push({ kind: "pause", wait: true, clip: lastWord.clip, from: lastWord.end, to: next.start, words: [lastWord.i, next.i], why: waitWhy(parts),
         moving: parts.map((s) => ({ from: +s.from.toFixed(3), to: +s.to.toFixed(3), rate: +(s.rate ?? speed(s.to - s.from)).toFixed(2) })) });
       groups.push(...parts);
     }
@@ -110,7 +166,10 @@ export function plan(words, cut, settings, voices, moves = () => []) {
         // must not take the breath and the first sound of a sentence
         const v = voices[g.clip];
         const to = Math.min(g.to, spokenAfter ? cutBefore(v.env, v.thr, spokenAfter[0].start, Math.max(from, before(spokenAfter[0]))) : Infinity);
-        if (to - from >= 0.4) pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: g.rate ?? speed(to - from), mute: true, wait: !!g.wait });
+        if (to - from < 0.4) return;
+        pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: g.rate ?? speed(to - from), mute: true, wait: !!g.wait });
+        const d = decided.get(g.pause);
+        if (d) { d.kept += to - from; d.fast ||= pieces.at(-1).rate > 1; }
         return;
       }
       const v = voices[g[0].clip], first = g[0], last = g.at(-1);
@@ -122,6 +181,8 @@ export function plan(words, cut, settings, voices, moves = () => []) {
       pieces.push({ clip: first.clip, in: start, out: to, words: g.map((w) => w.i), keep: k, adjust: Number(keep.gain) || 0 });
     });
   });
+
+  for (const [pause, d] of decided) pause.why = pauseWhy(pause, d);
 
   // words in no keep: what the cut leaves out, in runs
   let run = null;
@@ -184,15 +245,61 @@ export function plan(words, cut, settings, voices, moves = () => []) {
   // the cut's own words, timed in the cut (for subtitles), with the spelling of "fixes"
   const fixes = cut.fixes || {};
   const timed = [];
+  const lang = locale(settings.lang);
+  let prior = null; // the item the cut plays right before, whatever its kind
   for (const p of pieces) {
     for (const i of p.words) {
-      const w = words[i];
+      const w = words[i], played = prior;
+      prior = i;
       if (w.kind !== "word") continue;
-      const text = fixes[i] ?? fixes[String(i)] ?? w.text;
+      const fixed = fixes[i] ?? fixes[String(i)];
+      let text = fixed ?? w.text;
       if (!text) continue;
+      // The text is read as the cut plays it, not as the speech model wrote the recording: what
+      // stood right before this word in its video (a filler, which the text never shows, or
+      // anything the cut left out) is gone, so the word may now begin a sentence it did not
+      // begin before. Only the text changes; its number and its times stay.
+      const last = timed.at(-1), was = w.i > 0 && words[w.i - 1].clip === w.clip ? words[w.i - 1] : null;
+      const lost = !!was && (played !== was.i || was.kind === "filler" || (was.kind === "word" && last?.i !== was.i));
+      if (lost && last) sentenceEndOfFiller(last, words.slice(last.i + 1, w.i), words[last.i].clip === w.clip);
+      // a spelling the agent set in "fixes" is theirs (an account name may be lower-case on purpose)
+      if (lost && fixed == null && (!last || endsSentence(last.text))) text = capitalised(text, lang);
       const s = p.start + Math.max(0, w.start - p.in), e = p.start + Math.min(p.duration, w.end - p.in);
       timed.push({ i, text, start: +s.toFixed(3), end: +Math.max(e, s + 0.05).toFixed(3) });
     }
   }
-  return { pieces, removed, takes, words: timed, duration: at / fps, errors, warnings };
+  return { pieces, removed, takes, words: timed, motion: bases, duration: at / fps, errors, warnings };
+}
+
+// A sentence ends on . ! ? or …, also inside quotes or brackets. Not after a token that begins with
+// a digit ("3." is an ordinal in German, "12.03." a date) or one with a full stop inside ("z.B."):
+// there the full stop is part of the token, and the word after it is left as the model wrote it.
+export function endsSentence(text) {
+  if (!/[.!?…]["'“”‘’»«)\]]*$/u.test(text)) return false;
+  if (/^\p{N}/u.test(text)) return false;
+  return !/\..*\./u.test(text);
+}
+
+// The first letter in upper case when it is a lower-case letter, by Unicode's rules for the
+// language when one is known. A word that begins with a digit or a symbol stays as it is, and so
+// does one with a capital inside ("iPhone", "eBay"): that is a name spelled so.
+export function capitalised(text, lang = "und") {
+  const [first, ...rest] = [...text];
+  if (!/^\p{Ll}$/u.test(first) || /\p{Lu}/u.test(rest.join(""))) return text;
+  return first.toLocaleUpperCase(lang) + rest.join("");
+}
+
+// The speech model sometimes ends a sentence on the filler ("fertig, äh. Und"): when the filler is
+// cut out, that sentence end is the speaker's and goes onto the word before it, in place of the
+// comma it had. Only when nothing but fillers and noises lie between the two words in one video;
+// a comma a filler carried ("äh,") marks the filler, not the sentence, and goes with it.
+function sentenceEndOfFiller(last, between, sameClip) {
+  if (!sameClip || !between.length || between.some((w) => w.kind === "word") || endsSentence(last.text)) return;
+  const mark = between.filter((w) => w.kind === "filler").at(-1)?.text.match(/[.!?…]+$/u)?.[0];
+  if (mark) last.text = last.text.replace(/[,;:]+$/u, "") + mark;
+}
+
+// the language of the words as a locale for upper-casing; a tag Intl does not take counts as none
+function locale(lang) {
+  try { return lang ? Intl.getCanonicalLocales(lang)[0] : "und"; } catch { return "und"; }
 }
