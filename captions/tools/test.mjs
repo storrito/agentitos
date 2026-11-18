@@ -35,7 +35,7 @@ import { zones, zonesTool } from "./lib/zones.mjs";
 // that changed captions nobody placed on purpose: hormozi, karaoke and wipe; every group shrinks
 // until its widest word fits; now the one after the review, with one script for every style.
 // The commit must stay in the history: a merge that squashes it leaves the test skipped)
-const BEFORE = process.env.CAPTIONS_BEFORE || "72d9224c13c519ba7a9db00d091a198803b9b2eb";
+const BEFORE = process.env.CAPTIONS_BEFORE || "c020d5f8a247062567ab3855ec7c4a8eb2f42bc6";
 const TOOLS = path.dirname(fileURLToPath(import.meta.url)), REPO = path.dirname(path.dirname(TOOLS));
 const TOOL = path.join(TOOLS, "captions.mjs");
 const ZONES = zonesTool();
