@@ -339,9 +339,10 @@ test("a window that follows a face does not stop at a change of speaker", () => 
 });
 
 test("a close-up that sways is held calmly: no move back within a second", () => {
-  // the reviewer's guest: a face 90 % of the window's width, swaying ±60 px at 0.7 Hz with a nod
+  // the reviewer's guest: a face 90 % of the window's width, swaying ±45 px at 0.7 Hz with a nod
+  // (its middle 80 % fits the window wherever it sways: the window stays)
   const w = (1080 * 9) / 16;
-  const P = tracked("guest", "A", (t) => ({ x: 960 + 60 * Math.sin(2 * Math.PI * 0.7 * t), y: 420 + 20 * Math.sin(2 * Math.PI * 1.3 * t), w: 0.9 * w, h: 600 }), 0, 12);
+  const P = tracked("guest", "A", (t) => ({ x: 960 + 45 * Math.sin(2 * Math.PI * 0.7 * t), y: 420 + 20 * Math.sin(2 * Math.PI * 1.3 * t), w: 0.9 * w, h: 600 }), 0, 12);
   const shots = [{ start: 0, end: 12, kind: "people", people: [P], faces: [{ speaker: "A", ...faceAt(P, 6) }] }];
   const [win] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...HD, aspect: [9, 16] });
   const xs = [];
@@ -357,7 +358,7 @@ test("a close-up that sways is held calmly: no move back within a second", () =>
   assert.ok(turns <= 6, `${turns} turns in 12 s`);
   assert.ok(fastest < 0.8 * w, `${Math.round(fastest)} px/s`);
   // the face's middle (its eyes, nose and mouth) never leaves the window
-  for (const [t, x] of xs) { const f = faceAt(P, t); assert.ok(f.x - 0.35 * f.w >= x - 1 && f.x + 0.35 * f.w <= x + w + 1, `face cut at ${t.toFixed(2)} s`); }
+  for (const [t, x] of xs) { const f = faceAt(P, t); assert.ok(f.x - 0.4 * f.w >= x - 1 && f.x + 0.4 * f.w <= x + w + 1, `face cut at ${t.toFixed(2)} s`); }
 });
 
 test("the tracker does not trust a still that is far off its neighbours, keeps two crossing faces apart, and a face that leaves is absent, not cut", { skip: !ffmpeg && "no ffmpeg" }, () => {

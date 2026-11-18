@@ -69,7 +69,7 @@ const HOLD = 0.06, EDGE = 0.02;
 // window widths a second, and turns back no sooner than REST seconds after its last turn; of a
 // face wider than BIG of the window it holds the middle CORE of the face's width (the editors'
 // close-ups cut the ears too)
-const REST = 1, VMAX = 1.2, BIG = 0.5, CORE = 0.9, SLACK = 0.03;
+const REST = 1, VMAX = 1.2, BIG = 0.5, CORE = 0.8, SLACK = 0.03;
 // a face followed until here, then on a still without it: gone this long after it was last seen
 const ABSENT_GAP = 0.15;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
