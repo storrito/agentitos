@@ -8,7 +8,9 @@
 //           0 in a style that is cut in and cut out, else a frame may show no caption); even
 //           (a phrase too long for one group is cut by length, not into equal counts of words:
 //           fewer words left alone; every style of up to five words. The two that set whole
-//           phrases, clean and subtitle, gain nothing by it and keep the equal counts)
+//           phrases, clean and subtitle, gain nothing by it and keep the equal counts); brief
+//           (one word at a time: a word on screen for less than this many seconds shares its
+//           caption with the next, or the one before, where the two set in the line)
 //   look:   font, weight, size (px for a frame whose short side is 1080), case, colours, stroke,
 //           shadow, box; gap (the room between words: the active word grows by `grow` into it)
 //           color: the words; accent: the word being said (a brand's primary colour replaces
@@ -91,8 +93,8 @@ export const STYLES = {
   },
   single: {
     label: "One word",
-    about: "One word at a time, big and heavy, punching in the moment it is said; key words in colour. Fast and loud, for hooks and quick cuts.",
-    group: { words: 1, chars: 14, pause: 0.2, min: 0.25, lines: 1, gap: 0 },
+    about: "One word at a time, big and heavy, punching in the moment it is said; a word too short to be read shares its moment with the one beside it. Key words in colour. Fast and loud, for hooks and quick cuts.",
+    group: { words: 1, chars: 14, pause: 0.2, min: 0.25, lines: 1, gap: 0, brief: 0.15 },
     look: { font: "Montserrat", weight: 900, size: 116, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFE500",
       stroke: 0, strokeColor: "#000000", shadow: "0 0 4px rgba(0,0,0,0.7), 0 5px 0 rgba(0,0,0,0.55), 0 10px 28px rgba(0,0,0,0.6)", spacing: "-0.01em", lineHeight: 1.05, brand: "key" },
     motion: { in: "punch", active: "none", out: "cut" },

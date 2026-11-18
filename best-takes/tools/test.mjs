@@ -137,6 +137,31 @@ test("the cut's voice: every piece its length, silence where a piece only shows 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// the names of a file's tags, its own and its streams'
+function tagsOf(file) {
+  const j = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], { encoding: "utf8" }).stdout);
+  return [j.format.tags, ...j.streams.map((s) => s.tags)].flatMap((t) => Object.keys(t || {}));
+}
+
+test("finish: the levelled video names no place, even made from a file that names one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-test-"));
+  try {
+    // a made-up place, written the way a phone writes one, into a video quieter than -14 LUFS
+    const video = path.join(dir, "out.mp4");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", recording(dir, "plain.mp4", 440, 1), "-c", "copy",
+      "-metadata", "location=+12.3456-012.3456/", "-metadata", "location-eng=+12.3456-012.3456/", video], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(tagsOf(video).some((k) => /location/i.test(k)), "the made-up video should name a place");
+    const takes = path.join(dir, "takes");
+    fs.mkdirSync(path.join(takes, "source"), { recursive: true });
+    fs.writeFileSync(path.join(takes, "edit.json"), JSON.stringify({ duration: seconds(video), words: [{ text: "Hallo.", start: 1, end: 1.5 }] }));
+    const done = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs"), "finish", takes, video], { encoding: "utf8" });
+    assert.equal(done.status, 0, done.stdout + done.stderr);
+    assert.match(done.stdout, /-14 LUFS \(was /);
+    assert.deepEqual(tagsOf(video).filter((k) => /location|gps/i.test(k)), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a video that is not there is said in one sentence", { skip: !ffmpeg && "no ffmpeg" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-test-"));
   try {

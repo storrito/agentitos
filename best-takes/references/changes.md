@@ -19,3 +19,4 @@ What to do when the person asks for a change to the cut. After each: build again
 | "Vertical" / "square" | `--aspect 9:16` / `--aspect 1:1` (with `--fit contain` the whole picture stays, with bars) |
 | a word in the subtitles is wrong | `"fixes": {"57": "Pentax"}` |
 | "Captions in the picture" / "another caption style" | `takes.mjs captions takes/<name> --style hormozi` (see "Captions in the picture" in SKILL.md) |
+| "Show the app when I mention it" / "b-roll" | see "B-roll" in SKILL.md |

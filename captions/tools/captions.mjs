@@ -274,6 +274,10 @@ function cmdBuild(file, folder, opts) {
   const size = sizeOf(opts, doc.width && doc.height ? [doc.width, doc.height] : null) || fail("Give --size (width x height): the words carry no frame size.");
   const duration = Number(opts.duration) || doc.duration || Math.ceil(words.at(-1).end + 1);
   const r = captionsFor(words, path.resolve(folder), opts, size, duration);
+  // where they stand, for a skill that lays something out around them (b-roll's beats beside the
+  // person move them onto the band under the material): px of the frame, as high as their lines can be
+  const { left, width, top, bottom, size: type, lines } = r.area;
+  fs.writeFileSync(path.join(path.resolve(folder), "area.json"), JSON.stringify({ left, width, top, bottom, size: type, lines }) + "\n");
   console.log(`${rel(path.resolve(folder))}/index.html: ${r.style.label}, ${words.length} words in ${r.groups} groups, ${size.join("×")}, ${duration.toFixed(1)} s${r.brand?.primary && !r.kept ? `, ${{ key: "key words", both: "accent and key words" }[r.style.look.brand] || "accent"} ${r.brand.primary}` : ""}${r.brand?.family && !r.style.look.ownFont ? `, font ${r.brand.family}` : ""}`);
   console.log(r.placed);
   console.log(`Mount it in the host composition, inside its root:\n  ${mount({ dir: path.basename(folder), width: size[0], height: size[1], duration, track: Number(opts.track) || 9 })}`);

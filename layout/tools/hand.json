@@ -1,0 +1,224 @@
+{
+ "about": "The cases laid out by hand that tools/test.mjs compares the solver with: two takes, each as the numbers of its layouts (the frame, where the sharp picture lies, the faces, the text), never as pictures: the tests draw a placeholder. picture: the source's box in the frame; window: what of it shows where it is clipped; a caption block: left, width, the distance of its bottom from the frame's bottom, its type and lines. winners: what the solver puts first for each case with the weights of tools/weights.json and the skill's own type sizes (card: the hook as a card across the top, which the hand laid out; hook: as the solver tries it first, a short text in the middle); basis says who stands behind it: hand (the layout made by hand on the still), judged (people compared stills), solver (nobody has looked: it only keeps a change of the weights from passing unseen).",
+ "takes": {
+  "p1": {
+   "what": "An upright phone take, 1080×1920: one person speaking to the phone from close by, the face large, the eyes at half the height, the chin at 77 % of it. Laid out by hand on one still on 2026-11-16.",
+   "source": [1080, 1920],
+   "face": [300, 570, 600, 900],
+   "set": {"free.above": 0.02},
+   "head": "This box was read from the top of the head, not from the hairline (on the hand's still the hair's top lies 15 px above it, the receding hairline about 65 px of the source below it; the phone looks up at the face). The solver keeps a third of a box's height above it for the skull (defaults.mjs, free.above): for this box that would keep 300 px of wall clear that the hand used. Every run on this take keeps the margin it has as read, a fiftieth.",
+   "pages": [
+    {
+     "name": "1-person-9x16-sketch",
+     "title": "The person alone, 9:16, as sketched",
+     "note": "The take fills the frame, the captions end on the safe box's bottom.",
+     "checker": "fails: the face under what TikTok, YouTube Shorts and Facebook Reels lay over it, the captions on the face",
+     "frame": [1080, 1920],
+     "picture": [0, 0, 1080, 1920],
+     "faces": [[300, 570, 600, 900]],
+     "text": [
+      {"style": "cap", "left": 192, "width": 696, "bottom": 480, "font": 56, "align": "center", "lines": ["eure Instagram-Storys", "für die ganze Woche"]}
+     ]
+    },
+    {
+     "name": "2-person-9x16-zoomed",
+     "title": "The person alone, 9:16, zoomed in by 7 %",
+     "note": "The picture moved up and to the left until the chin and the cheek just lie in the safe box. Above the head there is room for one line.",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [-75.6, -134.4, 1155.6, 2054.4],
+     "faces": [[245.4, 475.5, 642, 963]],
+     "text": [
+      {"style": "cap", "left": 192, "width": 696, "bottom": 1480, "font": 60, "align": "center", "lines": ["für die ganze Woche"]}
+     ]
+    },
+    {
+     "name": "3-person-9x16-smaller",
+     "title": "The person alone, 9:16, at 90 %",
+     "note": "The picture a little smaller over a blurred copy. The wall above the head holds two lines.",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [54, 97, 972, 1728],
+     "faces": [[324, 610, 540, 810]],
+     "text": [
+      {"style": "cap", "left": 192, "width": 696, "bottom": 1350, "font": 56, "align": "center", "lines": ["eure Instagram-Storys", "für die ganze Woche"]}
+     ]
+    },
+    {
+     "name": "4-hook-9x16-sketch",
+     "title": "Hook at the top, 9:16, as sketched",
+     "note": "The hook card in the wide stretch at the top, the captions at the bottom.",
+     "checker": "fails: the face under what TikTok, YouTube Shorts and Facebook Reels lay over it, the captions on the face",
+     "frame": [1080, 1920],
+     "picture": [0, 0, 1080, 1920],
+     "faces": [[300, 570, 600, 900]],
+     "text": [
+      {"style": "card", "box": [60, 250, 960, 250], "font": 78, "lines": ["Storys für die ganze", "Woche vorplanen"]},
+      {"style": "cap", "left": 192, "width": 696, "bottom": 480, "font": 56, "align": "center", "lines": ["eure Instagram-Storys", "für die ganze Woche"]}
+     ]
+    },
+    {
+     "name": "5-hook-9x16-zoomed",
+     "title": "Hook at the top, 9:16, zoomed in by 7 %",
+     "note": "Above the head the card with two lines fits (shrunk to 66 px), but no captions beside it.",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [-75.6, -134.4, 1155.6, 2054.4],
+     "faces": [[245.4, 475.5, 642, 963]],
+     "text": [
+      {"style": "card", "box": [60, 250, 960, 196], "font": 66, "lines": ["Storys für die ganze", "Woche vorplanen"]}
+     ]
+    },
+    {
+     "name": "6-hook-9x16-smaller",
+     "title": "Hook at the top, 9:16, at 82 %",
+     "note": "The hook card and under it two caption lines, both above the head.",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [97, 215, 885.6, 1574.4],
+     "faces": [[343, 682.4, 492, 738]],
+     "text": [
+      {"style": "card", "box": [60, 250, 960, 240], "font": 76, "lines": ["Storys für die ganze", "Woche vorplanen"]},
+      {"style": "cap", "left": 192, "width": 696, "bottom": 1256, "font": 56, "align": "center", "lines": ["eure Instagram-Storys", "für die ganze Woche"]}
+     ]
+    },
+    {
+     "name": "7-person-16x9",
+     "title": "The person alone, 16:9",
+     "note": "The take as a tall panel on the left, the words large beside it.",
+     "checker": "passes",
+     "frame": [1920, 1080],
+     "picture": [0, 0, 607.5, 1080],
+     "faces": [[168.75, 320.625, 337.5, 506.25]],
+     "text": [
+      {"style": "big", "left": 704, "top": 318, "font": 138, "lines": ["für die ganze", "<b>Woche</b>", "vorplant"]}
+     ]
+    },
+    {
+     "name": "8-hook-16x9",
+     "title": "Hook at the top, 16:9",
+     "note": "The take on the left, the hook as large lines on the right, the captions small under it.",
+     "checker": "passes",
+     "frame": [1920, 1080],
+     "picture": [0, 0, 607.5, 1080],
+     "faces": [[168.75, 320.625, 337.5, 506.25]],
+     "text": [
+      {"style": "big", "left": 704, "top": 200, "font": 112, "lines": ["Storys für die ganze", "Woche vorplanen"]},
+      {"style": "cap", "left": 704, "width": 1120, "bottom": 150, "font": 50, "align": "left", "lines": ["eure Instagram-Storys", "für die ganze Woche"]}
+     ]
+    }
+   ]
+  },
+  "p2": {
+   "what": "A wide take, 1280×720: one person in the middle of a public interview, a still at second 45. The face read off a grid by hand (the eyes at y 200). Laid out by hand on 2026-11-17; people judged the sharpness on these stills: 1.5× crisp, 1.875× mildly soft but fine, 2.67× too soft to publish.",
+   "source": [1280, 720],
+   "face": [558, 100, 177, 248],
+   "pages": [
+    {
+     "name": "1-close-9x16-sketch",
+     "title": "Cropped close, 9:16, as sketched",
+     "note": "A crop of 405×720 around the face fills the frame, enlarged 2.67×: visibly soft. The eyes at 28 % of the height, the captions over the chest.",
+     "checker": "passes with one note: 2 % of the face cut where the Instagram feed shows 4:5",
+     "frame": [1080, 1920],
+     "picture": [-1182.7, 0, 3413.3, 1920],
+     "faces": [[305.3, 266.7, 472, 661.3]],
+     "text": [
+      {"style": "cap", "left": 192, "width": 696, "bottom": 480, "font": 56, "align": "center", "lines": ["we train for years", "for a single mission"]}
+     ]
+    },
+    {
+     "name": "2-square-9x16-sketch",
+     "title": "Square plus text, 9:16, as sketched",
+     "note": "A square of 720×720 across the frame (1.5×) over a blurred copy, the captions under it on calm ground. Crisp, but the person stays small: the face takes a quarter of the width.",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [-429, 180, 1920, 1080],
+     "window": [0, 188, 1080, 1072],
+     "faces": [[408, 330, 265.5, 372]],
+     "text": [
+      {"style": "cap", "left": 192, "width": 696, "bottom": 480, "font": 56, "align": "center", "lines": ["we train for years", "for a single mission"]}
+     ]
+    },
+    {
+     "name": "3-square-9x16-hook",
+     "title": "Square plus text, 9:16, with a hook",
+     "note": "The hook card at the top, the square moves down. Hook, square and captions under it need about 1280 px, the safe box is 1190 px tall: the captions stand over the chest.",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [-429, 360, 1920, 1080],
+     "window": [0, 368, 1080, 1072],
+     "faces": [[408, 510, 265.5, 372]],
+     "text": [
+      {"style": "card", "box": [60, 266, 960, 104], "font": 60, "lines": ["How astronauts really train"]},
+      {"style": "cap", "left": 192, "width": 696, "bottom": 480, "font": 56, "align": "center", "lines": ["we train for years", "for a single mission"]}
+     ]
+    },
+    {
+     "name": "4-upright-9x16-4to5",
+     "title": "A 4:5 crop, 9:16",
+     "note": "A crop of 576×720 (1.875×) over a blurred copy. The eyes at 30 % of the height, the captions over the chest; the head stays inside what the Instagram feed shows. For 720 lines the middle between close (soft) and the square (a small person).",
+     "checker": "passes",
+     "frame": [1080, 1920],
+     "picture": [-671.2, 200, 2400, 1350],
+     "window": [0, 210, 1080, 1340],
+     "faces": [[375, 387.5, 331.9, 465]],
+     "text": [
+      {"style": "cap", "left": 192, "width": 696, "bottom": 480, "font": 56, "align": "center", "lines": ["we train for years", "for a single mission"]}
+     ]
+    },
+    {
+     "name": "5-full-16x9",
+     "title": "Full frame, 16:9",
+     "note": "The source fills the frame (1.5×), one caption line at the bottom.",
+     "checker": "passes",
+     "frame": [1920, 1080],
+     "picture": [0, 0, 1920, 1080],
+     "faces": [[837, 150, 265.5, 372]],
+     "text": [
+      {"style": "cap", "left": 96, "width": 1728, "bottom": 150, "font": 50, "align": "center", "lines": ["we train for years for a single mission"]}
+     ]
+    },
+    {
+     "name": "6-third-16x9",
+     "title": "The person on a third, 16:9",
+     "note": "The person stands in the source's middle: only at 2.02× (a crop of 950×535) does the face reach the third without an edge of the source showing. The keyword on the free side over a darkened background, a caption line under it.",
+     "checker": "passes",
+     "frame": [1920, 1080],
+     "picture": [-664.9, -44, 2585.6, 1454.4],
+     "faces": [[462.2, 158, 357.5, 501]],
+     "text": [
+      {"style": "big", "left": 1110, "top": 262, "font": 124, "lines": ["<b>Years</b> of", "training"]},
+      {"style": "cap", "left": 1110, "width": 714, "bottom": 150, "font": 50, "align": "left", "lines": ["we train for years"]}
+     ]
+    }
+   ]
+  }
+ },
+ "winners": [
+  {"case": "P1 9:16, 1 caption line", "take": "p1", "frame": "9:16", "text": ["caption:1"], "first": "zoom 1.07×", "basis": "hand"},
+  {"case": "P1 9:16, 2 caption lines", "take": "p1", "frame": "9:16", "text": ["caption:2"], "first": "inset 0.98×", "basis": "solver"},
+  {"case": "P1 9:16, card", "take": "p1", "frame": "9:16", "text": ["hook:card"], "first": "zoom 1.07×", "basis": "hand"},
+  {"case": "P1 9:16, card + 1 line", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:1"], "first": "inset 0.88×", "basis": "solver"},
+  {"case": "P1 9:16, card + 2 lines", "take": "p1", "frame": "9:16", "text": ["hook:card", "caption:2"], "first": "inset 0.76×", "basis": "solver"},
+  {"case": "P1 16:9, 1 caption line", "take": "p1", "frame": "16:9", "text": ["caption:1"], "first": "panel left 0.56×", "basis": "hand"},
+  {"case": "P1 16:9, card + 2 lines", "take": "p1", "frame": "16:9", "text": ["hook:card", "caption:2"], "first": "panel left 0.56×", "basis": "hand"},
+  {"case": "P2 9:16, 1 caption line", "take": "p2", "frame": "9:16", "text": ["caption:1"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 9:16, 2 caption lines", "take": "p2", "frame": "9:16", "text": ["caption:2"], "first": "crop 4:5 1.88×", "basis": "judged"},
+  {"case": "P2 9:16, card", "take": "p2", "frame": "9:16", "text": ["hook:card"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 9:16, card + 2 lines", "take": "p2", "frame": "9:16", "text": ["hook:card", "caption:2"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 16:9, 1 caption line", "take": "p2", "frame": "16:9", "text": ["caption:1"], "first": "full 1.5×", "basis": "hand"},
+  {"case": "P2 16:9, card + 1 line", "take": "p2", "frame": "16:9", "text": ["hook:card", "caption:1"], "first": "zoom 1.59×", "basis": "solver"},
+  {"case": "P1 4:5, 2 caption lines", "take": "p1", "frame": "4:5", "text": ["caption:2"], "first": "crop 4:5 1×", "basis": "solver"},
+  {"case": "P1 4:5, card + 2 lines", "take": "p1", "frame": "4:5", "text": ["hook:card", "caption:2"], "first": "inset 0.64×", "basis": "solver"},
+  {"case": "P1 1:1, 2 caption lines", "take": "p1", "frame": "1:1", "text": ["caption:2"], "first": "crop band 0.7×", "basis": "solver"},
+  {"case": "P1 1:1, card + 2 lines", "take": "p1", "frame": "1:1", "text": ["hook:card", "caption:2"], "first": "inset 0.28×", "basis": "solver"},
+  {"case": "P2 4:5, 2 caption lines", "take": "p2", "frame": "4:5", "text": ["caption:2"], "first": "crop 1:1 1.5×", "basis": "solver"},
+  {"case": "P2 4:5, card + 2 lines", "take": "p2", "frame": "4:5", "text": ["hook:card", "caption:2"], "first": "crop band 1.48×", "basis": "solver"},
+  {"case": "P2 1:1, 2 caption lines", "take": "p2", "frame": "1:1", "text": ["caption:2"], "first": "full 1.5×", "basis": "solver"},
+  {"case": "P2 1:1, card + 2 lines", "take": "p2", "frame": "1:1", "text": ["hook:card", "caption:2"], "first": "crop band 1.11×", "basis": "solver"},
+  {"case": "P2 9:16, hook", "take": "p2", "frame": "9:16", "text": ["hook"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P2 9:16, hook + 1 line", "take": "p2", "frame": "9:16", "text": ["hook", "caption:1"], "first": "crop 4:5 1.88×", "basis": "solver"},
+  {"case": "P1 9:16, hook", "take": "p1", "frame": "9:16", "text": ["hook"], "first": "inset 0.98×", "basis": "solver"},
+  {"case": "P1 9:16, hook + 1 line", "take": "p1", "frame": "9:16", "text": ["hook", "caption:1"], "first": "inset 0.92×", "basis": "solver"}
+ ]
+}

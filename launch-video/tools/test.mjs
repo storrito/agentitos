@@ -253,6 +253,29 @@ test("board: a missing folder or one without stills is one sentence", () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ------------------------------------------------------------------------------- finish
+
+// the names of a file's tags, its own and its streams'
+function tagsOf(file) {
+  const j = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], { encoding: "utf8" }).stdout);
+  return [j.format.tags, ...j.streams.map((s) => s.tags)].flatMap((t) => Object.keys(t || {}));
+}
+
+test("finish: the levelled video names no place, even made from a file that names one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // a made-up place, written the way a phone writes one, into a video quieter than -14 LUFS
+    const video = path.join(dir, "film.mp4");
+    run(["-f", "lavfi", "-i", "color=c=gray:s=320x180:r=30:d=3", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3", "-af", "volume=-12dB",
+      "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", "-metadata", "location=+12.3456-012.3456/", "-metadata", "location-eng=+12.3456-012.3456/", video]);
+    assert.ok(tagsOf(video).some((k) => /location/i.test(k)), "the made-up video should name a place");
+    const r = launch(dir, "finish", "film.mp4");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /→ −14 LUFS/);
+    assert.deepEqual(tagsOf(video).filter((k) => /location|gps/i.test(k)), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("storyboardFrames: both of HyperFrames' headings, times from a range or the durations", () => {
   const frames = storyboardFrames(`---\nformat: 1080x1920\nduration: 12s\n---\n\n## Frame 1: The hook (0-3s)\n- act: 1\n\n## Frame 2 — The problem\n- duration: 4s\n- scene: a timer spins\n\n### Beat 3: The fix (7–9.5 s)\n\n## Frame 4 — The end card\n\nfree text\n## Notes\n`);
   assert.deepEqual(frames, [

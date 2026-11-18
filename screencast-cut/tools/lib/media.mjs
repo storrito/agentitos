@@ -81,7 +81,7 @@ export function samples(file, from = 0) {
 // the HyperFrames CLI: one on the PATH, else the version this skill pins
 export function hyperframes() {
   const r = spawnSync("hyperframes", ["--version"], { stdio: "ignore" });
-  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.172"];
+  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.221"];
 }
 
 export const clock = (s, tenths = true) => {
