@@ -1,6 +1,7 @@
-// node --test tools/test.mjs: where a beat beside the person goes (lib/beside.mjs) for the frames
-// b-roll makes, and that a broll.json of before "beside" builds as it did. No model, no browser:
-// platform-zones (beside this skill) gives the zones, ffmpeg makes a picture.
+// node --test tools/test.mjs: what b-roll makes of the layout skill's answer for a beat beside the
+// person (lib/beside.mjs asks agentitos' layout, its `beside` command) in the frames b-roll makes,
+// and that a broll.json of before "beside" builds as it did. No model, no browser: platform-zones
+// and layout (beside this skill) give the zones and the fields, ffmpeg makes a picture.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -9,65 +10,69 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { besideLayout, assumedFace, frameFace, aim, HAIR, SOFT, FACE_TARGET, FACE_NORM, FACE_LEAST, MATERIAL_LEAST } from "./lib/beside.mjs";
+import { besideLayout, frameFace, NEEDS_LAYOUT, SOFT_FROM, MATERIAL_LEAST } from "./lib/beside.mjs";
 import { rectOf, readBox, personMotion, holePolygon } from "./lib/render.mjs";
 import { zones } from "./lib/zones.mjs";
 
-const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), "broll.mjs");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const TOOL = path.join(HERE, "broll.mjs");
 const FRAMES = [[1080, 1920, ["reels"]], [1080, 1920, []], [1080, 1350, []], [1080, 1080, []], [1280, 720, ["youtube"]], [1920, 1080, []]];
 
 const inside = ([x, y, w, h], [X, Y, W, H], slack = 1) => x >= X - slack && y >= Y - slack && x + w <= X + W + slack && y + h <= Y + H + slack;
-const apart = ([x, y, w, h], [X, Y, W, H]) => x + w <= X || X + W <= x || y + h <= Y || Y + H <= y;
+const apart = ([x, y, w, h], [X, Y, W, H], slack = 1) => x + w <= X + slack || X + W <= x + slack || y + h <= Y + slack || Y + H <= y + slack;
 const bottomFree = (z) => z.safe[1] + z.safe[3];
 
 // a face of a medium shot (15 % of the frame's height) and of a close-up (40 %), in px of a
 // source of the frame's size
 const medium = (W, H) => [W / 2 - 0.06 * H, 0.3 * H, 0.12 * H, 0.15 * H];
 const closeUp = (W, H) => [W / 2 - 0.15 * H, 0.36 * H, 0.3 * H, 0.4 * H];
-// where captions stand without b-roll, as agentitos' captions says it (area.json): two lines of
+// where captions stand without b-roll, as agentitos' captions writes it (area.json): two lines of
 // hormozi at the bottom of the centred box
-const captionsOf = (z, W, H) => { const [x, y, w, h] = z.centred, u = Math.min(W, H) / 1080; return { left: x, width: w, bottom: y + h, top: Math.round(y + h - 202 * u), size: Math.round(96 * u) }; };
+const captionsOf = (z, W, H) => { const [x, y, w, h] = z.centred, u = Math.min(W, H) / 1080; return { left: x, width: w, bottom: y + h, top: Math.round(y + h - 202 * u), size: Math.round(96 * u), lines: 2 }; };
 
 for (const [W, H, platforms] of FRAMES) {
   const name = `${W}×${H}${platforms.length ? ` (${platforms.join(",")})` : ""}`;
   const z = zones(W, H, platforms);
   const frame = [0, 0, W, H];
-  const wide = W / H > 1.2;
+  const wide = W > H;
 
   for (const cap of [null, captionsOf(z, W, H)]) for (const [shot, face] of [["medium shot", medium(W, H)], ["close-up", closeUp(W, H)]]) {
-    test(`${name}, ${shot}${cap ? ", captions" : ""}: fields in the frame and apart, the face whole at its target`, () => {
-      const L = besideLayout({ width: W, height: H, zones: z, face, captions: cap });
+    test(`${name}, ${shot}${cap ? ", captions" : ""}: fields in the frame and apart, the face whole above the apps, the captions clear of it`, () => {
+      const L = besideLayout({ width: W, height: H, face, captions: cap, platforms });
       const M = L.material.field, P = L.speaker;
       for (const box of [M, P.field, P.card]) assert.ok(inside(box, frame), `${box} in the frame`);
-      assert.ok(inside(M, z.safe), `material ${M} in safe ${z.safe}`);
-      assert.ok(M[3] >= (wide ? 0.3 : MATERIAL_LEAST) * H - 1, `the material's field ${M[3]} high enough`);
+      assert.ok(inside(M, z.safe) || inside(M, z.wide), `material ${M} in what the apps leave free`);
+      assert.ok(M[3] >= MATERIAL_LEAST * H - 1, `the material's field ${M[3]} high enough`);
       assert.ok(inside(P.card, P.field), `card ${P.card} in ${P.field}`);
       assert.ok(apart(M, P.card), `material ${M} and person ${P.card} overlap`);
       assert.ok(inside(P.face, P.card), `face ${P.face} whole in ${P.card}`);
       assert.ok(P.face[1] + P.face[3] <= bottomFree(z) + 1, `chin ${P.face[1] + P.face[3]} above ${bottomFree(z)}`);
-      assert.ok(P.face[1] - HAIR * P.face[3] >= P.card[1] - 1, "room for the hair above the face");
-      assert.ok(P.facePct >= FACE_LEAST * 100 - 0.1, `face ${P.facePct} %`);
-      if (!wide) assert.ok(Math.abs(P.face[3] - aim(H, face[3])) <= 2 || L.notes.some((x) => /gives way/.test(x)), `face ${P.face[3]} at what it aims at, ${aim(H, face[3])}`);
-      assert.equal(L.warnings.length, 0, L.warnings.join("; "));
+      assert.equal(L.side, wide);
+      // nothing fails, no need is unmet (a soft finding, as a feed's crop cutting the material, is
+      // a warning to read)
+      const C0 = L.placement.candidates[L.candidate - 1];
+      assert.ok(!C0.problems.some((q) => q.level !== "soft"), L.warnings.join("; "));
+      assert.equal(L.warnings.length, C0.problems.length);
+      // the host's video: the face lands where the field says (scale, then the shift)
+      const f = frameFace(face, null, W, H).box;
+      assert.ok(Math.abs(P.left + P.scale * f[0] - P.face[0]) <= 2 && Math.abs(P.top + P.scale * f[1] - P.face[1]) <= 2, "the host's transform puts the face on its place");
       if (cap) {
         const C = L.captions;
         assert.ok(apart(M, C.box), `material ${M} and captions ${C.box} overlap`);
         assert.ok(apart(C.box, P.face), "the captions clear of the face");
+        assert.deepEqual([C.box[1] - cap.top, C.box[0] - cap.left], [C.shift.y, C.shift.x], "the shift moves the captions onto their box");
         if (!wide) {
-          // on the seam: under the material, over the person's field, the hair's room under them
           assert.equal(C.where, "seam");
-          assert.equal(cap.bottom + C.shift.y, C.box[1] + C.box[3]);
-          assert.ok(C.box[1] >= M[1] + M[3], "the captions under the material");
-          assert.ok(P.face[1] - HAIR * P.face[3] >= C.box[1] + C.box[3] - 1, "the hair's room between captions and face");
+          assert.ok(C.box[1] >= M[1] + M[3] - 1, "the captions under the material");
           assert.ok(inside(C.box, z.safe), `band ${C.box} in the safe box`);
         } else assert.deepEqual([C.where, C.shift], ["stay", { x: 0, y: 0 }]);
-      }
+      } else assert.equal(L.captions, null);
     });
   }
 
   test(`${name}: the same layout for every material, with captions the material shorter, the person the same`, () => {
-    const a = besideLayout({ width: W, height: H, zones: z, face: medium(W, H) });
-    const b = besideLayout({ width: W, height: H, zones: z, face: medium(W, H), captions: captionsOf(z, W, H) });
+    const a = besideLayout({ width: W, height: H, platforms, face: medium(W, H) });
+    const b = besideLayout({ width: W, height: H, platforms, face: medium(W, H), captions: captionsOf(z, W, H) });
     assert.ok(b.material.field[3] < a.material.field[3]);
     if (!wide) assert.deepEqual(a.speaker.face, b.speaker.face);
   });
@@ -75,7 +80,7 @@ for (const [W, H, platforms] of FRAMES) {
   test(`${name}: an odd face (at an edge, very large, tiny, none) still gives fields in the frame`, () => {
     for (const face of [[0, 0, 0.1 * W, 0.1 * H], [W - 50, H - 50, 400, 400], [0, 0, W, H], [W / 2, H / 2, 4, 4], [-200, -300, 0.5 * W, 0.5 * H], null, "x"]) {
       for (const cap of [null, captionsOf(z, W, H)]) {
-        const L = besideLayout({ width: W, height: H, zones: z, face, captions: cap });
+        const L = besideLayout({ width: W, height: H, platforms, face, captions: cap });
         const P = L.speaker;
         for (const box of [L.material.field, P.field, P.card]) assert.ok(inside(box, frame), `${JSON.stringify(face)}: ${box} in the frame`);
         assert.ok(inside(P.card, P.field), `${JSON.stringify(face)}: card ${P.card} in ${P.field}`);
@@ -87,12 +92,12 @@ for (const [W, H, platforms] of FRAMES) {
   });
 
   test(`${name}: no face: the usual framing, said`, () => {
-    const L = besideLayout({ width: W, height: H, zones: z });
+    const L = besideLayout({ width: W, height: H, platforms });
     assert.equal(L.speaker.assumed, true);
   });
 
   test(`${name}: a picture beside the person fits into the material's field`, () => {
-    const layout = besideLayout({ width: W, height: H, zones: z, face: medium(W, H) });
+    const layout = besideLayout({ width: W, height: H, platforms, face: medium(W, H) });
     for (const [w, h] of [[1170, 2532], [1920, 1080], [800, 800]]) {
       const r = rectOf({ fit: "beside", w, h, layout }, { width: W, height: H, zones: z });
       assert.ok(inside([r.x, r.y, r.w, r.h], layout.material.field), `${w}×${h}`);
@@ -101,7 +106,7 @@ for (const [W, H, platforms] of FRAMES) {
 
   test(`${name}: the panel's hole is the whole frame at the start, the card at the end, inside the moving video in between`, () => {
     for (const face of [medium(W, H), closeUp(W, H)]) {
-      const L = besideLayout({ width: W, height: H, zones: z, face, captions: captionsOf(z, W, H) });
+      const L = besideLayout({ width: W, height: H, platforms, face, captions: captionsOf(z, W, H) });
       const P = L.speaker;
       const poly = holePolygon(W, H, L, 28);
       const terms = [...poly.matchAll(/calc\(([-\d.]+)px \+ ([-\d.]+)px \* var\(--p\) \+ ([-\d.]+)px \* var\(--p\) \* var\(--p\)\)/g)].map((m) => m.slice(1, 4).map(Number));
@@ -124,37 +129,64 @@ for (const [W, H, platforms] of FRAMES) {
   });
 }
 
-test("1080×1920, the usual apps, hormozi captions, the take's close-up: the numbers of the layout", () => {
-  const z = zones(1080, 1920, []);
-  const L = besideLayout({ width: 1080, height: 1920, zones: z, face: [280, 700, 560, 760], source: [1080, 1920], captions: { left: 192, width: 696, top: 1238, bottom: 1440, size: 96 } });
-  assert.deepEqual(L.speaker.face, [384, 994, 311, 422]);       // 22 %, ending above the bottom zone (1440 less 24)
-  assert.deepEqual(L.captions.box, [192, 644, 696, 202]);       // two lines on the seam, 148 px of hair's room under them
-  assert.deepEqual(L.material.field, [60, 250, 828, 370]);      // from the safe box's top to 24 px above them: a number's room
-  assert.deepEqual(L.speaker.card, [229, 846, 600, 826]);
-  assert.ok(L.material.field[3] >= MATERIAL_LEAST * 1920, "the face has not given way");
-  assert.ok(!L.notes.some((x) => /gives way|stays sharp/.test(x)), L.notes.join("; "));
-});
+// what captions' build wrote for two lines of hormozi in 1080×1920 for Reels (area.json)
+const REELS_CAPTIONS = { left: 120, width: 840, top: 1298, bottom: 1500, size: 96, lines: 2 };
 
-test("the face aims at its target only as far as the video stays sharp, and never under the norm for that", () => {
-  const H = 1920;
-  assert.equal(aim(H, 0.4 * H), FACE_TARGET * H);                  // a close-up: shrunk, the target
-  assert.equal(aim(H, 0.2 * H), FACE_TARGET * H);                  // enlarged ×1.1: still sharp
-  assert.equal(aim(H, 0.15 * H), SOFT * 0.15 * H);                 // the target would need ×1.47: the sharpest, 18.75 %
-  assert.equal(aim(H, 0.1 * H), FACE_NORM * H);                    // small: the norm as before (×1.8, said to look soft)
-  assert.equal(aim(H, 0.15 * H, 1.25), FACE_NORM * H);             // the host enlarges the source already: no more than the norm
-  const z = zones(1080, 1920, []);
-  const L = besideLayout({ width: 1080, height: 1920, zones: z, face: [425, 576, 230, 288] });
-  assert.equal(L.speaker.scale, SOFT);
+test("the owner's close-up (1080×1920, Reels, two caption lines): the face 22 %, the person's card about 600 px wide", () => {
+  const L = besideLayout({ width: 1080, height: 1920, face: [280, 700, 560, 760], source: [1080, 1920], captions: REELS_CAPTIONS, platforms: ["reels"] });
+  assert.ok(Math.abs(L.speaker.facePct - 22) <= 0.3, `face ${L.speaker.facePct} %`);
+  assert.ok(Math.abs(L.speaker.card[2] - 600) <= 15, `card ${L.speaker.card}`);
+  assert.equal(L.captions.where, "seam");
+  assert.ok(apart(L.captions.box, L.speaker.face) && apart(L.captions.box, L.material.field));
+  // the captions stand on the panel: the person's card begins under them (the command's own
+  // window begins at the seam, under their lower line), with the face whole in it
+  assert.equal(L.speaker.card[1], L.captions.box[1] + L.captions.box[3]);
+  assert.ok(apart(L.captions.box, L.speaker.card), `captions ${L.captions.box} over the card ${L.speaker.card}`);
+  assert.ok(inside(L.speaker.face, L.speaker.card), `face ${L.speaker.face} in ${L.speaker.card}`);
+  assert.ok(L.placement.candidates[L.candidate - 1].speaker.window[1] < L.speaker.card[1], "the command's window begins higher");
   assert.equal(L.warnings.length, 0, L.warnings.join("; "));
-  assert.ok(L.notes.some((x) => /stays sharp/.test(x)), L.notes.join("; "));
+  // the call that gave it: the owner's settings, the captions' area, the person filling the frame
+  const call = L.call.join(" ");
+  for (const part of ["--frame 1080x1920", "--platform reels", "--source 1080x1920", "--face 280,700,560,760", "--caption-area 120,840,1298,1500,96,2", "--text caption:2", "--before 1,0,0", "beside.wish=0.22", "beside.face=0.18", "beside.faceUpTo=2", "weights.enlarge.softFrom=1.25"]) assert.ok(call.includes(part), `${part} in ${call}`);
+  assert.equal(L.placement.kind, "beside");
+  assert.equal(L.placement.candidates[L.candidate - 1].speaker.shape, "rect");
 });
 
-test("the face gives way to the material, not under 12 %, and says so", () => {
-  // a low captions' band leaves the material too little: the face gives way
-  const z = zones(1080, 1920, []);
-  const L = besideLayout({ width: 1080, height: 1920, zones: z, face: [440, 600, 200, 288], captions: { left: 192, width: 696, top: 900, bottom: 1440 } });
-  assert.ok(L.speaker.face[3] < FACE_TARGET * 1920 && L.speaker.face[3] >= FACE_LEAST * 1920 - 1);
-  assert.ok(L.notes.some((x) => /gives way/.test(x)));
+test("a medium shot stays sharp in every frame: not enlarged over 1.25 of its pixels for the wish, and not under 18 %; said", () => {
+  for (const [W, H] of [[1080, 1920], [1080, 1350], [1080, 1080], [1280, 720], [1920, 1080]]) {
+    const L = besideLayout({ width: W, height: H, face: medium(W, H) });
+    const f = frameFace(medium(W, H), null, W, H);
+    assert.ok(L.speaker.scale * f.cover <= SOFT_FROM + 1e-3, `${W}×${H}: enlarged ${L.speaker.scale}`);
+    assert.ok(L.speaker.facePct >= 18 - 0.1 && L.speaker.facePct < 22, `${W}×${H}: face ${L.speaker.facePct} %`);
+    assert.equal(L.warnings.length, 0, L.warnings.join("; "));
+    assert.ok(L.notes.some((x) => /22 %.*asked for/.test(x)), L.notes.join("; "));
+  }
+});
+
+test("a small face is enlarged twice at most, and that is said", () => {
+  const L = besideLayout({ width: 1080, height: 1920, face: [500, 600, 60, 80] });
+  assert.ok(L.speaker.scale <= 2 + 1e-3, `×${L.speaker.scale}`);
+  assert.ok(L.warnings.some((x) => /enlarged/.test(x)), L.warnings.join("; "));
+});
+
+test("without agentitos' layout the build stops with one sentence", () => {
+  // b-roll alone, with platform-zones named, and no layout beside it or named
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "broll-nolayout-"));
+  try {
+    fs.cpSync(path.dirname(HERE), path.join(tmp, "b-roll"), { recursive: true });
+    const words = Array.from({ length: 20 }, (_, i) => ({ i, text: "word", start: i * 0.4, end: i * 0.4 + 0.3 }));
+    fs.writeFileSync(path.join(tmp, "words.json"), JSON.stringify({ width: 1080, height: 1920, duration: 8, words }));
+    fs.writeFileSync(path.join(tmp, "broll.json"), JSON.stringify({ beats: [{ at: 2, until: 6, number: "3×" }] }));
+    const env = { ...process.env, PLATFORM_ZONES: path.join(path.dirname(HERE), "..", "platform-zones", "tools", "zones.mjs") };
+    delete env.LAYOUT;
+    const r = spawnSync(process.execPath, [path.join(tmp, "b-roll", "tools", "broll.mjs"), "build", "broll.json", "words.json", "out"], { encoding: "utf8", cwd: tmp, env });
+    if (fs.existsSync("/home/sprite/skills/layout/tools/place.mjs")) return;   // (the machine's clone would be found)
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(r.stdout.trim(), `✗ ${NEEDS_LAYOUT}`);
+    assert.ok(!fs.existsSync(path.join(tmp, "out")), "nothing built");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test("a face in the source's pixels lands in the frame as the host fills it", () => {
@@ -221,6 +253,9 @@ test("an old broll.json builds as before; a number and a page are beside the per
     assert.match(now.html, /broll-panel/);
     assert.match(now.said, /<script id="broll-person-motion">/);
     assert.match(now.said, /the face is assumed/);
+    // the layout skill's answer kept beside the build, to look at; none where no beat is beside
+    assert.equal(JSON.parse(fs.readFileSync(path.join(tmp, "now", "placement.json"), "utf8")).speaker.assumed, true);
+    assert.ok(!fs.existsSync(path.join(tmp, "old", "placement.json")));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

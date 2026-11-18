@@ -21,7 +21,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` bel
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `transcribe` skill (the words), `page-shot` (pictures of pages and posts), `platform-zones` (where the apps' buttons are) and, for captions, `captions` beside this one, and OpenRouter for the words: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (found at `http://sprite.internal`). Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `transcribe` skill (the words), `page-shot` (pictures of pages and posts), `platform-zones` (where the apps' buttons are), `layout` (where the material and the person go when a beat is beside them) and, for captions, `captions` beside this one, and OpenRouter for the words: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (found at `http://sprite.internal`). Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
 
 ## What b-roll is here
 

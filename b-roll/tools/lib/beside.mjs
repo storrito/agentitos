@@ -1,71 +1,71 @@
 // A beat shown "beside" the person: the frame is shared. One geometry per video and frame (with or
 // without captions), whatever the material, so that beats in a row need no rule of their own.
 //
-// Tall and square frames, built from the bottom up: the face at its target height (22 % of the
-// frame's) ends where the apps' bottom zone begins; above it the hair's room (35 % of the face's
-// height); above that the captions' band when there are captions (as high as their block can be,
-// moved there while the beat shows); the material gets what is left above, from the safe box's
-// top, over the safe width. Only when that is less than a material needs (MATERIAL_LEAST) does the
-// face give way, never under 12 % of the frame (said then). The person's video is moved into the
-// field under the seam by one transform (scale, then a shift, origin at the top left) on a
-// wrapper of the host; where it is then narrower than the field, the person shows as a card.
+// The geometry is not b-roll's: agentitos' layout skill keeps the one rule for material beside a
+// speaker (its `beside` command), and this asks it once per build, as a program: LAYOUT naming its
+// tools/place.mjs, else beside this skill, else in the machine's clone of the skills. Without it a
+// beat beside the person cannot be built, and the build says so; there is no second rule here.
+// b-roll tells the command what only b-roll knows: the frame, the apps, the person's video and
+// face, the captions' area, what its material needs, the person filling the frame before, and the
+// owner's settings below. It takes the first candidate the person stands in as a rectangle (b-roll
+// draws no circle) and gives it on in the names render.mjs and the hosts read.
 //
-// Wide frames (a sketch, not measured): the person is a tall field on the left third (filled with
-// the video when the face then still fits, else the face at the target), the material the rest of
-// the safe box, clear of the captions, which stay where they are.
-//
-// The proportions come from a layout study of 240 published Shorts (where a screen and a face are
-// seen at once, the face is under the screen in 66 % of the frames) and platform-zones' boxes at
-// run time. The collection's layout skill (its `beside` command, not merged yet) will give these
-// fields: ask it here, and nothing else in b-roll changes. The answer already carries its names.
-//
-//   besideLayout({ width, height, zones, face, source, captions }) →
-//     { side,
+//   besideLayout({ width, height, face, source, captions, platforms }) →
+//     { side,                                         true: the person is a column at one side
 //       material: { field },                          the material's field
 //       speaker:  { field, card, scale, left, top,    the person's field, what of it the video
-//                   face, facePct, assumed },          fills, the video's scale and place, the
+//                   face, facePct, assumed },          fills, the transform of the host's video
+//                                                      (scale, then a shift, origin top left), the
 //                                                      face in the frame then
 //       captions: { where, box, font, shift } | null, "seam" (moved onto box by shift) or "stay"
-//       room, warnings, notes }
+//       warnings, notes,                              what the command says of the candidate
+//       placement, candidate, call }                  its placement.json, which one, the call
 //   frameFace(face, source, width, height)           → the face in px of the frame (cover fit)
-//   assumedFace(width, height)                       → the usual framing of a talking head
+//   layoutTool()                                     → layout's tools/place.mjs, or null
+//   NEEDS_LAYOUT                                     → the sentence for when it is missing
 //
 // Boxes are [x, y, w, h] in px of the frame. `face` is the face (forehead to chin, cheek to cheek)
 // in px of the SOURCE video, `source` its size [w, h] (none: the frame's); the host fills the frame
 // with it (object-fit: cover). `captions` is where the captions stand without b-roll,
-// { left, width, top, bottom, size } (agentitos' captions' area.json).
+// { left, width, top, bottom, size, lines } (agentitos' captions' area.json). `platforms` is the
+// list b-roll was given (none: the frame's usual apps).
 
-// The face's height, of the frame's. Published Shorts show 18 % (the study's median, FACE_NORM);
-// the owner found the person's card too small at that and asked for a little more. 0.22 is the
-// most that still leaves a number its field under two lines of captions in a 9:16 frame with the
-// usual apps. The more is taken only as far as the video stays sharp (aim()).
-export const FACE_TARGET = 0.22;
-export const FACE_NORM = 0.18;
-export const FACE_LEAST = 0.12;      // the face gives way to the material down to this, no further
-export const HAIR = 0.35;            // room above a face box for the hair (and text above a head), of its height
-export const MATERIAL_LEAST = 0.18;  // the material's field at least this high, of the frame's (a number with a two-line label)
-export const SOFT = 1.25;            // the source's own pixels enlarged more than this look soft
-const FACE_MOST = 0.35;              // wide frames: a face that fills its tall field at most this, of the frame's height
-const SIDE = 1.2;                    // wider than this (width / height): the person at the left
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-export const isSide = (width, height) => width / height > SIDE;
+// The owner's choice for the person's face: 22 % of the frame's height while the video stays
+// sharp. Published Shorts show 18 % (the command's own default below the material); the owner
+// looked at built videos and wanted the person a little larger. Sharp means the video's own pixels
+// enlarged under 1.25×; where the wish needs more, the face gets 18 %, enlarging the video up to
+// twice its pixels (reported as soft past 1.25×), and beyond that it stays smaller, with a warning.
+// The 18 % is named too: the command's 16:9 column aims at 23 % by itself, which enlarges a medium
+// shot past 1.25× in place of keeping it sharp at the 18 % that b-roll's rule falls back to.
+export const FACE_WISH = 0.22;
+export const FACE_SHARP = 0.18;
+export const ENLARGE_MOST = 2;
+export const SOFT_FROM = 1.25;
+// What the material needs: a field at least 18 % of the frame's height (a number with a two-line
+// label under it), and wide enough for a number of six characters ("+300 %", "90 Sek.") at the
+// size such a field gives it (render.mjs sets the figure to 0.42 of the field's height; six
+// characters of Inter 800 are about 3.6 of its em wide, 1.5 times the field's height), with room
+// to spare for the label: 1.7 times the height.
+export const MATERIAL_LEAST = 0.18;
+export const MATERIAL_SHAPE = 1.7;
+
+export const NEEDS_LAYOUT = "A beat beside the person needs agentitos' layout skill beside this one (or LAYOUT naming its tools/place.mjs).";
+
+export function layoutTool() {
+  const skill = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
+  const candidates = [process.env.LAYOUT, path.join(skill, "..", "layout", "tools", "place.mjs"), "/home/sprite/skills/layout/tools/place.mjs"];
+  return candidates.find((p) => p && fs.existsSync(p)) || null;
+}
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const overlaps = ([x, y, w, h], [X, Y, W, H]) => x < X + W && X < x + w && y < Y + H && Y < y + h;
-
-// The height the face aims at, in px of the frame: the target, but where the source's own pixels
-// would be enlarged over SOFT for it, only what stays sharp, and never less for that than the
-// norm asks (a small face is enlarged for the norm as it always was, and said to look soft).
-// `fh` is the face's height as the host shows the source, `cover` how much that enlarges it.
-export function aim(height, fh, cover = 1) {
-  const want = FACE_TARGET * height, sharp = (SOFT / cover) * fh;
-  return want <= sharp ? want : Math.max(sharp, Math.min(want, FACE_NORM * height));
-}
-
-// the face in the upper third, in the middle: what a talking head usually is (px of the frame)
-export function assumedFace(width, height) {
-  const h = Math.round(0.2 * height), w = Math.round(0.75 * h);
-  return [Math.round(width / 2 - w / 2), Math.round(height / 3 - h / 2), w, h];
-}
+const num = (v) => String(+(+v).toFixed(4));
+const round = (b) => b.map(Math.round);
 
 // a face box in px of the source, kept inside it; null when it is no box
 export function faceBox(face, sw, sh) {
@@ -76,109 +76,80 @@ export function faceBox(face, sw, sh) {
   return [x, y, Math.min(w, sw - x), Math.min(h, sh - y)];
 }
 
+const sourceOf = (source, width, height) => (Array.isArray(source) && source.length === 2 && source.every((v) => v > 0) ? source : [width, height]);
+
 // the source's face in px of the frame, as the host shows the source (filling the frame, cut at its
 // edges); also how much the source's own pixels are enlarged
 export function frameFace(face, source, width, height) {
-  const [sw, sh] = Array.isArray(source) && source.length === 2 && source.every((v) => v > 0) ? source : [width, height];
+  const [sw, sh] = sourceOf(source, width, height);
   const box = faceBox(face, sw, sh);
   if (!box) return null;
   const c = Math.max(width / sw, height / sh), ox = (width - sw * c) / 2, oy = (height - sh * c) / 2;
   return { box: [ox + c * box[0], oy + c * box[1], c * box[2], c * box[3]], cover: c };
 }
 
-export function besideLayout({ width, height, zones, face, source, captions }) {
-  const [sx, sy, sw, sh] = zones.safe;
-  const u = Math.min(width, height) / 1080;
-  const margin = Math.round(24 * u);
-  const warnings = [], notes = [];
-  const given = frameFace(face, source, width, height);
-  const assumed = !given;
-  const [fx, fy, fw, fh] = given ? given.box : assumedFace(width, height);
-  const cover = given ? given.cover : 1;
-  const cap = captions && Number.isFinite(captions.top) && Number.isFinite(captions.bottom) && captions.bottom > captions.top ? captions : null;
-  const bottom = sy + sh - margin;   // the face ends above the apps' bottom zone
+const captionsGiven = (c) => c && ["left", "width", "top", "bottom", "size", "lines"].every((k) => Number.isFinite(c[k])) && c.bottom > c.top;
 
-  let side = isSide(width, height), material, person, room, capOut = null, scale, faceTop;
-  if (side) {
-    // the person on the left third, the material on the rest, above the captions where they stand
-    const pw = Math.round(width / 3);
-    const mx = Math.max(sx, pw + Math.round(40 * u)), mw = sx + sw - mx;
-    let mb = sy + sh;
-    const capBox = cap && [cap.left ?? 0, cap.top, cap.width ?? width, cap.bottom - cap.top];
-    if (capBox && overlaps(capBox, [mx, sy, mw, sh])) mb = Math.max(sy + sh * 0.4, cap.top - margin);
-    material = [mx, sy, mw, Math.round(mb - sy)];
-    person = [0, 0, pw, height];
-    room = [sy, bottom];
-    if (capBox) capOut = { where: "stay", box: capBox.map(Math.round), font: cap.size ?? null, shift: { x: 0, y: 0 } };
-    // the face at the target, or larger where that lets the video fill its tall field
-    const fits = Math.min(FACE_MOST * height, (room[1] - room[0]) / (1 + HAIR));
-    const fill = Math.max(pw / width, height / height);
-    scale = aim(height, fh, cover) / fh;
-    if (scale < fill && fill * fh <= fits) scale = fill;
-    const H = fh * scale, block = H * (1 + HAIR);
-    faceTop = room[0] + Math.max(0, room[1] - room[0] - block) * 0.35 + HAIR * H;
-  } else {
-    // from the bottom up: the face, the hair's room, the captions' band, the material above
-    const bandH = cap ? cap.bottom - cap.top : 0;
-    const above = (H) => bottom - H * (1 + HAIR) - (cap ? bandH : 0) - margin - sy;   // the material's height
-    let H = aim(height, fh, cover);
-    if (H < FACE_TARGET * height - 0.5) notes.push(`the face is small in the video: it shows at ${Math.round((H / height) * 100)} % of the frame's height, not ${Math.round(FACE_TARGET * 100)} %, so that the video stays sharp`);
-    const least = MATERIAL_LEAST * height;
-    if (above(H) < least) {
-      const fit = (bottom - (cap ? bandH : 0) - margin - sy - least) / (1 + HAIR);
-      H = Math.max(FACE_LEAST * height, fit);
-      notes.push(`the material needs room: the face gives way to ${Math.round((H / height) * 100)} % of the frame's height${H <= FACE_LEAST * height + 0.5 ? " (the least it may be)" : ""}`);
-    }
-    faceTop = bottom - H;
-    const seam = Math.round(faceTop - HAIR * H);
-    const mb = (cap ? seam - bandH : seam) - margin;
-    material = [sx, sy, sw, Math.round(mb - sy)];
-    person = [0, seam, width, height - seam];
-    room = [seam, bottom];
-    if (cap) {
-      const top = seam - bandH;
-      capOut = { where: "seam", box: [Math.round(cap.left ?? sx), Math.round(top), Math.round(cap.width ?? sw), Math.round(bandH)], font: cap.size ?? null, shift: { x: 0, y: Math.round(seam - cap.bottom) } };
-    }
-    scale = H / fh;
+export function besideLayout({ width, height, face, source, captions, platforms = [] }) {
+  const tool = layoutTool();
+  if (!tool) throw new Error(NEEDS_LAYOUT);
+  const [sw, sh] = sourceOf(source, width, height);
+  const box = faceBox(face, sw, sh);
+  if (captions && !captionsGiven(captions)) throw new Error("The captions' area is left, width, top, bottom, size and lines in px of the frame (agentitos' captions writes it as area.json): build the captions again.");
+  const cap = captions || null;
+  // the person filling the frame before the beat, as the host shows the video (cover, centred)
+  const c = Math.max(width / sw, height / sh);
+  const least = Math.round(MATERIAL_LEAST * height);
+  const args = [
+    "--frame", `${width}x${height}`, ...(platforms.length ? ["--platform", platforms.join(",")] : []),
+    "--source", `${sw}x${sh}`, "--face", box ? box.map(num).join(",") : "assumed",
+    "--material-min", `${Math.round(MATERIAL_SHAPE * least)}x${least}`,
+    ...(cap ? ["--caption-area", [cap.left, cap.width, cap.top, cap.bottom, cap.size, cap.lines].map(num).join(","), "--text", `caption:${cap.lines}`] : []),
+    "--before", [c, (width - sw * c) / 2, (height - sh * c) / 2].map(num).join(","),
+    "--set", `beside.wish=${FACE_WISH}`, "--set", `beside.face=${FACE_SHARP}`, "--set", `beside.faceUpTo=${ENLARGE_MOST}`, "--set", `weights.enlarge.softFrom=${SOFT_FROM}`,
+    // a wide frame: the person's column on the left, and the captions where they stand (b-roll
+    // moves the captions' block by a transform only: it cannot set them narrower under the
+    // material); the command reads these only for its 16:9 column
+    ...(width > height ? ["--set", "beside.side=left", "--set", "beside.captions=stay"] : []),
+  ];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "broll-beside-"));
+  let res;
+  try {
+    const r = spawnSync(process.execPath, [tool, "beside", dir, ...args], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`layout: ${(r.stderr || r.stdout || "").trim().split("\n").pop() || "its beside command stopped"}`);
+    res = JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
+  const k = res.candidates.findIndex((x) => x.speaker?.shape === "rect");
+  if (k < 0) throw new Error("layout's beside command gave no candidate with the person as a rectangle: b-roll draws no circle.");
+  const C = res.candidates[k], S = C.speaker;
 
-  // the source's own pixels enlarged: soft above SOFT, never more than twice
-  const native = scale * cover;
-  if (native > 2) { scale = 2 / cover; warnings.push("the face is small in the video: it is enlarged twice at most and stays under its target height"); }
-  else if (native > SOFT) warnings.push(`the person's video is enlarged ×${native.toFixed(1)} in its field and looks soft`);
-  const H = fh * scale;
-  if (!side) faceTop = room[1] - H;   // the face ends where the bottom zone begins
-
-  const [px, py, pw, ph] = person;
-  let x = px + pw / 2 - scale * (fx + fw / 2);
-  let y = faceTop - scale * fy;
-  // a video at least as large as the field covers it (no strip of the panel inside the field),
-  // unless that pushes the face out of its room or its field
-  const vw = width * scale, vh = height * scale;
-  if (vw >= pw) {
-    const cx = clamp(x, px + pw - vw, px), l = cx + scale * fx;
-    if (l >= px && l + scale * fw <= px + pw) x = cx;
+  // what the command says of this candidate: its problems as warnings, its notes and the frame's
+  // as notes (the assumed face b-roll says itself, with how to give one)
+  const warnings = C.problems.map((p) => `${p.of}: ${p.what}`);
+  const notes = [...(C.notes || []), ...res.notes.filter((n) => !/--face assumed/.test(n))];
+  let caps = null;
+  if (C.captions && cap) {
+    const b = round(C.captions.box);
+    // the host's captions move there by a shift of their block: from where they stand to the box
+    caps = { where: C.captions.where, box: b, font: C.captions.font ?? cap.size, shift: { x: Math.round(C.captions.box[0] - cap.left), y: Math.round(C.captions.box[1] - cap.top) } };
   }
-  if (vh >= ph) {
-    const cy = clamp(y, py + ph - vh, py), t = cy + scale * fy;
-    if (t - HAIR * H >= Math.min(py, room[0]) - 1 && t + H <= room[1] + 1) y = cy;
+  // The command's captions straddle the seam: their lower line lies over the top of the person's
+  // field. b-roll lets the person's card begin under them, so that they stand on the panel and
+  // not on the video; the face and the hair's room are below them in any case.
+  let card = round(S.window);
+  if (caps?.where === "seam") {
+    const under = caps.box[1] + caps.box[3];
+    if (under > card[1] && under <= S.face[1]) card = [card[0], under, card[2], card[1] + card[3] - under];
   }
-  const sx0 = Math.max(px, x), sy0 = Math.max(py, y), sx1 = Math.min(px + pw, x + vw), sy1 = Math.min(py + ph, y + vh);
-  const card = [sx0, sy0, Math.max(0, sx1 - sx0), Math.max(0, sy1 - sy0)].map(Math.round);
-  const faceAt = [x + scale * fx, y + scale * fy, scale * fw, scale * fh].map(Math.round);
-  const facePct = Math.round((faceAt[3] / height) * 1000) / 10;
-
-  if (faceAt[1] + faceAt[3] > room[1] + 1) warnings.push(`the face reaches under what the apps cover at the bottom (its chin at y ${faceAt[1] + faceAt[3]}, free to ${room[1]})`);
-  if (faceAt[1] - HAIR * faceAt[3] < card[1] - 1) warnings.push("the top of the head is cut by the field's edge");
-  if (faceAt[0] < card[0] - 1 || faceAt[0] + faceAt[2] > card[0] + card[2] + 1) warnings.push("the face is cut at the side of its field");
-  if (capOut && overlaps(capOut.box, faceAt)) warnings.push("the captions cover the face");
-  if (card[2] < pw - 1 || card[3] < ph - 1) notes.push(`the face is large in the video: the person shows as a card of ${card[2]}×${card[3]} in the field, the face ${facePct} % of the frame`);
-
+  if (S.ground > 0) notes.push(`the person shows as a card of ${card[2]}×${card[3]} in their field, the face ${S.facePct} % of the frame's height`);
   return {
-    side,
-    material: { field: material.map(Math.round) },
-    speaker: { field: person.map(Math.round), card, scale: +scale.toFixed(4), left: Math.round(x), top: Math.round(y), face: faceAt, facePct, assumed },
-    captions: capOut,
-    room, warnings, notes,
+    side: C.arrangement === "column",
+    material: { field: round(C.material.field) },
+    speaker: { field: round(S.field), card, scale: +S.host.scale.toFixed(4), left: Math.round(S.host.left), top: Math.round(S.host.top), face: round(S.face), facePct: S.facePct, assumed: !box },
+    captions: caps,
+    warnings, notes,
+    placement: res, candidate: k + 1, call: ["beside", "<folder>", ...args],
   };
 }

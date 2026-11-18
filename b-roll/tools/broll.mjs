@@ -243,7 +243,8 @@ function placeBeats(spec, w, size, base) {
     const prev = beats[k - 1], next = beats[k + 1];
     b.enter = touches(prev, b) ? "cut" : "move";
     b.leave = touches(b, next) ? "cut" : "move";
-    layout ||= besideLayout({ width: size[0], height: size[1], zones: size.zones, face: spec.face, source, captions: size.captions });
+    // (agentitos' layout gives it, asked once; without that skill the build stops here)
+    layout ||= besideLayout({ width: size[0], height: size[1], face: spec.face, source, captions: size.captions, platforms: size.platforms });
     b.layout = layout;
     if (touches(prev, b) && prev.fit === "beside") runs.at(-1).push(b); else runs.push([b]);
   });
@@ -291,7 +292,8 @@ function buildBroll(brollFile, wordsFile, folder, opts) {
   try { spec = read(brollFile); } catch (e) { fail(`✗ ${brollFile} is no valid JSON: ${e.message}`); }
   const w = readWords(wordsFile);
   const size = sizeOf(opts, w.width && w.height ? [w.width, w.height] : null) || fail("Give --size (width x height): the words carry no frame size.");
-  try { size.zones = zones(size[0], size[1], platformList(opts.platform)); } catch (e) { fail(`✗ ${e.message}`); }
+  size.platforms = platformList(opts.platform);
+  try { size.zones = zones(size[0], size[1], size.platforms); } catch (e) { fail(`✗ ${e.message}`); }
   size.source = opts.source;   // project: the person's video's size, for "face" without "source"
   // where the captions stand (agentitos' captions writes area.json beside its index.html): beats
   // beside the person keep a band for them under the material and move them onto it
@@ -329,6 +331,12 @@ function buildBroll(brollFile, wordsFile, folder, opts) {
   }
   for (const b of r.beats) if (b.kind === "number") b.track = 1;
   writeBroll(out, { beats: r.beats, width: size[0], height: size[1], duration: w.duration, zones: size.zones, brand });
+  // the layout skill's answer beside the build, to look at: every candidate with its reasons
+  const placed = r.beats.find((b) => b.layout)?.layout;
+  if (placed) {
+    fs.writeFileSync(path.join(out, "placement.json"), JSON.stringify(placed.placement, null, 1) + "\n");
+    r.notes.push(`beside the person: laid out by agentitos' layout, its candidate ${placed.candidate} (${placed.placement.candidates[placed.candidate - 1].fit}); all of them, with their reasons, in ${rel(path.join(out, "placement.json"))}`);
+  }
   const text = (b) => {
     const until = w.words.findIndex((x) => x.end > b.end - TAIL + 0.01);
     return w.words.slice(b.words, Math.max(b.words + 1, until === -1 ? w.words.length : until)).map((x) => x.text).join(" ");
