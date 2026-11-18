@@ -199,6 +199,8 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   printResult(res);
   const pass = res.candidates.filter((c) => !c.hard && !c.unmet.length).length;
   console.log(`\n${file}: ${plural(res.candidates.length, "candidate")}, ${pass} without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.`);
+  // why none passes, where the reason is one: the screen's text too small is not helped by less text
+  if (!pass && res.screen && res.candidates.every((c) => c.hard || c.unmet.includes("readable"))) console.log(`None passes because the screen's text does not read at any size the frame leaves the region: take a narrower region${res.notes.find((n) => /A narrower region reads/.test(n)) ? ` (${res.notes.find((n) => /A narrower region reads/.test(n)).match(/at most \d+×\d+ px of the source/)[0]})` : ""}, not less text.`);
   console.log(`The order is a suggestion from measurements. Look before you choose: ${self()} page ${rel(folder)} --still <video|image> writes the first three as pictures and has platform-zones check them.`);
 }
 

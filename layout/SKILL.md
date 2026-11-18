@@ -75,7 +75,7 @@ It prints the candidates, the first the one it would take, and writes them to `p
 - **Several people and no `--speaker`:** the candidates that show everyone stand first, the crops on one person behind them whatever they cost. Who speaks is yours to say, part by part; published podcast clips cut to whoever speaks more often than they show both.
 - **A `note:` under a candidate** says that its caption area is narrower than a long word at that type: captions will set such a word smaller for its moment.
 - **A face over a third of the frame tall with the chin below two thirds of its height** is a take filmed too close: only the wall above the head is free, and the text goes there. That is the answer for this take, not a good layout. Tell the person that more distance to the camera gives what published videos show: a face a quarter of the frame tall, the captions on the chest.
-- No candidate with `✓` or `!`: the needs do not fit this picture. Ask for less (no hook, or `hook:card`), name the platform, or take a layout that gives the text its own area; never take a `✗`.
+- No candidate with `✓` or `!`: the needs do not fit this picture. A screen whose text does not read (`–` screen text) needs a narrower region: the note says how wide one reads, give the part that matters at this moment and place again (less text does not help). Otherwise ask for less (no hook, or `hook:card`), name the platform, or take a layout that gives the text its own area; never take a `✗`.
 
 ### 4. Look, and choose
 

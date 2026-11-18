@@ -1004,6 +1004,14 @@ t("a webcam baked into the screen recording has one way, the one SKILL.md's tabl
   return `${args.join(" ")}: the circle shows ${c.circle.crop.map(Math.round).join(",")} of the screen`;
 });
 
+t("a screen whose text reads at no size the frame leaves it: the desktop of the first use on real footage (2560×1600, a region of 900×900 with 15 px text, one caption line) passed nothing, and the advice was to ask for less text; now the note and place's last lines say that a narrower region reads, at most 517 px of the source wide (the agent had worked that out by hand), and the region it names does read", () => {
+  const dir = path.join(OUT, "cli-narrow"), r = cli("place", dir, "--frame", "9:16", "--source", "2560x1600", "--region", "380,160,900,900", "--min-text-height", "15", "--text", "caption");
+  ok(r.status === 0 && /None passes because the screen's text does not read .*take a narrower region \(at most 517×645 px of the source\), not less text/.test(r.stdout), r.stdout.split("\n").slice(-4).join(" | "));
+  const narrow = solve({ zones: Z916, sources: [{ size: [2560, 1600], region: [380, 160, 517, 645], minTextHeight: 15 }], needs: [cap(1)] }).candidates[0];
+  ok(!narrow.hard && !narrow.unmet.length, `the region of 517×645: ${nameOf(narrow)} ${JSON.stringify(narrow.problems)}`);
+  return `then ${nameOf(narrow)}, text ${narrow.textHeight} px`;
+});
+
 if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
   const dir = path.join(OUT, "cli-chromes");
   cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");

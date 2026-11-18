@@ -117,7 +117,12 @@ export function screenFits(ctx, webcam, notes) {
     }
   } else {
     add("screen-fit", sMost);
-    if (sRead) notes.push(`at the size that reads (${r2(sRead)}×) the region would be ${Math.round(sRead * R[2])}×${Math.round(sRead * R[3])} px, larger than the room the frame leaves it (${rooms.map((r) => `${Math.round(r[2])}×${Math.round(r[3])}`).join(" or ")} px): at most ${r2(sMost)}×, the text then ${r1(sMost * main.minText)} px tall`);
+    if (sRead) {
+      // the part of the screen that does read at that size: what the larger room holds of it
+      const room = rooms.reduce((a, b) => (Math.min(b[2] / R[2], b[3] / R[3]) > Math.min(a[2] / R[2], a[3] / R[3]) ? b : a));
+      const nw = Math.floor(Math.min(R[2], room[2] / sRead)), nh = Math.floor(Math.min(R[3], room[3] / sRead));
+      notes.push(`at the size that reads (${r2(sRead)}×) the region would be ${Math.round(sRead * R[2])}×${Math.round(sRead * R[3])} px, larger than the room the frame leaves it (${rooms.map((r) => `${Math.round(r[2])}×${Math.round(r[3])}`).join(" or ")} px): at most ${r2(sMost)}×, the text then ${r1(sMost * main.minText)} px tall. A narrower region reads: at most ${nw}×${nh} px of the source (this one is ${R[2]}×${R[3]}); give the part that matters at this moment, and another region for the next`);
+    }
   }
   // the whole screen: as large as the room between the bands allows, smaller where the region would leave the safe box
   for (let i = 0; i <= 50; i++) {
