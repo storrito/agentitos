@@ -43,6 +43,10 @@ export const COSTS = {
   // moving its window in the footage (the face higher in the picture, nothing else changes), and
   // over a ground (a band of the blurred picture at the bottom, under the apps' bottom)
   liftFree: 1, liftGround: 4,
+  // a second of a shot raised past its head's top (moderately, for a mouth): more than the type
+  // down to the floor costs, so that a smaller type comes first and the head is cut only where
+  // even the floor would cover the mouth
+  past: 50,
   // the captions' middle outside where published Shorts have it (60–75 % of the height), for every
   // per cent of the height and every ten seconds of the clip; type smaller than the usual, for
   // every px and every ten seconds
@@ -261,7 +265,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
           const k = s.weight / Math.max(1e-6, s.end - s.start);
           const sec = r.seconds * k;
           touch += sec; cover += sec * r.share; mouth += r.mouth * k; nose += r.nose * k; lip += r.lip * k;
-          liftCost += s.weight * (free * costs.liftFree + ground * costs.liftGround) / (0.1 * H);
+          liftCost += s.weight * (free * costs.liftFree + ground * costs.liftGround) / (0.1 * H) + (r.past ? s.weight * costs.past : 0);
           return { ...r, seconds: sec, nose: r.nose * k, mouth: r.mouth * k, lip: r.lip * k, free, ground };
         });
         const mid = (yb - h / 2) / H;

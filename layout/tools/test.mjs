@@ -1225,6 +1225,12 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(r.conflicts.some((c) => /cover A's mouth for 4 s .* What would avoid it: a cut to another shot here, or a smaller type by hand/.test(c)), JSON.stringify(r.conflicts));
     ok(!r.notes.some((n) => /Nothing to fix/.test(n)), JSON.stringify(r.notes));
   });
+  t("a smaller type comes before a raise past the head's top: where the floor's type keeps off the mouth, the head stays whole", () => {
+    // the lip line at 1320: the usual type's area (from 1306) would cover the mouth, 69 px (from 1320) does not
+    const box = [140, 100, 800, 1500], feat = [300, 400, 480, 1045];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
+    ok(r.caption.font < DEFAULTS.caption.font.tall && !r.shots[0].past && r.shots[0].lift === 0 && r.shots[0].on.mouth === 0, JSON.stringify([r.caption.font, r.shots[0]]));
+  });
   t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
     const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
     const r = textOverTime({ zones: Z9, shots: [close(0, 3, 840), close(3, 6, 300), close(6, 9, 870), close(9, 12, 300), close(12, 15, 850)], needs: cap });
