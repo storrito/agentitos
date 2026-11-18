@@ -99,7 +99,7 @@ Never call Storrito's schedule procedures yourself: publish-video does it, so th
 
 ## B-roll
 
-A clip whose words name something that can be shown (a product, a page, a post, a number) can get b-roll: offer it once for the clips that have such moments, when the person agreed to them, naming the moments in a sentence. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), "For another skill", on `work/<k>/takes` (its `edit.json`, `takes.mjs broll work/<k>/takes …`), clip by clip; the moments of a podcast need little of it.
+A clip whose words name something that can be shown (a product, a page, a post, a number) can get b-roll: offer it once for the clips that have such moments, when the person agreed to them, naming the moments in a sentence. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), "For another skill", on `work/<k>/takes` (its `edit.json`, `takes.mjs broll work/<k>/takes …`), clip by clip; the moments of a podcast need little of it. A beat on a word of a spoken opening (a keep with `"again"`) sits where that word is said later: b-roll finds a word number at its last place, so the opening gets none.
 
 ## UI in the chat
 
