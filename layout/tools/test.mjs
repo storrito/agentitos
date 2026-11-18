@@ -1242,6 +1242,9 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(mouth.raise === "mouth" && mouth.shots[0].past && mouth.shots[0].on.mouth === 0 && mouth.shots[0].on.lip === 0 && mouth.shots[0].headCut.byLift === mouth.shots[0].lift, JSON.stringify(mouth.shots[0]));
     ok(full.shots[0].lift >= mouth.shots[0].lift && full.shots[0].headCut.px >= mouth.shots[0].headCut.px, JSON.stringify([full.shots[0], mouth.shots[0].lift]));
     ok(run("moderate").raise === "mouth", "moderate is mouth");
+    // a mouth the floor's type still covers: under head a fault that names --raise mouth
+    const low = textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat: [300, 700, 480, 760] })) }])], needs: cap });
+    ok(low.shots[0].lift === 0 && low.conflicts.some((c) => /cover A's mouth .*--raise mouth/.test(c)), JSON.stringify([low.shots[0], low.conflicts]));
     return `head ${head.caption.font} px unraised, mouth ${mouth.caption.font} px raised ${mouth.shots[0].lift} px, full raised ${full.shots[0].lift} px`;
   });
   t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
