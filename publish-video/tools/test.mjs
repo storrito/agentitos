@@ -49,3 +49,33 @@ test("prepare writes the video without the place, and the check after it is cont
   assert.doesNotMatch(said.slice(said.indexOf("Checking it again")), /recorded at/);
   assert.deepEqual(tags(path.join(dir, "publish/phone/video.mp4")).filter((k) => /location|gps/i.test(k)), []);
 });
+
+// inside the video: 6 s of a moving test picture, small, with one fault each (as agentitos-lab's inject.mjs builds them)
+const inside = (name, vf, input = ["-f", "lavfi", "-i", "testsrc2=size=540x960:rate=30:duration=6"]) => {
+  const made = run("ffmpeg", ["-v", "error", "-y", ...input, ...(vf ? ["-vf", vf] : []), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", `${name}.mp4`]);
+  assert.equal(made.status, 0, made.stderr);
+  return publish("check", `${name}.mp4`, `publish/${name}`, "--mode", "short").said;
+};
+const fill = (color, when) => `drawbox=x=0:y=0:w=iw:h=ih:color=${color}:t=fill:enable='${when}'`;
+
+test("a plain video has no black or flash frame inside, and job.json holds what was measured inside", () => {
+  const said = inside("steady");
+  assert.doesNotMatch(said, /⚠.*(black|flash)/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "publish/steady/job.json"), "utf8")).measured.whole, { black: [], flashes: [] });
+});
+
+test("0.6 s of black in the middle is a ⚠ with its time", () => {
+  assert.match(inside("gap", fill("black", "between(t,2.4,3.0)")), /⚠ black inside the video: 0\.[67] s at 0:02\.4/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "publish/gap/job.json"), "utf8")).measured.whole.black.length, 1);
+});
+
+test("one white frame is a ⚠ flash frame with its time", () => {
+  assert.match(inside("flash", fill("white", "eq(n,105)")), /⚠ a flash frame at 0:03\.5/);
+});
+
+test("a normal hard cut between two pictures is no flash", () => {
+  const said = inside("cut", null, ["-f", "lavfi", "-i", "testsrc2=size=540x960:rate=30:duration=3", "-f", "lavfi", "-i", "smptehdbars=size=540x960:rate=30:duration=3",
+    "-filter_complex", "[0:v][1:v]concat=n=2:v=1"]);
+  assert.doesNotMatch(said, /flash/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "publish/cut/job.json"), "utf8")).measured.whole, { black: [], flashes: [] });
+});
