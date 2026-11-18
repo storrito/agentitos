@@ -30,7 +30,7 @@ The caption area is as tall as the block captions builds into it: its lines, a s
 
 ## What goes in
 
-Boxes are `x,y,w,h` in px of the source: the top left corner, then width and height. A face runs from the hairline to the chin and from cheek to cheek. Every `--face`, `--face-at`, `--face-track` and `--region` belongs to the `--source` before it.
+Boxes are `x,y,w,h` in px of the source: the top left corner, then width and height. A face runs from the hairline to the chin and from cheek to cheek; without a hairline (bald, a cap) from where it would be, as far above the brows as the nose's bottom is below them; in profile from the front of the ear to the tip of the nose. Text keeps a margin around the box: above it 35 % of its height, for the skull or the hair. Every `--face`, `--face-at`, `--face-track` and `--region` belongs to the `--source` before it.
 
 | what | options | what the solver does with it |
 | --- | --- | --- |
@@ -96,6 +96,7 @@ Three things rank before any cost. A candidate with a hard problem stands behind
 
 **Some figures rest on the first use on real footage** (2026-11-18: an agent placed twelve recordings by the documents alone, and what it found wrong was fixed). They are defaults in `tools/lib/defaults.mjs`, each with its source, and rest on these twelve cases only:
 
+- `free.above` (0.35): what is kept clear of text above a face's box, a share of its height, for the top of the head. On the stills the head's top lay 0.22, 0.23, 0.31 and 0.335 of the box's height above it (bald and frontal, short hair, grey hair in profile, bald in profile: there a hook card had ended on the skull); hair worn high reached 0.49 and is not held. The upright take laid out by hand has a box read from the top of the head, so its cases keep the margin it has (`hand.json`). With this margin two people stack less often: a face over about a third of a half's height no longer fits a half with the captions on the seam.
 - `together` (2): two people of one picture whose faces' boxes are at most two widths of the wider face apart stand close together. Stacked would split them into two halves of the same shot; it stands behind every candidate that shows both in one picture (walking side by side: 1.0–2.3 widths; four in a row with room between them: 2.2–3.8; two at a table: 12.9).
 
 The type sizes come from the same study (a caption line 4 % of the frame's height, one line; a hook text 12.4 % of the height tall in the middle of the frame): they are defaults in `tools/lib/defaults.mjs`, each with its source. [`references/situations.md`](references/situations.md) has the figures with their counts.

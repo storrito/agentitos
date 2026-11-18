@@ -367,8 +367,9 @@ function cmdCaptions(o) {
   const what = `Candidate ${i + 1} (${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`})`;
   if (!t) fail(res.needs.some((n) => n.role === "caption") ? `${what} has no place for the captions asked for: take a candidate that has one (✓ or ! in ${self()} place), or fewer lines.` : `The placement asked for no captions: run ${self()} place ${folder} … again with --text caption.`);
   const centred = t.align === "center" && Math.abs(t.box[0] + t.box[2] / 2 - res.size[0] / 2) < 1;
-  // rounded into the area: the lowest line ends no lower, the lines run no wider
-  const opts = { ...(centred ? {} : { x: Math.ceil(t.box[0]) }), y: Math.floor(Y1(t.box) + 1e-6), "max-width": Math.floor(t.box[2] + 1e-6), ...(centred ? {} : { align: t.align === "center" ? "centre" : t.align }), "font-size": t.font, lines: t.lines };
+  // rounded to the nearest px: the area is exactly as tall as the block, so a bottom rounded down
+  // would lift its top out of the area; the lines run no wider
+  const opts = { ...(centred ? {} : { x: Math.ceil(t.box[0]) }), y: Math.round(Y1(t.box)), "max-width": Math.floor(t.box[2] + 1e-6), ...(centred ? {} : { align: t.align === "center" ? "centre" : t.align }), "font-size": t.font, lines: t.lines };
   const args = Object.entries(opts).flatMap(([k, v]) => [`--${k}`, String(v)]);
   if (o.json) return console.log(JSON.stringify({ candidate: i + 1, fit: c.fit, where: t.where, box: t.box, options: opts, args, ...(c.notes ? { notes: c.notes } : {}) }, null, 1));
   console.log(`${what}: ${plural(t.lines, "caption line")} ${t.where}, ${boxText(t.box)}, ${t.font} px type, ${centred ? "centred on the frame" : `${t.align === "center" ? "centred" : `${t.align}-aligned`} in a column`}.`);

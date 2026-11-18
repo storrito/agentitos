@@ -26,9 +26,10 @@ function axis(s, L, src, f0, f1, S0, S1, mode, pad) {
   const fLo = S0 - s * f0, fHi = S1 - s * f1;
   return {
     lo, hi,
-    pick(t) {
+    // exact: a hold the text asks for to the px, where the face may touch the safe box's edge
+    pick(t, exact = false) {
       let v = t;
-      if (fLo + pad <= fHi - pad) v = clamp(v, fLo + pad, fHi - pad);
+      if (!exact && fLo + pad <= fHi - pad) v = clamp(v, fLo + pad, fHi - pad);
       else if (fLo <= fHi) v = clamp(v, fLo, fHi);
       else v = (fLo + fHi) / 2;
       return clamp(v, lo, hi);
@@ -73,11 +74,13 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
   if (modeY === "inside") {
     if (cap) ys.push(Y1(S) - capH - g - s * sh);
     if (hook && tall) { const top = (Z.wide || S)[1]; ys.push(top + D.hookCard.font * D.hookCard.heightEm + g, top + D.hookCard.minFont * D.hookCard.heightEm + g); }
+    // the picture starting below a hook text on the ground above it, and below the captions as well
+    if (hook && tall && hook.kind !== "card") for (const font of [D.hookText.font, D.hookText.minFont]) { const hookH = font * D.hookText.heightEm; ys.push({ exact: S[1] + hookH + g }); if (cap) ys.push({ exact: S[1] + hookH + g + capH + g }); }
   }
   let best = null, bestFull = null, n = 0, first = [0, 0];
   const seen = new Set();
   for (const ty of ys) for (const tx of xs) {
-    const left = ax.pick(tx), top = ay.pick(ty), key = `${Math.round(left * 10)},${Math.round(top * 10)}`;
+    const left = ax.pick(tx), top = typeof ty === "object" ? ay.pick(ty.exact, true) : ay.pick(ty), key = `${Math.round(left * 10)},${Math.round(top * 10)}`;
     // how far this hold is from the fit's usual one (the first: centred), the last tie-break
     const variant = n++ ? Math.round(Math.abs(left - first[0]) + Math.abs(top - first[1])) : 0;
     if (!variant) first = [left, top];

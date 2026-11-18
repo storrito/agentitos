@@ -19,7 +19,7 @@ import { DEFAULTS } from "./lib/defaults.mjs";
 import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
-import { solve } from "./lib/solve.mjs";
+import { solve as solveAny } from "./lib/solve.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -29,6 +29,11 @@ if (!QUICK && !chromePath()) { console.error("The checker needs Chrome: set CHRO
 const OUT = given || fs.mkdtempSync(path.join(os.tmpdir(), "layout-test-"));
 fs.mkdirSync(OUT, { recursive: true });
 const HAND = JSON.parse(fs.readFileSync(path.join(HERE, "hand.json"), "utf8"));
+// The upright take's box was read from the top of the head (hand.json, p1.head): every run on it,
+// still or moving, keeps the margin above it that the box has as read.
+const P1BOX = /\b\d+,\d+,600,900\b/;
+const solve = (a) => (P1BOX.test(JSON.stringify(a.faces || a.sources || [])) ? solveAny({ ...a, set: { ...HAND.takes.p1.set, ...a.set } }) : solveAny(a));
+const P1SET = Object.entries(HAND.takes.p1.set).flatMap(([k, v]) => ["--set", `${k}=${v}`]);
 
 let failed = 0, passed = 0;
 const rows = [];
@@ -124,6 +129,9 @@ const plain1 = (zones, text) => solve({ zones, source: SRC1, faces: [FACE1], nee
 // hook: the kind the solver tries first (a short text in the middle, then the card); card: the
 // card across the top, which is what the hand laid out
 const cap = (n) => ({ role: "caption", lines: n }), hook = { role: "hook" }, card = { role: "hook", kind: "card" };
+// Two men at a table in profile, a 4K talk show (the first use on real footage, 2026-11-18): the
+// left one bald, his box from where a hairline would be (y 480) to the chin, his skull's top at y 403.
+const TABLE = [[555, 480, 185, 230], [3190, 575, 200, 215]], SKULL = 403;
 
 t("one caption line: the zoom wins, ≈ 1.07 at about −76/−134, text above the head", () => {
   const res = run1(Z916, [cap(1)]), c = res.candidates[0];
@@ -187,7 +195,7 @@ t("hook plus two caption lines: no full or zoom fits; 0.82 is the first inset th
 });
 
 t("the hand's insets, placed as the hand placed them, pass in the solver's geometry", () => {
-  const ctxOf = (text) => { const D = structuredClone(DEFAULTS); D.caption.font.tall = HAND_TYPE["caption.font.tall"]; D.caption.line = HAND_TYPE["caption.line"]; D.caption.padEm = 0; return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
+  const ctxOf = (text) => { const D = structuredClone(DEFAULTS); D.caption.font.tall = HAND_TYPE["caption.font.tall"]; D.caption.line = HAND_TYPE["caption.line"]; D.caption.padEm = 0; D.free.above = HAND.takes.p1.set["free.above"]; return { W: 1080, H: 1920, Z: Z916, D, sw: 1080, sh: 1920, s0: 1, faces: [FACE1], fb: [300, 570, 900, 1470], tall: true, cap: text.find((n) => n.role === "caption") || null, hook: text.find((n) => n.role === "hook") || null }; };
   const a = evaluate(ctxOf([cap(2)]), { fit: "inset", s: 0.9, left: 54, top: 97, win: [54, 97, 972, 1728] });
   ok(!a.hard && !a.unmet.length && a.text[0].where === "above-head", `0.9 with two lines: ${JSON.stringify(a.problems)}`);
   const b = evaluate(ctxOf([card, cap(2)]), { fit: "inset", s: 0.82, left: 97, top: 215, win: [97, 215, 885.6, 1574.4] });
@@ -296,7 +304,7 @@ t("the judged wide take (1280×720 into 9:16, two caption lines): the 4:5 crop (
 t("the hand cases keep the winners written down for them (hand.json: what the hand laid out, what people judged, and what only the solver says so far); a change of the weights that moves one shows here", () => {
   const changed = [];
   for (const w of HAND.winners) {
-    const take = HAND.takes[w.take], first = solve({ zones: ZONES[w.frame], source: take.source, faces: [take.face], needs: needsOf(w.text) }).candidates[0];
+    const take = HAND.takes[w.take], first = solveAny({ zones: ZONES[w.frame], source: take.source, faces: [take.face], needs: needsOf(w.text), set: take.set || {} }).candidates[0];
     const same = nameOf(first) === w.first;
     table.push([w.case, w.first, w.basis, same ? "" : `now ${nameOf(first)}`]);
     if (!same) changed.push(`${w.case}: ${w.first} (${w.basis}) is now ${nameOf(first)}`);
@@ -356,7 +364,7 @@ t("a hook in an upright frame is tried first as published Shorts set it: a short
   ok(none.unmet.length && none.text.every((x) => x.style !== "card"), "hook:text fell back to a card");
   // a screen, two people stacked, a wide frame
   const scr = solve({ zones: Z916, sources: [{ size: [1920, 1080], region: [700, 300, 480, 300], minTextHeight: 14 }], needs: [hook, cap(1)] }).candidates[0];
-  const two = solve({ zones: Z916, source: [1920, 1080], faces: [[420, 300, 220, 300], [1280, 320, 220, 300]], needs: [hook, cap(1)] }).candidates.find((c) => c.fit === "stacked");
+  const two = solve({ zones: Z916, source: [3840, 2160], faces: TABLE, needs: [hook, cap(1)] }).candidates.find((c) => c.fit === "stacked");
   const wide = solve({ zones: Z169, source: SRC1, faces: [FACE1], needs: [hook] }).candidates[0];
   ok(scr.text.find((x) => x.role === "hook").style === "card" && two.text.find((x) => x.role === "hook")?.style === "card" && wide.text[0].style === "big", `a screen: ${scr.text.map((x) => x.style)}, stacked: ${two.text.map((x) => x.style)}, 16:9: ${wide.text[0].style}`);
   return `the usual face: text at ${h.font} px, y ${Math.round(h.box[1])}–${Math.round(Y1(h.box))} (its middle at ${Math.round(100 * mid)} %); with a caption line y ${Math.round(bh.box[1])}–${Math.round(Y1(bh.box))} above y ${Math.round(bc.box[1])}–${Math.round(Y1(bc.box))}; the close take: text above the head at ${ct.font} px, the card at ${cc.font} px`;
@@ -403,18 +411,18 @@ t("--speaker 2: only the crops on the second person are listed, leaving the firs
   return `${nameOf(first)} on face 2, cost ${first.cost}; stacked ${res.candidates[1].cost}`;
 });
 
-t("two people far apart, one larger (1920×1080 into 9:16, one caption line), no speaker named: the stacked candidate that shows both leads, though the crop on the larger face (1.78×, soft, the other person left out) costs less; whom to leave out is the caller's to say, and with --speaker 2 that crop leads", () => {
+t("two people far apart, one larger (1920×1080 into 9:16, one caption line), no speaker named: a candidate that shows both leads, though the crop on the larger face (1.78×, soft, the other person left out) costs less; whom to leave out is the caller's to say, and with --speaker 2 that crop leads. (Stacked led until a third of a face's height above it was kept clear: the larger face, 384 px of 1080, with that margin and the caption on the seam, is taller than the lower half's safe part)", () => {
   const faces = [[230, 536, 248, 303], [1353, 195, 297, 384]];
   const res = solve({ zones: Z916, source: SRC2P, faces, needs: [cap(1)] }), first = res.candidates[0];
   const crop = res.candidates.find((c) => c.fit === "crop" && c.crop === "9:16" && c.speaker === 2);
-  ok(first.fit === "stacked" && !first.hard && !first.unmet.length && !first.soft && first.faceInFrame.length === 2, `the first is ${nameOf(first)}${first.speaker ? ` on face ${first.speaker}` : ""}`);
+  ok(!first.leftOut && !first.speaker && !first.hard && !first.unmet.length && first.faceInFrame.length === 2, `the first is ${nameOf(first)}${first.speaker ? ` on face ${first.speaker}` : ""}`);
   ok(crop && crop.leftOut === 1 && !crop.hard && crop.cost < first.cost, `the crop on face 2: ${crop ? `cost ${crop.cost} against ${first.cost}` : "not listed"}`);
   const all = res.candidates.filter((c) => !c.hard && !c.unmet.length), shown = all.filter((c) => !c.leftOut), out = all.filter((c) => c.leftOut);
   ok(shown.length && out.length && Math.max(...shown.map((c) => res.candidates.indexOf(c))) < Math.min(...out.map((c) => res.candidates.indexOf(c))), "a candidate that leaves a person out stands before one that shows both");
   ok(/leaves a person out/.test(crop.behind) && res.notes.some((n) => /--speaker/.test(n)), `the crop says: ${crop.behind}`);
   const named = solve({ zones: Z916, source: SRC2P, faces, needs: [cap(1)], speaker: 2 }).candidates[0];
   ok(named.fit === "crop" && named.crop === "9:16" && named.speaker === 2, `with --speaker 2 the first is ${nameOf(named)}`);
-  return `stacked (cost ${first.cost}) before the crop on face 2 (cost ${crop.cost}); with --speaker 2: ${nameOf(named)}`;
+  return `${nameOf(first)} (cost ${first.cost}) before the crop on face 2 (cost ${crop.cost}); with --speaker 2: ${nameOf(named)}`;
 });
 
 // The first use on real footage (2026-11-18, layout-proben/skill-real): two women walking shoulder
@@ -448,8 +456,20 @@ t("every face that shows is judged, whoever the crop is made for: four people wa
   return `the square on face 3: ${on3.problems.map((q) => `${q.of} ${q.code}`).join(", ")}`;
 });
 
+t("a third of a face's height above its box is kept clear of text, for the skull or the hair above the hairline: the two men at a table, stacked with a hook card at the top, the card ended on the bald man's skull (it passed); now it ends above the skull's top, and no text of any candidate comes within a third of a face's height above a face", () => {
+  ok(DEFAULTS.free.above === 0.35, `free.above is ${DEFAULTS.free.above}`);
+  const res = solve({ zones: Z916, source: [3840, 2160], faces: TABLE, needs: [cap(1), hook] }), st = res.candidates.find((c) => c.fit === "stacked");
+  ok(st && !st.hard && !st.unmet.length, `stacked: ${st && JSON.stringify(st.problems)}`);
+  const top = st.parts.find((q) => q.window[1] === 0), skull = top.top + top.scale * SKULL, card = st.text.find((x) => x.role === "hook");
+  ok(card && Y1(card.box) <= skull + 0.5, `the hook ends at y ${card && Y1(card.box)}, the skull's top is at y ${r2(skull)}`);
+  for (const c of res.candidates) for (const f of c.faceInFrame) for (const x of c.text) ok(!overlap(x.box, [f[0], f[1] - 0.35 * f[3], f[2], 0.35 * f[3]]), `${nameOf(c)}: the ${x.role} lies in the third above a face`);
+  return `the card ends at y ${Math.round(Y1(card.box))}, the skull's top at y ${Math.round(skull)}`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
-  const res = solve({ zones: Z169, source: SRC2P, faces: TWO, needs: [hook, cap(2)] }), c = res.candidates[0];
+  // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
+  const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);
+  const res = solve({ zones: Z169, source: SRC2P, faces: low, needs: [hook, cap(2)] }), c = res.candidates[0];
   ok(c.fit === "full" && !c.hard && !c.unmet.length && c.faceInFrame.length === 2, `the first is ${nameOf(c)}: ${JSON.stringify(c.problems)}`);
   ok(!res.candidates.some((q) => q.fit === "stacked" || q.fit === "side-by-side" || q.speaker), "a wide frame got a crop on one or parts");
   const hk = c.text.find((q) => q.role === "hook"), cp = c.text.find((q) => q.role === "caption");
@@ -711,14 +731,14 @@ const boxArg = (b) => b.join(",");
 
 t("place writes the candidates into the caller's folder, and captions turns a candidate's caption area into the captions skill's options: one line above the head of the upright take (--y, --max-width, --font-size, --lines), a left-aligned column beside the panel in 16:9 (--x, --align left as well)", () => {
   const a = path.join(OUT, "cli-916"), b = path.join(OUT, "cli-169");
-  let r = cli("place", a, "--frame", "9:16", "--source", SRC1.join("x"), "--face", boxArg(FACE1), "--text", "caption:1");
+  let r = cli("place", a, "--frame", "9:16", "--source", SRC1.join("x"), "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");
   ok(r.status === 0 && /1\. ✓ zoom/.test(r.stdout), `place: ${r.stderr || r.stdout}`);
   const res = JSON.parse(fs.readFileSync(path.join(a, "placement.json"), "utf8"));
   ok(res.candidates[0].fit === "zoom" && res.asked.frame === "9:16", "placement.json does not hold the candidates");
   r = cli("captions", a, "--json");
   const up = JSON.parse(r.stdout);
   ok(up.args.join(" ") === "--y 456 --max-width 696 --font-size 77 --lines 1", `9:16: ${up.args.join(" ")}`);
-  r = cli("place", b, "--frame", "16:9", "--source", SRC1.join("x"), "--face", boxArg(FACE1), "--text", "hook", "--text", "caption:2", "--json");
+  r = cli("place", b, "--frame", "16:9", "--source", SRC1.join("x"), "--face", boxArg(FACE1), ...P1SET, "--text", "hook", "--text", "caption:2", "--json");
   ok(r.status === 0 && JSON.parse(r.stdout).candidates[0].fit === "panel", `place --json: ${r.stderr}`);
   r = cli("captions", b, "--candidate", "1");
   ok(/--x 704 --y 930 --max-width 1120 --align left --font-size 50 --lines 2/.test(r.stdout), `16:9: ${r.stdout}`);
@@ -737,7 +757,7 @@ if (!QUICK) t("grid draws its lines over a frame of a video at the source's size
   const size = (f) => spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", f], { encoding: "utf8" }).stdout.trim();
   let r = cli("grid", video, grid, "--at", "1");
   ok(r.status === 0 && size(grid) === "1080,1920" && /every 108 px across and every 192 px down/.test(r.stdout) && /--source 1080x1920/.test(r.stdout), `grid: ${r.stderr || r.stdout}`);
-  r = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), "--text", "caption:1");
+  r = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");
   r = cli("page", dir, "--candidate", "1,3", "--still", video, "--at", "1");
   ok(r.status === 0, `page: ${r.stderr || r.stdout}`);
   for (const f of ["candidate-1.html", "candidate-1.png", "candidate-3.html", "candidate-3.png", "still.jpg"]) ok(fs.existsSync(path.join(dir, f)), `page wrote no ${f}`);
@@ -759,9 +779,9 @@ t("the caption area holds the block captions builds into it. With the options th
   // [line height, what the style's box adds above and below its lines, in em]
   const STYLES = { hormozi: [1.05, 0], karaoke: [1.15, 0], wipe: [1.08, 0], clean: [1.3, 0.44], bold: [1.15, 0], outline: [1.16, 0], impact: [1.02, 0], single: [1.05, 0], fill: [1.18, 0], label: [1.42, 0.2], editorial: [1.3, 0], subtitle: [1.25, 0] };
   const cases = [
-    ["above the head", ["--frame", "9:16", "--source", "1080x1920", "--face", "300,570,600,900", "--text", "caption:1"], "above-head"],
+    ["above the head", ["--frame", "9:16", "--source", "1080x1920", "--face", "300,570,600,900", ...P1SET, "--text", "caption:1"], "above-head"],
     ["below the chin", ["--frame", "9:16", "--source", "1080x1920", "--face", "340,400,400,560", "--text", "caption:2"], "below-chin"],
-    ["beside the panel", ["--frame", "16:9", "--source", "1080x1920", "--face", "300,570,600,900", "--text", "caption:2", "--text", "hook"], "beside"],
+    ["beside the panel", ["--frame", "16:9", "--source", "1080x1920", "--face", "300,570,600,900", ...P1SET, "--text", "caption:2", "--text", "hook"], "beside"],
   ];
   const out = [];
   for (const [name, args, where] of cases) {
@@ -794,7 +814,7 @@ t("the caption area holds the block captions builds into it. With the options th
 t("what the tool cannot do with its input it says in one sentence: a file where the folder goes, a face track that holds no boxes, a step of 0 (which once ran without end) or of a millionth (which ran for minutes), a default that is not there, a face past the source's edge, a CHROME that names no file", () => {
   const dir = path.join(OUT, "cli-bad"), file = path.join(OUT, "a-file.txt"), track = path.join(OUT, "track.json");
   fs.writeFileSync(file, "not a folder\n");
-  const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1)];
+  const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET];
   let e = cli("place", file, ...face);
   sentence(e, "place <a file>"); ok(/is a file/.test(e.stderr) && fs.readFileSync(file, "utf8") === "not a folder\n", `place <a file>: ${e.stderr}`);
   for (const bad of ["null", "[null]", "{\"faces\": [[{\"t\": 0, \"box\": [1, 2, 3]}]]}", "[{\"t\": \"soon\", \"box\": [1, 2, 3, 4]}]"]) {
@@ -826,7 +846,7 @@ if (!QUICK) t("a file the caller passes in is never removed or written over: gri
   const before = bytes(photo);
   let e = cli("grid", photo, photo);
   sentence(e, "grid photo.jpg photo.jpg"); ok(fs.existsSync(photo) && bytes(photo) === before, "grid onto its input removed or changed the input");
-  const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1)];
+  const face = ["--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET];
   cli("place", dir, ...face, "--text", "caption:1");
   fs.writeFileSync(note, "mine\n");
   ok(cli("grid", photo, own).status === 0, "grid into the placement's folder failed");
@@ -859,7 +879,7 @@ if (!QUICK) t("a file the caller passes in is never removed or written over: gri
 
 if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
   const dir = path.join(OUT, "cli-chromes");
-  cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), "--text", "caption:1");
+  cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");
   // the Chrome platform-zones finds, and a full Chromium where playwright put one (its window counts its bars)
   const pw = path.join(os.homedir(), ".cache", "ms-playwright");
   const others = (fs.existsSync(pw) ? fs.readdirSync(pw) : []).filter((n) => /^chromium-\d+$/.test(n)).map((n) => path.join(pw, n, "chrome-linux64", "chrome")).filter((f) => fs.existsSync(f)).slice(-1);

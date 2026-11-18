@@ -5,6 +5,8 @@
    "what": "An upright phone take, 1080×1920: one person speaking to the phone from close by, the face large, the eyes at half the height, the chin at 77 % of it. Laid out by hand on one still on 2026-11-16.",
    "source": [1080, 1920],
    "face": [300, 570, 600, 900],
+   "set": {"free.above": 0.02},
+   "head": "This box was read from the top of the head, not from the hairline (on the hand's still the hair's top lies 15 px above it, the receding hairline about 65 px of the source below it; the phone looks up at the face). The solver keeps a third of a box's height above it for the skull (defaults.mjs, free.above): for this box that would keep 300 px of wall clear that the hand used. Every run on this take keeps the margin it has as read, a fiftieth.",
    "pages": [
     {
      "name": "1-person-9x16-sketch",
@@ -217,6 +219,6 @@
   {"case": "P2 9:16, hook", "take": "p2", "frame": "9:16", "text": ["hook"], "first": "crop 4:5 1.88×", "basis": "solver"},
   {"case": "P2 9:16, hook + 1 line", "take": "p2", "frame": "9:16", "text": ["hook", "caption:1"], "first": "crop 4:5 1.88×", "basis": "solver"},
   {"case": "P1 9:16, hook", "take": "p1", "frame": "9:16", "text": ["hook"], "first": "inset 0.98×", "basis": "solver"},
-  {"case": "P1 9:16, hook + 1 line", "take": "p1", "frame": "9:16", "text": ["hook", "caption:1"], "first": "inset 0.9×", "basis": "solver"}
+  {"case": "P1 9:16, hook + 1 line", "take": "p1", "frame": "9:16", "text": ["hook", "caption:1"], "first": "inset 0.92×", "basis": "solver"}
  ]
 }

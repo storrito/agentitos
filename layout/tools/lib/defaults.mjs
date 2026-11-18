@@ -61,10 +61,16 @@ export const DEFAULTS = {
   // text set inside the picture keeps this far from the picture's own edge
   edgePad: 16,
   // What "free" means. A face's box runs hairline to chin, cheek to cheek. Text keeps out of it and
-  // out of a margin around it: above the hairline (hair), below the chin (jaw, neck), beside the
-  // cheeks (ears, hair, headphones). Each margin is a share of the face's height or width, never
-  // less than its Min. Outside that keep-out the picture counts as free: the solver sees no pixels.
-  free: { above: 0.02, aboveMin: 16, below: 0.08, belowMin: 24, beside: 0.25, besideMin: 24 },
+  // out of a margin around it: above the hairline (the skull, hair), below the chin (jaw, neck),
+  // beside the cheeks (ears, hair, headphones). Each margin is a share of the face's height or
+  // width, never less than its Min. Outside that keep-out the picture counts as free: the solver
+  // sees no pixels.
+  //   above  0.35: the top of the head above the box, measured on the stills of the first use on
+  //          real footage (2026-11-18): 0.22 of the box's height (a bald head, frontal), 0.23 (short
+  //          hair, frontal), 0.31 (grey hair, profile), 0.335 (a bald head in profile, where a hook
+  //          card ended on the skull with the 0.02 kept before); hair worn high reached 0.49 and is
+  //          not held. Four heads, no published video measured.
+  free: { above: 0.35, aboveMin: 16, below: 0.08, belowMin: 24, beside: 0.25, besideMin: 24 },
   // a face is kept this far inside the safe box wherever the fit leaves the choice (an inset's
   // place, the hold of a zoom); where every px costs zoom it may touch the box's edge
   facePad: 20,
