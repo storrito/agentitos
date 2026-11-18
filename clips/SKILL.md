@@ -22,7 +22,7 @@ The look is the video's own: the speaker's footage, cut and framed, captions, at
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones`, `transcribe` and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp comes from the PATH or is downloaded once. When something is missing, say so in one sentence; never install it.
+Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones`, `transcribe`, for b-roll `b-roll`, and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp comes from the PATH or is downloaded once. When something is missing, say so in one sentence; never install it.
 
 Costs: the episode's words a few cents an hour, the moments about ten cents an hour, per clip about a cent to frame it and well under a cent for its words and captions.
 
@@ -92,6 +92,10 @@ After "They are good":
 3. Publish with agentitos' **publish-video**, following its SKILL.md for each clip, `<name>` = `clip-<k>`: `check work/out/<k>.mp4 publish/clip-<k>` (short), its `accounts`, the texts with video-descriptions, then `publish`. Ask what the clips share once for all of them: the accounts (those that fit every clip ticked), the style, TikTok's audience and the times (default: one clip a day at 18:00 in the person's time zone, the strongest first). Show the texts of all clips before the person says yes; a ✗ of `check` on one clip is said for that clip and the others go on.
 
 Never call Storrito's schedule procedures yourself: publish-video does it, so that nothing is posted twice.
+
+## B-roll
+
+A clip whose words name something that can be shown (a product, a page, a post, a number) can get b-roll: offer it once for the clips that have such moments, when the person agreed to them, naming the moments in a sentence. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), "For another skill", on `work/<k>/takes` (its `edit.json`, `takes.mjs broll work/<k>/takes …`), clip by clip; the moments of a podcast need little of it.
 
 ## UI in the chat
 

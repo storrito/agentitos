@@ -15,7 +15,7 @@ node ../best-takes/tools/takes.mjs check work/01/takes
 node tools/clips.mjs render work/01 work/out/01.mp4                          # the video at −14 LUFS, and 01.srt
 ```
 
-Requirements: Node 20+, ffmpeg, the HyperFrames CLI (for the render), OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection), and agentitos' [best-takes](../best-takes/), [captions](../captions/), [platform-zones](../platform-zones/) and [transcribe](../transcribe/) beside this skill (transcribe also through `TRANSCRIBE` naming its `tools/transcribe.mjs`). yt-dlp from the PATH, else downloaded once into `~/.cache/agentitos/`. No npm dependencies.
+Requirements: Node 20+, ffmpeg, the HyperFrames CLI (for the render), OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection), and agentitos' [best-takes](../best-takes/), [captions](../captions/), [platform-zones](../platform-zones/) and [transcribe](../transcribe/) beside this skill (for b-roll also [b-roll](../b-roll/)) (transcribe also through `TRANSCRIBE` naming its `tools/transcribe.mjs`). yt-dlp from the PATH, else downloaded once into `~/.cache/agentitos/`. No npm dependencies.
 
 ## How it works
 
