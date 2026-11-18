@@ -157,8 +157,12 @@ shows at all. **Usual, not shown to work**, and none of it for 4:5, 1:1 or 16:9.
   reads in every field, the checker passes all 16 candidates. The panel in 9:16 and 4:5 looks
   like the published layout. Weak: the circle's face (6–11 % of the height) is small; in 16:9 the
   panel below the card leaves a banner of a card and ground beside the speaker; an upright take
-  with a large face fills no panel's width in 4:5, 1:1 or 16:9 and stands on ground. Never built
-  into a video.
+  with a large face fills no panel's width in 9:16, 4:5, 1:1 or 16:9 and stands in the panel's
+  middle with ground on both sides (before 2026-11-18 at one side: an independent review).
+- **Built into a video** once (b-roll's draft pull request 80, 2026-11-18, its own geometry, which
+  this command's numbers now match within about 10 px on its close-up): 9:16 and 16:9 looked at;
+  its owner took the face at 22 % where the footage stays under 1.25×, 18 % up to 2× (a judgement
+  on those videos, not a measurement: the default stays 18 %).
 
 ## The screen is the subject
 
