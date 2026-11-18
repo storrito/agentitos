@@ -98,7 +98,8 @@ async function peopleOf(parts, frames) {
   // one request keeps its voices apart by itself: they are its people (lib/voices.mjs)
   const r = bySound(fingerprints(sound, pieces));
   if (r.why || parts.length === 1) return r.why ? r : { person: r.person };
-  return { person: r.person, linked: "sound", ...(r.margin == null ? {} : { margin: +r.margin.toFixed(2) }) };
+  // across pieces the voices are told to be the same people by taking them to be two at most
+  return { person: r.person, linked: "sound", assumed: "two people at most", ...(r.margin == null ? {} : { margin: +r.margin.toFixed(2) }) };
 }
 
 // Scribe's words, with who speaks them where that can be told (`sure`: at the price of a second
@@ -240,6 +241,7 @@ const sp = r.speakers || {};
 const unnamed = engine === "gemini" || !r.words.length ? ""
   : sp.by === "gemini" ? ` Who speaks is ${STT_MODEL}'s, laid on these words by their times: ${sp.because}.`
   : sp.unlinked ? ` Who speaks may be fewer people than ${sp.people}: the long requests share no words between ${sp.unlinked.map((u) => `${clock(u.from)} and ${clock(u.to)}`).join(", ")}, so the voices before and after are not linked there.`
+  : sp.assumed ? ` Who speaks is told across the ${sp.pieces} pieces by the sound, taking the recording to be of ${sp.assumed}: where more speak, --speakers --speakers-n N (3 or more) asks long requests instead.`
   : r.speakers ? ""
   : ` Who speaks is not in it: ${r.why}` + (opts.speakers ? "." : r.why === NONE ? `; --speakers gets it from ${STT_MODEL}, a second transcription.` : "; --speakers gets it, with a second transcription in long requests.");
 // what the check against the sound found, in a sentence

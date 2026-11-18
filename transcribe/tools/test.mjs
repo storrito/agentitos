@@ -16,7 +16,7 @@ import { envelopeOf, smooth, threshold, voiced, islands, bare, check, repair, HO
 import { stretches, adopt, hearAgain } from "./lib/again.mjs";
 import { quietLevels, edged } from "./lib/edges.mjs";
 import { cut, scribe, LONG, BEFORE } from "./lib/scribe.mjs";
-import { listen, framesOf, fingerprints, bySound, shared, byWords, byTime, named, key, SR, APART } from "./lib/voices.mjs";
+import { listen, framesOf, fingerprints, bySound, shared, byWords, byTime, named, key, SR, APART, MARGIN } from "./lib/voices.mjs";
 
 // loudness in 10 ms frames: quiet room noise, voice where `parts` say ([from, to, level])
 function sound(seconds, parts) {
@@ -357,17 +357,19 @@ test("a voice with under 5 s of speech does not count: its words go to the neare
   assert.deepEqual([...new Set(named(pieces, r.person).words.map((w) => w.speaker))].sort(), ["A", "B"]);
 });
 
-test("one voice a piece is one person or two who take turns: no speakers from the pieces", () => {
-  // what the second review found: two people who sound alike (ann and dan lie within APART),
-  // one in each piece, came out as one person
+test("one voice a piece is one person: a recording is taken to be of two at most, and no piece names two", () => {
+  // the price of that: two people who speak one after the other, never in one piece, are one
+  // (ann and dan here; the sound would not tell them apart either, they lie within APART)
   const { samples, said } = talk(180, [["ann", 0, 90], ["dan", 90, 180]]);
   const frames = framesFrom(samples);
   const one = [heardAs(said, 0, 30, { ann: "0" }), heardAs(said, 30, 60, { ann: "3" }), heardAs(said, 60, 90, { ann: "0" })];
   const turns = [heardAs(said, 0, 90, { ann: "0" }), heardAs(said, 90, 180, { dan: "0" })];
   for (const pieces of [one, turns]) {
     const r = bySound(fingerprints(frames, pieces));
-    assert.match(r.why, /^no piece names two voices: one voice a piece is one person or two who take turns/);
-    assert.equal(r.person, undefined);
+    assert.equal(r.why, undefined);
+    assert.equal(r.people, 1);
+    assert.equal(r.margin, null);
+    assert.ok(named(pieces, r.person).words.every((w) => w.speaker === "A"));
   }
   // one piece alone (one request) is its one voice
   const alone = bySound(fingerprints(frames, [one[0]]));
@@ -377,27 +379,34 @@ test("one voice a piece is one person or two who take turns: no speakers from th
 });
 
 // what the reviewer found: a voice that is someone else was put to the nearer person unchecked
-test("someone else is not taken for one of two people: no speakers from the pieces then", () => {
+test("two people at most: someone else is taken for one of them, unless the caller passes the bounds, then no speakers", () => {
   const { samples, said } = talk(160, [["ann", 0, 40], ["ben", 40, 80], ...inTurns(["ann", "ben"], 80, 120), ...inTurns(["ann", "cyd"], 120, 160)]);
   const frames = framesFrom(samples), at = (from, to, numbers) => heardAs(said, from, to, numbers);
-  const why = (pieces) => bySound(fingerprints(frames, pieces)).why;
-  // one voice a piece, two people who take turns: not one person, and not told
-  assert.match(why([at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" })]), /^no piece names two voices/);
+  // the bounds a caller passes who would rather have no speakers than a doubtful link
+  const why = (pieces) => bySound(fingerprints(frames, pieces), { margin: MARGIN, apart: APART }).why;
+  // one voice a piece, two people who take turns: one person, as the recording is taken
+  assert.equal(bySound(fingerprints(frames, [at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" })])).people, 1);
   // the same once a piece names both: the pieces before it are put to them
   const both = bySound(fingerprints(frames, [at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" }), at(80, 120, { ann: "1", ben: "0" })]));
   assert.equal(both.why, undefined);
   assert.deepEqual(["0:0", "1:0", "2:1", "2:0"].map((id) => both.person.get(id)), [1, 0, 1, 0]);
-  // a third person beside one of the two, or alone: someone else
+  // a third person beside one of the two: one of the two by default, B here
+  const third = bySound(fingerprints(frames, [at(80, 120, { ann: "0", ben: "1" }), at(120, 160, { ann: "0", cyd: "1" })]));
+  assert.equal(third.why, undefined);
+  assert.equal(third.people, 2);
+  assert.equal(third.person.get("1:1"), third.person.get("0:1"));
+  // with the bounds, a third person beside one of the two, or alone: someone else
   assert.match(why([at(80, 120, { ann: "0", ben: "1" }), at(120, 160, { ann: "0", cyd: "1" })]), /^a voice of piece 2 sounds unlike both people/);
   assert.match(why([at(80, 120, { ann: "0", ben: "1" }), at(120, 160, { cyd: "0" })]), /^a voice of piece 2 sounds unlike both people/);
   // four people, two a piece
   const { samples: s4, said: w4 } = talk(80, [...inTurns(["ann", "ben"], 0, 40), ...inTurns(["cyd", "dan"], 40, 80)]);
   const four = fingerprints(framesFrom(s4), [heardAs(w4, 0, 40, { ann: "0", ben: "1" }), heardAs(w4, 40, 80, { cyd: "0", dan: "1" })]);
-  assert.match(bySound(four).why, /^a voice of piece 2 sounds unlike both people/);
-  // what the sound cannot see (README, "How far a voice is"): someone else who sounds like one
-  // of the two and never speaks beside both. dan lies within APART of ann and is taken for her.
+  assert.match(bySound(four, { apart: APART }).why, /^a voice of piece 2 sounds unlike both people/);
+  assert.equal(bySound(four).people, 2);
+  // what the bounds cannot see either (README, "What this takes on trust"): someone else who
+  // sounds like one of the two. dan lies within APART of ann and is taken for her.
   const { samples: s3, said: w3 } = talk(80, [...inTurns(["ann", "ben"], 0, 40), ["dan", 40, 80]]);
-  const blind = bySound(fingerprints(framesFrom(s3), [heardAs(w3, 0, 40, { ann: "0", ben: "1" }), heardAs(w3, 40, 80, { dan: "0" })]));
+  const blind = bySound(fingerprints(framesFrom(s3), [heardAs(w3, 0, 40, { ann: "0", ben: "1" }), heardAs(w3, 40, 80, { dan: "0" })]), { margin: MARGIN, apart: APART });
   assert.equal(blind.why, undefined);
   assert.equal(blind.person.get("1:0"), blind.person.get("0:0"));
   assert.ok(blind.decisions[0].apart < APART, JSON.stringify(blind.decisions));
@@ -418,17 +427,21 @@ test("one request: its voices are its people, however little they say", () => {
   assert.notEqual(short.person.get("0:0"), short.person.get("0:1"));
 });
 
-test("voices too close to tell whose is whose leave the speakers to the long requests", () => {
+test("voices close between two people go the nearer way round; with a margin they give no speakers", () => {
   // fingerprints that differ in how high the voices speak only: the distances are that difference
   const fp = (piece, voice, pitch) => ({ piece, voice, words: 200, seconds: 60, f0: [pitch, 0.3], mfcc: Array(38).fill(1) });
   const two = [fp(0, "0", 7.0), fp(0, "1", 8.0)];
   // 0.47 + 0.47 one way round, 0.53 + 0.53 the other: 1.13 times as far
-  const close = bySound([...two, fp(1, "0", 7.47), fp(1, "1", 7.53)]);
+  const near2 = bySound([...two, fp(1, "0", 7.47), fp(1, "1", 7.53)]);
+  assert.equal(near2.why, undefined);
+  assert.deepEqual(["1:0", "1:1"].map((id) => near2.person.get(id)), [0, 1]);
+  const close = bySound([...two, fp(1, "0", 7.47), fp(1, "1", 7.53)], { margin: MARGIN });
   assert.match(close.why, /^the voices of piece 2 are too close/);
   near(close.decisions[0].margin, 1.06 / 0.94, 0.001);
   assert.equal(bySound([...two, fp(1, "0", 7.47), fp(1, "1", 7.53)], { margin: 1.1 }).why, undefined);
   // one voice between two people
-  assert.match(bySound([...two, fp(1, "0", 7.48)]).why, /too close/);
+  assert.match(bySound([...two, fp(1, "0", 7.48)], { margin: MARGIN }).why, /too close/);
+  assert.equal(bySound([...two, fp(1, "0", 7.48)]).person.get("1:0"), 0);
   const clear = bySound([...two, fp(1, "0", 7.9), fp(1, "1", 7.1), fp(2, "5", 7.05)]);
   assert.equal(clear.why, undefined);
   assert.deepEqual(["1:0", "1:1", "2:5"].map((id) => clear.person.get(id)), [1, 0, 0]);
@@ -620,7 +633,7 @@ test("two voices: the words carry their speakers at once, linked across the piec
       assert.equal(r.json.engine, "scribe");
       assert.equal(r.json.cost, 0.002);
       const { margin, ...speakers } = r.json.speakers;
-      assert.deepEqual(speakers, { by: "scribe", people: 2, pieces: 2, linked: "sound" });
+      assert.deepEqual(speakers, { by: "scribe", people: 2, pieces: 2, linked: "sound", assumed: "two people at most" });
       assert.ok(margin > 2, `margin ${margin}`);
       assert.equal(r.json.words.length, said.length);
       r.json.words.forEach((w, i) => assert.equal(w.speaker, said[i].who === "ann" ? "A" : "B", `word ${i}`));
@@ -629,7 +642,9 @@ test("two voices: the words carry their speakers at once, linked across the piec
       assert.equal(r.json.edges, "sound");
       assert.equal(r.json.timing.checked, said.length - 1);
       assert.match(r.line, /, voices A B in 7:30 .*\{text, start, end, kind, speaker\}/);
-      assert.doesNotMatch(r.line, /Who speaks/);
+      // the line says what the speakers take on trust, and what to do where more speak
+      assert.match(r.line, /Who speaks is told across the 2 pieces by the sound, taking the recording to be of two people at most: where more speak, --speakers --speakers-n N/);
+      assert.doesNotMatch(r.line, /Who speaks is not in it/);
     }
     // Gemini, as --speakers was before: its own pieces, no kinds, no check against the sound
     assert.equal(g.code, 0, g.line);

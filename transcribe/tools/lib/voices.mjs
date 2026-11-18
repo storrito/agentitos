@@ -6,25 +6,26 @@
 // a fingerprint from the sound of its own words: how high it speaks (the median of log2 F0 and its
 // spread over the voiced frames) and how it sounds (mean and deviation of MFCC 1–19 over the
 // frames with speech), each number brought to mean 0 and deviation 1 over the recording's voices.
-// This holds only for two people: a recording qualifies when every piece names two voices at most
-// (one with under 5 s of speech does not count, its words go to the nearer person). The first
-// piece with two voices gives the two people; every other piece is put to them, two voices the
-// way round with the smaller distance, one voice the nearer person. A decision is trusted when
-// the worse way is 1.15 times as far as the better, and when every voice sounds like the person
-// it is put to: within APART of them by the numbers themselves (`far`), else it is someone else.
-// Pieces of one voice each, without one of two: no speakers, one person is not told from two
-// who take turns. Else there are no speakers from here: the caller sends long requests instead.
-// Measured 2026-11-18 (PR #64), all on the 32 recordings the bounds were set on, none held out.
-// On the live answers in five-minute pieces (as on a Sprite) 12 of 16 two-voice recordings give
-// speakers, 41 of 41 decisions right, 98.7 % of the words with the right speaker (each piece
-// alone 98.6 %); of 12 with more voices none, each refused by a piece that names three voices or
-// more: the distance never met a third person there. Of 4 with one voice none (no piece of two).
-// What the sound alone is worth: of 73 voices of someone else put to the two people of another
-// piece, 11 pass both the distance and the margin (15 %); real voices of someone else lie from
-// 0.89 off the nearer person, a person's own voice up to 1.86 off themselves, and two people of
-// one sex or on a telephone line lie as near as one person's own pieces. So the rule rests on
-// the model naming a third voice in some piece: a third person who sounds like one of the two
-// and never speaks in a piece beside both is taken for that one.
+// A recording is taken to be of two people at most, which most are: every piece names two
+// voices at most (one with under 5 s of speech does not count, its words go to the nearer
+// person). The first piece with two voices gives the two people; every other piece is put to
+// them, two voices the way round with the smaller distance, one voice the nearer person. Pieces
+// of one voice each, without one of two, are one person. A piece that names three voices or
+// more says there are more people: no speakers from here, the caller sends long requests.
+// Measured 2026-11-18 (PR #64) on the live answers of 32 recordings in five-minute pieces (as
+// on a Sprite): 15 of 16 two-voice recordings give speakers, 50 of 50 decisions right, 98.4 %
+// of the words with the right speaker (each piece alone 98.4 %); the 16th has a piece where the
+// model heard three voices. Of 12 recordings with more voices (4 to 15) none: each has a piece
+// that names three or more. Of 4 with one voice 3 are one person, the 4th has a piece where the
+// model heard three.
+// What this takes on trust: three people of whom no piece ever hears three become two, and two
+// who speak one after the other, never in one piece, become one (of 6 two-voice recordings
+// spliced so, 5). The sound does not tell: of 73 voices of someone else put to the two people of
+// another piece, 11 lie as near as the person themselves would (within APART = 1.1 of them, in
+// units of how much voices spread, and MARGIN = 1.15 nearer one way round than the other), and
+// bounds like these refused 3 of the 15 recordings above without stopping a wrong one. A caller
+// that would rather have no speakers than a doubtful link passes them: bySound(fps, { margin:
+// MARGIN, apart: APART }). The people a caller knows to be more go in with --speakers-n.
 // The fingerprints are those of the Python the rule was first measured with (torchaudio's MFCC,
 // the same pitch): this file gives the same frames and the same margins to 0.0001.
 //
@@ -58,7 +59,7 @@ const CUT = BLOCK * HOP;         // the samples a block's frames start in
 const OVER = PWIN - HOP;         // and the 480 after them its last pitch reads, the next block's first
 
 export const LITTLE = 5;         // seconds of speech under which a voice does not count
-export const MARGIN = 1.15;      // the worse way round is this many times as far as the better
+export const MARGIN = 1.15;      // for { margin }: the worse way round this many times as far as the better
 export const key = (k, voice) => `${k}:${voice}`;
 
 // ---------------------------------------------------------------- the sound
@@ -467,7 +468,7 @@ const dist = (a, b) => { let s = 0; for (let d = 0; d < a.length; d++) s += (a[d
 const SPREAD = [0.2531, 0.1533, 6.57, 7.731, 4.384, 4.743, 3.772, 3.484, 2.332, 2.547, 2.61, 2.042, 2.141, 1.912, 1.65, 1.676, 1.348, 1.287, 1.235, 1.34,
   1.14, 3.679, 2.242, 1.327, 1.336, 1.108, 0.7611, 0.7231, 0.6409, 0.6752, 0.5791, 0.5817, 0.5523, 0.5324, 0.5516, 0.677, 0.6387, 0.6597, 0.6988, 0.6753];
 const far = (a, b) => { let s = 0; for (let d = 0; d < a.length; d++) s += ((a[d] - b[d]) / SPREAD[d]) ** 2; return Math.sqrt(s / a.length); };
-// a voice farther than this from the person it would be is someone else
+// for { apart }: a voice farther than this from the person it would be is someone else
 export const APART = 1.1;
 
 // A person as the voices given to them so far: their mean, weighted by seconds, in both scales
@@ -494,15 +495,15 @@ function decide(known, xs) {
 //   → { person: Map "<piece>:<voice>" → 0 | 1 | …, people, margin (the smallest, null without a
 //       decision), decisions: [{ piece, voices, margin, apart }] }   or   { why, decisions }
 // One piece (one request, which keeps its voices apart by itself): its voices are its people,
-// however little they say (two who say four seconds each in a clip are two). Several pieces: the
-// first piece that names two voices gives the two people, and every other piece (in order, those
-// before it too) is put to them: two voices the one way round that is nearer, one voice the
-// nearer person. A person is the mean of the voices put to them so far. A voice farther than
-// APART from the person it would be is someone new, a third: no speakers from here. With no
-// piece of two voices there are none either: one voice a piece is one person or two who take
-// turns, and the sound does not tell which (two people of one sex lie as near as one person's
-// own pieces: of 6 recordings spliced so, 5 came out as one person).
-export function bySound(fps, { little = LITTLE, margin = MARGIN, apart = APART } = {}) {
+// however little they say (two who say four seconds each in a clip are two). Several pieces,
+// taken to be of two people at most: the first piece that names two voices gives the two
+// people, and every other piece (in order, those before it too) is put to them: two voices the
+// one way round that is nearer, one voice the nearer person. A person is the mean of the voices
+// put to them so far. With no piece of two voices every voice is the one person. Only a piece
+// that names three voices says otherwise: no speakers from here. With { apart } a voice farther
+// than that from the person it would be is someone new, a third, and with { margin } a decision
+// whose worse way round is not that many times as far as the better is none: no speakers.
+export function bySound(fps, { little = LITTLE, margin = 0, apart = Infinity } = {}) {
   const vec = vectors(fps);
   const pieces = [...new Set(vec.map((v) => v.piece))].sort((a, b) => a - b);
   const strong = (k) => vec.filter((v) => v.piece === k && v.ok && v.seconds >= little);
@@ -516,13 +517,16 @@ export function bySound(fps, { little = LITTLE, margin = MARGIN, apart = APART }
     const n = strong(k).length;
     if (n > 2) return { why: `piece ${k + 1} names ${n} voices, and the voices of short pieces are told to be the same people only for two` };
   }
-  const anchor = pieces.find((k) => strong(k).length === 2);
-  // one voice a piece (or none that says enough): one person, or two who take turns
-  if (anchor === undefined) return { why: "no piece names two voices: one voice a piece is one person or two who take turns, and the sound of short pieces does not tell which", decisions };
   // a piece that speaks (30 words or more) and none of whose voices has a fingerprint: the
   // sound was not there to tell them by
   const mute = pieces.find((k) => !vec.some((v) => v.piece === k && v.ok) && fps.reduce((a, f) => a + (f.piece === k ? f.words : 0), 0) >= 30);
   if (mute !== undefined) return { why: `the voices of piece ${mute + 1} have no sound to tell them by`, decisions };
+  const anchor = pieces.find((k) => strong(k).length === 2);
+  // one voice a piece (or none that says enough): taken to be one person
+  if (anchor === undefined) {
+    vec.forEach((v) => person.set(v.id, 0));
+    return { person, people: 1, margin: null, decisions };
+  }
   const known = strong(anchor).map((v, i) => { person.set(v.id, i); return person0(v); });
   for (const k of pieces) {
     const vs = strong(k);
