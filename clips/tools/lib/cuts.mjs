@@ -23,16 +23,21 @@ const SPANS = [1, 2, 3, 4, 6, 8, 12, 16, 24];
 // times more than as many frames change within the shots on either side
 const HARD = 12, SURE = 35, POSSIBLE = 9, OVER_MOTION = 2.2;
 
-// every frame of the video as a small grey picture, in the order shown, none doubled or left out
+// every frame of the video as a small grey picture, in the order shown, none doubled or left out;
+// `frames.times` holds each frame's own time (seconds from the file's start, as ffmpeg's filters
+// count): footage of a variable frame rate has no fixed step between them
 export function smallFrames(video) {
   // -fps_mode from ffmpeg 5.1, -vsync before it
-  const read = (mode) => spawnSync("ffmpeg", ["-v", "error", "-i", video, "-an", "-sn", ...mode,
-    "-vf", `scale=${SMALL_W}:${SMALL_H}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
+  const read = (mode) => spawnSync("ffmpeg", ["-v", "info", "-nostats", "-i", video, "-an", "-sn", ...mode,
+    "-vf", `showinfo,scale=${SMALL_W}:${SMALL_H}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30, encoding: "buffer" });
   let r = read(["-fps_mode", "passthrough"]);
   if (r.status !== 0) r = read(["-vsync", "passthrough"]);
-  if (r.status !== 0) throw new Error(`ffmpeg could not read the frames of ${video}`);
+  if (r.status !== 0) throw new Error(`ffmpeg could not read the frames of ${video}: check that the file plays (ffprobe ${video}), else cut it again.`);
   const size = SMALL_W * SMALL_H, n = Math.floor(r.stdout.length / size);
-  return Array.from({ length: n }, (_, i) => r.stdout.subarray(i * size, (i + 1) * size));
+  const frames = Array.from({ length: n }, (_, i) => r.stdout.subarray(i * size, (i + 1) * size));
+  const times = [...String(r.stderr).matchAll(/Parsed_showinfo.*?pts_time:\s*(-?[\d.]+)/g)].map((m) => Number(m[1]));
+  frames.times = times.length === n ? times : null;
+  return frames;
 }
 
 export function diff(a, b) {
@@ -95,15 +100,18 @@ export function shifted(a, b) {
 }
 
 // the cuts kept: the sure ones, and a possible one where a model named a cut within a second
-export function confirmed(cuts, fps, named = []) {
-  return cuts.filter((c) => c.sure || named.some((t) => Math.abs(t * fps - c.frame) <= fps));
+// (`times`: the frames' own times, else frame / fps)
+export function confirmed(cuts, fps, named = [], times = null) {
+  const at = (f) => (times ? times[f] : f / fps);
+  return cuts.filter((c) => c.sure || named.some((t) => Math.abs(t - at(c.frame)) <= 1));
 }
 
 // the shots between the cuts, none shorter than `shortest` frames (a cut that close to another
 // or to an end of the clip goes: its frames join the shot before). Times are the borders between
 // frames: a shot from its first frame's time minus half a frame (0 for the first) to the next
-// shot's start. `start` is the time of the video's first frame
-export function shotsBetween(cuts, frameCount, fps, { start = 0, shortest = 6 } = {}) {
+// shot's start. `start` is the time of the video's first frame; `times`, each frame's own time,
+// puts the borders between frames where they are (a variable frame rate)
+export function shotsBetween(cuts, frameCount, fps, { start = 0, shortest = 6, times = null } = {}) {
   const at = [...new Set(cuts.map((c) => c.frame ?? c))].filter((f) => f > 0 && f < frameCount).sort((a, b) => a - b);
   // the last frame of the change that brings each shot in (a wipe's)
   const done = Object.fromEntries(cuts.filter((c) => c.to != null).map((c) => [c.frame, c.to]));
@@ -118,11 +126,15 @@ export function shotsBetween(cuts, frameCount, fps, { start = 0, shortest = 6 } 
     if (f - prev >= shortest) kept.push(f);
     else if (prev > 0 && sure.has(f) && !sure.has(prev)) kept[kept.length - 1] = f;
   }
-  const border = (f) => (f === 0 ? 0 : +(start + (f - 0.5) / fps).toFixed(4));
+  // a frame's time, and the border halfway between a frame and the one before it
+  const ok = times && times.length === frameCount;
+  const time = (f) => (ok ? times[Math.min(f, frameCount - 1)] + (f >= frameCount ? 1 / fps : 0) : start + f / fps);
+  const border = (f) => +(f === 0 ? 0 : ok ? (times[f - 1] + times[f]) / 2 : start + (f - 0.5) / fps).toFixed(4);
+  const after = (f) => +(ok ? (times[f] + (times[f + 1] ?? times[f] + 1 / fps)) / 2 : start + (f + 0.5) / fps).toFixed(4);
   return kept.map((f, k) => {
     const next = kept[k + 1] ?? frameCount;
-    return { first: f, last: next - 1, start: border(f), end: next === frameCount ? +(start + frameCount / fps).toFixed(4) : border(next),
-      ...(done[f] > f ? { settled: +(start + (done[f] + 0.5) / fps).toFixed(4) } : {}),
-      ...(begins[next] < next ? { leaving: +(start + (begins[next] - 0.5) / fps).toFixed(4) } : {}) };
+    return { first: f, last: next - 1, start: border(f), end: next === frameCount ? +time(frameCount).toFixed(4) : border(next),
+      ...(done[f] > f ? { settled: after(done[f]) } : {}),
+      ...(begins[next] < next ? { leaving: border(begins[next]) } : {}) };
   });
 }

@@ -238,3 +238,21 @@ test("between two stills the face is followed in the frames, where a straight li
     assert.deepEqual(edgesOf(windows, [{ ...shots[0], people: truth }], { fps: FPS }).filter((e) => e.cut), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("footage of a variable frame rate: the cut sits at the frames' own time, not at frame number over rate", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // 4 s at 15 frames a second, then 3 s at 30 (the file says 30): the cut is at 4.0 s, frame 60
+    const video = path.join(dir, "vfr.mp4");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=15:d=4", "-f", "lavfi", "-i", "smptehdbars=s=320x180:r=30:d=3",
+      "-filter_complex", "[0:v]settb=1/30[a];[1:v]settb=1/30[b];[a][b]concat=n=2:v=1,format=yuv420p[v]", "-map", "[v]", "-vsync", "vfr", "-c:v", "libx264", "-preset", "ultrafast", video], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const frames = smallFrames(video);
+    assert.equal(frames.times.length, frames.length);
+    const cuts = findCuts(frames, 30);
+    assert.deepEqual(cuts.map((c) => c.frame), [60]);
+    const shots = shotsBetween(cuts, frames.length, 30, { times: frames.times });
+    near(shots[1].start, 3.967, 0.02);
+    near(shots[1].end, 7.0, 0.05);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

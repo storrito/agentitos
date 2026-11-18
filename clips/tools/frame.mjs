@@ -98,15 +98,15 @@ export function turnsOf(words) {
   return turns;
 }
 
-// the cuts of the footage, to the frame, and its frame count: { cuts, frames }
+// the cuts of the footage, to the frame, its frame count and each frame's time: { cuts, frames, times }
 export function cutsOf(video, meta = probe(video)) {
   const frames = smallFrames(video);
-  return { cuts: findCuts(frames, meta.fps), frames: frames.length };
+  return { cuts: findCuts(frames, meta.fps), frames: frames.length, times: frames.times };
 }
 
 // the shots of the footage from its cuts (the possible ones where the model named a cut)
-export function shotList({ cuts, frames }, meta, named = []) {
-  return shotsBetween(confirmed(cuts, meta.fps, named), frames, meta.fps, { start: meta.start });
+export function shotList({ cuts, frames, times }, meta, named = []) {
+  return shotsBetween(confirmed(cuts, meta.fps, named, times), frames, meta.fps, { start: meta.start, times });
 }
 
 // the moments a model is shown of each shot: its first frame (past a wipe), its middle, its last,
