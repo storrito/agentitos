@@ -18,7 +18,7 @@ export function greyFrames(video, { start = 0 } = {}) {
   const [W, H] = probe.stdout.trim().split(",").map(Number);
   const w = TRACK_W, h = Math.round((TRACK_W * H) / W / 2) * 2;
   const r = spawnSync("ffmpeg", ["-v", "error", "-i", video, "-an", "-sn", "-vf", `fps=${TRACK_FPS},scale=${w}:${h}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
-  if (r.status !== 0) throw new Error(`ffmpeg could not read the frames of ${video}`);
+  if (r.status !== 0) throw new Error(`ffmpeg could not read the frames of ${video}: check that the file plays (ffprobe ${video}), else cut it again.`);
   const n = Math.floor(r.stdout.length / (w * h));
   return { frames: Array.from({ length: n }, (_, i) => r.stdout.subarray(i * w * h, (i + 1) * w * h)), w, h, fps: TRACK_FPS, start, scale: w / W };
 }

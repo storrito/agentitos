@@ -440,3 +440,11 @@ test("prepare says a moment is too long only when it stays too long after its pa
   // deaths: 79.3 s of words, 71.0 s cut
   assert.match(lengthNote(79.3, 59), /⚠ .*stays over/);
 });
+
+test("a shot's stills are an odd number: the first, the middle and the last frame among them", () => {
+  for (const length of [2, 5, 7.5, 12, 30]) {
+    const stills = stillsOf([{ start: 0, end: length }], FPS);
+    assert.equal(stills.length % 2, 1, `${length} s: ${stills.length} stills`);
+    near(stills[(stills.length - 1) / 2].t, length / 2, 0.01);
+  }
+});

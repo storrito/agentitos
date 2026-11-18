@@ -125,7 +125,9 @@ export function stillsOf(shots, fps) {
   shots.forEach((s, k) => {
     // past the wipe that brings the shot in
     const a = Math.max(s.start + 1.5 / fps, s.settled ?? 0), b = Math.min(s.end - 1.5 / fps, (s.leaving ?? Infinity) - 0.5 / fps);
-    const n = b - a < 0.5 ? 1 : Math.max(3, Math.ceil((b - a) / every) + 1);
+    // an odd number, so that one still is the shot's middle
+    let n = b - a < 0.5 ? 1 : Math.max(3, Math.ceil((b - a) / every) + 1);
+    if (n % 2 === 0) n++;
     const ts = n === 1 ? [(s.start + s.end) / 2] : Array.from({ length: n }, (_, i) => a + ((b - a) * i) / (n - 1));
     ts.forEach((t, i) => out.push({ shot: k, id: `${k + 1}.${i + 1}`, t: +t.toFixed(3) }));
   });
@@ -923,6 +925,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       for (const d of s.doubtful || []) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
     });
     if (r.sheets.missing?.length) console.log(`The sheet is missing ${r.sheets.missing.join("; ")}: look at framed.mp4 there yourself (ffmpeg -ss <second> -i framed.mp4 -frames:v 1 look.jpg).`);
-    if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where a face is at an edge.${r.edges.length ? " A ⚠ above: look at that row; a face that matters cut off, `reframe --whole <second>` shows the shot whole, `--follow <second>` one window on who speaks." : ""}`);
+    if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where a face is at an edge.${r.edges.length ? " A ⚠ above: look at that row. On a face the window already follows, the footage gives no better window: keep it, or move the cut so that stretch is left out. Someone or something that matters left out of a window (a second person, a photo): `reframe --whole <second>` shows the shot whole (smaller; never for a close-up). A shot shown whole whose speaker should fill the frame: `--follow <second>`." : ""}`);
   }
 }
