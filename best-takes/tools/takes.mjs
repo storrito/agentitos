@@ -314,11 +314,14 @@ function cmdBuild(dir, opts) {
   const still = fs.existsSync(source(dir, "still.json")) ? read(source(dir, "still.json")) : {};
   const scales = s.punch === "on" ? punches(r.pieces, { highlight: cut.captions?.highlight, still, clips }) : r.pieces.map(() => 1);
   const faces = readFaces(dir);
+  // the eyes of a face grown closer stay below the apps' top bar
+  let safeTop = 0;
+  if (faces) { try { safeTop = zones(width, height, platformList(s.platform)).safe[1]; } catch {} }
   const pieces = r.pieces.map((p, k) => {
     if (!(scales[k] > 1)) return { ...p, scale: scales[k] };
     const list = faces?.[clips[p.clip].file], seen = [];
     if (list) for (let t = p.in; t <= p.out; t += 0.1) for (const f of facesAt(list, t)) seen.push(toFrame(f.box, list.size, [width, height]));
-    return { ...p, scale: scales[k], origin: +punchOrigin({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea }).toFixed(1) };
+    return { ...p, scale: scales[k], origin: +punchOrigin({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop }).toFixed(1) };
   });
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, hook });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words

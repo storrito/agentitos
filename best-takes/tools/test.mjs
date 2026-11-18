@@ -219,9 +219,12 @@ test("a punch-in on a face whose chin stands just above the captions grows from 
   // the chin after the punch-in, grown from y
   assert.ok(y + (chin - y) * 1.12 <= CAP[1] + 1e-6, `chin after ${y + (chin - y) * 1.12}`);
 });
-test("a punch-in on a face that lies on the captions already grows from the frame's bottom at most: the chin goes up, not down", () => {
+test("a punch-in on a face that lies on the captions already grows from the frame's bottom at most: the chin goes up, not down; but never so far that the eyes go under the apps' top bar", () => {
   const y = punchOrigin({ faces: [[100, 0, 880, 1700]], scale: 1.12, frame: FRAME, cap: CAP });
   assert.equal(y, 1920);
+  const f = [100, -414, 880, 1700], eyes = -414 + 0.42 * 1700;
+  const kept = punchOrigin({ faces: [f], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 });
+  assert.ok(kept < 1920 && Math.abs(kept + (eyes - kept) * 1.12 - 250) < 0.01, `origin ${kept}`);
 });
 test("without captions, or on a face below them (captions above a head), the punch-in grows from a third from the top", () => {
   assert.equal(punchOrigin({ faces: [[300, 600, 480, 640]], scale: 1.12, frame: FRAME, cap: null }), 0.32 * 1920);

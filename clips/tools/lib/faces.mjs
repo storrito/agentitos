@@ -17,13 +17,15 @@ const box = (f) => [f.x - f.w / 2, f.y - f.h / 2, f.w, f.h];
 
 // a face's box in the footage drawn through a crop (x, y, w, h of the footage) into a rectangle
 // of the frame (X, Y, W, H): scaled as the crop is, cut off where the rectangle ends (null when
-// nothing of it is left)
-function through(b, crop, rect) {
+// nothing of it is left). A window that fills the frame keeps the whole box (whole: true): a
+// close-up's forehead over the frame's top still tells where the eyes are.
+function through(b, crop, rect, whole = false) {
   const k = rect[2] / crop.w;
   const x0 = rect[0] + (b[0] - crop.x) * k, y0 = rect[1] + (b[1] - crop.y) * k;
   const x1 = x0 + b[2] * k, y1 = y0 + b[3] * k;
   const cx0 = Math.max(x0, rect[0]), cy0 = Math.max(y0, rect[1]), cx1 = Math.min(x1, rect[0] + rect[2]), cy1 = Math.min(y1, rect[1] + rect[3]);
   if (cx1 - cx0 < 1 || cy1 - cy0 < 1) return null;
+  if (whole) return [x0, y0, x1 - x0, y1 - y0].map((v) => +v.toFixed(1));
   return [cx0, cy0, cx1 - cx0, cy1 - cy0].map((v) => +v.toFixed(1));
 }
 
@@ -67,7 +69,7 @@ export function inFrame(w, shot, t, { outW, outH }) {
   const rect = [0, -lift, outW, outH];
   for (const p of people) {
     const f = faceAt(p, t);
-    const b = f && through(box(f), win, rect);
+    const b = f && through(box(f), win, rect, true);
     if (b) out.push({ who: p.who ?? p.speaker, speaker: p.speaker, box: b });
   }
   return out;

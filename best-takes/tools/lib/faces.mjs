@@ -49,18 +49,23 @@ const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.
 // a third from the top; a face that lies on them already grows upwards from below its chin. At
 // most the frame's bottom. `faces`: the boxes in px of the cut's frame over the piece; `cap`: the
 // captions' area.
-export function punchOrigin({ faces, scale, frame: [W, H], cap }) {
-  let y = ORIGIN_Y * H;
-  if (!cap || !(scale > 1)) return y;
+// It never grows from so low that a face's eyes (EYES of its box from the top) go above `safeTop`,
+// under the apps' top bar: there a chin on the captions is the lesser harm.
+export const EYES = 0.42;
+export function punchOrigin({ faces, scale, frame: [W, H], cap, safeTop = 0 }) {
+  const low = ORIGIN_Y * H;
+  if (!cap || !(scale > 1)) return low;
   const top = cap[1];
+  let y = low, most = H;
   for (const b of faces) {
     if (b[0] + b[2] <= cap[0] || b[0] >= cap[0] + cap[2]) continue;
     // only a face above the captions' middle: one below them (captions above a head) is not pushed into them by growing upwards
     if (b[1] + b[3] / 2 > top + cap[3] / 2) continue;
     const chin = b[1] + b[3] + Math.max(BELOW_MIN, BELOW * b[3]);
     y = Math.max(y, (scale * chin - top) / (scale - 1));
+    most = Math.min(most, (scale * (b[1] + EYES * b[3]) - safeTop) / (scale - 1));
   }
-  return Math.min(H, y);
+  return Math.max(low, Math.min(H, y, most));
 }
 
 // the seconds in which a text lies on a face: texts [{ role, box, from, to }] on the cut's clock;
