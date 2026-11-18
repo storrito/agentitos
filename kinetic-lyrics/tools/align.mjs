@@ -1,6 +1,8 @@
 // Refine ASR word timings against the actual audio.
 //
-// ASR word timestamps drift by 100–500 ms (Gemini gives tenths of a second), sometimes placing
+// ASR word timestamps drift by 100–500 ms (Gemini, which the transcribe skill's `--speakers gemini`
+// still runs, gives tenths of a second; its Scribe words come with edges the sound has set,
+// `edges: "sound"`, and are not aligned here again), sometimes placing
 // a word in the silence after it was spoken. For kinetic type that reads as
 // "late". We build an energy envelope, collect boundary candidates (voice onsets
 // after silences *and* after short energy dips between syllables), then choose
