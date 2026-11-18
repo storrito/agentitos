@@ -158,8 +158,7 @@ test("the moments come in the order of the episode; of two that overlap, the one
   assert.deepEqual(arrange({ moments: [moment(1, 3, { opens: 40 }), moment(8, 9, { opens: "x" })] }, INTERVIEW).map((m) => m.opens), [10, 1]);
   const two = arrange({ moments: [moment(1, 7, { opens: 3 }), moment(6, 9, { opens: 8 })] }, INTERVIEW, { limit: 90 });
   assert.deepEqual(two.map((m) => [m.first, m.last]), [[6, 9]]);
-  // on the same rating, the one the model listed first (it is asked to list them in the
-  // episode's order, so that is the earlier one), whichever it is
+  // on the same rating, the one the model listed first, whichever it is
   const tie = arrange({ moments: [moment(6, 9, { opens: 5 }), moment(1, 7, { opens: 5 })] }, INTERVIEW, { limit: 90 });
   assert.deepEqual(tie.map((m) => [m.first, m.last]), [[6, 9]]);
   const tie2 = arrange({ moments: [moment(1, 7, { opens: 5 }), moment(6, 9, { opens: 5 })] }, INTERVIEW, { limit: 90 });
@@ -184,10 +183,10 @@ test("the prompt holds the description for the channel's followers, the limit an
   assert.ok(p.startsWith("0 [0:00–0:04] A: Hi.\n"), "the transcript first, for the provider's cache");
   assert.ok(p.includes(`The video's description, as the channel's followers see it:\n"""\nJulia Garner (Ozark, Weapons) takes on the wings.\n"""`));
   assert.match(p, /everyone the title or the description names, so such a name needs no introduction/);
-  // nothing ranks the moments, so the model is not asked to rank them
-  assert.match(p, /Pick 8 moments that work as vertical shorts of this channel/);
-  assert.match(p, /List the moments in the order of the episode/);
-  assert.doesNotMatch(p, /best first|fillers|the \d+ best/);
+  // the wording the figures were measured with: asked for the episode's order instead, the model
+  // covered fewer of the editors' picks; the order is arrange's, after the answer
+  assert.match(p, /Pick the 5 best moments .* and 3 more as fillers/);
+  assert.match(p, /List the moments best first/);
   assert.match(p, /up to 59 seconds here/);
   assert.ok(p.includes(`(up to ${longest(59)})`));
   assert.match(p, /exchanges \(a quick back-and-forth with a laugh/);
