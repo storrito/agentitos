@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { besideLayout, assumedFace, frameFace, HAIR, FACE_TARGET, FACE_LEAST, MATERIAL_LEAST } from "./lib/beside.mjs";
+import { besideLayout, assumedFace, frameFace, aim, HAIR, SOFT, FACE_TARGET, FACE_NORM, FACE_LEAST, MATERIAL_LEAST } from "./lib/beside.mjs";
 import { rectOf, readBox, personMotion, holePolygon } from "./lib/render.mjs";
 import { zones } from "./lib/zones.mjs";
 
@@ -47,7 +47,7 @@ for (const [W, H, platforms] of FRAMES) {
       assert.ok(P.face[1] + P.face[3] <= bottomFree(z) + 1, `chin ${P.face[1] + P.face[3]} above ${bottomFree(z)}`);
       assert.ok(P.face[1] - HAIR * P.face[3] >= P.card[1] - 1, "room for the hair above the face");
       assert.ok(P.facePct >= FACE_LEAST * 100 - 0.1, `face ${P.facePct} %`);
-      if (!wide) assert.ok(Math.abs(P.face[3] - FACE_TARGET * H) <= 2 || L.notes.some((x) => /gives way/.test(x)), `face ${P.face[3]} at the target ${FACE_TARGET * H}`);
+      if (!wide) assert.ok(Math.abs(P.face[3] - aim(H, face[3])) <= 2 || L.notes.some((x) => /gives way/.test(x)), `face ${P.face[3]} at what it aims at, ${aim(H, face[3])}`);
       assert.equal(L.warnings.length, 0, L.warnings.join("; "));
       if (cap) {
         const C = L.captions;
@@ -127,10 +127,26 @@ for (const [W, H, platforms] of FRAMES) {
 test("1080×1920, the usual apps, hormozi captions, the take's close-up: the numbers of the layout", () => {
   const z = zones(1080, 1920, []);
   const L = besideLayout({ width: 1080, height: 1920, zones: z, face: [280, 700, 560, 760], source: [1080, 1920], captions: { left: 192, width: 696, top: 1238, bottom: 1440, size: 96 } });
-  assert.deepEqual(L.speaker.face, [413, 1070, 255, 346]);      // 18 %, ending above the bottom zone (1440 less 24)
-  assert.deepEqual(L.captions.box, [192, 747, 696, 202]);       // two lines on the seam, 121 px of hair's room under them
-  assert.deepEqual(L.material.field, [60, 250, 828, 473]);      // from the safe box's top to 24 px above them
-  assert.equal(L.speaker.card[1], 949);
+  assert.deepEqual(L.speaker.face, [384, 994, 311, 422]);       // 22 %, ending above the bottom zone (1440 less 24)
+  assert.deepEqual(L.captions.box, [192, 644, 696, 202]);       // two lines on the seam, 148 px of hair's room under them
+  assert.deepEqual(L.material.field, [60, 250, 828, 370]);      // from the safe box's top to 24 px above them: a number's room
+  assert.deepEqual(L.speaker.card, [229, 846, 600, 826]);
+  assert.ok(L.material.field[3] >= MATERIAL_LEAST * 1920, "the face has not given way");
+  assert.ok(!L.notes.some((x) => /gives way|stays sharp/.test(x)), L.notes.join("; "));
+});
+
+test("the face aims at its target only as far as the video stays sharp, and never under the norm for that", () => {
+  const H = 1920;
+  assert.equal(aim(H, 0.4 * H), FACE_TARGET * H);                  // a close-up: shrunk, the target
+  assert.equal(aim(H, 0.2 * H), FACE_TARGET * H);                  // enlarged ×1.1: still sharp
+  assert.equal(aim(H, 0.15 * H), SOFT * 0.15 * H);                 // the target would need ×1.47: the sharpest, 18.75 %
+  assert.equal(aim(H, 0.1 * H), FACE_NORM * H);                    // small: the norm as before (×1.8, said to look soft)
+  assert.equal(aim(H, 0.15 * H, 1.25), FACE_NORM * H);             // the host enlarges the source already: no more than the norm
+  const z = zones(1080, 1920, []);
+  const L = besideLayout({ width: 1080, height: 1920, zones: z, face: [425, 576, 230, 288] });
+  assert.equal(L.speaker.scale, SOFT);
+  assert.equal(L.warnings.length, 0, L.warnings.join("; "));
+  assert.ok(L.notes.some((x) => /stays sharp/.test(x)), L.notes.join("; "));
 });
 
 test("the face gives way to the material, not under 12 %, and says so", () => {
