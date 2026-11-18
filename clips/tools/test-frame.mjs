@@ -537,3 +537,44 @@ test("a shot's stills are an odd number: the first, the middle and the last fram
     near(stills[(stills.length - 1) / 2].t, length / 2, 0.01);
   }
 });
+
+// a close-up looking at the camera with its eyes, nose and mouth asked for one by one (version 4)
+const frontal = (t, { mouth = [640, 440, 700, 560], eyes = [380, 400, 460, 600], nose = [420, 460, 600, 540], x = 0 } = {}) => {
+  const mv = (b) => b && [b[0], b[1] + x, b[2], b[3] + x];
+  return { t, faces: [{ person: 0, box_2d: mv([200, 330, 900, 670]), eyes_2d: mv(eyes), nose_2d: mv(nose), mouth_2d: mv(mouth), looks: "camera" }] };
+};
+
+test("eyes, nose and mouth that do not hold (the mouth left out, above the nose, or one box ending at the nose) are left out and listed; the stills beside them hold", () => {
+  const ans = { version: 4, shots: [shotAnswer(0, 9, "people", [{ who: "guest", speaker: "A" }], [
+    frontal(0.1), frontal(3, { mouth: null }), frontal(4.5, { mouth: [400, 440, 450, 560] }), frontal(6), frontal(8.9)])] };
+  const [s] = shotsOf(ans, [{ start: 0, end: 9 }], META);
+  assert.deepEqual(s.doubtful.map((d) => [d.t, /mouth/.test(d.features), !!d.guess]), [[3, true, false], [4.5, true, false]]);
+  // between the stills that hold, the mouth's bottom stays where they have it (700 of 1000)
+  const f = faceAt(s.people[0], 3);
+  near(f.feat.y1, 0.7 * META.height, 2);
+  // one box for all three (version 3) that ends at the nose: only 31 % of the head
+  const v3 = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [0.1, 2, 3.9].map((t) => ({ t, faces: [{ person: 0, box_2d: [51, 513, 467, 706], features_2d: [202, 510, 329, 649], looks: "left" }] })))] };
+  const [g] = shotsOf(v3, [{ start: 0, end: 4 }], META);
+  assert.equal(g.doubtful.length, 3);
+  assert.ok(g.doubtful.every((d) => d.guess && /mouth left out/.test(d.features)), JSON.stringify(g.doubtful));
+  // no still holds: the head's proportions, the mouth line low in the box (never above the real one)
+  const h = faceAt(g.people[0], 2), top = h.y - h.h / 2;
+  assert.ok((h.feat.y1 - top) / h.h >= 0.85, `the mouth's bottom at ${((h.feat.y1 - top) / h.h).toFixed(2)} of the head`);
+});
+
+test("a features box that jumps against its neighbours (the ear taken for the eyes) is left out and listed, and the window does not swing for it", () => {
+  const stills = [0.1, 3, 6, 9, 11.9].map((t) => frontal(t));
+  const ok = { version: 4, shots: [shotAnswer(0, 12, "people", [{ who: "guest", speaker: "A" }], stills)] };
+  const bad = JSON.parse(JSON.stringify(ok));
+  // the still at 6 s: the eyes, nose and mouth moved to the face's right edge
+  for (const k of ["eyes_2d", "nose_2d", "mouth_2d"]) { const b = bad.shots[0].stills[2].faces[0][k]; const w = b[3] - b[1]; b[3] = 670; b[1] = 670 - w; }
+  const run = (a) => { const shots = shotsOf(a, [{ start: 0, end: 12 }], META); return { shots, w: windowsOf(shots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] })[0] }; };
+  const A = run(ok), B = run(bad);
+  assert.equal(A.shots[0].doubtful, undefined);
+  assert.deepEqual(B.shots[0].doubtful.map((d) => [d.t, /jump/.test(d.features)]), [[6, true]]);
+  for (let t = 0; t < 12; t += 0.5) near(windowAt(B.w, t).x, windowAt(A.w, t).x, 2);
+  // a head that turns (the model says it looks elsewhere) is no jump
+  const turn = JSON.parse(JSON.stringify(bad));
+  turn.shots[0].stills[2].faces[0].looks = "right";
+  assert.equal(run(turn).shots[0].doubtful, undefined);
+});
