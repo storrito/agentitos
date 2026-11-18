@@ -20,7 +20,7 @@ You run in rragent: the chat on the left, the artifacts beside it. `<skill>` is 
 
 ## What it needs
 
-Node 20+ and ffmpeg. For the video's words, agentitos' `transcribe` skill beside this one (ElevenLabs Scribe through OpenRouter, about half a cent a minute): `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection; or words another tool already made (rragent's transcribe tool, the captions skill: `--words`). Nothing to `npm install`. Something missing: say so in one sentence, never install it yourself.
+Node 20+ and ffmpeg. For the video's words, agentitos' `transcribe` skill beside this one (ElevenLabs Scribe through OpenRouter, about half a cent a minute): `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection; or words another tool already made (the captions skill: `--words`). Nothing to `npm install`. Something missing: say so in one sentence, never install it yourself.
 
 You write the texts; the tool reads the video, knows the rules, counts, checks and builds the overview.
 
@@ -114,6 +114,7 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - Several picks from one list (platforms): checkboxes and one button.
 - Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out: ask again for that group only. One question after the other only when it depends on the answer before, or on work the person should see first.
 - Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
 - The button that moves on gets `:class "primary"`; alternative answers (the styles) stay plain.
 - Never a token, a path of `descriptions/` or a raw error in the chat.
 

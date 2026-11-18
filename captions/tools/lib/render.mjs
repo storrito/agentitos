@@ -18,12 +18,21 @@ const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 // (see writeCaptions); null when it has none and the style's own transform will do.
 const NUMBER_LETTER = /^([^\p{L}\d]*\d[\d.,:]*)(\p{Ll})[^\p{L}\d]*$/u;
 const ENDING = /(?<=\p{L}[:*·]\u00AD?)(?:innen|in|r|e|n)(?!\p{L})|(?<=\p{L}\/\u00AD?)(?:innen|in)(?!\p{L})|(?<=\p{L}_\u00AD?)innen(?!\p{L})/gu;
+// A capital I inside a word is a gender mark too ("GeneralistInnen", "LehrerIn"), and the only
+// one that capitals swallow whole: there it is the one small letter, "GENERALISTiNNEN". Before
+// "nnen" always ("LehrerInnenzimmer" too); before a single "n" at the word's end only after an
+// ending a person's noun has ("LehrerIn", "KollegIn", "ÄrztIn", "KandidatIn"), never after any
+// other: "LinkedIn", "PlugIn", "LogIn", "StandIn" and "ChatIn" are no such words, and a mark
+// missed ("LEHRERIN") costs less than a name spoilt ("LINKEDiN"). A soft hyphen may stand before it.
+const INNER_I = /(?<=\p{Ll}­?)I(?=nnen)|(?<=(?:er|or|ent|ant|ist|eur|[dmrkbi]at|är|eg|ert|und|eut|olog|agog|gra(?:f|ph)|ilot|zt|hef|amt|ält)­?)I(?=n(?!\p{L}))/gu;
 function capitals(text) {
-  const keep = [...text.matchAll(ENDING)].map((m) => [m.index, m.index + m[0].length]), letter = NUMBER_LETTER.exec(text);
-  if (letter) keep.push([letter[1].length, letter[1].length + letter[2].length]);
+  // [from, to, what stands there]: what is kept as it is written, and the inner I as a small one
+  const keep = [...text.matchAll(ENDING)].map((m) => [m.index, m.index + m[0].length, m[0]]), letter = NUMBER_LETTER.exec(text);
+  if (letter) keep.push([letter[1].length, letter[1].length + letter[2].length, letter[2]]);
+  for (const m of text.matchAll(INNER_I)) keep.push([m.index, m.index + 1, "i"]);
   if (!keep.length) return null;
   let out = "", at = 0;
-  for (const [from, to] of keep.sort((a, b) => a[0] - b[0])) { out += text.slice(at, from).toUpperCase() + text.slice(from, to); at = to; }
+  for (const [from, to, small] of keep.sort((a, b) => a[0] - b[0])) { out += text.slice(at, from).toUpperCase() + small; at = to; }
   return out + text.slice(at).toUpperCase();
 }
 
@@ -130,7 +139,10 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   const inset = style.motion.active === "color-scale" && look.grow > 1 ? Math.ceil(((look.grow - 1) / 2) * area.maxWidth) : 0;
   // (what a group keeps at its sides is no room for a word: a box's padding, a pill's overhang, the room to grow)
   const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : look.pill ? 2 * PILL.pull * area.type : 2 * inset)) / area.type;
-  const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: (text, w) => type.word(text, !!w?.highlight) } } : style.group;
+  // (a style of one word at a time, `brief`, is measured wherever it stands: words that share a
+  // caption must set in its one line at nearly the style's size, or fit() would shrink them to 60 %)
+  const fitted = type || (style.group.brief ? measure(style.look) : null);
+  const group = fitted ? { ...style.group, fit: { lines: area.lines, room, space: fitted.space, word: (text, w) => fitted.word(text, !!w?.highlight) } } : style.group;
 
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
   // carries `icon`, its numbers in the key colour
@@ -149,7 +161,8 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // or a house number, when the word is a number with one small letter at its end ("§ 202a",
   // "12b,", "5m": not "b2b", "5m/s" or "3d-druck"), and a gender ending after its mark
   // ("Generalist:innen", "Lehrer*in", "jede:r", "Lehrer·innen"; after a slash or an underscore
-  // only the unmistakable ones, "Mitarbeiter/innen", not "und/oder" or a handle "@name_in").
+  // only the unmistakable ones, "Mitarbeiter/innen", not "und/oder" or a handle "@name_in"; an
+  // inner capital I as a small one, "GENERALISTiNNEN").
   // Such a word is written into the file in its capitals and is not transformed again (`own`);
   // the caller is told which (`small`).
   const small = [];

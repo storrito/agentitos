@@ -153,7 +153,7 @@ async function cmdRead([video, dir], opts) {
     if (!transcribeTool()) fail(`${NEEDS_TRANSCRIBE} Or give the words with --words <words.json>, or --no-words for a video without speech.`);
     console.log("Transcribing (ElevenLabs Scribe through OpenRouter) …");
     try { words = (await transcribeFile(video, { log: (s) => console.log(s) })).words; }
-    catch (e) { fail(`${e.message.split("\n")[0]} Or give the words with --words <words.json> (rragent's transcribe tool, the captions skill), or --no-words for a video without speech.`); }
+    catch (e) { fail(`${e.message.split("\n")[0]} Or give the words with --words <words.json> (agentitos' transcribe skill, the captions skill), or --no-words for a video without speech.`); }
     fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify({ words }, null, 1));
     source = "ElevenLabs Scribe";
   }

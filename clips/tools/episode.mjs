@@ -237,9 +237,10 @@ function cut(dir, a, b, c) {
   }
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
   if (episode.file) {
-    // from the person's file, up to 4K like a download; cut anew, not copied, so it starts on the word
+    // from the person's file, up to 4K like a download; cut anew, not copied, so it starts on the
+    // word; without the file's tags (a phone's video names the place it was recorded at)
     execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", from.toFixed(2), "-i", episode.file, "-t", (to - from).toFixed(2),
-      "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+      "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "-1", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", `${base}.mp4`], { stdio: ["ignore", "inherit", "inherit"] });
     fs.writeFileSync(`${base}.json`, JSON.stringify({ file: episode.file, from: +from.toFixed(2), to: +to.toFixed(2) }));
     console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: the skill that edits it (kinetic-lyrics: short.mjs new <short> ${base}.mp4).`);
