@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, edgeWindow, edgesPrompt, applyEdges, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -288,4 +288,41 @@ test("the payoff is a sentence of the moment and is never dropped", () => {
   assert.deepEqual(m.drop, [4]);
   assert.equal(arrange({ moments: [moment(1, 7, { payoff: 9 })] }, INTERVIEW)[0].payoff, null);
   assert.equal(arrange({ moments: [moment(2, 7, { payoff: 1 })] }, INTERVIEW)[0].payoff, null);
+});
+
+test("the edges pass sees the sentences two minutes around a moment", () => {
+  const long = transcript(Array.from({ length: 40 }, (_, k) => [10, k % 2 ? "A" : "B", `Sentence ${k}.`]));
+  const [m] = arrange({ moments: [moment(20, 21)] }, long);
+  assert.deepEqual(edgeWindow(long, m), [8, 33]);
+  const p = edgesPrompt({ title: "Show", channel: "Chan" }, long, { ...m, payoff: 21 }, 59);
+  assert.ok(p.startsWith("8 [1:21–1:31] B: Sentence 8.\n"));
+  assert.ok(p.includes("\n33 [5:36–5:46] A: Sentence 33.\nThese are the sentences around a moment"));
+  assert.match(p, /The moment is sentences 20 to 21: "t" \(w\)\./);
+  assert.match(p, /A short may be up to 59 seconds; the passage takes what it takes, up to 100\./);
+  assert.match(p, /or sentence 21 \(its strongest line\)/);
+});
+
+test("the edges pass moves only edges, into no other moment, and says why in a word", () => {
+  const ms = arrange({ moments: [moment(2, 7, { opens: 9 }), moment(8, 9, { opens: 5 })] }, INTERVIEW, { limit: 90 });
+  // the first wants its question and the second moment's sentences: it gets the question only
+  const out = applyEdges(ms, [{ first: 1, last: 9, drop: [], start: "question", end: "follow-up answer" }, { first: 8, last: 9, drop: [], start: "kept", end: "kept" }], INTERVIEW, { limit: 90 });
+  assert.deepEqual(out.map((m) => [m.first, m.last, m.edges]), [[1, 7, { start: "question", end: "kept" }], [8, 9, { start: "kept", end: "kept" }]]);
+  assert.equal(out[0].start, 7);
+  assert.equal(out[0].opening, undefined, "links and openings are the command's");
+  // over the limit: the marked sentences of the pass are kept, the checks counted anew
+  const [over] = applyEdges(ms.slice(0, 1), [{ first: 1, last: 7, drop: [4, 5], start: "question", end: "kept" }], INTERVIEW, { limit: 59 });
+  assert.deepEqual([over.drop, over.checks.over, over.kept], [[4, 5], 12, 54]);
+  // a shorter passage: the edges move in
+  const [inner] = applyEdges(ms.slice(0, 1), [{ first: 3, last: 6, drop: [], start: "later", end: "earlier" }], INTERVIEW, { limit: 90 });
+  assert.deepEqual([inner.first, inner.last, inner.edges], [3, 6, { start: "later", end: "earlier" }]);
+  // an answer outside the sentences shown, backwards, or missing leaves the moment as it was
+  const long = transcript(Array.from({ length: 40 }, (_, k) => [10, k % 2 ? "A" : "B", `Sentence ${k}.`]));
+  const [far] = arrange({ moments: [moment(20, 21)] }, long);
+  for (const e of [{ first: 2, last: 21 }, { first: 21, last: 20 }, null]) assert.deepEqual(applyEdges([far], [e], long)[0], far);
+});
+
+test("two moments that both reach for the sentences between them: the one ranked first gets them", () => {
+  const ms = arrange({ moments: [moment(2, 3, { opens: 9 }), moment(6, 7, { opens: 5 })] }, INTERVIEW, { limit: 90 });
+  const out = applyEdges(ms, [{ first: 2, last: 5, drop: [], start: "kept", end: "lesson" }, { first: 4, last: 7, drop: [], start: "setup", end: "kept" }], INTERVIEW, { limit: 90 });
+  assert.deepEqual(out.map((m) => [m.first, m.last, m.edges.start, m.edges.end]), [[2, 5, "kept", "lesson"], [6, 7, "kept", "kept"]]);
 });

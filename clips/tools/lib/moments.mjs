@@ -267,3 +267,71 @@ export function listing({ limit, count, inventory, moments: picked, ideas }, sen
   if (ideas.length) lines.push(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
   return lines.join("\n");
 }
+
+// ---------------------------------------------------------------- edges
+// The second, local pass: for each chosen moment the model reads only the sentences around it
+// (EDGE_WINDOW seconds before and after) and moves its edges to where the passage begins and
+// ends; it does not choose. One small call per moment.
+export const EDGE_WINDOW = 120;
+
+// the sentences around a moment, numbered as in sentences.txt: [from, to] indexes
+export function edgeWindow(sentences, m, around = EDGE_WINDOW) {
+  let from = m.first, to = m.last;
+  while (from > 0 && sentences[from - 1].end > m.start - around) from--;
+  while (to < sentences.length - 1 && sentences[to + 1].start < m.end + around) to++;
+  return [from, to];
+}
+
+export function edgesPrompt(episode, sentences, m, limit) {
+  const [from, to] = edgeWindow(sentences, m);
+  const lines = [];
+  for (let k = from; k <= to; k++) {
+    const s = sentences[k];
+    lines.push(`${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`);
+  }
+  const cap = longest(limit);
+  return `${lines.join("\n")}
+These are the sentences around a moment picked for a vertical short from "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line: \`<number> [<from>–<to>] <voice>: <words>\`. The moment is sentences ${m.first} to ${m.last}: "${m.title}" (${m.why}).
+
+Find where this passage begins and ends. Move only its edges; the topic stays the same.
+- Start: at the question or the set-up that opens this topic, the first of several questions on it, with the line its asker needs to set it up; a story or a claim nobody asked for at its own first sentence. Not at an answer without its question, not on the punchline, not in the middle of a thought.
+- End: after the last beat on this topic: the lesson after the story, the answer to a follow-up question on the same topic, the callback that tops the joke; before the talk turns to another topic. Not after the first laugh or the first finished thought when the same topic goes on.
+- An edge that is right already stays where it is.
+
+A short may be up to ${limit} seconds; the passage takes what it takes, up to ${cap}. When it is longer than ${limit} seconds, list in drop the sentences inside it that an editor would cut to bring it to ${limit} or under: an aside, a repetition, a detour, people talking at once; never its first or last sentence, the question, a step the story needs${m.payoff != null ? `, or sentence ${m.payoff} (its strongest line)` : ""}. Else drop is empty.
+
+Answer first, last, drop, and in one word each why the start and the end are where they are: start "kept", "question", "setup", "earlier" or "later"; end "kept", "lesson", "follow-up", "callback", "earlier" or "later".`;
+}
+
+export const EDGES_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["first", "last", "drop", "start", "end"],
+  properties: { first: { type: "integer" }, last: { type: "integer" }, drop: { type: "array", items: { type: "integer" } }, start: { type: "string" }, end: { type: "string" } },
+};
+
+// The moments with the edges the second pass gave (`edges[i]` for `moments[i]`, null where the
+// call failed: that moment stays as it was). An edge moves only within the sentences shown to
+// the model and never into another moment: every moment keeps its own sentences, and one ranked
+// higher grows first into what lies between. At most longest(limit) seconds, the end trimmed as
+// in arrange. A moved edge is said in `edges: { start, end }` (the model's word, or "kept").
+export function applyEdges(moments, edges, sentences, { limit = MAX_SECONDS } = {}) {
+  const owner = new Map();
+  moments.forEach((m, i) => { for (let k = m.first; k <= m.last; k++) owner.set(k, i); });
+  const free = (k, i) => k >= 0 && k < sentences.length && (!owner.has(k) || owner.get(k) === i);
+  return moments.map((m, i) => {
+    const e = edges[i];
+    if (!e) return m;
+    const [from, to] = edgeWindow(sentences, m);
+    const want = [Math.round(Number(e.first)), Math.round(Number(e.last))];
+    if (!(want[0] >= from && want[1] <= to && want[0] <= want[1])) return m;
+    let first = m.first, last = m.last;
+    if (want[0] < first) while (first > want[0] && free(first - 1, i)) first--;
+    else first = Math.min(want[0], m.last);
+    if (want[1] > last) while (last < want[1] && free(last + 1, i)) last++;
+    else last = Math.max(want[1], first);
+    while (last > first && sentences[last].end - sentences[first].start > longest(limit)) last--;
+    for (let k = first; k <= last; k++) owner.set(k, i);
+    const word = (w, moved) => (moved ? String(w || "moved").split(/\s+/)[0].toLowerCase() : "kept");
+    const shaped = shape({ ...m, drop: Array.isArray(e.drop) ? e.drop : [] }, first, last, sentences, limit, { opens: m.opens, asked: m.checks?.asked ?? null });
+    return { ...m, ...shaped, edges: { start: word(e.start, first !== m.first), end: word(e.end, last !== m.last) } };
+  });
+}
