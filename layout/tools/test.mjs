@@ -1333,6 +1333,14 @@ t("in 16:9 the column goes to the side from which the speaker looks at the mater
   ok(r.material.field[0] + r.material.field[2] <= r.speaker.field[0] && m.why.some((w) => /tells no look/.test(w)), JSON.stringify([r.material.field, r.speaker.field]));
 });
 
+t("in 16:9 the column's side can be fixed (beside.side) and the captions left where they stand (beside.captions=stay: across the frame's foot, over the column too), as b-roll does it; the material then ends above them; a wrong value is one sentence", () => {
+  const c = beside(Z169, { set: { "beside.side": "right", "beside.captions": "stay" } }).candidates[0];
+  ok(c.fit === "beside-column" && c.side === "right" && c.captions.where === "stay" && Math.abs(c.captions.box[0] + c.captions.box[2] / 2 - 960) < 1 && c.material.field[1] + c.material.field[3] <= c.captions.box[1] - 23 && !c.hard, JSON.stringify([c.side, c.captions, c.material.field, c.problems]));
+  ok(c.why.some((w) => /as asked \(beside\.side\)/.test(w)), c.why.join(" | "));
+  const e = cli("beside", path.join(OUT, "beside-side"), "--frame", "16:9", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--set", "beside.side=up");
+  sentence(e, "beside.side=up"); ok(/look, left or right/.test(e.stderr), e.stderr);
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {
