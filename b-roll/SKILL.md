@@ -44,13 +44,13 @@ The person attaches a video and perhaps pictures and clips; their message names 
 1. **The words.** Say in one sentence that you are listening to the video. `node <skill>/tools/broll.mjs words uploads/<file> broll/<name>`. Fix a misheard name in `broll/<name>/words.json` yourself, keeping the times.
 2. **The brief.** `node <skill>/tools/broll.mjs brief broll/<name>/words.json broll/<name> [uploads/<picture> …]` (every picture and clip the person brought). Read `broll/<name>/brief.md`, all of it.
 3. **The material.** For each moment worth showing, find the thing: among the uploads; a page or a post with `shot` (the links in the person's message, their website from `brand/DESIGN.md`); a number. Look at every picture you took (`Read` it): a banner still in the way, a login wall, a site's notice that it blocks automated visits, an error page or an empty page is no b-roll; take it again (`--from`, `--desktop`), or ask the person for a screenshot of it.
-4. **The plan.** Write `broll/<name>/broll.json` as the brief says, with a `"why"` for every beat.
+4. **The plan.** Write `broll/<name>/broll.json` as the brief says, with a `"why"` for every beat. A number or a page shows beside the person (`"fit": "beside"`: the material above, the person below, or at the left of a wide frame), so the person stays in view; `"fill"` only for a cutaway that is the point (their footage, a photo). Take a page's part that matters (`shot … --height 400`). For beats beside the person give the face once: `node <skill>/tools/broll.mjs face uploads/<file> broll/<name>/face.jpg`, read the box off its grid and write what it prints at the top of `broll.json`: `"face": [x, y, w, h]` (forehead to chin, the video's own px) and `"source"`.
 5. **The preview.** Make the project once, with the `project` tool: `create`, name `<name>`, kind `hyperframes`. Then
    ```bash
    node <skill>/tools/broll.mjs project uploads/<file> broll/<name>/broll.json broll/<name>/words.json artifacts/<name>/composition [--captions <style>] [--platform reels,tiktok]
    node <skill>/tools/broll.mjs sheet artifacts/<name>/composition --out broll/<name>/sheet.jpg
    ```
-   `project` builds the video with its b-roll (and captions, when the person wants them; the styles are agentitos' captions'); it lists every beat and warns (⚠). `sheet` takes the preview at every beat: a row each, just before it, its middle, just after it. **Look at the sheet** row by row: the middle shows the thing the words name, whole where it must be, nothing to be read under the captions; no watermark, burned-in subtitles or stranger's name; before and after, the face or the next beat. Fix what is wrong in `broll.json` and run both again; fix a ⚠ unless you have a reason not to.
+   `project` builds the video with its b-roll (and captions, when the person wants them; the styles are agentitos' captions'); it lists every beat and warns (⚠). `sheet` takes the preview at every beat: a row each, just before it, its middle, just after it. **Look at the sheet** row by row: the middle shows the thing the words name, whole where it must be, nothing to be read under the captions; no watermark, burned-in subtitles or stranger's name; before and after, the face or the next beat; beside the person, their face whole in its field, not under the apps' buttons. Fix what is wrong in `broll.json` and run both again; fix a ⚠ unless you have a reason not to.
 6. **Ask whether it is right.** One message: the beats as a list, each with its time, what is said, what shows (a small picture of it) and the why, a checkbox each, all ticked (they are your proposal); one button that keeps the ticked ones (primary, its `:send` with `{checked}`), the button that shows the preview, and a line that they can type what to change. Name, in one sentence, a moment that would gain from their own material ("a photo of your shop would fit at 0:12"). Do not show them the sheet.
 7. **Changes.** Change `broll.json` and run `project` and `sheet` again, then ask again in one sentence. Typical wishes:
 
@@ -60,6 +60,8 @@ The person attaches a video and perhaps pictures and clips; their message names 
    | "Longer" / "shorter at 0:20" | `"until"` a later or earlier word, or `"seconds"` |
    | "Earlier" / "later" | `"at"` another word (never before the word that names it) |
    | "Show all of it" / "it is cut off" | `"fit": "whole"` |
+   | "Full screen" / "bigger" | `"fit": "fill"` (a number: a card over the whole frame) |
+   | "I'm gone" / "keep me in" | `"fit": "beside"` |
    | "I can't read it" | `"fit": "read"`, or a narrower `shot` (the part that matters) |
    | uploads a picture for a moment | a beat with it at that moment's word |
    | "No source" / "with source" | `"credit"` out or in |
@@ -75,7 +77,7 @@ best-takes (and clips, which cuts through best-takes) offers b-roll once the per
 
 ```bash
 node <skill>/tools/broll.mjs brief takes/<name>/edit.json takes/<name>/broll [uploads/<picture> …]
-# take pages and posts with `shot`, look at them, write takes/<name>/broll/broll.json
+# take pages and posts with `shot`, look at them; `face takes/<name>/source/<take>.mp4 takes/<name>/broll/face.jpg` for "face" and "source"; write takes/<name>/broll/broll.json
 node <best-takes>/tools/takes.mjs broll takes/<name> takes/<name>/broll/broll.json
 node <skill>/tools/broll.mjs sheet artifacts/<name>/composition --out takes/<name>/broll/sheet.jpg
 ```
