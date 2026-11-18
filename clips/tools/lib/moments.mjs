@@ -155,12 +155,12 @@ export function keepsWithout(words, said, spans = []) {
 }
 
 // The keep that opens a short with its strongest line spoken, from the line's words in the clip
-// ({ i, text }, as best-takes numbers them): past an "and", "so" it begins with (a short never
-// opens on one), and with "again", so that best-takes also plays the line where it was said.
+// ({ i, text }, as best-takes numbers them), with "again", so that best-takes also plays the line
+// where it was said. It starts on the line's first word even when that is an "and": past it, a
+// short word fused with it is lost ("and I put them in" played as "put them in" in a run, the
+// caption still showing "I"); whether to start later is the agent's, by ear.
 export function openingKeep(line) {
-  let k = 0;
-  while (k < line.length - 1 && CONJUNCTIONS.has(firstWord(line[k].text)) && /^[\p{L}]+[,]?$/u.test(line[k].text)) k++;
-  const a = line[k].i, b = line.at(-1).i;
+  const a = line[0].i, b = line.at(-1).i;
   return { words: a === b ? `${a}` : `${a}-${b}`, why: "the strongest line first", again: true };
 }
 
