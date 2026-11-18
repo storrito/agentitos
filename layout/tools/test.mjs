@@ -216,8 +216,9 @@ t("16:9: the whole take as a panel on the left passes, text beside it", () => {
   const hk = c.text.find((q) => q.role === "hook"), cp = c.text.find((q) => q.role === "caption");
   side("P1 16:9, hook + 2 caption lines", "panel 607.5×1080 left; hook 112 px from x 704; captions x 704, bottom 930", `panel ${c.window[2]}×${c.window[3]} ${c.side}; hook ${hk.font} px from x ${hk.box[0]}; captions x ${cp.box[0]}, bottom ${cp.box[1] + cp.box[3]}`);
   if (!QUICK) { const v = verify(c, res, "p1-169-panel"); ok(v.r.ok, "the checker fails the panel"); ok(v.cmp.agree, `solver and checker differ: ${JSON.stringify(v.cmp)}`); }
-  const alone = run1(Z169, [cap(1)]).candidates[0];
-  ok(alone.fit === "panel" && !alone.hard && !alone.unmet.length, "the panel with one caption line fails");
+  // (with the hand's small type the take in the middle, a little smaller, may stand before it)
+  const alone = run1(Z169, [cap(1)]).candidates.find((q) => q.fit === "panel");
+  ok(alone && !alone.hard && !alone.unmet.length, "the panel with one caption line fails");
 });
 
 if (!QUICK) t("solver and checker give the same verdict on the eight hand pages, and it is the one the hand wrote down", () => handVerdicts("p1"));
@@ -577,6 +578,13 @@ t("closer in also from a source of the frame's shape with pixels to spare (4K in
   const S = Z916.safe, side = (f) => DEFAULTS.free.beside * f[2];
   ok(walk && walk.faceInFrame.every((f) => f[0] - side(f) >= S[0] - 0.5 && X1(f) + side(f) <= X1(S) + 0.5), `the walking pair: ${walk && walk.faceInFrame.map((f) => f.map(Math.round)).join(" | ")}`);
   return `16:9 ${wide.scale}×, 9:16 ${up.scale}×; the pair ${walk.scale}×`;
+});
+
+t("the upright take in the middle of 16:9 is also tried smaller, as the panel is: with the face low in the take (an independent review's input) the one scale tried left it under YouTube's controls; a smaller one passes", () => {
+  const res = solve({ zones: Z169, source: [1080, 1920], faces: [[380, 1300, 320, 400]], needs: [cap(1)] });
+  const mid = res.candidates.filter((c) => c.fit === "inset" && Math.abs(c.window[0] + c.window[2] / 2 - 960) < 1);
+  ok(mid.some((c) => !c.hard && !c.unmet.length), `the picture in the middle: ${mid.map((c) => `${c.scale} ${JSON.stringify(c.problems)}`).join(" | ")}`);
+  return mid.map((c) => `${nameOf(c)} ${c.hard ? "✗" : "passes"}`).join(", ");
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {

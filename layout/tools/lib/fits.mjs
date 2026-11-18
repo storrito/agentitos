@@ -220,7 +220,7 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       // picture in the middle, the sides filled with ground, the captions over its bottom (as an
       // upright clip stands in a wide video)
       scanDown("panel", sc, D.panelMin, "inside", "inside", { sides: true });
-      out.push(bestVariant(ctx, "inset", sc, "inside", "inside", { centre: true }));
+      scanDown("inset", sc, D.panelMin, "inside", "inside", { centre: true });
     }
     else {
       // an upright source in a frame less upright (4:5, 1:1): between covering and whole, the
