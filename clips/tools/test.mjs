@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, lengthNote, OPENING_LONGEST, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, checkNotes, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
@@ -420,4 +421,58 @@ test("prepare refuses a limit that is no length of a short, before anything is c
   assert.match(r.stdout, /^--max-seconds 5: how long the short may be, 15 to 600 seconds/);
   assert.ok(!fs.existsSync(path.join(dir, "01")));
   fs.rmSync(dir, { recursive: true });
+});
+
+// moments against a stand-in for OpenRouter that answers `content` (the reviewer's stub inputs)
+async function momentsWith(content, { finish = "stop", count = 3 } = {}) {
+  let calls = 0;
+  const server = http.createServer((req, res) => {
+    let body = ""; req.on("data", (c) => (body += c)); req.on("end", () => {
+      res.setHeader("Content-Type", "application/json");
+      if (req.url.endsWith("/key")) return res.end("{}");
+      calls++;
+      res.end(JSON.stringify({ choices: [{ message: { content }, finish_reason: finish }], usage: { cost: 0.01 } }));
+    });
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-moments-"));
+  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify({ title: "t", channel: "c", duration: 600 }));
+  fs.writeFileSync(path.join(dir, "sentences.json"), JSON.stringify(INTERVIEW));
+  fs.writeFileSync(path.join(dir, "sentences.txt"), INTERVIEW.map((s, k) => `${k} ${s.speaker}: ${s.text}`).join("\n") + "\n");
+  const child = spawn(process.execPath, [path.join(HERE, "episode.mjs"), "moments", dir, "--count", String(count)],
+    { env: { ...process.env, OPENROUTER_API_KEY: "test", OPENROUTER_BASE_URL: `http://127.0.0.1:${server.address().port}` } });
+  let out = "", err = "";
+  child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (err += d));
+  const status = await new Promise((ok) => child.on("close", ok));
+  server.close(); fs.rmSync(dir, { recursive: true });
+  return { status, out, err, calls };
+}
+const INVENTORY = (n) => Object.fromEntries(KINDS.map((k, i) => [k, i === 0 ? n : 0]));
+const answer = (moments, n = 9) => JSON.stringify({ inventory: INVENTORY(n), moments, ideas: [] });
+
+test("moments: an answer that is no answer is an error that says what to do, never a thin episode or a stack trace", async () => {
+  for (const content of [null, "Here are the moments you asked for: 1-7 is great.", '{"inventory":{"claim":3},"moments":[{"first":1,"last":7,"kind":"st', "[]"]) {
+    const r = await momentsWith(content, { finish: typeof content === "string" && content.startsWith('{"inv') ? "length" : "stop" });
+    assert.equal(r.status, 1, String(content));
+    assert.match(r.out, /^Picking the moments failed \(the model gave no list of moments twice .*\): run moments again in a few minutes; when it fails again, tell the person/);
+    assert.doesNotMatch(r.out + r.err, /TypeError|read sentences\.txt yourself|too thin/);
+    assert.equal(r.calls, 2, "tried once more, not three times");
+  }
+  // an empty list where the model counted plenty is no answer either
+  const none = await momentsWith(answer([]));
+  assert.equal(none.status, 1);
+  assert.match(none.out, /^The model listed no moments although it counted 9 pieces in the episode .*: that is no answer, not a thin episode; run moments again/);
+  // every moment out of the episode
+  const out = await momentsWith(answer([{ ...moment(5000, 5010), opens: 7 }]));
+  assert.equal(out.status, 1);
+  assert.match(out.out, /^None of the model's 1 moments is a range of this episode's sentences \(0–9\)/);
+});
+
+test("moments: a thin episode is said as one, and fewer moments than asked are said", async () => {
+  const thin = await momentsWith(answer([], 1));
+  assert.equal(thin.status, 0);
+  assert.match(thin.out, /too thin for many clips/);
+  const few = await momentsWith(answer([{ ...moment(1, 3), opens: 7 }]), { count: 3 });
+  assert.equal(few.status, 0);
+  assert.match(few.err, /the model gave 1 moments that hold, of the 3 asked for/);
 });

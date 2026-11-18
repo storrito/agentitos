@@ -334,10 +334,23 @@ function momentsOptions(rest) {
   return opts;
 }
 
-// one call to the model with a JSON schema, tried three times; → { answer, cost } or a throw
-async function ask(or, prompt, name, schema, timeout = 300e3) {
+// what to do when the model cannot pick: the moments need it (SKILL.md: never read sentences.txt
+// yourself), so try again later and tell the person when it still fails
+const AGAIN = "run moments again in a few minutes; when it fails again, tell the person the moments cannot be picked right now";
+
+// The model's answer when it is one: an object with a list of moments; else null
+export function answerOf(content) {
   let j;
-  for (let attempt = 1; ; attempt++) {
+  try { j = JSON.parse(String(content ?? "").replace(/^```(json)?\s*|\s*```$/g, "")); } catch { return null; }
+  return j && typeof j === "object" && !Array.isArray(j) && Array.isArray(j.moments) ? j : null;
+}
+
+// one call to the model with a JSON schema: an error of the request tried three times, an answer
+// that is no answer (text, JSON cut off, null, a bare list) once more at once; → { answer, cost }
+// or a throw. `cost` counts every attempt.
+async function ask(or, prompt, name, schema, timeout = 300e3) {
+  let j, cost = 0;
+  for (let attempt = 1, empty = 0; ; attempt++) {
     try {
       const res = await fetch(`${or.base}/chat/completions`, {
         method: "POST",
@@ -347,11 +360,20 @@ async function ask(or, prompt, name, schema, timeout = 300e3) {
         signal: AbortSignal.timeout(timeout),
       });
       j = await res.json();
-      if (res.ok && j.choices) return { answer: JSON.parse(String(j.choices[0].message.content).replace(/^```(json)?\s*|\s*```$/g, "")), cost: j.usage?.cost ?? 0 };
+      if (res.ok && j.choices) {
+        cost += j.usage?.cost ?? 0;
+        const answer = answerOf(j.choices[0]?.message?.content);
+        if (answer) return { answer, cost };
+        const cut = j.choices[0]?.finish_reason === "length";
+        if (++empty >= 2) throw Object.assign(new Error(`the model gave no list of moments twice (${cut ? "its answer was cut off" : "an answer that is not one"}, $${cost.toFixed(4)})`), { final: true });
+        log(`episode: the model's answer was no list of moments${cut ? " (cut off)" : ""}, once more …`);
+        attempt--;
+        continue;
+      }
       throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(j).slice(0, 300)}`);
     } catch (e) {
       if (rejectedIn(e.message)) fail(REJECTED(`${rejectedIn(e.message)}${j?.error?.message ? " " + j.error.message : ""}`));
-      if (attempt >= 3) throw e;
+      if (e.final || attempt >= 3) throw e;
       log(`episode: ${e.message}, again …`);
       await new Promise((r) => setTimeout(r, attempt * 5000));
     }
@@ -375,7 +397,7 @@ async function moments(dir, ...rest) {
   if (!dir) fail(USAGE);
   const given = momentsOptions(rest);
   const or = await openrouter();
-  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): read sentences.txt yourself and pick the moments.");
+  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): the moments are picked by a model, so nothing can be cut without it; say so.");
   const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
   const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
   const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
@@ -383,9 +405,15 @@ async function moments(dir, ...rest) {
   const limit = given.limit ?? MAX_SECONDS;
   log(`episode: picking moments (${MOMENTS_MODEL}) …`);
   let r;
-  try { r = await ask(or, momentsPrompt(episode, text, count, limit), "moments", MOMENTS_SCHEMA); } catch (e) { fail(`Picking the moments failed (${e.message}): read sentences.txt yourself.`); }
+  try { r = await ask(or, momentsPrompt(episode, text, count, limit), "moments", MOMENTS_SCHEMA); } catch (e) { fail(`Picking the moments failed (${e.message}): ${AGAIN}.`); }
   const { answer } = r;
+  const listed = answer.moments.length;
+  const pieces = Object.values(answer.inventory || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+  // no moments is a thin episode only when the model also found little in it
+  if (!listed && pieces >= 4) fail(`The model listed no moments although it counted ${pieces} pieces in the episode ($${r.cost.toFixed(4)}): that is no answer, not a thin episode; ${AGAIN}.`);
   const picked = withLinks(arrange(answer, sentences, { limit }), sentences, episode);
+  if (listed && !picked.length) fail(`None of the model's ${listed} moments is a range of this episode's sentences (0–${sentences.length - 1}) ($${r.cost.toFixed(4)}): ${AGAIN}.`);
+  if (picked.length < count) log(`episode: the model gave ${picked.length} moments that hold, of the ${count} asked for${listed > picked.length ? ` (${listed - picked.length} overlapped another or named no sentences of the episode)` : ""}.`);
   const ideas = (answer.ideas || []).map((d) => ({ ...d, sentences: (d.sentences || []).filter((k) => sentences[k]),
     at: (d.sentences || []).filter((k) => sentences[k]).map((k) => mmss(sentences[k].start)) }));
   const j = { limit, count, inventory: answer.inventory || {}, moments: picked, ideas };
