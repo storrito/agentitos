@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, checkNotes, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -166,7 +166,7 @@ test("each moment carries the checks the tool counts, an exchange is a kind of i
   const [m] = arrange({ moments: [moment(1, 7, { kind: "exchange" })] }, INTERVIEW);
   assert.equal(m.kind, "exchange");
   assert.ok(KINDS.includes("exchange"));
-  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null, stays: [] });
+  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null, stays: [], refused: [], trimmed: null });
   assert.equal(arrange({ moments: [moment(2, 3, { kind: "banter" })] }, INTERVIEW)[0].kind, "claim");
   // shape: the same moment over other sentences keeps what still fits
   const wider = shape({ ...m, drop: [4, 5] }, 1, 8, INTERVIEW, 59);
@@ -379,4 +379,17 @@ test("an aside of another voice inside a dropped sentence goes with it; a piece 
   assert.deepEqual(r.folded.map((w) => w.text), ["Um."]);
   assert.equal(r.keeps.length, 2);
   assert.match(dropNote(r.plan, r.gone, r.folded, r.keeps, t), /and between two cuts \d+ "Um\." \(too short to stand alone\)/);
+});
+
+test("a passage trimmed to 1.7 times the limit says so, and of its payoff; a drop of more than half of it is not taken", () => {
+  // INTERVIEW 1-9 runs about 104 s; at a limit of 40 at most 68 s are returned
+  const [m] = arrange({ moments: [moment(1, 9, { payoff: 9 })] }, INTERVIEW, { limit: 40 });
+  assert.ok(m.last < 9 && m.payoff == null);
+  assert.deepEqual(m.checks.trimmed, { from: 9, payoff: 9 });
+  assert.match(checkNotes(m, 40), new RegExp(`the model's passage ran to sentence 9, over 68 s: its end was cut back to ${m.last}; read where it really ends, the strongest line it named \\(9\\) lies past it`));
+  assert.equal(arrange({ moments: [moment(1, 3)] }, INTERVIEW, { limit: 40 })[0].checks.trimmed, null);
+  // 1-7 is 75 s; dropping 3-6 would take 46 s of it
+  const [all] = arrange({ moments: [moment(1, 7, { drop: [3, 4, 5, 6] })] }, INTERVIEW, { limit: 59 });
+  assert.deepEqual([all.drop, all.checks.refused, all.kept], [[], [3, 4, 5, 6], all.seconds]);
+  assert.match(checkNotes(all, 59), /the model marked 3-6 to drop, more than half of it: not taken/);
 });

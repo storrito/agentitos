@@ -289,10 +289,11 @@ export function arrange(answer, sentences, { limit = MAX_SECONDS } = {}) {
     let floor = first;
     while (floor > 0 && !taken.has(floor - 1)) floor--;
     const q = questionStart(sentences, first, floor);
+    const given = last;
     while (last > first && sentences[last].end - sentences[first].start > longest(limit)) last--;
     if (sentences[last].end - sentences[first].start > longest(limit)) return [];
     for (let k = first; k <= last; k++) taken.add(k);
-    return [shape(m, first, last, sentences, limit, { asked: q !== first ? q : null, opens: opensOf(m) })];
+    return [shape(m, first, last, sentences, limit, { asked: q !== first ? q : null, opens: opensOf(m), trimmed: given })];
   }).sort((a, b) => a.first - b.first);
 }
 
@@ -305,15 +306,21 @@ export function shape(m, first, last, sentences, limit, more = {}) {
     ? [...new Set((Array.isArray(m.drop) ? m.drop : []).filter((k) => Number.isInteger(k) && k > first && k < last && k !== payoff))].sort((a, b) => a - b)
     : [];
   // what of the marked sentences can go: one another voice speaks over stays
-  const plan = dropPlan(sentences, first, last, marked);
+  let plan = dropPlan(sentences, first, last, marked);
+  // a drop that would take more than half of the passage leaves a few sentences of it, no
+  // passage (an 83 s passage became 13 s of three sentences): it is not taken, and said
+  let refused = [];
+  if (plan.spans.reduce((a, [from, to]) => a + to - from, 0) > (s1.end - s0.start) / 2) { refused = plan.cut; plan = dropPlan(sentences, first, last, []); }
   const drop = plan.cut;
   const gone = plan.spans.reduce((a, [from, to]) => a + to - from, 0);
-  const { asked = m.checks?.asked ?? null, opens = m.opens, ...rest } = more;
+  const { asked = m.checks?.asked ?? null, opens = m.opens, trimmed = null, ...rest } = more;
+  // the end the model gave, when the passage was longer than longest(limit) and its end was trimmed
+  const cutAt = trimmed != null && trimmed > last ? { from: trimmed, payoff: Number.isInteger(m.payoff) && m.payoff > last ? m.payoff : null } : null;
   return {
     first, last, kind: KINDS.includes(m.kind) ? m.kind : "claim", title: m.title || "", why: m.why || "",
     opens, payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
     start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds, kept: Math.round(s1.end - s0.start - gone),
-    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null, stays: plan.stays.map(([k]) => k) },
+    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null, stays: plan.stays.map(([k]) => k), refused, trimmed: cutAt },
     ...rest,
   };
 }
@@ -362,6 +369,8 @@ export function checkNotes(m, limit) {
     c.conjunction ? "opens on a conjunction in the middle of a turn: read the sentence before it" : null,
     c.voices > 1 ? `${c.voices} voices` : null,
     c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : null,
+    c.trimmed ? `the model's passage ran to sentence ${c.trimmed.from}, over ${longest(limit)} s: its end was cut back to ${m.last}; read where it really ends${c.trimmed.payoff != null ? `, the strongest line it named (${c.trimmed.payoff}) lies past it` : ""}` : null,
+    c.refused?.length ? `the model marked ${ranges(c.refused)} to drop, more than half of it: not taken` : null,
     c.stays?.length ? `marked to drop but another voice speaks over ${c.stays.length > 1 ? "them" : "it"}, so ${c.stays.length > 1 ? "they stay" : "it stays"}: ${ranges(c.stays)}` : null,
   ].filter(Boolean).join("; ");
 }
