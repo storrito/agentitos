@@ -11,6 +11,9 @@ import { groups, activeSpans, fold } from "./group.mjs";
 import { measure } from "./widths.mjs";
 
 export const ID = "captions";
+// a pill's padding left and right of its word, and how far a margin draws it back (em): what is
+// left, 2 × (pad − pull), is the room a word takes beyond its letters (widths.mjs counts it)
+export const PILL = { pad: 0.22, pull: 0.14 };
 const n = (x) => +x.toFixed(3);
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 
@@ -112,7 +115,7 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // box each line has (linePad), is no room for them. A phrase whose groups set keeps them, any
   // other is cut anew (group.mjs). Captions
   // that are only moved or aligned keep the style's groups.
-  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : 0)) / area.type;
+  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : look.pill ? 2 * PILL.pull * area.type : 0)) / area.type;
   const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: type.word } } : style.group;
 
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
@@ -132,7 +135,7 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // Where the caller placed them, the area holds a style's box whole, its padding too, whatever
   // box-sizing the host sets: the box counts with its padding, and the padding is no room for a
   // word (both go into the rule and into fit() of the script below).
-  const whole = place ? " box-sizing: border-box;" : "", padded = (place ? ' || el.classList.contains("boxed")' : "") + (look.lineBox ? ' || el.classList.contains("lined")' : "");
+  const whole = place ? " box-sizing: border-box;" : "", padded = (place ? ' || el.classList.contains("boxed")' : "") + (look.lineBox ? ' || el.classList.contains("lined")' : "") + (look.pill ? " || true" : "");
   // (a box around two lines is as wide as the area: centred that is even, at one side it would
   // stand out past its text; this goes into fit() too)
   const hug = area.align === "center" ? "" : `
@@ -157,7 +160,12 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   //             its key colour) and stays in look.color once it is said. A word shorter than
   //             the light-up is lit by its end, so two tweens never hold its colour at once
   //             (the colour would depend on where the timeline was sought from)
-  const rules = (look.lineBox ? `
+  //   pill      the word being said on a pill: every word has the pill's padding, drawn back by
+  //             a margin so that the pill reaches into the gaps instead of widening them (the
+  //             gaps were twice a word space); the group keeps the pill's overhang at a line's
+  //             ends inside its area
+  const rules = (look.pill ? `
+        #root .cap-group:not(.cap-card) { box-sizing: border-box; padding: 0 ${PILL.pull}em; }` : "") + (look.lineBox ? `
         #root .cap-group.lined { box-sizing: border-box; padding: 0 ${look.linePad[1]}em; margin-bottom: ${look.linePad[0]}em; }
         #root .cap-group.lined .cap-word { position: relative; }
         #root .cap-box { position: absolute; background: ${look.lineBox}; border-radius: ${look.lineRadius || "0.2em"}; }
@@ -221,7 +229,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
         #root .cap-icon { display: inline-block; margin-right: 0.3em; text-transform: none; font-weight: 400; }
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
           ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * area.grow)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
-          ${look.pill ? "padding: 0.04em 0.22em; border-radius: 0.28em;" : ""} transform-origin: 50% 60%; }${rules}
+          ${look.pill ? `padding: 0.04em ${PILL.pad}em; margin: 0 -${PILL.pull}em; border-radius: 0.28em;` : ""} transform-origin: 50% 60%; }${rules}
       </style>
       <div id="root" data-composition-id="${ID}" data-width="${width}" data-height="${height}"${duration ? ` data-duration="${n(duration)}"` : ""}></div>
       <script>

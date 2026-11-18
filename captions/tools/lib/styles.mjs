@@ -7,7 +7,8 @@
 //           screen (s); lines at most; gap (s between a group's end and the next one's start:
 //           0 in a style that is cut in and cut out, else a frame may show no caption); even
 //           (a phrase too long for one group is cut by length, not into equal counts of words:
-//           fewer words left alone; every style after the first four, which stay as they were)
+//           fewer words left alone; every style of up to five words. The two that set whole
+//           phrases, clean and subtitle, gain nothing by it and keep the equal counts)
 //   look:   font, weight, size (px for a frame whose short side is 1080), case, colours, stroke,
 //           shadow, box; gap (the room between words: the active word grows by `grow` into it)
 //           color: the words; accent: the word being said (a brand's primary colour replaces
@@ -19,7 +20,8 @@
 //           brand: which colour takes a brand's primary: "accent" (the default: the word being
 //           said), "key" (the key words, in a style where no word lights up), "both"
 //           ownFont: the style is its typeface; a brand gives it its colour, never its font
-//   motion: in (how a group or a word appears: pop, punch, rise, fade, wipe, cut), active (how the word
+//   motion: in (how a group or a word appears: punch, rise, fade, wipe, cut; pop is a punch
+//           that starts transparent: a frame without a caption at every change), active (how the word
 //           being said stands out: color-scale, pill, dim-after, fill, none), out (how a group
 //           goes: fade, wipe, cut)
 //
@@ -34,15 +36,15 @@ export const STYLES = {
   hormozi: {
     label: "Hormozi",
     about: "One to three words, big, bold and in capitals, the word being said in a bright colour: the punchy look of talking-head reels.",
-    group: { words: 3, chars: 22, pause: 0.25, min: 0.5, lines: 2 },
+    group: { words: 3, chars: 22, pause: 0.25, min: 0.5, lines: 2, gap: 0, even: true },
     look: { font: "Montserrat", weight: 900, size: 96, case: "upper", color: "#FFFFFF", accent: "#FFE500", highlight: "#3CFF5A",
       stroke: 9, strokeColor: "#000000", shadow: "0 8px 0 rgba(0,0,0,0.85)", spacing: "0.01em", lineHeight: 1.05, gap: "0.32em", grow: 1.08 },
-    motion: { in: "pop", active: "color-scale", out: "cut" },
+    motion: { in: "punch", active: "color-scale", out: "cut" },
   },
   karaoke: {
     label: "Karaoke pill",
     about: "Three or four words in a row; the word being said sits on a coloured pill, the others wait in white.",
-    group: { words: 4, chars: 26, pause: 0.3, min: 0.7, lines: 2 },
+    group: { words: 4, chars: 26, pause: 0.3, min: 0.7, lines: 2, even: true },
     look: { font: "Poppins", weight: 800, size: 72, case: "none", color: "#FFFFFF", accent: "#7C3AED", highlight: "#FFE500",
       stroke: 0, strokeColor: "#000000", shadow: "0 4px 18px rgba(0,0,0,0.55)", spacing: "0", lineHeight: 1.15, pill: true },
     motion: { in: "rise", active: "pill", out: "fade" },
@@ -50,7 +52,7 @@ export const STYLES = {
   wipe: {
     label: "Wipe",
     about: "Up to four words in capitals, each wiped in as it is said; said words dim, key words turn gold (the look of Storrito's content workflow).",
-    group: { words: 4, chars: 24, pause: 0.25, min: 0.6, lines: 2 },
+    group: { words: 4, chars: 24, pause: 0.25, min: 0.6, lines: 2, even: true },
     look: { font: "Poppins", weight: 800, size: 76, case: "upper", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFD700", dim: "rgba(255,255,255,0.62)",
       stroke: 0, strokeColor: "#000000", shadow: "0 4px 0 rgba(0,0,0,0.82), 0 12px 30px rgba(0,0,0,0.78)", spacing: "0.02em", lineHeight: 1.08 },
     motion: { in: "wipe", active: "dim-after", out: "wipe" },
@@ -123,7 +125,7 @@ export const STYLES = {
   subtitle: {
     label: "Plain subtitles",
     about: "Whole phrases of up to two lines in sentence case, white with a thin dark edge and no box: the classic subtitle, quiet under any picture.",
-    group: { words: 8, chars: 56, pause: 0.45, min: 1.0, lines: 2, gap: 0, even: true },
+    group: { words: 8, chars: 56, pause: 0.45, min: 1.0, lines: 2, gap: 0 },
     look: { font: "Inter", weight: 600, size: 54, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFE500",
       stroke: 5, strokeColor: "rgba(0,0,0,0.9)", shadow: "0 2px 5px rgba(0,0,0,0.8)", spacing: "0", lineHeight: 1.25, gap: "0", brand: "key" },
     motion: { in: "cut", active: "none", out: "cut" },

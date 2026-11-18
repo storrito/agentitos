@@ -46,6 +46,15 @@ So, when you say which styles fit (never as a recommendation of one):
 - Seven in ten of the 198 have no emphasis at all, one in ten a word that follows the voice (`hormozi`, `karaoke`, `fill`, `label`, `wipe`), one in twelve coloured key words: a style that lights up every word is a choice for energy, not the rule.
 - 122 are in sentence case, 45 in capitals, 23 all lowercase: only `hormozi`, `impact` and `wipe` set capitals.
 
+## Near each other
+
+No two styles are the same look; these are the nearest, when the person hesitates between them:
+
+- `hormozi` and `outline`: the same heavy outlined type. `hormozi` shouts in capitals and lights up the word being said; `outline` is in sentence case and nothing moves but the caption coming in.
+- `karaoke` and `fill`: both follow the voice word by word. `karaoke` puts a pill behind the word being said; `fill` lets the line fill from dim to bright.
+- `clean` and `subtitle`: both whole phrases. `clean` stands on a soft dark box, `subtitle` has a thin dark edge and nothing behind it.
+- `outline` and `single`: both heavy. `outline` shows two or three words, `single` one.
+
 ## A brand kit
 
 `--brand brand/DESIGN.md` gives the captions the brand's display font (`impact` keeps its own narrow one, `editorial` its serif italic for the key words) and puts the brand's primary colour where the style shows a colour:

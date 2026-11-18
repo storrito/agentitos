@@ -30,7 +30,7 @@ export function measure(look) {
   const usual = table ? letters.reduce((sum, ch) => sum + at.get(ch), 0) / letters.length : 0.62;
   const spacing = parseFloat(look.spacing) || 0;
   const word = (text) => {
-    let width = look.pill ? 0.44 : 0;
+    let width = look.pill ? 0.16 : 0;   // a pill's padding less the margin that draws it back (render.mjs PILL)
     // (a soft hyphen, where the caller lets a long word break, is not drawn)
     for (const ch of look.case === "upper" ? text.toUpperCase() : text) if (ch !== "\u00AD") width += (at.get(ch) ?? (ch.codePointAt(0) > 0x2e7f ? 1 : usual)) + spacing;
     return width;

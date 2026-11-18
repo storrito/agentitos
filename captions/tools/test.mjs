@@ -115,8 +115,13 @@ function versionBefore(dir) {
 test("without the options the built files and what the tool says are those of the version before", { skip: noZones }, (t) => {
   const dir = folder(t), old = versionBefore(path.join(dir, "before"));
   if (!old) return t.skip(`no commit ${BEFORE} in a git history here`);
+  // hormozi, karaoke and wipe were changed on purpose by the commit that carries this line (no
+  // frame without a caption at a change, a pill that does not widen the gaps, phrases cut by
+  // length): until the next commit names this one as the version before, clean alone is compared.
+  const changed = (args) => ["hormozi", "karaoke", "wipe"].includes(args.includes("--style") ? args[args.indexOf("--style") + 1] : "hormozi");
   // `put` lays what the run needs beside its words (a brand kit, a video) into both folders
   const same = (name, args, files, { words, put } = {}) => {
+    if (changed(args)) return;
     for (const side of ["a", "b"]) { fs.mkdirSync(path.join(dir, side, name), { recursive: true }); put?.(path.join(dir, side, name)); }
     const a = run(old, path.join(dir, "a", name), args, words), b = run(TOOL, path.join(dir, "b", name), args, words);
     assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
@@ -363,16 +368,18 @@ test("every style builds in every frame, every word once and in order; what only
   }
 });
 
-test("the styles after the first four cut a phrase by length: no word alone where a pair holds; the first four keep their equal counts", () => {
+test("the styles of up to five words cut a phrase by length: no word alone where a pair holds; the two that set whole phrases keep equal counts", () => {
   const ws = wordsOf("Wir haben letzte Woche vierundzwanzig Stories gepostet und damit dreitausendzweihundert Menschen erreicht.");
   const cut = (style) => groups(ws, STYLES[style].group, 60).map((g) => ws.slice(g.from, g.to + 1).map((w) => w.text).join(" "));
   assert.deepEqual(cut("bold"), ["Wir haben letzte", "Woche vierundzwanzig", "Stories gepostet", "und damit", "dreitausendzweihundert", "Menschen erreicht."]);
   assert.deepEqual(cut("label"), ["Wir haben letzte Woche", "vierundzwanzig Stories", "gepostet und damit", "dreitausendzweihundert", "Menschen erreicht."]);
-  assert.deepEqual(cut("hormozi"), ["Wir haben", "letzte", "Woche vierundzwanzig", "Stories gepostet", "und damit", "dreitausendzweihundert", "Menschen erreicht."]);
-  // every style of more than one word after the first four says so, and never passes its words or characters for it
+  // (by equal counts hormozi had "Wir haben | letzte | Woche vierundzwanzig")
+  assert.deepEqual(cut("hormozi"), ["Wir haben letzte", "Woche vierundzwanzig", "Stories gepostet", "und damit", "dreitausendzweihundert", "Menschen erreicht."]);
+  assert.deepEqual(cut("clean"), ["Wir haben letzte Woche vierundzwanzig Stories", "gepostet und damit dreitausendzweihundert Menschen erreicht."]);
+  // every style of two to five words says so, and never passes its words or characters for it
   for (const [name, s] of Object.entries(STYLES)) {
-    if (["hormozi", "karaoke", "wipe", "clean"].includes(name) || s.group.words === 1) continue;
-    assert.equal(s.group.even, true, name);
+    assert.equal(!!s.group.even, s.group.words > 1 && s.group.words <= 5, name);
+    if (!s.group.even) continue;
     for (const text of cut(name)) assert.ok(text.split(" ").length <= s.group.words && (text.length <= s.group.chars || !text.includes(" ")), `${name}: "${text}"`);
     assert.equal(cut(name).join(" "), ws.map((w) => w.text).join(" "), name);
   }
