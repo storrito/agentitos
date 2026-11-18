@@ -30,13 +30,16 @@ export function evaluate(ctx, p) {
       const box = [q.left + q.s * f[0], q.top + q.s * f[1], q.s * f[2], q.s * f[3]];
       const label = src.screen ? "region" : total > 1 ? `face ${(src.first || 0) + i + 1}` : "face";
       if (!q.own || q.own.includes(i)) faces.push({ box, label, win: q.win, part: k, height: q.s * (src.heights ? src.heights[i] : f[3]), screen: !!src.screen });
-      else { const part = clipBox(box, shown); if (part) others.push({ box: part, label, share: area(part) / area(box) }); }
+      else { const part = clipBox(box, shown); if (part) others.push({ box: part, label, share: area(part) / area(box), height: q.s * (src.heights ? src.heights[i] : f[3]) }); }
     });
   });
   const keep = [...faces.map((f) => (f.screen ? grow(f.box, D.gap) : keepOut(f.box, D))), ...others.map((o) => keepOut(o.box, D)), ...(p.circle ? [grow(p.circle.box, D.gap)] : [])];
   const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null, card: split || !!sources[0].screen });
+  // every face that shows is judged, whoever the placement is about: one under what an app covers
+  // or in the safe box's margin is a finding also where it is another person's in a crop on one
   const problems = judge(Z, [
     ...faces.map((f) => ({ kind: "face", label: f.label, box: f.box })),
+    ...others.map((o) => ({ kind: "face", label: o.label, box: o.box })),
     ...(p.circle ? [{ kind: "face", label: "webcam", box: p.circle.box }] : []),
     ...text.placed.map((t) => ({ kind: "text", label: t.role, box: t.box, ink: t.ink })),
   ]);
@@ -90,7 +93,9 @@ export function evaluate(ctx, p) {
     ...(textPx !== null ? { textHeight: r1(textPx) } : {}),
     ...(p.circle ? { circle: { ...p.circle, box: p.circle.box.map(r1) } } : {}),
     ground: Math.max(0, +(1 - parts.reduce((a, q) => a + inter(q.win, frame), 0) / (W * H)).toFixed(3)),
-    faceHeight: faces.length ? Math.round(Math.min(...faces.map((f) => f.height))) : 0,
+    // the smallest face the picture shows whole: another person a crop on one shows whole is as
+    // much in the picture as the one it is made for
+    faceHeight: faces.length ? Math.round(Math.min(...faces.map((f) => f.height), ...(split ? [] : others.filter((o) => o.share >= 0.999).map((o) => o.height)))) : 0,
     textPenalty: text.penalty,
     variant: p.variant || 0,
   };

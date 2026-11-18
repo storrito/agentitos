@@ -61,6 +61,8 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
     parts.push(clip ? `<div class="clip" style="${st(win)}">${picture([pic[0] - win[0], pic[1] - win[1], pic[2], pic[3]])}</div>` : picture(pic));
   }
   for (const f of c.faceInFrame) parts.push(`<div data-zone="face"${res.screen ? ` data-label="region"` : ""} style="${st(f)}"></div>`);
+  // the part of another person's face that shows: the checker judges it as any face
+  for (const o of c.others || []) parts.push(`<div data-zone="face" data-label="${o.of}" style="${st(o.box)}"></div>`);
   if (c.circle) parts.push(`<div class="cam" data-zone="face" data-label="webcam" style="${st(c.circle.box)}"></div>`);
   for (const t of c.text) {
     const [x, y, w, h] = t.box;

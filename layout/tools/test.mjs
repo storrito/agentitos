@@ -105,7 +105,7 @@ function verify(c, res, name) {
   const r = checkPage(file);
   // the page must show the checker what the solver placed
   const faces = r.boxes.filter((b) => b.kind === "face" && b.box[2] > 0 && b.box[3] > 0).length, texts = r.boxes.filter((b) => b.kind === "text").length;
-  const placed = c.faceInFrame.length + (c.circle ? 1 : 0);
+  const placed = c.faceInFrame.length + (c.others || []).length + (c.circle ? 1 : 0);
   if (faces !== placed || texts !== c.text.length) throw new Error(`${name}: the checker saw ${faces} faces and ${texts} texts, the solver placed ${placed} and ${c.text.length}`);
   return { r, cmp: compare(c, r), file };
 }
@@ -432,6 +432,20 @@ t("two people who walk shoulder to shoulder (their faces' boxes 1.05 face widths
   const apart = solve({ zones: Z916, source: SRC2P, faces: TWO, needs: [cap(1)] });
   ok(apart.candidates[0].fit === "stacked" && !apart.notes.some((n) => /close together/.test(n)), `two people 2.9 widths apart: ${nameOf(apart.candidates[0])}`);
   return `${nameOf(first)} first, stacked ${res.candidates.indexOf(st) + 1}.`;
+});
+
+t("every face that shows is judged, whoever the crop is made for: four people walking in a row (4K) into 9:16; the square crop on face 3 shows face 1 at x 45, past the safe box's left edge, and says so, as the same square 218 px higher already did for its own faces (it passed before: a face 'not held' was not looked at); its page shows the checker every face, and the two agree", () => {
+  const faces = [[1536, 740, 135, 200], [1968, 805, 105, 175], [2448, 710, 155, 145], [3178, 720, 145, 145]];
+  const res = solve({ zones: Z916, source: [3840, 2160], faces, needs: [cap(1)] });
+  const on3 = res.candidates.find((c) => c.crop === "1:1" && c.speaker === 3);
+  ok(on3 && on3.others.length === 3, `the square on face 3: ${on3 && JSON.stringify(on3.others)}`);
+  const f1 = on3.others.find((o) => o.of === "face 1");
+  ok(f1.box[0] < Z916.safe[0] && on3.problems.some((q) => q.of === "face 1" && q.code === "margin" && q.level === "soft"), `face 1 at x ${f1.box[0]}: ${JSON.stringify(on3.problems)}`);
+  ok(on3.soft && !on3.hard, `the square on face 3: ${JSON.stringify(on3.problems)}`);
+  // every candidate: no face that shows lies under what an app covers without a hard problem
+  for (const c of res.candidates) for (const o of c.others || []) ok(!Z916.covers.some((z) => overlap(o.box, z.box)) || c.hard, `${nameOf(c)}: ${o.of} lies under an app's button and passes`);
+  agree(on3, res, "group-square-on-3");
+  return `the square on face 3: ${on3.problems.map((q) => `${q.of} ${q.code}`).join(", ")}`;
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
