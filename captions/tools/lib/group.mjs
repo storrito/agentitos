@@ -26,7 +26,15 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 //
 // `gap` (a style whose groups are cut in and cut out): 0, so that a group ends in the moment the
 // next one starts; with the usual 20 ms a frame of a 30 fps video often shows neither.
-export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit, gap = GAP }, duration = Infinity) {
+//
+// `even` (the styles after the first four): a phrase too long for one group is cut by length
+// instead of into equal counts of words: the fewest groups that keep to the style's words and
+// characters, and of those ways the one whose groups are most alike in length. Equal counts
+// take one group more whenever a pair of long words passes the characters, and then leave
+// words alone ("Wir | haben | letzte | Woche" where "Wir haben letzte | Woche vierundzwanzig"
+// holds): in 190 captions of two or three words about twenty single words that need not be,
+// and as many captions on screen for under 0.4 s; by length half and a quarter of that.
+export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit, gap = GAP, even }, duration = Infinity) {
   const boxOf = (w) => w.box || null;
   const phrases = [];
   let cur = null;
@@ -40,6 +48,10 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, fi
   for (const ph of phrases) {
     if (ph.box) { out.push({ from: ph.from, to: ph.to, box: true }); continue; }
     const n = ph.to - ph.from + 1;
+    if (even) {
+      for (const [a, b] of byLength(words.slice(ph.from, ph.to + 1).map((w) => w.text), maxWords, maxChars, fit)) out.push({ from: ph.from + a, to: ph.from + b });
+      continue;
+    }
     let k = Math.ceil(n / maxWords);
     while (k < n && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => t.length > maxChars)) k++;
     if (fit && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => !sets(t.split(" "), fit))) {
@@ -71,9 +83,10 @@ function sets(texts, fit) {
 }
 
 // A phrase's words into the fewest groups of at most maxWords words and maxChars characters that
-// each set in their lines (sets above), and of those ways the one whose groups are most alike in
-// length (the least sum of their squared lengths); returns [[first, last], …] as indexes into
-// the phrase. A word that fits no line stands alone.
+// each set in their lines (sets above; without a `fit` the words and characters alone count),
+// and of those ways the one whose groups are most alike in length (the least sum of their
+// squared lengths); returns [[first, last], …] as indexes into the phrase. A word that fits no
+// line stands alone.
 function byLength(texts, maxWords, maxChars, fit) {
   const length = (a, b) => texts.slice(a, b).join(" ").length;   // of the words a … b - 1
   // best[i]: the words before i as [how many groups, their squared lengths summed, where the last one starts]
@@ -82,7 +95,7 @@ function byLength(texts, maxWords, maxChars, fit) {
     for (let j = i - 1; j >= Math.max(0, i - maxWords); j--) {
       const l = length(j, i);
       // (a group that does not set is not helped by a word more in front of it)
-      if (j < i - 1 && (l > maxChars || !sets(texts.slice(j, i), fit))) break;
+      if (j < i - 1 && (l > maxChars || (fit && !sets(texts.slice(j, i), fit)))) break;
       const way = [best[j][0] + 1, best[j][1] + l * l, j];
       if (!best[i] || way[0] < best[i][0] || (way[0] === best[i][0] && way[1] < best[i][1])) best[i] = way;
     }

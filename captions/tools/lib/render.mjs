@@ -131,7 +131,7 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
   // Where the caller placed them, the area holds a style's box whole, its padding too, whatever
   // box-sizing the host sets: the box counts with its padding, and the padding is no room for a
   // word (both go into the rule and into fit() of the script below).
-  const whole = place ? " box-sizing: border-box;" : "", padded = place ? ' || el.classList.contains("boxed")' : "";
+  const whole = place ? " box-sizing: border-box;" : "", padded = (place ? ' || el.classList.contains("boxed")' : "") + (look.lineBox ? ' || el.classList.contains("lined")' : "");
   // (a box around two lines is as wide as the area: centred that is even, at one side it would
   // stand out past its text; this goes into fit() too)
   const hug = area.align === "center" ? "" : `
@@ -143,11 +143,13 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
             }`;
 
   // What only some styles have, written only for them (the other styles' files stay as they were):
-  //   lineBox   each line on a box of its own that hugs its text: the words of a group sit in one
-  //             inline box whose background is drawn anew on every line (box-decoration-break);
-  //             the lowest box ends where the lowest line would, so the group stands higher by
-  //             the box's padding. A card keeps its own box, in the lines' colour (its words
-  //             are the style's, dark on a light box).
+  //   lineBox   each line on a box of its own that hugs its text: once a group is fitted, a box
+  //             is laid behind every line, as high as the line and as wide as its words, with
+  //             linePad around them. The boxes are sized by the line, not by the font's own
+  //             ascent and descent, so a brand's font sits in them as the style's does. The
+  //             padding left and right is no room for a word, and the lowest box ends where
+  //             the lowest line would (the group stands higher by the padding). A card keeps
+  //             its own box, in the lines' colour (its words are the style's, dark on light).
   //   keyFont   key words in another typeface, larger (keyScale); they take no height of their
   //             own (line-height 0), so a line with one is as high as a line without
   //   active "fill"   the words wait in look.wait; the one being said takes the accent (a key word
@@ -155,9 +157,9 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
   //             the light-up is lit by its end, so two tweens never hold its colour at once
   //             (the colour would depend on where the timeline was sought from)
   const rules = (look.lineBox ? `
-        #root .cap-group.lined { margin-bottom: ${look.linePad[0]}em; }
-        #root .cap-line { background: ${look.lineBox}; padding: ${look.linePad[0]}em ${look.linePad[1]}em; border-radius: ${look.lineRadius || "0.2em"};
-          -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+        #root .cap-group.lined { box-sizing: border-box; padding: 0 ${look.linePad[1]}em; margin-bottom: ${look.linePad[0]}em; }
+        #root .cap-group.lined .cap-word { position: relative; }
+        #root .cap-box { position: absolute; background: ${look.lineBox}; border-radius: ${look.lineRadius || "0.2em"}; }
         #root .cap-group.cap-card { background: ${look.lineBox}; }` : "") + (look.keyFont ? `
         #root .cap-word.key { font-family: "${look.keyFont}", serif; font-weight: ${look.keyWeight || look.weight}; font-style: ${look.keyItalic ? "italic" : "normal"};
           font-size: ${look.keyScale || 1}em; line-height: 0; letter-spacing: 0; }` : "");
@@ -165,13 +167,27 @@ export function writeCaptions(out, { words, style, width, height, duration, bran
               if (w.key) s.className += " key";` : "") + (style.motion.active === "fill" ? `
               s.style.color = L.wait;` : "");
   const lined = look.lineBox ? `
-            if (!g.box) {
-              var line = document.createElement("span");
-              line.className = "cap-line";
-              while (el.firstChild) line.appendChild(el.firstChild);
-              el.appendChild(line);
-              el.className += " lined";
-            }` : "";
+            if (!g.box) el.className += " lined";` : "";
+  const boxes = look.lineBox ? `
+          // a box behind every line of a fitted group: the words whose tops lie within half the type's size are one line
+          function boxes(el) {
+            var size = parseFloat(el.style.fontSize), padY = L.linePad[0] * size, padX = L.linePad[1] * size, lines = [];
+            Array.prototype.forEach.call(el.querySelectorAll(".cap-word"), function (w) {
+              var last = lines[lines.length - 1];
+              if (last && Math.abs(w.offsetTop - last.top) < size * 0.5) last.right = w.offsetLeft + w.offsetWidth;
+              else lines.push({ top: w.offsetTop, left: w.offsetLeft, right: w.offsetLeft + w.offsetWidth, height: w.offsetHeight });
+            });
+            lines.forEach(function (line) {
+              var box = document.createElement("div");
+              box.className = "cap-box";
+              box.style.left = line.left - padX + "px";
+              box.style.top = line.top - padY + "px";
+              box.style.width = line.right - line.left + 2 * padX + "px";
+              box.style.height = line.height + 2 * padY + "px";
+              el.insertBefore(box, el.firstChild);
+            });
+          }` : "", boxed = look.lineBox ? `
+              if (el.classList.contains("lined")) boxes(el);` : "";
   // in "punch": the group is there at once, a little smaller, and snaps to its size (a pop without
   // the frame in which it is half transparent: at 30 fps a word of a tenth of a second has three)
   const punch = style.motion.in === "punch" ? `
@@ -252,7 +268,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               if (lines <= DATA.lines + 0.35 && widest <= room) break;
             }
             el.style.fontSize = size + "px";${hug}
-          }
+          }${boxes}
           function reveal(w) {
             var spoken = Math.max(0.03, w.said - w.start);
             return Math.min(0.3, Math.max(0.045, spoken * 0.55), Math.max(0.025, spoken * 0.85));
@@ -261,7 +277,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
             var tl = gsap.timeline({ paused: true });
             DATA.groups.forEach(function (g, gi) {
               var el = els[gi], words = el.querySelectorAll(".cap-word");
-              fit(el);
+              fit(el);${boxed}
               tl.set(el, { visibility: "visible", opacity: 1 }, g.start);
               if (M.in === "pop") tl.fromTo(el, { scale: 0.82, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.12, ease: "back.out(2.2)" }, g.start);
               if (M.in === "rise") tl.fromTo(el, { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.18, ease: "power2.out" }, g.start);

@@ -5,7 +5,9 @@
 //
 //   group:  words / chars at most per group; pause (s) from which a group breaks; minimum time on
 //           screen (s); lines at most; gap (s between a group's end and the next one's start:
-//           0 in a style that is cut in and cut out, else a frame may show no caption)
+//           0 in a style that is cut in and cut out, else a frame may show no caption); even
+//           (a phrase too long for one group is cut by length, not into equal counts of words:
+//           fewer words left alone; every style after the first four, which stay as they were)
 //   look:   font, weight, size (px for a frame whose short side is 1080), case, colours, stroke,
 //           shadow, box; gap (the room between words: the active word grows by `grow` into it)
 //           color: the words; accent: the word being said (a brand's primary colour replaces
@@ -64,7 +66,7 @@ export const STYLES = {
   bold: {
     label: "Bold words",
     about: "Two or three bold words in sentence case, white with a soft shadow, nothing behind them and nothing moving; key words in colour. What most podcast clips and talking heads carry.",
-    group: { words: 3, chars: 20, pause: 0.25, min: 0.5, lines: 2, gap: 0 },
+    group: { words: 3, chars: 20, pause: 0.25, min: 0.5, lines: 2, gap: 0, even: true },
     look: { font: "Montserrat", weight: 700, size: 66, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFE500",
       stroke: 0, strokeColor: "#000000", shadow: "0 2px 4px rgba(0,0,0,0.8), 0 0 12px rgba(0,0,0,0.5), 0 0 28px rgba(0,0,0,0.4)", spacing: "0", lineHeight: 1.15, gap: "0", brand: "key" },
     motion: { in: "cut", active: "none", out: "cut" },
@@ -72,7 +74,7 @@ export const STYLES = {
   outline: {
     label: "Outline",
     about: "One to three heavy words in sentence case, white with a thick black outline and a drop shadow, key words in colour; each caption punches in, no word lights up. Reads on any picture: maps, games, screen recordings.",
-    group: { words: 3, chars: 20, pause: 0.25, min: 0.5, lines: 2, gap: 0 },
+    group: { words: 3, chars: 20, pause: 0.25, min: 0.5, lines: 2, gap: 0, even: true },
     look: { font: "Montserrat", weight: 900, size: 72, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFE500",
       stroke: 13, strokeColor: "#000000", shadow: "0 6px 0 rgba(0,0,0,0.9)", spacing: "0", lineHeight: 1.16, gap: "0.04em", brand: "key" },
     motion: { in: "punch", active: "none", out: "cut" },
@@ -80,7 +82,7 @@ export const STYLES = {
   impact: {
     label: "Impact",
     about: "Two or three words in tall narrow capitals with a dark edge; a caption that holds a key word stands whole in lime, the others in white. The look of sports and podcast clips.",
-    group: { words: 3, chars: 18, pause: 0.25, min: 0.5, lines: 2, gap: 0 },
+    group: { words: 3, chars: 18, pause: 0.25, min: 0.5, lines: 2, gap: 0, even: true },
     look: { font: "League Gothic", weight: 400, size: 100, case: "upper", color: "#FFFFFF", accent: "#C8FF1A", highlight: "#C8FF1A", groupKey: true,
       stroke: 6, strokeColor: "#000000", shadow: "0 5px 0 rgba(0,0,0,0.75), 0 8px 22px rgba(0,0,0,0.55)", spacing: "0.02em", lineHeight: 1.02, gap: "0.04em", brand: "key", ownFont: true },
     motion: { in: "cut", active: "none", out: "cut" },
@@ -96,7 +98,7 @@ export const STYLES = {
   fill: {
     label: "Karaoke fill",
     about: "Four or five words on two lines; they wait dim, the one being said lights up in colour and stays white behind it, so the line fills as it is spoken.",
-    group: { words: 5, chars: 30, pause: 0.3, min: 0.8, lines: 2 },
+    group: { words: 5, chars: 30, pause: 0.3, min: 0.8, lines: 2, even: true },
     look: { font: "Poppins", weight: 800, size: 70, case: "none", color: "#FFFFFF", wait: "rgba(255,255,255,0.45)", accent: "#FFE500", highlight: "#FFE500",
       stroke: 0, strokeColor: "#000000", shadow: "0 2px 2px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.55), 0 0 28px rgba(0,0,0,0.4)", spacing: "0", lineHeight: 1.18, brand: "both" },
     motion: { in: "rise", active: "fill", out: "fade" },
@@ -104,7 +106,7 @@ export const STYLES = {
   label: {
     label: "Label",
     about: "Each line on a white box of its own, as the apps' own text looks; the words wait in grey and turn black as they are said, key words in colour.",
-    group: { words: 5, chars: 30, pause: 0.3, min: 0.8, lines: 2, gap: 0 },
+    group: { words: 5, chars: 30, pause: 0.3, min: 0.8, lines: 2, gap: 0, even: true },
     look: { font: "Poppins", weight: 600, size: 58, case: "none", color: "#141414", wait: "#8F8F8F", accent: "#141414", highlight: "#2563EB",
       stroke: 0, strokeColor: "#000000", shadow: "none", spacing: "0", lineHeight: 1.42, lineBox: "#FFFFFF", linePad: [0.1, 0.4], lineRadius: "0.24em", brand: "key" },
     motion: { in: "cut", active: "fill", out: "cut" },
@@ -112,7 +114,7 @@ export const STYLES = {
   editorial: {
     label: "Editorial",
     about: "Three to five words in a quiet sans, sentence case, the key words in a larger serif italic. Calm and deliberate, for essays, advice and interviews.",
-    group: { words: 5, chars: 32, pause: 0.3, min: 0.8, lines: 2 },
+    group: { words: 5, chars: 32, pause: 0.3, min: 0.8, lines: 2, even: true },
     look: { font: "Inter", weight: 500, size: 60, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFF1C2",
       keyFont: "Playfair Display", keyWeight: 600, keyItalic: true, keyScale: 1.24,
       stroke: 0, strokeColor: "#000000", shadow: "0 0 2px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.8), 0 2px 16px rgba(0,0,0,0.65)", spacing: "0", lineHeight: 1.3, brand: "key" },
@@ -121,7 +123,7 @@ export const STYLES = {
   subtitle: {
     label: "Plain subtitles",
     about: "Whole phrases of up to two lines in sentence case, white with a thin dark edge and no box: the classic subtitle, quiet under any picture.",
-    group: { words: 8, chars: 56, pause: 0.45, min: 1.0, lines: 2, gap: 0 },
+    group: { words: 8, chars: 56, pause: 0.45, min: 1.0, lines: 2, gap: 0, even: true },
     look: { font: "Inter", weight: 600, size: 54, case: "none", color: "#FFFFFF", accent: "#FFFFFF", highlight: "#FFE500",
       stroke: 5, strokeColor: "rgba(0,0,0,0.9)", shadow: "0 2px 5px rgba(0,0,0,0.8)", spacing: "0", lineHeight: 1.25, gap: "0", brand: "key" },
     motion: { in: "cut", active: "none", out: "cut" },
