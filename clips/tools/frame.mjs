@@ -63,6 +63,9 @@ const CLOSEST = 0.55, CLOSEST_LINES = 960;
 // the room a window keeps beside the face it holds (share of its width): to choose it, and to
 // warn of a face closer to the edge than EDGE
 const HOLD = 0.06, EDGE = 0.04;
+// of a face wider than BIG of the window it holds the middle CORE of the face's width (the
+// editors' close-ups cut the ears too)
+const BIG = 0.5, CORE = 0.7;
 // a window that follows a face moves to where it is every FOLLOW seconds
 const FOLLOW = 0.4;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
@@ -498,46 +501,54 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
         const low = (fy - Math.min(height - h, Math.max(0, fy - h * FACE_Y))) / h;
         if (low > FACE_LOW) h = Math.min(h, Math.max(hMin, fh / 0.4, (height - fy) / (1 - FACE_Y)));
       }
-      // wider where the face moves more than a still window holds
+      // wider where the face moves more than a still window holds (of a face as wide as the
+      // window, its middle: CORE of its width)
+      const core = (f, ww) => (f.w > BIG * ww ? [f.x - (CORE / 2) * f.w, f.x + (CORE / 2) * f.w] : [f.x - f.w / 2 - HOLD * ww, f.x + f.w / 2 + HOLD * ww]);
       let hold = "still";
       for (const g of segs) {
-        if (!g.at.length) continue;
-        const span = Math.max(...g.at.map((f) => f.x + f.w / 2)) - Math.min(...g.at.map((f) => f.x - f.w / 2));
-        const need = ((span / (1 - 2 * HOLD)) * ah) / aw;
-        if (need > h) {
-          if (need <= hMax) { h = need; if (hold === "still") hold = "wider"; }
-          else hold = "follows";
-        }
+        const fs = g.at.filter(Boolean);
+        if (!fs.length) continue;
+        const spanOf = (ww) => Math.max(...fs.map((f) => core(f, ww)[1])) - Math.min(...fs.map((f) => core(f, ww)[0]));
+        if (spanOf((h * aw) / ah) <= (h * aw) / ah) continue;
+        // the smallest height whose width holds every core, if the footage has it
+        let need = h;
+        while (need < hMax && spanOf((need * aw) / ah) > (need * aw) / ah) need = Math.min(hMax, need * 1.03);
+        if (spanOf((need * aw) / ah) <= (need * aw) / ah) { h = need; if (hold === "still") hold = "wider"; }
+        else hold = "follows";
       }
       const w = (h * aw) / ah;
       const clampX = (x) => Math.min(width - w, Math.max(0, x)), clampY = (y) => Math.min(height - h, Math.max(0, y));
       const keys = [];
       const push = (key) => {
         const last = keys[keys.length - 1];
-        if (last && !key.linear && Math.abs(last.x - key.x) < w * 0.08 && Math.abs(last.y - key.y) < h * 0.08) return;
+        if (last && Math.abs(last.x - key.x) < w * 0.08 && Math.abs(last.y - key.y) < h * 0.08) return false;
         keys.push(key);
+        return true;
       };
+      let moves = 0;
       for (const g of segs) {
-        if (!g.at.length) { push({ t: g.t0, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) }); continue; }
-        const lo = Math.min(...g.at.map((f) => f.x - f.w / 2)), hi = Math.max(...g.at.map((f) => f.x + f.w / 2));
-        const fy = g.at.reduce((n, f) => n + f.y, 0) / g.at.length;
-        if (hi - lo <= w * (1 - 2 * HOLD)) { push({ t: g.t0, x: clampX((lo + hi) / 2 - w / 2), y: clampY(fy - h * FACE_Y) }); continue; }
-        // following: every FOLLOW seconds where the face is then (its path a little smoothed),
-        // straight from one to the next
-        const near = (t) => {
-          const xs = [-0.2, -0.1, 0, 0.1, 0.2].map((d) => faceAt(g.person, Math.min(g.t1, Math.max(g.t0, t + d))));
-          return { x: xs.reduce((n, f) => n + f.x, 0) / xs.length, y: xs.reduce((n, f) => n + f.y, 0) / xs.length };
-        };
-        const f0 = near(g.t0);
-        push({ t: g.t0, x: clampX(f0.x - w / 2), y: clampY(f0.y - h * FACE_Y) });
-        let free = keys.length > 1 ? g.t0 + PAN : g.t0;
-        for (let t = free + FOLLOW; t < g.t1 + FOLLOW - 1e-6; t += FOLLOW) {
-          const at = Math.min(t, g.t1), f = near(at);
-          if (at - free < 0.1) continue;
-          keys.push({ t: +free.toFixed(3), x: clampX(f.x - w / 2), y: clampY(f.y - h * FACE_Y), pan: +(at - free).toFixed(3), linear: true });
-          free = at;
+        const fs = g.at.filter(Boolean);
+        if (!fs.length) { push({ t: g.t0, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) }); continue; }
+        const y = clampY(fs.reduce((n, f) => n + f.y, 0) / fs.length - h * FACE_Y);
+        const lo = Math.min(...fs.map((f) => core(f, w)[0])), hi = Math.max(...fs.map((f) => core(f, w)[1]));
+        if (hi - lo <= w) { push({ t: g.t0, x: clampX((lo + hi) / 2 - w / 2), y }); continue; }
+        {
+          const near = (t) => {
+            const xs = [-0.2, -0.1, 0, 0.1, 0.2].map((d) => faceAt(g.person, Math.min(g.t1, Math.max(g.t0, t + d)))).filter(Boolean);
+            return xs.reduce((n, f) => n + f.x, 0) / xs.length;
+          };
+          const added = push({ t: g.t0, x: +clampX(near(g.t0) - w / 2).toFixed(1), y });
+          let free = added && keys.length > 1 ? g.t0 + PAN : g.t0;
+          for (let t = free + FOLLOW; t < g.t1 + FOLLOW - 1e-6; t += FOLLOW) {
+            const at = Math.min(t, g.t1);
+            if (at - free < 0.1) continue;
+            keys.push({ t: +free.toFixed(3), x: +clampX(near(at) - w / 2).toFixed(1), y, pan: +(at - free).toFixed(3), linear: true });
+            free = at;
+            moves++;
+          }
         }
       }
+      if (moves && hold !== "follows") hold = "follows";
       if (!keys.length) keys.push({ t: a, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) });
       return { start: a, end: b, shot, kind: "people", hold, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys: keys.map((k) => ({ ...k, x: +k.x.toFixed(1), y: +k.y.toFixed(1) })) };
     };
@@ -583,8 +594,8 @@ export function edgesOf(windows, shots, { fps = 25, height, at = [] } = {}) {
           const [edge, gap] = Object.entries(gaps).sort((a, b) => a[1] - b[1])[0];
           // a close-up's face is as wide as the frame (the editors' too): only a cut into it counts,
           // and only beyond the model's own blur of a box (a tenth of the face)
-          const big = f.w >= 0.6 * win.w;
-          const cut = gap < (big ? -0.1 * (edge === "left" || edge === "right" ? f.w / win.w : f.h / win.h) : -0.02);
+          const big = f.w > BIG * win.w;
+          const cut = gap < (big ? -((1 - CORE) / 2) * (edge === "left" || edge === "right" ? f.w / win.w : f.h / win.h) : -0.02);
           if (cut || (!big && edge !== "top" && edge !== "bottom" && gap < EDGE)) found.push({ piece: k, shot: p.shot, t: +t.toFixed(3), who: person.who || person.speaker, speaker: person.speaker, edge, gap: +gap.toFixed(3), cut });
         }
       }

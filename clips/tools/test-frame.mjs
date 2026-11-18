@@ -320,3 +320,20 @@ test("a very dark hard cut, a two-second dissolve and a fade through black are e
     assert.ok(f[0].sure && f[0].frame >= 44 && f[0].frame <= 64, JSON.stringify(f));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// a person whose face is at every tenth of a second where `at(t)` says, for windowsOf
+const tracked = (who, speaker, at, t0, t1) => ({ who, speaker, track: Array.from({ length: Math.round((t1 - t0) * 10) + 1 }, (_, i) => ({ t: +(t0 + i / 10).toFixed(2), ...at(t0 + i / 10) })) });
+const HD = { width: 1920, height: 1080, fps: FPS };
+
+test("a window that follows a face does not stop at a change of speaker", () => {
+  // A walks across the picture; a second voice off the picture speaks in between (the window
+  // stays on A, the face it shows), then A again: two changes of speaker inside one shot
+  const A = tracked("A", "A", (t) => ({ x: 280 + 200 * t, y: 400, w: 480, h: 520 }), 0, 7);
+  const shots = [{ start: 0, end: 7, kind: "people", people: [A], faces: [{ speaker: "A", ...faceAt(A, 3.5) }] }];
+  const timeline = [{ t: 0, speaker: "A" }, { t: 2.5, speaker: "B" }, { t: 4.5, speaker: "A" }];
+  const windows = windowsOf(shots, timeline, { ...HD, aspect: [9, 16] });
+  for (let t = 0; t < 7; t += 1 / FPS) {
+    const p = windows.find((w) => w.start <= t && w.end > t), win = windowAt(p, t), f = faceAt(A, t);
+    assert.ok(f.x - f.w / 2 >= win.x - 1 && f.x + f.w / 2 <= win.x + win.w + 1, `A out of the window at ${t.toFixed(2)} s: face ${Math.round(f.x - f.w / 2)}–${Math.round(f.x + f.w / 2)}, window ${Math.round(win.x)}–${Math.round(win.x + win.w)}`);
+  }
+});
