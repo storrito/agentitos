@@ -1281,6 +1281,15 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(at(n).on.lip === 0 && at(n + 1).on.lip > 0, JSON.stringify([n, at(n).on, at(n + 1).on]));
     return `none: lip ${none.shots[0].on.lip} s; head: lip ${head.shots[0].on.lip} s; a lip that clears at ${n} px (of ${some.caption.font})`;
   });
+  t("a lower lip from features that are an estimate between two stills (the caller's between) is said as one, with the stills: a mouth that opens there is not seen", () => {
+    const run = (between) => textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520], ...(between && i > 5 && i < 35 ? { between: [0.5, 3.5] } : {}) })) }])], needs: cap });
+    const est = run(true), plain = run(false), note = (r) => r.notes.find((x) => /lower lip for/.test(x)) || "";
+    ok(est.shots[0].on.lipEst > 0 && est.shots[0].on.lipEst < est.shots[0].on.lip && JSON.stringify(est.shots[0].touches[0].stills) === "[[0.5,3.5]]", JSON.stringify(est.shots[0]));
+    ok(/s of it between the stills at 0\.5 and 3\.5 s, where the mouth's place is an estimate/.test(note(est)) && !/between the stills/.test(note(plain)) && plain.shots[0].on.lipEst === undefined, `${note(est)} | ${note(plain)}`);
+    // the place is the same: the estimate is said, not weighed
+    ok(est.caption.options.y === plain.caption.options.y && est.caption.font === plain.caption.font, JSON.stringify([est.caption, plain.caption]));
+    return `${est.shots[0].on.lipEst} s of ${est.shots[0].on.lip} s on the lower lip from an estimate`;
+  });
   t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
     const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
     const r = textOverTime({ zones: Z9, shots: [close(0, 3, 840), close(3, 6, 300), close(6, 9, 870), close(9, 12, 300), close(12, 15, 850)], needs: cap });

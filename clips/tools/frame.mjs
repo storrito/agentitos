@@ -441,24 +441,32 @@ export function featureJumps(track) {
 
 // the features of a face at t: between two stills that have them on the straight line (still
 // while the head does not turn, from the one to the other when it does), the head's own place
-// from the track; before the first and after the last as there
+// from the track; before the first and after the last as there. `stills`: the two stills it
+// comes from (the same one twice before the first and after the last)
 const anchors = new WeakMap();
 function partsAt(track, t) {
   let a = anchors.get(track);
   if (!a) anchors.set(track, (a = track.filter((s) => s.parts && !s.absent)));
   if (!a.length) return null;
-  if (t <= a[0].t) return a[0].parts;
-  if (t >= a[a.length - 1].t) return a[a.length - 1].parts;
+  if (t <= a[0].t) return { ...a[0].parts, stills: [a[0].t, a[0].t] };
+  if (t >= a[a.length - 1].t) return { ...a[a.length - 1].parts, stills: [a[a.length - 1].t, a[a.length - 1].t] };
   const k = a.findIndex((s) => s.t >= t), p = a[k - 1].parts, q = a[k].parts, f = (t - a[k - 1].t) / (a[k].t - a[k - 1].t);
   const mix = (key) => p[key] + (q[key] - p[key]) * f;
-  return { l: mix("l"), r: mix("r"), t: mix("t"), b: mix("b"), lean: mix("lean") };
+  return { l: mix("l"), r: mix("r"), t: mix("t"), b: mix("b"), lean: mix("lean"), stills: [a[k - 1].t, a[k].t] };
 }
-// a face with its features in the footage's pixels: feat { x0, x1, y0, y1, lean }
+// Features further than this from the nearest still that has them are an estimate: they ride
+// with the head's box, and a mouth that opens or a head that tips there is not seen (robe, the
+// review of 2026-11-18: the mouth opened wide between the stills at 22.73 and 25.38 s, and the
+// captions the list put on the lower lip lay on the open mouth)
+export const FEAT_EST = 0.25;
+// a face with its features in the footage's pixels: feat { x0, x1, y0, y1, lean, between? }
+// (between: the two stills an estimate lies between, where it is one)
 const withParts = (person, f) => {
   if (!f) return f;
   const p = partsAt(person.track, f.t);
   if (!p) return f;
-  return { ...f, feat: { x0: f.x + p.l * f.w, x1: f.x + p.r * f.w, y0: f.y + p.t * f.h, y1: f.y + p.b * f.h, lean: p.lean } };
+  const far = Math.min(Math.abs(f.t - p.stills[0]), Math.abs(f.t - p.stills[1])) > FEAT_EST;
+  return { ...f, feat: { x0: f.x + p.l * f.w, x1: f.x + p.r * f.w, y0: f.y + p.t * f.h, y1: f.y + p.b * f.h, lean: p.lean, ...(far ? { between: p.stills.map((x) => +x.toFixed(2)) } : {}) } };
 };
 
 // an answer of the first kind (one face per person and shot, the shots' times the model's own)

@@ -588,3 +588,14 @@ test("a close-up whose head moves or tips between two stills gets a still more t
   const small = shot((t) => (t > 3 && t < 6 ? 200 : 0)); small[0].people[0].track.forEach((x) => { x.w = 300; });
   assert.deepEqual(extraStills(small, META), []);
 });
+
+test("the features between two stills are an estimate: faceAt names the two stills where t is further than FEAT_EST from both, none at a still or near one", () => {
+  const parts = { l: -0.3, r: 0.3, t: -0.1, b: 0.35, lean: 0 };
+  const track = [0, 0.5, 1, 1.5, 2, 2.5, 3].map((t) => ({ t, x: 500, y: 400, w: 300, h: 400, ...(t === 0 || t === 2.5 ? { parts } : {}) }));
+  const p = { who: "A", speaker: "A", track };
+  assert.equal(faceAt(p, 0.1).feat.between, undefined);
+  assert.deepEqual(faceAt(p, 1.2).feat.between, [0, 2.5]);
+  assert.equal(faceAt(p, 2.4).feat.between, undefined);
+  // after the last still, as there: an estimate from it alone once it is far
+  assert.deepEqual(faceAt(p, 3).feat.between, [2.5, 2.5]);
+});

@@ -9,8 +9,10 @@
 //   textOverTime({ zones, shots, needs, set, fixed }) → { caption, shots, hook, candidates,
 //       changes, conflicts, notes }
 //
-// shots: [{ n?, start, end, weight?, picture?: [x, y, w, h], faces: [{ who, track: [{ t, box }] }],
+// shots: [{ n?, start, end, weight?, picture?: [x, y, w, h], faces: [{ who, track: [{ t, box, feat?, between? }] }],
 //   room?: { free, ground? } | null }]: times in seconds of one clock, boxes in px of the frame
+//   (feat: the eyes, nose and mouth; between: the two stills they are an estimate between, where
+//   the caller's features are one, said with the seconds on the lower lip they give)
 //   as the picture stands unraised; weight: the seconds of the shot the video shows (default
 //   end − start); n: the shot's number in the caller's list, for the sentences; room: how far
 //   the picture may be raised without a ground (free: the framing moves its window in the footage) and at most (ground: over a ground; default as far as the
@@ -105,7 +107,7 @@ function momentsOf(shot) {
   if (!ts.length) return [];
   return ts.map((t, i) => {
     const a = i ? (ts[i - 1] + t) / 2 : shot.start, b = i < ts.length - 1 ? (t + ts[i + 1]) / 2 : shot.end;
-    const faces = shot.faces.map((f) => { const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t); return m?.box ? { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}) } : null; }).filter(Boolean);
+    const faces = shot.faces.map((f) => { const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t); return m?.box ? { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}) } : null; }).filter(Boolean);
     return { t, dt: Math.max(0, b - a), faces };
   });
 }
@@ -166,10 +168,10 @@ function shotUnder(cap, moments, most, D, exact = false, beyond = most, price = 
     else below = true;
   }
   const measure = (lift) => {
-    let seconds = 0, share = 0, mouth = 0, nose = 0, lip = 0;
+    let seconds = 0, share = 0, mouth = 0, nose = 0, lip = 0, lipEst = 0;
     const who = new Map();
     for (const m of moments) {
-      let on = false, part = 0;
+      let on = false, part = 0, est = false;
       for (const f of m.faces) {
         if (inter(keepOut(up(f.box, lift), D), cap) <= 0) continue;
         on = true;
@@ -180,15 +182,18 @@ function shotUnder(cap, moments, most, D, exact = false, beyond = most, price = 
         // how deep into the face from its chin: a share of its height (0 where the box is not reached)
         const s = inter(b, cap) > 0 ? Math.min(1, Math.max(0, (Y1(b) - Math.max(cap[1], b[1])) / b[3])) : 0;
         share = Math.max(share, s);
-        const w = who.get(f.who) || { who: f.who, seconds: 0, share: 0, nose: 0, mouth: 0, lip: 0, from: m.t, to: m.t };
+        const w = who.get(f.who) || { who: f.who, seconds: 0, share: 0, nose: 0, mouth: 0, lip: 0, lipEst: 0, stills: null, from: m.t, to: m.t };
         w.seconds += m.dt; w.share = Math.max(w.share, s); w.from = Math.min(w.from, m.t); w.to = Math.max(w.to, m.t);
         if (p === 3) w.nose += m.dt; else if (p === 2) w.mouth += m.dt; else if (p === 1) w.lip += m.dt;
+        // on the lower lip by features that are an estimate between two stills (the caller's
+        // between): the mouth may open lower there, onto the captions
+        if (p === 1 && f.between) { w.lipEst += m.dt; w.stills ||= []; if (!w.stills.some((x) => x[0] === f.between[0] && x[1] === f.between[1])) w.stills.push([...f.between]); est = true; }
         who.set(f.who, w);
       }
       if (on) seconds += m.dt;
-      if (part === 3) nose += m.dt; else if (part === 2) mouth += m.dt; else if (part === 1) lip += m.dt;
+      if (part === 3) nose += m.dt; else if (part === 2) mouth += m.dt; else if (part === 1) { lip += m.dt; if (est) lipEst += m.dt; }
     }
-    return { seconds, share, nose, mouth, lip, who: [...who.values()] };
+    return { seconds, share, nose, mouth, lip, lipEst, who: [...who.values()] };
   };
   let lift = exact ? most : Math.min(most, Math.ceil(need)), past = false;
   let r = measure(lift);
@@ -214,6 +219,13 @@ function lipClearing(cap, moments, lift, D) {
   const em = cap.lines * D.caption.line + D.caption.padEm;
   return { font: Math.max(0, Math.floor((Y1(cap.box) - lip) / em)), lip };
 }
+
+// the stills an estimate lies between, said: [[a, b], …] (a = b: before the first still or after
+// the last, from that one alone)
+export const stillsText = (pairs, f = r1) => {
+  const two = pairs.filter(([a, b]) => a !== b), one = pairs.filter(([a, b]) => a === b);
+  return [two.length ? `between the stills at ${two.map(([a, b]) => `${f(a)} and ${f(b)} s`).join(", ")}` : "", one.length ? `from the still at ${one.map(([a]) => `${f(a)} s`).join(", ")} alone` : ""].filter(Boolean).join(" and ");
+};
 
 // Returns of one framing (the same face, the same size, the same place in the frame: the camera
 // cut back to a close-up it showed before) stand at one height: a close-up that comes back
@@ -308,7 +320,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
           const sec = r.seconds * k;
           touch += sec; cover += sec * r.share; mouth += r.mouth * k; nose += r.nose * k; lip += r.lip * k;
           liftCost += s.weight * (free * costs.liftFree + ground * costs.liftGround) / (0.1 * H) + (r.past ? s.weight * costs.past : 0);
-          return { ...r, seconds: sec, nose: r.nose * k, mouth: r.mouth * k, lip: r.lip * k, free, ground };
+          return { ...r, seconds: sec, nose: r.nose * k, mouth: r.mouth * k, lip: r.lip * k, lipEst: (r.lipEst || 0) * k, free, ground };
         });
         const mid = (yb - h / 2) / H;
         const away = Math.max(0, USUAL[0] - mid, mid - USUAL[1]) * 100;
@@ -422,13 +434,13 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     let eyesTop = Infinity;
     for (const m of s.moments) for (const f of m.faces) eyesTop = Math.min(eyesTop, eyesOf(f, D) - r.lift);
     const out = { shot: i, start: s.start, end: s.end, lift: r.lift, headCut, ...(Number.isFinite(eyesTop) ? { eyes: Math.round((eyesTop / H) * 1000) / 1000 } : {}), free: r.free, ground: r.ground, band: r.ground, most: s.most, limit: r.past ? "mouth" : s.by, ...(s.forced ? { fixed: true } : {}), ...(r.past ? { past: true } : {}), ...(r.returned ? { returned: true } : {}),
-      touches: r.who.map((w) => ({ role: "caption", who: w.who, from: r1(w.from), to: r1(w.to), seconds: r1(w.seconds), nose: r1(w.nose), mouth: r1(w.mouth), lip: r1(w.lip), share: Math.round(w.share * 100) / 100 })) };
+      touches: r.who.map((w) => ({ role: "caption", who: w.who, from: r1(w.from), to: r1(w.to), seconds: r1(w.seconds), nose: r1(w.nose), mouth: r1(w.mouth), lip: r1(w.lip), ...(w.lipEst > 0.05 ? { lipEst: r1(w.lipEst), stills: w.stills } : {}), share: Math.round(w.share * 100) / 100 })) };
     if (best && r.seconds > 0.05) {
       const who = [...new Set(r.who.map((w) => w.who))].join(" and "), short = r.need - r.lift;
       const span = `Shot ${s.n ?? i + 1} (${r1(s.start)}–${r1(s.end)} s)`;
       const chin = r1(Math.max(0, r.seconds - r.nose - r.mouth - r.lip));
       // the seconds on each part, as the list says them
-      out.on = { nose: r1(r.nose), mouth: r1(r.mouth), lip: r1(r.lip), chin };
+      out.on = { nose: r1(r.nose), mouth: r1(r.mouth), lip: r1(r.lip), ...(r.lipEst > 0.05 ? { lipEst: r1(r.lipEst) } : {}), chin };
       const hair = r.who.length && r.share === 0 && best.box[1] + best.box[3] / 2 < Math.min(...s.moments.flatMap((m) => m.faces.map((f) => f.box[1] + f.box[3] / 2)));
       const raised = r.past ? ` (raised ${r.lift} px, as far as the eyes allow ${raise === "mouth" ? `at ${Math.round(D.eyeLine * 100)} % of the height` : "below the apps' top bar"})` : "";
       if (r.nose > 0.05) {
@@ -447,7 +459,10 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         // with the whole head kept: whether the default raise, past the head's top as far as the
         // eye line allows, would clear it
         const viaMouth = raise === "head" && !s.forced && (() => { const ml = maxLift(s, s.moments, { ...ctx, raise: "mouth" }); const q = shotUnder(best.box, s.moments, ml.beyond, D, true); return q.lip + q.mouth + q.nose <= 0.05; })();
-        const lead = `${span}: the captions lie on ${who}'s lower lip for ${r1(r.lip)} s and on the chin for ${chin} s, not on the mouth${r.past ? `; raised ${r.lift} px past the head's top for it` : ""}`;
+        // the lower lip from features that are an estimate between two stills: said, with the stills
+        const est = r.lipEst > 0.05 ? r.who.filter((w) => w.lipEst > 0.05) : [];
+        const estSaid = est.length ? ` (${r1(r.lipEst)} s of it ${stillsText(est.flatMap((w) => w.stills))}, where the mouth's place is an estimate that rides with the head's box: a mouth that opens there reaches lower, onto the captions; look at those seconds)` : "";
+        const lead = `${span}: the captions lie on ${who}'s lower lip for ${r1(r.lip)} s${estSaid} and on the chin for ${chin} s, not on the mouth${r.past ? `; raised ${r.lift} px past the head's top for it` : ""}`;
         if (c.font >= least && c.font < best.font) notes.push(`${lead}, at ${best.font} px, the type that leaves the least on the faces of the whole clip: ${c.font} px or less (--font-size ${c.font}) would clear it at this place, and a cut to another shot would avoid it.`);
         else notes.push(`${lead}: not avoidable at a readable size (${best.font} px; the low end of published captions is ${least} px)${raise === "head" ? " with the whole head kept" : ""}. Nothing to fix; ${viaMouth ? "--raise mouth (the head's top cut for it) or " : ""}a cut to another shot would avoid it${raise === "head" && !viaMouth ? " (--raise mouth would not clear it either)" : ""}; ${c.font >= 1 ? `a smaller type only at ${c.font} px or less (--font-size ${c.font}), under that low end` : `no smaller type would: the lower lip reaches down to y ${r0(c.lip)} and the captions end at y ${r0(Y1(best.box))}`}.`);
       } else if (hair) {

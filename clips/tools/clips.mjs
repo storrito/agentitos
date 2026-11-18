@@ -374,7 +374,11 @@ function place(dir, opts, { build = true } = {}) {
   console.log(`Raised (--raise ${level}): ${level === "full" ? "a shot goes up until the chin is clear, as far as the eyes reach the apps' top bar, the head cut by the frame's top" : level === "head" ? "a shot goes up only while the whole head stays in the picture; the type goes to its floor first and what is left lies on the chin or the lower lip" : "a shot goes up while the whole head stays in the picture, and past the head's top only where the captions would otherwise lie on a mouth"} (head, mouth, full).`);
   console.log(`Per shot of the cut (seconds of the clip, as the sheets list them):`);
   // per shot the seconds on each part, the part named; a ✗ only where something can be done
-  const partsOf = (on) => [on.nose ? `the nose or eyes ${sec(on.nose)} s` : "", on.mouth ? `the mouth ${sec(on.mouth)} s` : "", on.lip ? `the lower lip ${sec(on.lip)} s` : "", on.chin ? `the chin ${sec(on.chin)} s` : ""].filter(Boolean).join(", ");
+  // (the lower lip from features that are an estimate between two stills: said with the stills, as
+  // the mouth may open lower there, onto the captions)
+  const stillsOf = (pairs) => { const two = pairs.filter(([a, b]) => a !== b), one = pairs.filter(([a, b]) => a === b); return [two.length ? `between the stills at ${two.map(([a, b]) => `${sec(a)} and ${sec(b)} s`).join(", ")}` : "", one.length ? `from the still at ${one.map(([a]) => `${sec(a)} s`).join(", ")} alone` : ""].filter(Boolean).join(" and "); };
+  const estOf = (x) => { const w = x.touches.filter((t) => t.lipEst); return w.length ? ` (${sec(w.reduce((n, t) => n + t.lipEst, 0))} s of it ${stillsOf(w.flatMap((t) => t.stills))}: there the mouth's place is an estimate, look whether it opens onto the captions)` : ""; };
+  const partsOf = (on, x) => [on.nose ? `the nose or eyes ${sec(on.nose)} s` : "", on.mouth ? `the mouth ${sec(on.mouth)} s` : "", on.lip ? `the lower lip ${sec(on.lip)} s${x ? estOf(x) : ""}` : "", on.chin ? `the chin ${sec(on.chin)} s` : ""].filter(Boolean).join(", ");
   const rows = text.shots.map((x, i) => {
     // (the framing again found its shots anew: the one at this shot's middle)
     const k = index[i], mid = (x.start + x.end) / 2, sh = lifted.find((q) => mid >= q.start && mid < q.end) || lifted[k] || { faces: [] };
@@ -382,11 +386,11 @@ function place(dir, opts, { build = true } = {}) {
     const on = x.on || {};
     const raised = `${x.lift ? `raised ${x.lift} px${x.ground ? `, a blurred band of ${x.ground} px at the bottom (under the apps' text from y ${text.safe[1] + text.safe[3]})` : ""}${x.fixed ? " as you fixed it" : x.past ? ", past the head's top so that the captions keep off the mouth" : x.returned ? ", as the other returns of this close-up" : ""}` : "as framed"}${x.headCut?.seconds ? `; the head cut at the top ${x.headCut.px} px for ${sec(x.headCut.seconds)} s${x.headCut.byLift ? ` (${x.headCut.byLift} px of it by the raise)` : ""}` : ""}`;
     const where = !x.touches.length || !(x.touches.some((t) => t.seconds > 0.05)) ? "on no face"
-      : x.fault === "nose" ? `✗ on the nose or eyes of ${who}: ${partsOf(on)}`
-      : x.fault === "mouth" ? `✗ on the mouth of ${who}: ${partsOf(on)}`
+      : x.fault === "nose" ? `✗ on the nose or eyes of ${who}: ${partsOf(on, x)}`
+      : x.fault === "mouth" ? `✗ on the mouth of ${who}: ${partsOf(on, x)}`
       : x.fault ? `✗ on the face of ${who} ${sec(x.touches.reduce((n, t) => n + t.seconds, 0))} s (a picture shown whole: reframe --follow)`
       : x.hair ? `above the head of ${who}, on the hair ${sec(x.touches.reduce((n, t) => n + t.seconds, 0))} s`
-      : x.lip ? `on ${who}: ${partsOf(on)}, not on the mouth: not avoidable at a readable size`
+      : x.lip ? `on ${who}: ${partsOf(on, x)}, not on the mouth: not avoidable at a readable size`
       : `on the chin or neck of ${who} ${sec(on.chin ?? x.touches.reduce((n, t) => n + t.seconds, 0))} s, below the mouth`;
     console.log(`  ${String(k + 1).padStart(2)}. ${sec(x.start)}–${sec(x.end)} s  ${raised}; captions ${where}`);
     const facesAt = (t) => { const out = []; for (const f of sh.faces) { let best = null; for (const m of f.track) if (!best || Math.abs(m.t - t) < Math.abs(best.t - t)) best = m; if (best && Math.abs(best.t - t) < 0.3) out.push(best.box); } return out; };
