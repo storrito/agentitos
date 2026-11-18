@@ -587,6 +587,20 @@ t("the upright take in the middle of 16:9 is also tried smaller, as the panel is
   return mid.map((c) => `${nameOf(c)} ${c.hard ? "✗" : "passes"}`).join(", ");
 });
 
+t("a sliver of another person at a crop's edge is one finding: it was both 'in the safe box's margin' and 'cut by the picture's edge'; now the margin's finding says that it is cut, and the checker still agrees", () => {
+  const res = solve({ zones: Z916, source: [3840, 2160], faces: [[1536, 740, 135, 200], [1968, 805, 105, 175], [2448, 710, 155, 145], [3178, 720, 145, 145]], needs: [cap(1)] });
+  let n = 0;
+  for (const c of res.candidates) for (const o of (c.others || []).filter((x) => x.shows < 0.999)) {
+    const mine = c.problems.filter((q) => q.of === o.of && q.level === "soft");
+    ok(mine.length === 1, `${nameOf(c)}: ${o.of} has ${mine.length} findings: ${mine.map((q) => q.what).join(" | ")}`);
+    ok(/cut by the picture's edge/.test(mine[0].what), mine[0].what);
+    n++;
+  }
+  const c = res.candidates.find((q) => (q.others || []).some((o) => o.shows < 0.999));
+  agree(c, res, "sliver-one-finding");
+  return `${n} slivers`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);

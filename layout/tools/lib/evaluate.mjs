@@ -66,7 +66,12 @@ export function evaluate(ctx, p) {
     // (the speaker baked into the screen is said once: that he shows twice)
     if (o.baked) continue;
     if (split) problems.push({ level: "soft", code: "other-shows", kind: "face", of: o.label, what: `shows in the other person's part (${pct(o.share)} of it)` });
-    else if (o.share < 0.999) problems.push({ level: "soft", code: "other-cut", kind: "face", of: o.label, what: `is cut by the picture's edge (${pct(o.share)} of it shows)` });
+    else if (o.share < 0.999) {
+      // a sliver in the safe box's margin or a feed's crop is one finding, that says both
+      const same = problems.find((q) => q.of === o.label && q.level === "soft" && (q.code === "margin" || q.code === "crop"));
+      if (same) same.what += `, and cut by the picture's edge (${pct(o.share)} of it shows)`;
+      else problems.push({ level: "soft", code: "other-cut", kind: "face", of: o.label, what: `is cut by the picture's edge (${pct(o.share)} of it shows)` });
+    }
   }
   const leftOut = !split && parts[0].own ? sources[0].faces.length - parts[0].own.length - others.filter((o) => o.share >= 0.999).length : 0;
   const sMax = Math.max(...parts.map((q) => q.s));
