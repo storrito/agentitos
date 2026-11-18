@@ -2,10 +2,10 @@
 // passage is held against, what goes when its marked sentences are dropped, and the list as
 // moments.json holds it. All of it from the sentences: their words, voices and times.
 //
-//   arrange(answer, sentences, { limit })   → the moments of moments.json from the model's answer, in its order
-//   orderOf(answer)                         → the model's order as indexes into its moments, each once
-//   questionStart(sentences, first, floor)  → the sentence a moment starts at: an answer at its question
-//   checks(sentences, first, last, limit)   → { question, conjunction, voices, over }
+//   arrange(answer, sentences, { limit })   → the moments of moments.json from the model's answer, by `opens`
+//   shape(m, first, last, sentences, limit) → one moment of moments.json over first..last
+//   questionStart(sentences, first, floor)  → the question just before a moment that its first sentence answers
+//   checks(sentences, first, last, limit)   → { question, conjunction, voices, over } (arrange adds `asked`)
 //   dropSpans(sentences, first, last, drop) → [[from, to], …] in the episode's seconds
 //   keepsWithout(words, said, spans)        → the word ranges of a cut clip that stay
 //   numbers("229-234,240") / ranges([…])    → [229, …, 234, 240] and back
@@ -47,14 +47,14 @@ export function continues(sentences, k) {
   return sameVoice(sentences[p], sentences[k]) && sentences[k].start - sentences[p].end <= 3;
 }
 
-// An answer begins at its question. Looking back from the first sentence over what its own
-// voice said before it (the answer so far) and at most two "mhm"s of another voice: when the
-// next thing another voice said is a question that ends within 15 s before the first sentence,
-// the moment starts at that question, with what its asker says in those 15 s to set it up ("So
-// in Gonzo Girl you play …" before "What kind of value …?"). A question further back, or one
-// with a remark after it, is the model's to find: a wider rule (any question within 15 s, and a
-// step back from every conjunction) moved a third of the starts of the first measurement's
-// answers, more of them away from the editors' starts than towards them.
+// The question a moment's first sentence answers. Looking back from the first sentence over what
+// its own voice said before it (the answer so far) and at most two "mhm"s of another voice: when
+// the next thing another voice said is a question that ends within 15 s before the first
+// sentence, the sentence where that question begins, with what its asker says in those 15 s to
+// set it up ("So in Gonzo Girl you play …" before "What kind of value …?"); else `first`. It is
+// a note for the agent, not a move: starting there took the editors' start away in every case
+// it touched in the second measurement (they began at the answer), and a wider rule (any
+// question within 15 s, a step back from every conjunction) did worse still in the first.
 // Without voices (YouTube's captions) nobody is known to ask: the start stays. Never below
 // `floor` (a sentence another moment holds).
 export function questionStart(sentences, first, floor = 0) {
@@ -153,55 +153,55 @@ export function keepsWithout(words, said, spans = []) {
   return { keeps, inside, left };
 }
 
-// The model's `order`: the numbers of its moments (1 for the first it listed), best first. A
-// number twice or out of the list counts once or not at all; a moment it left out comes after
-// the others, in the order it was listed. → indexes into answer.moments, best first
-export function orderOf(answer) {
-  const n = Array.isArray(answer.moments) ? answer.moments.length : 0;
-  const seen = new Set();
-  for (const v of Array.isArray(answer.order) ? answer.order : []) {
-    const k = Math.round(Number(v)) - 1;
-    if (k >= 0 && k < n) seen.add(k);
-  }
-  for (let k = 0; k < n; k++) seen.add(k);
-  return [...seen];
-}
+// How well a moment's first sentence works on someone who has seen nothing of the episode, as the
+// model rates it, 1 to 10. It is the one judgement of the old score that ordered anything: main's
+// score was in effect 8 plus "cold" (clips-eval, 2026-11-17).
+const opensOf = (m) => Math.max(1, Math.min(10, Math.round(Number(m.opens) || 1)));
 
-// The moments of moments.json from the model's answer, in the model's order (`rank` 1, 2, …, no
-// two the same): whole sentences that exist, an answer started at its question (`moved` says from
-// where), at most longest(limit) seconds (the end trimmed sentence by sentence, as rarely as the
-// model returns more), overlapping no moment ranked before it. `drop` stays only inside a moment
-// that is over the limit and never holds its payoff; `kept` is its length without those
-// sentences; `checks` what the tool counts about it (see checks above).
+// The moments of moments.json from the model's answer, ordered by `opens` (higher first; on the
+// same rating, as the model listed them), `rank` 1, 2, … with no two the same: whole sentences
+// that exist, at most longest(limit) seconds (the end trimmed sentence by sentence, as rarely as
+// the model returns more), overlapping no moment ranked before it. `drop` stays only inside a
+// moment that is over the limit and never holds its payoff; `kept` is its length without those
+// sentences; `checks` what the tool counts about it (see checks above). The tool moves no start:
+// a question just before the first sentence that it answers is only noted (`checks.asked`): a
+// rule that moved the start there took covered starts away from the editors' (clips-eval).
 export function arrange(answer, sentences, { limit = MAX_SECONDS } = {}) {
   const taken = new Set();
-  const listed = Array.isArray(answer.moments) ? answer.moments : [];
-  return orderOf(answer).flatMap((index) => {
-    const m = listed[index];
-    let first = Math.max(0, Math.round(Number(m.first))), last = Math.min(sentences.length - 1, Math.round(Number(m.last)));
+  const listed = (Array.isArray(answer.moments) ? answer.moments : []).map((m, k) => ({ m, k }))
+    .sort((a, b) => opensOf(b.m) - opensOf(a.m) || a.k - b.k).map(({ m }) => m);
+  return listed.flatMap((m) => {
+    const first = Math.max(0, Math.round(Number(m.first)));
+    let last = Math.min(sentences.length - 1, Math.round(Number(m.last)));
     if (!(first <= last)) return [];
     for (let k = first; k <= last; k++) if (taken.has(k)) return [];
-    const asked = first;
     let floor = first;
     while (floor > 0 && !taken.has(floor - 1)) floor--;
-    first = questionStart(sentences, first, floor);
+    const q = questionStart(sentences, first, floor);
     while (last > first && sentences[last].end - sentences[first].start > longest(limit)) last--;
     if (sentences[last].end - sentences[first].start > longest(limit)) return [];
     for (let k = first; k <= last; k++) taken.add(k);
-    const s0 = sentences[first], s1 = sentences[last], seconds = Math.round(s1.end - s0.start);
-    const payoff = Number.isInteger(m.payoff) && m.payoff >= first && m.payoff <= last ? m.payoff : null;
-    const drop = seconds > limit
-      ? [...new Set((Array.isArray(m.drop) ? m.drop : []).filter((k) => Number.isInteger(k) && k > first && k < last && k !== payoff))].sort((a, b) => a - b)
-      : [];
-    const gone = dropSpans(sentences, first, last, drop).reduce((a, [from, to]) => a + to - from, 0);
-    return [{
-      first, last, kind: KINDS.includes(m.kind) ? m.kind : "claim", title: m.title || "", why: m.why || "",
-      payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
-      start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds, kept: Math.round(s1.end - s0.start - gone),
-      checks: checks(sentences, first, last, limit),
-      ...(first !== asked ? { moved: { from: asked, why: "question" } } : {}),
-    }];
+    return [shape(m, first, last, sentences, limit, { asked: q !== first ? q : null, opens: opensOf(m) })];
   }).map((m, k) => ({ rank: k + 1, ...m }));
+}
+
+// One moment of moments.json over the sentences first..last, from what the model said about it
+// (`m`): its drop and payoff kept where they still fit, its length, its checks
+export function shape(m, first, last, sentences, limit, more = {}) {
+  const s0 = sentences[first], s1 = sentences[last], seconds = Math.round(s1.end - s0.start);
+  const payoff = Number.isInteger(m.payoff) && m.payoff >= first && m.payoff <= last ? m.payoff : null;
+  const drop = seconds > limit
+    ? [...new Set((Array.isArray(m.drop) ? m.drop : []).filter((k) => Number.isInteger(k) && k > first && k < last && k !== payoff))].sort((a, b) => a - b)
+    : [];
+  const gone = dropSpans(sentences, first, last, drop).reduce((a, [from, to]) => a + to - from, 0);
+  const { asked = m.checks?.asked ?? null, opens = m.opens, ...rest } = more;
+  return {
+    first, last, kind: KINDS.includes(m.kind) ? m.kind : "claim", title: m.title || "", why: m.why || "",
+    opens, payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
+    start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds, kept: Math.round(s1.end - s0.start - gone),
+    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null },
+    ...rest,
+  };
 }
 
 // The transcript comes first and the task after it: a second run on the same episode (another
@@ -232,7 +232,9 @@ A moment stands alone for this channel's own followers: they know the host, the 
 An exchange changes voices every few seconds: that is what it is, not a fault. Set crosstalk true only where people talk over each other so that words are lost.
 When the first sentence of a moment does not hook on its own in its first three seconds (it opens on small talk, "so", "yeah", or a set-up that only pays off later), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
 
-List the moments best first, no two equal: decide. First is the one that works best as a short of this channel on its own: its first sentence makes someone scrolling past stop (a question, a surprising claim, a vivid image, a number, a line that gets a laugh), it holds one idea to its end, and its end lands. Concrete beats abstract. They do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, payoff, drop, the hook, crosstalk.
+opens: how well the moment's first sentence works on someone who has seen nothing of the episode, 1 to 10, judged on that alone: 10 makes anyone scrolling past stop and makes sense by itself (a question, a surprising claim, a vivid image, a number, a line that gets a laugh); 5 is fine but plain; 1 needs what came before or opens on small talk. Use the whole scale; two moments rarely open equally well.
+
+List the moments best first; they do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, opens, payoff, drop, the hook, crosstalk.
 
 Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.`;
 }
@@ -242,6 +244,7 @@ export function checkNotes(m, limit) {
   const c = m.checks || {};
   return [
     c.question ? "opens with a question" : null,
+    c.asked != null ? `answers the question at sentence ${c.asked} just before it: start there when the question belongs to it` : null,
     c.conjunction ? "opens on a conjunction in the middle of a turn: read the sentence before it" : null,
     c.voices > 1 ? `${c.voices} voices` : null,
     c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : null,
@@ -256,9 +259,8 @@ export function listing({ limit, count, inventory, moments: picked, ideas }, sen
   picked.forEach((m, k) => {
     if (k === count && picked.length > count) lines.push(`Fillers, weaker than the ${count} above:`);
     const notes = checkNotes(m, limit);
-    lines.push(`${m.rank}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
+    lines.push(`${m.rank}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] opens ${m.opens}/10 · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
       + (notes ? `\n   ${notes}` : "")
-      + (m.moved ? `\n   starts at the question before it (the model began at sentence ${m.moved.from})` : "")
       + `\n   „${sentences[m.first].text}“\n   ${m.why}`
       + (m.payoff != null ? `\n   strongest line (${m.payoff}): „${sentences[m.payoff].text}“` : "") + (m.hook ? `\n   hook on screen: „${m.hook}“` : ""));
   });

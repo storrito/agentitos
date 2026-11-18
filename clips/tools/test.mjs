@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, orderOf, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -149,17 +149,14 @@ test("prepare refuses a payoff that is not a kept sentence of the moment, before
   fs.rmSync(dir, { recursive: true });
 });
 
-test("the moments come in the model's order, ranked 1, 2, … with no two the same", () => {
-  // listed as they come in the episode, ordered best first: the later passage first
-  const out = arrange({ moments: [moment(1, 3), moment(6, 7), moment(8, 9)], order: [3, 1, 2] }, INTERVIEW, { limit: 90 });
-  assert.deepEqual(out.map((m) => [m.rank, m.first, m.last]), [[1, 8, 9], [2, 1, 3], [3, 6, 7]]);
+test("the moments are ordered by how well they open, the model's list breaking a tie, ranked 1, 2, …", () => {
+  const out = arrange({ moments: [moment(1, 3, { opens: 6 }), moment(6, 7, { opens: 9 }), moment(8, 9, { opens: 6 })] }, INTERVIEW, { limit: 90 });
+  assert.deepEqual(out.map((m) => [m.rank, m.first, m.opens]), [[1, 6, 9], [2, 1, 6], [3, 8, 6]]);
   assert.ok(out.every((m) => !("score" in m) && !("weak" in m) && !("points" in m)));
-  // a number twice or out of the list counts once or not at all; one left out comes last, as listed
-  assert.deepEqual(orderOf({ moments: [{}, {}, {}, {}], order: [2, 2, 9, 0, 4] }), [1, 3, 0, 2]);
-  assert.deepEqual(orderOf({ moments: [{}, {}] }), [0, 1]);
-  assert.deepEqual(orderOf({}), []);
-  // of two that overlap, the one ordered first stays, wherever it was listed
-  const two = arrange({ moments: [moment(1, 7), moment(6, 9)], order: [2, 1] }, INTERVIEW, { limit: 90 });
+  // a rating out of the scale is brought into it
+  assert.deepEqual(arrange({ moments: [moment(1, 3, { opens: 40 }), moment(8, 9, { opens: "x" })] }, INTERVIEW).map((m) => m.opens), [10, 1]);
+  // of two that overlap, the one that opens better stays, wherever it was listed
+  const two = arrange({ moments: [moment(1, 7, { opens: 3 }), moment(6, 9, { opens: 8 })] }, INTERVIEW, { limit: 90 });
   assert.deepEqual(two.map((m) => [m.rank, m.first, m.last]), [[1, 6, 9]]);
 });
 
@@ -167,8 +164,12 @@ test("each moment carries the checks the tool counts, an exchange is a kind of i
   const [m] = arrange({ moments: [moment(1, 7, { kind: "exchange" })] }, INTERVIEW);
   assert.equal(m.kind, "exchange");
   assert.ok(KINDS.includes("exchange"));
-  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12 });
+  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null });
   assert.equal(arrange({ moments: [moment(2, 3, { kind: "banter" })] }, INTERVIEW)[0].kind, "claim");
+  // shape: the same moment over other sentences keeps what still fits
+  const wider = shape({ ...m, drop: [4, 5] }, 1, 8, INTERVIEW, 59);
+  assert.deepEqual([wider.first, wider.last, wider.drop, wider.payoff, wider.checks.asked], [1, 8, [4, 5], 7, null]);
+  assert.equal(shape({ ...m, payoff: 9 }, 1, 8, INTERVIEW, 200).payoff, null);
 });
 
 test("the prompt holds the description for the channel's followers, the limit and the order to give", () => {
@@ -181,22 +182,22 @@ test("the prompt holds the description for the channel's followers, the limit an
   assert.match(p, /up to 59 seconds here/);
   assert.ok(p.includes(`(up to ${longest(59)})`));
   assert.match(p, /exchanges \(a quick back-and-forth with a laugh/);
-  assert.match(p, /List the moments best first, no two equal: decide\./);
+  assert.match(p, /opens: how well the moment's first sentence works on someone who has seen nothing of the episode, 1 to 10, judged on that alone/);
   assert.doesNotMatch(p, /Score|0 to 2/);
   assert.doesNotMatch(momentsPrompt({ title: "T" }, "", 3, 90), /The video's description/);
 });
 
 test("the list shows the moments best first, the fillers apart, and only the checks that need a look", () => {
-  const ms = arrange({ moments: [moment(1, 7, { drop: [4, 5], hook: "He nearly drowned" }), moment(8, 9)], order: [1, 2] }, INTERVIEW);
+  const ms = arrange({ moments: [moment(2, 7, { drop: [4, 5], hook: "He nearly drowned", opens: 7 }), moment(8, 9, { opens: 4 })] }, INTERVIEW);
   const out = listing({ limit: 59, count: 1, inventory: { story: 2, answer: 1 }, moments: ms, ideas: [] }, INTERVIEW, 3);
   const lines = out.split("\n");
   assert.match(lines[0], /^Inside: 0 claims, 2 stories, 0 numbers, 0 mistakes, 0 how-tos, 1 answers, 0 exchanges — too thin/);
-  assert.equal(lines[1], "1. 1-7 [0:07, 71 s] story · t");
-  assert.equal(lines[2], "   opens with a question; 2 voices; 12 s over the 59: 54 s without the sentences 4-5");
+  assert.equal(lines[1], "1. 2-7 [0:13, 65 s] opens 7/10 · story · t");
+  assert.equal(lines[2], "   answers the question at sentence 1 just before it: start there when the question belongs to it; 6 s over the 59: 48 s without the sentences 4-5");
   assert.ok(out.includes("strongest line (7): „That is when I learned to say no to a director.“"));
   assert.ok(out.includes("hook on screen: „He nearly drowned“"));
   assert.match(out, /\nFillers, weaker than the 1 above:\n2\. 8-9 /);
-  assert.doesNotMatch(out, /\/10|\bweak\b/);
+  assert.doesNotMatch(out, /\bweak\b|score/);
 });
 
 test("a key that OpenRouter turns away is told from everything else, and said in one sentence", async () => {
@@ -220,17 +221,16 @@ test("a key that OpenRouter turns away is told from everything else, and said in
   assert.match(REJECTED("401 User not found."), /^OpenRouter turned the key away \(401 User not found\.\), so nothing was written: put a valid OPENROUTER_API_KEY/);
 });
 
-test("an answer starts at its question, with what the asker says to set it up", () => {
+test("the question an answer answers is noted where it starts, with what the asker says to set it up; nothing moves", () => {
   const [m] = arrange({ moments: [moment(2, 7)] }, INTERVIEW);
-  assert.deepEqual([m.first, m.last], [1, 7]);
-  assert.deepEqual(m.moved, { from: 2, why: "question" });
-  assert.equal(m.start, 7);
+  assert.deepEqual([m.first, m.last, m.checks.asked], [2, 7, 1]);
+  assert.equal(m.moved, undefined);
   // from the middle of the answer too, as long as only the answering voice spoke since the question
   assert.equal(questionStart(INTERVIEW.slice(0, 3).concat(transcript([[3, "B", "It was cold.", 23.4]])), 3), 1);
   // "So in that film you play a diver." before the question belongs to it; the greeting 3 s earlier does not
   const setUp = transcript([[3, "A", "Good to have you."], [5, "A", "So in that film you play a diver.", 6], [4, "A", "How long can you hold your breath?"], [8, "B", "Four minutes, on a good day."]]);
   assert.equal(questionStart(setUp, 3), 1);
-  assert.equal(arrange({ moments: [moment(3, 3)] }, setUp)[0].first, 1);
+  assert.deepEqual([arrange({ moments: [moment(3, 3)] }, setUp)[0].first, arrange({ moments: [moment(3, 3)] }, setUp)[0].checks.asked], [3, 1]);
 });
 
 test("a start that answers no question stays where the model put it", () => {
@@ -254,7 +254,7 @@ test("a start that answers no question stays where the model put it", () => {
   // the question belongs to another moment
   assert.equal(at([[4, "A", "How did you start out?"], [7, "B", "With nothing, honestly."]], 1, 1), 1);
   const taken = arrange({ moments: [moment(0, 1), moment(2, 7)] }, INTERVIEW, { limit: 200 });
-  assert.deepEqual(taken.map((m) => [m.first, m.last, m.moved]).sort(), [[0, 1, undefined], [2, 7, undefined]]);
+  assert.deepEqual(taken.map((m) => [m.first, m.last, m.checks.asked]).sort(), [[0, 1, null], [2, 7, null]]);
 });
 
 test("a conjunction counts as one in the middle of a voice's turn, not where it opens a turn", () => {
@@ -287,5 +287,5 @@ test("the payoff is a sentence of the moment and is never dropped", () => {
   assert.equal(m.payoff, 5);
   assert.deepEqual(m.drop, [4]);
   assert.equal(arrange({ moments: [moment(1, 7, { payoff: 9 })] }, INTERVIEW)[0].payoff, null);
-  assert.equal(arrange({ moments: [moment(2, 7, { payoff: 1 })] }, INTERVIEW)[0].payoff, 1);
+  assert.equal(arrange({ moments: [moment(2, 7, { payoff: 1 })] }, INTERVIEW)[0].payoff, null);
 });

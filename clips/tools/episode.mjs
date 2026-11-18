@@ -300,10 +300,10 @@ const MOMENTS_SCHEMA = {
     inventory: { type: "object", additionalProperties: false, required: KINDS, properties: Object.fromEntries(KINDS.map((k) => [k, { type: "integer" }])) },
     moments: { type: "array", items: {
       type: "object", additionalProperties: false,
-      required: ["first", "last", "kind", "title", "why", "payoff", "drop", "hook", "crosstalk"],
+      required: ["first", "last", "kind", "title", "why", "opens", "payoff", "drop", "hook", "crosstalk"],
       properties: {
         first: { type: "integer" }, last: { type: "integer" }, kind: { type: "string", enum: KINDS },
-        title: { type: "string" }, why: { type: "string" },
+        title: { type: "string" }, why: { type: "string" }, opens: { type: "integer" },
         payoff: { type: "integer" }, drop: { type: "array", items: { type: "integer" } },
         hook: { type: "string" }, crosstalk: { type: "boolean" },
       },
