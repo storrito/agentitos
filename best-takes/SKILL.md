@@ -21,7 +21,7 @@ You run in rragent: chat left, artifacts beside it. `<skill>` is this file's fol
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `transcribe` skill beside this one, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (found at `http://sprite.internal`; an rragent agent there often has no key). Words from ElevenLabs Scribe ("äh" included), the cut proposed by Gemini watching the videos: about two cents a minute of recording. Nothing to `npm install`; when something is missing, say so in one sentence, never install it.
+Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `transcribe` skill beside this one, for b-roll its `b-roll` skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (found at `http://sprite.internal`; an rragent agent there often has no key). Words from ElevenLabs Scribe ("äh" included), the cut proposed by Gemini watching the videos: about two cents a minute of recording. Nothing to `npm install`; when something is missing, say so in one sentence, never install it.
 
 ## From the recordings to the video, all in the chat
 
@@ -58,11 +58,13 @@ node <skill>/tools/takes.mjs build takes/<name> --out artifacts/<name>/compositi
 node <skill>/tools/takes.mjs check takes/<name>
 ```
 
-The title is the topic in the person's words. `build` cuts between words, evens each take's level and handles pauses over a second by the picture: still → jump cut; moving (a click, a page loading) → kept muted, a long one as a timelapse (up to ×10). A wait the speaker announces ("let's wait until then", any language) never goes (a timelapse when the picture moves, else held 3 s before the cut): the proposal lists it in `"waits"`; check that it did and add the sentence's last word yourself when not. The player beside the chat reloads after every build; nothing is rendered. It also writes the cut's voice as one file, `takes/<name>/voice.cut.m4a`: with the words of `takes/<name>/edit.json`, timed in the cut, that is what another skill takes when its pictures are to follow this voice. `check` prints the cut piece by piece with the words, what it leaves out, the levels and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason (a short piece that is a whole keep, like "Tschüss.", is fine).
+The title is the topic in the person's words. `build` cuts between words, evens each take's level and handles pauses over a second by the picture: moving no more than while the person speaks (a face, a hand-held phone) → jump cut; something moving clearly more (a thing held into the picture, a click, a page loading) → kept muted, a long one as a timelapse (up to ×10); a silent moment worth seeing that it cannot measure (a look, a reaction) is yours to keep with `"pauses": "keep"` on its keep. A wait the speaker announces ("let's wait until then", any language) never goes (a timelapse when the picture moves, else held 3 s before the cut): the proposal lists it in `"waits"`; check that it did and add the sentence's last word yourself when not. The player beside the chat reloads after every build; nothing is rendered. It also writes the cut's voice as one file, `takes/<name>/voice.cut.m4a`: with the words of `takes/<name>/edit.json`, timed in the cut, that is what another skill takes when its pictures are to follow this voice. `check` prints the cut piece by piece with the words, what it leaves out, each pause with what it did and why, the levels and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason (a short piece that is a whole keep, like "Tschüss.", is fine).
 
 ### 4. Ask whether it is right
 
 One message: length before and now, what you left out in plain words (each retry and why, the talk about the recording, the ähs, pauses cut, stretches played faster), what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**: "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
+
+When `check` says the length is no longer a matter of cutting (the target would leave out more than half of the cut), do not cut it shorter on your own: ask instead, the two lengths and two buttons, as in "Too long to cut" below. After "a script to record": write it in the chat, in their own words and language, one sentence a line, within the words `check` named, and say in one sentence that a new recording of it goes through this skill again; no tool is needed. After "the strongest parts": cut by the brief's rule 8, build, check, and ask as above, naming in plain words what was left out.
 
 ### 5. Changes
 
@@ -70,7 +72,7 @@ Read `<skill>/references/changes.md` before making a change they ask for. Change
 
 ### Captions in the picture
 
-When they ask for captions in the picture ("Untertitel ins Bild", "like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for explainers). Then
+When they ask for captions in the picture ("Untertitel ins Bild", "like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Bold words** (two or three bold words, white, nothing behind them), **Karaoke pill**, **Wipe**, **Label** (a white box a line, the words turn black as they are said), **Editorial** (quiet, the key words in a serif italic), **Clean subtitles** (whole phrases on a soft box, for explainers). As `--style` they are `hormozi`, `bold`, `karaoke`, `wipe`, `label`, `editorial`, `clean`; a person who names another look gets it from captions' other styles (`outline`, `impact`, `single`, `fill`, `subtitle`). Then
 
 ```bash
 node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<name>"] [--brand brand/DESIGN.md] [--platform <reels, tiktok, shorts, story, …>]
@@ -78,9 +80,19 @@ node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<
 
 marks key words with a model, keeps style and marks in `cut.json` (`"captions"`) and builds again; placed for any frame from 16:9 to 9:16. Another style: same command, other `--style`; a key word too many or too few: edit `captions.highlight` (word numbers) in `cut.json` and build; out again: `--off`. It needs agentitos' captions skill beside this one; when missing, say so.
 
+### B-roll: what they talk about, on screen
+
+When the person agreed to the cut and its words name things that can be shown (their product, a page, a post they quote, a number), offer once, before you render: in the message after their yes, one sentence naming two or three of those moments, with "Render it" (primary) and "Show what I talk about" (plain); when they ask for it themselves ("show the app when I mention it", "b-roll"), go straight on. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), its "For another skill": its brief on `takes/<name>/edit.json`, the pictures it takes and you look at, `takes/<name>/broll/broll.json`, then
+
+```bash
+node <skill>/tools/takes.mjs broll takes/<name> takes/<name>/broll/broll.json
+```
+
+keeps it in `cut.json` and builds again: the b-roll is mounted under the captions on the cut's word numbers, so every later build keeps each beat on its word (one whose word is cut out is left out, and the build says so; its ⚠ lines are b-roll's). `--off` takes it out. Look at its sheet, then ask as its step 6 says. When the b-roll skill is missing, say so.
+
 ### 6. The video
 
-Only after their "looks good". Say in one sentence that you are rendering it (about 1.5× the cut's length). Render with the `render` tool, name `<name>` (→ `artifacts/<name>.mp4`, progress in the pane). Then
+Only after their "looks good" (and the b-roll question, when there was one). Say in one sentence that you are rendering it (about 1.5× the cut's length). Render with the `render` tool, name `<name>` (→ `artifacts/<name>.mp4`, progress in the pane). Then
 
 ```bash
 node <skill>/tools/takes.mjs finish takes/<name> artifacts/<name>.mp4
@@ -97,6 +109,7 @@ brings it to −14 LUFS, the loudness Instagram, TikTok and YouTube play at (`--
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links and videos point at `https://…`, `artifacts/…` or `uploads/…`. No text fields: for a change they type.
 
 - One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several independent questions that must all be answered before you go on: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"). An answer missing a group: ask again for that group only. One question after the other only when it depends on the answer before or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
 - The button that moves on gets `:class "primary"`; the others stay plain.
 - A button's text says what happens; its `:send` reads as the person's answer ("The cut is good").
 - Never a token, a word number, a `takes/` path or a raw error in the chat.
@@ -115,6 +128,17 @@ The question after the preview:
  [:button {:class "primary" :send "The cut is good, make the video"} "Looks good"] " "
  [:button {:open "artifacts/kameras"} "Show the preview ↗"]
  [:p [:small "Or tell me what should be different."]]]
+```
+
+Too long to cut (`check` says the target would leave out more than half):
+
+```hiccup
+[:div
+ [:p "Without slips and repeats it is " [:strong "2:10"] "; " [:strong "0:45"] " would leave out more than half of what you said."]
+ [:p "Shall I write a 45-second script from it for you to record again, or cut it to the strongest parts anyway?"]
+ [:button {:class "primary" :send "Write me a 45-second script from what I said, to record again"} "A 45 s script to record"] " "
+ [:button {:send "Cut it to the strongest parts anyway"} "Cut to the strongest parts"]
+ [:p [:small "Or tell me what else you have in mind."]]]
 ```
 
 The finished video:

@@ -387,14 +387,15 @@ async function main() {
     } finally { fs.closeSync(fd); }
 
     // the clip up to the freeze, the effect, the clip on from where the effect ends; one encode,
-    // everything on the same constant frame rate, the same number of frames as the clip has on it
+    // everything on the same constant frame rate, the same number of frames as the clip has on it;
+    // without the clip's tags (a phone's video names the place it was recorded at)
     const rest = nTotal - k - nPop - nBlend;
     fs.mkdirSync(path.dirname(out), { recursive: true });
     const enc = ff(["-y", "-i", clip, "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", `${W}x${H}`, "-framerate", RATE, "-i", fxFile, "-filter_complex",
       `[0:v]fps=${RATE},split[a][b];[a]trim=end_frame=${k},setpts=PTS-STARTPTS,format=yuv420p,setsar=1[h];`
       + `[1:v]${toYuv},setsar=1[e];`
       + `[b]trim=start_frame=${k + nBlend}:end_frame=${k + nBlend + rest},setpts=PTS-STARTPTS,format=yuv420p,setsar=1[t];[h][e][t]concat=n=3:v=1:a=0[v]`,
-      "-map", "[v]", "-an", "-r", RATE, "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-g", String(Math.round(fps)), "-keyint_min", String(Math.round(fps)), "-pix_fmt", "yuv420p",
+      "-map", "[v]", "-an", "-map_metadata", "-1", "-r", RATE, "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-g", String(Math.round(fps)), "-keyint_min", String(Math.round(fps)), "-pix_fmt", "yuv420p",
       ...(vs.color_space && vs.color_space !== "unknown" ? ["-colorspace", vs.color_space] : []), ...(vs.color_primaries && vs.color_primaries !== "unknown" ? ["-color_primaries", vs.color_primaries] : []),
       ...(vs.color_transfer && vs.color_transfer !== "unknown" ? ["-color_trc", vs.color_transfer] : []), ...(full ? ["-color_range", "pc"] : []), part], { encoding: "utf8" });
     if (enc.status !== 0 || !fs.existsSync(part)) fail(`The clip with the freeze could not be written: ${errOf(enc)}`);

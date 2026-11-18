@@ -7,8 +7,8 @@ metadata:
   title-de: "Launch-Video"
   summary: "A launch or promo video for your product, made from its website, for Reels, TikTok, Shorts and the feeds: real screens, your brand, music and voice."
   summary-de: "Ein Launch- oder Promo-Video für dein Produkt, aus seiner Website gemacht, für Reels, TikTok, Shorts und die Feeds: echte Screens, deine Marke, Musik und Stimme."
-  ask: "Paste the link of your product or feature (or a script or a few lines about it) and say where the video goes: Reels, TikTok, Shorts, YouTube … I suggest three stories, you pick one, and you see a preview before anything is rendered."
-  ask-de: "Füg den Link zu deinem Produkt oder Feature ein (oder ein Skript oder ein paar Zeilen dazu) und sag, wo das Video hinsoll: Reels, TikTok, Shorts, YouTube … Ich schlage dir drei Geschichten vor, du wählst eine, und du siehst eine Vorschau, bevor etwas gerendert wird."
+  ask: "Paste the link of your product or feature (or a script or a few lines about it) and say where the video goes: Reels, TikTok, Shorts, YouTube … I suggest three stories, you pick one and see it as stills, and you see a preview before anything is rendered."
+  ask-de: "Füg den Link zu deinem Produkt oder Feature ein (oder ein Skript oder ein paar Zeilen dazu) und sag, wo das Video hinsoll: Reels, TikTok, Shorts, YouTube … Ich schlage dir drei Geschichten vor, du wählst eine und siehst sie als Standbilder, und du siehst eine Vorschau, bevor etwas gerendert wird."
   placeholder: "A link, and where it goes"
   placeholder-de: "Ein Link, und wo es hingeht"
   inputs: "image, video"
@@ -27,15 +27,15 @@ Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too),
 
 ## The guides
 
-`node <skill>/tools/launch.mjs guides` prints where HyperFrames' guides are (those of the CLI that renders). Read each when its step comes: before planning `hyperframes/SKILL.md`, `references/types/launch.md`, `references/story.md`, `references/spec.md` (vertical film: `references/types/vertical.md`); while building `references/format.md`, `references/motion.md`, `references/look.md`, `references/sound.md`; before the preview `references/review.md`. Here:
+`node <skill>/tools/launch.mjs guides` prints where HyperFrames' guides are (those of the CLI that renders). Read each when its step comes: before planning `hyperframes/SKILL.md`, `references/types/launch.md`, `references/story.md`, `references/spec.md` (vertical film: `references/types/vertical.md`); before the board (step 5) `references/storyboard.md`, `references/storyboard-format.md`, `references/format.md`, `references/look.md`; while building `references/motion.md`, `references/sound.md`; before the preview `references/review.md`. Here:
 
 - `/name` is `<guides>/<name>/SKILL.md` (`/media-use`, `/hyperframes-cli`). `/hyperframes-registry` is not on the machine: `hyperframes catalog --json` searches it, `hyperframes add <name>` installs a block.
 - `npx hyperframes …` / `hyperframes …` is the command on `guides`' last line (`hyperframes` on the PATH, else `node <its path>`). Always pass the project folder `artifacts/<name>/composition`; elsewhere it finds no `index.html`.
 - **Zones:** every number about where text may sit (vertical.md's 168 and 1330 px, "the 80% title-safe box", "600–700 px from the bottom" for captions) is replaced by `zones`. Text under the apps' buttons is found only by `<skill>/tools/launch.mjs check`.
 - **Media:** voice, music and pictures from this skill, never HeyGen. Sound effects and logos from media-use (no account): `hyperframes media-use resolve --type sfx --intent "…" --project <composition>` and `--type logo`. No avatar, HeyGen voice clone or catalog music: say so when asked, offer what is here.
-- **Studio, the desktop app, Framey, `publish`, `usage`:** not here. Preview = the player beside the chat; render = the `render` tool.
-- **Checks:** rragent's template leaves `hyperframes check` to the render; here it runs before the first preview and after a layout or timing change (step 7), and `snapshot --review` sheets come with the stills of every beat.
-- `STORYLINES.md`, `SPEC.md`, `REVIEW.md` go into your work folder, never into the project (they would show as artifacts).
+- **Studio, the desktop app, Framey, `publish`, `usage`:** not here. Preview = the player beside the chat; render = the `render` tool; the Storyboard tab = the board's picture in the chat (step 5).
+- **Checks:** rragent's template leaves `hyperframes check` to the render; here it runs before the first preview and after a layout or timing change (step 8), and `snapshot --review` sheets come with the stills of every beat.
+- `STORYLINES.md`, `SPEC.md`, `STORYBOARD.md`, `REVIEW.md` go into your work folder, never into the project (they would show as artifacts).
 
 ## From the link to the video, all in the chat
 
@@ -75,21 +75,36 @@ By story.md: the one thing, then three storylines that are three different films
 
 `launch/<name>/SPEC.md` by spec.md: every adjective a number, the shots by frame, the BANNED line. OUTPUT: `HyperFrames, <W> x <H>, 30 fps; safe box <x, y, w, h>; for <platforms>`.
 
-### 5. The sound
+### 5. The board: every beat as a still
+
+Read storyboard.md's § 1 and do its steps 1, 2 and 5, without its page and the film's copies (nothing under `boards/`): there is no film yet, the posed composition is where step 7 starts, and the board's picture in the chat stands in for the Studio's tab.
+
+Build `artifacts/<name>/composition/` by the guides: `index.html` as root at the frame's size (`data-width`, `data-height`, the viewport, `html` and `body`), id `main`, timeline `window.__timelines["main"]`; one scene per sub-composition in `compositions/`, mounted at its planned start, media in `assets/`. Replace the template's example content and variables; keep variables only for what the person may want to change (headline, call to action). Pose every beat at its key moment as the film will show it: its real words, the brand's fonts and colours, the product's own screens and pictures in their places, no motion yet.
+
+**Pictures** no source has (a world's ground, an object the story needs): `node <skill>/tools/launch.mjs image artifacts/<name>/composition/assets/<file>.png --prompt "…" --ratio <9:16>` (Gemini; `--ref` passes a picture to follow). Never for the product's screens, its logo or a real person.
+
+`launch/<name>/STORYBOARD.md` (storyboard-format.md) names the beats in film order, a heading each with its time: `## Frame 1: The hook (0-3s)`. Then all stills in one run, and the board:
+
+```bash
+hyperframes snapshot artifacts/<name>/composition --at <every beat's moment, in film order> --no-end -o launch/<name>/board
+node <skill>/tools/launch.mjs board launch/<name> launch/<name>/board
+```
+
+`board` writes `uploads/<name>-board.jpg`: the stills in film order, each with its number, name and time. Look at every still and fix it first. Then show the board (see "UI in the chat") and stop until they say go. A note on a frame changes only that frame: re-pose it, snapshot its moment alone into `launch/<name>/board/redo/`, move that still over the frame's old one (the new time in its name if it moved), run `board` and show it again. They asked for no questions ("just make it"), or a run of a hook or a schedule (nobody in the chat): pose and look yourself, no board, no stop.
+
+### 6. The sound
 
 A film over about 15 s gets music and sound effects on its visible actions (sound.md); a voice only when the person asked for one or the storyline is narrated.
 
 - **Voice:** read `<skill>/references/voice-and-captions.md` before writing the script (`script.json`, choosing the voice, `voice`, then `captions`).
-- **Music:** `node <skill>/tools/launch.mjs music launch/<name> artifacts/<name>/composition --prompt "<feel, tempo, instruments, from the storyline's sound line>" --seconds <the film's length>` composes it with Google's Lyria 3 into `assets/music.mp3`, faded at the end. Once the film has its `<audio id="music">` (step 6), `hyperframes beats artifacts/<name>/composition` finds its beats; the payoff and the mark land on strong ones. The person's own track always comes first.
+- **Music:** `node <skill>/tools/launch.mjs music launch/<name> artifacts/<name>/composition --prompt "<feel, tempo, instruments, from the storyline's sound line>" --seconds <the film's length>` composes it with Google's Lyria 3 into `assets/music.mp3`, faded at the end. Once the film has its `<audio id="music">` (step 7), `hyperframes beats artifacts/<name>/composition` finds its beats; the payoff and the mark land on strong ones. The person's own track always comes first.
 - **Sound effects:** `hyperframes media-use resolve --type sfx --intent "<soft mouse click>" --project artifacts/<name>/composition` (free, Openverse), only where something happens on screen (sound.md §4).
 
-### 6. The film
+### 7. The film
 
-Say in one sentence that the preview is coming, and build `artifacts/<name>/composition/` by the guides: `index.html` as root at the frame's size (`data-width`, `data-height`, the viewport, `html` and `body`), id `main`, timeline `window.__timelines["main"]`; one scene per sub-composition in `compositions/`, media in `assets/`. Replace the template's example content and variables; keep variables only for what the person may want to change (headline, call to action). Voice lines and music are `<audio>` elements in the root, each with an `id`. With a voice, add its captions (voice-and-captions.md).
+Say in one sentence that the preview is coming, and animate the posed beats by the guides; what the board showed stays as it was approved. Voice lines and music are `<audio>` elements in the root, each with an `id`. With a voice, add its captions (voice-and-captions.md).
 
-**Pictures** no source has (a world's ground, an object the story needs): `node <skill>/tools/launch.mjs image artifacts/<name>/composition/assets/<file>.png --prompt "…" --ratio <9:16>` (Gemini; `--ref` passes a picture to follow). Never for the product's screens, its logo or a real person.
-
-### 7. Check and review, before the preview
+### 8. Check and review, before the preview
 
 ```bash
 hyperframes lint artifacts/<name>/composition             # while building, seconds
@@ -98,15 +113,15 @@ node <skill>/tools/launch.mjs check launch/<name> artifacts/<name>/composition
 
 `check` names every text the apps would cover (when, where, under which app's buttons): a ✗ is always fixed by moving it out. A `!` is text in the safe box's margin, where no app lays anything: it may stay when the layout needs it. Then HyperFrames' gate and review (review.md), each with the project folder: `hyperframes check artifacts/<name>/composition --json` (minutes), `hyperframes snapshot artifacts/<name>/composition --review`, and stills of every beat, `hyperframes snapshot artifacts/<name>/composition --at <every beat's moment> --no-end -o launch/<name>/stills`. Then `node <skill>/tools/launch.mjs draw launch/<name> launch/<name>/stills` draws the zones over every still: look at each for what no check reads (a word inside a screenshot, a face, the product's button under red). Write `launch/<name>/REVIEW.md` as review.md says; fix the P0s.
 
-### 8. Ask whether it is right
+### 9. Ask whether it is right
 
 One message: the storyline in a line, the length, the platforms the zones are for, what you measured and what you only looked at (the sound was measured, not heard), and **whether it is right**: "Looks good" (`:class "primary"`) and "Show the preview ↗", with a line that they can type what to change.
 
-### 9. Changes
+### 10. Changes
 
-They name a moment ("at 0:07 the text is too small", "another voice", "more energy"): change the scene, script or music, run `check` again, ask again as in step 8 with one sentence on what changed. "For TikTok and Shorts" / "a Story": `zones` again with those platforms, move what the new zones ask for, `captions` again. "Square" / "for YouTube": a film of its own in the other frame (step 2).
+They name a moment ("at 0:07 the text is too small", "another voice", "more energy"): change the scene, script or music, run `check` again, ask again as in step 9 with one sentence on what changed. "For TikTok and Shorts" / "a Story": `zones` again with those platforms, move what the new zones ask for, `captions` again. "Square" / "for YouTube": a film of its own in the other frame (step 2).
 
-### 10. The video
+### 11. The video
 
 Only after their "looks good": say in one sentence that you are rendering, render with the `render` tool, name `<name>` (writes `artifacts/<name>.mp4`), then `node <skill>/tools/launch.mjs finish artifacts/<name>.mp4` brings it to −14 LUFS, the platforms' loudness. Say in one sentence that it is ready, with the download link, and offer a button "Publish it": then follow agentitos' **publish-video** (beside this skill) with the video; it checks it, writes the texts with video-descriptions and schedules through Storrito. Never call Storrito's schedule procedures yourself.
 
@@ -121,6 +136,7 @@ A Story can carry Instagram's own stickers: a link to the page, a poll, a questi
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:style` is a map; `:send "text"` on a button sends that text as the person's next message; an `input` is a checkbox or radio button, and `{checked}` in a button's `:send` becomes the `:value`s ticked in the same block, comma-separated; `:open "artifacts/<name>"` shows the preview. Links, pictures, audio and videos point at `https://…`, `artifacts/…` or `uploads/…`. No text fields: for a change they type.
 
 - One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"). An answer that leaves a group out: ask again for that group only. One question after the other only when it depends on the answer before or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
 - The button that moves on gets `:class "primary"`; the others stay plain.
 - Never a token, a path of `launch/` or a raw error in the chat.
 
@@ -137,6 +153,16 @@ The storylines:
  [:button {:send "Take story 2"} "2"] " "
  [:button {:send "Take story 3"} "3"]
  [:p [:small "My pick: a real moment people know. Or tell me what to change: a voice, another length, other platforms."]]]
+```
+
+The board, after the spec:
+
+```hiccup
+[:div
+ [:img {:src "uploads/storrito-launch-board.jpg" :style {:max-width "100%"}}]
+ [:p "Every beat as a still, in the film's real look, before I animate it:"]
+ [:button {:class "primary" :send "Animate it"} "Animate it"]
+ [:p [:small "Or tell me what to change, by the frame's number: \"3: the screenshot bigger\"."]]]
 ```
 
 ## Rules

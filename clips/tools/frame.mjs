@@ -261,7 +261,9 @@ export async function locate(video, words, shots, meta, { log = () => {} } = {})
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "frame-"));
   try {
     const small = path.join(tmp, "small.mp4");
-    execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", "scale=640:-2", "-r", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-c:a", "aac", "-b:a", "48k", "-ac", "1", small]);
+    // without the file's tags: a phone's video names the place it was recorded at, and ffmpeg
+    // would carry that into the copy the model watches
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-map_metadata", "-1", "-vf", "scale=640:-2", "-r", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-c:a", "aac", "-b:a", "48k", "-ac", "1", small]);
     const images = stills.map((s, i) => {
       const f = path.join(tmp, `${i}.jpg`);
       execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", s.t.toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=768:-2", "-q:v", "5", f]);

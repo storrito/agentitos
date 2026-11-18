@@ -7,14 +7,14 @@
 //   node tools/short.mjs clock <work> [--gap 0.3]
 //        <work>/voice.json (launch-video's `voice`: a line a sentence) → the film's clock: where
 //        each line plays, every sentence and word with its time; <work>/clock.json
-//   node tools/short.mjs build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions]
+//   node tools/short.mjs build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17]
 //        <work>/beats.json and the clock → one clip per beat cut into <composition>/assets/clips/
 //        and checked (dark, cut short, standing still, a dark first frame, a cut of the source
 //        inside), the captions built by agentitos' captions (paused under the comparison card,
 //        the key words marked, the beats' "boxes" as cards of their own), the first beat's freeze
 //        by agentitos' freeze-cutout when the beat asks for one, and <composition>/index.html:
-//        clips, voice, music, hook text, card, credit, handle. Changed beats: build again; a
-//        clip whose beat and source did not change is kept.
+//        clips, voice, music (measured, 17 LU under the voice), hook text, card, credit, handle.
+//        Changed beats: build again; a clip whose beat and source did not change is kept.
 //   node tools/short.mjs sheet <work> <composition>
 //        stills of the composition at the moments that matter (the first frame, the hook, the
 //        freeze, each beat at its start and middle, every card, the end) on one sheet,
@@ -27,8 +27,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { loudness, musicVolume } from "./lib/level.mjs";
 
-const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] | sheet <work> <composition>";
+const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
 const log = (s) => console.error(s);
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -55,6 +56,8 @@ const DARK_MAX = { whole: 12, fill: 24, native: 24 };
 const SHORT_TOL = 0.15;     // seconds a clip may be shorter than its beat
 const FROZEN_PART = 0.5;    // part of a clip that stands still before it is mentioned
 const OPEN_PART = 0.5;      // the hook's first frame reaches this part of the clip's median luma
+const UNDER = 17;           // LU the music lies under the voice: as launch-video's `music` lays it, the distance the owner chose by ear
+const lufs = (x) => x.toFixed(1).replace("-", "−");
 
 function parse(args, valued = [], flags = []) {
   const pos = [], opts = {};
@@ -250,9 +253,11 @@ const totalOf = (beats, ck) => r2(Math.max(ck.end + END_TAIL, beats.at(-1).to));
 
 // ---------------------------------------------------------------- build
 function build(args) {
-  const { pos, opts } = parse(args, ["platform", "style"], ["no-captions"]);
+  const { pos, opts } = parse(args, ["platform", "style", "under"], ["no-captions"]);
   const [workArg, compArg] = pos;
   if (!workArg || !compArg) fail(`Name the work folder and the composition: build short/<name> artifacts/<name>/composition. ${USAGE}`);
+  const musicUnder = opts.under != null ? Number(opts.under) : UNDER;
+  if (!(musicUnder >= 3 && musicUnder <= 30)) fail(`--under is how many LU the music lies under the voice, 3 to 30 (${UNDER} by default).`);
   const work = path.resolve(workArg), comp = path.resolve(compArg);
   const beatsFile = path.join(work, "beats.json");
   const cfg = readJson(beatsFile, "write the beats first (SKILL.md, \"The beats\").");
@@ -476,11 +481,22 @@ function build(args) {
     audio += `      <audio id="vo-${esc(l.id)}" src="${esc(l.file)}" data-start="${l.at}"${l.from ? ` data-media-start="${l.from}"` : ""} data-duration="${l.duration}" data-track-index="8" data-volume="1"></audio>\n`;
   }
   const music = path.join(comp, "assets", "music.mp3"), hasMusic = fs.existsSync(music);
+  let musicSaid = "";
   if (hasMusic) {
+    // --under LU under the voice, both measured as the film plays them (the voice's lines at volume 1)
+    const v = loudness(ck.lines.map((l) => path.join(comp, l.file))), m = loudness([music]);
+    let volume = 0.14;
+    if (v == null || m == null) warn.push(`the ${v == null ? "voice" : "music"} is silent: the music is at 0.14, as if both were equally loud`);
+    else {
+      const fit = musicVolume(v, m, musicUnder);
+      volume = fit.volume;
+      musicSaid = ` ${fit.under.toFixed(1)} LU under the voice (at ${volume}; the voice at ${lufs(v)} LUFS, the music at ${lufs(m)})`;
+      if (fit.bound) warn.push(`the music would need ${fit.need.toFixed(3)} to lie ${musicUnder} LU under the voice; at ${volume}, the ${fit.bound} volume here, it lies ${fit.under.toFixed(1)} LU under it; for ${musicUnder} LU, ${fit.bound === "highest" ? "louder" : "quieter"} music of its own (launch-video's \`music\` again)`);
+    }
     // under the voice all the way, down to nothing from the last word to the end
     const hold = r2(Math.min(voiceEnd + 0.1, total - 0.3));
-    const lanes = JSON.stringify({ version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: 0.16 }, { t: hold, v: 0.16 }, { t: total, v: 0 }] }] }).replace(/"/g, "&quot;");
-    audio += `      <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${Math.min(total, down2(audioSeconds(music) || total))}" data-track-index="7" data-volume="0.16" data-automation="${lanes}"></audio>\n`;
+    const lanes = JSON.stringify({ version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: volume }, { t: hold, v: volume }, { t: total, v: 0 }] }] }).replace(/"/g, "&quot;");
+    audio += `      <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${Math.min(total, down2(audioSeconds(music) || total))}" data-track-index="7" data-volume="${volume}" data-under-voice="${musicUnder}" data-automation="${lanes}"></audio>\n`;
   }
 
   const x = top[0], y = top[1], w = top[2];
@@ -535,7 +551,7 @@ ${tweens}      window.__timelines["main"] = tl;
   fs.mkdirSync(comp, { recursive: true });
   fs.writeFileSync(path.join(comp, "index.html"), html);
 
-  console.log(`${rel(path.join(comp, "index.html"))}: ${total} s, ${beats.length} beats (${cutAnew} cut anew), the voice in ${ck.lines.length} lines${hasMusic ? ", music" : ", no music yet (assets/music.mp3)"}${mount ? `, captions (${shown.length} of ${words.length} words${card ? ", paused under the card" : ""}${boxes.n ? `, ${boxes.n} as cards` : ""})` : ", no captions"}; text placed for ${zones.platforms?.map((p) => p.name).join(", ") || "the usual apps"}.`);
+  console.log(`${rel(path.join(comp, "index.html"))}: ${total} s, ${beats.length} beats (${cutAnew} cut anew), the voice in ${ck.lines.length} lines${hasMusic ? `, music${musicSaid}` : ", no music yet (assets/music.mp3)"}${mount ? `, captions (${shown.length} of ${words.length} words${card ? ", paused under the card" : ""}${boxes.n ? `, ${boxes.n} as cards` : ""})` : ", no captions"}; text placed for ${zones.platforms?.map((p) => p.name).join(", ") || "the usual apps"}.`);
   for (const l of report) console.log(l);
   for (const wn of warn) console.log(`  ! ${wn}`);
   if (failed) fail(`${failed} clip(s) cannot go out as they are (✗): change their beats and build again.`);

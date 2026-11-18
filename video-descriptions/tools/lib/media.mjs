@@ -30,7 +30,7 @@ export function frameOf(w, h) {
   return near[1] < Math.log(1.15) ? near[0] : `${(r).toFixed(2)}:1`;
 }
 
-// words from rragent's transcribe tool, the captions skill or best-takes: a list, or { words }
+// words from the transcribe skill, the captions skill or best-takes: a list, or { words }
 export function readWords(file) {
   const j = JSON.parse(fs.readFileSync(file, "utf8"));
   const list = Array.isArray(j) ? j : j.words || [];

@@ -26,7 +26,7 @@
 
 - `credit`: the footage's owner, on screen the whole time (two owners: `"Boston Dynamics · NASA"`). `handle`: the account's @name, shown at the end; ask when you do not know it.
 - `footage`: the folder of the footage skill; a beat's `source` is a stem of it (`sources.json`), or the path of a video file.
-- May be left out: `platforms` (where it goes, as `--platform`: `"tiktok"`, `"reels,tiktok"`), `captions` (their style, as `--style`: `hormozi` by default, `karaoke`, `wipe`, `clean`), `lang` (the film's language, `en` by default).
+- May be left out: `platforms` (where it goes, as `--platform`: `"tiktok"`, `"reels,tiktok"`), `captions` (their style, as `--style`: `hormozi` by default, or another of captions' styles: `bold`, `outline`, `subtitle`, `clean`, `karaoke`, `wipe`, …), `lang` (the film's language, `en` by default).
 
 ## A beat
 

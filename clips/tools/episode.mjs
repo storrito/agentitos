@@ -17,9 +17,10 @@
 // A file instead of a link (an upload, a recording of the person's own) goes the same way: its
 // sound is written down as it is, its stretches are cut from it with ffmpeg.
 //
-// The words come from Gemini 3.5 Transcribe through OpenRouter, run by agentitos' transcribe skill
+// The words come from ElevenLabs Scribe through OpenRouter, run by agentitos' transcribe skill
 // beside this one (OPENROUTER_API_KEY or the Sprites gateway's OpenRouter connection, with
-// speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
+// speakers, about 22 cents an hour, twice that when the voices need its long requests, a few
+// minutes; the noises it marks among the words are left out), else from the video's captions on YouTube
 // (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
 // ~/.cache/agentitos/.
 
@@ -129,7 +130,9 @@ function captionTrack(info) {
 // a path that exists, not a link
 const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
 
-function writeEpisode(dir, facts, words) {
+function writeEpisode(dir, facts, heard) {
+  // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
+  const words = heard.filter((w) => w.kind !== "event");
   if (!words.length) fail("No words found: is there speech in it?");
   const sentences = sentencesOf(words);
   const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };
@@ -172,8 +175,9 @@ async function fetchEpisode(url, dir) {
     let audio = null;
     try {
       // the full-rate m4a (about 130 kbit/s): at about 50 kbit/s the download is a few seconds
-      // shorter, but the model's speakers fall apart, nine to thirteen voices where the full rate
-      // hears four (measured 2026-10-19)
+      // shorter, but Gemini's speakers fell apart there, nine to thirteen voices where the full
+      // rate heard four (measured 2026-10-19, when Gemini wrote the episode down; Scribe's at the
+      // lower rate are not measured)
       download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
       audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {
@@ -233,9 +237,10 @@ function cut(dir, a, b, c) {
   }
   log(`episode: cutting ${mmss(from)}–${mmss(to)} (${(to - from).toFixed(1)} s) …`);
   if (episode.file) {
-    // from the person's file, up to 4K like a download; cut anew, not copied, so it starts on the word
+    // from the person's file, up to 4K like a download; cut anew, not copied, so it starts on the
+    // word; without the file's tags (a phone's video names the place it was recorded at)
     execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", from.toFixed(2), "-i", episode.file, "-t", (to - from).toFixed(2),
-      "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+      "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "-1", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", `${base}.mp4`], { stdio: ["ignore", "inherit", "inherit"] });
     fs.writeFileSync(`${base}.json`, JSON.stringify({ file: episode.file, from: +from.toFixed(2), to: +to.toFixed(2) }));
     console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: the skill that edits it (kinetic-lyrics: short.mjs new <short> ${base}.mp4).`);

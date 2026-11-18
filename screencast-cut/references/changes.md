@@ -10,8 +10,9 @@ For a moment the person names, `node <skill>/tools/screencast.mjs at screencast/
 | "Show the phone" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
 | "Hide my face here" | `"circle": false` on that keep: the screen takes its room too |
 | "No background" / "plain background" | `"background": "plain"` in cut.json (the brand's colours) |
-| "Other captions" / "no captions" | `screencast.mjs captions screencast/<name> --style hormozi` (karaoke, wipe, clean) / `--off` |
+| "Other captions" / "no captions" | `screencast.mjs captions screencast/<name> --style hormozi` (karaoke, wipe, clean; on a busy screen `outline` or `fill` stand out, `bold` and `subtitle` have nothing behind the words) / `--off` |
 | "Longer waits as time-lapses" | the last word before it into `"waits"` |
+| "Keep that moment" (shown to the phone's camera in silence, cut as a pause) | `"pauses": "keep"` on its keep (its other pauses then stay too; for that one alone, make the sentences around it a keep of their own), or a keep by its time, `"at"` |
 | "Start with …" | move that keep to the top |
 | "Vertical" / "square" / "for TikTok" | `build … --frame 9:16` / `1:1` / `--platform tiktok` |
 | "Hide that" (a password on screen) | a `"zoom"` past it, or another `"view"` |

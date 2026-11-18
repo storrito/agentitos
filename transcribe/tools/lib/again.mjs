@@ -77,7 +77,7 @@ export async function hearAgain(file, words, spots, hear, log = () => {}) {
   try {
     for (const [n, s] of list.entries()) {
       const piece = path.join(tmp, `s${n}.flac`), seconds = s.to - s.from;
-      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", s.from.toFixed(3), "-t", seconds.toFixed(3), "-i", file, "-vn", "-ac", "1", "-ar", "16000", piece]);
+      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", s.from.toFixed(3), "-t", seconds.toFixed(3), "-i", file, "-vn", "-map_metadata", "-1", "-ac", "1", "-ar", "16000", piece]);
       let again;
       try { again = await hear(piece, seconds); } catch (e) { log(`  transcribe: a stretch at ${s.from.toFixed(1)} s was not heard again (${String(e.message).split("\n")[0]})`); continue; }
       heard += adopt(words, s, again.map((w) => ({ ...w, start: w.start + s.from, end: w.end + s.from })));
