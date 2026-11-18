@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf } from "./frame.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA } from "./frame.mjs";
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -577,4 +577,24 @@ test("a features box that jumps against its neighbours (the ear taken for the ey
   const turn = JSON.parse(JSON.stringify(bad));
   turn.shots[0].stills[2].faces[0].looks = "right";
   assert.equal(run(turn).shots[0].doubtful, undefined);
+});
+
+test("a close-up whose head moves or tips between two stills gets a still more there, at the moment furthest off the line (three a shot at most); a calm one gets none", () => {
+  // a close-up 700 px wide of 3840×2160 (the 9:16 window is 1215 px wide), stills every 3 s
+  const track = (dip) => Array.from({ length: 121 }, (_, i) => {
+    const t = i / 10, seen = Math.abs(t % 3) < 1e-6;
+    return { t, x: 1900, y: 1000 + dip(t), w: 700, h: 1100, ...(seen ? { seen: true } : {}) };
+  });
+  const shot = (dip) => [{ kind: "people", people: [{ who: "guest", speaker: "A", track: track(dip) }] }];
+  // the head goes down 200 px in the middle of 3–6 s and comes back
+  const tips = extraStills(shot((t) => (t > 3 && t < 6 ? 200 * Math.sin(((t - 3) / 3) * Math.PI) : 0)), META);
+  assert.deepEqual(tips.map((x) => [x.t, x.shot]), [[4.5, 0]]);
+  assert.ok(tips[0].off > 0.15, JSON.stringify(tips));
+  // a calm head: none
+  assert.deepEqual(extraStills(shot((t) => 10 * Math.sin(t)), META), []);
+  // a head that sways all the time: at most EXTRA
+  assert.equal(extraStills(shot((t) => 250 * Math.sin((t % 3) / 3 * Math.PI)), META).length, EXTRA);
+  // a small face (not a close-up) moving the same way: none
+  const small = shot((t) => (t > 3 && t < 6 ? 200 : 0)); small[0].people[0].track.forEach((x) => { x.w = 300; });
+  assert.deepEqual(extraStills(small, META), []);
 });
