@@ -1725,7 +1725,7 @@ t("captions on the seam stand on the panel's ground: speaker.card is speaker.win
   return `card ${q.card.join(",")}, window ${q.window.join(",")}`;
 });
 
-t("covering the panel's width never makes the face larger than it aims at (b-roll's first builds: 4:5 and 1:1, a close-up without captions, kept the face at 40 % of the frame's height at 1×, twice the 22 % asked for): the picture stands narrower with ground beside it, the face at its aim, and the reason says why; with nothing set 18 %; a face just over its aim, where the ground would be a sliver under 24 px a side, still covers", () => {
+t("covering the panel's width holds a face up to 34 % of the frame's height (beside.coverUpTo: the third quartile of published talking heads), over its aim or not; a larger one comes to its aim (b-roll's first builds: 4:5 and 1:1, a close-up without captions, kept the face at 40 % at 1×, twice the 22 % asked for): the picture stands narrower with ground beside it, and the reason says why; with nothing set 18 %. The review of the first fix: ordinary takes keep the full-width panel as on main (9:16 a face at 19.8 %, 16:9 a 1080p wide shot at 20.4 %, both at 1×); a face of 33.5 % covers, one of 35 % comes down", () => {
   const out = [];
   for (const [frame, face, min] of [["1080x1350", "337.5,486,405,540", "413x243"], ["1080x1080", "378,388.8,324,432", "330x194"]]) {
     const c = besideRun("beside-close", "--frame", frame, "--source", frame, "--face", face, "--material-min", min, "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18").res.candidates[0];
@@ -1739,6 +1739,14 @@ t("covering the panel's width never makes the face larger than it aims at (b-rol
   }
   const just = beside(Z45, { source: [1080, 1350], face: [415, 500, 250, 250], needs: [] }).candidates[0];
   ok(just.speaker.scale === 1 && just.speaker.ground === 0, `a face 1 % over its aim: ${just.speaker.scale}× ground ${just.speaker.ground}`);
+  const r1 = besideRun("beside-ordinary", "--frame", "9:16", "--source", "1080x1920", "--face", "390,500,300,380", "--material-min", "700x330", "--text", "caption:2", "--caption-area", "180,720,1238,1440,96,2").res.candidates.find((k) => k.arrangement === "above");
+  ok(r1.speaker.scale === 1 && r1.speaker.window[2] === 1080 && r1.speaker.facePct === 19.8 && !r1.speaker.ground, `9:16 at 19.8 %: ${r1.speaker.scale}× ${r1.speaker.window} ${r1.speaker.facePct} %`);
+  const r2 = besideRun("beside-ordinary", "--frame", "16:9", "--source", "1920x1080", "--face", "830,220,170,220", "--material-min", "600x340").res.candidates.find((k) => k.arrangement === "above");
+  ok(r2.speaker.scale === 1 && r2.speaker.window[2] === 1920 && r2.speaker.facePct === 20.4, `16:9 above at 20.4 %: ${r2.speaker.scale}× ${r2.speaker.window} ${r2.speaker.facePct} %`);
+  for (const [h, pctAt, covers] of [[452, 33.5, true], [473, 35, false]]) {
+    const c = besideRun("beside-edge34", "--frame", "1080x1350", "--source", "1080x1350", "--face", `400,450,300,${h}`, "--material-min", "413x243").res.candidates[0];
+    ok(covers ? c.speaker.scale === 1 && c.speaker.facePct === pctAt && !c.speaker.ground : Math.abs(c.speaker.facePct - 18) < 0.2 && c.speaker.ground > 0 && c.why.some((w) => /over the 34 % up to which a panel covers the width \(beside\.coverUpTo\)/.test(w)), `a face of ${pctAt} % at cover: ${c.speaker.scale}× ${c.speaker.facePct} % ground ${c.speaker.ground}`);
+  }
   return out.join(", ");
 });
 
@@ -1751,6 +1759,10 @@ t("a feed's or grid's crop is a note, not a problem (b-roll's first builds showe
   for (const k of grid.candidates) ok(k.crops.some((q) => q.of === "caption" && /profile grid shows 3:4/.test(q.what)) && !k.problems.some((q) => q.code === "crop") && (k.notes || []).some((n) => /captions are 16 % cut/.test(n)), `${k.fit}: ${JSON.stringify(k.crops)}`);
   const edge = besideRun("beside-edge", "--frame", "9:16", "--source", "1280x720", "--face", "1200,150,180,195", "--material-min", "600x340", "--text", "caption");
   ok(/^note: the face's box 1200,150,180,195 reaches past the source of 1280×720: taken as 1200,150,80,195/m.test(edge.out) && JSON.stringify(edge.res.speaker.face) === "[1200,150,80,195]", edge.out.split("\n").slice(0, 4).join(" | "));
+  // (a box cut at a corner keeps the face's size as given: the circle shows two given faces, not two of the cut part)
+  const corner = besideRun("beside-corner", "--frame", "9:16", "--source", "1920x1080", "--face", "1830,1000,180,220", "--material-min", "600x340", "--text", "caption").res;
+  const pip = corner.candidates.find((k) => k.arrangement === "pip"), panel = corner.candidates.find((k) => k.arrangement === "above");
+  ok(JSON.stringify(corner.speaker.face) === "[1830,1000,90,80]" && pip.speaker.scale < 0.6 && Math.abs(pip.speaker.crop[2] - 440) < 1 && panel.speaker.faceHeight === Math.round(220 * panel.speaker.scale), `corner: face ${corner.speaker.face}, circle ${pip.speaker.scale}× crop ${pip.speaker.crop}, panel face ${panel.speaker.faceHeight} at ${panel.speaker.scale}×`);
   const e = cli("beside", path.join(OUT, "beside-edge"), "--frame", "9:16", "--source", "1280x720", "--face", "1300,150,180,195", "--material-min", "600x340");
   sentence(e, "a face wholly outside"); ok(/lies outside the source of 1280×720/.test(e.stderr), e.stderr);
   ok(cli("place", path.join(OUT, "place-edge"), "--frame", "9:16", "--source", "1280x720", "--face", "1200,150,180,195").status === 1, "place takes a box past the edge");

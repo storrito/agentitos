@@ -136,9 +136,11 @@ function parseSources(o, { clamp = false } = {}) {
       if (!clamp || b === q.region) fail(`The box ${b.join(",")} reaches past the source of ${sw}×${sh}: a face or region the picture's edge cuts ends at that edge, read it again off the grid.`);
       const x0 = Math.max(0, b[0]), y0 = Math.max(0, b[1]), x1 = Math.min(sw, b[0] + b[2]), y1 = Math.min(sh, b[1] + b[3]);
       if (x1 - x0 < 1 || y1 - y0 < 1) fail(`The face's box ${b.join(",")} lies outside the source of ${sw}×${sh}: read it again off ${self()} grid.`);
-      const was = b.join(",");
+      const was = b.join(","), given = b[3];
       b.splice(0, 4, x0, y0, x1 - x0, y1 - y0);
-      q.clamped.push(`the face's box ${was} reaches past the source of ${sw}×${sh}: taken as ${b.map((v) => +v.toFixed(1)).join(",")}, its part inside the picture`);
+      // (the face is as large as given: only what can be shown is cut)
+      b.givenHeight = given;
+      q.clamped.push(`the face's box ${was} reaches past the source of ${sw}×${sh}: taken as ${b.map((v) => +v.toFixed(1)).join(",")}, its part inside the picture, the face's size still the ${given} px given`);
     }
   }
   return sources;
@@ -285,7 +287,7 @@ function cmdBeside(o) {
     if (o["caption-area"] !== undefined) captionArea = areaFile(o["caption-area"]);
     else if (o["caption-style"] !== undefined) captionArea = areaOfStyle(o["caption-style"], needs.find((n) => n.role === "caption")?.lines, zones.size, platforms);
     res = besideSolve({
-      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
+      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], faceSize: sources[0].faces[0].givenHeight ?? null, material, needs, before,
       set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
     });
   } catch (e) { fail(e.message); }
