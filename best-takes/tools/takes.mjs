@@ -504,7 +504,7 @@ function cmdCheck(dir) {
       const line = `the ${x.role === "hook" ? "hook" : "captions"} lie${x.role === "hook" ? "s" : ""} on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)} (${parts(x)}): ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "place them again where the skill that laid the frame out can (clips: place: a smaller type by hand, --font-size), or cut to another shot there"}`;
       if (x.role !== "hook") errors.push(line); else warnings.push(line);
     }
-    if (said.length) console.log(`\nText and faces: the captions lie on ${said.join("; ")}; never on the nose, the eyes or the mouth (the skill that framed the video says where that is not avoidable at a readable size).`);
+    if (said.length) console.log(`\nText and faces: the captions lie on ${said.join("; ")}${on.some((q) => q.role !== "hook" && (q.nose || q.mouth)) ? "" : "; never on the nose, the eyes or the mouth"} (the skill that framed the video says where that is not avoidable at a readable size).`);
     else if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
   }
   const over = overTarget(e.duration, s.target);

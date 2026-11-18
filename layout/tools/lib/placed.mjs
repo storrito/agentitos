@@ -417,7 +417,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         conflicts.push(`${span}: the captions lie on ${who}'s nose or eyes for ${r1(r.nose)} s${raised} wherever they stand at a readable size. What would avoid it: ${s.by === "fixed" ? "a larger lift than the one fixed, " : raise === "head" ? "--raise mouth (the head's top cut for it), " : ""}a cut to another shot here, or a smaller type by hand (--font-size).`);
       } else if (r.mouth > 0.05) {
         out.fault = "mouth";
-        conflicts.push(`${span}: the captions cover ${who}'s mouth for ${r1(r.mouth)} s${raised} at the smallest readable size (${best.font} px). What would avoid it: ${s.by === "fixed" ? "a larger lift than the one fixed, " : raise === "head" ? "--raise mouth (the head's top cut for it), " : ""}a cut to another shot here, or a smaller type by hand (--font-size).`);
+        conflicts.push(`${span}: the captions cover ${who}'s mouth for ${r1(r.mouth)} s${raised} at ${best.font} px${best.font <= D.caption.font.least + 1 ? " (the smallest readable size)" : ", the type that leaves the least on the faces of the whole clip"}. What would avoid it: ${s.by === "fixed" ? "a larger lift than the one fixed, " : raise === "head" ? "--raise mouth (the head's top cut for it), " : ""}a cut to another shot here, or a smaller type by hand (--font-size).`);
       } else if (r.lip > 0.05) {
         // on the lower lip at a readable size: said, not a fault
         out.chin = true; out.lip = r1(r.lip);
