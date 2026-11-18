@@ -21,6 +21,10 @@ import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { alike, solve as solveAny } from "./lib/solve.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
+import { besideSolve } from "./lib/beside.mjs";
+import { renderBeside } from "./lib/beside-page.mjs";
+import { inter } from "./lib/boxes.mjs";
+import { keepOut } from "./lib/text.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2), QUICK = args.includes("--quick"), given = args.find((a) => !a.startsWith("--"));
@@ -1154,6 +1158,154 @@ if (!QUICK) t("the picture of a candidate is the frame down to its last row with
     seen.push(chrome ? path.basename(path.dirname(path.dirname(chrome))) : "the Chrome found");
   }
   return seen.join(", ");
+});
+
+console.log("\nMaterial beside the speaker (beside): a field for a card, the speaker in a field of its own");
+// =============================================================================================
+// The wide interview of the first use on real footage (1280×720, the face 555,150,180,195) and a
+// card that needs at least 600×340 px, one caption line.
+const WIDE = { source: [1280, 720], face: [555, 150, 180, 195] }, CARD = { min: [600, 340] };
+const beside = (Z, o = {}) => besideSolve({ zones: Z, source: o.source || WIDE.source, face: o.face || WIDE.face, material: o.material || CARD, needs: o.needs || [cap(1)], before: o.before || null, set: o.set || {} });
+const inBox = (o, i, slack = 2.5) => i[0] >= o[0] - slack && i[1] >= o[1] - slack && i[0] + i[2] <= o[0] + o[2] + slack && i[1] + i[3] <= o[1] + o[3] + slack;
+const inSafe = (Z, b) => inBox(Z.safe, b) || (Z.wide && inBox(Z.wide, b));
+const meetsMin = (c, min) => c.material.field[2] >= min[0] - 0.5 && c.material.field[3] >= min[1] - 0.5;
+// what holds for every candidate that passes: the material's field has its size and lies in the
+// safe box, the face lies in the safe box and in the speaker's field, the captions touch neither
+function sane(Z, c, min = CARD.min) {
+  const [W, H] = Z.size, out = [];
+  if (!meetsMin(c, min)) out.push(`the field ${c.material.field} is under ${min}`);
+  if (!inSafe(Z, c.material.field)) out.push(`the field ${c.material.field} leaves the safe box`);
+  if (!inSafe(Z, c.speaker.face)) out.push(`the face ${c.speaker.face} leaves the safe box`);
+  if (!inBox(c.speaker.field, c.faceInFrame[1], 0.5)) out.push(`the face ${c.faceInFrame[1]} leaves its field ${c.speaker.field}`);
+  for (const t of c.text) for (const b of c.faceInFrame) if (inter(t.box, b) > 0) out.push(`the caption ${t.box} lies on ${b}`);
+  if (inter(c.material.field, c.speaker.field) > 0 && c.arrangement !== "pip") out.push("the material's field lies on the speaker's");
+  if (c.speaker.scale > 1.5 + 1e-9) out.push(`the speaker enlarged ${c.speaker.scale}×`);
+  if (!(c.material.field[0] >= 0 && c.material.field[1] >= 0 && c.material.field[0] + c.material.field[2] <= W && c.material.field[1] + c.material.field[3] <= H)) out.push("the field leaves the frame");
+  return out;
+}
+const fitsOf = (r) => r.candidates.map((c) => `${c.fit}${c.side ? ` ${c.side}` : ""} ${c.hard ? "✗" : c.unmet.length ? "–" : "✓"}`).join(", ");
+
+t("each frame gives the arrangement it should first, and every candidate passes with the card's field at its size: 9:16, 4:5 and 1:1 the material above and the speaker as a panel below, the captions on the seam, the circle second; 16:9 the speaker as a column at one side first, the panel below only where the field keeps its size, the circle last. In 9:16 the face is held at 15 % by the 720p source's soft limit (18 % is the usual below a screen), in 4:5 and 1:1 it reaches 18 %", () => {
+  const out = [];
+  for (const [Z, first, n] of [[Z916, "beside-above", 2], [Z45, "beside-above", 2], [Z11, "beside-above", 2], [Z169, "beside-column", 3]]) {
+    const r = beside(Z), c = r.candidates[0];
+    ok(c.fit === first && r.candidates.length === n, `${Z.frame}: ${fitsOf(r)}`);
+    ok(r.candidates.at(-1).fit === "beside-pip", `${Z.frame}: the circle is not last: ${fitsOf(r)}`);
+    for (const k of r.candidates) { ok(!k.hard && !k.unmet.length, `${Z.frame} ${k.fit}: ${JSON.stringify(k.problems)}`); const bad = sane(Z, k); ok(!bad.length, `${Z.frame} ${k.fit}: ${bad.join("; ")}`); }
+    if (c.arrangement === "above") ok(c.captions.where === "seam" && Math.abs(c.captions.box[1] + c.captions.box[3] / 2 - c.seam) < 0.6, `${Z.frame}: the caption is not on the seam: ${JSON.stringify(c.captions)} seam ${c.seam}`);
+    out.push(`${Z.frame} field ${Math.round(c.material.field[2])}×${Math.round(c.material.field[3])}, face ${c.speaker.facePct} %`);
+  }
+  near(beside(Z916).candidates[0].speaker.facePct, 15.3, 0.2, "9:16's face");
+  for (const Z of [Z45, Z11]) near(beside(Z).candidates[0].speaker.facePct, 18, 0.2, `${Z.frame}'s face`);
+  return out.join("; ");
+});
+
+t("a face high in the source (its hairline at 10 px) and one low (its chin at 695 of 720): in every frame the panel or column holds it whole in its field and in the safe box, the captions stay out of the margin above the head, and the arrangement does not change", () => {
+  for (const face of [[555, 10, 180, 195], [555, 500, 180, 195]]) for (const Z of [Z916, Z45, Z11, Z169]) {
+    const r = beside(Z, { face }), c = r.candidates[0];
+    ok(!c.hard && !c.unmet.length, `${Z.frame} face ${face}: ${fitsOf(r)} ${JSON.stringify(c.problems)}`);
+    const bad = sane(Z, c); ok(!bad.length, `${Z.frame} face ${face}: ${bad.join("; ")}`);
+    for (const tx of c.text) ok(!(inter(tx.box, keepOut(c.faceInFrame[1], DEFAULTS)) > 0), `${Z.frame} face ${face}: the caption lies in the head's margin`);
+    ok(c.fit === beside(Z).candidates[0].fit, `${Z.frame} face ${face}: ${c.fit}`);
+  }
+});
+
+t("a face at the source's edge (the upright take's, x 80 of 1080, and a wide take's at x 5): the picture cannot cover its field with the face in the safe box, so it stands smaller or moved with ground beside it, says so, and passes; the face is never cut", () => {
+  const out = [];
+  for (const [source, face] of [[[1080, 1920], [80, 250, 445, 580]], [[1280, 720], [5, 150, 180, 195]]]) for (const Z of [Z916, Z169]) {
+    const r = beside(Z, { source, face }), c = r.candidates[0];
+    ok(!c.hard && !c.unmet.length, `${Z.frame} ${source}: ${JSON.stringify(c.problems)}`);
+    const bad = sane(Z, c); ok(!bad.length, `${Z.frame} ${source}: ${bad.join("; ")}`);
+    ok(!c.problems.some((q) => q.code === "cut"), `${Z.frame} ${source}: the face is cut`);
+    out.push(`${Z.frame} ${source.join("×")}: ${c.fit}, ground ${c.speaker.ground}`);
+    if (c.speaker.ground) ok(c.why.some((w) => /ground beside the speaker/.test(w)), `${Z.frame}: the ground is not said`);
+  }
+  return out.join("; ");
+});
+
+t("a material field that cannot be given is said in one sentence with what can be: 1000×900 in 9:16, 800×700 in 1:1; a card too tall for the panel but not for the circle (600 px of height in 1:1, where the panel keeps the face at 12 % up to 549) gets the circle first, and the note says up to which height the panel keeps the face at 12 %", () => {
+  for (const [frame, min] of [["9:16", "1000x900"], ["1:1", "800x700"]]) {
+    const e = cli("beside", path.join(OUT, "beside-none"), "--frame", frame, "--source", "1280x720", "--face", "555,150,180,195", "--material-min", min, "--text", "caption");
+    sentence(e, `beside ${frame} ${min}`); ok(/^No arrangement gives the material a field of \d+×\d+ px in .*: the most is \d+×\d+ px .*; ask for a smaller field, or show the material alone for its seconds\.$/.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
+  }
+  const r = beside(Z11, { material: { min: [600, 600] } });
+  ok(r.candidates[0].fit === "beside-pip", fitsOf(r));
+  ok(r.notes.some((n) => /holds the face at 12 % .* at most \d+×\d+ px/.test(n)), r.notes.join(" | "));
+  return `1:1, 600×500: ${fitsOf(r)}; ${r.limits.above?.says || "no panel"}`;
+});
+
+t("a picture of fixed size (a 1920×1080 screenshot) gets the largest box of its shape: in 9:16 960×540 above the panel (screen-stacked gave it 828 wide), its scale given; a field it would have to be enlarged into past 2× fails", () => {
+  const c = beside(Z916, { material: { fixed: [1920, 1080], min: [828, 466] } }).candidates[0];
+  near(c.material.field[2], 960, 0.5, "the width"); near(c.material.field[3], 540, 0.5, "the height"); near(c.material.scale, 0.5, 0.001, "the scale");
+  const small = beside(Z916, { material: { fixed: [320, 180] } }).candidates[0];
+  ok(small.hard && small.problems.some((q) => q.code === "enlarged" && q.of === "material"), JSON.stringify(small.problems));
+});
+
+t("the change from full-frame: in 16:9 the column keeps the scale the speaker had full-frame (1.5×: the picture is only cut to the column and moved, the face moves across, not up or down); in 9:16 the panel keeps the face where it was across (no sideways jump) and gives the numbers to animate (before and after: scale, left, top, window, face)", () => {
+  const col = beside(Z169, { before: { scale: 1.5, left: 0, top: 0 } }).candidates[0];
+  ok(col.change.face.zoom === 1 && Math.abs(col.change.face.dy) < 1 && /same scale/.test(col.change.says), JSON.stringify(col.change));
+  const up = beside(Z916, { before: { scale: 1.875, left: -650, top: 0, window: [0, 285, 1080, 1350] } }).candidates[0];
+  ok(Math.abs(up.change.face.dx) < 1, JSON.stringify(up.change));
+  for (const k of ["scale", "left", "top", "window", "face"]) ok(up.change.before[k] !== undefined && up.change.after[k] !== undefined, `the change lacks ${k}`);
+  ok(JSON.stringify(up.change.before.window) === "[0,285,1080,1350]" && JSON.stringify(up.change.after.window) === JSON.stringify(up.speaker.field), JSON.stringify(up.change));
+  return `16:9: ${col.change.says}; 9:16: ${up.change.says}`;
+});
+
+t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
+  const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
+  ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);
+  ok(r.material.field[0] + r.material.field[2] <= r.speaker.field[0] && m.why.some((w) => /tells no look/.test(w)), JSON.stringify([r.material.field, r.speaker.field]));
+});
+
+t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
+  const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
+  for (const Z of [Z916, Z169]) {
+    const r = beside(Z, { face: moving }), c = r.candidates[0];
+    ok(!c.hard && !c.unmet.length && r.tracks?.length === 1, `${Z.frame}: ${JSON.stringify(c.problems)}`);
+    for (const m of moving) { const b = [c.left + c.scale * m.box[0], c.top + c.scale * m.box[1], c.scale * m.box[2], c.scale * m.box[3]]; ok(inBox(c.speaker.field, b, 0.5) && inSafe(Z, b), `${Z.frame} at ${m.t} s: ${b}`); }
+  }
+});
+
+t("beside's input it cannot use it says in one sentence: no material need, a hook, two faces, a bad --before", () => {
+  const dir = path.join(OUT, "beside-bad"), base = ["--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195"];
+  for (const [extra, says] of [[[], /needs what the material needs/], [["--material-min", "600x340", "--text", "hook"], /captions only/], [["--material-min", "600x340", "--face", "100,100,50,50"], /one speaker/], [["--material-min", "600x340", "--before", "1,2"], /--before is scale,left,top/], [["--material-min", "600x340", "--material-ratio", "wide"], /--material-ratio is/]]) {
+    const e = cli("beside", dir, ...base, ...extra);
+    sentence(e, extra.join(" ")); ok(says.test(e.stderr), e.stderr);
+  }
+});
+
+t("place.mjs beside writes placement.json, and captions reads it: on the seam centred (9:16), under the material in the column (16:9: --x and --align)", () => {
+  const a = path.join(OUT, "beside-916"), b = path.join(OUT, "beside-169");
+  let r = cli("beside", a, "--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  ok(r.status === 0 && /1\. ✓ beside-above/.test(r.stdout) && fs.existsSync(path.join(a, "placement.json")), r.stderr || r.stdout);
+  r = cli("captions", a, "--candidate", "1");
+  ok(r.status === 0 && /seam/.test(r.stdout) && !/--x/.test(r.stdout), r.stderr || r.stdout);
+  cli("beside", b, "--frame", "16:9", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  r = cli("captions", b, "--candidate", "1");
+  ok(r.status === 0 && /--x 664 /.test(r.stdout) && /--align centre/.test(r.stdout), r.stderr || r.stdout);
+});
+
+if (!QUICK) t("every candidate of beside in every frame, as a page, gets the same verdict and findings from the checker as from the solver (the material's field is marked as something to be seen, the face, the circle and the caption measured by their letters); page takes the speaker's still and the material's picture", () => {
+  let n = 0;
+  for (const Z of [Z916, Z45, Z11, Z169]) for (const face of [WIDE.face, [555, 500, 180, 195]]) {
+    const r = beside(Z, { face });
+    r.candidates.forEach((c, i) => {
+      const file = path.join(OUT, `beside-${Z.frame.replace(":", "-")}-${face[1]}-${i + 1}.html`);
+      fs.writeFileSync(file, renderBeside(c, r, { page: file }));
+      const ch = checkPage(file), faces = ch.boxes.filter((x) => x.kind === "face").length, texts = ch.boxes.filter((x) => x.kind === "text").length;
+      ok(faces === c.faceInFrame.length + (c.circle ? 1 : 0) && texts === c.text.length, `${file}: the checker saw ${faces} faces, ${texts} texts`);
+      const cmp = compare(c, ch);
+      ok(cmp.verdictAgrees && cmp.agree, `${file}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`);
+      n++;
+    });
+  }
+  const dir = path.join(OUT, "beside-page"), still = path.join(OUT, "beside-speaker.jpg"), card = path.join(OUT, "beside-card.png");
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720", "-frames:v", "1", still]);
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=navy:s=800x450", "-frames:v", "1", card]);
+  cli("beside", dir, "--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  const p = cli("page", dir, "--still", still, "--still", card, "--candidate", "1,2");
+  ok(p.status === 0 && ["candidate-1.png", "candidate-2.png", "still.jpg", "still-2.jpg"].every((f) => fs.existsSync(path.join(dir, f))) && !/They differ/.test(p.stdout), p.stderr || p.stdout);
+  return `${n} pages`;
 });
 
 if (table.length) {
