@@ -83,7 +83,7 @@ const texts = (data) => data.groups.map((g) => g.words.map((w) => w.text).join("
 function linesOf(text, style, room) {
   const m = measure(STYLES[style].look);
   let lines = 1, used = 0;
-  for (const w of text.split(" ").map(m.word)) {
+  for (const w of text.split(" ").map((t) => m.word(t))) {
     if (w > room) return Infinity;
     if (used && used + m.space + w > room) { lines++; used = w; } else used += (used ? m.space : 0) + w;
   }
@@ -112,7 +112,11 @@ test("without the options the built files and what the tool says are those of th
     const a = run(old, path.join(dir, "a", name), args, words), b = run(TOOL, path.join(dir, "b", name), args, words);
     assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
     assert.equal(b.stdout, a.stdout, `${name}: what the tool says`);
-    for (const f of files) assert.ok(fs.readFileSync(path.join(dir, "b", name, f)).equals(fs.readFileSync(path.join(dir, "a", name, f))), `${name}: ${f} differs from the version before`);
+    // The commit that carries this line lets every group shrink until its widest word is inside
+    // its room (before: a word alone): three lines of every built file's script. Until the next
+    // commit names this one as the version before, the two are compared without those lines.
+    const fitted = (file) => (file.endsWith("captions/index.html") ? (text) => text.replace(/\n {12}\/\/ a word [^\n]*wider than its room even at the least size[^\n]*\n[^\n]*\n {12}while \([^\n]*?\}/, "") : (text) => text);
+    for (const f of files) assert.equal(fitted(f)(fs.readFileSync(path.join(dir, "b", name, f), "latin1")), fitted(f)(fs.readFileSync(path.join(dir, "a", name, f), "latin1")), `${name}: ${f} differs from the version before`);
   };
   // 9:16, 16:9, 1:1, 4:5 and a small 9:16, in every style
   for (const style of Object.keys(STYLES)) for (const size of ["1080x1920", "1920x1080", "1080x1080", "1080x1350", "720x1280"]) {
@@ -235,8 +239,13 @@ test("review 1: a narrow area holds every group in two lines, line by line, and 
   for (const text of texts(narrow.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 96) <= 2, `"${text}" takes more than two lines of 420 px at 96 px`);
   assert.match(narrow.said, /\n {2}Wider than a line of this area at 96 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "browser"\.\n/);
   const named = built(t, ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420", "--font-size", "110"], wordsOf(NARROW));
-  assert.deepEqual(texts(named.data), ["For that", "I use", "Storrito,", "which", "runs", "in the", "browser", "and needs", "no app."]);
-  for (const text of texts(named.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 110) <= 2, `"${text}" takes more than two lines of 420 px at 110 px`);
+  // ("which" is wider than a line at 110 px and stands alone, set smaller; "runs" after it would be on screen for a fifth of a second and stays with it)
+  assert.deepEqual(texts(named.data), ["For that", "I use", "Storrito,", "which runs", "in the", "browser", "and needs", "no app."]);
+  assert.match(named.said, /\n {2}A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: "runs"\.\n/);
+  assert.doesNotMatch(narrow.said, /flash by/);   // at 96 px "which runs" sets: nothing joined
+  // (but for the group of a word wider than a line, which is set smaller than 110 px)
+  const type = measure(STYLES.hormozi.look), tooWide = (text) => text.split(" ").some((w) => type.word(w) > 420 / 110);
+  for (const text of texts(named.data)) assert.ok(!text.includes(" ") || tooWide(text) || linesOf(text, "hormozi", 420 / 110) <= 2, `"${text}" takes more than two lines of 420 px at 110 px`);
   assert.match(named.said, /at 110 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "which", "browser"\./);
 });
 
@@ -322,6 +331,9 @@ test("a mark alone is no caption: it joins the word said beside it, or is left o
   assert.deepEqual(texts([w("Hello.", 0, 0.3), w("…", 2, 2.8), w("So", 4, 4.2)]), ["Hello.", "So"]);               // a pause's "…": no word near it
   assert.deepEqual(texts([w("das.", 0, 0.3), w("…", 0.8, 0.9), w("Und", 1.4, 1.6)]), ["das.", "Und"]);               // nor after a sentence's end
   assert.deepEqual(texts([w("Tom", 0, 0.3), w("&", 0.32, 0.4), w("Jerry", 0.42, 0.8)]), ["Tom &", "Jerry"]);
+  // a mark that can only stand before its word goes with it; one that stands on either side goes by what is near
+  assert.deepEqual(texts([w("Nach", 0, 0.3), w("§", 0.32, 0.4), w("202a", 0.42, 0.8), w("kostet", 0.9, 1.1), w("5", 1.12, 1.2), w("$", 1.22, 1.3), w("pro", 1.32, 1.5)]), ["Nach", "§ 202a", "kostet", "5 $", "pro"]);
+  assert.deepEqual(texts([w("(", 0, 0.02), w("Notiz", 0.03, 0.3), w(")", 0.31, 0.33)]), ["(Notiz)"]);
   assert.deepEqual(texts([w("„", 0, 0.02), w("Hallo", 0.03, 0.3), w("“", 0.31, 0.33), w("sagt", 0.4, 0.6), w("er", 0.61, 0.7), w("–", 0.72, 0.75), w("leise.", 0.8, 1.1)]), ["„Hallo“", "sagt", "er –", "leise."]);
   // the times are the words': a joined mark moves none
   assert.deepEqual(fold([w("Well", 0, 0.3), w("…", 0.35, 0.4)]).map((x) => [x.start, x.end]), [[0, 0.3]]);
@@ -331,6 +343,51 @@ test("a mark alone is no caption: it joins the word said beside it, or is left o
   const said = [w("Hello.", 0, 0.3), w("…", 2, 2.8), w("Verwaltungs\u00ADwissenschaft", 4, 5), w("zählt.", 5.05, 5.4)];
   for (const s of Object.values(STYLES)) for (const g of groups(fold(said), s.group, 60)) assert.match(fold(said).slice(g.from, g.to + 1).map((x) => x.text).join(" "), /\p{L}/u);
   assert.deepEqual(cues(said).map((c) => c.text), ["Hello.", "Verwaltungswissenschaft zählt."]);
+});
+
+test("in capitals the letter of a paragraph and a gender ending stay small; nothing else changes, and no other style is touched", { skip: noZones }, (t) => {
+  const said = "Nach § 202a sind Generalist:innen und eine Lehrer*in gefragt, 10kg im 5G Netz.";
+  for (const style of ["hormozi", "impact", "wipe"]) {
+    const b = built(t, ["--style", style, "--size", "1080x1920"], wordsOf(said)), all = b.data.groups.flatMap((g) => g.words);
+    // the words with something small are written in their capitals and marked; the others are left to the style's transform
+    // (the "§" a recognizer sets apart goes with its number: group.mjs fold)
+    assert.deepEqual(all.filter((w) => w.own).map((w) => w.text), ["§ 202a", "GENERALIST:innen", "LEHRER*in"], style);
+    assert.deepEqual(all.filter((w) => !w.own).map((w) => w.text), ["Nach", "sind", "und", "eine", "gefragt,", "10kg", "im", "5G", "Netz."], style);
+    assert.match(b.html, /#root \.cap-word\.own \{ text-transform: none; \}/);
+    assert.match(b.html, /if \(w\.own\) s\.className \+= " own";/);
+  }
+  // other endings after their mark; a slash or an underscore only where it cannot be anything else
+  const more = built(t, ["--style", "hormozi", "--size", "1080x1920"], wordsOf("Für jede:n Mitarbeiter/innen und/oder @brand_in mit 5km/h."));
+  assert.deepEqual(more.data.groups.flatMap((g) => g.words).filter((w) => w.own).map((w) => w.text), ["JEDE:n", "MITARBEITER/innen"]);
+  // a style in sentence case writes the words as they are, and a file without such words has nothing of this
+  const bold = built(t, ["--style", "bold", "--size", "1080x1920"], wordsOf(said));
+  assert.ok(!bold.data.groups.some((g) => g.words.some((w) => w.own)) && !/\.own/.test(bold.html));
+  assert.doesNotMatch(built(t, ["--style", "hormozi", "--size", "1080x1920"]).html, /\.own/);
+});
+
+test("a key word in another typeface is measured in it; a short word that would flash by beside a word wider than a line joins it", { skip: noZones }, (t) => {
+  // editorial: Playfair Display italic at 1.24 of the size is wider than the sans it stands in
+  const type = measure(STYLES.editorial.look);
+  assert.ok(type.word("Storrito,", true) > type.word("Storrito,") * 1.05 && type.word("Storrito,", true) < type.word("Storrito,") * 1.4);
+  assert.equal(measure(STYLES.bold.look).word("Storrito,", true), measure(STYLES.bold.look).word("Storrito,"));   // no typeface of its own: the same
+  // in 360 px "how Storrito plans it all." sets in two lines by the sans's widths, but not with "Storrito" in its serif: the group is cut again
+  const serif = wordsOf("Today I show you how Storrito plans it all.", { 5: { highlight: true } });
+  const narrow = built(t, ["--style", "editorial", "--size", "1080x1920", "--max-width", "360"], serif);
+  assert.deepEqual(texts(narrow.data), ["Today I show you", "how Storrito", "plans it all."]);
+  const bySans = groups(serif, { ...STYLES.editorial.group, fit: { lines: 2, room: 360 / 60, space: type.space, word: (text) => type.word(text) } }, 60);
+  assert.deepEqual(bySans.map((g) => serif.slice(g.from, g.to + 1).map((w) => w.text).join(" ")), ["Today I show you", "how Storrito plans it all."]);
+  // "Am" would be on screen for 0.15 s before "Montagmorgen", which is wider than a line: they stand together where there are two lines
+  const said = "Am Montagmorgen ist dann die ganze Woche fertig geplant.";
+  const two = built(t, ["--style", "bold", "--size", "1080x1920", "--max-width", "420"], wordsOf(said));
+  assert.deepEqual(texts(two.data).slice(0, 2), ["Am Montagmorgen", "ist dann die"]);
+  assert.match(two.said, /\n {2}Wider than a line of this area at 66 px, so each stands alone, set smaller \(or broken at its hyphen\): "Montagmorgen"\.\n {2}A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: "Am"\.\n/);
+  const one = built(t, ["--style", "bold", "--size", "1080x1920", "--max-width", "420", "--lines", "1"], wordsOf(said));
+  assert.deepEqual(texts(one.data).slice(0, 2), ["Am", "Montagmorgen"]);   // one line: no room for it
+  assert.doesNotMatch(one.said, /flash by/);
+  // a word that is on screen long enough stays alone, as does one word at a time
+  const slow = wordsOf(said); slow[1].start += 0.6; slow[1].end += 0.6; for (const w of slow.slice(2)) { w.start += 0.6; w.end += 0.6; }
+  assert.deepEqual(texts(built(t, ["--style", "bold", "--size", "1080x1920", "--max-width", "420"], slow).data).slice(0, 2), ["Am", "Montagmorgen"]);
+  assert.ok(built(t, ["--style", "single", "--size", "1080x1920", "--max-width", "420"], wordsOf(said)).data.groups.every((g) => g.words.length === 1));
 });
 
 // ---- the styles ---------------------------------------------------------------------------------
@@ -510,9 +567,13 @@ test("in Chrome: the review's sentences stand in the lines and at the size asked
     { words: BIG_BOX, opts: ["--style", "clean", "--size", "1920x1080", "--x", "1000", "--max-width", "824", "--align", "right", "--font-size", "110"] },
     { words: SAID, opts: ["--style", "karaoke", "--size", "1080x1350", "--max-width", "540", "--align", "left", "--font-size", "84"] },
     { words: SAID, opts: ["--style", "wipe", "--size", "1920x1080", "--x", "704", "--max-width", "1120", "--align", "left", "--font-size", "138"] },
+    // a key word in a serif of its own, wider than the sans: measured in it, so the groups are cut for it and none is shrunk
+    { words: "Today I show you how Storrito plans it all.", more: { 5: { highlight: true } }, opts: ["--style", "editorial", "--size", "1080x1920", "--max-width", "360"] },
+    // a short word that stays with a word wider than a line: both set as small as the wide one takes
+    { words: "Die Verwaltungswissenschaft ist schwer zu lernen.", opts: ["--style", "bold", "--size", "1080x1920", "--max-width", "420"] },
   ];
   for (const c of cases) for (const borderBox of [false, true]) {
-    const b = built(t, c.opts, wordsOf(c.words)), seen = laidOut(t, b.html, borderBox), name = `${c.opts.join(" ")}${borderBox ? ", a border-box host" : ""}`;
+    const b = built(t, c.opts, wordsOf(c.words, c.more)), seen = laidOut(t, b.html, borderBox), name = `${c.opts.join(" ")}${borderBox ? ", a border-box host" : ""}`;
     if (!seen) return t.skip(`Chrome did not lay the page out (${name})`);
     if (seen === "no font") return t.skip(`the style's font did not load, no network? (${name})`);
     assert.equal(seen.length, b.data.groups.length, name);
@@ -520,8 +581,12 @@ test("in Chrome: the review's sentences stand in the lines and at the size asked
     seen.forEach((g, i) => {
       const alone = b.data.groups[i].words.length === 1;
       assert.ok(g.lines <= b.data.lines || alone, `${name}: "${g.text}" stands in ${g.lines} lines`);
-      if (!alone) assert.equal(g.size, b.data.size, `${name}: "${g.text}" is set at ${g.size} px`);
+      // (a word wider than a line is set smaller, and with it the short word that stays beside it: the tool names both)
+      const wide = [...(b.said.match(/Wider than a line[^\n]*/)?.[0].matchAll(/"([^"]+)"/g) ?? [])].map((m) => m[1]);
+      if (!alone && !b.data.groups[i].words.some((w) => wide.includes(w.text))) assert.equal(g.size, b.data.size, `${name}: "${g.text}" is set at ${g.size} px`);
       assert.ok(g.box[0] >= Math.floor(left) - 1 && g.box[2] <= Math.ceil(right) + 1, `${name}: the box of "${g.text}" (x ${g.box[0]}–${g.box[2]}) leaves the area x ${left}–${right}`);
+      // (the box is the group's and as wide as the area by itself: the words in it must not pass it either)
+      assert.ok(g.words[0] >= Math.floor(left) - 1 && g.words[1] <= Math.ceil(right) + 1, `${name}: the words of "${g.text}" (x ${g.words[0]}–${g.words[1]}) leave the area x ${left}–${right}`);
       assert.equal(g.box[3], height - b.data.bottom, `${name}: "${g.text}" ends at y ${g.box[3]}`);
     });
   }
@@ -571,7 +636,8 @@ test("in Chrome: a word alone that is wider than its line is set as small as it 
       const b = built(t, ["--style", style, "--size", "1080x1920"], wordsOf(`Viele ${word} sagen das.`)), seen = laidOut(t, b.html, true), at = `${style}, ${name}`;
       if (!seen) return t.skip(`Chrome did not lay the page out (${at})`);
       if (seen === "no font") return t.skip(`the style's font did not load, no network? (${at})`);
-      const i = b.data.groups.findIndex((g) => g.words.some((w) => w.text === word)), g = seen[i];
+      // (in a style in capitals the file has the word in its capitals, the ending after the * small)
+      const i = b.data.groups.findIndex((g) => g.words.some((w) => w.text.toLowerCase() === word.toLowerCase())), g = seen[i];
       assert.equal(b.data.groups[i].words.length, 1, `${at}: the long word stands alone`);
       assert.ok(g.words[0] >= b.data.left - 1 && g.words[1] <= b.data.left + b.data.maxWidth + 1, `${at}: the word reaches x ${g.words[0]}–${g.words[1]}, its area x ${b.data.left}–${b.data.left + b.data.maxWidth}`);
       assert.equal(g.lines, 1, at);   // (a word is one box, whatever lines it has inside)

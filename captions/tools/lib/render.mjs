@@ -116,7 +116,7 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // other is cut anew (group.mjs). Captions
   // that are only moved or aligned keep the style's groups.
   const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : look.pill ? 2 * PILL.pull * area.type : 0)) / area.type;
-  const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: type.word } } : style.group;
+  const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: (text, w) => type.word(text, !!w?.highlight) } } : style.group;
 
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
   // carries `icon`, its numbers in the key colour
@@ -125,6 +125,27 @@ export function writeCaptions(out, { words: said, style, width, height, duration
     words: activeSpans(words, g).map((s) => ({ text: words[s.i].text, start: n(s.start), end: n(s.end), said: n(words[s.i].end),
       key: !!words[s.i].highlight || (!!g.box && /\d/.test(words[s.i].text)) })),
   }));
+  // What the caller is told of the words (below): those wider than a line of the area, which
+  // are set smaller, and the short words that joined one and are set smaller with it (group.mjs
+  // joinFlash).
+  const tooWide = (w) => type.word(w.text, w.key) > room;
+  const wide = type ? gs.flatMap((g) => (g.box ? [] : g.words.filter(tooWide).map((w) => w.text))) : [];
+  const joined = type ? gs.flatMap((g) => (!g.box && g.words.length > 1 && g.words.some(tooWide) ? g.words.filter((w) => !tooWide(w)).map((w) => w.text) : [])) : [];
+  // In capitals a few letters stay small, or they say something else: the letter of a paragraph
+  // or a house number ("§ 202a", "12b": one small letter after a digit, at the word's end) and a
+  // gender ending after its mark ("Generalist:innen", "Lehrer*in", "jede:r", "Lehrer·innen";
+  // after a slash or an underscore only the unmistakable ones, "Mitarbeiter/innen", not
+  // "und/oder" or a handle "@name_in"). Such a word is written into the file in its capitals
+  // and is not transformed again (`own`).
+  if (look.case === "upper") for (const g of gs) for (const w of g.words) {
+    const small = [...w.text.matchAll(/(?<=\d)\p{Ll}(?![\p{L}\d])|(?<=\p{L}[:*·]\u00AD?)(?:innen|in|r|e|n)(?!\p{L})|(?<=\p{L}\/\u00AD?)(?:innen|in)(?!\p{L})|(?<=\p{L}_\u00AD?)innen(?!\p{L})/gu)];
+    if (!small.length) continue;
+    let text = "", at = 0;
+    for (const m of small) { text += w.text.slice(at, m.index).toUpperCase() + m[0]; at = m.index + m[0].length; }
+    w.text = text + w.text.slice(at).toUpperCase();
+    w.own = true;
+  }
+  const own = gs.some((g) => g.words.some((w) => w.own));
   // groupKey: a caption that holds a key word stands whole in the key colour
   if (look.groupKey) for (const g of gs) if (!g.box && g.words.some((w) => w.key)) for (const w of g.words) w.key = true;
   const data = { groups: gs, look, motion: style.motion, lines: area.lines,
@@ -164,7 +185,8 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   //             a margin so that the pill reaches into the gaps instead of widening them (the
   //             gaps were twice a word space); the group keeps the pill's overhang at a line's
   //             ends inside its area
-  const rules = (look.pill ? `
+  const rules = (own ? `
+        #root .cap-word.own { text-transform: none; }` : "") + (look.pill ? `
         #root .cap-group:not(.cap-card) { box-sizing: border-box; padding: 0 ${PILL.pull}em; }` : "") + (look.lineBox ? `
         #root .cap-group.lined { box-sizing: border-box; padding: 0 ${look.linePad[1]}em; margin-bottom: ${look.linePad[0]}em; }
         #root .cap-group.lined .cap-word { position: relative; }
@@ -172,7 +194,8 @@ export function writeCaptions(out, { words: said, style, width, height, duration
         #root .cap-group.cap-card { background: ${look.lineBox}; }` : "") + (look.keyFont ? `
         #root .cap-word.key { font-family: "${look.keyFont}", serif; font-weight: ${look.keyWeight || look.weight}; font-style: ${look.keyItalic ? "italic" : "normal"};
           font-size: ${look.keyScale || 1}em; line-height: 0; letter-spacing: 0; }` : "");
-  const wordMore = (look.keyFont ? `
+  const wordMore = (own ? `
+              if (w.own) s.className += " own";` : "") + (look.keyFont ? `
               if (w.key) s.className += " key";` : "") + (style.motion.active === "fill" ? `
               s.style.color = L.wait;` : "");
   const lined = look.lineBox ? `
@@ -277,9 +300,9 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               if (lines <= DATA.lines + 0.35 && widest <= room) break;
             }
             el.style.fontSize = size + "px";
-            // a word alone that is wider than its room even at the least size is set as small as it takes: it is never cut off at the frame's edge
-            var only = el.querySelectorAll(".cap-word");
-            while (only.length === 1 && size > 14 && only[0].offsetWidth > room) { size -= 2; el.style.fontSize = size + "px"; }${hug}
+            // a word that is wider than its room even at the least size is set as small as it takes, alone or with the words of its group: it is never cut off at the frame's edge
+            var all = el.querySelectorAll(".cap-word"), widestWord = function () { return Math.max.apply(null, Array.prototype.map.call(all, function (c) { return c.offsetWidth; })); };
+            while (size > 14 && widestWord() > room) { size -= 2; el.style.fontSize = size + "px"; }${hug}
           }${boxes}
           function reveal(w) {
             var spoken = Math.max(0.03, w.said - w.start);
@@ -330,8 +353,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
   // are never cut to an area.
   const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
   const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : look.lineBox ? 2 * look.linePad[0] * area.type : 0;
-  const wide = type ? gs.filter((g) => !g.box && g.words.length === 1 && type.word(g.words[0].text) > room).map((g) => g.words[0].text) : [];
-  return { groups: gs.length, cards, wide, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
+  return { groups: gs.length, cards, wide, joined, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.

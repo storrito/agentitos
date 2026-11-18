@@ -246,6 +246,8 @@ function placedAs(r, z, [width, height], platforms) {
   else said.push(`! That leaves ${off ? `the frame (${off}: not in the video) and ` : ""}the safe box of ${who} (${span(z.safe)}): ${past}${under.length ? `, where the apps lay ${under.join("; ")} over the captions` : ", into the margin the guides keep"}.`);
   const wide = [...new Set(r.wide)];
   if (wide.length) said.push(`  Wider than a line of this area at ${a.size} px, so each stands alone, set smaller (or broken at its hyphen): ${wide.slice(0, 8).map((w) => `"${w}"`).join(", ")}${wide.length > 8 ? ", …" : ""}.`);
+  const joined = [...new Set(r.joined)];
+  if (joined.length) said.push(`  A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: ${joined.slice(0, 8).map((w) => `"${w}"`).join(", ")}${joined.length > 8 ? ", …" : ""}.`);
   if (a.own && r.cards) said.push(`  A card keeps its words together whatever the area (${r.cards} here): it shrinks to the lines asked for and takes another line where it cannot.`);
   return said.join("\n");
 }

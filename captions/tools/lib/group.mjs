@@ -19,10 +19,13 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 // after it are grouped as if the run were a pause. Without a `box` on any word nothing changes.
 //
 // `fit` (captions in an area, lines or a size of the caller's own, render.mjs): { lines, room,
-// space, word(text) }, how many lines a group may have and how wide a line, a gap between words
-// and a word are, all in the type's size. A phrase whose groups, cut as above, each set in
-// those lines keeps them; any other is split into the fewest groups that do, about equally
-// long. A word wider than a line stands alone: the browser sets it smaller.
+// space, word(text, w) }, how many lines a group may have and how wide a line, a gap between
+// words and a word are, all in the type's size (word is given the word itself too: a key word
+// may be set in another typeface). A phrase whose groups, cut as above, each set in those lines
+// keeps them; any other is split into the fewest groups that do, about equally long. A word
+// wider than a line stands alone: the browser sets it smaller. A single short word beside it
+// that would be on screen for less than the style's minimum joins it when the area has a
+// second line (joinFlash below).
 //
 // `gap` (a style whose groups are cut in and cut out): 0, so that a group ends in the moment the
 // next one starts; with the usual 20 ms a frame of a 30 fps video often shows neither.
@@ -45,19 +48,19 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, fi
   });
   const text = (a, b) => words.slice(a, b + 1).map((x) => x.text).join(" ");
   const out = [];
+  // a phrase cut by length, the words measured where there is a `fit`
+  const cut = (ph) => {
+    const ws = words.slice(ph.from, ph.to + 1), ranges = byLength(ws, maxWords, maxChars, fit);
+    for (const [a, b] of fit && maxWords > 1 ? joinFlash(ranges, ws, fit, min) : ranges) out.push({ from: ph.from + a, to: ph.from + b });
+  };
   for (const ph of phrases) {
     if (ph.box) { out.push({ from: ph.from, to: ph.to, box: true }); continue; }
     const n = ph.to - ph.from + 1;
-    if (even) {
-      for (const [a, b] of byLength(words.slice(ph.from, ph.to + 1).map((w) => w.text), maxWords, maxChars, fit)) out.push({ from: ph.from + a, to: ph.from + b });
-      continue;
-    }
+    if (even) { cut(ph); continue; }
     let k = Math.ceil(n / maxWords);
-    while (k < n && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => t.length > maxChars)) k++;
-    if (fit && Array.from({ length: k }, (_, j) => text(ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1)).some((t) => !sets(t.split(" "), fit))) {
-      for (const [a, b] of byLength(words.slice(ph.from, ph.to + 1).map((w) => w.text), maxWords, maxChars, fit)) out.push({ from: ph.from + a, to: ph.from + b });
-      continue;
-    }
+    const equal = () => Array.from({ length: k }, (_, j) => [ph.from + Math.round((j * n) / k), ph.from + Math.round(((j + 1) * n) / k) - 1]);
+    while (k < n && equal().some(([a, b]) => text(a, b).length > maxChars)) k++;
+    if (fit && equal().some(([a, b]) => !sets(words.slice(a, b + 1), fit))) { cut(ph); continue; }
     for (let j = 0; j < k; j++) out.push({ from: ph.from + Math.round((j * n) / k), to: ph.from + Math.round(((j + 1) * n) / k) - 1 });
   }
   out.forEach((g, k) => {
@@ -71,11 +74,11 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, fi
 
 // Whether words set in at most fit.lines lines of fit.room, line by line as a browser fills
 // them: a word that does not fit the line begins the next. A word alone always does (it shrinks).
-function sets(texts, fit) {
-  if (texts.length === 1) return true;
+function sets(ws, fit) {
+  if (ws.length === 1) return true;
   let lines = 1, used = 0;
-  for (const t of texts) {
-    const w = fit.word(t);
+  for (const x of ws) {
+    const w = fit.word(x.text, x);
     if (w > fit.room) return false;
     if (used && used + fit.space + w > fit.room) { lines++; used = w; } else used += (used ? fit.space : 0) + w;
   }
@@ -87,7 +90,8 @@ function sets(texts, fit) {
 // and of those ways the one whose groups are most alike in length (the least sum of their
 // squared lengths); returns [[first, last], …] as indexes into the phrase. A word that fits no
 // line stands alone.
-function byLength(texts, maxWords, maxChars, fit) {
+function byLength(ws, maxWords, maxChars, fit) {
+  const texts = ws.map((w) => w.text);
   const length = (a, b) => texts.slice(a, b).join(" ").length;   // of the words a … b - 1
   // best[i]: the words before i as [how many groups, their squared lengths summed, where the last one starts]
   const best = [[0, 0, 0]];
@@ -95,7 +99,7 @@ function byLength(texts, maxWords, maxChars, fit) {
     for (let j = i - 1; j >= Math.max(0, i - maxWords); j--) {
       const l = length(j, i);
       // (a group that does not set is not helped by a word more in front of it)
-      if (j < i - 1 && (l > maxChars || (fit && !sets(texts.slice(j, i), fit)))) break;
+      if (j < i - 1 && (l > maxChars || (fit && !sets(ws.slice(j, i), fit)))) break;
       const way = [best[j][0] + 1, best[j][1] + l * l, j];
       if (!best[i] || way[0] < best[i][0] || (way[0] === best[i][0] && way[1] < best[i][1])) best[i] = way;
     }
@@ -107,11 +111,14 @@ function byLength(texts, maxWords, maxChars, fit) {
 
 // A token without a letter or a digit ("…", "–", "&", a quotation mark the recognizer set apart)
 // is no word to show by itself: it joins the word said just before it (a closing mark without a
-// space: "well…"), else the word said just after it (an opening mark without a space), each
-// within NEAR seconds; a mark with no word near it is left out (a "…" for a pause stood in the
+// space: "well…"), else the word said just after it (an opening mark without a space; a mark
+// that stands before its word, such as "§", always), each within NEAR seconds; a mark with no word near it is left out (a "…" for a pause stood in the
 // picture for most of a second), as are dots after a word that ends its sentence already. The words come back as they are when there is no such token.
 const NEAR = 0.6;
 const bare = (text) => !/[\p{L}\p{N}]/u.test(text);
+// (marks that can only belong to what follows them: an opening bracket, a low opening quotation
+// mark, "§ 202a". "$", "#", "@", "«" stand on either side, "5 $", "Hallo«": they go by what is near)
+const before = (text) => /^[(\[{„§¿¡]+$/.test(text);
 export function fold(words) {
   if (!words.some((w) => bare(w.text))) return words;
   const out = [];
@@ -120,12 +127,30 @@ export function fold(words) {
     const prev = out[out.length - 1];
     if (bare(w.text)) {
       // (dots after a word that ends its sentence add nothing: "das." stays "das.", not "das.…")
-      if (prev && !lead && w.start - prev.end < NEAR) { if (!(/^[.…]+$/.test(w.text) && /[.!?…]["»”)]*$/.test(prev.text))) out[out.length - 1] = { ...prev, text: prev.text + (/^[.,;:!?…)\]}»“”‘’"']+$/.test(w.text) ? "" : " ") + w.text }; }
+      if (!before(w.text) && prev && !lead && w.start - prev.end < NEAR) { if (!(/^[.…]+$/.test(w.text) && /[.!?…]["»”)]*$/.test(prev.text))) out[out.length - 1] = { ...prev, text: prev.text + (/^[.,;:!?…)\]}»“”‘’"']+$/.test(w.text) ? "" : " ") + w.text }; }
       else lead = lead ? { ...lead, text: `${lead.text} ${w.text}`, end: w.end } : w;
       continue;
     }
-    out.push(lead && w.start - lead.end < NEAR ? { ...w, text: lead.text + (/^[(\[{«„“‘"']+$/.test(lead.text) ? "" : " ") + w.text } : w);
+    out.push(lead && w.start - lead.end < NEAR ? { ...w, text: lead.text + (/^[(\[{«„‹“‘"'¿¡]+$/.test(lead.text) ? "" : " ") + w.text } : w);
     lead = null;
+  }
+  return out;
+}
+
+// A word wider than a line stands alone and is set smaller. A single word before it, or after
+// it inside the phrase, that fits a line but would be on screen for less than the style's
+// minimum ("Am" for 0.15 s before "Montagmorgen") reads as a flicker: it joins the wide word,
+// on a line of its own, where the area has two lines, and is set smaller with it. ranges are
+// [first, last] in the phrase's words ws.
+function joinFlash(ranges, ws, fit, min) {
+  if (fit.lines < 2) return ranges;
+  const out = ranges.map((r) => [...r]), wide = (i) => fit.word(ws[i].text, ws[i]) > fit.room;
+  const flash = (r, until) => r && r[0] === r[1] && !wide(r[0]) && until - ws[r[0]].start < min;
+  for (let k = 0; k < out.length; k++) {
+    const [a, b] = out[k];
+    if (a !== b || !wide(a)) continue;
+    if (flash(out[k - 1], ws[a].start)) { out.splice(k - 1, 2, [out[k - 1][0], b]); k--; }
+    else if (out[k + 2] && flash(out[k + 1], ws[out[k + 2][0]].start)) out.splice(k, 2, [a, out[k + 1][1]]);
   }
   return out;
 }
