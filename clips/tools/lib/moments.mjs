@@ -284,9 +284,10 @@ const opensOf = (m) => Math.max(1, Math.min(10, Math.round(Number(m.opens) || 1)
 // The moments of moments.json from the model's answer, in the order of the episode: whole
 // sentences that exist, at most longest(limit) seconds (the end trimmed sentence by sentence, as
 // rarely as the model returns more); of two that overlap, the one that opens better stays (on
-// the same `opens`, the one the model listed first). No order is claimed: neither the model's
-// ranking, nor `opens`, nor any count put the editors' picks ahead of the other moments (AUC
-// 0.44-0.56 in nine runs on the nine episodes of clips-eval, 2026-11-18; 0.5 is chance). `drop` stays only inside a
+// the same `opens`, the one the model listed first, which is the earlier one: it lists them in the
+// order of the episode). No order is claimed: neither the model's ranking, nor `opens`, nor any
+// count put the editors' picks ahead of the other moments (0.34-0.56 of the pairs on twelve
+// episodes, clips-eval, November 2026; 0.5 is chance; README, "Measured"). `drop` stays only inside a
 // moment that is over the limit and never holds its payoff; `kept` is its length without those
 // sentences; `checks` what the tool counts about it (see checks above). The tool moves no start:
 // a question just before the first sentence that it answers is only noted (`checks.asked`): a
@@ -352,7 +353,7 @@ The video's description, as the channel's followers see it:
 """
 ${description}
 """` : ""}
-Pick the ${count} best moments for vertical shorts of this channel (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers.
+Pick ${count + Math.ceil(count / 2)} moments that work as vertical shorts of this channel (Reels, TikTok, YouTube Shorts) on their own, or fewer where the episode holds fewer.
 
 First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered; also one its followers are curious about, how someone lives or works or what a thing is, without a punchline), exchanges (a quick back-and-forth with a laugh: teasing, a joke two people build, a reaction to what is in front of them).
 
@@ -370,7 +371,7 @@ When the first sentence of a moment does not hook on its own in its first three 
 
 opens: how well the moment's first sentence works on someone who has seen nothing of the episode, 1 to 10, judged on that alone: 10 makes anyone scrolling past stop and makes sense by itself (a question, a surprising claim, a vivid image, a number, a line that gets a laugh); 5 is fine but plain; 1 needs what came before or opens on small talk. Use the whole scale; two moments rarely open equally well.
 
-List the moments best first; they do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, opens, payoff, drop, the hook, crosstalk.
+List the moments in the order of the episode; they do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, opens, payoff, drop, the hook, crosstalk.
 
 Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.`;
 }

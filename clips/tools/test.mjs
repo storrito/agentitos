@@ -181,7 +181,10 @@ test("the prompt holds the description for the channel's followers, the limit an
   assert.ok(p.startsWith("0 [0:00–0:04] A: Hi.\n"), "the transcript first, for the provider's cache");
   assert.ok(p.includes(`The video's description, as the channel's followers see it:\n"""\nJulia Garner (Ozark, Weapons) takes on the wings.\n"""`));
   assert.match(p, /everyone the title or the description names, so such a name needs no introduction/);
-  assert.match(p, /Pick the 5 best moments .* and 3 more as fillers/);
+  // nothing ranks the moments, so the model is not asked to rank them
+  assert.match(p, /Pick 8 moments that work as vertical shorts of this channel/);
+  assert.match(p, /List the moments in the order of the episode/);
+  assert.doesNotMatch(p, /best first|fillers|the \d+ best/);
   assert.match(p, /up to 59 seconds here/);
   assert.ok(p.includes(`(up to ${longest(59)})`));
   assert.match(p, /exchanges \(a quick back-and-forth with a laugh/);

@@ -5,8 +5,8 @@ license: MIT
 metadata:
   title: "Kinetic shorts"
   title-de: "Kinetic Shorts"
-  summary: "Shorts from a YouTube episode: the best moments found, every spoken word big on screen, rendered and scheduled on your accounts."
-  summary-de: "Shorts aus einer YouTube-Folge: die besten Stellen gefunden, jedes gesprochene Wort groß im Bild, gerendert und auf deinen Konten eingeplant."
+  summary: "Shorts from a YouTube episode: the moments that stand alone found, every spoken word big on screen, rendered and scheduled on your accounts."
+  summary-de: "Shorts aus einer YouTube-Folge: die Stellen, die für sich stehen, gefunden, jedes gesprochene Wort groß im Bild, gerendert und auf deinen Konten eingeplant."
   ask: "Paste the link of a YouTube video with people talking (a podcast, an interview, a talk). I find the moments that work as shorts, we set them up together here, and I schedule them on your accounts."
   ask-de: "Füge den Link eines YouTube-Videos ein, in dem Menschen sprechen (Podcast, Interview, Vortrag). Ich finde die Stellen, die als Short funktionieren, wir richten sie hier gemeinsam ein, und ich plane sie auf deinen Konten ein."
   placeholder: "Paste a YouTube link"
@@ -115,7 +115,7 @@ After "They are good", say in one sentence that you are rendering N shorts now, 
 
 Follow publish-video's SKILL.md for each short, `<name>` = `short-<k>` (a variant `short-<k>-<v>`): `check work/out/<k>.mp4 publish/short-<k> --mode short --platforms <the chosen platforms>`, its `accounts`, the texts with video-descriptions (in the episode's language, the hook first), then `publish`. publish-video holds every limit (length, caption, a YouTube Short's title, privacy and "made for kids", TikTok's audience) and posts nothing twice.
 
-Ask what the shorts share **once for all of them**: the accounts (`accounts publish/short-01 --hiccup`, with pictures and last time's choices ticked; say in a line when an account does not take every short; an adapted short goes only to its platform or account), the style of the texts, TikTok's audience, a YouTube Short's visibility, and the times. Default times: one short a day at 18:00 in the person's time zone, strongest first, the same short on all its accounts at the same time; also offer "One every two days" and "All today". Show the texts of all shorts (video-descriptions' overview, "Show the texts of short 1 ↗" …) before their yes; a ✗ of `check` on one short is said for that short and the others go on.
+Ask what the shorts share **once for all of them**: the accounts (`accounts publish/short-01 --hiccup`, with pictures and last time's choices ticked; say in a line when an account does not take every short; an adapted short goes only to its platform or account), the style of the texts, TikTok's audience, a YouTube Short's visibility, and the times. Default times: one short a day at 18:00 in the person's time zone, in the order the person chose them, the same short on all its accounts at the same time; also offer "One every two days" and "All today". Show the texts of all shorts (video-descriptions' overview, "Show the texts of short 1 ↗" …) before their yes; a ✗ of `check` on one short is said for that short and the others go on.
 
 At the end one table in the chat: short, account, time and status (`status publish/short-<k>`).
 
