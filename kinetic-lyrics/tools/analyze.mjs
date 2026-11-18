@@ -78,7 +78,8 @@ export function normalizeTranscript(raw, { keepFillers = false } = {}) {
   const words = [];
   for (const w of list) {
     const text = String(w.text ?? w.word ?? w.token ?? "").trim();
-    if (!text) continue;
+    // a noise the transcription wrote among the words ("[laughs]") is nothing said
+    if (!text || w.kind === "event") continue;
     let start = w.start ?? (w.startMs != null ? w.startMs / 1000 : undefined);
     let end = w.end ?? (w.endMs != null ? w.endMs / 1000 : undefined);
     if (typeof start !== "number" || Number.isNaN(start)) continue;

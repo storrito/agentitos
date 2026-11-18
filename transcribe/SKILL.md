@@ -1,6 +1,6 @@
 ---
 name: transcribe
-description: Writes down every word of a recording with its time (ElevenLabs Scribe with "äh"s and noises, or Gemini with --speakers saying who speaks); for a transcript and as other skills' transcription step.
+description: Writes down every word of a recording with its time (ElevenLabs Scribe with "äh"s and noises, and who speaks where the pieces' voices tell it, with --speakers also where they do not); for a transcript and as other skills' transcription step.
 license: MIT
 metadata:
   title: "Transcribe"
@@ -20,7 +20,7 @@ metadata:
 
 ## What it needs
 
-Node 20+, ffmpeg and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tool finds it at `http://sprite.internal`). About half a cent a minute (Scribe) to a cent (Gemini). When something is missing, say so in one sentence; never install it.
+Node 20+, ffmpeg and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tool finds it at `http://sprite.internal`). About 0.37 cents a minute (22 cents an hour, as OpenRouter billed Scribe on 2026-11-18), twice that where `--speakers` needs its second transcription. When something is missing, say so in one sentence; never install it.
 
 ## The words
 
@@ -28,14 +28,16 @@ The recording comes as a line `video: uploads/<file>` or `audio: uploads/<file>`
 
 ```bash
 node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json
-node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json --speakers [--speakers-n 2] [--lang de]
+node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json --speakers [--speakers-n 3] [--lang de]
 ```
 
 - Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word. Every word's time is checked against the recording's own sound: the few the recognizer squeezed, drew over a pause or put into silence are moved to where the voice is (`"by": "sound"`), a stretch that stays doubtful is heard again alone (`"by": "second hearing"`). Then the edges of all words are set where their sound begins and ends: Scribe starts a word about 60 ms late and ends one in eight more than 100 ms early, so a cut or a caption by its own times comes after the word has begun. The summary line says how many words lie where the voice is and which spots stay doubtful.
-- `--speakers`: Gemini 3.5 Transcribe, `"speaker": "A"`, `"B"`, … in the order they first speak, times to a tenth of a second, an hour in about a minute. For an interview or a podcast. `--speakers-n N` when the person said how many speak: more voices than that are merged into the nearest of the N that speak most.
+- Who speaks, without `--speakers`: Scribe names the voice of every word, but only within one request, and a long recording goes in pieces side by side (ten minutes each, five on a Sprite). Where that is enough, the words carry `"speaker": "A"`, `"B"`, … in the order they first speak and the JSON `"speakers": {"by": "scribe", "people": 2, …}`: a recording of one piece (up to 12 minutes, 7 on a Sprite), or one no piece of which names more than two voices: such a recording is taken to be of two people at most and the sound puts every voice of a piece to one of them (the JSON then says `"assumed": "two people at most"`, and so does the line). Else the words carry no speaker, and the summary line says why ("Who speaks is not in it: …") and what `--speakers` does about it. Never take a missing speaker for one voice. Measured on 2026-11-18 in five-minute pieces: 15 of 16 two-voice recordings got speakers (98.4 % of the words right, every link between pieces right), none of 12 with more voices, 3 of 4 with one voice (as one person). What it takes on trust: three people of whom no piece ever hears three become two (one meeting of four did, in ten-minute pieces), and two who speak one after the other, never in one piece, become one. Where you know more than two speak, or a third speaks only now and then, say so: `--speakers --speakers-n N`.
+- `--speakers`: when who speaks matters (an interview, a podcast). The same, and where the pieces' voices cannot be told to be the same people (a piece with three voices: 1 of 16 two-voice recordings, and nearly every one with more voices) the recording is written down once more in requests of three quarters of an hour, each of which keeps its voices apart: twice the cost. Such a request has its own errors (on 2026-11-18 three people for two in one recording, 94 % right; a meeting of four 89 to 92 %). Where the long requests fail, for any reason, the speakers are Gemini's, as `--speakers` gave them before, laid on Scribe's words by their times (`"speakers": {"by": "gemini", "because": …}`, and the line says so; weaker: 85 % right for two voices, 59 % for four in one test); where that fails too, the words come without speakers and the line says why. `--speakers-n N` when the person said how many speak: `1` makes every word A without a further request, from three on the long requests at once, and more voices than N are merged into the nearest of the N that speak most. Where long requests share no words in their overlap (music, an ad), `"unlinked"` names the stretch and the line says the people may be fewer.
+- `--speakers gemini`: Gemini 3.5 Transcribe instead, as `--speakers` was before: times to a tenth of a second, no kinds, no check against the sound, about half a cent a minute (0.47 cents on 2026-11-18). Only for what was built on it.
 - `--lang de` when you know the language; else the model hears it.
 
-The tool writes `{engine, model, duration, cost, timing, edges, words: [{text, start, end, …}]}`; `"edges": "sound"` says the words' edges lie on the sound, and a skill that takes them times nothing a second time. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
+The tool writes `{engine, model, duration, cost, speakers, timing, edges, words: [{text, start, end, kind, speaker, …}]}`; `"speakers"` is there when the words carry them; `"edges": "sound"` says the words' edges lie on the sound, and a skill that takes them times nothing a second time. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
 
 ## When a time looks wrong
 

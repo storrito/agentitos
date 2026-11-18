@@ -3,6 +3,8 @@
 // breaks at the end of a sentence and at a pause of 0.6 s; it stays long enough to be read at 17
 // characters a second where the next cue leaves room.
 
+import { fold } from "./group.mjs";
+
 const LINE = 42, LINES = 2, CPS = 17, MIN = 0.8, MAX = 6, PAUSE = 0.6, GAP = 0.08;
 const sentenceEnd = (text) => /[.!?…]["»”)]*$/.test(text);
 
@@ -15,7 +17,10 @@ function lines(text) {
   return best < 0 ? text : `${text.slice(0, best)}\n${text.slice(best + 1)}`;
 }
 
-export function cues(words) {
+export function cues(said) {
+  // the words as the captions show them: a mark alone joins a word or is left out (group.mjs); a
+  // soft hyphen, set into a long word for the picture, is not part of the text
+  const words = fold(said).map((w) => (w.text.includes("\u00AD") ? { ...w, text: w.text.replace(/\u00AD/g, "") } : w));
   const out = [];
   let cur = null;
   for (const [i, w] of words.entries()) {

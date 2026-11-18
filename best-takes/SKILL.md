@@ -58,11 +58,13 @@ node <skill>/tools/takes.mjs build takes/<name> --out artifacts/<name>/compositi
 node <skill>/tools/takes.mjs check takes/<name>
 ```
 
-The title is the topic in the person's words. `build` cuts between words, evens each take's level and handles pauses over a second by the picture: still → jump cut; moving (a click, a page loading) → kept muted, a long one as a timelapse (up to ×10). A wait the speaker announces ("let's wait until then", any language) never goes (a timelapse when the picture moves, else held 3 s before the cut): the proposal lists it in `"waits"`; check that it did and add the sentence's last word yourself when not. The player beside the chat reloads after every build; nothing is rendered. It also writes the cut's voice as one file, `takes/<name>/voice.cut.m4a`: with the words of `takes/<name>/edit.json`, timed in the cut, that is what another skill takes when its pictures are to follow this voice. `check` prints the cut piece by piece with the words, what it leaves out, the levels and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason (a short piece that is a whole keep, like "Tschüss.", is fine).
+The title is the topic in the person's words. `build` cuts between words, evens each take's level and handles pauses over a second by the picture: moving no more than while the person speaks (a face, a hand-held phone) → jump cut; something moving clearly more (a thing held into the picture, a click, a page loading) → kept muted, a long one as a timelapse (up to ×10); a silent moment worth seeing that it cannot measure (a look, a reaction) is yours to keep with `"pauses": "keep"` on its keep. A wait the speaker announces ("let's wait until then", any language) never goes (a timelapse when the picture moves, else held 3 s before the cut): the proposal lists it in `"waits"`; check that it did and add the sentence's last word yourself when not. The player beside the chat reloads after every build; nothing is rendered. It also writes the cut's voice as one file, `takes/<name>/voice.cut.m4a`: with the words of `takes/<name>/edit.json`, timed in the cut, that is what another skill takes when its pictures are to follow this voice. `check` prints the cut piece by piece with the words, what it leaves out, each pause with what it did and why, the levels and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason (a short piece that is a whole keep, like "Tschüss.", is fine).
 
 ### 4. Ask whether it is right
 
 One message: length before and now, what you left out in plain words (each retry and why, the talk about the recording, the ähs, pauses cut, stretches played faster), what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**: "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
+
+When `check` says the length is no longer a matter of cutting (the target would leave out more than half of the cut), do not cut it shorter on your own: ask instead, the two lengths and two buttons, as in "Too long to cut" below. After "a script to record": write it in the chat, in their own words and language, one sentence a line, within the words `check` named, and say in one sentence that a new recording of it goes through this skill again; no tool is needed. After "the strongest parts": cut by the brief's rule 8, build, check, and ask as above, naming in plain words what was left out.
 
 ### 5. Changes
 
@@ -70,7 +72,7 @@ Read `<skill>/references/changes.md` before making a change they ask for. Change
 
 ### Captions in the picture
 
-When they ask for captions in the picture ("Untertitel ins Bild", "like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for explainers). Then
+When they ask for captions in the picture ("Untertitel ins Bild", "like Hormozi"), or the cut is for a reel and they said nothing against it, offer them once, the styles as buttons (none marked): **Hormozi** (one to three big words in capitals, the word being said in colour), **Bold words** (two or three bold words, white, nothing behind them), **Karaoke pill**, **Wipe**, **Label** (a white box a line, the words turn black as they are said), **Editorial** (quiet, the key words in a serif italic), **Clean subtitles** (whole phrases on a soft box, for explainers). As `--style` they are `hormozi`, `bold`, `karaoke`, `wipe`, `label`, `editorial`, `clean`; a person who names another look gets it from captions' other styles (`outline`, `impact`, `single`, `fill`, `subtitle`). Then
 
 ```bash
 node <skill>/tools/takes.mjs captions takes/<name> --style <style> [--product "<name>"] [--brand brand/DESIGN.md] [--platform <reels, tiktok, shorts, story, …>]
@@ -125,6 +127,17 @@ The question after the preview:
  [:button {:class "primary" :send "The cut is good, make the video"} "Looks good"] " "
  [:button {:open "artifacts/kameras"} "Show the preview ↗"]
  [:p [:small "Or tell me what should be different."]]]
+```
+
+Too long to cut (`check` says the target would leave out more than half):
+
+```hiccup
+[:div
+ [:p "Without slips and repeats it is " [:strong "2:10"] "; " [:strong "0:45"] " would leave out more than half of what you said."]
+ [:p "Shall I write a 45-second script from it for you to record again, or cut it to the strongest parts anyway?"]
+ [:button {:class "primary" :send "Write me a 45-second script from what I said, to record again"} "A 45 s script to record"] " "
+ [:button {:send "Cut it to the strongest parts anyway"} "Cut to the strongest parts"]
+ [:p [:small "Or tell me what else you have in mind."]]]
 ```
 
 The finished video:

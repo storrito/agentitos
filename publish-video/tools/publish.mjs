@@ -8,8 +8,9 @@
 //   node tools/publish.mjs check <video|link> <dir> [--mode short|long] [--platforms reels,tiktok,…]
 //   node tools/publish.mjs check <dir> [--mode short|long] [--platforms …]
 //        measures the video (frame, size, codec, length, sound level, black and silence at its
-//        ends), suggests short or long, says what keeps it from being published, and makes a sheet
-//        of its frames with what the apps cover drawn in: <dir>/job.json, uploads/publish-<name>/frames.jpg
+//        ends, black and flash frames inside it), suggests short or long, says what keeps it from
+//        being published, and makes a sheet of its frames with what the apps cover drawn in:
+//        <dir>/job.json, uploads/publish-<name>/frames.jpg
 //   node tools/publish.mjs prepare <dir> [--pad | --crop] [--loudness] [--start <s>] [--end <s>]
 //        writes the video again in the form Storrito or YouTube takes (<dir>/video.mp4), and checks it
 //   node tools/publish.mjs accounts [<dir>] [--json | --hiccup [--lang de]]
@@ -29,7 +30,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { probe, frameOf, isRatio, loudness, edges, sheet, download, prepare, clock } from "./lib/media.mjs";
+import { probe, frameOf, isRatio, loudness, edges, whole, sheet, download, prepare, clock } from "./lib/media.mjs";
 import { connect, call } from "./lib/storrito.mjs";
 import { PROCEDURES, targetsOf, unfit, paramsOf } from "./lib/targets.mjs";
 import { zones, checkTexts, missing, tool } from "./lib/skills.mjs";
@@ -89,9 +90,13 @@ function suggest(info) {
   return { mode: null, ask: true, why: `${frame}: short-form needs 9:16 (reframed, or with bars), YouTube shows it with bars` };
 }
 
+// a moment with its tenths: 0:04.8
+const tenths = (s) => { const d = Math.floor(s * 10 + 1e-6) / 10; return `${clock(d)}.${Math.round(d * 10) % 10}`; };
+const some = (items) => (items.length > 5 ? `${items.slice(0, 5).join(", ")} and ${items.length - 5} more` : items.join(", "));
+
 // what keeps the video from being published in this mode: ✗ must be fixed, ⚠ should be looked at;
 // `fix` names the option of prepare that fixes it
-function assess(info, mode, sound, ends) {
+function assess(info, mode, sound, ends, inside) {
   const out = [];
   const add = (level, text, fix) => out.push({ level, text, ...(fix ? { fix } : {}) });
   const frame = frameOf(info.width, info.height);
@@ -123,9 +128,13 @@ function assess(info, mode, sound, ends) {
     else if (sound.lufs > -9) add("⚠", `loud: ${sound.lufs.toFixed(1)} LUFS; the apps turn it down to about -14`, "--loudness");
     if (sound.peak != null && sound.peak > -1) add("⚠", `peaks at ${sound.peak.toFixed(1)} dBTP: may crackle after the apps encode it`, "--loudness");
   }
+  if (info.located) add("✗", "the file names the place it was recorded at (a phone writes it into its videos): whoever gets the file can read it", "prepare");
   if (ends.blackStart >= 0.4) add("⚠", `begins with ${ends.blackStart.toFixed(1)} s of black: the first second decides whether people stay`, "--start");
   if (ends.silentStart != null && ends.silentStart >= 1) add("⚠", `the first ${ends.silentStart.toFixed(1)} s are silent`, "--start");
   if (ends.blackEnd >= 1) add("⚠", `ends with ${ends.blackEnd.toFixed(1)} s of black`, "--end");
+  // inside the video nothing is cut mechanically: a gap in a cut, or a pause meant as one
+  if (inside?.black.length) add("⚠", `black inside the video: ${some(inside.black.map(([s, e]) => `${(e - s).toFixed(1)} s at ${tenths(s)}`))}; a gap in the cut, unless it is meant as a pause`);
+  if (inside?.flashes.length) add("⚠", `${inside.flashes.length > 1 ? "flash frames" : "a flash frame"} at ${some(inside.flashes.map(tenths))}: a picture for one or two frames between two cuts (a white frame, a stray frame of another clip); the sheet does not show it`);
   return out;
 }
 
@@ -165,8 +174,10 @@ async function cmdCheck(pos, opts) {
 
   const sound = info.sound ? loudness(job.video) : null;
   const ends = edges(job.video, info);
-  const findings = assess(info, mode, sound, ends);
+  const inside = whole(job.video, info);
+  const findings = assess(info, mode, sound, ends, inside);
   if (sound?.lufs != null) console.log(`sound: ${sound.lufs.toFixed(1)} LUFS${sound.peak != null ? `, peaks ${sound.peak.toFixed(1)} dBTP` : ""}`);
+  if (!inside) console.log(`(Black and flash frames inside the video not measured: ${info.duration > 600 ? "it is longer than 10 min" : "ffmpeg gave no frame differences"}.)`);
 
   // the sheet: on a short video with what the apps cover, for the person and the agent to look at
   const sheetFile = path.join("uploads", `publish-${job.name}`, "frames.jpg");
@@ -177,7 +188,7 @@ async function cmdCheck(pos, opts) {
   let moments = [];
   try { moments = sheet(job.video, info, sheetFile, { zones: z }); } catch (e) { fail(`${e.message}.`); }
 
-  Object.assign(job, { measured: { ...info, frame, loudness: sound, ends }, suggested: s, findings, sheet: sheetFile, stamp: stamp(job.video), checked: new Date().toISOString() });
+  Object.assign(job, { measured: { ...info, frame, loudness: sound, ends, whole: inside }, suggested: s, findings, sheet: sheetFile, stamp: stamp(job.video), checked: new Date().toISOString() });
   writeJson(jobFile, job);
 
   console.log(`\n${sheetFile}: ${moments.length} frames at ${moments.map(clock).join(", ")}${z ? `; outlined in red what ${z.platforms.map((p) => p.name).join(", ")} cover, in green the safe box` : ""}.`);
@@ -193,7 +204,7 @@ async function cmdCheck(pos, opts) {
     console.log(`\nNot ready: ${errors.length} ✗.${fixable.length ? ` What prepare can fix: ${cmd(`prepare ${rel(dir)}${opt.length ? ` [${opt.join(" | ")}]` : ""}`)} (each option only when it is the person's or your considered choice).` : ""}${errors.some((f) => !f.fix) ? " The rest needs another edit of the video, or the other mode." : ""}`);
     process.exitCode = 1;
   } else {
-    console.log(`\nReady to publish${warnings.length ? `, with ${warnings.length} ⚠ to weigh (fix with prepare, or keep for a reason)` : ""}. Next: ${cmd(`accounts ${rel(dir)}`)}`);
+    console.log(`\nReady to publish${warnings.length ? `, with ${warnings.length} ⚠ to weigh (fix with prepare where it names an option, or keep for a reason)` : ""}. Next: ${cmd(`accounts ${rel(dir)}`)}`);
   }
 }
 

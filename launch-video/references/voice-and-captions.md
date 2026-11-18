@@ -32,7 +32,7 @@ The voice's lines are `<audio>` elements in the root `index.html`, each with an 
 When there is a voice (most watch muted):
 
 ```bash
-node <skill>/tools/launch.mjs captions launch/<name> artifacts/<name>/composition --style <hormozi|karaoke|wipe|clean> [--mark --product "<name>"]
+node <skill>/tools/launch.mjs captions launch/<name> artifacts/<name>/composition --style <hormozi|bold|karaoke|wipe|clean|…> [--mark --product "<name>"]
 ```
 
 puts the voice's words, timed where the root plays them, into `composition/captions/` by agentitos' captions skill, placed for the platforms. Mount the line it prints once, as the root's last child. After moving a line of the voice, run it again: the key words marked before stay marked while the words are the same; `--mark` marks anew.
