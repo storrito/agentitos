@@ -6,6 +6,7 @@ It is an agent of its own (upload a video, get it back with captions, see [SKILL
 
 ```
 node tools/captions.mjs styles
+node tools/captions.mjs styles --json                                     # the same for a skill that sets captions with this one: each style's words and lines a group
 node tools/captions.mjs transcribe <video> <words.json>
 node tools/captions.mjs mark <words.json> [--product "Storrito"]
 node tools/captions.mjs box <words.json> "📏 32 centimetres wide"     # only when cards are asked for: a phrase as a box of its own
