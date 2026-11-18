@@ -270,3 +270,9 @@ test("raise moderate: a punch-in keeps a whole head inside the frame and the mou
   const y = punchOrigin({ faces: [tight], scale: 1.12, frame: FRAME, cap: [192, 1306, 696, 134].map((v, i) => (i === 1 ? line + 10 : v)), safeTop: 250, raise: "moderate" });
   assert.ok(y + (line - y) * 1.12 <= line + 10 + 1e-6, `mouth line after ${y + (line - y) * 1.12}`);
 });
+
+test("raise moderate: a head the frame cuts already is not pushed further up to free a chin", () => {
+  const face = [100, 60, 880, 1500];
+  assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: [192, 1440, 696, 0].map((v, i) => (i === 3 ? 134 : i === 1 ? 1306 : v)), safeTop: 250, raise: "moderate" }), 0.32 * 1920 > (1.12 * (60 + 0.65 * 1500) - 1306) / 0.12 ? 0.32 * 1920 : (1.12 * (60 + 0.65 * 1500) - 1306) / 0.12);
+  assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 }), Math.min(1920, (1.12 * (60 + 0.42 * 1500) - 250) / 0.12));
+});

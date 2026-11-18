@@ -61,7 +61,7 @@ import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
-import { readFaces, facesAt, toFrame, punchOrigin, textOnFaces } from "./lib/faces.mjs";
+import { readFaces, facesAt, toFrame, punchOrigin, textOnFaces, MOUTH } from "./lib/faces.mjs";
 import { brief, shown } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
@@ -439,12 +439,15 @@ function cmdCheck(dir) {
   if (faces && e.text) {
     const texts = [...(e.text.caption ? e.text.caption.groups.map(([a, b]) => ({ role: "captions", box: e.text.caption.box, from: a, to: b })) : []),
       ...(e.text.hook ? [{ role: "hook", box: e.text.hook.box, from: 0, to: e.text.hook.until }] : [])];
-    const on = textOnFaces({ pieces: e.pieces, clips, faces, texts, frame: [e.width, e.height] });
+    const on = textOnFaces({ pieces: e.pieces, clips, faces, texts, frame: [e.width, e.height] }), chin = [];
     for (const x of on.filter((q) => q.seconds >= 0.3)) {
-      const deep = x.share >= 0.2 ? `${Math.round(x.share * 100)} % of its height up from the chin (the mouth and more)` : `the chin, ${Math.round(x.share * 100)} % of its height`;
-      warnings.push(`the ${x.role === "hook" ? "hook" : "captions' area"} lies on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)}, up to ${deep}: ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "a place clear of it from the skill that laid the frame out (clips: place, which raises that shot or sets the captions elsewhere), or a cut to another shot there"}`);
+      // above the mouth line (MOUTH of the box from its top) is the mouth, the nose, the eyes
+      const mouth = x.share > 1 - MOUTH;
+      if (x.role !== "hook" && !mouth) { chin.push(`${x.who ?? "a face"} ${x.seconds} s`); continue; }
+      warnings.push(`the ${x.role === "hook" ? "hook" : "captions' area"} lies on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)}, up to ${Math.round(x.share * 100)} % of its height up from the chin${mouth ? " (the mouth and above)" : ""}: ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "a place clear of it from the skill that laid the frame out (clips: place: a smaller type, another height), or a cut to another shot there"}`);
     }
-    if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
+    if (chin.length) console.log(`\nText and faces: the captions lie on the chin or neck, below the mouth, of ${chin.join(", ")} (the skill that framed the video says where that is not avoidable without cutting a head).`);
+    else if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
   }
   if (s.target && e.duration > s.target + 0.5) warnings.push(`the cut is ${e.duration.toFixed(1)} s long, ${(e.duration - s.target).toFixed(1)} s over the ${s.target} s it should be at most`);
 
