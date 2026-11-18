@@ -5,9 +5,12 @@
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
-//   node tools/episode.mjs moments <dir> [--count N]
-//        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (about ten
-//        cents an hour), best first, at most 59 s each: <dir>/moments.json and a short list to read
+//   node tools/episode.mjs moments <dir> [--count N] [--max-seconds N]
+//        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (five to
+//        nine cents an hour), in the order of the episode, each a whole passage: <dir>/moments.json and a short list
+//        to read. --max-seconds is how long a short may be (59: it fits every post type; higher is a trade:
+//        long passages whole more often, short ones with more around them); a passage
+//        that is longer is returned whole, with the sentences that can go marked (`drop`)
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
 //        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
@@ -20,9 +23,10 @@
 // The words come from ElevenLabs Scribe through OpenRouter, run by agentitos' transcribe skill
 // beside this one (OPENROUTER_API_KEY or the Sprites gateway's OpenRouter connection, with
 // speakers, about 22 cents an hour, twice that when the voices need its long requests, a few
-// minutes; the noises it marks among the words are left out), else from the video's captions on YouTube
-// (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
-// ~/.cache/agentitos/.
+// minutes; the noises it marks among the words are left out), else from the video's captions on
+// YouTube (no speakers): without OpenRouter, or when the transcription fails, and then fetch says
+// so in its last line. A key that OpenRouter turns away ends fetch at once: nothing after it would
+// work. yt-dlp: the one on the PATH, else a copy downloaded once into ~/.cache/agentitos/.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -30,7 +34,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
-import { openrouter } from "./lib/openrouter.mjs";
+import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
+import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing } from "./lib/moments.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -127,10 +132,14 @@ function captionTrack(info) {
 }
 
 // ---------------------------------------------------------------- fetch
+// what fetch says when the words are YouTube's captions although OpenRouter is there
+const CAPTIONS_INSTEAD = (why) => `These are YouTube's captions, without voices, because ${/^YouTube/.test(why) ? why : `the transcription failed (${String(why).slice(0, 200)})`}: `
+  + `run fetch again for the voices (the framing and an exchange between two people need them). `;
+
 // a path that exists, not a link
 const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
 
-function writeEpisode(dir, facts, heard) {
+function writeEpisode(dir, facts, heard, note = "") {
   // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
   const words = heard.filter((w) => w.kind !== "event");
   if (!words.length) fail("No words found: is there speech in it?");
@@ -142,14 +151,17 @@ function writeEpisode(dir, facts, heard) {
   fs.writeFileSync(path.join(dir, "sentences.txt"), sentences.map((s, k) =>
     `${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`).join("\n") + "\n");
   console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
-    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. episode.mjs moments ${dir} picks the moments; `
+    + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. ${note}episode.mjs moments ${dir} picks the moments; `
     + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
 }
 
 // the person's own file: no captions to fall back on, so the words need the key
 async function fetchFile(file, dir) {
   if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
-  if (!(await openrouter())) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
+  const or = await openrouter();
+  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
+  const turnedAway = await keyRejected(or);
+  if (turnedAway) fail(REJECTED(turnedAway));
   const title = path.basename(file).replace(/\.[^.]+$/, "");
   const length = duration(file);
   log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
@@ -166,11 +178,16 @@ async function fetchEpisode(url, dir) {
   const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
-  let words, source;
+  let words, source, note = "";
   // the sound and words of an episode fetched into this folder before are not this one's
   for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
-  if (await openrouter()) {
+  const or = await openrouter();
+  if (or) {
     if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
+    // a key OpenRouter turns away: the captions would come out as if all were well, and
+    // moments, the framing and the edit would fail one after the other
+    const turnedAway = await keyRejected(or);
+    if (turnedAway) fail(REJECTED(turnedAway));
     log(`episode: the sound of “${info.title}” (${mmss(info.duration || 0)}) …`);
     let audio = null;
     try {
@@ -190,11 +207,16 @@ async function fetchEpisode(url, dir) {
         ({ words } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
         source = "openrouter";
       } catch (e) {
+        if (rejectedIn(e.message)) fail(REJECTED(rejectedIn(e.message)));
         log(`episode: the transcription failed (${e.message}), the captions instead …`);
+        note = CAPTIONS_INSTEAD(e.message);
       }
+    } else {
+      note = CAPTIONS_INSTEAD("YouTube gave no sound");
     }
   } else {
     log("episode: no OpenRouter, the captions on YouTube (no speakers) …");
+    note = "These are YouTube's captions, without voices: there is no OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's connection), and without it moments cannot pick. ";
   }
   if (!words) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-"));
@@ -206,10 +228,11 @@ async function fetchEpisode(url, dir) {
     words = captionWords(path.join(tmp, file));
     source = "captions";
   }
+  // the description as the channel's audience sees it: moments counts the names in it as introduced
   writeEpisode(dir, {
     url: info.webpage_url || url, id: info.id, title: info.title, channel: info.channel || info.uploader,
-    duration: info.duration, lang, source,
-  }, words);
+    duration: info.duration, lang, source, description: String(info.description || "").slice(0, 1500),
+  }, words, note);
 }
 
 // ---------------------------------------------------------------- cut
@@ -258,31 +281,36 @@ function cut(dir, a, b, c) {
 
 // ---------------------------------------------------------------- moments
 // The candidates for shorts, picked by a model that reads the whole episode once (Gemini through
-// OpenRouter, some ten cents and a minute or two for an hour), so that the agent does not: what it reads stays in every later step
-// of its chat and makes each of them slower and dearer.
+// OpenRouter, five to nine cents and a minute or two for an hour), so that the agent does not:
+// what it reads stays in every later step of its chat and makes each of them slower and dearer.
 //
-// A moment must stand alone: it is scored 0–2 on five points (it opens cold, it holds one idea,
-// it ends on a finished thought, it leans on nothing said before, its length), and one under
-// KEEP of 10 is listed as weak. The model also counts what the episode holds (claims, stories,
-// numbers, mistakes, how-tos, answers: under four in all it is too thin for clips), writes an
-// on-screen hook for a moment whose first line is weak, and names the ideas spread too far
-// over the episode to cut, to be recorded anew.
+// A moment is a whole passage, from the sentence that opens it to its last conclusion, as the
+// channels' own editors cut them (clips-eval, 2026-11-17: their passages have a median of 60 s
+// in the episode, and they cut a median of 10 s of words out of the inside). The length a short
+// may have comes with --max-seconds; a passage up to 1.7 times that long is returned whole, with
+// the sentences that can go marked (`drop`). The moments come in the order of the episode and
+// nothing ranks them: the old score (8 to 10 points for all 77 moments of the first measurement),
+// the model's own ranking and its rating of the first line (`opens`, which only settles which of
+// two overlapping moments stays) put the editors' picks no further ahead than chance. What can be
+// counted (a question at the start, the question just before it that it answers, a conjunction in
+// the middle of a turn, the voices, the length against the limit) the tool counts itself (`checks`). The model also counts what the episode holds
+// (claims, stories, numbers, mistakes, how-tos, answers, exchanges: under four in all it is too
+// thin for clips), writes an on-screen hook for a moment whose first line does not hook, names
+// the sentence with the strongest line (`payoff`), and the ideas spread too far over the episode
+// to cut, to be recorded anew. "Stands alone" is judged for the channel's own followers: the
+// names in the video's title and description count as introduced.
 export const MOMENTS_MODEL = "google/gemini-3.8-flash";
-export const KEEP = 7;
-const KINDS = ["claim", "story", "number", "mistake", "how-to", "answer"];
-const POINT = { type: "integer" };
-const point = (v) => Math.max(0, Math.min(2, Math.round(Number(v) || 0)));
 const MOMENTS_SCHEMA = {
   type: "object", additionalProperties: false, required: ["inventory", "moments", "ideas"],
   properties: {
     inventory: { type: "object", additionalProperties: false, required: KINDS, properties: Object.fromEntries(KINDS.map((k) => [k, { type: "integer" }])) },
     moments: { type: "array", items: {
       type: "object", additionalProperties: false,
-      required: ["first", "last", "kind", "title", "why", "cold", "one", "ends", "alone", "hook", "crosstalk"],
+      required: ["first", "last", "kind", "title", "why", "opens", "payoff", "drop", "hook", "crosstalk"],
       properties: {
         first: { type: "integer" }, last: { type: "integer" }, kind: { type: "string", enum: KINDS },
-        title: { type: "string" }, why: { type: "string" },
-        cold: POINT, one: POINT, ends: POINT, alone: POINT,
+        title: { type: "string" }, why: { type: "string" }, opens: { type: "integer" },
+        payoff: { type: "integer" }, drop: { type: "array", items: { type: "integer" } },
         hook: { type: "string" }, crosstalk: { type: "boolean" },
       },
     } },
@@ -293,89 +321,109 @@ const MOMENTS_SCHEMA = {
   },
 };
 
-// 2 from 20 to 59 s, 1 from 15 s (59 s at most: it fits every post type Storrito offers)
-const lengthPoint = (s) => (s >= 20 ? 2 : s >= 15 ? 1 : 0);
+const USAGE = "episode.mjs moments <dir> [--count N] [--max-seconds N]";
+function momentsOptions(rest) {
+  const opts = {};
+  for (let i = 0; i < rest.length; i++) {
+    const k = { "--count": "count", "--max-seconds": "limit" }[rest[i]];
+    const v = Number(rest[i + 1]);
+    if (!k) fail(`Unknown option ${rest[i]}: ${USAGE}`);
+    if (!Number.isInteger(v) || v < 1) fail(`${rest[i]} takes a whole number: ${USAGE}`);
+    opts[k] = v; i++;
+  }
+  if (opts.limit != null && (opts.limit < 15 || opts.limit > 600)) fail(`--max-seconds ${opts.limit}: a short is 15 to 600 seconds long (59 fits every post type; Reels, TikTok and Shorts take more).`);
+  return opts;
+}
 
-async function moments(dir, ...rest) {
-  if (!dir) fail("episode.mjs moments <dir> [--count N]");
-  const or = await openrouter();
-  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): read sentences.txt yourself and pick the moments.");
-  const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
-  const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
-  const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
-  const i = rest.indexOf("--count");
-  const count = i >= 0 ? Number(rest[i + 1]) : Math.max(3, Math.min(10, Math.round((episode.duration || 600) / 540)));
-  const prompt = `This is the transcript of "${episode.title}" (${episode.channel || "a podcast"}), one numbered sentence a line:
-\`<number> [<from>–<to>] <voice>: <words>\`. Pick the ${count} best moments for vertical shorts (Reels, TikTok, YouTube Shorts) and ${Math.ceil(count / 2)} more as fillers, best first.
+// what to do when the model cannot pick: the moments need it (SKILL.md: never read sentences.txt
+// yourself), so try again later and tell the person when it still fails
+const AGAIN = "run moments again in a few minutes; when it fails again, tell the person the moments cannot be picked right now";
 
-First count what the episode holds, every usable piece once: claims (a clear position, best against the usual advice), stories (a moment with a turn: a problem, a decision, what happened), numbers (a result, a before and after, a price, a time), mistakes (what went wrong and what was learned), how-tos (steps or one move the viewer can apply), answers (a question the audience asks, answered).
-
-A moment is a range of whole sentences, first..last, cut straight from the episode: **at most 59 seconds** from the start of the first to the end of the last, best 25–50. It is one of those pieces (its kind). Score how well it stands alone, 0 to 2 on each point, strictly: a 2 is earned, and most moments lose a point somewhere:
-- cold: its first sentence makes sense to someone who saw nothing before and works as a hook in its first three seconds (a question, a surprising claim, a vivid image, a number); 0 when it opens on "and", "so", "yeah", "like I said", small talk, or a "he", "it" or "this" nobody introduced;
-- one: it holds one idea, complete, no "and also";
-- ends: it stops on a finished thought, right after its payoff (a punchline, an insight, a striking number, an emotional turn), not mid-list or on "and then";
-- alone: it leans on nothing outside it: no "as I said earlier", "in this episode", "this guest", "the next part".
-A host's question followed by the answer is fine. Concrete and visual beats abstract. Prefer moments spoken by one voice at a time: a stretch of one- and two-word sentences flipping between voices is people talking at once; where a moment has a few seconds of it, set crosstalk true.
-When the best start of a moment is weak (cold under 2), keep it and write a hook for the screen: 6 words or fewer, in the episode's language, that says what the viewer gets ("Daily posting nearly killed my channel"), never a label like "NEW" or "TIP"; else hook is "".
-
-Moments do not overlap. For each: first and last sentence number, its kind, a title of 3–7 words in the episode's language, why it works in one sentence in the episode's language, the four points, the hook, crosstalk.
-
-Last, the ideas too spread out to clip (a point made in three places, a story told slowly, with the parts far apart): up to five, each with a title in the episode's language, the numbers of the sentences that carry it, and why it would be worth recording anew as a short of its own, in one sentence.
-
-${text}`;
-  log(`episode: picking moments (${MOMENTS_MODEL}) …`);
+// The model's answer when it is one: an object with a list of moments; else null
+export function answerOf(content) {
   let j;
-  for (let attempt = 1; ; attempt++) {
+  try { j = JSON.parse(String(content ?? "").replace(/^```(json)?\s*|\s*```$/g, "")); } catch { return null; }
+  return j && typeof j === "object" && !Array.isArray(j) && Array.isArray(j.moments) ? j : null;
+}
+
+// one call to the model with a JSON schema: an error of the request tried three times, an answer
+// that is no answer (text, JSON cut off, null, a bare list) once more at once; → { answer, cost }
+// or a throw. `cost` counts every attempt.
+async function ask(or, prompt, name, schema, timeout = 300e3) {
+  let j, cost = 0;
+  for (let attempt = 1, empty = 0; ; attempt++) {
     try {
       const res = await fetch(`${or.base}/chat/completions`, {
         method: "POST",
         headers: { ...or.headers, "Content-Type": "application/json" },
         body: JSON.stringify({ model: MOMENTS_MODEL, messages: [{ role: "user", content: prompt }],
-          response_format: { type: "json_schema", json_schema: { name: "moments", strict: true, schema: MOMENTS_SCHEMA } } }),
-        signal: AbortSignal.timeout(300e3),
+          response_format: { type: "json_schema", json_schema: { name, strict: true, schema } } }),
+        signal: AbortSignal.timeout(timeout),
       });
       j = await res.json();
-      if (res.ok && j.choices) break;
+      if (res.ok && j.choices) {
+        cost += j.usage?.cost ?? 0;
+        const answer = answerOf(j.choices[0]?.message?.content);
+        if (answer) return { answer, cost };
+        const cut = j.choices[0]?.finish_reason === "length";
+        if (++empty >= 2) throw Object.assign(new Error(`the model gave no list of moments twice (${cut ? "its answer was cut off" : "an answer that is not one"}, $${cost.toFixed(4)})`), { final: true });
+        log(`episode: the model's answer was no list of moments${cut ? " (cut off)" : ""}, once more …`);
+        attempt--;
+        continue;
+      }
       throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(j).slice(0, 300)}`);
     } catch (e) {
-      if (attempt >= 3) fail(`Picking the moments failed (${e.message}): read sentences.txt yourself.`);
+      if (rejectedIn(e.message)) fail(REJECTED(`${rejectedIn(e.message)}${j?.error?.message ? " " + j.error.message : ""}`));
+      if (e.final || attempt >= 3) throw e;
       log(`episode: ${e.message}, again …`);
       await new Promise((r) => setTimeout(r, attempt * 5000));
     }
   }
-  const answer = JSON.parse(String(j.choices[0].message.content).replace(/^```(json)?\s*|\s*```$/g, ""));
-  // whole sentences that exist, at most 59 seconds (the end trimmed sentence by sentence), no overlap
-  const taken = new Set();
-  const picked = (answer.moments || []).flatMap((m) => {
-    let first = Math.max(0, m.first), last = Math.min(sentences.length - 1, m.last);
-    while (last > first && sentences[last].end - sentences[first].start > 59) last--;
-    if (!(first <= last) || sentences[last].end - sentences[first].start > 59) return [];
-    for (let k = first; k <= last; k++) if (taken.has(k)) return [];
-    for (let k = first; k <= last; k++) taken.add(k);
-    const s0 = sentences[first], s1 = sentences[last], seconds = Math.round(s1.end - s0.start);
-    const points = { cold: point(m.cold), one: point(m.one), ends: point(m.ends), alone: point(m.alone), length: lengthPoint(seconds) };
-    const score = Object.values(points).reduce((a, b) => a + b, 0);
-    return [{ first, last, kind: m.kind, title: m.title, why: m.why, score, points, weak: score < KEEP, hook: m.hook || "", crosstalk: m.crosstalk,
-      start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds,
-      opening: s0.text, link: episode.id ? `https://youtu.be/${episode.id}?t=${Math.floor(s0.start)}` : null }];
-  }).sort((a, b) => b.score - a.score);
-  const inventory = answer.inventory || {};
-  const pieces = Object.values(inventory).reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+const withLinks = (list, sentences, episode) => list.map((m) => ({ ...m, opening: sentences[m.first].text,
+  link: episode.id ? `https://youtu.be/${episode.id}?t=${Math.floor(m.start)}` : null }));
+
+function report(dir, episode, sentences, j, cost) {
+  const pieces = Object.values(j.inventory || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+  console.log(listing(j, sentences, pieces));
+  const over = j.moments.filter((m) => m.checks.over).length, still = j.moments.filter((m) => m.checks.still).length;
+  console.log(`${j.moments.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${cost.toFixed(4)}. `
+    + (over ? `${over} ${over === 1 ? "is a whole passage" : "are whole passages"} longer than ${j.limit} s: their marked sentences are left out (clips.mjs prepare … --drop <sentences>). ` : "")
+    + (still ? `${still} ${still === 1 ? "is" : "are"} still over ${j.limit} s without ${still === 1 ? "its" : "their"} marked sentences: drop more or offer other moments; --max-seconds 100 only where the person wants such a passage and every platform chosen takes it (short passages then come back with more around them); never one over the limit. ` : "")
+    + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
+}
+
+async function moments(dir, ...rest) {
+  if (!dir) fail(USAGE);
+  const given = momentsOptions(rest);
+  const or = await openrouter();
+  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): the moments are picked by a model, so nothing can be cut without it; say so.");
+  const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
+  const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
+  const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
+  const count = given.count ?? Math.max(3, Math.min(10, Math.round((episode.duration || 600) / 540)));
+  const limit = given.limit ?? MAX_SECONDS;
+  log(`episode: picking moments (${MOMENTS_MODEL}) …`);
+  let r;
+  try { r = await ask(or, momentsPrompt(episode, text, count, limit), "moments", MOMENTS_SCHEMA); } catch (e) { fail(`Picking the moments failed (${e.message}): ${AGAIN}.`); }
+  const { answer } = r;
+  const listed = answer.moments.length;
+  const pieces = Object.values(answer.inventory || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+  // no moments is a thin episode only when the model also found little in it
+  if (!listed && pieces >= 4) fail(`The model listed no moments although it counted ${pieces} pieces in the episode ($${r.cost.toFixed(4)}): that is no answer, not a thin episode; ${AGAIN}.`);
+  const picked = withLinks(arrange(answer, sentences, { limit }), sentences, episode);
+  if (listed && !picked.length) fail(`None of the model's ${listed} moments is a range of this episode's sentences (0–${sentences.length - 1}) ($${r.cost.toFixed(4)}): ${AGAIN}.`);
+  if (picked.length < count) log(`episode: the model gave ${picked.length} moments that hold, of the ${count} asked for${listed > picked.length ? ` (${listed - picked.length} overlapped another or named no sentences of the episode)` : ""}.`);
   const ideas = (answer.ideas || []).map((d) => ({ ...d, sentences: (d.sentences || []).filter((k) => sentences[k]),
     at: (d.sentences || []).filter((k) => sentences[k]).map((k) => mmss(sentences[k].start)) }));
-  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify({ inventory, moments: picked, ideas }, null, 1));
-
-  console.log(`Inside: ${KINDS.map((k) => `${inventory[k] || 0} ${k === "how-to" ? "how-tos" : k === "story" ? "stories" : k + "s"}`).join(", ")}`
-    + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : ""));
-  console.log(picked.map((m, k) => `${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] ${m.score}/10${m.weak ? " weak" : ""} · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
-    + `\n   „${m.opening}“\n   ${m.why}` + (m.hook ? `\n   hook on screen: „${m.hook}“` : "")).join("\n"));
-  if (ideas.length) console.log(`Too spread out to clip, worth recording anew:\n${ideas.map((d) => `- ${d.title} (${d.at.slice(0, 4).join(", ")}${d.at.length > 4 ? " …" : ""}): ${d.why}`).join("\n")}`);
-  console.log(`${picked.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${(j.usage?.cost ?? 0).toFixed(4)}. `
-    + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
+  const j = { limit, count, inventory: answer.inventory || {}, moments: picked, ideas };
+  fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify(j, null, 1));
+  report(dir, episode, sentences, j, r.cost);
 }
 
 const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
 else if (command === "moments") await moments(...args);
-else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] | cut <dir> <first>-<last> <clip.mp4>");
+else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>");
