@@ -245,15 +245,61 @@ export function plan(words, cut, settings, voices, motion = null) {
   // the cut's own words, timed in the cut (for subtitles), with the spelling of "fixes"
   const fixes = cut.fixes || {};
   const timed = [];
+  const lang = locale(settings.lang);
+  let prior = null; // the item the cut plays right before, whatever its kind
   for (const p of pieces) {
     for (const i of p.words) {
-      const w = words[i];
+      const w = words[i], played = prior;
+      prior = i;
       if (w.kind !== "word") continue;
-      const text = fixes[i] ?? fixes[String(i)] ?? w.text;
+      const fixed = fixes[i] ?? fixes[String(i)];
+      let text = fixed ?? w.text;
       if (!text) continue;
+      // The text is read as the cut plays it, not as the speech model wrote the recording: what
+      // stood right before this word in its video (a filler, which the text never shows, or
+      // anything the cut left out) is gone, so the word may now begin a sentence it did not
+      // begin before. Only the text changes; its number and its times stay.
+      const last = timed.at(-1), was = w.i > 0 && words[w.i - 1].clip === w.clip ? words[w.i - 1] : null;
+      const lost = !!was && (played !== was.i || was.kind === "filler" || (was.kind === "word" && last?.i !== was.i));
+      if (lost && last) sentenceEndOfFiller(last, words.slice(last.i + 1, w.i), words[last.i].clip === w.clip);
+      // a spelling the agent set in "fixes" is theirs (an account name may be lower-case on purpose)
+      if (lost && fixed == null && (!last || endsSentence(last.text))) text = capitalised(text, lang);
       const s = p.start + Math.max(0, w.start - p.in), e = p.start + Math.min(p.duration, w.end - p.in);
       timed.push({ i, text, start: +s.toFixed(3), end: +Math.max(e, s + 0.05).toFixed(3) });
     }
   }
   return { pieces, removed, takes, words: timed, motion: bases, duration: at / fps, errors, warnings };
+}
+
+// A sentence ends on . ! ? or …, also inside quotes or brackets. Not after a token that begins with
+// a digit ("3." is an ordinal in German, "12.03." a date) or one with a full stop inside ("z.B."):
+// there the full stop is part of the token, and the word after it is left as the model wrote it.
+export function endsSentence(text) {
+  if (!/[.!?…]["'“”‘’»«)\]]*$/u.test(text)) return false;
+  if (/^\p{N}/u.test(text)) return false;
+  return !/\..*\./u.test(text);
+}
+
+// The first letter in upper case when it is a lower-case letter, by Unicode's rules for the
+// language when one is known. A word that begins with a digit or a symbol stays as it is, and so
+// does one with a capital inside ("iPhone", "eBay"): that is a name spelled so.
+export function capitalised(text, lang = "und") {
+  const [first, ...rest] = [...text];
+  if (!/^\p{Ll}$/u.test(first) || /\p{Lu}/u.test(rest.join(""))) return text;
+  return first.toLocaleUpperCase(lang) + rest.join("");
+}
+
+// The speech model sometimes ends a sentence on the filler ("fertig, äh. Und"): when the filler is
+// cut out, that sentence end is the speaker's and goes onto the word before it, in place of the
+// comma it had. Only when nothing but fillers and noises lie between the two words in one video;
+// a comma a filler carried ("äh,") marks the filler, not the sentence, and goes with it.
+function sentenceEndOfFiller(last, between, sameClip) {
+  if (!sameClip || !between.length || between.some((w) => w.kind === "word") || endsSentence(last.text)) return;
+  const mark = between.filter((w) => w.kind === "filler").at(-1)?.text.match(/[.!?…]+$/u)?.[0];
+  if (mark) last.text = last.text.replace(/[,;:]+$/u, "") + mark;
+}
+
+// the language of the words as a locale for upper-casing; a tag Intl does not take counts as none
+function locale(lang) {
+  try { return lang ? Intl.getCanonicalLocales(lang)[0] : "und"; } catch { return "und"; }
 }
