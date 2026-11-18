@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // the HyperFrames CLI: one on the PATH, else the version agentitos pins
 function hyperframes() {
   const r = spawnSync("hyperframes", ["--version"], { stdio: "ignore" });
-  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.146"];
+  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.221"];
 }
 
 export function chromePath() {
