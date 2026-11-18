@@ -54,8 +54,13 @@ import { captionHeight, keepOut, inkRows } from "./text.mjs";
 //   pipCrop  2: the circle shows a square two face heights tall around the face (the circle beside a
 //            screen shows three: head and shoulders), so that the face reads at its small size.
 //            A guess.
-//   face     0: the face's target in the panel and the column is the usual one (18 % of the
-//            frame's height below a screen; 23 % in the 16:9 column). A share of the frame's height
+//   face     0: the face's target in the panel and the column is the usual one, 18 % of the
+//            frame's height (the face below a screen in published Shorts). The 16:9 column takes
+//            the same: nothing in 16:9 was measured, and with one base the caller's three figures
+//            (the base, the wish while the footage stays under its limit, how far it may be
+//            enlarged) hold in every arrangement. (It aimed at 23 %, the lower end of published
+//            talking heads filling the frame, which enlarged a medium shot past the wish's limit
+//            in place of keeping it sharp at the base.) A share of the frame's height
 //            from faceMin to 0.5 asks for another ("the person larger": --set beside.face=0.22);
 //            where the panel or column holds less, or the footage stays sharp only for less, the
 //            face gets the most it can and a note says what was asked and what was given.
@@ -69,16 +74,28 @@ import { captionHeight, keepOut, inkRows } from "./text.mjs";
 //            "left" or "right" fixes it
 //   captions "move": in 16:9 the captions go under the material; "stay" leaves them where they
 //            stand without the material (across the frame's foot, over the column too)
+//   coverUpTo 0: a panel's picture covers the frame's width (or keeps the scale it had
+//            full-frame) while the face then is at most this share of the frame's height, even
+//            where that is over the face's aim; a face larger than that is brought to its aim, the
+//            picture narrower with ground beside it. 0: weights.subject.to, 34 %, the third
+//            quartile of the faces of 49 talking heads and 60 podcast clips in 240 published
+//            Shorts (middle half 23.2–33.6 % and 23.1–33.7 %): a face that published videos keep
+//            is still fine in a panel that fills the width. The spread of faces below a screen
+//            (17.1 / 18.0 / 19.4 %, 35 frames of 9 videos) is the spread of the aim itself, too
+//            narrow for this: ordinary takes at 19.8 and 20.4 % lie outside it and covered the
+//            panel's width before; the same videos show their faces at 32 % (median) in the frames
+//            without a screen. (layout-data's report, findings.md, sections 5 and 6.) A close-up
+//            of 40 % comes down; one of 30 % keeps the full-width panel.
 //   b-roll's values (its owner looked at built videos): face 0 (18 %), faceUpTo 2, wish 0.22,
 //   wishUpTo 1.25, with weights.enlarge.softFrom 1.25 so that past 1.25× is reported as soft.
-export const BESIDE = { faceMin: 0.12, column: 1 / 3, look: 0.1, pipCrop: 2, face: 0, faceUpTo: 0, wish: 0, wishUpTo: 0, side: "look", captions: "move" };
+export const BESIDE = { faceMin: 0.12, column: 1 / 3, look: 0.1, pipCrop: 2, face: 0, faceUpTo: 0, wish: 0, wishUpTo: 0, side: "look", captions: "move", coverUpTo: 0 };
 
 const ORDER = { tall: ["above", "pip"], mid: ["above", "pip"], wide: ["column", "above", "pip"] };
 const NAMES = { above: "the material above, the speaker as a panel below it", pip: "the material over the frame, the speaker as a circle in its corner", column: "the speaker as a column at one side, the material beside it" };
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
 
-export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {}, captionArea = null, faceAssumed = false }) {
+export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {}, captionArea = null, faceAssumed = false, faceSize = null }) {
   const [W, H] = Z.size;
   for (const k of Object.keys(set)) if (k.startsWith("beside.") && !(k.slice(7) in BESIDE)) throw new Error(`There is no default "${k}" to set: beside's own are ${Object.keys(BESIDE).map((x) => `beside.${x}`).join(", ")} (tools/lib/beside.mjs, each with its source).`);
   const D = scaled(merged({ ...DEFAULTS, beside: BESIDE }, set), Z.size);
@@ -89,6 +106,10 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   const moving = typeof face[0] !== "number";
   const tf = moving ? trackFace(face) : null;
   const hull = moving ? tf.box : face, usual = moving ? tf.track.usual : face;
+  // how tall the face is: its box's height, or, where the caller's box reached past the source's
+  // edge and was cut to it (faceSize), the height that was given: the part inside the source is
+  // what can be shown, not how large the face is
+  const fz = faceSize > usual[3] ? faceSize : usual[3];
   const fam = H >= 1.5 * W ? "tall" : W >= 1.5 * H ? "wide" : "mid";
   // the face's target asked for (none: the usual one of each arrangement), and what each could hold
   if (!["look", "left", "right"].includes(B.side)) throw new Error(`--set beside.side is look, left or right (the 16:9 column's side), not "${B.side}".`);
@@ -96,12 +117,14 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   const asked = B.face > 0 ? B.face : null, wish = B.wish > 0 ? B.wish : null;
   if (wish !== null && (wish < B.faceMin - 1e-9 || wish > 0.5)) throw new Error(`--set beside.wish is the larger face asked for while the footage stays sharp, a share of the frame's height from ${B.faceMin} to 0.5; ${wish} is outside that.`);
   for (const k of ["faceUpTo", "wishUpTo"]) if (B[k] && (B[k] < 1 || B[k] > forbidden)) throw new Error(`--set beside.${k} is how far the footage may be enlarged, from 1 to ${forbidden} (weights.enlarge.forbiddenFrom); 0 is the soft limit, ${B[k]} is outside that.`);
+  if (!(B.coverUpTo >= 0 && B.coverUpTo <= 1)) throw new Error(`--set beside.coverUpTo is a share of the frame's height (0: weights.subject.to); ${B.coverUpTo} is outside 0 to 1.`);
+  const coverUpTo = B.coverUpTo || WT.subject.to / 100;
   const baseUp = Math.min(B.faceUpTo || soft, forbidden), wishUp = Math.min(B.wishUpTo || soft, forbidden);
   // The scale the face aims at, for a usual target (a share of the frame's height): the wish where
   // it stays under wishUp, else as much of it as does and the target at the least, up to baseUp.
   // → { s, up: the enlargement it may take, says: why the face is under what was asked, aimed }
   const aim = (usualTarget) => {
-    const t = asked ?? usualTarget, sBase = t * H / usual[3], sWish = wish ? wish * H / usual[3] : 0;
+    const t = asked ?? usualTarget, sBase = t * H / fz, sWish = wish ? wish * H / fz : 0;
     if (sWish && sWish <= wishUp + 1e-9) return { s: sWish, up: wishUp, aimed: wish, says: null };
     const s = Math.max(Math.min(sBase, baseUp), sWish ? Math.min(sWish, wishUp) : 0);
     const said = [];
@@ -201,7 +224,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // and the largest scale that fits below a seam
     const sAt = (seam) => { let s = (Y1(S) - seam - capHalf) / (hull[3] * (1 + D.free.above + D.free.below)); while (s > 1e-4 && seamOf(s) < seam - 1e-6) s *= 0.995; return Math.max(s, 0); };
     // The panel never leaves the face under faceMin: the lowest seam is the one at which it has that
-    const sMin = B.faceMin * H / usual[3], seamLast = seamOf(sMin);
+    const sMin = B.faceMin * H / fz, seamLast = seamOf(sMin);
     const atLast = bestField([stretch(seamLast)]);
     if (atLast) { most.above = atLast.field; limits.above = { field: atLast.field.map(Math.round), says: `with the speaker's face at ${pct(B.faceMin)} of the frame's height (${limits.faceMin} px) the material's field is at most ${Math.round(atLast.field[2])}×${Math.round(atLast.field[3])} px` }; }
     // the highest seam that leaves the material its smallest field
@@ -218,10 +241,19 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // tall as below a screen in published Shorts, never enlarged past the soft limit; and where
     // covering does not fit, the face at that size with ground beside the picture.
     const sCover = W / sw, a = aim(D.screenFace.height), sRoom = sAt(seamMat);
-    const keep = asked === null && wish === null && prev.scale >= sCover - 1e-9 && prev.scale <= Math.min(soft, sRoom) + 1e-9 && prev.scale * usual[3] >= B.faceMin * H - EPS;
+    // Covering the panel's width (or keeping the scale it had full-frame) makes the face no larger
+    // than coverUpTo (34 %) where that is over its aim: a close-up that covered a 4:5 or 1:1 panel
+    // had its face at 40 % of the frame's height with 22 % aimed at. Past that the face comes to
+    // its aim and the picture stands narrower than the panel with ground beside it, as a panel
+    // does that the picture cannot cover (never where that ground would be a sliver, under the
+    // gap between boxes on a side). A face a little over its aim keeps the full-width panel.
+    const tooLarge = (k) => k > a.s * (1 + 1e-6) && k * fz > Math.max(coverUpTo, a.s * fz / H) * H + 0.5 && (W - a.s * sw) / 2 >= g;
+    const keep = asked === null && wish === null && prev.scale >= sCover - 1e-9 && prev.scale <= Math.min(soft, sRoom) + 1e-9 && prev.scale * fz >= B.faceMin * H - EPS && !tooLarge(prev.scale);
     // (covering the panel's width counts as the face's base size does: it may take the footage
     // up to baseUp, reported as soft past the soft limit)
-    let s = keep ? prev.scale : sCover <= Math.min(baseUp, sRoom) + 1e-9 ? Math.max(a.s, sCover) : a.s;
+    const covers = sCover <= Math.min(baseUp, sRoom) + 1e-9;
+    const narrow = !keep && covers && tooLarge(sCover) ? sCover * fz / H : null;
+    let s = keep ? prev.scale : covers && narrow === null ? Math.max(a.s, sCover) : a.s;
     // (what held the face under its target: the room the material leaves, or the sharpness)
     const by = s > sRoom + 1e-9 ? "room" : keep ? null : a.says;
     s = Math.min(s, sRoom);
@@ -232,7 +264,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // across, the face where it was full-frame (it does not jump sideways); down, its eyes a third
     // into the panel
     const sp = placeIn(s, panel, band, mid(prevFace)[0] - s * ux, seam + panel[3] / 3 - s * ue, H - Y1(S));
-    return build("above", { field: bestField([stretch(seam)]).field, area: [0, 0, W, seam], speaker: { ...sp, field: panel, shape: "rect" }, caption: cap ? caption(seam - capHalf, "seam") : null, seam, keep, target: a.aimed, by, room: sRoom * usual[3] / H });
+    return build("above", { field: bestField([stretch(seam)]).field, area: [0, 0, W, seam], speaker: { ...sp, field: panel, shape: "rect" }, caption: cap ? caption(seam - capHalf, "seam") : null, seam, keep, target: a.aimed, by, room: sRoom * fz / H, narrow });
   }
 
   // ---- pip: the material over the frame, the speaker as a circle in a corner ----
@@ -258,7 +290,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // screen has them (0.42 of the square down); kept inside the footage where the face and the
     // margin above the head then still lie in the disc, else on the face with ground where the
     // footage ends (a face at the footage's edge)
-    const side = B.pipCrop * hull[3], small = Math.min(side, sw, sh);
+    const side = B.pipCrop * Math.max(hull[3], fz), small = Math.min(side, sw, sh);
     const at = (c) => { const s = d / c[2]; return { s, left: C[0] - c[0] * s, top: C[1] - c[1] * s, field: C, shape: "circle", corner, crop: c, ok: true }; };
     const centred = [hull[0] + hull[2] / 2 - side / 2, hull[1] + D.eyes * hull[3] - 0.42 * side, side, side];
     // (the square no larger than the footage's shorter side, inside it)
@@ -300,11 +332,12 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const sCover = Math.max(cw / sw, H / sh);
     const fits = (s) => s * hull[2] <= band[2] - 2 * EPS && s * hull[3] <= band[3] - 2 * EPS;
     // the scale it had full-frame where that covers the column (the picture is then only cut to
-    // the column and moved), else covering the column, the face as tall as published talking
-    // heads keep theirs where that needs more, never past the soft limit (where covering needs
-    // more, the footage stands smaller with ground beside it); smaller where the face would not
-    // fit the column
-    const sMost = Math.min(band[2] / hull[2], band[3] / hull[3]) * (1 - 1e-6), a = aim(WT.subject.from / 100);
+    // the column and moved), else covering the column, the face at the panel's target where that
+    // needs more (the base, the wish while the footage stays under its limit, up to faceUpTo:
+    // the same three figures as the panel, no aim of the column's own), never past baseUp (where
+    // covering needs more, the footage stands smaller with ground beside it); smaller where the
+    // face would not fit the column
+    const sMost = Math.min(band[2] / hull[2], band[3] / hull[3]) * (1 - 1e-6), a = aim(D.screenFace.height);
     const keep = asked === null && wish === null && prev.scale >= sCover - 1e-9 && prev.scale <= soft + 1e-9 && fits(prev.scale);
     // (filling the column counts as the face's base size does: up to baseUp, reported as soft
     // past the soft limit; past baseUp ground beside it)
@@ -320,7 +353,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     most.column = fld.field;
     const w = Math.min(mx1 - mx0, D.caption.maxEm * capF);
     const capBox = !cap ? null : B.captions === "stay" ? caption(capTop, "stay") : caption(capTop, "under-material", (mx0 + mx1) / 2 - w / 2, w);
-    return build("column", { field: fld.field, area: side === "left" ? [cw, 0, W - cw, H] : [0, 0, W - cw, H], speaker: { ...sp, field: col, shape: "rect" }, caption: capBox, side, looks, fixed: B.side !== "look", keep, target: a.aimed, by, room: sMost * usual[3] / H });
+    return build("column", { field: fld.field, area: side === "left" ? [cw, 0, W - cw, H] : [0, 0, W - cw, H], speaker: { ...sp, field: col, shape: "rect" }, caption: capBox, side, looks, fixed: B.side !== "look", keep, target: a.aimed, by, room: sMost * fz / H });
   }
 
   // The same placement for a caller that shows the footage filling the frame (object-fit: cover,
@@ -336,12 +369,19 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   function build(arr, p) {
     const sp = p.speaker, s = sp.s;
     const faceBox = inFrame(s, sp.left, sp.top, hull), faceUsual = inFrame(s, sp.left, sp.top, usual);
-    const problems = judge(Z, [
+    const judged = judge(Z, [
       { kind: "face", label: "material", box: p.field },
       { kind: "face", label: "speaker", box: faceBox },
       ...(sp.shape === "circle" ? [{ kind: "face", label: "speaker's circle", box: sp.field }] : []),
       ...(p.caption ? [{ kind: "text", label: "caption", box: p.caption.box, ink: p.caption.ink }] : []),
     ]);
+    // A feed's or grid's crop (the Instagram feed's 4:5 of an upright video, the profile grid's
+    // 3:4) is no problem a caller can act on: the video shows the frame whole, and the fields stay
+    // inside those crops already wherever they keep their size there. It goes into `crops` and
+    // the notes, not into the problems, so that a caller tells what it can change from where the
+    // frame is shown cropped elsewhere.
+    const crops = judged.filter((q) => q.code === "crop").map((q) => ({ of: q.of, kind: q.kind, what: q.what }));
+    const problems = judged.filter((q) => q.code !== "crop");
     // what only the solver knows: the face cut by its own field, enlargement, the captions in the
     // margin kept above a head, the material's field under its smallest size, a panel's face small
     const cut = 1 - inter(faceBox, sp.field) / area(faceBox);
@@ -354,7 +394,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     }
     if (p.caption && inter(p.caption.box, keepOut(faceBox, D)) > 0) problems.push({ level: "unmet", code: "no-room", kind: "text", of: "caption", what: "lies in the margin kept around the speaker's face: no free place for the captions" });
     if (!meets(p.field)) problems.push({ level: "unmet", code: "small", kind: "picture", of: "material", what: `its field is ${Math.floor(p.field[2])}×${Math.floor(p.field[3])} px, ${mat.min ? `under the ${mat.min[0]}×${mat.min[1]} it needs` : `under a tenth of the frame's shorter side (${Math.round(least)} px): no field to show it in`}` });
-    const faceH = s * usual[3], small = arr !== "pip" && faceH < B.faceMin * H - 1;
+    const faceH = s * fz, small = arr !== "pip" && faceH < B.faceMin * H - 1;
     // the face's target: what was asked (or the usual one), what was given, and what held it back
     const short = p.target != null && faceH < (p.target - 0.005) * H;
     const heldBy = !short ? null : p.by === "room" ? `the ${arr === "column" ? "column" : "panel"} holds no more${arr === "above" ? " beside the material's field" : ""} (at most ${pct(p.room)})` : p.by || null;
@@ -362,13 +402,21 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const cNotes = (asked !== null || wish !== null) && short && heldBy ? [`a face of ${pct(p.target)} of the frame's height was asked for; it is ${pct(faceH / H)}: ${heldBy}`] : [];
     if (s > forbidden + 1e-9) cNotes.push(`the footage would be enlarged ${r2(s)}×, past the ${forbidden}× nothing is enlarged past`);
     if (small) problems.push({ level: "soft", code: "small", kind: "face", of: "speaker", what: `the face is ${pct(faceH / H)} of the frame's height, under the ${pct(B.faceMin)} below which the circle stands first` });
+    for (const q of crops) cNotes.push(`not a problem, a note: the ${q.of === "caption" ? "captions are" : `${q.of} is`} ${q.what}; the video itself shows the frame whole`);
+    // The speaker's card: the part of its window that the captions on the seam leave free, so that
+    // they stand on the panel's ground and not on the video: the window cut at the top to the
+    // captions' bottom, no lower than the margin kept above the head. Elsewhere it is the window.
+    let card = sp.win;
+    if (sp.shape === "rect" && p.caption?.where === "seam") {
+      const top = Math.min(Y1(p.caption.box), faceBox[1] - above(faceBox[3]));
+      if (top > sp.win[1] + 0.05 && top < Y1(sp.win)) card = [sp.win[0], top, sp.win[2], Y1(sp.win) - top];
+    }
     const hard = problems.filter((q) => q.level === "hard").length, softN = problems.filter((q) => q.level === "soft").length;
     const unmet = problems.filter((q) => q.level === "unmet").map((q) => (q.of === "caption" ? "caption" : "material"));
     // The cost, in the points of weights.json: enlargement as everywhere; ground beside the
     // speaker's picture in its field (the material's own ground is the material's); a face short of
-    // its target (a panel: as tall as below a screen; a column: the lower end of published talking
-    // heads, measured upright only; the circle: none); soft problems.
-    const target = arr === "pip" ? null : asked !== null ? 100 * asked : arr === "above" ? 100 * D.screenFace.height : WT.subject.from;
+    // its target (a panel and a column: as tall as below a screen; the circle: none); soft problems.
+    const target = arr === "pip" ? null : asked !== null ? 100 * asked : 100 * D.screenFace.height;
     const ground = Math.max(0, area(sp.field) - area(sp.win)) / (W * H);
     const sMax = Math.max(...scales.map(([, v]) => v));
     const terms = {
@@ -389,7 +437,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const c = {
       fit: `beside-${arr}`, arrangement: arr, ...(p.side ? { side: p.side, looks: p.looks } : {}),
       material: { field: fieldOut(p.field), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
-      speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), ...(faceAssumed ? { assumed: true } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
+      speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), card: card.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), ...(faceAssumed ? { assumed: true } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
       captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band, ...(p.caption.lineBox ? { lineBox: true } : {}) } : null,
       ...(p.seam != null ? { seam: r1(p.seam) } : {}),
       change: {
@@ -404,13 +452,14 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
       ...(sp.shape === "circle" ? { circle: { box: sp.field.map(r1), d: Math.round(sp.field[2]), corner: sp.corner, crop: crop.map(r1), of: "speaker", enlargement: r2(s), faceHeight: Math.round(faceH) } } : {}),
       text: p.caption ? [{ ...p.caption, box: p.caption.box.map(r1), ink: p.caption.ink.map(r1) }] : [],
       ...(cNotes.length ? { notes: cNotes } : {}),
-      problems, hard, soft: softN, unmet, terms, cost, rank: [hard ? 1 : 0, unmet.length, 0, order, Math.round(cost * 1000)],
+      problems, crops, hard, soft: softN, unmet, terms, cost, rank: [hard ? 1 : 0, unmet.length, 0, order, Math.round(cost * 1000)],
     };
     c.why = [
       hard ? `fails: ${problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ")}` : "no hard problem",
       NAMES[arr] + (arr === "above" ? " (what published Shorts do most where a screen and a face show together: usual, not shown to work)" : arr === "pip" ? " (a small picture in or at the screen: the rarer form in published Shorts)" : ` (${p.fixed ? `on the ${p.side}, as asked (beside.side)` : p.looks ? `the face sits off the source's middle, so the speaker likely looks ${p.looks}, towards the material` : "the face's place in the source tells no look: left, the default"}; unmeasured)`),
       `the material's field is ${Math.round(p.field[2])}×${Math.round(p.field[3])} px (${pct(c.material.share)} of the frame)${mat.min ? (meets(p.field) ? `, at least the ${mat.min[0]}×${mat.min[1]} it needs` : `, under the ${mat.min[0]}×${mat.min[1]} it needs`) : ""}`,
-      `the speaker's face is ${Math.round(faceH)} px (${pct(faceH / H)} of the frame's height${target != null ? `; ${r1(target)} % is ${asked !== null ? `the target asked for (beside.face; the usual is ${arr === "above" ? `${r1(100 * D.screenFace.height)} % below a screen` : `${WT.subject.from} %, the lower end of published talking heads`})` : arr === "above" ? "the usual below a screen" : "the lower end of published talking heads, measured upright"}` : ""})${wish !== null && arr !== "pip" ? `; the wish of ${pct(wish)} (beside.wish, taken under ${wishUp}×) ${faceH >= wish * H - 1 ? "holds" : "gives way"}` : ""}${s > 1 + 1e-9 ? `, the footage enlarged ${r2(s)}×` : ""}${heldBy ? `: ${heldBy}` : ""}`,
+      `the speaker's face is ${Math.round(faceH)} px (${pct(faceH / H)} of the frame's height${target != null ? `; ${r1(target)} % is ${asked !== null ? `the target asked for (beside.face; the usual is ${r1(100 * D.screenFace.height)} % below a screen)` : `the usual below a screen${arr === "column" ? ", the panel's target, taken by the column too" : ""}`}` : ""})${wish !== null && arr !== "pip" ? `; the wish of ${pct(wish)} (beside.wish, taken under ${wishUp}×) ${faceH >= wish * H - 1 ? "holds" : "gives way"}` : ""}${s > 1 + 1e-9 ? `, the footage enlarged ${r2(s)}×` : ""}${heldBy ? `: ${heldBy}` : ""}`,
+      ...(p.narrow != null ? [`the picture stands narrower than the panel: covering its width would make the face ${pct(p.narrow)} of the frame's height, over the ${pct(coverUpTo)} up to which a panel covers the width (beside.coverUpTo), so it is brought to the ${pct(faceH / H)} it aims at`] : []),
       ...(faceAssumed && arr !== "pip" ? ["the face's box was assumed (the usual framing of a talking head, not read off the footage): its size and place here are guesses"] : []),
       ...(p.keep ? ["the speaker keeps the scale it had full-frame"] : []),
       ...(ground ? [`${pct(ground)} of the frame is ground beside the speaker's picture`] : []),
@@ -468,6 +517,7 @@ export function printBeside(res, tool, folder) {
     console.log(`\n${i + 1}. ${mark(c)} ${c.fit}${c.side ? ` ${c.side}` : ""}  score ${c.score}`);
     console.log(`   material  field ${boxText(f)} (${Math.round(f[2])}×${Math.round(f[3])}, ${pct(c.material.share)} of the frame)${c.material.scale ? ` at ${c.material.scale}×` : ""}; its ground ${boxText(c.material.area)}`);
     console.log(`   speaker   ${q.shape === "circle" ? `circle ${Math.round(q.field[2])} px ${q.corner}` : "field"} ${boxText(q.field)}: the footage at ${q.scale}× (left ${q.left}, top ${q.top}), shows x ${Math.round(q.crop[0])}–${Math.round(q.crop[0] + q.crop[2])}, y ${Math.round(q.crop[1])}–${Math.round(q.crop[1] + q.crop[3])} of it; face ${boxText(q.face)} (${q.faceHeight} px, ${pct(q.faceHeight / H)})${q.ground ? `; ${pct(q.ground)} of the frame ground beside it` : ""}`);
+    if (q.card && q.card.some((v, k) => Math.abs(v - q.window[k]) > 0.05)) console.log(`   card      ${boxText(q.card)}: the window under the captions (speaker.card), so that they stand on the panel's ground`);
     if (c.captions) console.log(`   caption   ${c.captions.where}, ${boxText(c.captions.box)}, ${c.captions.lines} line${c.captions.lines > 1 ? "s" : ""} at ${c.captions.font} px`);
     console.log(`   change    from full-frame (${c.change.before.scale}× at ${c.change.before.left}, ${c.change.before.top}${c.change.before.assumed ? ", assumed" : ""}): ${c.change.says}`);
     for (const p of c.problems) console.log(`   ${p.level === "hard" ? "✗" : p.level === "soft" ? "!" : "–"} ${p.of}: ${p.what}`);

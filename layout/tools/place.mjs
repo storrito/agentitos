@@ -100,7 +100,7 @@ function parseArgs(cmd, argv) {
 
 // the sources in the order given: every --face belongs to the --source before it (faces before the
 // first --source: to the first)
-function parseSources(o) {
+function parseSources(o, { clamp = false } = {}) {
   const sources = [], early = [];
   const box = (f, what) => { const b = String(f).split(",").map(Number); if (b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[2] <= 0 || b[3] <= 0) fail(`--${what} is x,y,w,h in px of the source, as 300,570,600,900.`); return b; };
   for (const [k, v] of o.order) {
@@ -125,11 +125,22 @@ function parseSources(o) {
       (sources.at(-1)?.faces || early).push(...tracks);
     }
   }
-  // a box past the source's edge places a face that is not there
+  // A box past the source's edge places a face that is not there. beside (clamp) takes the part
+  // of a face's box inside the picture and says so in a note (`clamped`), since its caller often
+  // has a box from another tool; a box wholly outside stays an error.
   for (const q of sources) {
     const [sw, sh] = q.size;
+    q.clamped = [];
     for (const b of [...q.faces.flatMap((f) => (typeof f[0] === "number" ? [f] : f.map((m) => m.box))), ...(q.region ? [q.region] : [])]) {
-      if (b[0] < 0 || b[1] < 0 || b[0] + b[2] > sw || b[1] + b[3] > sh) fail(`The box ${b.join(",")} reaches past the source of ${sw}×${sh}: a face or region the picture's edge cuts ends at that edge, read it again off the grid.`);
+      if (!(b[0] < 0 || b[1] < 0 || b[0] + b[2] > sw || b[1] + b[3] > sh)) continue;
+      if (!clamp || b === q.region) fail(`The box ${b.join(",")} reaches past the source of ${sw}×${sh}: a face or region the picture's edge cuts ends at that edge, read it again off the grid.`);
+      const x0 = Math.max(0, b[0]), y0 = Math.max(0, b[1]), x1 = Math.min(sw, b[0] + b[2]), y1 = Math.min(sh, b[1] + b[3]);
+      if (x1 - x0 < 1 || y1 - y0 < 1) fail(`The face's box ${b.join(",")} lies outside the source of ${sw}×${sh}: read it again off ${self()} grid.`);
+      const was = b.join(","), given = b[3];
+      b.splice(0, 4, x0, y0, x1 - x0, y1 - y0);
+      // (the face is as large as given: only what can be shown is cut)
+      b.givenHeight = given;
+      q.clamped.push(`the face's box ${was} reaches past the source of ${sw}×${sh}: taken as ${b.map((v) => +v.toFixed(1)).join(",")}, its part inside the picture, the face's size still the ${given} px given`);
     }
   }
   return sources;
@@ -245,7 +256,7 @@ function cmdBeside(o) {
     const box = [Math.max(0, fx), Math.max(0, fy), Math.min(w / k, sw), Math.min(h / k, sh)].map((v) => Math.round(v));
     o.order = o.order.map(([kk, v]) => (kk === "face" && v === "assumed" ? [kk, box.join(",")] : [kk, v]));
   }
-  const sources = parseSources(o);
+  const sources = parseSources(o, { clamp: true });
   if (!folder || o._.length > 1 || !o.frame || !sources.length) fail(usage);
   if (sources.length > 1 || sources[0].faces.length !== 1) fail(`beside places one speaker from one recording: give one --source and one --face (or the moments of one face as --face-at), read off ${self()} grid.`);
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) fail(`${folder} is a file: beside writes its placement.json into a folder, name one.`);
@@ -276,10 +287,11 @@ function cmdBeside(o) {
     if (o["caption-area"] !== undefined) captionArea = areaFile(o["caption-area"]);
     else if (o["caption-style"] !== undefined) captionArea = areaOfStyle(o["caption-style"], needs.find((n) => n.role === "caption")?.lines, zones.size, platforms);
     res = besideSolve({
-      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
+      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], faceSize: sources[0].faces[0].givenHeight ?? null, material, needs, before,
       set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
     });
   } catch (e) { fail(e.message); }
+  if (sources[0].clamped.length) res.notes.unshift(...sources[0].clamped);
   res.asked = { frame: o.frame, platforms };
   const file = path.join(folder, "placement.json");
   try {
@@ -460,6 +472,8 @@ function cmdPage(o) {
     console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}${multi ? ` at ${v.at} s` : ""}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}`);
     console.log(`   solver:  ${c.problems.length ? c.problems.map((q) => `${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of} ${q.what}`).join("; ") : "✓ no problem"}`);
+    // (beside's crops of a feed or grid are notes, not problems: the checker reports them as soft)
+    if (c.crops?.length) console.log(`   note:    where the frame is shown cropped elsewhere, not a problem: ${c.crops.map((q) => `${q.of} ${q.what}`).join("; ")}`);
     console.log(`   checker: ${checked.findings.length ? checked.findings.map((f) => `${f.level} ${f.kind === "text" ? `"${f.label}"` : f.label} ${f.what}`).join("; ") : "✓ nothing under the apps' buttons, nothing on top of each other"}`);
     if (!cmp.verdictAgrees) { differ++; console.log(`   ✗ They differ: ${checked.ok ? "the checker passes what the solver fails" : "the checker fails what the solver passes"} (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}). The checker measured the page: do not take this candidate without looking at why.`); }
     else if (!cmp.agree) console.log(`   They agree on the verdict and differ in a finding (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}).`);
