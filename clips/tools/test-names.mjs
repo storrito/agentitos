@@ -119,6 +119,12 @@ test("proposed: the model's knowledge, a case alone, a model not sure; the words
   const known = judged([fix(7, "Andoran Tubik oder Kanaki", "Anjouan Tobique oder Kahnawake", "medium", { where: "knowledge" })]);
   assert.deepEqual(known.map((e) => [e.from, e.to, e.status]), [["Andoran", "Anjouan", "proposed"], ["Tubik", "Tobique", "proposed"], ["Kanaki", "Kahnawake", "proposed"]]);
   assert.match(known[0].because, /the model's knowledge/);
+  // a piece that is no name keeps the run together; one ordinary word for another is refused
+  const malta = episodeOf([["A", "Die Lizenz kam aus'm Alter, sagt sie."]]);
+  const m = entriesOf({ names: [], fixes: [fix(0, "aus'm Alter", "aus Malta", "low")] }, malta.words, malta.sentences, SOURCES);
+  assert.deepEqual(m.map((e) => [e.from, e.to, e.status]), [["aus'm Alter", "aus Malta", "proposed"]]);
+  const swap = entriesOf({ names: [], fixes: [fix(0, "sagt sie", "sagte sie")] }, malta.words, malta.sentences, SOURCES);
+  assert.match(swap[0].refused, /no name on either side/);
   const cased = one([fix(8, "hot ones", "Hot Ones")]);
   assert.equal(cased.status, "proposed");
   assert.match(cased.because, /only the case/);

@@ -214,13 +214,15 @@ function narrowed(words, [a, b], right) {
   if (to.length !== j - i + 1 || fold(words.slice(i, j + 1).map(core).join("")) === fold(to.join(""))) return [{ at: [i, j], to }];
   const out = [];
   for (let k = 0; k < to.length; k++) if (core(words[i + k]) !== to[k]) out.push({ at: [i + k, i + k], to: [to[k]] });
-  return out;
+  // a piece that is no name ("aus'm Alter" → "aus Malta": the m went to Malta) keeps them together
+  return out.every((p) => capital(p.to[0])) ? out : [{ at: [i, j], to }];
 }
 
 // Why a correction would change what was said, or null: these are refused
 function rewrites(from, to) {
   if (!to.length) return "it leaves out words that were said";
   if (!from.length) return "it adds words that were not said";
+  if (!from.some(capital) && !to.some(capital)) return "no name on either side: one ordinary word for another";
   if (to.length > from.length + 1 || to.length < from.length - 1) return "more or fewer words than were said";
   const f = fold(from.join("")), t = fold(to.join(""));
   if (f !== t && (f.startsWith(t) || t.startsWith(f)) && ENDING.test(f.startsWith(t) ? from.join("").slice(to.join("").length) : to.join("").slice(from.join("").length))) return "it changes an ending, not the name's spelling";
