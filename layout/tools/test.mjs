@@ -1187,14 +1187,13 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(!r.conflicts.length && r.notes.some((n) => /Shot 1 .*lie on A's chin or neck for 4 s, below the mouth: not avoidable without the eyes going under/.test(n)), JSON.stringify([r.conflicts, r.notes]));
     return r.notes[0].slice(0, 90) + " …";
   });
-  t("moderate, the default: a close-up is raised only while the whole head stays in the picture (its box and the margin above it for the hair under the frame's top); a smaller type comes first, never below the low end of published captions (caption.font.least); what is left lies on the chin and the lower lip, said as not avoidable at a readable size, never a fault", () => {
-    // the face from y 330, 1500 px tall: the head's top 0.35 of it above the frame's top: no raise at all
+  t("moderate, the default: a close-up is raised only while the whole head stays in the picture (its box and the margin above it for the hair under the frame's top); a smaller type comes first, never below the low end of published captions (caption.font.least); where even that would cover the mouth, the shot goes up past the head's top (as far as the eyes allow) until the captions lie on the lower lip at most, said as not avoidable, never a fault", () => {
+    // the face from y 330, 1500 px tall: the head's top 0.35 of it above the frame's top; its lips (the head's proportions: the lip line at 80 % of the box) at 1533–1573, below the safe box: no type clears them unraised
     const f = [140, 330, 800, 1500], moving = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [f[0], f[1] + (i % 10 < 5 ? 0 : 40), f[2], f[3]] })) };
     const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap });
-    ok(r.shots[0].lift === 0 && r.shots[0].limit === "head", JSON.stringify(r.shots[0]));
-    // the mouth line at 1330–1345: even the smallest readable type (61 px, its area from 1334) reaches it at the lowest moment
+    ok(r.shots[0].lift > 0 && r.shots[0].limit === "mouth" && r.shots[0].past && r.shots[0].on.mouth === 0 && r.shots[0].on.nose === 0, JSON.stringify(r.shots[0]));
     ok(r.caption.font >= DEFAULTS.caption.font.least, `type ${r.caption.font} under the floor ${DEFAULTS.caption.font.least}`);
-    ok(!r.conflicts.length && r.notes.some((n) => /lower lip for [\d.]+ s: not avoidable at a readable size .*--raise full .*--font-size/.test(n)), JSON.stringify([r.conflicts, r.notes]));
+    ok(!r.conflicts.length && r.notes.some((n) => /lower lip for [\d.]+ s and on the chin for [\d.]+ s, not on the mouth; raised \d+ px past the head's top .*Nothing to fix/.test(n)), JSON.stringify([r.conflicts, r.notes]));
     // a size given by hand goes below the floor
     const hand = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap, fixed: { font: 50 } });
     ok(hand.caption.font === 50, `--font-size 50 gave ${hand.caption.font}`);
@@ -1217,6 +1216,26 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     // the features ending at 1400 (the mouth low, 71 %): no readable type clears it on the safe box's bottom: the lower lip, said
     const low = textOverTime({ zones: Z9, shots: [shot(0, 4, [track([300, 760, 480, 640])])], needs: cap });
     ok(low.notes.some((n) => /lower lip .* not avoidable at a readable size/.test(n)) || low.caption.box[1] + low.caption.box[3] <= 330, JSON.stringify([low.caption, low.notes, low.conflicts]));
+  });
+  t("a tight close-up whose eyes stand at the apps' top bar already: no raise can free its mouth, and captions over the whole mouth are a fault (✗) with what would avoid it, never 'the lower lip, nothing to fix' (the review's case: the whole caption area between the nose line and the lower lip)", () => {
+    // the features from 260 to 1500: the nose line at 1128, the lip line at 1351, the eyes at 260, 10 px below the safe box's top; the smallest readable area reaches from 1334
+    const box = [140, 100, 800, 1500], feat = [300, 260, 480, 1240];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
+    ok(r.shots[0].on.mouth > 3.9 && r.shots[0].fault === "mouth", JSON.stringify(r.shots[0]));
+    ok(r.conflicts.some((c) => /cover A's mouth for 4 s .* What would avoid it: a cut to another shot here, or a smaller type by hand/.test(c)), JSON.stringify(r.conflicts));
+    ok(!r.notes.some((n) => /Nothing to fix/.test(n)), JSON.stringify(r.notes));
+  });
+  t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
+    const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
+    const r = textOverTime({ zones: Z9, shots: [close(0, 3, 840), close(3, 6, 300), close(6, 9, 870), close(9, 12, 300), close(12, 15, 850)], needs: cap });
+    const lifts = r.shots.map((s) => s.lift);
+    ok(lifts[0] > 0 && lifts[0] === lifts[2] && lifts[2] === lifts[4] && lifts[1] === 0, lifts.join(", "));
+    ok(r.caption.seconds === 0, `${r.caption.seconds} s on a face`);
+  });
+  t("a hook that finds no place clear of the faces keeps the calm rule (a card over a picture that is not calm) and says why", () => {
+    const big = [still([60, 250, 960, 1250], 0, 4)];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, big, null)], needs: [...cap, { role: "hook", start: 0, end: 3, calm: false }] });
+    ok(r.hook && (r.hook.kind === "card" || r.hook.where !== "middle") && r.hook.kindWhy && r.hook.kindWhy.length > 10, JSON.stringify(r.hook));
   });
   t("a hook over a picture that is not calm (the caller says hook.calm false: a wide shot with hands, a photo) is a card in the text's place, and says why", () => {
     const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: [...cap, { role: "hook", start: 0, end: 3, calm: false }] });
@@ -1267,6 +1286,9 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(r.status === 0 && /shot 2 .*as it stands {2}on the chin/.test(r.stdout) && /not avoidable without a larger lift than the one fixed/.test(r.stdout), r.stdout);
     r = cli("text", dir, "--frame", "9:16", "--shots", file, "--lift", "5:10");
     ok(r.status === 1 && r.stderr.trim().split("\n").length === 1 && /--lift is <shot>:<px>/.test(r.stderr), r.stderr);
+    // captions below the safe box, where the apps lay their own text: refused in one sentence
+    r = cli("text", dir, "--frame", "9:16", "--shots", file, "--caption-y", "1750");
+    ok(r.status === 1 && r.stderr.trim().split("\n").length === 1 && /below the safe box's bottom \(y \d+ .*give \d+ or less/.test(r.stderr), r.stderr);
     fs.writeFileSync(file, JSON.stringify({ shots: [{ start: 0, end: 2, faces: [{ who: "A" }] }] }));
     r = cli("text", dir, "--frame", "9:16", "--shots", file);
     ok(r.status === 1 && /"track"/.test(r.stderr), r.stderr);

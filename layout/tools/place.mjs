@@ -451,6 +451,9 @@ function cmdText(o) {
   let res;
   try {
     const Z = askZones(o.frame, platforms);
+    // under the safe box the apps lay their own text (the username, the caption, the sound)
+    if (fixed.y !== undefined && fixed.y > Z.safe[1] + Z.safe[3]) fail(`--caption-y ${fixed.y} is below the safe box's bottom (y ${Z.safe[1] + Z.safe[3]} for ${Z.platforms.map((p) => p.name).join(", ")}), where the apps lay their own text: give ${Z.safe[1] + Z.safe[3]} or less.`);
+    if (fixed.y !== undefined && fixed.y < Z.safe[1] + 40) fail(`--caption-y ${fixed.y} is above the safe box's top (y ${Z.safe[1]}) once a line stands on it: give more than ${Z.safe[1] + 40}.`);
     if (o.raise !== undefined && !["moderate", "full"].includes(o.raise)) fail(`--raise is moderate (a shot raised only while the whole head stays in the picture; the default) or full (until the eyes reach the apps' top bar, the head cut by the frame).`);
     res = textOverTime({ zones: Z, shots, needs, fixed, raise: o.raise || "moderate", set: Object.fromEntries(o.set.map((x) => { const i = x.indexOf("="); if (i < 1) fail(`--set is key=value, as caption.padEm=0.6.`); return [x.slice(0, i), num(x.slice(i + 1))]; })) });
   } catch (e) { fail(e.message); }
@@ -462,8 +465,11 @@ function cmdText(o) {
   console.log(`${res.frame} for ${res.platforms.join(", ")}, ${plural(shots.length, "shot")}`);
   if (c) console.log(`captions: one place for the clip, ${plural(c.lines, "line")} of ${c.font} px, ${boxText(c.box)} (its middle at ${c.middle} % of the height, ${c.where}); ${c.seconds ? `on a face for ${c.seconds} s` : "on no face"}${c.lifted ? `, ${plural(c.lifted, "shot")} raised for it` : ""}`);
   for (const s of res.shots) {
-    const on = s.touches.map((t) => `on ${t.who}'s face ${t.from}–${t.to} s (${t.seconds} s, up to ${Math.round(t.share * 100)} % of it)`).join("; ");
-    console.log(`  shot ${s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : ""}` : "as it stands"}${on ? `  ${s.chin ? "on the chin" : "✗"} ${on}` : ""}`);
+    // the seconds on each part, the part named; a ✗ only where something can still be done
+    const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : ""].filter(Boolean).join(", ");
+    const on = s.touches.map((t) => `${t.who}'s face ${t.from}–${t.to} s (${t.seconds} s${parts(t) ? `, of them ${parts(t)}` : ""}, up to ${Math.round(t.share * 100)} % of it)`).join("; ");
+    const what = s.fault === "nose" ? "✗ on the nose or eyes of" : s.fault === "mouth" ? "✗ on the mouth of" : s.fault ? "✗ on" : s.hair ? "above the head, on the hair of" : s.lip ? "on the lower lip and chin of" : "on the chin of";
+    console.log(`  shot ${s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.past ? ", past the head's top to keep the mouth free" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${on ? `  ${what} ${on}` : ""}`);
   }
   if (res.hook) console.log(`hook: ${res.hook.kind === "card" ? "a card" : "a text"} at ${res.hook.font} px, ${res.hook.where}, ${boxText(res.hook.box)}, ${res.hook.start}–${res.hook.until} s (${res.hook.kindWhy || ""}${res.hook.why ? `; ${res.hook.why}` : ""})${res.hook.onFace?.seconds ? `  ✗ on a face for ${res.hook.onFace.seconds} s` : ""}`);
   for (const x of res.conflicts) console.log(`✗ ${x}`);
