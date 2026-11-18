@@ -84,8 +84,12 @@ const SWAY = 2;
 // (the channel's editors and OpusClip cut them so). Features at the edge: closer than FEAT_EDGE of
 // the window's width. Chosen on the five passages of the three-way test: with 8 % and 22 % of the
 // face a swaying close-up left the window too little play (0.65 turns a second), with a pad of
-// 3.5 % of the face the far eye and a pair of glasses came to the edge in the rendered clips
-const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.06, FEAT_EDGE = 0.015;
+// 3.5 % of the face the far eye and a pair of glasses came to the edge in the rendered clips.
+// Most of the head stays in (HEAD_IN of its box's width, a wish taken over a sway like the room):
+// the room on the looking side takes what it leaves, at most ROOM_SHARE of the window's play. With
+// none, half the frame stood empty before a face at a sway's end; with 80 % (or 65 % that the
+// window must keep at once) the window followed the sway again (0.5 to 0.8 turns a second)
+const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.06, FEAT_EDGE = 0.015, HEAD_IN = 0.75, ROOM_SHARE = 0.5;
 // an answer without the features (one of version 2): the middle CORE of the face's width (FRAME_CORE)
 const CORE = Math.min(1, Math.max(0.5, Number(process.env.FRAME_CORE) || 0.8));
 
@@ -97,14 +101,26 @@ export function holdOf(f, ww, m = HOLD) {
   const { x0, x1, lean } = f.feat;
   // never closer to the edge than FEAT_PAD of the window (best-takes' punch-in takes 5.4 % of each side)
   const pad = FEAT_PAD * ww;
-  if (!m) return [x0 - pad, x1 + pad];
+  const hard = [x0 - pad, x1 + pad];
+  if (!m) return hard;
+  // most of the head in the picture (HEAD_IN of its box's width), as far as the features allow:
+  // where both do not fit, as much of the head as fits beside them
+  const hl = f.x - f.w / 2, hr = f.x + f.w / 2, keep = Math.min(HEAD_IN * f.w, f.w);
+  let must = [Math.min(hard[0], hr - keep), Math.max(hard[1], hl + keep)];
+  if (must[1] - must[0] > ww) must = hl + hr < hard[0] + hard[1] ? [Math.min(hard[0], hard[1] - ww), hard[1]] : [hard[0], Math.max(hard[1], hard[0] + ww)];
+  // the room beside the features, more on the side the face looks to, the window's middle on that
+  // side of theirs: a wish that takes what the head leaves
   const back = Math.max(ROOM_BACK * f.w, pad + Math.min(m, SLACK) * ww), front = back + ROOM_FRONT * Math.abs(lean) * f.w;
-  // a face that looks to one side: the window's middle on that side of the features' middle, so
-  // that it has more room there than behind
   const mid = (x0 + x1) / 2;
-  if (lean <= -0.5) return [Math.min(x0 - front, mid - ww / 2), x1 + back];
-  if (lean >= 0.5) return [x0 - back, Math.max(x1 + front, mid + ww / 2)];
-  return lean < 0 ? [x0 - front, x1 + back] : [x0 - back, x1 + front];
+  const room = lean <= -0.5 ? [Math.min(x0 - front, mid - ww / 2), x1 + back] : lean >= 0.5 ? [x0 - back, Math.max(x1 + front, mid + ww / 2)]
+    : lean < 0 ? [x0 - front, x1 + back] : [x0 - back, x1 + front];
+  const all = [Math.min(must[0], room[0]), Math.max(must[1], room[1])];
+  if (all[1] - all[0] <= ww) return all;
+  // not both: the head and the features, and towards the looking side half of what the window has
+  // left (the other half is the window's play, so that it can rest over a sway)
+  const left = (ww - (must[1] - must[0])) * ROOM_SHARE;
+  if (left <= 0) return must;
+  return lean < 0 ? [Math.max(room[0], must[0] - left), must[1]] : lean > 0 ? [must[0], Math.min(room[1], must[1] + left)] : must;
 }
 // a face followed until here, then on a still without it: gone this long after it was last seen
 const ABSENT_GAP = 0.15;
