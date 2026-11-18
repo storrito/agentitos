@@ -449,7 +449,7 @@ function cmdWords(dir, file) {
   if (!list.length) fail(`${file} holds no words.`);
   const bare = lengthless(list);
   if (bare) fail(`✗ ${bare} Take the words with ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe, every word with its start and end); names it mishears go into cut.json's "fixes".`);
-  keepWords(dir, list, j.model || "rragent transcribe", j.edges === "sound");
+  keepWords(dir, list, j.model || "another tool", j.edges === "sound");
 }
 
 async function cmdTranscribe(dir) {
