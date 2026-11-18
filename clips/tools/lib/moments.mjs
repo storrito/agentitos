@@ -8,7 +8,9 @@
 //   checks(sentences, first, last, limit)   → { question, conjunction, voices, over } (arrange adds `asked`)
 //   dropSpans(sentences, first, last, drop) → [[from, to], …] in the episode's seconds
 //   keepsWithout(words, said, spans)        → the word ranges of a cut clip that stay
+//   sentenceWords(words, sentence, from)    → a sentence's own words among a cut clip's
 //   openingKeep(line)                       → the keep that opens a short with its strongest line
+//   openingNote(line, k)                    → what prepare prints for it
 //   numbers("229-234,240") / ranges([…])    → [229, …, 234, 240] and back
 //   momentsPrompt(episode, text, count, limit) → what the model is asked
 //   listing(moments.json, sentences, pieces) → the list `moments` prints
@@ -154,6 +156,33 @@ export function keepsWithout(words, said, spans = []) {
   return { keeps, inside, left };
 }
 
+// The words of one sentence of the episode among the words of a cut clip (`words`: { i, text,
+// start, end } as best-takes numbers them, `from`: where the clip starts in the episode): its
+// words and no other. The clip's words are written down anew and their times are up to a tenth of
+// a second off the episode's, so the edges are found by the words themselves: of the words whose
+// middle lies within a quarter second of the sentence, the run from the one that is the
+// sentence's first word to the one that is its last (the nearest of each where a word repeats);
+// where the clip heard an edge word differently, the words that reach into the sentence by more
+// than 30 ms.
+// A word that only shares the sentence's edges in time ("right?" before "It was called Hula.")
+// is not one of them. [] when none was heard.
+const bare = (t) => String(t).toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+export function sentenceWords(words, s, from = 0) {
+  const a = s.start - from, b = s.end - from, mid = (w) => (w.start + w.end) / 2;
+  const near = words.filter((w) => mid(w) >= a - 0.25 && mid(w) <= b + 0.25);
+  if (!near.length) return [];
+  const said = String(s.text).split(/\s+/).map(bare).filter(Boolean);
+  const pick = (want, at, edge) => {
+    const hits = near.map((w, k) => ({ w, k })).filter(({ w }) => bare(w.text) === want);
+    return hits.length ? hits.reduce((x, y) => (Math.abs(edge(y.w) - at) < Math.abs(edge(x.w) - at) ? y : x)).k : null;
+  };
+  let p = pick(said[0], a, (w) => w.start), q = pick(said.at(-1), b, (w) => w.end);
+  if (p == null) p = near.findIndex((w) => w.end > a + 0.03);
+  if (q == null) q = near.findLastIndex((w) => w.start < b - 0.03);
+  if (p < 0 || q < 0 || p > q) return near.filter((w) => mid(w) >= a && mid(w) <= b);
+  return near.slice(p, q + 1);
+}
+
 // The keep that opens a short with its strongest line spoken, from the line's words in the clip
 // ({ i, text }, as best-takes numbers them), with "again", so that best-takes also plays the line
 // where it was said. It starts on the line's first word even when that is an "and": past it, a
@@ -162,6 +191,16 @@ export function keepsWithout(words, said, spans = []) {
 export function openingKeep(line) {
   const a = line[0].i, b = line.at(-1).i;
   return { words: a === b ? `${a}` : `${a}-${b}`, why: "the strongest line first", again: true };
+}
+
+// What prepare prints for the strongest line (sentence `k`, its words in the clip `line`, from
+// sentenceWords): the keep to put first, or why there is none
+export function openingNote(line, k) {
+  if (!line.length) return `No word of the strongest line (sentence ${k}) was heard in the clip: look for it in the brief.`;
+  const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
+  const fused = CONJUNCTIONS.has(firstWord(line[0].text)) && line.length > 1
+    ? ` It begins on "${line[0].text}": start a word later only where the brief shows the next word heard on its own (an "and I" is often one sound).` : "";
+  return `The strongest line (sentence ${k}) is words ${line[0].i}–${line.at(-1).i}: ${edge(line.slice(0, 3))} … ${edge(line.slice(-2))}. To open the short with it spoken, put ${JSON.stringify(openingKeep(line))} at the top of cut.json's "keep" (best-takes plays the keeps in their order; "again" lets it play the line where it was said too: take it out of the moment's keep there only where hearing it twice drags).${fused} With a spoken opening the hook card is not needed: build with --hook "".`;
 }
 
 // How well a moment's first sentence works on someone who has seen nothing of the episode, as the

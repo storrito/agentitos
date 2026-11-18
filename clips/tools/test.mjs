@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, openingKeep, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -298,4 +298,39 @@ test("the strongest line as the opening keep: the whole line, played again where
   // best-takes refuses a word in two keeps unless the keep that repeats it says "again"
   assert.deepEqual(openingKeep(line), { words: "149-159", why: "the strongest line first", again: true });
   assert.equal(openingKeep([{ i: 4, text: "No." }]).words, "4");
+});
+
+// Real words: Hot Ones with Willem Dafoe (YqugY2zTIoI), the episode's sentences and the words
+// best-takes wrote down anew in two cut clips (e2e run, 2026-11-18), timed in each clip.
+const HULA = { from: 180.35, sentences: {
+  66: { start: 233, end: 235.1, speaker: "A", text: "And that was a very popular show." },
+  67: { start: 236.1, end: 237.7, speaker: "C", text: "Which was called hula, right?" },
+  68: { start: 237.7, end: 238.4, speaker: "A", text: "It was called hula." } },
+  words: [[158, "a", 53.62, 53.68], [159, "very", 53.68, 53.89], [160, "popular", 53.98, 54.37], [161, "show.", 54.4, 54.68],
+    [163, "Which", 55.78, 55.98], [164, "was", 55.98, 56.16], [165, "called", 56.18, 56.61], [166, "Hula,", 56.74, 57.06], [167, "right?", 57.06, 57.28],
+    [168, "It", 57.28, 57.39], [169, "was", 57.4, 57.52], [170, "called", 57.54, 57.78], [171, "Hula.", 57.78, 58.08], [172, "In", 58.08, 58.24],
+    [173, "fact,", 58.29, 58.54], [174, "once,", 58.72, 59.2]].map(([i, text, start, end]) => ({ i, text, start, end })) };
+const TEETH = { from: 295.65, sentences: {
+  99: { start: 341.2, end: 343.5, speaker: "A", text: "And then he told me to put in these teeth." },
+  100: { start: 344.3, end: 347.2, speaker: "A", text: "And I put them in, and I couldn't close my mouth." },
+  101: { start: 347.8, end: 349.9, speaker: "A", text: "And so I'm always like this." } },
+  words: [[145, "put", 46.6, 46.8], [146, "in", 46.8, 47.02], [147, "these", 47.02, 47.28], [148, "teeth,", 47.3, 47.75], [149, "and", 48.6, 48.86],
+    [150, "I", 48.86, 48.9], [151, "put", 48.94, 49.12], [152, "them", 49.12, 49.42], [153, "in,", 49.42, 49.65], [154, "and", 50.07, 50.3],
+    [155, "I", 50.3, 50.35], [156, "couldn't", 50.37, 50.56], [157, "close", 50.58, 50.88], [158, "my", 50.89, 51.08], [159, "mouth.", 51.08, 51.54],
+    [160, "And", 52.09, 52.43], [161, "so", 52.69, 52.99], [162, "I'm", 52.99, 53.2]].map(([i, text, start, end]) => ({ i, text, start, end })) };
+const printed = (c, k) => openingNote(sentenceWords(c.words, c.sentences[k], c.from), k);
+
+test("the opening keep is the strongest line's own words, no neighbour's, as prepare prints it on real words", () => {
+  // the ±0.25 s of a moment's edges gave "right? It was called Hula. In" here
+  assert.match(printed(HULA, 68), /put \{"words":"168-171","why":"the strongest line first","again":true\} at the top/);
+  assert.match(printed(HULA, 67), /"words":"163-167"/);
+  assert.match(printed(HULA, 66), /"words":"158-161"/);
+  assert.match(printed(TEETH, 100), /"words":"149-159"/);
+  // an "and" it begins with is the agent's to judge: the "I" after it is one sound with it here
+  assert.match(printed(TEETH, 100), /It begins on "and": start a word later only where/);
+  assert.doesNotMatch(printed(HULA, 68), /It begins on/);
+  // a clip that heard an edge word differently: the words whose middle lies inside the sentence
+  const misheard = HULA.words.map((w) => (w.i === 168 ? { ...w, text: "Id" } : w));
+  assert.deepEqual(sentenceWords(misheard, HULA.sentences[68], HULA.from).map((w) => w.i), [168, 169, 170, 171]);
+  assert.match(openingNote([], 68), /No word of the strongest line \(sentence 68\)/);
 });
