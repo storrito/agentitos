@@ -5,8 +5,8 @@ license: MIT
 metadata:
   title: "Kinetic shorts"
   title-de: "Kinetic Shorts"
-  summary: "Shorts from a YouTube episode: the best moments found, every spoken word big on screen, rendered and scheduled on your accounts."
-  summary-de: "Shorts aus einer YouTube-Folge: die besten Stellen gefunden, jedes gesprochene Wort groß im Bild, gerendert und auf deinen Konten eingeplant."
+  summary: "Shorts from a YouTube episode: the moments that stand alone found, every spoken word big on screen, rendered and scheduled on your accounts."
+  summary-de: "Shorts aus einer YouTube-Folge: die Stellen, die für sich stehen, gefunden, jedes gesprochene Wort groß im Bild, gerendert und auf deinen Konten eingeplant."
   ask: "Paste the link of a YouTube video with people talking (a podcast, an interview, a talk). I find the moments that work as shorts, we set them up together here, and I schedule them on your accounts."
   ask-de: "Füge den Link eines YouTube-Videos ein, in dem Menschen sprechen (Podcast, Interview, Vortrag). Ich finde die Stellen, die als Short funktionieren, wir richten sie hier gemeinsam ein, und ich plane sie auf deinen Konten ein."
   placeholder: "Paste a YouTube link"
@@ -48,11 +48,11 @@ writes `work/episode/episode.json` (title, channel, length, the voices), `words.
 
 ### 2. The moments, and how many
 
-Do not read `sentences.txt` yourself (some 30,000 tokens an hour, kept in every later turn). `node <skill>/tools/episode.mjs moments work/episode` has a model read it once (a minute or two, about ten cents an hour) and lists the candidates best first: sentence range, time, length, kind, title, first line, why it works, a score out of 10 (two points each for a cold open, one idea, a clean end, leaning on nothing said before, the length; under 7 it says `weak`), plus what the episode holds and the ideas too spread out to clip. `work/episode/moments.json` holds them with their YouTube links. A moment's screen hook, when it has one, is a good start for `--hook`. For a candidate's words: `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt`. Without OpenRouter read `sentences.txt` yourself.
+Do not read `sentences.txt` yourself (some 30,000 tokens an hour, kept in every later turn). `node <skill>/tools/episode.mjs moments work/episode` has a model read it once (a minute or two, 5 to 9 cents an hour) and lists the candidates in the order of the episode (nothing ranks them): sentence range, time, length, how well the first sentence works alone (`opens`, 1–10, a weak hint), kind, title, first line, why it works, the strongest line, and what the tool counted where it needs a look (opens with a question, answers a question just before it, on a conjunction in the middle of a turn, how many voices, seconds over 59), plus what the episode holds and the ideas too spread out to clip. A moment is a whole passage: one longer than 59 s comes whole with the sentences an editor would cut marked; a kinetic short is one stretch, so take a part of it of at most 59 s that opens and ends clean, or another moment. `work/episode/moments.json` holds them with their YouTube links. A moment's screen hook, when it has one, is a good start for `--hook`. For a candidate's words: `sed -n '<first+1>,<last+1>p' work/episode/sentences.txt`. Without OpenRouter read `sentences.txt` yourself.
 
 A moment is **at most 59 seconds** (fits every post type Storrito offers, the 60-second stories too), best 25–50, and: understandable alone (no "as I said", no unexplained "he"); opens with a hook in its first sentence, not "and", "so", "yeah" or small talk; builds to a payoff and ends right after it; concrete rather than abstract (a host's question plus the answer is fine); one voice at a time: a stretch of one- and two-word sentences flipping between voices is crosstalk the type can follow only by leaving one out. Prefer a moment without it (the list marks one "crosstalk"), or say on its card that a few seconds are crosstalk.
 
-Keep roughly one strong moment per 8–10 minutes of episode, at most 10; drop one that its title or first line show to be weak. Show them as cards and say in a sentence how they compare ("the first four are the strongest, the rest are good fillers"). Each card: title, time and length, the first line as a quote, why, and a link to the moment (`https://youtu.be/<id>?t=<seconds>`). Ask how many, with buttons for the numbers that make sense (the strong ones, all, fewer), none marked as recommended, and say they can also name the ones they want.
+Keep roughly one strong moment per 8–10 minutes of episode, at most 10; drop one that its title or first line show to be weak. Show them as cards and say in a sentence what sets them apart; never call one the strongest for its place in the list. Each card: title, time and length, the first line as a quote, why, and a link to the moment (`https://youtu.be/<id>?t=<seconds>`). Ask how many, with buttons for the numbers that make sense (the strong ones, all, fewer), none marked as recommended, and say they can also name the ones they want.
 
 ### 3. Where the shorts go
 
@@ -115,7 +115,7 @@ After "They are good", say in one sentence that you are rendering N shorts now, 
 
 Follow publish-video's SKILL.md for each short, `<name>` = `short-<k>` (a variant `short-<k>-<v>`): `check work/out/<k>.mp4 publish/short-<k> --mode short --platforms <the chosen platforms>`, its `accounts`, the texts with video-descriptions (in the episode's language, the hook first), then `publish`. publish-video holds every limit (length, caption, a YouTube Short's title, privacy and "made for kids", TikTok's audience) and posts nothing twice.
 
-Ask what the shorts share **once for all of them**: the accounts (`accounts publish/short-01 --hiccup`, with pictures and last time's choices ticked; say in a line when an account does not take every short; an adapted short goes only to its platform or account), the style of the texts, TikTok's audience, a YouTube Short's visibility, and the times. Default times: one short a day at 18:00 in the person's time zone, strongest first, the same short on all its accounts at the same time; also offer "One every two days" and "All today". Show the texts of all shorts (video-descriptions' overview, "Show the texts of short 1 ↗" …) before their yes; a ✗ of `check` on one short is said for that short and the others go on.
+Ask what the shorts share **once for all of them**: the accounts (`accounts publish/short-01 --hiccup`, with pictures and last time's choices ticked; say in a line when an account does not take every short; an adapted short goes only to its platform or account), the style of the texts, TikTok's audience, a YouTube Short's visibility, and the times. Default times: one short a day at 18:00 in the person's time zone, in the order the person chose them, the same short on all its accounts at the same time; also offer "One every two days" and "All today". Show the texts of all shorts (video-descriptions' overview, "Show the texts of short 1 ↗" …) before their yes; a ✗ of `check` on one short is said for that short and the others go on.
 
 At the end one table in the chat: short, account, time and status (`status publish/short-<k>`).
 
@@ -148,10 +148,11 @@ The moments:
    [:p [:em "„Du hast morgens einen Kuchen gebacken …“"]]
    [:small "A riddle with a surprising answer, the punchline at the end."] " "
    [:a {:href "https://youtu.be/STqnETZ9kRc?t=4004"} "▶ watch on YouTube"]]]
- [:p "The first four are the strongest. How many should it be?"]
+ [:p "How many should it be?"]
  [:button {:send "Take 4 shorts"} "4"] " "
  [:button {:send "Take all 6 shorts"} "All 6"] " "
- [:button {:send "Take only the best 2"} "2"]]
+ [:button {:send "Take 2 shorts"} "2"]
+ [:p [:small "Or name the ones you want."]]]
 ```
 
 The platforms, from publish-video's `accounts`:

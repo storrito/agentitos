@@ -138,6 +138,8 @@ ${rules(several, settings)}
 - \`words\`: a range of the numbers below, first and last included (or one number). One video per
   range: a range never runs into the next video.
 - \`why\` is for you and the person; say it for every keep that leaves a retry behind.
+- \`again\` (optional): \`true\` on a keep that plays words another keep plays too (a strong line
+  put first as a hook, heard again where it was said); without it each word plays once.
 - \`fixes\` (optional): the spelling the subtitles should show, by number; "" drops a word from
   the text. It changes the subtitles, not the cut.
 - \`waits\` (optional): the numbers of the last words of sentences that announce a wait; the
