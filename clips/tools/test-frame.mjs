@@ -143,8 +143,8 @@ test("a person low in a wide shot is brought up: eyes in the upper part, not an 
 });
 
 test("a wide shot called split or B-roll, in which someone of the talk speaks with a small face, is cut to who speaks", () => {
-  const ans = { version: 2, shots: [shotAnswer(0, 5, "split", [{ who: "host", speaker: "C" }, { who: "guest", speaker: null }],
-    [{ t: 2.5, faces: [{ person: 0, box_2d: [360, 140, 440, 185] }, { person: 1, box_2d: [360, 830, 430, 866] }] }])] };
+  const ans = { version: 2, shots: [{ ...shotAnswer(0, 5, "split", [{ who: "host", speaker: "C" }, { who: "guest", speaker: null }],
+    [{ t: 2.5, faces: [{ person: 0, box_2d: [360, 140, 440, 185] }, { person: 1, box_2d: [360, 830, 430, 866] }] }]), material: false }] };
   const shots = shotsOf(ans, [{ start: 0, end: 5 }], META);
   assert.equal(shots[0].kind, "people");
   assert.match(shots[0].note, /cut to who speaks/);
@@ -392,4 +392,17 @@ test("the tracker does not trust a still that is far off its neighbours, keeps t
     const windows = windowsOf(shots, [{ t: 0, speaker: "A" }], { width: 1280, height: 720, fps: FPS, aspect: [9, 16] });
     assert.deepEqual(edgesOf(windows, shots, { fps: FPS }).filter((e) => e.t > 3.2 && e.t < 5.8), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a slide talk (the speaker a small inset beside the slides) stays whole; unsure, it stays whole and the list says how to cut it", () => {
+  // the reviewer's b6: one voice, its face 5 % of the height at the left, the slides filling the frame
+  const slide = (material) => ({ version: 2, shots: [{ ...shotAnswer(0, 40, "split", [{ who: "speaker", speaker: "A" }],
+    [5, 20, 35].map((t) => ({ t, faces: [{ person: 0, box_2d: [544, 93, 597, 126] }] }))), material }] });
+  for (const material of [true, undefined]) {
+    const [shot] = shotsOf(slide(material), [{ start: 0, end: 40 }], META);
+    assert.equal(shot.kind, "split");
+    assert.match(shot.note, material ? /material .* shown whole/ : /shown whole.*--follow/);
+    const [w] = windowsOf([shot], [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+    assert.ok(w.fit, "shown whole");
+  }
 });

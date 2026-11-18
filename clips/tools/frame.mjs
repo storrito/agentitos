@@ -27,10 +27,12 @@
 // cut closer.
 // What a window would cut apart is shown whole instead, above the captions over a blurred copy of
 // itself: B-roll (a photo, archive footage, a place, a document, a screen) and a picture split
-// into feeds side by side. Gemini says which a shot is and what in it must be seen. A wide shot of
-// the room in which someone of the conversation speaks is never shown whole, even when Gemini
-// calls it B-roll or split: whole, a face there is 2 to 5 % of the short's height, and the
-// channels' editors cut to who speaks there; `--whole` shows it whole all the same.
+// into feeds side by side. Gemini says which a shot is, whether it shows the people or material
+// (slides, a screen, a product), and what in it must be seen. A wide shot of the room in which
+// someone of the conversation speaks is cut to them even when Gemini calls it B-roll or split
+// (whole, a face there is 2 to 5 % of the short's height, and the channels' editors cut to who
+// speaks there), but only when Gemini says it shows the people: material with the speaker small
+// beside it stays whole, and so does a shot Gemini says nothing about, with a note in the list.
 // Two who speak, too far apart for one window, go one above the other: a split screen of two
 // voices always, a shot of both while they talk back and forth (three turns or more of under five
 // seconds each); the window then stops swinging from one to the other.
@@ -135,10 +137,11 @@ const SCHEMA = {
   type: "object", additionalProperties: false, required: ["shots", "missed_cuts"],
   properties: {
     shots: { type: "array", items: {
-      type: "object", additionalProperties: false, required: ["shot", "kind", "subject", "people", "stills"],
+      type: "object", additionalProperties: false, required: ["shot", "kind", "material", "subject", "people", "stills"],
       properties: {
         shot: { type: "integer" },
         kind: { type: "string", enum: KINDS },
+        material: { type: "boolean" },
         subject: BOX,
         people: { type: "array", items: {
           type: "object", additionalProperties: false, required: ["who", "speaker"],
@@ -222,6 +225,7 @@ Then, for each shot above, in this order (its number in "shot"):
 - its kind: "people" when the camera shows people of the conversation itself (in the room or on a call, one or several in one picture, a wide shot of the room too);
   "split" when the picture is divided into separate feeds or pictures side by side (a split-screen call, two photos next to each other);
   "broll" for everything else: a photo, archive or news footage, a film clip, a place, an object, a document, a screen;
+- material: true when the picture is mainly something shown or talked about (slides, a screen, a document, a product, a photo, footage), with any person of the conversation small beside or inside it (a speaker inset beside slides); false when it is mainly the people;
 - its subject: the box of what must stay visible for the shot to make sense (the photo with everyone in it, both feeds, the scene; for "people" the people);
 - its people: everyone visible in it, people in photos and footage included: who they are (a name or a short description, the same words for the same person in every shot) and the voice label they speak with (null if they do not speak in the clip);
 - its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0) and the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture).
@@ -262,7 +266,7 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
           }
           return [];
         };
-        return { start: s.start, end: s.end, kind: entry.kind, subject: entry.subject, people,
+        return { start: s.start, end: s.end, kind: entry.kind, material: entry.material, subject: entry.subject, people,
           stills: stills.filter((x) => x.shot === k).map((x) => ({ t: x.t, faces: faces(x) })) };
       }),
       missed: (ans.missed_cuts || []).filter(Number.isFinite),
@@ -351,12 +355,17 @@ export function shotsOf(answer, shots, meta) {
     const mid = (s.start + s.end) / 2;
     const faces = people.map((p) => ({ speaker: p.speaker, who: p.who, ...seenFace(p, mid) }));
     // a wide shot of the room called B-roll or split: someone of the conversation speaks in it,
-    // and shown whole their face would be too small to see
+    // and shown whole their face would be too small to see. Only when the model says the picture
+    // is the people, not material (slides, a screen, a product) with a speaker small beside it;
+    // when it does not say, it stays whole and the list says how to cut it to the speaker
     let note;
-    if (kind !== "people" && people.some((p) => p.speaker != null) && Math.max(...faces.map((f) => f.h)) < meta.height * SMALL_FACE) {
-      note = `called ${kind}, but someone of the conversation speaks in it and shown whole the faces would be ${Math.round((Math.max(...faces.map((f) => f.h)) / meta.height) * 32)} % of the frame's height: cut to who speaks`;
+    const small = kind !== "people" && people.some((p) => p.speaker != null) && faces.length && Math.max(...faces.map((f) => f.h)) < meta.height * SMALL_FACE;
+    const pct = small && Math.round((Math.max(...faces.map((f) => f.h)) / meta.height) * 32);
+    if (small && best.material === false) {
+      note = `called ${kind}, but it shows the people and shown whole their faces would be ${pct} % of the frame's height: cut to who speaks (--whole shows it whole)`;
       kind = "people";
-    }
+    } else if (small && best.material === true) note = `material with the speaker small in it (${pct} % of the frame's height): shown whole (--follow cuts to the speaker)`;
+    else if (small) note = `shown whole, the speaker ${pct} % of the frame's height: a wide shot of the room is better cut to them (--follow), slides or a screen stay whole`;
     return { start: s.start, end: s.end, first: s.first, last: s.last, kind, subject, people, faces, ...(note ? { note } : {}) };
   });
 }
