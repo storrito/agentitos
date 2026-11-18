@@ -1411,6 +1411,13 @@ t("captions that stay in 16:9 (beside.captions=stay) keep the column's face abov
   return `${n} columns`;
 });
 
+t("filling the column counts as the face's base size does: with b-roll's settings (faceUpTo 2, the soft limit 1.25×) a 720p speaker fills the 16:9 column at 1.5×, reported as soft, where it stood at 1.25× with 90 px of ground above and below (an independent review); without them it fills it at 1.5× as before", () => {
+  const BR = { "beside.faceUpTo": 2, "beside.wish": 0.22, "weights.enlarge.softFrom": 1.25 };
+  const c = beside(Z169, { set: BR }).candidates.find((k) => k.arrangement === "column"), d = beside(Z169).candidates.find((k) => k.arrangement === "column");
+  ok(c.speaker.scale === 1.5 && c.speaker.ground === 0 && c.problems.some((q) => q.code === "enlarged" && q.level === "soft") && !c.hard, JSON.stringify([c.speaker.scale, c.speaker.window, c.problems]));
+  ok(d.speaker.scale === 1.5 && d.speaker.ground === 0, JSON.stringify(d.speaker.window));
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {

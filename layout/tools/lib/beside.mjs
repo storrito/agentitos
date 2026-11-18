@@ -217,7 +217,9 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // covering does not fit, the face at that size with ground beside the picture.
     const sCover = W / sw, a = aim(D.screenFace.height), sRoom = sAt(seamMat);
     const keep = asked === null && wish === null && prev.scale >= sCover - 1e-9 && prev.scale <= Math.min(soft, sRoom) + 1e-9 && prev.scale * usual[3] >= B.faceMin * H - EPS;
-    let s = keep ? prev.scale : sCover <= Math.min(a.up, sRoom) + 1e-9 ? Math.max(a.s, sCover) : a.s;
+    // (covering the panel's width counts as the face's base size does: it may take the footage
+    // up to baseUp, reported as soft past the soft limit)
+    let s = keep ? prev.scale : sCover <= Math.min(baseUp, sRoom) + 1e-9 ? Math.max(a.s, sCover) : a.s;
     // (what held the face under its target: the room the material leaves, or the sharpness)
     const by = s > sRoom + 1e-9 ? "room" : keep ? null : a.says;
     s = Math.min(s, sRoom);
@@ -302,9 +304,9 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // fit the column
     const sMost = Math.min(band[2] / hull[2], band[3] / hull[3]) * (1 - 1e-6), a = aim(WT.subject.from / 100);
     const keep = asked === null && wish === null && prev.scale >= sCover - 1e-9 && prev.scale <= soft + 1e-9 && fits(prev.scale);
-    // (covering the column never takes the footage past the limit its target may take: ground
-    // beside it then)
-    let s = keep ? prev.scale : Math.min(a.up, Math.max(sCover, a.s));
+    // (filling the column counts as the face's base size does: up to baseUp, reported as soft
+    // past the soft limit; past baseUp ground beside it)
+    let s = keep ? prev.scale : Math.max(a.s, Math.min(sCover, baseUp));
     const by = s > sMost + 1e-9 ? "room" : keep ? null : a.says;
     while (s > 1e-4 && !fits(s)) s *= 0.99;
     // across, the face in the column's middle; down, at the height it had full-frame
