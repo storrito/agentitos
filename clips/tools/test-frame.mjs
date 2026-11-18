@@ -256,3 +256,22 @@ test("footage of a variable frame rate: the cut sits at the frames' own time, no
     near(shots[1].end, 7.0, 0.05);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("someone standing up, or a hand waved in front of the lens, is no sure cut: a cut changes the whole picture and keeps it changed", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // a white body rising into a third of the picture over half a second (the reviewer's cook standing up, change 36)
+    const stand = path.join(dir, "stand.mp4");
+    let r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=320x180:r=${FPS}:d=4`, "-f", "lavfi", "-i", `color=c=white:s=150x160:r=${FPS}:d=4`,
+      "-filter_complex", "[0:v][1:v]overlay=x=150:y='if(lt(t,2),180,if(lt(t,2.48),180-(t-2)/0.48*170,10))',format=yuv420p[v]", "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", stand], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(findCuts(smallFrames(stand), FPS).filter((c) => c.sure), []);
+    // a hand that covers most of the picture over a few frames and is gone half a second later
+    const hand = path.join(dir, "hand.mp4");
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=320x180:r=${FPS}:d=4`, "-f", "lavfi", "-i", `color=c=0xd0a080:s=300x170:r=${FPS}:d=4`,
+      "-filter_complex", "[0:v][1:v]overlay=x='if(lt(t,1.5),330,if(lt(t,1.7),330-(t-1.5)/0.2*320,if(lt(t,2.1),10,if(lt(t,2.3),10+(t-2.1)/0.2*320,330))))':y=5,format=yuv420p[v]",
+      "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", hand], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(findCuts(smallFrames(hand), FPS).filter((c) => c.sure), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

@@ -7,9 +7,10 @@
 // over as many frames within the shots on either side, each stretch measured against its own
 // neighbourhood, not one threshold for the whole clip. The smallest stretch that holds the change
 // is it (one frame for a hard cut). A stretch whose two ends are the same picture moved a little
-// is the camera panning. A change that is small (a gesture, a turn of the head changes as many
-// frames as fast, but less) is only "possible": a cut only where a model watching the clip names
-// one within a second of it. The cut is placed on the first frame of the stretch that looks more
+// is the camera panning; one that changes only part of the picture (someone standing up), or
+// whose picture comes back within a second (a hand waved in front of the lens), is a movement.
+// Those, and a change that is small, are only "possible": a cut only where a model watching the
+// clip names one within a second of it. The cut is placed on the first frame of the stretch that looks more
 // like the shot after it than like the shot before.
 
 import { spawnSync } from "node:child_process";
@@ -22,6 +23,11 @@ const SPANS = [1, 2, 3, 4, 6, 8, 12, 16, 24];
 // over more frames a change is sure from SURE, possible from POSSIBLE; and always OVER_MOTION
 // times more than as many frames change within the shots on either side
 const HARD = 12, SURE = 35, POSSIBLE = 9, OVER_MOTION = 2.2;
+// a change over several frames is sure only when its least changed third changed at least this
+// share of the whole change (true wipes and dissolves: 0.5 and more; a person standing up: 0.05)
+const SPREAD = 0.3;
+// a picture is the same again when it differs by less than this share of the change
+const BACK = 0.35;
 
 // every frame of the video as a small grey picture, in the order shown, none doubled or left out;
 // `frames.times` holds each frame's own time (seconds from the file's start, as ffmpeg's filters
@@ -75,10 +81,34 @@ export function findCuts(frames, fps) {
       let at = s;
       while (at < i && diff(frames[at], after) >= diff(frames[at], before)) at++;
       const moved = k > 1 && shifted(before, after) < 0.5 * D[i];
-      found.push({ frame: at, from: s, to: i, change: +D[i].toFixed(1), sure: !moved && D[i] >= (k === 1 ? HARD : SURE) });
+      // over several frames a cut changes the whole picture: a hand, a person standing up changes
+      // a part of it (the least changed third of the picture's cells barely changes)
+      const part = k > 1 && spread(before, after) < SPREAD * D[i];
+      // and keeps it changed: a hand waved in front of the lens is gone again within a second
+      const back = k > 1 && returns(frames, s - 1, i, fps, D[i]);
+      found.push({ frame: at, from: s, to: i, change: +D[i].toFixed(1), sure: !moved && !part && !back && D[i] >= (k === 1 ? HARD : SURE) });
     }
   }
   return found.sort((a, b) => a.frame - b.frame);
+}
+
+// does the picture before frame `from` come back within a second after frame `to`?
+function returns(frames, from, to, fps, change) {
+  for (let k = to + 1; k < Math.min(frames.length, to + 1 + fps); k++) if (diff(frames[from], frames[k]) < BACK * change) return true;
+  return false;
+}
+
+// how much the least changed third of the picture changed: the 30th percentile of the mean
+// difference of 8×6 cells
+export function spread(a, b) {
+  const cw = SMALL_W / 8, ch = SMALL_H / 6, cells = [];
+  for (let cy = 0; cy < 6; cy++) for (let cx = 0; cx < 8; cx++) {
+    let sum = 0, n = 0;
+    for (let y = cy * ch; y < (cy + 1) * ch; y++) for (let x = cx * cw; x < (cx + 1) * cw; x++) { sum += Math.abs(a[y * SMALL_W + x] - b[y * SMALL_W + x]); n++; }
+    cells.push(sum / n);
+  }
+  cells.sort((p, q) => p - q);
+  return cells[Math.floor(0.3 * (cells.length - 1))];
 }
 
 // the least difference between two small frames when one is moved by up to SHIFT pixels: small
