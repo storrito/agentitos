@@ -1187,13 +1187,13 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(!r.conflicts.length && r.notes.some((n) => /Shot 1 .*lie on A's chin or neck for 4 s, below the mouth: not avoidable without the eyes going under/.test(n)), JSON.stringify([r.conflicts, r.notes]));
     return r.notes[0].slice(0, 90) + " …";
   });
-  t("moderate, the default: a close-up is raised only while the whole head stays in the picture (its box and the margin above it for the hair under the frame's top); a smaller type comes first, never below the low end of published captions (caption.font.least); where even that would cover the mouth, the shot goes up past the head's top (as far as the eyes allow) until the captions lie on the lower lip at most, said as not avoidable, never a fault", () => {
+  t("moderate, the default: a close-up is raised only while the whole head stays in the picture (its box and the margin above it for the hair under the frame's top); a smaller type comes first, never below the low end of published captions (caption.font.least); where even that would cover the mouth or the lower lip, the shot goes up past the head's top (as far as the eyes allow, where that costs less than it saves) until the captions clear the mouth, said, never a fault", () => {
     // the face from y 330, 1500 px tall: the head's top 0.35 of it above the frame's top; its lips (the head's proportions: the lip line at 80 % of the box) at 1533–1573, below the safe box: no type clears them unraised
     const f = [140, 330, 800, 1500], moving = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [f[0], f[1] + (i % 10 < 5 ? 0 : 40), f[2], f[3]] })) };
     const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap });
     ok(r.shots[0].lift > 0 && r.shots[0].limit === "mouth" && r.shots[0].past && r.shots[0].on.mouth === 0 && r.shots[0].on.nose === 0, JSON.stringify(r.shots[0]));
     ok(r.caption.font >= DEFAULTS.caption.font.least, `type ${r.caption.font} under the floor ${DEFAULTS.caption.font.least}`);
-    ok(!r.conflicts.length && r.notes.some((n) => /lower lip for [\d.]+ s and on the chin for [\d.]+ s, not on the mouth; raised \d+ px past the head's top .*Nothing to fix/.test(n)), JSON.stringify([r.conflicts, r.notes]));
+    ok(!r.conflicts.length && r.notes.some((n) => /(lower lip for [\d.]+ s and on the chin for [\d.]+ s, not on the mouth; raised \d+ px past the head's top .*Nothing to fix|chin or neck for [\d.]+ s, below the mouth; raised \d+ px past the head's top so that they keep off the mouth)/.test(n)), JSON.stringify([r.conflicts, r.notes]));
     // a size given by hand goes below the floor
     const hand = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap, fixed: { font: 50 } });
     ok(hand.caption.font === 50, `--font-size 50 gave ${hand.caption.font}`);
@@ -1215,7 +1215,8 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(high.caption.font === DEFAULTS.caption.font.tall && !high.conflicts.length, JSON.stringify([high.caption, high.conflicts]));
     // the features ending at 1400 (the mouth low, 71 %): no readable type clears it on the safe box's bottom: the lower lip, said
     const low = textOverTime({ zones: Z9, shots: [shot(0, 4, [track([300, 760, 480, 640])])], needs: cap });
-    ok(low.notes.some((n) => /lower lip .* not avoidable at a readable size/.test(n)) || low.caption.box[1] + low.caption.box[3] <= 330, JSON.stringify([low.caption, low.notes, low.conflicts]));
+    ok(low.notes.some((n) => /lower lip .* not avoidable at a readable size|past the head's top so that they keep off the mouth/.test(n)) || low.caption.box[1] + low.caption.box[3] <= 330, JSON.stringify([low.caption, low.notes, low.conflicts]));
+    ok(!low.conflicts.length && low.shots[0].on.mouth === 0 && low.shots[0].on.nose === 0, JSON.stringify(low.shots[0]));
   });
   t("a tight close-up whose eyes stand at the apps' top bar already: no raise can free its mouth, and captions over the whole mouth are a fault (✗) with what would avoid it, never 'the lower lip, nothing to fix' (the review's case: the whole caption area between the nose line and the lower lip)", () => {
     // the features from 260 to 1500: the nose line at 1128, the lip line at 1351, the eyes at 260, 10 px below the safe box's top; the smallest readable area reaches from 1334

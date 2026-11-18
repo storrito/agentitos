@@ -133,17 +133,16 @@ function maxLift(shot, moments, ctx) {
 // One shot under one caption box: the least lift that clears it (within `most`), the seconds and
 // the share of a face the box still lies on, and of those the seconds on each part: the nose or the
 // eyes, the mouth (both lips), the lower lip. Where that lift leaves the captions on a mouth or a
-// nose, the shot goes higher, to `beyond` at most, until every lip line clears them: the lower lip
-// at most, as a tight close-up's editors leave it, never the mouth (`past`: the head's top cut by
-// the frame for it).
-function shotUnder(cap, moments, most, D, exact = false, beyond = most) {
+// nose or the lower lip, the shot goes higher, to `beyond` at most, until every mouth line clears
+// them, where that costs less than it saves (`past`: the head's top cut by the frame for it).
+function shotUnder(cap, moments, most, D, exact = false, beyond = most, price = null) {
   let need = 0, needMouth = 0, below = false;
   for (const m of moments) for (const f of m.faces) {
     const k = keepOut(f.box, D);
     // a face whose middle stands above the captions' middle is cleared by raising it; one below
     // (captions above a head) is not
     const higher = f.box[1] + f.box[3] / 2 < cap[1] + cap[3] / 2;
-    if (higher && overlapsX(f.box, cap)) needMouth = Math.max(needMouth, lipOf(f) - cap[1]);
+    if (higher && overlapsX(f.box, cap)) needMouth = Math.max(needMouth, mouthOf(f) - cap[1]);
     if (!overlapsX(k, cap) || inter(k, cap) <= 0) continue;
     if (higher) need = Math.max(need, Y1(k) - cap[1]);
     else below = true;
@@ -175,9 +174,11 @@ function shotUnder(cap, moments, most, D, exact = false, beyond = most) {
   };
   let lift = exact ? most : Math.min(most, Math.ceil(need)), past = false;
   let r = measure(lift);
-  if (!exact && (r.mouth > 0 || r.nose > 0) && beyond > lift) {
+  // past the head's top, as far as the mouth line clears or the eyes allow, where that costs less
+  // than what it saves on the mouth and the lower lip (price: the caller's points of a result)
+  if (!exact && price && (r.mouth > 0 || r.nose > 0 || r.lip > 0) && beyond > lift) {
     const higher = Math.min(beyond, Math.max(lift, Math.ceil(needMouth)));
-    if (higher > lift) { const q = measure(higher); if (q.mouth + q.nose < r.mouth + r.nose) { r = q; lift = higher; past = true; } }
+    if (higher > lift) { const q = measure(higher); if (price(q, higher, true) < price(r, lift, false)) { r = q; lift = higher; past = true; } }
   }
   return { ...r, lift: Math.max(0, lift), need: Math.ceil(need), needMouth: Math.ceil(needMouth), past, below };
 }
@@ -250,7 +251,10 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         const box = [W / 2 - w / 2, yb - h, w, h];
         let cost = 0, touch = 0, cover = 0, liftCost = 0, mouth = 0, nose = 0, lip = 0;
         // a lift the caller fixed stands as given
-        const raw = list.map((s) => shotUnder(box, s.moments, s.most, D, s.forced, s.beyond));
+        // what a shot's result costs, for the raise past its head's top
+        const price = (s) => (q, l, past) => q.nose * costs.nose + q.mouth * costs.mouth + q.lip * costs.lip + (q.seconds - q.nose - q.mouth - q.lip) * costs.touch
+          + (s.end - s.start) * ((l * costs.liftGround) / (0.1 * H) + (past ? costs.past : 0));
+        const raw = list.map((s) => shotUnder(box, s.moments, s.most, D, s.forced, s.beyond, price(s)));
         // the returns of one framing at the height of the one that needs most (as far as each may go)
         for (const g of returns) {
           const want = Math.max(...g.map((i) => raw[i].lift));
