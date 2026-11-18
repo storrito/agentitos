@@ -71,7 +71,7 @@ Boxes are `x,y,w,h` in px of the source: the top left corner, then width and hei
 - `alike`: candidates that showed the same frame to the eye and are listed once, as this one (their fit, scale and how many px they lay from it).
 - `notes` say what no candidate can; a candidate's own `notes` say that its caption area is narrower than a long word.
 
-`page` writes `candidate-N.html` and `candidate-N.png` for the first three candidates (or `--candidate 2`, `1,4`, `all`) and, with `--still`, `still.jpg`: one frame of the recording, without any of the file's tags. The picture is taken in a window taller than the frame and cut back to it, so that it is the frame with any Chrome (one that counts its own bars into the window left the lowest rows black). What `page` wrote is listed in `placement.json` (`written`): the next `page` or `place` into the folder removes exactly those files, never another one, and never a file that is passed in (a still that already lies in the folder is used as it is; a file of the caller's under the name of a frame page would write is refused, not written over). `grid` writes the one picture it is given a name for, and refuses to write over the file it reads. Nothing is written into the skill.
+`page` writes `candidate-N.html` and `candidate-N.png` for the first three candidates (or `--candidate 2`, `1,4`, `all`) and, with `--still`, `still.jpg`: one frame of the recording, without any of the file's tags. Two sources (two people, a screen and its webcam) take a `--still` each, in their order (`still-2.jpg`): the webcam's circle and panel show its picture, cut as the candidate says; without its still the circle is drawn. The picture is taken in a window taller than the frame and cut back to it, so that it is the frame with any Chrome (one that counts its own bars into the window left the lowest rows black). What `page` wrote is listed in `placement.json` (`written`): the next `page` or `place` into the folder removes exactly those files, never another one, and never a file that is passed in (a still that already lies in the folder is used as it is; a file of the caller's under the name of a frame page would write is refused, not written over). `grid` writes the one picture it is given a name for, and refuses to write over the file it reads. Nothing is written into the skill.
 
 ## Two checks
 
@@ -129,7 +129,6 @@ Beside screencast-cut's own layout for a screen with a webcam (its code run on t
 - **Follow a face.** A moving face gets one placement for the whole clip, by its hull; following it, or cutting the clip where it moves, is only suggested in a note. Moments that give the hull no edge are not tried as deciding.
 - **Time.** It lays out one moment of a video. Which layout a part gets, how long a hook stays and what changes when it leaves are the agent's.
 - **Name tags, step texts, a second picture** (material above a person): not placed. `stacked` is two people.
-- **The webcam's picture.** The circle on a page is drawn; its crop of the webcam is a number.
 - **Other subjects than faces and screens.** A product, a hand, a thing shown: [auto-reframe](../auto-reframe/) follows one moving subject.
 
 ## The code

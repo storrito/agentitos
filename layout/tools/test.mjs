@@ -973,6 +973,26 @@ if (!QUICK) t("a file the caller passes in is never removed or written over: gri
   return "the input kept, the old pages cleared, the caller's files left";
 });
 
+if (!QUICK) t("a screen and its webcam as two files: page takes a still of each (it answered that a placement of a screen has one source) and shows the webcam's own picture in the circle and in the panel, cut as the candidate says; a webcam baked into the screen shows from the screen's still, and a second still is refused in one sentence", () => {
+  const dir = path.join(OUT, "cli-webcam"), screen = path.join(OUT, "screen.jpg"), cam = path.join(OUT, "cam.jpg");
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=2560x1600", "-frames:v", "1", screen]);
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "smptebars=s=1280x720", "-frames:v", "1", cam]);
+  let r = cli("place", dir, "--frame", "9:16", "--source", "2560x1600", "--region", "384,614,486,160", "--min-text-height", "15", "--source", "1280x720", "--face", "635,415,180,175", "--text", "caption", "--text", "hook");
+  ok(r.status === 0, `place: ${r.stderr}`);
+  r = cli("page", dir, "--still", screen, "--still", cam, "--candidate", "all");
+  ok(r.status === 0, `page with two stills: ${r.stderr || r.stdout}`);
+  const pages = fs.readdirSync(dir).filter((f) => /^candidate-\d+\.html$/.test(f)).map((f) => fs.readFileSync(path.join(dir, f), "utf8"));
+  ok(pages.some((h) => /class="cam"[^>]*><img src="still-2\.jpg"/.test(h)), "no circle shows the webcam's still");
+  ok(pages.some((h) => /screen-stacked/.test(h) && /<img src="still-2\.jpg"/.test(h)), "the panel does not show the webcam's still");
+  const baked = path.join(OUT, "cli-baked");
+  cli("place", baked, "--frame", "9:16", "--source", "2560x1600", "--region", "900,200,1000,500", "--min-text-height", "15", "--face", "100,1200,150,180", "--text", "caption");
+  r = cli("page", baked, "--still", screen, "--candidate", "all");
+  ok(r.status === 0 && fs.readdirSync(baked).filter((f) => /\.html$/.test(f)).some((f) => /class="cam"[^>]*><img src="still\.jpg"/.test(fs.readFileSync(path.join(baked, f), "utf8"))), `the baked webcam: ${r.stderr}`);
+  const e = cli("page", baked, "--still", screen, "--still", cam);
+  sentence(e, "a second still for a baked webcam"); ok(/baked into the screen/.test(e.stderr), e.stderr);
+  return `${pages.length} pages; the baked webcam from the screen's still`;
+});
+
 if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
   const dir = path.join(OUT, "cli-chromes");
   cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");

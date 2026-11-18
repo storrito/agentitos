@@ -82,7 +82,7 @@ It prints the candidates, the first the one it would take, and writes them to `p
 node <skill>/tools/place.mjs page placement/<name> --still <video|image> [--at <s>] [--candidate 1,2,3]
 ```
 
-The first three candidates (or the ones named), each as a page of one frame (`candidate-N.html`) and a picture of it (`candidate-N.png`) on that frame of the recording, and what platform-zones' layout check says of the page next to the solver's own verdict. Two files: `--still` twice, in the order of the sources.
+The first three candidates (or the ones named), each as a page of one frame (`candidate-N.html`) and a picture of it (`candidate-N.png`) on that frame of the recording, and what platform-zones' layout check says of the page next to the solver's own verdict. Two files (two people, or a screen and its webcam): `--still` twice, in the order of the sources; the circle and the panel then show the webcam's own picture, cut as the candidate says. A webcam baked into the screen shows from the screen's still.
 
 Open every picture. The order is a suggestion from measurements, the choice is yours:
 

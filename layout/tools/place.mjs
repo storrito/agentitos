@@ -311,9 +311,10 @@ function cmdPage(o) {
   const chrome = chromePath();
   if (!chrome) fail("page needs Chrome, to measure the candidates' pages and to take their pictures: set CHROME=/path/to/chrome. Until then the candidates carry only the solver's own verdict.");
   if (!fs.existsSync(chrome)) fail(`CHROME names ${chrome}, and there is no such file: set it to a Chrome's path, or unset it to have one found.`);
-  const sources = res.sources || [{ size: res.source }];
+  // (a webcam baked into the screen recording is no source of its own: the screen's still shows it)
+  const sources = (res.sources || [{ size: res.source }]).filter((q) => !q.baked);
   // the stills: one frame per source, copied beside the pages so that their links hold
-  if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
+  if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}${res.sources?.some((q) => q.baked) ? " (the webcam baked into the screen shows in the screen's still)" : ""}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
   const outs = o.still.map((_, i) => path.join(folder, i ? `still-${i + 1}.jpg` : "still.jpg"));
   const before = readWritten(folder);
   o.still.forEach((input, i) => {

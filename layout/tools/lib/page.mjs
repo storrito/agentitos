@@ -65,7 +65,13 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
   c.faceInFrame.forEach((f, k) => parts.push(`<div data-zone="face"${res.screen ? ` data-label="${k ? "webcam" : "region"}"` : ""} style="${st(f)}"></div>`));
   // the part of another person's face that shows: the checker judges it as any face
   for (const o of c.others || []) parts.push(`<div data-zone="face" data-label="${o.of}" style="${st(o.box)}"></div>`);
-  if (c.circle) parts.push(`<div class="cam" data-zone="face" data-label="webcam" style="${st(c.circle.box)}"></div>`);
+  // the webcam's circle: its square of the webcam's picture where there is a still of it (a baked
+  // webcam: the screen's own still), else a drawn face
+  const camStill = srcs[1], camSize = sources[1]?.size;
+  if (c.circle && c.circle.crop && camStill && camSize) {
+    const [cx, cy, side] = c.circle.crop, k = c.circle.box[2] / side;
+    parts.push(`<div class="cam" data-zone="face" data-label="webcam" style="${st(c.circle.box)};overflow:hidden;background:#000"><img src="${camStill}" style="${st([-cx * k, -cy * k, camSize[0] * k, camSize[1] * k])}"></div>`);
+  } else if (c.circle) parts.push(`<div class="cam" data-zone="face" data-label="webcam" style="${st(c.circle.box)}"></div>`);
   for (const t of c.text) {
     const [x, y, w, h] = t.box;
     if (t.style === "cap") {
