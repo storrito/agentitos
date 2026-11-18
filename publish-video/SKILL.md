@@ -50,7 +50,7 @@ Then `check publish/<name> --mode short|long`. A wide video going out short: ref
 
 Look at the sheet for what no tool measures: does the first frame make someone stay, does the end close or cut off mid-move, is every text readable, inside the green box and spelled right, is there another app's watermark (a TikTok logo on a Reel costs reach), black bars, a test frame, something private?
 
-- **✗ that `prepare` fixes** (size, codec, container, bitrate): run it without asking. `--crop` for a nearly 9:16 video only when the sheet shows nothing near the edges; else ask: cropped or thin bars.
+- **✗ that `prepare` fixes** (size, codec, container, bitrate, the place of the recording in the file): run it without asking. `--crop` for a nearly 9:16 video only when the sheet shows nothing near the edges; else ask: cropped or thin bars.
 - **⚠ about the sound** (too quiet, too loud, peaks): `prepare --loudness`. **Black or silence at the start or end**, plainly empty: `prepare --start <s>` / `--end <s>`.
 - All fixes in one `prepare` call; it writes `publish/<name>/video.mp4` and checks it again.
 - The sheet shows twelve moments, not every frame. A subtitle touching a red outline in a frame or two, a word in the margin that stays readable, the edge of a picture under the buttons: leave it and say nothing.
