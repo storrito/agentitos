@@ -78,7 +78,7 @@ const NAMES = { above: "the material above, the speaker as a panel below it", pi
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
 
-export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {}, captionArea = null }) {
+export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {}, captionArea = null, faceAssumed = false }) {
   const [W, H] = Z.size;
   const D = scaled(merged({ ...DEFAULTS, beside: BESIDE }, set), Z.size);
   const S = Z.safe, g = D.gap, B = D.beside, WT = D.weights, soft = WT.enlarge.softFrom, forbidden = WT.enlarge.forbiddenFrom;
@@ -376,7 +376,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const c = {
       fit: `beside-${arr}`, arrangement: arr, ...(p.side ? { side: p.side, looks: p.looks } : {}),
       material: { field: p.field.map(r1), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
-      speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
+      speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), ...(faceAssumed ? { assumed: true } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
       captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band } : null,
       ...(p.seam != null ? { seam: r1(p.seam) } : {}),
       change: {
@@ -398,6 +398,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
       NAMES[arr] + (arr === "above" ? " (what published Shorts do most where a screen and a face show together: usual, not shown to work)" : arr === "pip" ? " (a small picture in or at the screen: the rarer form in published Shorts)" : ` (${p.fixed ? `on the ${p.side}, as asked (beside.side)` : p.looks ? `the face sits off the source's middle, so the speaker likely looks ${p.looks}, towards the material` : "the face's place in the source tells no look: left, the default"}; unmeasured)`),
       `the material's field is ${Math.round(p.field[2])}×${Math.round(p.field[3])} px (${pct(c.material.share)} of the frame)${mat.min ? (meets(p.field) ? `, at least the ${mat.min[0]}×${mat.min[1]} it needs` : `, under the ${mat.min[0]}×${mat.min[1]} it needs`) : ""}`,
       `the speaker's face is ${Math.round(faceH)} px (${pct(faceH / H)} of the frame's height${target != null ? `; ${r1(target)} % is ${asked !== null ? `the target asked for (beside.face; the usual is ${arr === "above" ? `${r1(100 * D.screenFace.height)} % below a screen` : `${WT.subject.from} %, the lower end of published talking heads`})` : arr === "above" ? "the usual below a screen" : "the lower end of published talking heads, measured upright"}` : ""})${wish !== null && arr !== "pip" ? `; the wish of ${pct(wish)} (beside.wish, taken under ${wishUp}×) ${faceH >= wish * H - 1 ? "holds" : "gives way"}` : ""}${s > 1 + 1e-9 ? `, the footage enlarged ${r2(s)}×` : ""}${heldBy ? `: ${heldBy}` : ""}`,
+      ...(faceAssumed && arr !== "pip" ? ["the face's box was assumed (the usual framing of a talking head, not read off the footage): its size and place here are guesses"] : []),
       ...(p.keep ? ["the speaker keeps the scale it had full-frame"] : []),
       ...(ground ? [`${pct(ground)} of the frame is ground beside the speaker's picture`] : []),
       ...(cap ? [unmet.includes("caption") ? "the captions find no free place" : `the captions ${p.caption.where === "seam" ? "on the seam" : p.caption.where === "below" ? "at the safe box's bottom" : p.caption.where === "stay" ? "where they stand without the material (beside.captions)" : "under the material"}`] : []),
@@ -420,12 +421,13 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   if (mat.fixed && mat.min && (mat.fixed[0] * soft < mat.min[0] - 0.5 || mat.fixed[1] * soft < mat.min[1] - 0.5)) notes.unshift(`the picture of ${mat.fixed.join("×")} stays sharp up to ${Math.floor(mat.fixed[0] * soft)}×${Math.floor(mat.fixed[1] * soft)} px (${soft}× its pixels), under the ${mat.min.join("×")} it needs: give a larger picture of it, or a smaller --material-min`);
   if (fam === "mid") notes.push(`in ${W}×${H} the panel holds the face at ${pct(B.faceMin)} of the frame's height or more while the material's field is at most ${limits.above ? `${limits.above.field[2]}×${limits.above.field[3]} px` : "nothing"}; a material that needs more height gets the circle (nothing was measured in this frame)`);
   if (fam === "wide") notes.push("nothing in 16:9 was measured: the column is the catalogue's sketch, the panel below the material is offered only where the material keeps its smallest field");
+  if (faceAssumed) notes.push("the face's box was assumed, not read off the footage (--face assumed): the face's size and place in every candidate are guesses; read it off grid for a layout that holds");
   if (!prev.given) notes.push(`no --before: the speaker full-frame before is taken as the source covering the frame (${prev.scale}× at ${prev.left}, ${prev.top}); give the placement you used, as --before scale,left,top, for the change's numbers`);
   const res = {
     kind: "beside", frame: Z.frame, size: Z.size, platforms: Z.platforms.map((p) => p.name), fallback: Z.fallback,
     source, faces: [hull],
     sources: [{ size: source, faces: [hull] }, { size: mat.fixed || null, material: true }],
-    speaker: { source, face: usual, ...(moving ? { hull } : {}) },
+    speaker: { source, face: usual, ...(moving ? { hull } : {}), ...(faceAssumed ? { assumed: true } : {}) },
     material: { min: mat.min, ratio: mat.ratio ? r4(mat.ratio) : null, fixed: mat.fixed },
     before: { ...prev, face: prevFace.map(r1) },
     needs, notes, limits, candidates: cands, defaults: D,

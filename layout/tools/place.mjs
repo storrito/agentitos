@@ -225,6 +225,18 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
 function cmdBeside(o) {
   const usage = `${self()} beside <folder> --frame 9:16 --source WxH --face x,y,w,h (or --face-at s:x,y,w,h …) --material-min WxH [--material-ratio 16:9 | --material WxH] [--text caption] [--before scale,left,top] [--platform reels,tiktok] [--json]`;
   const [folder] = o._;
+  // --face assumed: a caller without a face's box gets the usual framing of a talking head (the
+  // face a fifth of the frame tall, in the middle across, its middle a third down, as the source
+  // covers the frame), marked as assumed
+  const assumed = o.order.some(([k, v]) => k === "face" && v === "assumed");
+  if (assumed) {
+    const src = o.order.find(([k]) => k === "source")?.[1], m = String(src || "").match(/^(\d+)x(\d+)$/);
+    if (!m || !/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame || "")) fail(usage);
+    const [W, H] = askZones(o.frame, platformList(o.platform)).size, sw = +m[1], sh = +m[2], k = Math.max(W / sw, H / sh);
+    const h = 0.2 * H, w = 0.75 * h, fx = (W / 2 - w / 2 - (W - k * sw) / 2) / k, fy = (H / 3 - h / 2 - (H - k * sh) / 2) / k;
+    const box = [Math.max(0, fx), Math.max(0, fy), Math.min(w / k, sw), Math.min(h / k, sh)].map((v) => Math.round(v));
+    o.order = o.order.map(([kk, v]) => (kk === "face" && v === "assumed" ? [kk, box.join(",")] : [kk, v]));
+  }
   const sources = parseSources(o);
   if (!folder || o._.length > 1 || !o.frame || !sources.length) fail(usage);
   if (sources.length > 1 || sources[0].faces.length !== 1) fail(`beside places one speaker from one recording: give one --source and one --face (or the moments of one face as --face-at), read off ${self()} grid.`);
@@ -256,7 +268,7 @@ function cmdBeside(o) {
     if (o["caption-area"] !== undefined) captionArea = areaFile(o["caption-area"]);
     else if (o["caption-style"] !== undefined) captionArea = areaOfStyle(o["caption-style"], needs.find((n) => n.role === "caption")?.lines, zones.size, platforms);
     res = besideSolve({
-      zones, captionArea, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
+      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
       set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
     });
   } catch (e) { fail(e.message); }

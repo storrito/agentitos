@@ -1349,6 +1349,14 @@ t("speaker.scale, left and top place the footage itself (frame px per footage px
   }
 });
 
+t("a caller without a face's box passes --face assumed: the usual framing of a talking head (a fifth of the frame tall, in the middle, a third down, as the footage covers the frame), and every candidate says that the box was assumed", () => {
+  const dir = path.join(OUT, "beside-assumed");
+  const r = cli("beside", dir, "--frame", "9:16", "--source", "1080x1920", "--face", "assumed", "--material-min", "600x340", "--text", "caption");
+  ok(r.status === 0 && /^note: the face's box was assumed/m.test(r.stdout), r.stderr || r.stdout);
+  const res = JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8"));
+  ok(JSON.stringify(res.speaker.face) === "[396,448,288,384]" && res.speaker.assumed && res.candidates.every((c) => c.speaker.assumed) && res.candidates[0].why.some((w) => /assumed/.test(w)), JSON.stringify(res.speaker));
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {
