@@ -39,7 +39,7 @@ import path from "node:path";
 import { execFileSync, spawnSync, spawn } from "node:child_process";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { numbers, ranges, dropSpans, keepsWithout } from "./lib/moments.mjs";
+import { numbers, ranges, dropSpans, keepsWithout, openingKeep } from "./lib/moments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "drop", "payoff"];
@@ -176,7 +176,7 @@ function prepare(episode, dir, range, opts) {
   if (drop.length) console.log(`Left out inside it: the sentences ${ranges(drop)} (${left} words, ${gone.reduce((s, [x, y]) => s + y - x, 0).toFixed(1)} s), ${keeps.length} keeps: ${keeps.map(([x, y]) => `${x}–${y}`).join(", ")}. Read in the brief that each cut falls between two thoughts; move a keep's end where it does not.`);
   if (payoff != null) {
     const line = keepsWithout(spoken, [sentences[payoff].start - from, sentences[payoff].end - from]).inside;
-    if (line.length) console.log(`The strongest line (sentence ${payoff}) is words ${line[0].i}–${line.at(-1).i}: ${edge(line.slice(0, 3))} … ${edge(line.slice(-2))}. To open the short with it spoken, put {"words": "${line[0].i}-${line.at(-1).i}", "why": "the strongest line first"} at the top of cut.json's "keep" (best-takes plays the keeps in their order); it plays again where it was said, unless you cut it out there. With a spoken opening the hook card is usually not needed.`);
+    if (line.length) console.log(`The strongest line (sentence ${payoff}) is words ${line[0].i}–${line.at(-1).i}: ${edge(line.slice(0, 3))} … ${edge(line.slice(-2))}. To open the short with it spoken, put ${JSON.stringify(openingKeep(line))} at the top of cut.json's "keep" (best-takes plays the keeps in their order; "again" lets it play the line where it was said too: take it out of the moment's keep there only where hearing it twice drags). With a spoken opening the hook card is not needed: build with --hook "".`);
     else console.log(`No word of the strongest line (sentence ${payoff}) was heard in the clip: look for it in ${rel(path.join(td, "source", "brief.md"))}.`);
   }
   if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (each shot: the footage left, the frame right). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);

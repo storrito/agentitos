@@ -8,6 +8,7 @@
 //   checks(sentences, first, last, limit)   → { question, conjunction, voices, over } (arrange adds `asked`)
 //   dropSpans(sentences, first, last, drop) → [[from, to], …] in the episode's seconds
 //   keepsWithout(words, said, spans)        → the word ranges of a cut clip that stay
+//   openingKeep(line)                       → the keep that opens a short with its strongest line
 //   numbers("229-234,240") / ranges([…])    → [229, …, 234, 240] and back
 //   momentsPrompt(episode, text, count, limit) → what the model is asked
 //   listing(moments.json, sentences, pieces) → the list `moments` prints
@@ -151,6 +152,16 @@ export function keepsWithout(words, said, spans = []) {
     if (run) run[1] = w.i; else keeps.push((run = [w.i, w.i]));
   }
   return { keeps, inside, left };
+}
+
+// The keep that opens a short with its strongest line spoken, from the line's words in the clip
+// ({ i, text }, as best-takes numbers them): past an "and", "so" it begins with (a short never
+// opens on one), and with "again", so that best-takes also plays the line where it was said.
+export function openingKeep(line) {
+  let k = 0;
+  while (k < line.length - 1 && CONJUNCTIONS.has(firstWord(line[k].text)) && /^[\p{L}]+[,]?$/u.test(line[k].text)) k++;
+  const a = line[k].i, b = line.at(-1).i;
+  return { words: a === b ? `${a}` : `${a}-${b}`, why: "the strongest line first", again: true };
 }
 
 // How well a moment's first sentence works on someone who has seen nothing of the episode, as the

@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, openingKeep, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -291,4 +291,13 @@ test("the payoff is a sentence of the moment and is never dropped", () => {
   assert.deepEqual(m.drop, [4]);
   assert.equal(arrange({ moments: [moment(1, 7, { payoff: 9 })] }, INTERVIEW)[0].payoff, null);
   assert.equal(arrange({ moments: [moment(2, 7, { payoff: 1 })] }, INTERVIEW)[0].payoff, null);
+});
+
+test("the strongest line as the opening keep: past an \"and\" it begins with, played again where it was said", () => {
+  const line = ["and", "I", "put", "them", "in,", "and", "I", "couldn't", "close", "my", "mouth."].map((text, k) => ({ i: 149 + k, text }));
+  // best-takes refuses a word in two keeps unless the keep that repeats it says "again"
+  assert.deepEqual(openingKeep(line), { words: "150-159", why: "the strongest line first", again: true });
+  assert.equal(openingKeep([{ i: 7, text: "So," }, { i: 8, text: "Und" }, { i: 9, text: "nobody" }]).words, "9");
+  assert.equal(openingKeep([{ i: 4, text: "And" }]).words, "4");
+  assert.equal(openingKeep(line.slice(1)).words, "150-159");
 });
