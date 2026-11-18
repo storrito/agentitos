@@ -2,7 +2,7 @@
 // passage is held against, what goes when its marked sentences are dropped, and the list as
 // moments.json holds it. All of it from the sentences: their words, voices and times.
 //
-//   arrange(answer, sentences, { limit })   → the moments of moments.json from the model's answer, by `opens`
+//   arrange(answer, sentences, { limit })   → the moments of moments.json from the model's answer, in the episode's order
 //   shape(m, first, last, sentences, limit) → one moment of moments.json over first..last
 //   questionStart(sentences, first, floor)  → the question just before a moment that its first sentence answers
 //   checks(sentences, first, last, limit)   → { question, conjunction, voices, over } (arrange adds `asked`)
@@ -158,10 +158,12 @@ export function keepsWithout(words, said, spans = []) {
 // score was in effect 8 plus "cold" (clips-eval, 2026-11-17).
 const opensOf = (m) => Math.max(1, Math.min(10, Math.round(Number(m.opens) || 1)));
 
-// The moments of moments.json from the model's answer, ordered by `opens` (higher first; on the
-// same rating, as the model listed them), `rank` 1, 2, … with no two the same: whole sentences
-// that exist, at most longest(limit) seconds (the end trimmed sentence by sentence, as rarely as
-// the model returns more), overlapping no moment ranked before it. `drop` stays only inside a
+// The moments of moments.json from the model's answer, in the order of the episode: whole
+// sentences that exist, at most longest(limit) seconds (the end trimmed sentence by sentence, as
+// rarely as the model returns more); of two that overlap, the one that opens better stays (on
+// the same `opens`, the one the model listed first). No order is claimed: neither the model's
+// ranking, nor `opens`, nor any count put the editors' picks ahead of the other moments (AUC
+// 0.44-0.56 in nine runs on the nine episodes of clips-eval, 2026-11-18; 0.5 is chance). `drop` stays only inside a
 // moment that is over the limit and never holds its payoff; `kept` is its length without those
 // sentences; `checks` what the tool counts about it (see checks above). The tool moves no start:
 // a question just before the first sentence that it answers is only noted (`checks.asked`): a
@@ -182,7 +184,7 @@ export function arrange(answer, sentences, { limit = MAX_SECONDS } = {}) {
     if (sentences[last].end - sentences[first].start > longest(limit)) return [];
     for (let k = first; k <= last; k++) taken.add(k);
     return [shape(m, first, last, sentences, limit, { asked: q !== first ? q : null, opens: opensOf(m) })];
-  }).map((m, k) => ({ rank: k + 1, ...m }));
+  }).sort((a, b) => a.first - b.first);
 }
 
 // One moment of moments.json over the sentences first..last, from what the model said about it
@@ -251,15 +253,15 @@ export function checkNotes(m, limit) {
   ].filter(Boolean).join("; ");
 }
 
-// The list moments prints: what is inside, the moments best first (the first `count` the picks,
-// the rest fillers), the ideas to record anew
-export function listing({ limit, count, inventory, moments: picked, ideas }, sentences, pieces) {
+// The list moments prints: what is inside, the moments in the order of the episode, the ideas to
+// record anew
+export function listing({ limit, inventory, moments: picked, ideas }, sentences, pieces) {
   const lines = [`Inside: ${KINDS.map((k) => `${inventory[k] || 0} ${k === "how-to" ? "how-tos" : k === "story" ? "stories" : k + "s"}`).join(", ")}`
     + (pieces < 4 ? ` — too thin for many clips: say so, and offer the one or two it gives.` : "")];
+  if (picked.length) lines.push(`The moments in the order of the episode (the order says nothing about which is better; "opens" is how well the first sentence works alone, a weak hint):`);
   picked.forEach((m, k) => {
-    if (k === count && picked.length > count) lines.push(`Fillers, weaker than the ${count} above:`);
     const notes = checkNotes(m, limit);
-    lines.push(`${m.rank}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] opens ${m.opens}/10 · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
+    lines.push(`${k + 1}. ${m.first}-${m.last} [${mmss(m.start)}, ${m.seconds} s] opens ${m.opens}/10 · ${m.kind}${m.crosstalk ? ", crosstalk" : ""} · ${m.title}`
       + (notes ? `\n   ${notes}` : "")
       + `\n   „${sentences[m.first].text}“\n   ${m.why}`
       + (m.payoff != null ? `\n   strongest line (${m.payoff}): „${sentences[m.payoff].text}“` : "") + (m.hook ? `\n   hook on screen: „${m.hook}“` : ""));
@@ -310,15 +312,18 @@ export const EDGES_SCHEMA = {
 
 // The moments with the edges the second pass gave (`edges[i]` for `moments[i]`, null where the
 // call failed: that moment stays as it was). An edge moves only within the sentences shown to
-// the model and never into another moment: every moment keeps its own sentences, and one ranked
-// higher grows first into what lies between. At most longest(limit) seconds, the end trimmed as
+// the model and never into another moment: every moment keeps its own sentences, and the one
+// that opens better grows first into what lies between. At most longest(limit) seconds, the end trimmed as
 // in arrange. A moved edge is said in `edges: { start, end }` (the model's word, or "kept").
 export function applyEdges(moments, edges, sentences, { limit = MAX_SECONDS } = {}) {
   const owner = new Map();
   moments.forEach((m, i) => { for (let k = m.first; k <= m.last; k++) owner.set(k, i); });
   const free = (k, i) => k >= 0 && k < sentences.length && (!owner.has(k) || owner.get(k) === i);
-  return moments.map((m, i) => {
-    const e = edges[i];
+  const out = moments.slice();
+  const turn = moments.map((m, i) => i).sort((a, b) => (moments[b].opens ?? 0) - (moments[a].opens ?? 0) || a - b);
+  for (const i of turn) out[i] = edged(moments[i], edges[i], i);
+  return out;
+  function edged(m, e, i) {
     if (!e) return m;
     const [from, to] = edgeWindow(sentences, m);
     const want = [Math.round(Number(e.first)), Math.round(Number(e.last))];
@@ -333,5 +338,5 @@ export function applyEdges(moments, edges, sentences, { limit = MAX_SECONDS } = 
     const word = (w, moved) => (moved ? String(w || "moved").split(/\s+/)[0].toLowerCase() : "kept");
     const shaped = shape({ ...m, drop: Array.isArray(e.drop) ? e.drop : [] }, first, last, sentences, limit, { opens: m.opens, asked: m.checks?.asked ?? null });
     return { ...m, ...shaped, edges: { start: word(e.start, first !== m.first), end: word(e.end, last !== m.last) } };
-  });
+  }
 }

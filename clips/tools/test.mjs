@@ -149,15 +149,17 @@ test("prepare refuses a payoff that is not a kept sentence of the moment, before
   fs.rmSync(dir, { recursive: true });
 });
 
-test("the moments are ordered by how well they open, the model's list breaking a tie, ranked 1, 2, …", () => {
-  const out = arrange({ moments: [moment(1, 3, { opens: 6 }), moment(6, 7, { opens: 9 }), moment(8, 9, { opens: 6 })] }, INTERVIEW, { limit: 90 });
-  assert.deepEqual(out.map((m) => [m.rank, m.first, m.opens]), [[1, 6, 9], [2, 1, 6], [3, 8, 6]]);
-  assert.ok(out.every((m) => !("score" in m) && !("weak" in m) && !("points" in m)));
+test("the moments come in the order of the episode; of two that overlap, the one that opens better stays", () => {
+  const out = arrange({ moments: [moment(8, 9, { opens: 9 }), moment(1, 3, { opens: 6 }), moment(6, 7, { opens: 6 })] }, INTERVIEW, { limit: 90 });
+  assert.deepEqual(out.map((m) => [m.first, m.opens]), [[1, 6], [6, 6], [8, 9]]);
+  assert.ok(out.every((m) => !("score" in m) && !("weak" in m) && !("points" in m) && !("rank" in m)));
   // a rating out of the scale is brought into it
   assert.deepEqual(arrange({ moments: [moment(1, 3, { opens: 40 }), moment(8, 9, { opens: "x" })] }, INTERVIEW).map((m) => m.opens), [10, 1]);
-  // of two that overlap, the one that opens better stays, wherever it was listed
   const two = arrange({ moments: [moment(1, 7, { opens: 3 }), moment(6, 9, { opens: 8 })] }, INTERVIEW, { limit: 90 });
-  assert.deepEqual(two.map((m) => [m.rank, m.first, m.last]), [[1, 6, 9]]);
+  assert.deepEqual(two.map((m) => [m.first, m.last]), [[6, 9]]);
+  // on the same rating, the one the model listed first
+  const tie = arrange({ moments: [moment(6, 9, { opens: 5 }), moment(1, 7, { opens: 5 })] }, INTERVIEW, { limit: 90 });
+  assert.deepEqual(tie.map((m) => [m.first, m.last]), [[6, 9]]);
 });
 
 test("each moment carries the checks the tool counts, an exchange is a kind of its own", () => {
@@ -187,17 +189,18 @@ test("the prompt holds the description for the channel's followers, the limit an
   assert.doesNotMatch(momentsPrompt({ title: "T" }, "", 3, 90), /The video's description/);
 });
 
-test("the list shows the moments best first, the fillers apart, and only the checks that need a look", () => {
-  const ms = arrange({ moments: [moment(2, 7, { drop: [4, 5], hook: "He nearly drowned", opens: 7 }), moment(8, 9, { opens: 4 })] }, INTERVIEW);
+test("the list shows the moments in the order of the episode, says that the order ranks nothing, and only the checks that need a look", () => {
+  const ms = arrange({ moments: [moment(8, 9, { opens: 4 }), moment(2, 7, { drop: [4, 5], hook: "He nearly drowned", opens: 7 })] }, INTERVIEW);
   const out = listing({ limit: 59, count: 1, inventory: { story: 2, answer: 1 }, moments: ms, ideas: [] }, INTERVIEW, 3);
   const lines = out.split("\n");
   assert.match(lines[0], /^Inside: 0 claims, 2 stories, 0 numbers, 0 mistakes, 0 how-tos, 1 answers, 0 exchanges — too thin/);
-  assert.equal(lines[1], "1. 2-7 [0:13, 65 s] opens 7/10 · story · t");
-  assert.equal(lines[2], "   answers the question at sentence 1 just before it: start there when the question belongs to it; 6 s over the 59: 48 s without the sentences 4-5");
+  assert.match(lines[1], /^The moments in the order of the episode \(the order says nothing about which is better/);
+  assert.equal(lines[2], "1. 2-7 [0:13, 65 s] opens 7/10 · story · t");
+  assert.equal(lines[3], "   answers the question at sentence 1 just before it: start there when the question belongs to it; 6 s over the 59: 48 s without the sentences 4-5");
   assert.ok(out.includes("strongest line (7): „That is when I learned to say no to a director.“"));
   assert.ok(out.includes("hook on screen: „He nearly drowned“"));
-  assert.match(out, /\nFillers, weaker than the 1 above:\n2\. 8-9 /);
-  assert.doesNotMatch(out, /\bweak\b|score/);
+  assert.match(out, /\n2\. 8-9 \[1:18, 25 s\] opens 4\/10/);
+  assert.doesNotMatch(out, /score|Fillers|\/10 weak/);
 });
 
 test("a key that OpenRouter turns away is told from everything else, and said in one sentence", async () => {
@@ -321,8 +324,8 @@ test("the edges pass moves only edges, into no other moment, and says why in a w
   for (const e of [{ first: 2, last: 21 }, { first: 21, last: 20 }, null]) assert.deepEqual(applyEdges([far], [e], long)[0], far);
 });
 
-test("two moments that both reach for the sentences between them: the one ranked first gets them", () => {
-  const ms = arrange({ moments: [moment(2, 3, { opens: 9 }), moment(6, 7, { opens: 5 })] }, INTERVIEW, { limit: 90 });
+test("two moments that both reach for the sentences between them: the one that opens better gets them", () => {
+  const ms = arrange({ moments: [moment(2, 3, { opens: 5 }), moment(6, 7, { opens: 9 })] }, INTERVIEW, { limit: 90 });
   const out = applyEdges(ms, [{ first: 2, last: 5, drop: [], start: "kept", end: "lesson" }, { first: 4, last: 7, drop: [], start: "setup", end: "kept" }], INTERVIEW, { limit: 90 });
-  assert.deepEqual(out.map((m) => [m.first, m.last, m.edges.start, m.edges.end]), [[2, 5, "kept", "lesson"], [6, 7, "kept", "kept"]]);
+  assert.deepEqual(out.map((m) => [m.first, m.last, m.edges.start, m.edges.end]), [[2, 3, "kept", "kept"], [4, 7, "setup", "kept"]]);
 });
