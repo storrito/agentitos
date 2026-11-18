@@ -1012,6 +1012,23 @@ t("a screen whose text reads at no size the frame leaves it: the desktop of the 
   return `then ${nameOf(narrow)}, text ${narrow.textHeight} px`;
 });
 
+if (!QUICK) t("a face that moves is looked at at every moment: page with a video takes every moment the boxes were read at (or the --at given), with pictures one --at each; every moment's files carry it in their names, and a second call no longer leaves only the last moment (it removed the pictures before)", () => {
+  const dir = path.join(OUT, "cli-moments"), video = path.join(OUT, "take.mp4");
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1080x1920:d=3:r=10", "-pix_fmt", "yuv420p", video]);
+  let r = cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face-at", "0.5:340,420,400,540", "--face-at", "2:360,470,400,540", "--text", "caption");
+  ok(r.status === 0, `place: ${r.stderr}`);
+  r = cli("page", dir, "--still", video, "--candidate", "1");
+  const files = () => fs.readdirSync(dir).sort();
+  ok(r.status === 0 && ["candidate-1-at-0.5.png", "candidate-1-at-2.png", "still-at-0.5.jpg", "still-at-2.jpg"].every((f) => files().includes(f)), `page with the video: ${r.stderr || files().join(", ")}`);
+  const a = path.join(OUT, "moment-a.jpg"), b = path.join(OUT, "moment-b.jpg");
+  for (const [f, t] of [[a, "0.5"], [b, "2"]]) spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", t, "-i", video, "-frames:v", "1", f]);
+  r = cli("page", dir, "--still", a, "--at", "0.5", "--still", b, "--at", "2", "--candidate", "1");
+  ok(r.status === 0 && ["candidate-1-at-0.5.png", "candidate-1-at-2.png"].every((f) => files().includes(f)) && !files().includes("candidate-1.png"), `page with two pictures: ${r.stderr || files().join(", ")}`);
+  const e = cli("page", dir, "--still", a, "--still", b);
+  sentence(e, "two pictures of one source without --at"); ok(/an --at for each/.test(e.stderr), e.stderr);
+  return files().filter((f) => /png$/.test(f)).join(", ");
+});
+
 if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
   const dir = path.join(OUT, "cli-chromes");
   cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");

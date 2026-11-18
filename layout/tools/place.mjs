@@ -22,7 +22,8 @@
 //                           or a file of its own; a circle in a free corner, a panel below the screen)
 //        the ranking:       [--weights file.json] [--set weights.enlarge.costAtForbidden=5] [--set hookCard.minFont=76]
 //                           [--all]   (every fit, also where the unchanged picture passes)
-//   node place.mjs page <folder> [--candidate 1,2,3 | all] [--still <video|image>]… [--at <s>]
+//   node place.mjs page <folder> [--candidate 1,2,3 | all] [--still <video|image>]… [--at <s>]…
+//        (a face that moves: a picture at every moment its boxes were read at, or at each --at)
 //        each candidate as a page of one frame (candidate-N.html) with a picture of it
 //        (candidate-N.png), and what platform-zones' layout check says of the page
 //   node place.mjs captions <folder> [--candidate 1] [--json]
@@ -56,7 +57,7 @@ const sameFile = (a, b) => real(a) === real(b);
 // ---- options ----
 
 const FLAGS = new Set(["json", "all"]);
-const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still"]);
+const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still", "at"]);
 const OPTIONS = {
   grid: ["at"],
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
@@ -233,6 +234,8 @@ function frameOf(input, out, at, filters = []) {
 function cmdGrid(o) {
   const [input, out] = o._;
   if (!input || !out || o._.length > 2) fail(`${self()} grid <video|image> <out.jpg> [--at <s>]`);
+  if (o.at.length > 1) fail(`grid draws one moment: run it once for each --at, each into a picture of its own.`);
+  o.at = o.at[0];
   if (sameFile(input, out)) fail(`${out} is the file to read: give the picture with the grid another name.`);
   const [w, h] = probe(input);
   const t = Math.max(2, Math.round(Math.min(w, h) / 360)), size = Math.max(16, Math.round(Math.min(w, h) / 36));
@@ -272,7 +275,7 @@ function readPlacement(folder, cmd) {
 // recording) is listed in placement.json, so that exactly these files are removed when the
 // placement is made anew or other candidates are shown: never a file of another name, never one
 // the caller passes in.
-const OURS = /^(candidate-\d+\.(html|png)|still(-\d+)?\.jpg)$/;
+const OURS = /^(candidate-\d+(-at-\d+(\.\d+)?)?\.(html|png)|still(-\d+)?(-at-\d+(\.\d+)?)?\.jpg)$/;
 function readWritten(folder) {
   try { const w = JSON.parse(fs.readFileSync(path.join(folder, "placement.json"), "utf8")).written; return Array.isArray(w) ? w.filter((n) => typeof n === "string" && OURS.test(n)) : []; } catch { return []; }
 }
@@ -317,41 +320,56 @@ function cmdPage(o) {
   if (!fs.existsSync(chrome)) fail(`CHROME names ${chrome}, and there is no such file: set it to a Chrome's path, or unset it to have one found.`);
   // (a webcam baked into the screen recording is no source of its own: the screen's still shows it)
   const sources = (res.sources || [{ size: res.source }]).filter((q) => !q.baked);
-  // the stills: one frame per source, copied beside the pages so that their links hold
-  if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}${res.sources?.some((q) => q.baked) ? " (the webcam baked into the screen shows in the screen's still)" : ""}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
-  const outs = o.still.map((_, i) => path.join(folder, i ? `still-${i + 1}.jpg` : "still.jpg"));
-  const before = readWritten(folder);
-  o.still.forEach((input, i) => {
+  const ats = o.at.map((v) => { const t = Number(v); if (!Number.isFinite(t) || t < 0) fail(`--at is a moment in seconds, as 2.5, not "${v}".`); return t; });
+  const image = (f) => /\.(jpe?g|png|webp|bmp|gif)$/i.test(f);
+  // The views: one frame of the recording per moment. A face that moves is looked at at each
+  // moment its boxes were read at: with a video, page takes every moment given (--at), else every
+  // moment of the placement's moving faces; with pictures of one source, one --at for each, in
+  // their order. Each moment's files carry it in their names (candidate-1-at-2.5.png).
+  let views;
+  if (sources.length === 1 && o.still.length > 1 && o.still.every(image) && (res.tracks || []).length) {
+    if (ats.length !== o.still.length) fail(`The placement has 1 source and ${o.still.length} pictures: if they are moments of a face that moves, give an --at for each, in the same order (--still a.jpg --at 2.5 --still b.jpg --at 4.5).`);
+    views = o.still.map((f, k) => ({ at: ats[k], inputs: [f], seek: false }));
+  } else {
+    if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}${res.sources?.some((q) => q.baked) ? " (the webcam baked into the screen shows in the screen's still)" : ""}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
+    const moving = [...new Set((res.tracks || []).flatMap((t) => t.times || []))].sort((a, b) => a - b);
+    const moments = ats.length ? ats : o.still.some((f) => !image(f)) && moving.length > 1 ? moving : [undefined];
+    views = moments.map((t) => ({ at: t, inputs: o.still, seek: true }));
+  }
+  const multi = views.length > 1, tag = (v) => (multi ? `-at-${v.at}` : "");
+  views.forEach((v) => { v.outs = v.inputs.map((_, i) => path.join(folder, `still${i ? `-${i + 1}` : ""}${tag(v)}.jpg`)); });
+  const before = readWritten(folder), inputs = views.flatMap((v) => v.inputs);
+  for (const v of views) v.inputs.forEach((input, i) => {
     const [w, h] = probe(input), [sw, sh] = sources[i].size;
     if (Math.abs((w / h) / (sw / sh) - 1) > 0.02) fail(`${input} is ${w}×${h}; the placement was made for a source of ${sw}×${sh}, another shape: give the recording the boxes were read from.`);
-    const over = outs.findIndex((out, k) => k !== i && sameFile(input, out));
-    if (over >= 0) fail(`${input} is where the frame of ${o.still[over]} goes: copy it out of ${folder} first, or give the stills in the order they lie there.`);
+    const over = views.flatMap((x) => x.outs).findIndex((out) => out !== v.outs[i] && sameFile(input, out));
+    if (over >= 0) fail(`${input} is where page puts another frame: copy it out of ${folder} first, or give the stills in the order they lie there.`);
     // a file of that name that page did not write is the caller's: never written over
-    if (fs.existsSync(outs[i]) && !sameFile(input, outs[i]) && !before.includes(path.basename(outs[i]))) fail(`${outs[i]} is a file of yours, where page puts the frame of ${input}: move it out of ${folder}, or pass it as --still.`);
+    if (fs.existsSync(v.outs[i]) && !sameFile(input, v.outs[i]) && !before.includes(path.basename(v.outs[i]))) fail(`${v.outs[i]} is a file of yours, where page puts the frame of ${input}: move it out of ${folder}, or pass it as --still.`);
   });
   // what an earlier call wrote here goes, except a frame that is passed in again now
-  clearWritten(folder, before, o.still);
+  clearWritten(folder, before, inputs);
   const written = [], save = () => fs.writeFileSync(path.join(folder, "placement.json"), JSON.stringify({ ...res, written }, null, 1));
-  const stills = o.still.map((input, i) => {
+  for (const v of views) v.stills = v.inputs.map((input, i) => {
     // a frame that already lies where it belongs is used as it is, and stays the caller's unless an earlier call made it
-    if (sameFile(input, outs[i])) { if (before.includes(path.basename(outs[i]))) written.push(path.basename(outs[i])); return outs[i]; }
-    const err = frameOf(input, outs[i], o.at);
-    if (err) { save(); fail(`ffmpeg could not take a frame of ${input}: ${err}`); }
-    written.push(path.basename(outs[i]));
-    return outs[i];
+    if (sameFile(input, v.outs[i])) { if (before.includes(path.basename(v.outs[i]))) written.push(path.basename(v.outs[i])); return v.outs[i]; }
+    const err = frameOf(input, v.outs[i], v.seek && !image(input) ? v.at : undefined);
+    if (err) { save(); fail(`ffmpeg could not take a frame of ${input}${v.at !== undefined ? ` at ${v.at} s` : ""}: ${err}`); }
+    written.push(path.basename(v.outs[i]));
+    return v.outs[i];
   });
   save();
-  console.log(`${res.frame} ${res.size.join("×")} for ${res.platforms.join(", ")}${stills.length ? `, on a frame of ${o.still.map(rel).join(" and ")}${o.at !== undefined ? ` at ${o.at} s` : ""}` : ", on a drawn surface with each face as an oval (--still <video|image> shows the recording)"}`);
+  console.log(`${res.frame} ${res.size.join("×")} for ${res.platforms.join(", ")}${o.still.length ? `, on ${multi ? `the frames of ${views.length} moments (${views.map((v) => `${v.at} s`).join(", ")})` : `a frame of ${o.still.map(rel).join(" and ")}${views[0].at !== undefined ? ` at ${views[0].at} s` : ""}`}` : ", on a drawn surface with each face as an oval (--still <video|image> shows the recording)"}`);
   let differ = 0;
-  for (const i of picks) {
-    const c = res.candidates[i], page = path.join(folder, `candidate-${i + 1}.html`), png = path.join(folder, `candidate-${i + 1}.png`);
-    fs.writeFileSync(page, renderPage(c, res, { stills: stills.length ? stills : null, page }));
+  for (const i of picks) for (const v of views) {
+    const c = res.candidates[i], page = path.join(folder, `candidate-${i + 1}${tag(v)}.html`), png = path.join(folder, `candidate-${i + 1}${tag(v)}.png`);
+    fs.writeFileSync(page, renderPage(c, res, { stills: v.stills.length ? v.stills : null, page }));
     let checked;
     try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { written.push(path.basename(page)); save(); fail(e.message); }
     const shot = picture(chrome, page, png, res.size);
     written.push(path.basename(page), ...(shot ? [path.basename(png)] : []));
     const cmp = compare(c, checked);
-    console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
+    console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}${multi ? ` at ${v.at} s` : ""}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}`);
     console.log(`   solver:  ${c.problems.length ? c.problems.map((q) => `${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of} ${q.what}`).join("; ") : "✓ no problem"}`);
     console.log(`   checker: ${checked.findings.length ? checked.findings.map((f) => `${f.level} ${f.kind === "text" ? `"${f.label}"` : f.label} ${f.what}`).join("; ") : "✓ nothing under the apps' buttons, nothing on top of each other"}`);
@@ -359,6 +377,8 @@ function cmdPage(o) {
     else if (!cmp.agree) console.log(`   They agree on the verdict and differ in a finding (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}).`);
   }
   save();
+  if (multi) console.log(`\nA face that moves: every candidate at each moment (${views.map((v) => `${v.at} s`).join(", ")}), its files named by the moment. The placement holds the boxes of every moment; look whether the text stays off the face and the picture holds at each.`);
+  else if ((res.tracks || []).length && !o.still.some((f) => !image(f))) console.log(`\nA face that moves: look at it at every moment its boxes were read at (${[...new Set(res.tracks.flatMap((t) => t.times || []))].join(", ")} s): --still <video> alone takes them all, or one picture per moment with an --at each.`);
   console.log(`\nLook at ${picks.length > 1 ? "each picture" : "the picture"} before you choose. What no measurement here knows: whether the picture behind a text is calm (the solver sees boxes, no pixels), whether the box of a face was read right, and how wide the video's own words are: the pages show placeholder words (caption lines of three words, a hook of two short lines), and a block is taken as wide as its area.`);
   console.log(`Chosen: ${self()} captions ${rel(folder)} --candidate N gives the options for agentitos' captions; scale, left, top, window and the text's boxes of the candidate are in ${rel(path.join(folder, "placement.json"))} for the skill that builds the video.`);
   if (differ) process.exitCode = 1;
