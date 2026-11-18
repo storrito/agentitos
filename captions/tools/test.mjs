@@ -31,9 +31,10 @@ import { cues } from "./lib/srt.mjs";
 import { measure } from "./lib/widths.mjs";
 import { zones, zonesTool } from "./lib/zones.mjs";
 
-// (ce60c3a, the last commit without the options, until 2026-11-18; since then the commit that
-// changed hormozi, karaoke and wipe on purpose and keeps a word alone inside the frame)
-const BEFORE = process.env.CAPTIONS_BEFORE || "f6c0639a9b279503f8f7575c615024d8eba2e679";
+// (ce60c3a, the last commit without the options, until 2026-11-18; then f6c0639, which changed
+// hormozi, karaoke and wipe on purpose; now the commit that lets every group shrink until its
+// widest word is inside its room)
+const BEFORE = process.env.CAPTIONS_BEFORE || "cecc7206272b1e36204750e39c652b2f0636fd29";
 const TOOLS = path.dirname(fileURLToPath(import.meta.url)), REPO = path.dirname(path.dirname(TOOLS));
 const TOOL = path.join(TOOLS, "captions.mjs");
 const ZONES = zonesTool();
@@ -112,11 +113,7 @@ test("without the options the built files and what the tool says are those of th
     const a = run(old, path.join(dir, "a", name), args, words), b = run(TOOL, path.join(dir, "b", name), args, words);
     assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
     assert.equal(b.stdout, a.stdout, `${name}: what the tool says`);
-    // The commit that carries this line lets every group shrink until its widest word is inside
-    // its room (before: a word alone): three lines of every built file's script. Until the next
-    // commit names this one as the version before, the two are compared without those lines.
-    const fitted = (file) => (file.endsWith("captions/index.html") ? (text) => text.replace(/\n {12}\/\/ a word [^\n]*wider than its room even at the least size[^\n]*\n[^\n]*\n {12}while \([^\n]*?\}/, "") : (text) => text);
-    for (const f of files) assert.equal(fitted(f)(fs.readFileSync(path.join(dir, "b", name, f), "latin1")), fitted(f)(fs.readFileSync(path.join(dir, "a", name, f), "latin1")), `${name}: ${f} differs from the version before`);
+    for (const f of files) assert.ok(fs.readFileSync(path.join(dir, "b", name, f)).equals(fs.readFileSync(path.join(dir, "a", name, f))), `${name}: ${f} differs from the version before`);
   };
   // 9:16, 16:9, 1:1, 4:5 and a small 9:16, in every style
   for (const style of Object.keys(STYLES)) for (const size of ["1080x1920", "1920x1080", "1080x1080", "1080x1350", "720x1280"]) {
