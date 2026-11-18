@@ -42,7 +42,8 @@ const time = (s) => {
   return t;
 };
 
-// the span of a recording: from its earliest source's start, as long as its longest source
+// the span of a recording: from its earliest source's start, as long as its longest source plus
+// its pauses (recording.json "pauses", clock times; the files leave them out)
 function recordingSpan(folder) {
   const file = path.join(folder, "recording.json");
   if (!fs.existsSync(file)) fail(`${folder} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
@@ -54,7 +55,10 @@ function recordingSpan(folder) {
     return Number(r.stdout.trim()) || 0;
   });
   const from = Math.min(...starts);
-  return { from, to: from + (Math.max(0, ...lengths) || 1800) * 1000 };
+  const pauses = (rec.pauses || []).filter((p) => Number.isFinite(p.from) && Number.isFinite(p.to) && p.to > p.from)
+    .sort((a, b) => a.from - b.from);
+  const paused = pauses.reduce((t, p) => t + p.to - p.from, 0);
+  return { from, to: from + (Math.max(0, ...lengths) || 1800) * 1000 + paused, pauses };
 }
 
 const clock = (s) => {
@@ -74,24 +78,38 @@ let all;
 try { all = await events(w.db, w.bot, span.from - BEFORE, span.to); } catch (e) { fail(`✗ ${e.message} (node:sqlite needs Node 22.13 or later)`); }
 const list = all.filter((e) => e.at >= span.from);
 const busy = working(all, span.from, span.to);
-const rel = (ms) => (ms - span.from) / 1000;
+const pauses = span.pauses || [];
+// a clock time on the recording's time: the pauses before it taken out, a moment inside one at its start
+const rel = (ms) => (ms - span.from - pauses.reduce((t, p) => t + Math.max(0, Math.min(ms, p.to) - p.from), 0)) / 1000;
+const pausedAt = (ms) => pauses.some((p) => ms >= p.from && ms < p.to);
 
-console.log(`Bot ${w.bot}, ${wall(span.from)}–${wall(span.to)} (${clock(rel(span.to))}); times from the start${folder ? " of the recording" : ""}:\n`);
+console.log(`Bot ${w.bot}, ${wall(span.from)}–${wall(span.to)} (${clock(rel(span.to))}); times from the start${folder ? " of the recording" : ""}${pauses.length ? ", the pauses left out as in the files" : ""}:\n`);
+// each pause in its place among the events
+const unsaid = [...pauses];
+const pausesUntil = (ms) => {
+  while (unsaid.length && unsaid[0].from <= ms) {
+    const p = unsaid.shift();
+    console.log(`${clock(rel(p.from)).padStart(6)} (${wall(p.from)})  ⏸ paused ${Math.round((p.to - p.from) / 1000)} s, until ${wall(p.to)}: not in the recording`);
+  }
+};
 for (const e of list) {
-  const head = `${clock(rel(e.at)).padStart(6)} (${wall(e.at)})`;
+  pausesUntil(e.at);
+  const head = `${clock(rel(e.at)).padStart(6)} (${wall(e.at)})${pausedAt(e.at) ? " ⏸" : ""}`;
   if (e.kind === "sent") console.log(`${head}  sent: ${e.text}`);
   else if (e.kind === "answer") console.log(`${head}  answered: ${e.text}`);
   else console.log(`${head}  ${e.name} ${e.what}${e.took != null ? ` (${e.took} s)` : ""}${e.error ? " ✗" : ""}${e.result ? ` → ${e.result}` : ""}${DONE.test(e.result || "") ? "   ★ out" : ""}`);
 }
+pausesUntil(Infinity);
 if (!list.length) console.log("Nothing: the agent did nothing in that span.");
 if (busy.length) console.log("");
-for (const b of busy) console.log(`The agent worked ${clock(rel(b.from))}–${clock(rel(b.to))} (${Math.round((b.to - b.from) / 1000)} s), on: ${b.message.slice(0, 80)}`);
+for (const b of busy) console.log(`The agent worked ${clock(rel(b.from))}–${clock(rel(b.to))} (${Math.round(rel(b.to) - rel(b.from))} s), on: ${b.message.slice(0, 80)}`);
 
 if (opts.json) {
   const out = {
     bot: w.bot, from: new Date(span.from).toISOString(), to: new Date(span.to).toISOString(),
-    events: list.map(({ at, ...e }) => ({ t: +rel(at).toFixed(2), ...e })),
+    events: list.map(({ at, ...e }) => ({ t: +rel(at).toFixed(2), ...e, ...(pausedAt(at) ? { paused: true } : {}) })),
     working: busy.map((b) => ({ from: +rel(b.from).toFixed(2), to: +rel(b.to).toFixed(2), message: b.message })),
+    pauses: pauses.map((p) => ({ t: +rel(p.from).toFixed(2), seconds: +((p.to - p.from) / 1000).toFixed(2) })),
     out: list.filter((e) => DONE.test(e.result || "")).map((e) => ({ t: +rel(e.at + (e.took || 0) * 1000).toFixed(2), what: e.result })),
   };
   fs.mkdirSync(path.dirname(path.resolve(opts.json)), { recursive: true });

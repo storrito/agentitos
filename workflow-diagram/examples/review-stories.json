@@ -1,0 +1,49 @@
+{
+  "lang": "de",
+  "title": "So wird aus einer Bewertung ein Beitrag",
+  "subtitle": "Du gibst nur frei. Alles andere passiert von selbst.",
+  "steps": [
+    {
+      "who": "event",
+      "icon": "star",
+      "title": "Etwas Neues kommt herein",
+      "text": "Eines davon genügt:",
+      "items": ["Ein Gast bewertet eine Wohnung", "Eine neue Zeile im Redaktionsplan", "Jeden Montag: das Beste der Woche"]
+    },
+    {
+      "who": "auto",
+      "icon": "sparkle",
+      "title": "Der Beitrag entsteht",
+      "text": "Aus den Worten des Gastes wird eine Story im Stil, den wir festgelegt haben.",
+      "note": { "title": "Unter 4 Sternen?", "text": "Dann entsteht kein Beitrag. Dein Team bekommt nur eine Nachricht." }
+    },
+    {
+      "who": "auto",
+      "icon": "phone",
+      "title": "Vorschau aufs Handy",
+      "text": "Du bekommst die Story in **Telegram**, mit der Uhrzeit, zu der sie online ginge."
+    },
+    {
+      "who": "you",
+      "icon": "ok",
+      "title": "Antworte „OK“",
+      "text": "Gefällt sie dir? Dann antworte einfach **OK**.",
+      "note": { "title": "Etwas soll anders sein?", "text": "Schreib, was sich ändern soll – du bekommst eine neue Vorschau." }
+    },
+    {
+      "who": "auto",
+      "icon": "send",
+      "title": "Der Beitrag geht hinaus",
+      "text": "Zur nächsten freien Zeit des Tages, auf:",
+      "items": ["Instagram-Story", "Facebook-Seite", "Pinterest"],
+      "chips": ["11:00", "13:00", "15:00", "17:00"]
+    },
+    {
+      "who": "auto",
+      "icon": "table",
+      "title": "Alles steht im Protokoll",
+      "text": "Jeder Beitrag kommt mit Datum und Link in deine Tabelle."
+    }
+  ],
+  "promise": "Ohne dein OK geht nichts online."
+}

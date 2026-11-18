@@ -1,6 +1,6 @@
 ---
 name: transcribe
-description: The words of a recording (audio or video), each with its time in seconds, through OpenRouter. By default ElevenLabs Scribe v2, word for word as spoken with "äh"s and noises marked, 20 ms timings, for cutting and captions; with --speakers Gemini 3.5 Transcribe, which also says who speaks (A, B, …), for interviews and podcasts. Use when the person wants a transcript, and as the transcription step of other skills (captions, best-takes, clips, kinetic-lyrics, launch-video, screencast-cut, video-descriptions): they run its tool instead of keeping their own.
+description: Writes down every word of a recording with its time (ElevenLabs Scribe with "äh"s and noises, or Gemini with --speakers saying who speaks); for a transcript and as other skills' transcription step.
 license: MIT
 metadata:
   title: "Transcribe"
@@ -16,26 +16,37 @@ metadata:
 
 # transcribe
 
-You run in rragent. `<skill>` below is the folder this file is in. Run the tool as `node <skill>/tools/transcribe.mjs …` from your working directory; every path you pass is yours. Never change the files in `<skill>`. Full reference: [README.md](README.md).
+`<skill>` is the folder of this file. Run `node <skill>/tools/transcribe.mjs …` from your working directory; every path you pass is yours. Never change the files in `<skill>`. Full reference: [README.md](README.md).
 
 ## What it needs
 
-Node 20+, ffmpeg and OpenRouter: `OPENROUTER_API_KEY` in the environment, or, on a Sprite, the gateway's OpenRouter connection (the tool finds it at `http://sprite.internal`; an rragent agent there often has no key of its own). About half a cent a minute (Scribe) to a cent (Gemini). Nothing to `npm install`. When something is missing, say so in one sentence instead of installing it yourself.
+Node 20+, ffmpeg and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tool finds it at `http://sprite.internal`). About half a cent a minute (Scribe) to a cent (Gemini). When something is missing, say so in one sentence; never install it.
 
 ## The words
 
-The person attaches a recording; their message names it as a line `video: uploads/<file>` or `audio: uploads/<file>`.
+The recording comes as a line `video: uploads/<file>` or `audio: uploads/<file>`.
 
 ```bash
 node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json
 node <skill>/tools/transcribe.mjs uploads/<file> --out transcribe/<name>/words.json --speakers [--speakers-n 2] [--lang de]
 ```
 
-- Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word.
+- Without `--speakers`: ElevenLabs Scribe v2, every word as spoken, `"kind": "word" | "filler" | "event"` ("äh", "[laughs]"), 20 ms timings with the real pauses. For cutting, captions, anything timed to the word. Every word's time is checked against the recording's own sound: the few the recognizer squeezed, drew over a pause or put into silence are moved to where the voice is (`"by": "sound"`), a stretch that stays doubtful is heard again alone (`"by": "second hearing"`). Then the edges of all words are set where their sound begins and ends: Scribe starts a word about 60 ms late and ends one in eight more than 100 ms early, so a cut or a caption by its own times comes after the word has begun. The summary line says how many words lie where the voice is and which spots stay doubtful.
 - `--speakers`: Gemini 3.5 Transcribe, `"speaker": "A"`, `"B"`, … in the order they first speak, times to a tenth of a second, an hour in about a minute. For an interview or a podcast. `--speakers-n N` when the person said how many speak: more voices than that are merged into the nearest of the N that speak most.
 - `--lang de` when you know the language; else the model hears it.
 
-The tool writes `{engine, model, duration, cost, words: [{text, start, end, …}]}` and prints what it wrote and what to do next. Read the words: a name the model misheard (a product, an account like "storrito_com", a person) you correct in `words.json` yourself, keeping the times.
+The tool writes `{engine, model, duration, cost, timing, edges, words: [{text, start, end, …}]}`; `"edges": "sound"` says the words' edges lie on the sound, and a skill that takes them times nothing a second time. Read the words: correct a misheard name (a product, an account like "storrito_com", a person) in `words.json` yourself, keeping the times.
+
+## When a time looks wrong
+
+A spot the summary calls doubtful, or one the person says is off (a caption too early, a cut into a word):
+
+```bash
+node <skill>/tools/timing.mjs sheet uploads/<file> transcribe/<name>/words.json --at 2:14
+node <skill>/tools/timing.mjs check uploads/<file> <words.json> [--fix]
+```
+
+`sheet` draws six seconds of the sound around the moment: the waveform, in green where a voice is, every word as a box over its time, doubtful words in red; read the picture and set a wrong word's start and end in `words.json` to its voice. `check` measures words from anywhere against the sound, `--fix` moves the ones it contradicts. Words with one time each (start = end) it refuses: the sound cannot say which stretch of voice is which word, take them again with `transcribe.mjs`.
 
 ## For another skill
 

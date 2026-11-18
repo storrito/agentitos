@@ -4,7 +4,7 @@
 // elements, and from the 76th on the preview was silent. One track each takes two.
 //
 //   voiceTrack(file, pieces, out)                 the voice of every spoken piece at its take's
-//                                                 level and speed with 10 ms fades, silence for
+//                                                 level and speed with 20 ms fades, silence for
 //                                                 the rest
 //   cameraTrack(file, offset, pieces, out, opts)  the webcam at every piece's moment and speed
 //   backdropTrack(pick, pieces, out, opts)        each piece's screen, small and blurred: the
@@ -17,6 +17,9 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const n = (x) => +x.toFixed(4);
+// every spoken piece fades in and out this long (seconds): a cut in the quiet does not click, the
+// words' first and last sounds stay (browser-use's video-use fades 30 ms)
+const FADE = 0.02;
 
 function run(args, what) {
   const r = spawnSync("ffmpeg", args, { encoding: "utf8", maxBuffer: 1 << 26 });
@@ -55,7 +58,7 @@ export function voiceTrack(file, pieces, out) {
     // a cut played faster (--speed): its voice too, at its own pitch
     const rate = p.rate || 1;
     return `[${k++}:a]atrim=duration=${n(d * rate)},asetpts=PTS-STARTPTS,aresample=48000,${Math.abs(rate - 1) > 0.001 ? `atempo=${n(rate)},` : ""}volume=${p.gain || 0}dB,`
-      + `afade=t=in:d=0.01,afade=t=out:st=${n(Math.max(0, d - 0.01))}:d=0.01,apad=whole_dur=${d},atrim=duration=${d}[a${i}]`;
+      + `afade=t=in:d=${FADE},afade=t=out:st=${n(Math.max(0, d - FADE))}:d=${FADE},apad=whole_dur=${d},atrim=duration=${d}[a${i}]`;
   });
   const graph = `${parts.join(";")};${pieces.map((_, i) => `[a${i}]`).join("")}concat=n=${pieces.length}:v=0:a=1[out]`;
   // a cut of silence alone still needs an input for ffmpeg: the file, unused

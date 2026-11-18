@@ -12,6 +12,7 @@ node tools/takes.mjs build takes/kameras --out artifacts/kameras/composition   #
 node tools/takes.mjs check takes/kameras                                       # the cut as text, what is left out, levels, problems
 # the render tool: kameras → artifacts/kameras.mp4
 node tools/takes.mjs finish takes/kameras artifacts/kameras.mp4                # at −14 LUFS, and kameras.srt
+node --test tools/test.mjs                                                     # the cut's voice as one file, no request
 ```
 
 Outside rragent the same works with any HyperFrames project folder: `--out <project>/composition`, then `hyperframes render` in that folder.
@@ -31,6 +32,7 @@ Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, 
    - **the loudness**: the pieces of one take (same video, forward, of one keep or under 5 s apart) are measured together (gated like EBU R128 integrated loudness) and get one gain to −16 LUFS, so the level evens out between takes and videos without jumping inside a take.
 
    The project has one `<video>` clip per piece, edge to edge on one track (`data-start`, `data-duration`, `data-media-start`), its gain as a `gain` stage of `data-fx-chain` (two stages above +12 dB), 10 ms fades as a volume lane against clicks, and all of them in an `<hf-audio-group>` bus with a high-pass at 75 Hz, a gentle compressor and a true-peak ceiling. Nothing is rendered for the preview: the player plays the pieces straight from the videos, and rragent's pane shows the project and loads it again after every build.
+   `build` also writes the cut's voice as one file, `takes/<name>/voice.cut.m4a` (each take at its level, silence where a piece only shows something; `tools/lib/tracks.mjs`), named as `"voice"` in `edit.json`, whose `"words"` are timed in the cut: together they are what another skill needs to set its own pictures to this voice. It is as long as the cut and made again only when the cut changed.
 4. **`check`** lists the cut as it plays, what it leaves out, the levels, and what to look at: pieces under 0.6 s left over by a cut, takes raised by more than 15 dB (their room noise rises too), a cut longer than `--target`, and HyperFrames' own lint.
 5. **The render** is rragent's `render` tool, `hyperframes render` of the project (about 1.5× the cut's length on 8 cores). **`finish`** then brings the whole to `--loudness` (−14 LUFS) with a gain and a limiter 2 dB under full scale, measured and corrected once, the picture copied; a video at the level already stays as it is. It refuses a video whose length is not the cut's (rendered before the last build), and writes subtitles of the cut's words (`.srt`, with the spelling of `fixes`).
 

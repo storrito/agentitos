@@ -14,7 +14,7 @@ node tools/story.mjs build work/post                                # the frames
 # schedule-instagram-story (or create-draft) per frame, status-instagram-story, cancel-instagram-story
 ```
 
-Requirements: Node 20+, agentitos' [platform-zones](../platform-zones/) and [brand-kit](../brand-kit/) beside this skill (where Instagram covers a story; the brand kit), Chrome (`CHROME`, or `google-chrome` / `chromium` on the PATH), network access to the page, Google Fonts and Storrito.
+Requirements: Node 20+, agentitos' [platform-zones](../platform-zones/), [brand-kit](../brand-kit/) and [story-stickers](../story-stickers/) beside this skill (where Instagram covers a story; the brand kit; which stickers an account has), Chrome (`CHROME`, or `google-chrome` / `chromium` on the PATH), network access to the page, Google Fonts and Storrito.
 
 ## How it works
 

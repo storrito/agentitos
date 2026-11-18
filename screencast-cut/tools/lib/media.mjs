@@ -28,6 +28,9 @@ export function probe(file) {
 // The recording as the preview and the renderer play it best: H.264 at a steady 30 frames a
 // second (a phone's screen arrives with a varying rate), a keyframe every second so that every
 // cut seeks at once, at most 2560 px wide, its sound as AAC; a recording of sound alone: AAC.
+// The browser's sound has gaps in its timestamps (Chrome's recorder: 3.8 s in six minutes): they
+// are filled with silence, so that the sound decoded (the words' times, the envelopes) and the
+// sound played (the preview, every seek) run on one clock; else the cuts drift into the words.
 // With `frames` (activity.differ of activity.grid) the same decoding also streams the grey frames
 // the activity is measured on, so the source is read once; `progress` hears how many seconds of
 // it are done. Resolves with what the copy is (probe).
@@ -41,6 +44,7 @@ export function prepare(file, out, { fps = 30, frames, progress } = {}) {
   } else {
     args.push("-map", "0:a:0", "-vn");
   }
+  if (p.audio) args.push("-af", "aresample=async=1:first_pts=0");
   args.push("-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out);
   if (p.video && frames) args.push("-map", "0:v:0", "-an", "-vf", frames.filter, "-f", "rawvideo", "pipe:1");
   return new Promise((resolve, reject) => {

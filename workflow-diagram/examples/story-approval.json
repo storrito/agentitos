@@ -1,0 +1,38 @@
+{
+  "lang": "en",
+  "title": "How a soul.globe Story gets made",
+  "subtitle": "You do two small things. Everything else happens by itself.",
+  "steps": [
+    {
+      "who": "you",
+      "icon": "folder",
+      "title": "Drop a folder in Dropbox",
+      "text": "Put a video or your photos into a new folder in **“Instagram Stories”** – plus a short note with your wishes, like a link to add."
+    },
+    {
+      "who": "auto",
+      "icon": "phone",
+      "title": "Get a preview on your phone",
+      "text": "Shortly after, your Story is made and sent to you in **Telegram**, together with the time it would go online."
+    },
+    {
+      "who": "you",
+      "icon": "ok",
+      "title": "Reply “OK”",
+      "text": "Happy with it? Just answer **OK**.",
+      "note": {
+        "title": "Want something different?",
+        "text": "Simply write what should change – you’ll get a new preview, as often as you like."
+      }
+    },
+    {
+      "who": "auto",
+      "icon": "clock",
+      "title": "Your Story goes live",
+      "text": "It appears on **soul.globe** at the next free time of the day:",
+      "chips": ["11:00", "13:00", "15:00", "17:00"],
+      "small": "You get a message with the exact time."
+    }
+  ],
+  "promise": "Nothing goes online without your OK."
+}

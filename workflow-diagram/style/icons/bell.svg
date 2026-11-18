@@ -1,0 +1,1 @@
+<svg viewBox="0 0 150 140"><path d="M75 16c-24 0-38 18-38 40v22l-12 20h100l-12-20V56c0-22-14-40-38-40z" fill="var(--role)" stroke="var(--role)" stroke-width="6" stroke-linejoin="round"/><path d="M60 110a15 15 0 0 0 30 0z" fill="var(--role-soft)" stroke="var(--role-soft)" stroke-width="6" stroke-linejoin="round"/><circle cx="110" cy="26" r="13" fill="var(--alert)"/></svg>

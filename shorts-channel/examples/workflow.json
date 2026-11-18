@@ -1,0 +1,38 @@
+{
+  "lang": "en",
+  "title": "How a Robotics News video gets out",
+  "subtitle": "You do one small thing a video. Everything else happens by itself.",
+  "steps": [
+    {
+      "who": "auto",
+      "icon": "sparkle",
+      "title": "The day's topics are chosen",
+      "text": "Early in the morning the news about robots is read and three topics are picked for the day."
+    },
+    {
+      "who": "auto",
+      "icon": "phone",
+      "title": "A video is made and shown to you",
+      "text": "Each topic becomes a short video with a voice, real footage and captions. You get a message here when one is ready."
+    },
+    {
+      "who": "you",
+      "icon": "ok",
+      "title": "Say yes",
+      "text": "Watch it and say yes.",
+      "note": {
+        "title": "Want something different?",
+        "text": "Write what should change, a sentence or a shot, and you get it again. Or drop it."
+      }
+    },
+    {
+      "who": "auto",
+      "icon": "clock",
+      "title": "It goes out on TikTok",
+      "text": "On **Storrito Robotics News**, at its time of the day:",
+      "chips": ["11:00", "14:00", "17:00"],
+      "small": "On Mondays you get a short look back at the week."
+    }
+  ],
+  "promise": "Nothing goes online without your yes."
+}
