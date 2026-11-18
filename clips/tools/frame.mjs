@@ -22,7 +22,9 @@
 // a voice that speaks for less than a second and a half (a "ja", a laugh) moves nothing; a shot
 // of someone else (a reaction) shows them. The face is known on every still, and between the
 // stills followed in the frames (lib/track.mjs, ten a second): the window holds it all through,
-// still where it can, wider where that is enough, else following it. A face low in a wide shot (an empty wall above it) is brought up by a closer window, as
+// still where it can, wider where that is enough, else following it; of a close-up it holds the
+// eyes, nose and mouth with room on the side the face looks to (holdOf), calmly over a sway
+// (calm). A face low in a wide shot (an empty wall above it) is brought up by a closer window, as
 // far as the footage's sharpness allows. Within a shot the window pans in 0.4 s to another
 // speaker, at a cut it cuts. A wide shot (several people) from footage of 1440 lines and more is
 // cut closer.
@@ -67,13 +69,36 @@ const CLOSEST = 0.55, CLOSEST_LINES = 960;
 // warn of a face closer to the edge than EDGE
 const HOLD = 0.06, EDGE = 0.02;
 // a window that follows a face goes along only when the face pushes at its edge, at most VMAX
-// window widths a second, and turns back no sooner than REST seconds after its last turn; of a
-// face wider than BIG of the window it holds the middle CORE of the face's width (the editors'
-// close-ups cut the ears too)
-// CORE was chosen on the five passages of the three-way test (70 % let a nose or an eye go in
-// profile turns, 90 % made the window chase a swaying close-up): a default, FRAME_CORE changes it
+// window widths a second, and turns back no sooner than REST seconds after its last turn
 const REST = 1, VMAX = 1.2, BIG = 0.5, SLACK = 0.03;
+// the room a following window keeps is taken as it is on average over SWAY seconds: a head that
+// sways to and fro within them moves nothing, only the features about to leave do
+const SWAY = 2;
+// of a close-up (a face wider than BIG of the window) the window holds the eyes, nose and mouth
+// with ROOM_BACK of the face's width beside them, and ROOM_FRONT more on the side the face looks
+// to; the back of the head, an ear, hair at the side may be cut (the channel's editors and OpusClip
+// cut them so). Turning back early, the features themselves with FEAT_PAD. Features at the edge:
+// closer than FEAT_EDGE of the window's width. Chosen on the five passages of the three-way test:
+// with 0.08 and 0.22 a swaying close-up left the window too little play (0.65 turns a second)
+const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.035, FEAT_EDGE = 0.015;
+// an answer without the features (one of version 2): the middle CORE of the face's width (FRAME_CORE)
 const CORE = Math.min(1, Math.max(0.5, Number(process.env.FRAME_CORE) || 0.8));
+
+// what of a face a window of width ww must hold, [left, right] in the footage's pixels, with room
+// m (a share of ww) beside it; m = 0: the least (turning back early so that it does not leave)
+export function holdOf(f, ww, m = HOLD) {
+  if (f.w <= BIG * ww) return [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww];
+  if (!f.feat) { const e = Math.min(m, SLACK) * ww; return [f.x - (CORE / 2) * f.w - e, f.x + (CORE / 2) * f.w + e]; }
+  const { x0, x1, lean } = f.feat;
+  if (!m) return [x0 - FEAT_PAD * f.w, x1 + FEAT_PAD * f.w];
+  const back = ROOM_BACK * f.w, front = back + ROOM_FRONT * Math.abs(lean) * f.w;
+  // a face that looks to one side: the window's middle on that side of the features' middle, so
+  // that it has more room there than behind
+  const mid = (x0 + x1) / 2;
+  if (lean <= -0.5) return [Math.min(x0 - front, mid - ww / 2), x1 + back];
+  if (lean >= 0.5) return [x0 - back, Math.max(x1 + front, mid + ww / 2)];
+  return lean < 0 ? [x0 - front, x1 + back] : [x0 - back, x1 + front];
+}
 // a face followed until here, then on a still without it: gone this long after it was last seen
 const ABSENT_GAP = 0.15;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
@@ -585,9 +610,9 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
         const low = (fy - Math.min(height - h, Math.max(0, fy - h * FACE_Y))) / h;
         if (low > FACE_LOW) h = Math.min(h, Math.max(hMin, fh / 0.4, (height - fy) / (1 - FACE_Y)));
       }
-      // wider where the face moves more than a still window holds (of a face as wide as the
-      // window, its middle: CORE of its width)
-      const core = (f, ww, m = HOLD) => (f.w > BIG * ww ? [f.x - (CORE / 2) * f.w - Math.min(m, SLACK) * ww, f.x + (CORE / 2) * f.w + Math.min(m, SLACK) * ww] : [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww]);
+      // wider where the face moves more than a still window holds (of a close-up its eyes, nose
+      // and mouth with room beside them: holdOf)
+      const core = holdOf;
       let hold = "still";
       for (const g of segs) {
         const fs = g.at.filter(Boolean);
@@ -633,7 +658,9 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
       }
       if (moves && hold !== "follows") hold = "follows";
       if (!keys.length) keys.push({ t: a, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) });
-      return { start: a, end: b, shot, kind: "people", hold, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys: keys.map((k) => ({ ...k, x: +k.x.toFixed(1), y: +k.y.toFixed(1) })) };
+      const piece = { start: a, end: b, shot, kind: "people", hold, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys: keys.map((k) => ({ ...k, x: +k.x.toFixed(1), y: +k.y.toFixed(1) })) };
+      const cu = closeupOf(piece, segs, fps);
+      return cu ? { ...piece, closeup: cu } : piece;
     };
     const out = [];
     let t = s.start;
@@ -649,39 +676,90 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
   });
 }
 
+// how calm a close-up's window is and how well it holds the face, frame by frame: { turns (a
+// second), held (share of the close-up's time the features are in with their room), inside (with
+// at least FEAT_PAD: not at the edge), seconds, features (whether the answer had them) }, or null
+// when the piece has no close-up. `segs`: [{ t0, t1, person }], whom the window holds when
+export function closeupOf(piece, segs, fps = 25) {
+  const dt = 1 / fps;
+  let n = 0, held = 0, inside = 0, turns = 0, dir = 0, prev = null, feat = false;
+  for (let t = piece.start + dt / 2; t < piece.end; t += dt) {
+    const x = windowAt(piece, t).x;
+    const g = segs.find((s) => t >= s.t0 && t < s.t1), f = g?.person && faceAt(g.person, t);
+    // the turns while it is a close-up (a pan to another speaker is none)
+    if (!f || f.w <= BIG * piece.w) { prev = null; dir = 0; continue; }
+    if (prev != null) {
+      const v = (x - prev) / dt, d = Math.abs(v) < 2 ? 0 : Math.sign(v);
+      if (d && dir && d !== dir) turns++;
+      if (d) dir = d;
+    }
+    prev = x;
+    n++;
+    feat ||= !!f.feat;
+    const [a, b] = holdOf(f, piece.w), [c, d] = holdOf(f, piece.w, 0);
+    if (a >= x - 0.5 && b <= x + piece.w + 0.5) held++;
+    if (c >= x - 0.5 && d <= x + piece.w + 0.5) inside++;
+  }
+  if (!n) return null;
+  return { turns: +(turns / (n * dt)).toFixed(2), held: +(held / n).toFixed(3), inside: +(inside / n).toFixed(3), seconds: +(n * dt).toFixed(2), features: feat };
+}
+
 // the window's place on one face from t0 to t1, every tenth of a second: [{ t, x }]. It rests
-// while the face (its core) stays inside, and when the face pushes at an edge it goes along, at
-// most VMAX window widths a second, only as far as needed; it does not turn back within REST
-// seconds of its last turn unless the face itself (its core) would leave the window (a swaying
-// head is let into the room beside it rather than chased), so a still face gets a still window,
-// a walking one a gliding window. `near`: the place before
+// while the face with its room (holdOf: of a close-up the eyes, nose and mouth), taken over SWAY
+// seconds, stays inside, and when it pushes at an edge it goes along, at most VMAX window widths a
+// second, only as far as needed; it does not turn back within REST seconds of its last turn unless
+// the features themselves (holdOf's least) would leave the window (a swaying head is let into the
+// room beside it rather than chased), so a still face gets a still window, a walking one a
+// gliding window. `near`: the place before
 export function calm(person, t0, t1, { w, width, core, near = null }) {
-  const room = (t) => {
-    const f = faceAt(person, t);
-    if (!f) return null;
-    // a following window lets a face come closer to its edge than a still one is chosen with
-    const [a, b] = core(f, w, SLACK);
+  // where the window may be for a face to be held with room m: [lo, hi] of its left edge
+  const span = (f, m) => {
+    const [a, b] = core(f, w, m);
     let lo = Math.max(0, b - w), hi = Math.min(width - w, a);
-    if (lo > hi) lo = hi = Math.min(width - w, Math.max(0, f.x - w / 2));
+    if (lo > hi) lo = hi = Math.min(width - w, Math.max(0, (a + b) / 2 - w / 2));
     return [lo, hi];
   };
   const dt = 0.1, vmax = VMAX * w;
+  const closeUp = (t) => { const f = faceAt(person, t); return !!f && f.w > BIG * w; };
+  // the room (a following window lets a face come closer to its edge than a still one is chosen
+  // with), as it is on average over SWAY seconds around t (less at the ends, always as much before
+  // t as after it, so that a face going one way is not led or followed): a head swaying to and fro
+  // moves nothing
+  const room = (t) => {
+    let lo = 0, hi = 0, n = 0;
+    // a face smaller than a close-up's (a wide shot, someone walking) as it is at t
+    const half = closeUp(t) ? Math.max(0, Math.min(SWAY / 2, t - t0, t1 - t)) : 0;
+    for (let u = t - half; u <= t + half + 1e-6; u += dt) {
+      const f = faceAt(person, u);
+      if (!f) continue;
+      const r = span(f, SLACK);
+      lo += r[0]; hi += r[1]; n++;
+    }
+    return n ? [lo / n, hi / n] : null;
+  };
   const first = room(t0) || [0, width - w];
   let x = near == null ? (first[0] + first[1]) / 2 : Math.min(first[1], Math.max(first[0], near));
   let dir = 0, turned = -Infinity;
   const path = [{ t: t0, x }];
   for (let t = t0 + dt; t < t1 + dt - 1e-6; t += dt) {
     const at = Math.min(t, t1), r = room(at);
-    if (r) {
-      const want = Math.min(r[1], Math.max(r[0], x)) - x;
-      const d = Math.sign(Math.round(want));
-      // the face itself (not only the room beside it) about to leave: turn back all the same
-      const f = faceAt(person, at), [a, b] = f ? core(f, w, 0) : [x, x + w];
-      const leaving = a < x || b > x + w;
-      if (d && (d === dir || at - turned >= REST || !dir || leaving)) {
-        x += Math.max(-vmax * dt, Math.min(vmax * dt, want));
-        if (d !== dir) { if (dir) turned = at; dir = d; }
-      }
+    let want = r ? Math.min(r[1], Math.max(r[0], x)) - x : 0;
+    // the face itself (its features, not only the room beside them) about to leave, within the
+    // next two tenths: the window goes at least as far as that needs, also straight back
+    let hard = null;
+    for (const u of closeUp(at) ? [at, at + dt, at + 2 * dt] : [at]) {
+      const f = u <= t1 + 1e-6 && faceAt(person, u);
+      if (!f) continue;
+      const s = span(f, 0);
+      hard = !hard ? s : Math.max(hard[0], s[0]) <= Math.min(hard[1], s[1]) ? [Math.max(hard[0], s[0]), Math.min(hard[1], s[1])] : hard;
+    }
+    const must = hard ? Math.min(hard[1], Math.max(hard[0], x)) - x : 0;
+    const leaving = Math.abs(must) >= 0.5;
+    if (leaving && (Math.sign(want) !== Math.sign(must) || Math.abs(want) < Math.abs(must))) want = must;
+    const d = Math.sign(Math.round(want));
+    if (d && (d === dir || at - turned >= REST || !dir || leaving)) {
+      x += Math.max(-vmax * dt, Math.min(vmax * dt, want));
+      if (d !== dir) { if (dir) turned = at; dir = d; }
     }
     path.push({ t: at, x });
   }
