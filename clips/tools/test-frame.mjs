@@ -337,3 +337,25 @@ test("a window that follows a face does not stop at a change of speaker", () => 
     assert.ok(f.x - f.w / 2 >= win.x - 1 && f.x + f.w / 2 <= win.x + win.w + 1, `A out of the window at ${t.toFixed(2)} s: face ${Math.round(f.x - f.w / 2)}–${Math.round(f.x + f.w / 2)}, window ${Math.round(win.x)}–${Math.round(win.x + win.w)}`);
   }
 });
+
+test("a close-up that sways is held calmly: no move back within a second", () => {
+  // the reviewer's guest: a face 90 % of the window's width, swaying ±60 px at 0.7 Hz with a nod
+  const w = (1080 * 9) / 16;
+  const P = tracked("guest", "A", (t) => ({ x: 960 + 60 * Math.sin(2 * Math.PI * 0.7 * t), y: 420 + 20 * Math.sin(2 * Math.PI * 1.3 * t), w: 0.9 * w, h: 600 }), 0, 12);
+  const shots = [{ start: 0, end: 12, kind: "people", people: [P], faces: [{ speaker: "A", ...faceAt(P, 6) }] }];
+  const [win] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...HD, aspect: [9, 16] });
+  const xs = [];
+  for (let t = 0; t < 12; t += 1 / FPS) xs.push([t, windowAt(win, t).x]);
+  let lastDir = 0, lastTurn = -Infinity, turns = 0, fastest = 0;
+  for (let k = 1; k < xs.length; k++) {
+    const v = (xs[k][1] - xs[k - 1][1]) * FPS;
+    fastest = Math.max(fastest, Math.abs(v));
+    const dir = Math.abs(v) < 1 ? 0 : Math.sign(v);
+    if (dir && lastDir && dir !== lastDir) { assert.ok(xs[k][0] - lastTurn >= 1, `turned back at ${xs[k][0].toFixed(2)} s`); lastTurn = xs[k][0]; turns++; }
+    if (dir) lastDir = dir;
+  }
+  assert.ok(turns <= 6, `${turns} turns in 12 s`);
+  assert.ok(fastest < 0.8 * w, `${Math.round(fastest)} px/s`);
+  // the face's middle (its eyes, nose and mouth) never leaves the window
+  for (const [t, x] of xs) { const f = faceAt(P, t); assert.ok(f.x - 0.35 * f.w >= x - 1 && f.x + 0.35 * f.w <= x + w + 1, `face cut at ${t.toFixed(2)} s`); }
+});

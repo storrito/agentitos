@@ -63,10 +63,11 @@ const CLOSEST = 0.55, CLOSEST_LINES = 960;
 // the room a window keeps beside the face it holds (share of its width): to choose it, and to
 // warn of a face closer to the edge than EDGE
 const HOLD = 0.06, EDGE = 0.04;
-// of a face wider than BIG of the window it holds the middle CORE of the face's width (the
-// editors' close-ups cut the ears too)
-const BIG = 0.5, CORE = 0.7;
-// a window that follows a face moves to where it is every FOLLOW seconds
+// a window that follows a face rests at least REST seconds between moves, and moves at SPEED
+// window widths a second, in MOVE_MIN to MOVE_MAX seconds; of a face wider than BIG of the window
+// it holds the middle CORE of the face's width (the editors' close-ups cut the ears too)
+const REST = 1, SPEED = 0.6, MOVE_MIN = 0.4, MOVE_MAX = 1.2, BIG = 0.5, CORE = 0.7;
+// a window that glides along with a face going one way moves to where it is every FOLLOW seconds
 const FOLLOW = 0.4;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
 const STILL_EVERY = 3, STILLS_MAX = 60;
@@ -530,9 +531,10 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
         const fs = g.at.filter(Boolean);
         if (!fs.length) { push({ t: g.t0, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) }); continue; }
         const y = clampY(fs.reduce((n, f) => n + f.y, 0) / fs.length - h * FACE_Y);
-        const lo = Math.min(...fs.map((f) => core(f, w)[0])), hi = Math.max(...fs.map((f) => core(f, w)[1]));
-        if (hi - lo <= w) { push({ t: g.t0, x: clampX((lo + hi) / 2 - w / 2), y }); continue; }
-        {
+        const prev = keys[keys.length - 1];
+        // a face that goes one way (someone walking across) is glided along with; one that sways
+        // or moves now and then is held calmly
+        if (oneWay(g.person, g.t0, g.t1, w - (core(fs[0], w)[1] - core(fs[0], w)[0]))) {
           const near = (t) => {
             const xs = [-0.2, -0.1, 0, 0.1, 0.2].map((d) => faceAt(g.person, Math.min(g.t1, Math.max(g.t0, t + d)))).filter(Boolean);
             return xs.reduce((n, f) => n + f.x, 0) / xs.length;
@@ -546,6 +548,21 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
             free = at;
             moves++;
           }
+          continue;
+        }
+        const holds = calm(g.person, g.t0, g.t1, { w, width, core, near: prev?.x });
+        // the first place: a cut at the shot's start, a pan of PAN to a new speaker
+        const added = push({ t: g.t0, x: +holds[0].x.toFixed(1), y });
+        let free = added && keys.length > 1 ? g.t0 + PAN : g.t0;
+        for (const hd of holds.slice(1)) {
+          const last = keys[keys.length - 1];
+          const pan = Math.min(MOVE_MAX, Math.max(MOVE_MIN, Math.abs(hd.x - last.x) / (SPEED * w)));
+          // the move ends when the place before stops holding the face
+          const t0 = Math.max(free, hd.from - pan);
+          if (t0 >= g.t1) break;
+          keys.push({ t: +t0.toFixed(3), x: +hd.x.toFixed(1), y, pan: +pan.toFixed(3) });
+          free = t0 + pan;
+          moves++;
         }
       }
       if (moves && hold !== "follows") hold = "follows";
@@ -564,6 +581,63 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
     else out[out.length - 1].end = s.end;
     return out;
   });
+}
+
+// where a window on one face rests, from t0 to t1: [{ from, x }]. It stays where it is while the
+// face (its core) stays inside; when it would leave, the window moves once, to the middle of the
+// places that hold the face longest from then on, and rests at least REST seconds before it moves
+// again, so it never swings back and forth with a swaying head. `near`: the place before, kept
+// where it holds the face
+export function calm(person, t0, t1, { w, width, core, near = null }) {
+  const ts = [];
+  for (let t = t0; t < t1; t += 0.1) ts.push(t);
+  ts.push(t1);
+  const range = ts.map((t) => {
+    const f = faceAt(person, t);
+    if (!f) return null;
+    const [a, b] = core(f, w);
+    let lo = Math.max(0, b - w), hi = Math.min(width - w, a);
+    if (lo > hi) lo = hi = Math.min(width - w, Math.max(0, f.x - w / 2));
+    return [lo, hi];
+  });
+  const holds = [];
+  let i = 0, x = near;
+  while (i < ts.length) {
+    while (i < ts.length && !range[i]) i++;
+    if (i >= ts.length) break;
+    let L = range[i][0], H = range[i][1], j = i + 1;
+    while (j < ts.length && (!range[j] || Math.max(L, range[j][0]) <= Math.min(H, range[j][1]))) {
+      if (range[j]) { L = Math.max(L, range[j][0]); H = Math.min(H, range[j][1]); }
+      j++;
+    }
+    if (j < ts.length && ts[j] - ts[i] < REST) {
+      // the face leaves sooner than a window should move again: the place that keeps it best
+      // for REST seconds
+      const k = ts.findIndex((t) => t >= ts[i] + REST);
+      const end = k < 0 ? ts.length : k;
+      const rs = range.slice(i, end).filter(Boolean);
+      const lo = Math.max(...rs.map((r) => r[0])), hi = Math.min(...rs.map((r) => r[1]));
+      x = (lo + hi) / 2;
+      j = end;
+    } else x = holds.length === 0 && x != null ? Math.min(H, Math.max(L, x)) : (L + H) / 2;
+    const last = holds[holds.length - 1];
+    if (!last || Math.abs(last.x - x) >= 0.03 * w) holds.push({ from: ts[i], x });
+    i = j;
+  }
+  if (!holds.length) holds.push({ from: t0, x: near ?? (width - w) / 2 });
+  holds[0].from = t0;
+  return holds;
+}
+
+// does the face go one way from t0 to t1, further than the window leaves it room (`room`)?
+export function oneWay(person, t0, t1, room) {
+  const xs = [];
+  for (let t = t0; t <= t1 + 1e-6; t += 0.1) { const f = faceAt(person, Math.min(t, t1)); if (f) xs.push(f.x); }
+  if (xs.length < 3) return false;
+  let path = 0;
+  for (let k = 1; k < xs.length; k++) path += Math.abs(xs[k] - xs[k - 1]);
+  const net = Math.abs(xs[xs.length - 1] - xs[0]);
+  return net > room && net >= 0.7 * path;
 }
 
 // the faces a window cuts at its edge or holds too close to it: [{ piece, shot, t, who, edge,
