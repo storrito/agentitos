@@ -1168,7 +1168,7 @@ function cmdFinish(dir, file) {
   const before = lufsOf(file);
   if (!(Math.abs(before.lufs - s.final) <= 0.5 && before.peak <= -1)) {
     const tmp = path.join(path.dirname(path.resolve(file)), `.${path.basename(file)}.part.mp4`);
-    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "-1", "-c:v", "copy",
       "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.79:attack=5:release=60:level=disabled`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out], { stdio: ["ignore", "ignore", "inherit"] });
     try {
       let gain = s.final - before.lufs;
