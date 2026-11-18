@@ -58,30 +58,57 @@ export function followBox(grey, box, from, to) {
     }
     if (!(best < POOR)) ok = false;
     if (ok) cur = { ...cur, l: cur.l + bx, t: cur.t + by };
+    // a face whose middle has left the picture is gone
+    const cx = cur.l + cur.w / 2, cy = cur.t + cur.h / 2;
+    if (cx < 0 || cx >= w || cy < 0 || cy >= h) ok = false;
     out.push({ k: k + step, x: (cur.l + cur.w / 2) / scale, y: (cur.t + cur.h / 2) / scale, ok });
   }
   return out;
 }
 
-// a person's track ([{ t, x, y, w, h }] at the stills) filled in at every frame of the small copy
-// between `start` and `end` (seconds): forward from each still, back from the next, blended by
-// how close each is; sizes on the straight line. The stills stay as they are, marked `seen`
+// a person's track ([{ t, x, y, w, h }] at the stills, { t, absent } where a still does not show
+// them) filled in at every frame of the small copy between `start` and `end` (seconds): forward
+// from each still, back from the next, blended by how close each is; sizes on the straight line.
+// Next to a still without the face it is followed only as far as the frames show it (it leaves
+// the picture: absent, not cut). A still whose face is far from where the frames lead from both
+// stills beside it, which agree, is the model's slip: left out and listed in `track.doubtful`
+// ([{ t, off }], off in pixels). The stills stay as they are, marked `seen`
 export function fillTrack(grey, track, start, end) {
-  if (!track.length) return track;
-  const frameOf = (t) => Math.round((t - grey.start) * grey.fps);
+  const result = (list, doubtful = []) => Object.assign(list, { doubtful });
+  if (!track.some((s) => !s.absent)) return result(track.slice());
+  const frameOf = (t) => Math.max(0, Math.min(grey.frames.length - 1, Math.round((t - grey.start) * grey.fps)));
   const timeOf = (k) => grey.start + k / grey.fps;
-  const first = Math.max(0, frameOf(start)), last = Math.min(grey.frames.length - 1, frameOf(end));
-  const out = track.map((s) => ({ ...s, seen: true }));
+  const first = frameOf(start), last = frameOf(end);
   const lerp = (a, b, f) => a + (b - a) * f;
-  // before the first still and after the last: followed from it alone
-  const ends = [[track[0], first], [track[track.length - 1], last]];
-  for (const [s, to] of ends) {
-    const k = frameOf(s.t);
-    for (const p of followBox(grey, s, k, to)) if (p.ok) out.push({ t: +timeOf(p.k).toFixed(3), x: p.x, y: p.y, w: s.w, h: s.h });
+  const end1 = (path) => path[path.length - 1];
+  // the model's slips: a still the frames from both neighbours (agreeing) do not lead to
+  const doubtful = [];
+  let entries = track.slice();
+  for (let changed = true; changed;) {
+    changed = false;
+    const seen = entries.filter((s) => !s.absent);
+    for (let i = 1; i + 1 < seen.length; i++) {
+      const a = seen[i - 1], m = seen[i], b = seen[i + 1];
+      const pf = end1(followBox(grey, a, frameOf(a.t), frameOf(m.t))), pb = end1(followBox(grey, b, frameOf(b.t), frameOf(m.t)));
+      if (!pf?.ok || !pb?.ok) continue;
+      const agree = Math.hypot(pf.x - pb.x, pf.y - pb.y) < 0.3 * m.w;
+      const off = Math.hypot((pf.x + pb.x) / 2 - m.x, (pf.y + pb.y) / 2 - m.y);
+      if (agree && off > 0.6 * m.w) { doubtful.push({ t: m.t, off: Math.round(off) }); entries = entries.filter((s) => s !== m); changed = true; break; }
+    }
   }
-  for (let i = 0; i + 1 < track.length; i++) {
-    const a = track[i], b = track[i + 1], ka = frameOf(a.t), kb = frameOf(b.t);
-    if (kb - ka < 2) continue;
+  const out = entries.map((s) => ({ ...s, seen: true }));
+  const followed = (s, from, to) => {
+    for (const p of followBox(grey, s, from, to)) { if (!p.ok) break; out.push({ t: +timeOf(p.k).toFixed(3), x: p.x, y: p.y, w: s.w, h: s.h }); }
+  };
+  // before the first still and after the last: followed from it alone
+  if (!entries[0].absent) followed(entries[0], frameOf(entries[0].t), first);
+  if (!entries[entries.length - 1].absent) followed(entries[entries.length - 1], frameOf(entries[entries.length - 1].t), last);
+  for (let i = 0; i + 1 < entries.length; i++) {
+    const a = entries[i], b = entries[i + 1], ka = frameOf(a.t), kb = frameOf(b.t);
+    if (kb - ka < 2 || (a.absent && b.absent)) continue;
+    // next to a still without the face: as far as the frames show it
+    if (b.absent) { followed(a, ka, kb); continue; }
+    if (a.absent) { followed(b, kb, ka); continue; }
     const fwd = followBox(grey, a, ka, kb), back = followBox(grey, b, kb, ka);
     const byK = Object.fromEntries(back.map((p) => [p.k, p]));
     for (const p of fwd) {
@@ -92,7 +119,41 @@ export function fillTrack(grey, track, start, end) {
       out.push({ t: +timeOf(p.k).toFixed(3), x: lerp(fx, bx, f), y: lerp(fy, by, f), w: lerp(a.w, b.w, f), h: lerp(a.h, b.h, f) });
     }
   }
-  const seen = new Set();
-  return out.filter((s) => s.t >= start && s.t <= end || s.seen).sort((p, q) => p.t - q.t || (q.seen ? 1 : 0) - (p.seen ? 1 : 0))
-    .filter((s) => { const key = s.t.toFixed(2); if (seen.has(key)) return false; seen.add(key); return true; });
+  const once = new Set();
+  return result(out.filter((s) => (s.t >= start && s.t <= end) || s.seen).sort((p, q) => p.t - q.t || (q.seen ? 1 : 0) - (p.seen ? 1 : 0))
+    .filter((s) => { const key = s.t.toFixed(2); if (once.has(key)) return false; once.add(key); return true; }), doubtful);
+}
+
+// two faces whose followed paths run into each other (one passes in front of the other): there
+// the frames cannot tell them apart, and each path goes straight from the still before to the
+// still after. `people`: the persons of one shot, their tracks filled in
+export function uncross(people) {
+  const box = (s) => [s.x - s.w / 2, s.y - s.h / 2, s.x + s.w / 2, s.y + s.h / 2];
+  const iou = (a, b) => {
+    const [a0, a1, a2, a3] = box(a), [b0, b1, b2, b3] = box(b);
+    const ix = Math.max(0, Math.min(a2, b2) - Math.max(a0, b0)), iy = Math.max(0, Math.min(a3, b3) - Math.max(a1, b1));
+    const i = ix * iy;
+    return i / (a.w * a.h + b.w * b.h - i);
+  };
+  const crossing = new Map(people.map((p) => [p, new Set()]));
+  for (let i = 0; i < people.length; i++) for (let j = i + 1; j < people.length; j++) {
+    const byT = new Map(people[j].track.filter((s) => !s.absent).map((s) => [s.t.toFixed(2), s]));
+    for (const s of people[i].track) {
+      const o = !s.absent && byT.get(s.t.toFixed(2));
+      if (o && iou(s, o) > 0.2) { crossing.get(people[i]).add(s.t.toFixed(2)); crossing.get(people[j]).add(s.t.toFixed(2)); }
+    }
+  }
+  for (const p of people) {
+    const bad = crossing.get(p);
+    if (!bad.size) continue;
+    const seen = p.track.filter((s) => s.seen && !s.absent);
+    p.track = p.track.map((s) => {
+      if (s.seen || s.absent || !bad.has(s.t.toFixed(2))) return s;
+      const a = [...seen].reverse().find((x) => x.t < s.t), b = seen.find((x) => x.t > s.t);
+      if (!a || !b) return s;
+      const f = (s.t - a.t) / (b.t - a.t);
+      return { ...s, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, crossed: true };
+    });
+  }
+  return people;
 }

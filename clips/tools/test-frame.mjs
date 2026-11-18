@@ -11,7 +11,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
 import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline } from "./frame.mjs";
-import { greyFrames, fillTrack } from "./lib/track.mjs";
+import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const FPS = 25;
@@ -358,4 +358,38 @@ test("a close-up that sways is held calmly: no move back within a second", () =>
   assert.ok(fastest < 0.8 * w, `${Math.round(fastest)} px/s`);
   // the face's middle (its eyes, nose and mouth) never leaves the window
   for (const [t, x] of xs) { const f = faceAt(P, t); assert.ok(f.x - 0.35 * f.w >= x - 1 && f.x + 0.35 * f.w <= x + w + 1, `face cut at ${t.toFixed(2)} s`); }
+});
+
+test("the tracker does not trust a still that is far off its neighbours, keeps two crossing faces apart, and a face that leaves is absent, not cut", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const clip = (name, graph) => {
+      const file = path.join(dir, name);
+      const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=0x202020:s=1280x720:r=${FPS}:d=8`, "-f", "lavfi", "-i", `testsrc2=s=120x140:r=${FPS}:d=8`,
+        "-f", "lavfi", "-i", `mandelbrot=s=120x140:r=${FPS}`, "-filter_complex", graph, "-map", "[v]", "-t", "8", "-c:v", "libx264", "-preset", "ultrafast", file], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return greyFrames(file);
+    };
+    const box = (x) => ({ x: x + 60, y: 270, w: 120, h: 140 });
+    // a slip: the middle still put 500 px off
+    const walk = clip("walk.mp4", "[0:v][1:v]overlay=x='100+100*t':y=200,format=yuv420p[v]");
+    const slip = fillTrack(walk, [{ t: 0.5, ...box(150) }, { t: 4, ...box(500 + 500) }, { t: 7.5, ...box(850) }], 0, 8);
+    assert.deepEqual(slip.doubtful.map((d) => d.t), [4]);
+    near(faceAt({ track: slip }, 4).x, 560, 30);
+    // two faces crossing, the second in front: the one behind keeps its straight path
+    const cross = clip("cross.mp4", "[0:v][1:v]overlay=x='1000-120*t':y=200[a];[a][2:v]overlay=x='100+120*t':y=200,format=yuv420p[v]");
+    const back = { who: "back", speaker: "A", track: fillTrack(cross, [{ t: 0.5, ...box(940) }, { t: 7.5, ...box(100) }], 0, 8) };
+    const front = { who: "front", speaker: "B", track: fillTrack(cross, [{ t: 0.5, ...box(160) }, { t: 7.5, ...box(1000) }], 0, 8) };
+    uncross([back, front]);
+    for (let t = 3; t <= 5; t += 0.1) near(faceAt(back, t).x, 1060 - 120 * t, 40);
+    // leaving: out to the right after 3 s, back from 6 s; the still at 4.5 s has no face
+    const leave = clip("leave.mp4", "[0:v][1:v]overlay=x='if(lt(t,3),800+150*t,if(lt(t,6),1400,1400-150*(t-6)))':y=200,format=yuv420p[v]");
+    const away = { who: "A", speaker: "A", track: fillTrack(leave, [{ t: 1, ...box(950) }, { t: 4.5, absent: true }, { t: 7.5, ...box(1175) }], 0, 8) };
+    assert.equal(faceAt(away, 4.5), null);
+    assert.equal(faceAt(away, 3.8), null);
+    assert.ok(faceAt(away, 2));
+    const shots = [{ start: 0, end: 8, kind: "people", people: [away], faces: [{ speaker: "A", who: "A", ...box(950) }] }];
+    const windows = windowsOf(shots, [{ t: 0, speaker: "A" }], { width: 1280, height: 720, fps: FPS, aspect: [9, 16] });
+    assert.deepEqual(edgesOf(windows, shots, { fps: FPS }).filter((e) => e.t > 3.2 && e.t < 5.8), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

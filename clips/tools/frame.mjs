@@ -50,7 +50,7 @@ import os from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { greyFrames, fillTrack } from "./lib/track.mjs";
+import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 export const FRAME_MODEL = "google/gemini-3.8-flash";
 import { openrouter, GATEWAY_MAX } from "./lib/openrouter.mjs";
@@ -69,6 +69,8 @@ const HOLD = 0.06, EDGE = 0.04;
 const REST = 1, SPEED = 0.6, MOVE_MIN = 0.4, MOVE_MAX = 1.2, BIG = 0.5, CORE = 0.7;
 // a window that glides along with a face going one way moves to where it is every FOLLOW seconds
 const FOLLOW = 0.4;
+// a face followed until here, then on a still without it: gone this long after it was last seen
+const ABSENT_GAP = 0.15;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
 const STILL_EVERY = 3, STILLS_MAX = 60;
 // a face shown whole in a 9:16 frame is this share of the footage's height times 0.32: under
@@ -317,9 +319,11 @@ export function shotsOf(answer, shots, meta) {
     // every person once, by voice, else by who they are
     const persons = [];
     const keyOf = (p) => (p.speaker != null ? `v:${p.speaker}` : `w:${String(p.who || "").toLowerCase()}`);
-    const samples = [];
+    const samples = [], seenAt = [];
     for (const a of from.length ? from : [best]) {
       let stills = a.stills.filter((x) => x.t >= s.start && x.t <= s.end);
+      // only the shot's own stills say who is out of the picture
+      for (const st of stills) seenAt.push(st.t);
       if (!stills.length) {
         const mid = (s.start + s.end) / 2;
         stills = [...a.stills].sort((p, q) => Math.abs(p.t - mid) - Math.abs(q.t - mid)).slice(0, 1).map((x) => ({ ...x, t: Math.min(s.end, Math.max(s.start, x.t)) }));
@@ -335,15 +339,17 @@ export function shotsOf(answer, shots, meta) {
       }
     }
     for (const [person, sample] of samples) if (!person.track.some((x) => Math.abs(x.t - sample.t) < 1e-3)) person.track.push(sample);
+    // a still on which a person is not: they are out of the picture then
+    for (const p of persons) for (const t of seenAt) if (!p.track.some((x) => Math.abs(x.t - t) < 1e-3)) p.track.push({ t, absent: true });
     for (const p of persons) p.track.sort((a, b) => a.t - b.t);
-    const people = persons.filter((p) => p.track.length).map(({ key, ...p }) => p);
+    const people = persons.filter((p) => p.track.some((x) => !x.absent)).map(({ key, ...p }) => p);
     let kind = KINDS.includes(best.kind) ? best.kind : people.length ? "people" : "broll";
     const subject = (() => {
       const b = pixels(best.subject, meta);
       return b && b.w > meta.width * 0.05 && b.h > meta.height * 0.05 ? { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h } : null;
     })();
     const mid = (s.start + s.end) / 2;
-    const faces = people.map((p) => ({ speaker: p.speaker, who: p.who, ...faceAt(p, mid) }));
+    const faces = people.map((p) => ({ speaker: p.speaker, who: p.who, ...seenFace(p, mid) }));
     // a wide shot of the room called B-roll or split: someone of the conversation speaks in it,
     // and shown whole their face would be too small to see
     let note;
@@ -357,15 +363,32 @@ export function shotsOf(answer, shots, meta) {
 
 // where a person's face is at t: between two stills on the straight line, before the first and
 // after the last as there
+// export: a person out of the picture (on a still without them, and no longer followed in the
+// frames) has no face: null
 export function faceAt(person, t) {
   const tr = person.track;
-  if (!tr.length) return null;
-  if (t <= tr[0].t) return { ...tr[0], t };
-  if (t >= tr[tr.length - 1].t) return { ...tr[tr.length - 1], t };
+  if (!tr?.length) return null;
+  const at = (s) => (s.absent ? null : { ...s, t });
+  if (t <= tr[0].t) return at(tr[0]);
+  if (t >= tr[tr.length - 1].t) return at(tr[tr.length - 1]);
   const k = tr.findIndex((s) => s.t >= t);
   const a = tr[k - 1], b = tr[k], f = (t - a.t) / (b.t - a.t);
+  if (a.absent || b.absent) {
+    // between the face seen and a still without it: there while the frames still show it
+    if (a.absent && b.absent) return null;
+    if (b.absent) return t - a.t <= ABSENT_GAP ? at(a) : null;
+    return b.t - t <= ABSENT_GAP ? at(b) : null;
+  }
   const mix = (p, q) => p + (q - p) * f;
   return { t, x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) };
+}
+
+// the face at t, else where it was seen nearest to t
+export function seenFace(person, t) {
+  const f = faceAt(person, t);
+  if (f) return f;
+  const seen = person.track.filter((x) => !x.absent).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0];
+  return seen ? { ...seen } : null;
 }
 
 // who is shown from when: at every moment the voice heard most within 1.2 s around it, a lead
@@ -442,7 +465,7 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
     const forced = kinds.find((o) => o.t >= s0.start && o.t < s0.end);
     let s = forced ? { ...s0, kind: forced.kind === "follow" ? "people" : forced.kind, single: forced.kind === "follow" } : s0;
     if (!s.people) s = { ...s, people: (s.faces || []).map((f) => ({ speaker: f.speaker, who: f.who, track: [{ t: (s.start + s.end) / 2, x: f.x, y: f.y, w: f.w, h: f.h }] })) };
-    const faces = s.faces || s.people.map((p) => ({ speaker: p.speaker, ...faceAt(p, (s.start + s.end) / 2) }));
+    const faces = s.faces || s.people.map((p) => ({ speaker: p.speaker, ...seenFace(p, (s.start + s.end) / 2) }));
     // a wide shot (several people, their faces small) from footage sharp enough is cut closer
     const biggest = Math.max(0, ...faces.map((f) => f.h));
     const zoom = height >= 1400 && faces.length >= 2 && biggest < height * 0.22 ? 0.72 : 1;
@@ -491,7 +514,7 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
       const segs = list.map((c, k) => {
         const t1 = list[k + 1]?.t ?? b, person = personOf(c.speaker);
         const ts = [c.t, ...(person?.track || []).map((x) => x.t).filter((t) => t > c.t && t < t1), t1];
-        return { t0: c.t, t1, person, at: person ? ts.map((t) => faceAt(person, t)) : [] };
+        return { t0: c.t, t1, person, at: person ? ts.map((t) => faceAt(person, t)).filter(Boolean) : [] };
       });
       // the window's height: closer where a face sits low (eyes high in the frame, not an empty
       // wall above them), never closer than the footage allows or than the face fits in
@@ -650,7 +673,7 @@ export function edgesOf(windows, shots, { fps = 25, height, at = [] } = {}) {
     if (!s || p.fit || !s.people?.length) return;
     const times = new Set([p.start + 0.5 / fps, (p.start + p.end) / 2, p.end - 0.5 / fps, ...at.filter((t) => t > p.start && t < p.end)]);
     for (const person of s.people) for (const x of person.track) if (x.t > p.start && x.t < p.end) times.add(x.t);
-    const biggest = Math.max(...s.people.map((q) => Math.max(...q.track.map((x) => x.h))));
+    const biggest = Math.max(...s.people.map((q) => Math.max(...q.track.filter((x) => !x.absent).map((x) => x.h))));
     const rects = p.stack ? p.stack.map((r, i) => ({ r, only: p.speakers[i] })) : [{ r: null }];
     for (const t of [...times].sort((a, b) => a - b)) {
       for (const { r, only } of rects) {
@@ -809,7 +832,13 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   const seen = shotsOf(people, shots, meta);
   // the faces between the stills, followed in the frames
   const grey = greyFrames(video, { start: meta.start });
-  for (const s of seen) if (s.kind === "people") for (const p of s.people) p.track = fillTrack(grey, p.track, s.start, s.end);
+  for (const s of seen) if (s.kind === "people") {
+    for (const p of s.people) {
+      p.track = fillTrack(grey, p.track, s.start, s.end);
+      for (const d of p.track.doubtful) (s.doubtful ||= []).push({ who: p.who || p.speaker, t: d.t, off: d.off });
+    }
+    uncross(s.people);
+  }
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
   const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, outW });
   const edges = edgesOf(windows, seen, meta);
@@ -821,7 +850,7 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   fs.rmSync(out, { force: true });
   fs.renameSync(tmp, out);
   fs.writeFileSync(out.replace(/\.mp4$/, ".json"), JSON.stringify({ footage: path.basename(video), aspect,
-    shots: seen.map((s) => ({ start: s.start, end: s.end, kind: s.kind, ...(s.note ? { note: s.note } : {}), people: s.people })), windows, edges }, null, 1));
+    shots: seen.map((s) => ({ start: s.start, end: s.end, kind: s.kind, ...(s.note ? { note: s.note } : {}), ...(s.doubtful ? { doubtful: s.doubtful } : {}), people: s.people })), windows, edges }, null, 1));
   const sheetFile = out.replace(/\.mp4$/, ".sheet.jpg");
   for (const f of fs.readdirSync(path.dirname(out))) if (/^framed\.sheet-\d+\.jpg$/.test(f) && out.endsWith("framed.mp4")) fs.rmSync(path.join(path.dirname(out), f));
   const sheets = sheet(video, out, windows, seen, edges, sheetFile, meta);
@@ -856,6 +885,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         const all = spans(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}` === key).map((x) => x.t));
         console.log(`     ⚠ ${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s`);
       }
+      for (const d of s.doubtful || []) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
     });
     if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where a face is at an edge.${r.edges.length ? " A ⚠ above: look at that row; a face that matters cut off, `reframe --whole <second>` shows the shot whole, `--follow <second>` one window on who speaks." : ""}`);
   }
