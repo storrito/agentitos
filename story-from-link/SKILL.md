@@ -127,6 +127,7 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - Several picks from one list (accounts): checkboxes and one button.
 - Several questions that must all be answered before you can go on, none depending on another's answer: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each with its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("YouTube: public"), as they arrive in one line. An answer that leaves a group out: ask again for that group only. One question after the other only when it depends on the answer before, or on work the person should see first.
 - Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
 - The button that moves on gets `:class "primary"`; alternative answers stay plain. A button's text says what happens; its `:send` reads as the person's answer ("The story is good", "Post it tomorrow at 9:00").
 - Never a token, an id the person does not need or a raw error in the chat.
 
