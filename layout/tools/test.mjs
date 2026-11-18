@@ -19,7 +19,7 @@ import { DEFAULTS } from "./lib/defaults.mjs";
 import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
-import { solve as solveAny } from "./lib/solve.mjs";
+import { alike, solve as solveAny } from "./lib/solve.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -226,7 +226,7 @@ if (!QUICK) t("solver and checker give the same verdict on the eight hand pages,
 console.log(`\nP2: ${HAND.takes.p2.what.split(":")[0].toLowerCase()}, source ${HAND.takes.p2.source.join("×")}, face x 558–735, y 100–348`);
 // =============================================================================================
 const SRC2 = HAND.takes.p2.source, FACE2 = HAND.takes.p2.face;
-const run2 = (zones, text) => solve({ zones, source: SRC2, faces: [FACE2], needs: text, set: HAND_TYPE });
+const run2 = (zones, text) => solve({ zones, source: SRC2, faces: [FACE2], needs: text, set: HAND_TYPE, merge: false });
 const pages2 = HAND.takes.p2.pages.map((p) => [p.name, handBoxes(p)]);
 const handOf = (pred) => pages2.find(([, p]) => p.W < p.H && pred(p));
 const scaleOf = (p) => p.picture[2] / SRC2[0];
@@ -289,7 +289,7 @@ const needsOf = (list) => list.map((x) => (x === "hook" ? hook : x === "hook:car
 const table = [];
 
 t("the judged wide take (1280×720 into 9:16, two caption lines): the 4:5 crop (1.875×, soft) first, the square (1.5×, no problem) second, the whole picture as a strip third, the 2.67× crop fails", () => {
-  const res = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)] });
+  const res = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], merge: false });
   const order = res.candidates.map((c) => (c.fit === "crop" ? `crop ${c.crop}` : c.fit));
   ok(order.slice(0, 3).join(", ") === "crop 4:5, crop 1:1, inset", `the order is ${order.join(", ")}`);
   const [c45, c11, strip] = res.candidates, c916 = res.candidates.find((c) => c.crop === "9:16");
@@ -330,7 +330,7 @@ t("the size of a face is a target, not a reward: as tall as published talking he
 t("one term changed changes the order: with enlargement at 5 points at the limit the crisp square leads", () => {
   const res = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], set: { "weights.enlarge.costAtForbidden": 5 } });
   ok(res.candidates[0].crop === "1:1" && res.candidates[1].crop === "4:5", `the order is ${res.candidates.map(nameOf).join(", ")}`);
-  const far = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], set: { "weights.enlarge.forbiddenFrom": 3 } }).candidates.find((c) => c.crop === "9:16");
+  const far = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], set: { "weights.enlarge.forbiddenFrom": 3 }, merge: false }).candidates.find((c) => c.crop === "9:16");
   ok(!far.hard, "with the limit at 3× the 2.67× crop still fails");
 });
 
@@ -445,15 +445,16 @@ t("two people who walk shoulder to shoulder (their faces' boxes 1.05 face widths
 t("every face that shows is judged, whoever the crop is made for: four people walking in a row (4K) into 9:16; the square crop on face 3 shows face 1 at x 45, past the safe box's left edge, and says so, as the same square 218 px higher already did for its own faces (it passed before: a face 'not held' was not looked at); its page shows the checker every face, and the two agree", () => {
   const faces = [[1536, 740, 135, 200], [1968, 805, 105, 175], [2448, 710, 155, 145], [3178, 720, 145, 145]];
   const res = solve({ zones: Z916, source: [3840, 2160], faces, needs: [cap(1)] });
-  const on3 = res.candidates.find((c) => c.crop === "1:1" && c.speaker === 3);
-  ok(on3 && on3.others.length === 3, `the square on face 3: ${on3 && JSON.stringify(on3.others)}`);
-  const f1 = on3.others.find((o) => o.of === "face 1");
+  // the square on face 3 lies 18 px from the square that holds all four: listed once, as that one
+  const on3 = res.candidates.find((c) => c.crop === "1:1" && (c.speaker === 3 || (c.alike || []).some((a) => a.crop === "1:1" && a.speaker === 3)));
+  ok(on3 && (on3.others || []).length + on3.faceInFrame.length === 4, `the square on face 3: ${on3 && JSON.stringify(on3.others)}`);
+  const f1 = on3.speaker ? on3.others.find((o) => o.of === "face 1") : { box: on3.faceInFrame[0] };
   ok(f1.box[0] < Z916.safe[0] && on3.problems.some((q) => q.of === "face 1" && q.code === "margin" && q.level === "soft"), `face 1 at x ${f1.box[0]}: ${JSON.stringify(on3.problems)}`);
   ok(on3.soft && !on3.hard, `the square on face 3: ${JSON.stringify(on3.problems)}`);
   // every candidate: no face that shows lies under what an app covers without a hard problem
   for (const c of res.candidates) for (const o of c.others || []) ok(!Z916.covers.some((z) => overlap(o.box, z.box)) || c.hard, `${nameOf(c)}: ${o.of} lies under an app's button and passes`);
   agree(on3, res, "group-square-on-3");
-  return `the square on face 3: ${on3.problems.map((q) => `${q.of} ${q.code}`).join(", ")}`;
+  return `the square on face 3${on3.speaker ? "" : ", listed once with the square that holds all four (18 px apart),"}: ${on3.problems.map((q) => `${q.of} ${q.code}`).join(", ")}`;
 });
 
 t("a third of a face's height above its box is kept clear of text, for the skull or the hair above the hairline: the two men at a table, stacked with a hook card at the top, the card ended on the bald man's skull (it passed); now it ends above the skull's top, and no text of any candidate comes within a third of a face's height above a face", () => {
@@ -473,6 +474,19 @@ t("one picture, one size of stacked: the two men at a table came out stacked at 
   ok(named.parts[0].scale === without.parts[0].scale, `with --speaker 2 ${named.parts[0].scale}×, without ${without.parts[0].scale}×`);
   ok(100 * without.faceHeight / 1920 >= 14, `the faces are ${without.faceHeight} px tall`);
   return `with the hook ${withHook.parts[0].scale}× (faces ${withHook.faceHeight} px), without ${without.parts[0].scale}× (${without.faceHeight} px)`;
+});
+
+t("candidates a viewer cannot tell apart are one: the wide interview into 4:5 gave the frame filled at 1.875× and the 4:5 crop 9 px from it as the first two; now the crop is named in the first's `alike`, and the square comes second. Pictures 2 % of the frame apart are one, 3 % two", () => {
+  const res = solve({ zones: Z45, source: [1280, 720], faces: [[555, 150, 180, 195]], needs: [cap(1)] }), [a, b] = res.candidates;
+  ok(a.alike && a.alike.some((x) => x.fit === "crop" && x.crop === "4:5" && x.apart <= 21.6), `the first: ${nameOf(a)}, alike ${JSON.stringify(a.alike)}`);
+  ok(Math.abs(b.scale / a.scale - 1) > 0.02 || Math.abs(b.left - a.left) > 21.6 || Math.abs(b.top - a.top) > 21.6, `the second is the first again: ${nameOf(b)} at ${b.left}/${b.top}`);
+  const all = solve({ zones: Z45, source: [1280, 720], faces: [[555, 150, 180, 195]], needs: [cap(1)], merge: false });
+  ok(all.candidates.length === res.candidates.length + a.alike.length, "merge: false does not list every candidate");
+  // moved by 2 % of the frame's width the same, by 3 % another
+  const base = all.candidates[0], moved = (dx) => ({ ...base, left: base.left + dx, window: base.window.map((v, i) => (i === 0 ? v + dx : v)), text: base.text.map((t) => ({ ...t, box: t.box.map((v, i) => (i === 0 ? v + dx : v)) })) });
+  const px = DEFAULTS.same.px * 1080;
+  ok(px === 21.6 && alike(base, moved(21), px, DEFAULTS.same.scale) && !alike(base, moved(32), px, DEFAULTS.same.scale), `moved 21 px: ${alike(base, moved(21), px, 0.02)}, 32 px: ${alike(base, moved(32), px, 0.02)}`);
+  return `${nameOf(a)} (as well ${a.alike.map((x) => `${x.fit} ${x.crop || ""} ${x.apart} px away`).join(", ")}), then ${nameOf(b)}`;
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {

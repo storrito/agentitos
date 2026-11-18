@@ -93,6 +93,13 @@ export const DEFAULTS = {
   // room between them 2.2–3.8, two at a table 12.9; the made-up two people of the tests, who are
   // meant to be stacked, 2.9. Twelve cases, no published video measured.
   together: 2,
+  // Two candidates whose pictures differ by less than a viewer sees are one: the same scale within
+  // `scale` (a share), the picture, its window, a webcam's circle and every text within `px` of
+  // the frame's shorter side of each other. The later one is dropped and named in the first's
+  // `alike`, so that the next different one takes its place among the first three. From the first
+  // use on real footage (2026-11-18): pairs 9 and 18 px apart looked the same in their pictures,
+  // pairs 193 and 218 px apart did not. A judgement on twelve cases.
+  same: { px: 0.02, scale: 0.02 },
   // a screen recording: its smallest text that must be read is at least `height` px tall (its
   // letters: a capital's height) in a frame `per` px wide, in proportion in a wider or narrower
   // frame. 24 px in 1080: 2.2 % of the frame's width, about a 33 px font, 12 pt on a phone that

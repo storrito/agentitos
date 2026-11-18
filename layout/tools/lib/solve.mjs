@@ -12,6 +12,7 @@
 //       speaker   the face (from 1) a crop on one of several people is made for (none: one each)
 //       set       { "dotted.key": value } over the defaults; weights: readWeights(file)
 //   trackFace(moments) → a moving face's hull and usual box
+//   alike(a, b, px, ds) → whether two candidates show the same frame to the eye (DEFAULTS.same)
 //
 // A candidate: { fit, scale, left, top, window, faceInFrame, text: [{ role, where, box, font,
 //   style, … }], problems, hard, soft, unmet, notes?, terms, cost, score, why, behind }
@@ -94,7 +95,7 @@ export function solve(args) {
   return res;
 }
 
-function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null }) {
+function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null, merge = true }) {
   const [W, H] = Z.size;
   const D = scaled(merged(weights ? { ...DEFAULTS, weights } : DEFAULTS, set), Z.size);
   let count = 0;
@@ -111,7 +112,7 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
   const main = srcs[0], [sw, sh] = main.size;
   const s0 = Math.max(W / sw, H / sh);
   const ctx = {
-    W, H, Z, D, sw, sh, s0, faces: main.faces, fb: main.faces.length ? hullOf(main.faces) : null, sources: srcs, tall: W <= H, speakerNamed: speaker != null,
+    W, H, Z, D, sw, sh, s0, merge: merge && !all, faces: main.faces, fb: main.faces.length ? hullOf(main.faces) : null, sources: srcs, tall: W <= H, speakerNamed: speaker != null,
     cap: needs.find((n) => n.role === "caption") || null, hook: needs.find((n) => n.role === "hook") || null,
   };
   const rs = sw / sh, rf = W / H, same = Math.abs(rs / rf - 1) < 0.02;
@@ -162,7 +163,15 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
 function ranked(ctx, out, notes, { needs, srcs }) {
   const { Z, D } = ctx, main = srcs[0];
   const seen = new Set();
-  const cands = out.filter((c) => { delete c.full; return true; }).filter((c) => { const k = `${c.fit}|${c.scale}|${c.left}|${c.top}|${c.window}|${c.speaker || ""}|${JSON.stringify(c.parts || "")}`; if (seen.has(k)) return false; seen.add(k); return true; }).sort(cmpRank);
+  const sorted = out.filter((c) => { delete c.full; return true; }).filter((c) => { const k = `${c.fit}|${c.scale}|${c.left}|${c.top}|${c.window}|${c.speaker || ""}|${JSON.stringify(c.parts || "")}`; if (seen.has(k)) return false; seen.add(k); return true; }).sort(cmpRank);
+  // a candidate a viewer cannot tell from one before it is that one (DEFAULTS.same); --all keeps
+  // them, and so does merge: false (the tests, to look at one fit)
+  const cands = [];
+  for (const c of sorted) {
+    const twin = !ctx.merge ? null : cands.find((k) => alike(k, c, D.same.px * Math.min(ctx.W, ctx.H), D.same.scale));
+    if (twin) (twin.alike ||= []).push({ fit: c.fit, ...(c.crop ? { crop: c.crop } : {}), ...(c.speaker ? { speaker: c.speaker } : {}), scale: c.scale, left: c.left, top: c.top, apart: Math.round(apart(twin, c)) });
+    else cands.push(c);
+  }
   // the score: 100 less the cost for a candidate that passes (so that larger is better and the
   // distance between two is the difference of their costs in points), 0 for one that does not
   cands.forEach((c, i) => {
@@ -175,6 +184,19 @@ function ranked(ctx, out, notes, { needs, srcs }) {
     source: main.size, faces: main.faces, ...(main.screen ? { screen: { region: main.faces[0], minTextHeight: main.minText, readable: r1(ctx.readable) } } : srcs.length > 1 ? { sources: srcs.map((q) => ({ size: q.size, faces: q.faces })) } : {}),
     needs, defaults: D, notes, candidates: cands,
   };
+}
+
+// whether two candidates show the same frame to the eye: their scales within `ds`, the picture,
+// its window, the parts, the circle and the text within `px`; apart: how far, in px
+const boxesOf = (c) => [[c.left, c.top], c.window, ...(c.parts || []).flatMap((q) => [[q.left, q.top], q.window]), ...(c.circle ? [c.circle.box] : []), ...c.text.map((t) => t.box)];
+function apart(a, b) { const A = boxesOf(a), B = boxesOf(b); return Math.max(...A.map((x, i) => Math.max(...x.map((v, k) => Math.abs(v - B[i][k]))))); }
+export function alike(a, b, px, ds) {
+  const scales = (c) => (c.parts ? c.parts.map((q) => q.scale) : [c.scale]);
+  const sa = scales(a), sb = scales(b);
+  if (sa.length !== sb.length || sa.some((v, i) => Math.abs(v / sb[i] - 1) > ds)) return false;
+  if (!!a.circle !== !!b.circle || a.text.length !== b.text.length || a.text.some((t, i) => t.role !== b.text[i].role || t.style !== b.text[i].style || t.font !== b.text[i].font)) return false;
+  if (a.hard !== b.hard || a.unmet.length !== b.unmet.length) return false;
+  return boxesOf(a).length === boxesOf(b).length && apart(a, b) <= px;
 }
 
 const textLine = (t) => `${t.role === "caption" ? `${t.lines} caption line${t.lines > 1 ? "s" : ""}` : `hook ${t.style === "card" ? "card" : t.style === "text" ? "text" : "lines"} at ${t.font} px${t.shrunk ? " (smaller than its size)" : ""}`} ${t.where}`;
