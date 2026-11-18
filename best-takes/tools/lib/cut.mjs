@@ -7,8 +7,17 @@
 // ("let's wait until then", cut.json "waits") never goes: it plays as a timelapse when its
 // picture moves, else it holds a few seconds before the cut, so that the viewer feels the time
 // pass.
+//
+// Speech not written down (an item of kind "unwritten": voice the transcribe skill found no
+// words for, nearly always an attempt it skipped) never passes for a pause: a keep that runs
+// across one is an error until it says "unwritten": "cut" or "keep".
+//
+// Sound alone (settings.audio, no picture): a pause goes, and where the cut joins two stretches
+// that were not one in the recording it lays the room's own quiet between them, as a cutter of
+// narration does: BREATH.sentence after a sentence, BREATH.inside within one, a keep's "breath"
+// (seconds) before it where it begins a new part. A wait plays its own sound.
 
-import { cutBefore, cutAfter, loudness } from "./voice.mjs";
+import { cutBefore, cutAfter, loudness, HOP } from "./voice.mjs";
 import { speed, waitSpeed, WAIT_MOVING, WAIT_HOLD, SAMPLES, BASE_SECONDS, BASE_LONGEST, MOVING, moving, median, limit } from "./motion.mjs";
 
 // The spans of a wait from–to, as groups of the cut: the whole of it faster when its picture
@@ -36,8 +45,39 @@ export function range(r) {
 // activity); without it (--pauses tight) no pause shows anything
 // returns { pieces, removed, words (the cut's, timed in the cut), motion (per video: how much
 // it moves while speaking), errors, warnings }
+// the room's quiet between two stretches of sound alone, seconds: as the hand-made cut of a
+// six-minute narration read with retries had it (2026-11-18), on top of the quiet the cut points
+// leave (about 0.25 s)
+export const BREATH = { sentence: 0.42, inside: 0.2 };
+
+// The quietest three seconds of a recording (blocks of 0.25 s, the window whose loudest block is
+// the quietest), with no frame of voice in it (over `thr`): the room's own quiet. Without three
+// such seconds, the longest quiet there is down to a quarter of a second; digital silence only
+// when the room has nothing else. → { from, to }, or null when every quarter second holds voice
+// (the breaths are silence then).
+export function roomQuiet(env, thr = Infinity, seconds = 3) {
+  const per = Math.round(0.25 / HOP), blocks = [];
+  for (let f = 0; f + per <= env.length; f += per) {
+    let sum = 0, top = 0;
+    for (let k = f; k < f + per; k++) { sum += env[k] * env[k]; top = Math.max(top, env[k]); }
+    blocks.push({ rms: Math.sqrt(sum / per), voice: top > thr });
+  }
+  for (let n = Math.min(Math.round(seconds / 0.25), blocks.length); n >= 1; n--) {
+    let best = -1, least = Infinity, live = false;
+    for (let i = 0; i + n <= blocks.length; i++) {
+      const w = blocks.slice(i, i + n);
+      if (w.some((b) => b.voice)) continue;
+      const alive = Math.min(...w.map((b) => b.rms)) > 1e-5, top = Math.max(...w.map((b) => b.rms));
+      if (best < 0 || (alive && !live) || (alive === live && top < least)) { best = i; least = top; live = alive; }
+    }
+    if (best >= 0) return { from: best * 0.25, to: (best + n) * 0.25 };
+  }
+  return null;
+}
+
 export function plan(words, cut, settings, voices, motion = null) {
   const errors = [], warnings = [], removed = [];
+  const audio = !!settings.audio;
   const fps = settings.fps, maxPause = settings.pause, target = settings.loudness;
   const used = new Map();
   const waits = new Set((cut.waits || []).map(Number));
@@ -79,6 +119,7 @@ export function plan(words, cut, settings, voices, motion = null) {
   // pieces are known: { most: the most its picture changed, shown: spans that move, kept: s }
   const decided = new Map();
   const pauseWhy = (r, { most, shown, kept, fast }) => {
+    if (audio) return "cut: sound alone, a breath of the room's quiet in its place";
     if (!motion) return "cut (tight)";
     if (!shown) return most < MOVING ? "cut: the picture stands still" : "cut: the picture moves no more than while speaking";
     if (!kept) return "cut: what moves in it is too short to show";
@@ -86,7 +127,7 @@ export function plan(words, cut, settings, voices, motion = null) {
     return `${kept < r.to - r.from - 0.3 ? `${kept.toFixed(1)} s of it kept` : "kept"}${fast ? " as a timelapse" : ", muted"}: something moves in it` +
       (least > MOVING ? ` (${(most / base).toFixed(1)}× as much as while speaking)` : "");
   };
-  const waitWhy = (parts) => (parts.some((p) => p.rate > 1) ? "the wait: a timelapse, its picture moves" : `the wait: held ${WAIT_HOLD} s before the cut, its picture stands still`);
+  const waitWhy = (parts) => (audio ? `the wait: ${WAIT_HOLD} s of it as recorded, then the cut` : parts.some((p) => p.rate > 1) ? "the wait: a timelapse, its picture moves" : `the wait: held ${WAIT_HOLD} s before the cut, its picture stands still`);
   let pieces = [];
   if (!Array.isArray(cut.keep) || !cut.keep.length) errors.push('cut.json has no "keep": list the word ranges to keep, in the order they play.');
   for (const i of waits) if (!(i >= 0 && i < words.length)) errors.push(`"waits": ${i} is no word number (0–${words.length - 1})`);
@@ -107,6 +148,12 @@ export function plan(words, cut, settings, voices, motion = null) {
     for (const w of items) {
       if (used.has(w.i)) return errors.push(`${name}: word ${w.i} "${w.text}" is in keep ${used.get(w.i) + 1} already`);
     }
+    // voice without words inside the keep: the words around it may be of two attempts
+    const unheard = items.filter((w) => w.kind === "unwritten");
+    if (unheard.length && !["cut", "keep"].includes(keep.unwritten)) {
+      return errors.push(`${name} runs across speech not written down (${unheard.map((u) => `[${u.i}] at ${u.start.toFixed(1)} s, ${(u.end - u.start).toFixed(1)} s long`).join("; ")}): voice the speech model wrote no words for, nearly always an attempt it skipped, so the words on either side may be of different attempts, a sentence spliced. End the keep before it, or start it after it at the first word of the attempt that follows; where the words after it begin in the middle of a sentence it holds that attempt's start: "unwritten": "keep" on the keep plays it as recorded ("unwritten": "cut" cuts it out)`);
+    }
+    if (keep.breath != null && !(Number.isFinite(Number(keep.breath)) && Number(keep.breath) >= 0)) return errors.push(`${name}: "breath" is the seconds of quiet before it, e.g. 1`);
     for (const w of items) used.set(w.i, k);
 
     // the kept words in groups that play without a cut: a cut where a filler ("äh") is left
@@ -120,6 +167,11 @@ export function plan(words, cut, settings, voices, motion = null) {
     for (const w of items) {
       if (w.kind === "filler" && keep.sounds !== "keep") {
         removed.push({ kind: "filler", clip: w.clip, from: w.start, to: w.end, words: [w.i, w.i], text: w.text });
+        close();
+        continue;
+      }
+      if (w.kind === "unwritten" && keep.unwritten === "cut") {
+        removed.push({ kind: "unwritten", clip: w.clip, from: w.start, to: w.end, words: [w.i, w.i], why: 'speech not written down, cut as its keep says ("unwritten": "cut")' });
         close();
         continue;
       }
@@ -167,7 +219,8 @@ export function plan(words, cut, settings, voices, motion = null) {
         const v = voices[g.clip];
         const to = Math.min(g.to, spokenAfter ? cutBefore(v.env, v.thr, spokenAfter[0].start, Math.max(from, before(spokenAfter[0]))) : Infinity);
         if (to - from < 0.4) return;
-        pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: g.rate ?? speed(to - from), mute: true, wait: !!g.wait });
+        // sound alone: a wait plays its own sound, as recorded
+        pieces.push({ clip: g.clip, in: from, out: to, words: [], keep: k, adjust: 0, rate: audio ? 1 : g.rate ?? speed(to - from), mute: !audio, wait: !!g.wait });
         const d = decided.get(g.pause);
         if (d) { d.kept += to - from; d.fast ||= pieces.at(-1).rate > 1; }
         return;
@@ -177,7 +230,7 @@ export function plan(words, cut, settings, voices, motion = null) {
       const to = Math.min(v.duration, cutAfter(v.env, v.thr, last.end, after(last)));
       // the words' room before them is the picture's when it showed the pause
       const shown = pieces.at(-1);
-      const start = shown?.mute && shown.keep === k ? Math.max(from, shown.out) : from;
+      const start = shown && !shown.words.length && shown.keep === k ? Math.max(from, shown.out) : from;
       pieces.push({ clip: first.clip, in: start, out: to, words: g.map((w) => w.i), keep: k, adjust: Number(keep.gain) || 0 });
     });
   });
@@ -197,10 +250,42 @@ export function plan(words, cut, settings, voices, motion = null) {
   // pieces that follow each other in their video without a gap play as one
   pieces = pieces.reduce((out, p) => {
     const q = out.at(-1);
-    if (q && q.clip === p.clip && Math.abs(p.in - q.out) < 0.04 && q.adjust === p.adjust && !q.mute && !p.mute) { q.out = p.out; q.words.push(...p.words); }
+    // (sound alone: a keep that asks for a breath before it stays a piece of its own)
+    // and a wait (no words) stays one of its own, as on a video
+    const breath = audio && q && q.keep !== p.keep && cut.keep[p.keep]?.breath != null;
+    const wait = audio && q && (!q.words.length || !p.words.length);
+    if (q && q.clip === p.clip && Math.abs(p.in - q.out) < 0.04 && q.adjust === p.adjust && !q.mute && !p.mute && !breath && !wait) { q.out = p.out; q.words.push(...p.words); }
     else out.push({ ...p });
     return out;
   }, []);
+
+  // sound alone: the room's quiet where two stretches that were not one in the recording meet
+  if (audio) {
+    const rooms = {};
+    const quietOf = (clip) => (rooms[clip] ??= { ...(roomQuiet(voices[clip].env, voices[clip].thr) ?? { silent: true, from: 0, to: 3 }), at: 0 });
+    const fixes = cut.fixes || {};
+    const out = [];
+    for (const p of pieces) {
+      const prev = out.at(-1);
+      const asked = prev && prev.keep !== p.keep ? cut.keep[p.keep]?.breath : undefined;
+      // a breath where two stretches of words meet; none beside a wait, which is the pause, unless the keep asks
+      if (prev && p.words.length && (asked != null || (prev.words.length && !(prev.clip === p.clip && Math.abs(p.in - prev.out) < 0.04)))) {
+        const said = [...prev.words].reverse().map((i) => words[i]).find((w) => w.kind === "word");
+        let left = asked != null ? Math.max(0, Number(asked))
+          : said && endsSentence(fixes[said.i] ?? said.text) ? BREATH.sentence : BREATH.inside;
+        const room = quietOf(prev.clip), span = room.to - room.from;
+        while (left > 0.005) {
+          if (room.at + Math.min(left, span) > span + 1e-6) room.at = 0;
+          const d = Math.min(left, span - room.at);
+          // (a recording with no quarter second free of voice: silence)
+          out.push({ clip: prev.clip, in: room.from + room.at, out: room.from + room.at + d, words: [], keep: p.keep, adjust: 0, rate: 1, quiet: true, ...(room.silent ? { mute: true } : {}) });
+          room.at += d; left -= d;
+        }
+      }
+      out.push(p);
+    }
+    pieces = out;
+  }
 
   // on whole frames, one after the other; a piece that plays faster takes less time than its range
   let at = 0;
@@ -220,7 +305,7 @@ export function plan(words, cut, settings, voices, motion = null) {
   // so that the level does not jump inside a take
   const takes = [];
   for (const p of pieces) {
-    if (p.mute) { p.lufs = null; p.gain = 0; continue; }
+    if (p.mute || !p.words.length) { p.lufs = null; p.gain = 0; continue; }
     const t = takes.at(-1), q = t?.pieces.at(-1);
     if (q && q.clip === p.clip && p.in >= q.out - 0.05 && (p.keep === q.keep || p.in - q.out < 5)) t.pieces.push(p);
     else takes.push({ clip: p.clip, pieces: [p] });
@@ -240,6 +325,12 @@ export function plan(words, cut, settings, voices, motion = null) {
     if (t.lufs == null) warnings.push(`words ${first}–${last}: no voice to measure, their level stays as recorded`);
     else if (gain > 24) warnings.push(`words ${first}–${last} are very quiet (${t.lufs} LUFS): raised by the most there is, 24 dB, still ${(gain - 24).toFixed(1)} dB short`);
     else if (gain > 15) warnings.push(`words ${first}–${last} were recorded quietly (${t.lufs} LUFS) and are raised by ${gain.toFixed(1)} dB: the room's noise rises with them, listen to that piece`);
+  }
+
+  // sound alone: what plays without words (the room's quiet, a wait) at the level of the take before it
+  if (audio) {
+    let gain = pieces.find((p) => p.words.length)?.gain ?? 0;
+    for (const p of pieces) { if (p.words.length) gain = p.gain; else if (!p.mute) p.gain = gain; }
   }
 
   // the cut's own words, timed in the cut (for subtitles), with the spelling of "fixes"

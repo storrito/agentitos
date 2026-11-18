@@ -23,13 +23,17 @@ export function overTarget(duration, target) {
   return `the cut is ${duration.toFixed(1)} s long and should be at most ${target} s: that would leave out more than half of what it says, which is no longer a matter of cutting, so do not thin it out but ask the person (SKILL.md, step 4) whether you write a script of ${target} s spoken, about ${Math.round(target * WORDS_A_SECOND)} words, from what they said, to record again, or cut it to the strongest parts anyway`;
 }
 
-export const shown = (w) => (w.kind === "filler" ? `(${w.text.replace(/[,.;:!?]+$/, "")})` : w.text);
+// voice the transcribe skill found no words for, even heard again (its "unwritten"): an item of
+// its own in the words, so that its time never reads as a pause between the words around it
+export const UNWRITTEN = "speech not written down";
+export const shown = (w) => (w.kind === "filler" ? `(${w.text.replace(/[,.;:!?]+$/, "")})`
+  : w.kind === "unwritten" ? `(${UNWRITTEN}, ${(w.end - w.start).toFixed(1)} s)` : w.text);
 
 // one line per sentence or after a pause, each word with its number: [41]Die [42]erste …
 export function takesText(clips, words) {
   const lines = [];
   for (const c of Object.values(clips)) {
-    lines.push("", `## Video ${c.n} · ${c.from} · ${clock(c.duration, false)}${c.created ? ` · recorded ${c.created.replace("T", " ").slice(0, 16)}` : ""}`, "");
+    lines.push("", `## ${c.audio ? "Recording" : "Video"} ${c.n} · ${c.from} · ${clock(c.duration, false)}${c.audio ? " · sound alone" : ""}${c.created ? ` · recorded ${c.created.replace("T", " ").slice(0, 16)}` : ""}`, "");
     let line = [], prev = null;
     const flush = () => { if (line.length) lines.push(line.join(" ")); line = []; };
     for (const w of words.filter((x) => x.clip === c.n)) {
@@ -61,6 +65,14 @@ should see: **the best take of every part, in the order of the story, without sl
 2. **No slips.** Leave out false starts and abandoned sentences ("zwei Komma achter Brenn –"),
    stutters and doubled words ("die die"), a sentence started over. Cut **between words**,
    never inside one.
+   **\`(${UNWRITTEN}, 1.7 s)\`** marks voice the speech model wrote no words for, even
+   when heard again: nearly always an attempt it skipped, a sentence started over. The words
+   before and after it may belong to different attempts ("The" of the first, "new app opens"
+   of the third): **a keep never runs across one** unless it belongs to the attempt you keep.
+   Start the keep after it, at the first word of the attempt that follows. Where the words
+   after it begin in the middle of a sentence ("testers liked the new layout." after it,
+   "Three of four" missing), it holds the start of that attempt:
+   start the keep on it and give the keep \`"unwritten": "keep"\`, which plays it as recorded.
 3. **Nothing about the recording itself**, unless it is meant for the viewer: "I'll just
    start", "let the AI cut this", "let's see what the AI makes of it", counting in, talking to
    someone behind the camera. A greeting or a goodbye to the viewer stays.
@@ -70,17 +82,20 @@ should see: **the best take of every part, in the order of the story, without sl
    sentences are a retry or two different points, keep both and say so.
 5. **Few, whole pieces.** Ranges of whole sentences. Fillers ("äh", "ähm") inside a kept range
    are cut out by the tool, long pauses shortened: **never split a range around them**. A piece of one or two words between cuts sounds chopped: take the whole phrase.
-6. **Pauses follow the picture.** A pause that moves no more than the picture while the person
+${settings.audio ? `6. **Pauses are breaths.** There is no picture: a pause over ${settings.pause ?? 1} s inside a keep is cut,
+   and between the stretches that play the tool lays the room's own quiet, a breath. A
+   silence that belongs to what is said (a beat before a punchline) is yours to mark:
+   \`"pauses": "keep"\` on its keep (all its pauses then play as they are).` : `6. **Pauses follow the picture.** A pause that moves no more than the picture while the person
    speaks (a face, the hand holding the phone) the tool cuts; where something moves clearly
    more (a thing held into the picture, a click, a page that loads) it keeps that part, muted,
    a long one as a timelapse. A silent moment worth seeing that it cannot measure (a look, a
    reaction, a thing held still) is yours to mark: \`"pauses": "keep"\` on its keep (all its
-   pauses then play as they are).
+   pauses then play as they are).`}
 7. **A wait the speaker announces stays a wait.** "Let's wait until then", "wir warten kurz",
    "un momento", in any language: what follows is the time passing, and the viewer should feel
    it. Put the number of the announcing sentence's last word into \`"waits"\`; the tool then
-   never cuts that pause away: a picture that moves (a clock, a progress bar) plays as a
-   timelapse of 3–5 s, a still one holds 3 s before the cut. This works inside a keep and
+   never cuts that pause away: ${settings.audio ? "it plays 3 s of it as recorded before the cut" : `a picture that moves (a clock, a progress bar) plays as a
+   timelapse of 3–5 s, a still one holds 3 s before the cut`}. This works inside a keep and
    between two keeps (the pause up to the next keep's first word).${settings.target ? `
 8. **The length.** It should be at most ${settings.target} s, but the first cut keeps to rules
    1–7 alone and drops nothing for the length. Then, by that cut's length: up to
@@ -94,6 +109,8 @@ first only when the person asks for it (e.g. a strong sentence as a hook).`;
 
 export function brief(clips, words, settings) {
   const several = Object.keys(clips).length > 1;
+  settings = { ...settings, audio: Object.values(clips).every((c) => c.audio) };
+  const unwritten = words.some((w) => w.kind === "unwritten");
   return `# Directing the cut
 
 You choose which words stay, the tool finds the cut points in the sound. Read all of this,
@@ -109,15 +126,22 @@ ${rules(several, settings)}
   word ("hm" as an answer), give that keep \`"sounds": "keep"\`.
 - **Events** like \`[Kamera klackert]\` are noises, not speech: they stay where they are, inside
   a kept range they play along.
-- **Pauses** ${settings.pauses === "tight" ? `longer than ${settings.pause} s inside a keep are cut to a breath, whatever the picture
+- **Pauses** ${settings.audio ? `longer than ${settings.pause} s inside a keep are cut; there is no picture to look at.` : settings.pauses === "tight" ? `longer than ${settings.pause} s inside a keep are cut to a breath, whatever the picture
   shows (tight).` : `longer than ${settings.pause} s inside a keep: where the picture moves no more than
   while the person speaks they are cut to about 0.3 s; where something moves clearly more (4×,
   on a screen any movement), that part stays, muted, up to 2.5 s as it is, longer in about a
   third of its time (2–6 s, at most ×10). \`check\` says for each pause what it did and why.`}
   \`"pauses": "keep"\` plays them as they are.
-- **Cut points** go into the quiet just before and after the kept words.
+- **Cut points** go into the quiet just before and after the kept words.${settings.audio ? `
+- **Breaths**: where the cut joins two stretches that were not one in the recording (a pause
+  cut, the next keep), it lays the room's own quiet between them (the quietest three seconds
+  of the recording): 0.42 s after a sentence, 0.2 s inside one, on top of the quiet the cut
+  points leave. Before a keep that begins a new part, give it \`"breath": 1\` (seconds).` : ""}${unwritten ? `
+- **Speech not written down** inside a keep is an error of \`build\` until the keep says what
+  it is: \`"unwritten": "cut"\` when you are sure it is no speech of the cut (a cough, someone
+  else), \`"unwritten": "keep"\` when it belongs to the sentence (a word the model left out).` : ""}
 - **Loudness**: each take is measured and brought to the same level (${settings.loudness} LUFS
-  before the bus, ${settings.final} LUFS in the rendered video). For a part that should be quieter
+  before the bus, ${settings.final} LUFS in ${settings.audio ? "the cut's voice" : "the rendered video"}). For a part that should be quieter
   or louder on purpose, give its keep \`"gain": -3\` (dB, on top).
 
 ## cut.json
@@ -141,7 +165,10 @@ ${rules(several, settings)}
 - \`fixes\` (optional): the spelling the subtitles should show, by number; "" drops a word from
   the text. It changes the subtitles, not the cut.
 - \`waits\` (optional): the numbers of the last words of sentences that announce a wait; the
-  pause after each plays as a wait (rule 7).
+  pause after each plays as a wait (rule 7).${settings.audio ? `
+- \`breath\` (optional, on a keep): seconds of the room's quiet before it, for a new part.` : ""}${unwritten ? `
+- \`unwritten\` (optional, on a keep): \`"cut"\` or \`"keep"\` for the speech not written down
+  inside it; better, end the keep before it.` : ""}
 
 ## The words
 ${takesText(clips, words)}
