@@ -149,7 +149,7 @@ function printResult(res) {
       console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}  scale ${c.scale} (${c.zoom}× of covering) at left ${c.left}, top ${c.top}  score ${c.score}`);
       if (c.ground) console.log(`   picture ${boxText(c.window)}, ${pct(c.ground)} ground`);
     }
-    c.faceInFrame.forEach((f) => console.log(`   ${res.screen ? "region " : "face   "} ${boxText(f)} (${Math.round(f[2])}×${Math.round(f[3])})${c.textHeight != null ? `, smallest text ${c.textHeight} px` : ""}`));
+    c.faceInFrame.forEach((f, k) => console.log(`   ${res.screen ? (k ? "webcam " : "region ") : "face   "} ${boxText(f)} (${Math.round(f[2])}×${Math.round(f[3])})${res.screen && !k && c.textHeight != null ? `, smallest text ${c.textHeight} px` : ""}`));
     if (c.circle) console.log(`   webcam  circle ${c.circle.d} px ${c.circle.corner}, ${boxText(c.circle.box)}${c.circle.crop ? `; shows ${boxText(c.circle.crop)} of the webcam's picture at ${c.circle.enlargement}×, the face ${c.circle.faceHeight} px tall` : ""}`);
     (c.others || []).forEach((f) => console.log(`   (${f.of}, not held: ${boxText(f.box)}, ${pct(f.shows)} of it shows)`));
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}${t.role === "hook" ? `, ${t.style === "text" ? "text" : t.style === "card" ? "a card" : "big lines"} at ${t.font} px${t.shrunk ? " (shrunk)" : ""}` : `, ${plural(t.lines, "line")} at ${t.font} px`}`);

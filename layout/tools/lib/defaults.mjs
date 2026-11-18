@@ -109,6 +109,11 @@ export const DEFAULTS = {
   // frames) or of its shorter side (4:5, 1:1, wide), as screencast-cut sizes it; down to `min` of
   // the shorter side where no corner is free at that size
   circle: { tall: 0.22, square: 0.16, wide: 0.2, min: 0.12 },
+  // the screen above, the webcam as a panel below it (screen-stacked): the face `height` of the
+  // frame's height where the source allows it (published Shorts: 18 % below a screen, median of 35
+  // frames of 9 videos; layout study of 240 Shorts, 2026-11-17), the panel at most `panel` of the
+  // frame's height (the screen takes about half the frame in those layouts: 51 % of its area)
+  screenFace: { height: 0.18, panel: 0.5 },
 };
 
 // The ranking's weights and limits: tools/weights.json, read once at start. Every term there is

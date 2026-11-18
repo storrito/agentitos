@@ -26,7 +26,8 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
   // the sources and their stills (one still: the first source's)
   const sources = res.sources || [{ size: res.source, faces: res.faces }];
   const rel = (f) => (f ? (page ? path.relative(path.dirname(path.resolve(page)), path.resolve(f)) : f).split(path.sep).join("/") : null);
-  const srcs = sources.map((q, i) => rel((stills || [still])[i]));
+  // a webcam baked into the screen shows the screen's own still
+  const srcs = sources.map((q, i) => rel((stills || [still])[i] || (q.baked ? (stills || [still])[0] : null)));
   const [sw, sh] = sources[0].size, src = srcs[0];
   const css = `html,body{margin:0;background:#000}
 #frame{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:#14181d;font-family:${font};font-weight:800;color:#fff}
@@ -57,10 +58,10 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
     : [{ i: 0, scale: c.scale, pic: [c.left, c.top, c.scale * sw, c.scale * sh], win: c.window, clip: c.ground > 0 && (Math.abs(c.window[2] - c.scale * sw) > 1 || Math.abs(c.window[3] - c.scale * sh) > 1) }];
   for (const { i, scale, pic, win, clip } of pictures) {
     const ovals = sources[i].faces.map((f) => `<i style="${st([f[0] * scale, f[1] * scale, f[2] * scale, f[3] * scale])}"></i>`).join("");
-    const picture = (b) => (srcs[i] ? `<img src="${srcs[i]}" style="${st(b)}">` : `<div class="ph${res.screen ? " scr" : ""}" style="${st(b)}">${ovals}</div>`);
+    const picture = (b) => (srcs[i] ? `<img src="${srcs[i]}" style="${st(b)}">` : `<div class="ph${res.screen && !i ? " scr" : ""}" style="${st(b)}">${ovals}</div>`);
     parts.push(clip ? `<div class="clip" style="${st(win)}">${picture([pic[0] - win[0], pic[1] - win[1], pic[2], pic[3]])}</div>` : picture(pic));
   }
-  for (const f of c.faceInFrame) parts.push(`<div data-zone="face"${res.screen ? ` data-label="region"` : ""} style="${st(f)}"></div>`);
+  c.faceInFrame.forEach((f, k) => parts.push(`<div data-zone="face"${res.screen ? ` data-label="${k ? "webcam" : "region"}"` : ""} style="${st(f)}"></div>`));
   // the part of another person's face that shows: the checker judges it as any face
   for (const o of c.others || []) parts.push(`<div data-zone="face" data-label="${o.of}" style="${st(o.box)}"></div>`);
   if (c.circle) parts.push(`<div class="cam" data-zone="face" data-label="webcam" style="${st(c.circle.box)}"></div>`);

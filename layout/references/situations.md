@@ -79,7 +79,7 @@ videos from the bottom third by views per follower: 5 of 69 comparisons fall und
 | P1 | Hook card at the top | a hook that stays: a reply to a comment, a part of a series | 9:16: a card of 3–8 words in the wide stretch, the face under it. 16:9: big lines beside the panel, captions small under them | `--text hook:card`; in 16:9 big lines |
 | P2 wide | Cropped close | from about 2.7K material | 9:16: a crop around the face, 31.6 % of the source's width. 16:9: the source as it is, one caption line at the bottom | `crop 9:16`; 16:9 `full` |
 | P2 | Square plus text | 1080-line material and less, or when keywords stand beside the speaking | 9:16: a square across the frame, captions under it on calm ground. 16:9: the person on a third, the keyword on the free side | `crop 1:1`, `crop 4:5`, `crop band` |
-| P4 speaker and material | Material on top, person below | the person speaks about the material for a while and stays visible | 9:16: material in the wide stretch, the person under it, captions on the seam. 16:9: material on two thirds, the person as a panel | not built: `stacked` holds two people, not a picture and a person |
+| P4 speaker and material | Material on top, person below | the person speaks about the material for a while and stays visible | 9:16: material in the wide stretch, the person under it, captions on the seam. 16:9: material on two thirds, the person as a panel | 9:16: the material as `--region` with the speaker as the webcam: `screen-stacked`; 16:9 not built |
 | P4 | Material fills, person in a circle | the material carries many sentences | circle 22 % of the frame's width, left above the captions (9:16); 20 % of the height, top right (16:9) | a screen or picture as `--region` with the speaker as the webcam |
 | P4 | Insert | proof of 2–5 seconds, the voice goes on | upright material fills; wide material as a band over a blurred copy in 9:16, hence short | `inset`, `crop band` |
 
@@ -135,7 +135,7 @@ videos from the bottom third by views per follower: 5 of 69 comparisons fall und
 | B1 desktop alone | Zoom on the spot | the usual, once it is clear where something happens | the part that matters in the safe box, the rest of the screen running on under the apps' bars, never under the captions | `screen-zoom`, `screen-fit` |
 | B1 | Whole screen | one or two seconds to find one's way: at the start, when the application changes | 9:16: the screen across the frame, nothing readable, hence short | `screen-whole` |
 | B1 | Crop plus step text | a recording without a voice, or a guide in steps | 9:16: the crop at the top with a ring, the step under it. 16:9: the screen on two thirds, the step on the right | the crop: `screen-zoom`; the step text is not placed |
-| B2 desktop and webcam | Screen on top, face below | the usual in published Shorts, when both show | 9:16: the screen across the upper part, the face in a panel under it, about 18 % of the frame's height tall | **not built** |
+| B2 desktop and webcam | Screen on top, face below | the usual in published Shorts, when both show | 9:16: the screen across the upper part, the face in a panel under it, about 18 % of the frame's height tall | `screen-stacked` (upright frames) |
 | B2 | Screen with circle | the screen carries, the person only stays present | circle 22 % of the width, left above the captions (9:16); 20 % of the height, top right (16:9) | `--region` with a second `--source` and its `--face` |
 | B2 | Face large | first sentence, last sentence, a personal remark | the webcam fills the frame, enlarged 1.25× at most | `place` on the webcam's file alone |
 | B4 phone alone | Phone whole | the opening: it is the real app on a real phone | 9:16: the phone in the middle of the safe box, about half the width | `screen-whole` |
@@ -145,9 +145,10 @@ videos from the bottom third by views per follower: 5 of 69 comparisons fall und
 
 - **The face below the screen is the common layout, the small circle the exception** (240
   Shorts: below in 35 of 53 frames, a small picture in or at the screen in 9; from 33 videos of
-  18 channels, so a few channels carry it). This skill places only the circle. The stacked layout
-  is missing: say so when a screen and a face are to show together, and leave that layout to the
-  skill that builds the video.
+  18 channels, so a few channels carry it). `screen-stacked` builds it in upright frames: the
+  screen in the upper half, the face towards 18 % of the frame's height. It was run once on a real
+  desktop recording with a webcam file (2026-11-18), the face 13 % at the soft limit of a 720p
+  webcam; nobody judged its pictures against the circle yet.
 - The circle's sizes (22 % of the width in 9:16, 16 % of the short side in 4:5 and 1:1, 20 % in
   16:9), the least share of the screen (38 % of its width) and the 1.25× of "Face large" are from
   screencast-cut. The times and "about half the width" are sketch.

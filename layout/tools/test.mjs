@@ -655,6 +655,22 @@ t("a webcam baked into the screen recording (its face given with the screen's ow
   return `the whole slide: ${whole.problems.filter((q) => q.code === "twice").map((q) => q.what.split(":")[0]).join("")}; the circle crops ${whole.circle.crop.map(Math.round).join(",")} of the screen`;
 });
 
+t("a screen above, the webcam as a panel below it (screen-stacked), the common layout of a screen with a face in published Shorts: the desktop recording and the webcam of the first use on real footage (2560×1600 and 1280×720, a message as the region, its text 15 px; a caption line and a hook) gave the screen with a small circle over an empty third; now the screen stands at the size that reads in the upper half, the face below it 13 % of the frame tall at the soft limit, the caption on the seam, the hook as a card above, and it leads. A speaker baked into a talk's slides, 85 px tall, gets no panel, and the note says why", () => {
+  const res = solve({ zones: Z916, sources: [{ size: [2560, 1600], region: [384, 614, 486, 160], minTextHeight: 15 }, { size: [1280, 720], faces: [[635, 415, 180, 175]] }], needs: [cap(1), hook] });
+  const st = res.candidates[0];
+  ok(st.fit === "screen-stacked" && !st.hard && !st.unmet.length, `the first is ${nameOf(st)}: ${JSON.stringify(st.problems)}`);
+  const [region, face] = st.faceInFrame, seam = st.seam;
+  ok(Y1(region) <= seam && face[1] >= seam && st.textHeight >= 24 - 0.05, `the region ends at y ${Y1(region)}, the face starts at ${face[1]}, the seam at ${seam}; text ${st.textHeight} px`);
+  ok(face[3] / 1920 >= 0.13 && inside(Z916.safe, face) && inside(Z916.safe, region), `the face ${face}, the region ${region}`);
+  const cp = st.text.find((x) => x.role === "caption"), hk = st.text.find((x) => x.role === "hook");
+  ok(cp.where === "seam" && hk.style === "card" && Y1(hk.box) <= region[1], `caption ${cp.where}, hook ${hk.style} ending at ${Y1(hk.box)}`);
+  ok(res.sources && res.sources.length === 2 && st.parts[1].source === 2, "the webcam is not the second source");
+  agree(st, res, "screen-stacked");
+  const talk = solve({ zones: Z916, sources: [TALK], needs: [cap(1)] });
+  ok(!talk.candidates.some((c) => c.fit === "screen-stacked") && talk.notes.some((n) => /no panel under the screen/.test(n)), `the talk: ${talk.notes.join(" | ")}`);
+  return `the screen at ${st.parts[0].scale}× (text ${st.textHeight} px) above y ${seam}, the face ${Math.round(face[3])} px at ${st.parts[1].scale}×; cost ${st.cost} against the circle's ${res.candidates.find((c) => c.circle)?.cost}`;
+});
+
 // =============================================================================================
 console.log("\nFrames 4:5 (1080×1350) and 1:1 (1080×1080)");
 // =============================================================================================

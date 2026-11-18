@@ -28,7 +28,7 @@ export function evaluate(ctx, p) {
     const src = sources[q.src], shown = clipBox(q.win, frame) || q.win;
     src.faces.forEach((f, i) => {
       const box = [q.left + q.s * f[0], q.top + q.s * f[1], q.s * f[2], q.s * f[3]];
-      const label = src.screen ? "region" : total > 1 ? `face ${(src.first || 0) + i + 1}` : "face";
+      const label = src.screen ? "region" : src.label || (total > 1 ? `face ${(src.first || 0) + i + 1}` : "face");
       if (!q.own || q.own.includes(i)) faces.push({ box, label, win: q.win, part: k, height: q.s * (src.heights ? src.heights[i] : f[3]), screen: !!src.screen });
       else { const part = clipBox(box, shown); if (part) others.push({ box: part, label, share: area(part) / area(box), height: q.s * (src.heights ? src.heights[i] : f[3]) }); }
     });

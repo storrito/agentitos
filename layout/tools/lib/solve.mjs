@@ -35,7 +35,7 @@ import { DEFAULTS, merged, scaled } from "./defaults.mjs";
 import { cmpRank } from "./evaluate.mjs";
 import { pictureFits } from "./fits.mjs";
 import { splitFits } from "./parts.mjs";
-import { screenFits } from "./screen.mjs";
+import { screenFits, screenStacked } from "./screen.mjs";
 
 // A face as it is given: a box [x, y, w, h], or its box at several moments [{ t, box }, …] (a
 // face that moves). A moving face is held by the hull of its boxes, so that the placement and the
@@ -124,8 +124,11 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
     // that part of the screen's own picture)
     const cam = srcs[1] ? { size: srcs[1].size, face: srcs[1].faces[0] || null } : main.webcam ? { size: main.size, face: main.webcam, baked: true } : null;
     if (cam?.baked) ctx.baked = cam.face;
-    ctx.sources = [main];
+    // the webcam as a source of its own, for the panel below the screen (baked: the screen's file)
+    const camSrc = srcs[1] ? { ...srcs[1], label: "webcam" } : cam ? { size: main.size, faces: [cam.face], heights: [cam.face[3]], first: 0, label: "webcam", baked: true } : null;
+    ctx.sources = camSrc ? [main, camSrc] : [main];
     out.push(...screenFits(ctx, cam, notes));
+    if (camSrc?.faces[0]) out.push(...screenStacked(ctx, camSrc, notes));
     if (!main.minText) notes.push("no --min-text-height given: whether the screen's text reads is not judged");
   } else if (srcs.length === 2) {
     // two people as two files: stacked in an upright frame, side by side in a wide one, both tried between
@@ -181,7 +184,10 @@ function ranked(ctx, out, notes, { needs, srcs }) {
   });
   return {
     frame: Z.frame, size: Z.size, platforms: Z.platforms.map((p) => p.name), fallback: Z.fallback,
-    source: main.size, faces: main.faces, ...(main.screen ? { screen: { region: main.faces[0], minTextHeight: main.minText, readable: r1(ctx.readable) } } : srcs.length > 1 ? { sources: srcs.map((q) => ({ size: q.size, faces: q.faces })) } : {}),
+    source: main.size, faces: main.faces,
+    ...(main.screen ? { screen: { region: main.faces[0], minTextHeight: main.minText, readable: r1(ctx.readable) } } : {}),
+    // the sources in the order given; a screen's webcam is the second (baked: the screen's own file)
+    ...(ctx.sources.length > 1 ? { sources: ctx.sources.map((q) => ({ size: q.size, faces: q.faces, ...(q.screen ? { screen: true } : {}), ...(q.baked ? { baked: true } : {}) })) } : {}),
     needs, defaults: D, notes, candidates: cands,
   };
 }
