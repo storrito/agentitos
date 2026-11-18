@@ -64,7 +64,8 @@ const SPEECH_MODEL = "elevenlabs/eleven-v3";
 const SPEECH_VOICE = "sarah";
 const MUSIC_MODELS = { clip: "google/lyria-3-clip-preview", pro: "google/lyria-3-pro-preview" };
 const IMAGE_MODEL = "google/gemini-3.1-flash-image";
-// LU the music lies under the voice: what HyperFrames' sound guide's 0.14 means for two equally loud files
+// LU the music lies under the voice: what HyperFrames' sound guide's 0.14 means for two equally loud
+// files, and the distance the owner chose by ear from samples at 11, 14, 17, 20 and 23 LU
 const UNDER = 17;
 
 // options that take no value
@@ -802,7 +803,7 @@ function cmdFinish(video) {
   // hidden beside it, so a half-written file never shows as an artifact
   const tmp = path.join(path.dirname(video), `.${path.basename(video, path.extname(video))}.levelled.mp4`);
   try {
-    ffmpeg(["-i", video, "-map", "0", "-c:v", "copy", "-af",
+    ffmpeg(["-i", video, "-map", "0", "-map_metadata", "-1", "-c:v", "copy", "-af",
       `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`,
       "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
     fs.renameSync(tmp, video);

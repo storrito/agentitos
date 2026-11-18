@@ -97,7 +97,9 @@ export async function locate(video, words, { log = () => {} } = {}) {
   if (!or) return null;
   const lines = turnsOf(words).map((t) => `[${t.start.toFixed(1)}–${t.end.toFixed(1)} s] ${t.speaker}: ${t.text}`).join("\n");
   const small = video.replace(/\.[^.]+$/, "") + ".small.mp4";
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", "scale=640:-2", "-r", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-c:a", "aac", "-b:a", "48k", "-ac", "1", small]);
+  // without the file's tags: a phone's video names the place it was recorded at, and ffmpeg
+  // would carry that into the copy the model watches
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-map_metadata", "-1", "-vf", "scale=640:-2", "-r", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-c:a", "aac", "-b:a", "48k", "-ac", "1", small]);
   const prompt = `This is a clip from a video podcast. Speech recognition labelled the voices; these are the turns, with their times in the clip:
 
 ${lines}

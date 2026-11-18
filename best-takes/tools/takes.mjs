@@ -16,6 +16,9 @@
 //                                         captions skill): a model marks the key words, cut.json
 //                                         keeps the style and the marks, every build mounts them;
 //                                         --off takes them out again
+//   node tools/takes.mjs broll <dir> <broll.json>   b-roll over the cut (agentitos' b-roll skill):
+//                                         cut.json keeps the file, every build mounts it under the
+//                                         captions; --off takes it out again
 //
 // Options, kept in source/settings.json for the next steps:
 //   --out <folder>     the composition/ folder of the HyperFrames project the preview shows
@@ -232,6 +235,13 @@ function captionsTool() {
   return candidates.find((p) => p && fs.existsSync(p)) || null;
 }
 
+// The b-roll skill of agentitos: BROLL_TOOL, else beside this skill, else in the machine's clone.
+function brollTool() {
+  const skill = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const candidates = [process.env.BROLL_TOOL, path.join(skill, "..", "b-roll", "tools", "broll.mjs"), "/home/sprite/skills/b-roll/tools/broll.mjs"];
+  return candidates.find((p) => p && fs.existsSync(p)) || null;
+}
+
 // The cut's words for the captions skill, timed in the cut, the marked ones standing out.
 function captionWords(dir, words, captions, { width, height, duration }) {
   const keys = new Set(captions.highlight || []);
@@ -277,6 +287,27 @@ function cmdBuild(dir, opts) {
       ...(s.platform || cut.captions.platform ? ["--platform", platformList(s.platform || cut.captions.platform).join(",")] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
+  let brollSaid = "";
+  // the b-roll (cut.json "broll", see the broll command): beats on the cut's word numbers, so a
+  // new cut keeps them on their words (a beat whose word went is left out, and said)
+  let broll = null, brollMotion = null;
+  fs.rmSync(path.join(out, "broll"), { recursive: true, force: true });
+  if (cut.broll) {
+    const tool = brollTool();
+    if (!tool) fail("✗ The b-roll needs agentitos' b-roll skill beside this one (or BROLL_TOOL naming its tools/broll.mjs).");
+    const file = path.join(dir, "broll.words.json");
+    fs.writeFileSync(file, JSON.stringify({ width, height, duration: r.duration, words: r.words.map((w) => ({ i: w.i, text: w.text, start: w.start, end: w.end })) }, null, 1));
+    const brand = s.brand || cut.captions?.brand;
+    // with captions, where they stand: beats beside the person move them onto a band of their own
+    const area = captions && fs.existsSync(path.join(out, "captions", "area.json")) ? ["--captions-area", path.join(out, "captions", "area.json")] : [];
+    const b = spawnSync(process.execPath, [tool, "build", cut.broll, file, path.join(out, "broll"), "--size", `${width}x${height}`,
+      ...(brand ? ["--brand", brand] : []), ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []), ...area], { encoding: "utf8" });
+    if (b.status) fail(`${(b.stdout || b.stderr).trim()}`);
+    broll = b.stdout.match(/<div id="broll"[^\n]*<\/div>/)?.[0] ?? null;
+    // beats beside the person: its script moves the pieces into the person's field
+    brollMotion = b.stdout.match(/<script id="broll-person-motion">[^\n]*<\/script>/)?.[0] ?? null;
+    brollSaid = b.stdout.split("\n").filter((l) => l.trim() && !/^Mount it|^Beats beside the person move|^\s*<div id="broll"|^\s*<script id="broll-person-motion"/.test(l)).join("\n");
+  }
   // the hook card, at the top of the box the platforms leave free
   let hook = null;
   if (s.hook) {
@@ -290,7 +321,7 @@ function cmdBuild(dir, opts) {
   const still = fs.existsSync(source(dir, "still.json")) ? read(source(dir, "still.json")) : {};
   const scales = s.punch === "on" ? punches(r.pieces, { highlight: cut.captions?.highlight, still, clips }) : r.pieces.map(() => 1);
   const pieces = r.pieces.map((p, k) => ({ ...p, scale: scales[k] }));
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, hook });
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
   // are timed in it. The preview does not need it, so a failure is said and the build goes on
   let voice = null;
@@ -307,6 +338,7 @@ function cmdBuild(dir, opts) {
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
   if (voice) console.log(`Voice: ${rel(voice)}, the cut's sound as one file (each take at its level); the words in ${rel(path.join(dir, "edit.json"))} are timed in it`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
+  if (brollSaid) console.log(`B-roll: ${brollSaid.replace(/^[^\n]*?: /, "")}`);
   if (hook) console.log(`Hook: „${s.hook}“ until ${hookUntil(r.words, r.duration)} s`);
   if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
   if (s.punch === "on") console.log(`Punch: ${scales.filter((v) => v > 1).length} of ${scales.length} pieces closer, at the jump cuts`);
@@ -329,6 +361,22 @@ function cmdCaptions(dir, opts) {
     const highlight = read(file).words.filter((w) => w.highlight).map((w) => w.i);
     cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}) };
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
+  }
+  fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
+  cmdBuild(dir, {});
+}
+
+// ------------------------------------------------------------------------------------ broll
+function cmdBroll(dir, file, opts) {
+  const cutFile = path.join(dir, "cut.json");
+  if (!fs.existsSync(path.join(dir, "edit.json"))) fail(`Build first: takes.mjs build ${rel(dir)}`);
+  const cut = read(cutFile);
+  if (opts.off) delete cut.broll;
+  else {
+    if (!file) fail("Usage: takes.mjs broll <dir> <broll.json>   (or --off)");
+    if (!fs.existsSync(file)) fail(`There is no ${file}: write it as the b-roll brief says.`);
+    if (!brollTool()) fail("✗ The b-roll needs agentitos' b-roll skill beside this one (or BROLL_TOOL naming its tools/broll.mjs).");
+    cut.broll = rel(path.resolve(file));
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
   cmdBuild(dir, {});
@@ -456,7 +504,7 @@ function cmdFinish(dir, file) {
   const before = lufsOf(file);
   if (!(Math.abs(before.lufs - s.final) <= 0.5 && before.peak <= -1)) {
     const tmp = path.join(path.dirname(path.resolve(file)), `.${path.basename(file)}.part.mp4`);
-    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "-1", "-c:v", "copy",
       "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.79:attack=5:release=60:level=disabled`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out], { stdio: ["ignore", "ignore", "inherit"] });
     try {
       let gain = s.final - before.lufs;
@@ -483,4 +531,5 @@ else if (command === "build") cmdBuild(pos[0], opts);
 else if (command === "check") cmdCheck(pos[0]);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "captions") cmdCaptions(pos[0], opts);
-else fail("Usage: takes.mjs new <dir> <video> [<video> …] | propose <dir> | build <dir> | check <dir> | finish <dir> <video.mp4>   (options: see the head of this file)");
+else if (command === "broll") cmdBroll(pos[0], pos[1], opts);
+else fail("Usage: takes.mjs new <dir> <video> [<video> …] | propose <dir> | build <dir> | check <dir> | finish <dir> <video.mp4> | captions <dir> --style … | broll <dir> <broll.json>   (options: see the head of this file)");
