@@ -105,6 +105,31 @@ function byLength(texts, maxWords, maxChars, fit) {
   return out;
 }
 
+// A token without a letter or a digit ("…", "–", "&", a quotation mark the recognizer set apart)
+// is no word to show by itself: it joins the word said just before it (a closing mark without a
+// space: "well…"), else the word said just after it (an opening mark without a space), each
+// within NEAR seconds; a mark with no word near it is left out (a "…" for a pause stood in the
+// picture for most of a second), as are dots after a word that ends its sentence already. The words come back as they are when there is no such token.
+const NEAR = 0.6;
+const bare = (text) => !/[\p{L}\p{N}]/u.test(text);
+export function fold(words) {
+  if (!words.some((w) => bare(w.text))) return words;
+  const out = [];
+  let lead = null;   // marks waiting for the word after them
+  for (const w of words) {
+    const prev = out[out.length - 1];
+    if (bare(w.text)) {
+      // (dots after a word that ends its sentence add nothing: "das." stays "das.", not "das.…")
+      if (prev && !lead && w.start - prev.end < NEAR) { if (!(/^[.…]+$/.test(w.text) && /[.!?…]["»”)]*$/.test(prev.text))) out[out.length - 1] = { ...prev, text: prev.text + (/^[.,;:!?…)\]}»“”‘’"']+$/.test(w.text) ? "" : " ") + w.text }; }
+      else lead = lead ? { ...lead, text: `${lead.text} ${w.text}`, end: w.end } : w;
+      continue;
+    }
+    out.push(lead && w.start - lead.end < NEAR ? { ...w, text: lead.text + (/^[(\[{«„“‘"']+$/.test(lead.text) ? "" : " ") + w.text } : w);
+    lead = null;
+  }
+  return out;
+}
+
 // The time each word is the one being said: from its start to the next word's start in the
 // group (a short pause between them does not leave the group without an active word), the last
 // one to its end.

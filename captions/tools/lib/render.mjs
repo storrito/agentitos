@@ -7,7 +7,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { groups, activeSpans } from "./group.mjs";
+import { groups, activeSpans, fold } from "./group.mjs";
 import { measure } from "./widths.mjs";
 
 export const ID = "captions";
@@ -71,7 +71,8 @@ function areaOf(place, style, width, height, [sx, sy, sw, sh]) {
 // zones: platform-zones' answer for the frame (tools/lib/zones.mjs); place: where the caller wants
 // the captions instead of where it says (areaOf above). Without place the file is what it was
 // before there was one.
-export function writeCaptions(out, { words, style, width, height, duration, brand, zones, place }) {
+export function writeCaptions(out, { words: said, style, width, height, duration, brand, zones, place }) {
+  const words = fold(said);   // a mark alone ("…") is no caption: group.mjs
   const look = { ...style.look }, area = areaOf(place, style, width, height, zones.centred);
   fs.mkdirSync(out, { recursive: true });
   const links = [];
@@ -267,7 +268,10 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               // (the words are inline blocks between spaces: the lines balance, no word is left alone)
               if (lines <= DATA.lines + 0.35 && widest <= room) break;
             }
-            el.style.fontSize = size + "px";${hug}
+            el.style.fontSize = size + "px";
+            // a word alone that is wider than its room even at the least size is set as small as it takes: it is never cut off at the frame's edge
+            var only = el.querySelectorAll(".cap-word");
+            while (only.length === 1 && size > 14 && only[0].offsetWidth > room) { size -= 2; el.style.fontSize = size + "px"; }${hug}
           }${boxes}
           function reveal(w) {
             var spoken = Math.max(0.03, w.said - w.start);

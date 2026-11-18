@@ -31,7 +31,8 @@ export function measure(look) {
   const spacing = parseFloat(look.spacing) || 0;
   const word = (text) => {
     let width = look.pill ? 0.44 : 0;
-    for (const ch of look.case === "upper" ? text.toUpperCase() : text) width += (at.get(ch) ?? (ch.codePointAt(0) > 0x2e7f ? 1 : usual)) + spacing;
+    // (a soft hyphen, where the caller lets a long word break, is not drawn)
+    for (const ch of look.case === "upper" ? text.toUpperCase() : text) if (ch !== "\u00AD") width += (at.get(ch) ?? (ch.codePointAt(0) > 0x2e7f ? 1 : usual)) + spacing;
     return width;
   };
   return { word, space: (at.get(" ") ?? 0.28) + spacing + (look.gap == null ? 0.08 : parseFloat(look.gap) || 0) };

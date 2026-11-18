@@ -11,7 +11,8 @@
 // repository's history into a temp folder and run on the same words (CAPTIONS_BEFORE names
 // another commit). Without git or without that commit (the skill's folder alone, a shallow
 // clone) that test is skipped. Whoever changes the captions nobody placed on purpose names the
-// commit that did it here.
+// commit that did it here; what the built files have since on purpose (SINCE below) is taken
+// out before they are compared.
 //
 // The last test lays the built files out in a Chrome (CHROME, one on the PATH, puppeteer's or
 // HyperFrames' own) and measures lines, sizes and boxes; it loads the styles' fonts from Google
@@ -26,7 +27,8 @@ import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { STYLES } from "./lib/styles.mjs";
-import { groups } from "./lib/group.mjs";
+import { groups, fold } from "./lib/group.mjs";
+import { cues } from "./lib/srt.mjs";
 import { measure } from "./lib/widths.mjs";
 import { zones, zonesTool } from "./lib/zones.mjs";
 
@@ -88,6 +90,16 @@ function linesOf(text, style, room) {
 }
 const video = (file, size) => assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=gray:s=${size}:r=30:d=9`, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", file]).status, 0);
 
+// What the built captions have on purpose that the version before did not: three lines of the
+// script that keep a word alone inside the frame when it is wider than its room even at the
+// least size (it was cut off at the frame's edge). The comparison takes them out and holds
+// everything else to the byte; "in Chrome: a word alone …" below says what they do.
+const SINCE = /\n {12}\/\/ a word alone that is wider than its room even at the least size[^\n]*\n {12}var only = [^\n]*\n {12}while \(only\.length === 1 [^\n]*?\}(?=\n| *\/\/|$)/;
+function withoutSince(html) {
+  assert.match(html, SINCE, "the lines that keep a word alone inside the frame are not in the built file as the test knows them");
+  return html.replace(SINCE, "");
+}
+
 // the tools of the version before the options, in `dir`; null when the history is not there
 function versionBefore(dir) {
   const git = (...args) => spawnSync("git", ["-C", REPO, ...args], { maxBuffer: 1 << 26 });
@@ -109,7 +121,10 @@ test("without the options the built files and what the tool says are those of th
     const a = run(old, path.join(dir, "a", name), args, words), b = run(TOOL, path.join(dir, "b", name), args, words);
     assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
     assert.equal(b.stdout, a.stdout, `${name}: what the tool says`);
-    for (const f of files) assert.ok(fs.readFileSync(path.join(dir, "b", name, f)).equals(fs.readFileSync(path.join(dir, "a", name, f))), `${name}: ${f} differs from the version before`);
+    for (const f of files) {
+      const now = fs.readFileSync(path.join(dir, "b", name, f)), before = fs.readFileSync(path.join(dir, "a", name, f));
+      assert.ok((f.endsWith("captions/index.html") ? Buffer.from(withoutSince(now.toString())) : now).equals(before), `${name}: ${f} differs from the version before`);
+    }
   };
   // 9:16, 16:9, 1:1, 4:5 and a small 9:16, in the styles the version before had
   for (const style of ["hormozi", "karaoke", "wipe", "clean"]) for (const size of ["1080x1920", "1920x1080", "1080x1080", "1080x1350", "720x1280"]) {
@@ -311,6 +326,25 @@ test("an option that cannot be meant is one sentence that says what it takes", {
   assert.equal(fs.existsSync(path.join(dir, "out")), false);
 });
 
+// ---- words that are no words, and words longer than a line ---------------------------------------
+
+test("a mark alone is no caption: it joins the word said beside it, or is left out; the subtitle file has the same words", () => {
+  const w = (text, start, end) => ({ text, start, end }), texts = (ws) => fold(ws).map((x) => x.text);
+  assert.deepEqual(texts([w("Well", 0, 0.3), w("…", 0.35, 0.4), w("so", 0.9, 1.1)]), ["Well…", "so"]);
+  assert.deepEqual(texts([w("Hello.", 0, 0.3), w("…", 2, 2.8), w("So", 4, 4.2)]), ["Hello.", "So"]);               // a pause's "…": no word near it
+  assert.deepEqual(texts([w("das.", 0, 0.3), w("…", 0.8, 0.9), w("Und", 1.4, 1.6)]), ["das.", "Und"]);               // nor after a sentence's end
+  assert.deepEqual(texts([w("Tom", 0, 0.3), w("&", 0.32, 0.4), w("Jerry", 0.42, 0.8)]), ["Tom &", "Jerry"]);
+  assert.deepEqual(texts([w("„", 0, 0.02), w("Hallo", 0.03, 0.3), w("“", 0.31, 0.33), w("sagt", 0.4, 0.6), w("er", 0.61, 0.7), w("–", 0.72, 0.75), w("leise.", 0.8, 1.1)]), ["„Hallo“", "sagt", "er –", "leise."]);
+  // the times are the words': a joined mark moves none
+  assert.deepEqual(fold([w("Well", 0, 0.3), w("…", 0.35, 0.4)]).map((x) => [x.start, x.end]), [[0, 0.3]]);
+  const plain = [w("a", 0, 1), w("b", 1, 2)];
+  assert.equal(fold(plain), plain);   // nothing to join: the very words
+  // in the pictures no group is a mark, in the subtitle file no cue; a soft hyphen is for the picture alone
+  const said = [w("Hello.", 0, 0.3), w("…", 2, 2.8), w("Verwaltungs\u00ADwissenschaft", 4, 5), w("zählt.", 5.05, 5.4)];
+  for (const s of Object.values(STYLES)) for (const g of groups(fold(said), s.group, 60)) assert.match(fold(said).slice(g.from, g.to + 1).map((x) => x.text).join(" "), /\p{L}/u);
+  assert.deepEqual(cues(said).map((c) => c.text), ["Hello.", "Verwaltungswissenschaft zählt."]);
+});
+
 // ---- the styles ---------------------------------------------------------------------------------
 
 test("every style builds in every frame, every word once and in order; what only some styles have is only in their files", { skip: noZones }, (t) => {
@@ -438,8 +472,8 @@ const CHROME = chromePath();
 // that sets `box-sizing: border-box` on everything (as `project` writes one) or sets nothing.
 // The style's font is loaded before the captions' own script fits the groups (else they would be
 // fitted in a stand-in font). Per group: { text, size, lines, box: [left, top, right, bottom] in
-// px of the frame, lineBoxes: the same for the box of each line when the style has them }; null
-// when Chrome gave nothing, "no font" when the font did not come.
+// px of the frame, words: [left, right] of its words, lineBoxes: the box of each line as `box`
+// when the style has them }; null when Chrome gave nothing, "no font" when the font did not come.
 function laidOut(t, html, borderBox) {
   const template = html.match(/<template>([\s\S]*)<\/template>/)[1], [, w, h] = template.match(/data-width="(\d+)" data-height="(\d+)"/);
   const [, family, weight] = template.match(/font-family: "([^"]+)", sans-serif; font-weight: (\d+);/);
@@ -457,8 +491,9 @@ function measured(n) {
     // the lines: words whose tops lie more than half the type's size apart (a key word in another typeface sits a little off its neighbours)
     var tops = Array.prototype.map.call(el.querySelectorAll(".cap-word"), function (c) { return c.getBoundingClientRect().top; }).sort(function (a, b) { return a - b; });
     var lines = tops.filter(function (y, i) { return !i || y - tops[i - 1] > size * 0.5; }).length;
-    var laid = el.querySelectorAll(".cap-box");
-    return { text: el.textContent, size: size, lines: lines, box: [r.left - at.left, r.top - at.top, r.right - at.left, r.bottom - at.top].map(Math.round),
+    var laid = el.querySelectorAll(".cap-box"), reach = [Infinity, -Infinity];
+    Array.prototype.forEach.call(el.querySelectorAll(".cap-word"), function (c) { var b = c.getBoundingClientRect(); reach = [Math.min(reach[0], Math.round(b.left - at.left)), Math.max(reach[1], Math.round(b.right - at.left))]; });
+    return { text: el.textContent, size: size, lines: lines, words: reach, box: [r.left - at.left, r.top - at.top, r.right - at.left, r.bottom - at.top].map(Math.round),
       lineBoxes: laid.length ? Array.prototype.map.call(laid, function (c) { var b = c.getBoundingClientRect(); return [b.left - at.left, b.top - at.top, b.right - at.left, b.bottom - at.top].map(Math.round); }) : null };
   })));
 }
@@ -535,5 +570,28 @@ test("in Chrome: the styles with a box for every line, key words in another type
       for (const [, top, , bottom] of g.lineBoxes) assert.ok(Math.abs(bottom - top - high) <= 1, `${name}: a box of "${g.text}" is ${bottom - top} px high, a line with its padding ${high}`);
       tops.forEach((top, k) => { if (k) assert.ok(top <= tops[k - 1] + high, `${name}: the boxes of "${g.text}" leave a gap between two lines`); });
     });
+  }
+});
+
+test("in Chrome: a word alone that is wider than its line is set as small as it takes and never passes its area; with a soft hyphen it breaks there and stays larger", { skip: noZones || (!CHROME && "no Chrome on this machine (CHROME names one)") }, (t) => {
+  const long = "Verwaltungswissenschaftler*innen", soft = "Verwaltungs\u00ADwissenschaftler*innen";
+  for (const style of ["hormozi", "wipe", "bold", "impact", "label"]) {
+    const sizes = {};
+    for (const [name, word] of [["whole", long], ["soft", soft]]) {
+      const b = built(t, ["--style", style, "--size", "1080x1920"], wordsOf(`Viele ${word} sagen das.`)), seen = laidOut(t, b.html, true), at = `${style}, ${name}`;
+      if (!seen) return t.skip(`Chrome did not lay the page out (${at})`);
+      if (seen === "no font") return t.skip(`the style's font did not load, no network? (${at})`);
+      const i = b.data.groups.findIndex((g) => g.words.some((w) => w.text === word)), g = seen[i];
+      assert.equal(b.data.groups[i].words.length, 1, `${at}: the long word stands alone`);
+      assert.ok(g.words[0] >= b.data.left - 1 && g.words[1] <= b.data.left + b.data.maxWidth + 1, `${at}: the word reaches x ${g.words[0]}–${g.words[1]}, its area x ${b.data.left}–${b.data.left + b.data.maxWidth}`);
+      assert.equal(g.lines, 1, at);   // (a word is one box, whatever lines it has inside)
+      sizes[name] = g.size;
+      // the other captions are not touched by it
+      seen.forEach((o, k) => { if (k !== i && b.data.groups[k].words.length > 1) assert.equal(o.size, b.data.size, `${at}: "${o.text}"`); });
+    }
+    assert.ok(sizes.whole < STYLES[style].look.size, `${style}: the whole word is set at ${sizes.whole} px, the style's size`);
+    assert.ok(sizes.soft > sizes.whole, `${style}: broken at its soft hyphen the word is ${sizes.soft} px, whole ${sizes.whole}`);
+    // the big styles' type would pass the area even at the least size the others shrink to: there the word goes under it
+    if (["hormozi", "wipe"].includes(style)) assert.ok(sizes.whole < STYLES[style].look.size * 0.55, `${style}: ${sizes.whole} px`);
   }
 });
