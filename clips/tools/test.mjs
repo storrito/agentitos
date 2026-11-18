@@ -404,7 +404,10 @@ test("the limit travels: a moment still over it after its drop is said to be in 
   // INTERVIEW 1-7 is 75 s; without 4-5 it is about 57 s: still over a limit of 50
   const [m] = arrange({ moments: [moment(1, 7, { drop: [4, 5], payoff: 7 })] }, INTERVIEW, { limit: 50 });
   assert.equal(m.checks.still, m.kept - 50);
-  assert.match(checkNotes(m, 50), new RegExp(`${m.kept} s without the sentences 4-5, still ${m.kept - 50} s over: drop more of it, run moments again with a higher --max-seconds where the platforms take it, or take another moment; never one over the limit`));
+  assert.match(checkNotes(m, 50), new RegExp(`${m.kept} s without the sentences 4-5, still ${m.kept - 50} s over: drop more of it or take another moment; --max-seconds 100 only where the person wants this passage and every platform takes it \\(short passages then come back with more around them\\); never one over the limit`));
+  // a higher limit is a trade, never suggested only because the platforms allow it
+  assert.doesNotMatch(checkNotes(m, 50) + lengthNote(64.6, 59), /where the platforms (take|allow) it/);
+  assert.match(lengthNote(64.6, 59), /--max-seconds 100 \(short passages then come back with more around them\)/);
   assert.equal(arrange({ moments: [moment(1, 7, { drop: [4, 5] })] }, INTERVIEW, { limit: 59 })[0].checks.still, 0);
   assert.equal(lengthNote(58.4, 59), null);
   assert.match(lengthNote(64.6, 59), /^⚠ Without what is left out the moment still plays about 65 s, over the 59 s a short may be here: drop more/);

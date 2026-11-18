@@ -258,7 +258,7 @@ export function playedSeconds(words, keeps) {
 // (`estimate`: playedSeconds of its keeps)
 export function lengthNote(estimate, limit) {
   if (!(estimate > limit)) return null;
-  return `⚠ Without what is left out the moment still plays about ${Math.round(estimate)} s, over the ${limit} s a short may be here: drop more of it (rm -r the clip's takes/, then prepare again with a longer --drop), run moments again with a higher --max-seconds where the platforms take it, or choose another moment. check says so until it fits; never publish it over the limit.`;
+  return `⚠ Without what is left out the moment still plays about ${Math.round(estimate)} s, over the ${limit} s a short may be here: drop more of it (rm -r the clip's takes/, then prepare again with a longer --drop) or choose another moment; where the person wants this passage and every platform takes it, run moments again with --max-seconds 100 (short passages then come back with more around them). check says so until it fits; never publish it over the limit.`;
 }
 
 // What prepare says of a drop: what is left out, truthfully, and what stays and why
@@ -404,7 +404,7 @@ export function checkNotes(m, limit) {
     c.conjunction ? "opens on a conjunction in the middle of a turn: read the sentence before it" : null,
     c.voices > 1 ? `${c.voices} voices` : null,
     c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop")
-      + (c.still ? `, still ${c.still} s over: drop more of it, run moments again with a higher --max-seconds where the platforms take it, or take another moment; never one over the limit` : "") : null,
+      + (c.still ? `, still ${c.still} s over: drop more of it or take another moment; --max-seconds 100 only where the person wants this passage and every platform takes it (short passages then come back with more around them); never one over the limit` : "") : null,
     c.trimmed ? `the model's passage ran to sentence ${c.trimmed.from}, over ${longest(limit)} s: its end was cut back to ${m.last}; read where it really ends${c.trimmed.payoff != null ? `, the strongest line it named (${c.trimmed.payoff}) lies past it` : ""}` : null,
     c.refused?.length ? `the model marked ${ranges(c.refused)} to drop, more than half of it: not taken` : null,
     c.stays?.length ? `marked to drop but another voice speaks over ${c.stays.length > 1 ? "them" : "it"}, so ${c.stays.length > 1 ? "they stay" : "it stays"}: ${ranges(c.stays)}` : null,

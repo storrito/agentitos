@@ -8,7 +8,8 @@
 //   node tools/episode.mjs moments <dir> [--count N] [--max-seconds N]
 //        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (five to
 //        nine cents an hour), in the order of the episode, each a whole passage: <dir>/moments.json and a short list
-//        to read. --max-seconds is how long a short may be (59: it fits every post type); a passage
+//        to read. --max-seconds is how long a short may be (59: it fits every post type; higher is a trade:
+//        long passages whole more often, short ones with more around them); a passage
 //        that is longer is returned whole, with the sentences that can go marked (`drop`)
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
@@ -388,8 +389,8 @@ function report(dir, episode, sentences, j, cost) {
   console.log(listing(j, sentences, pieces));
   const over = j.moments.filter((m) => m.checks.over).length, still = j.moments.filter((m) => m.checks.still).length;
   console.log(`${j.moments.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${cost.toFixed(4)}. `
-    + (over ? `${over} ${over === 1 ? "is a whole passage" : "are whole passages"} longer than ${j.limit} s: where the platforms allow it, run moments again with a higher --max-seconds; else leave their marked sentences out (clips.mjs prepare … --drop <sentences>). ` : "")
-    + (still ? `${still} ${still === 1 ? "is" : "are"} still over ${j.limit} s without ${still === 1 ? "its" : "their"} marked sentences: drop more, raise --max-seconds where every platform chosen takes it, or offer other moments; never one over the limit. ` : "")
+    + (over ? `${over} ${over === 1 ? "is a whole passage" : "are whole passages"} longer than ${j.limit} s: their marked sentences are left out (clips.mjs prepare … --drop <sentences>). ` : "")
+    + (still ? `${still} ${still === 1 ? "is" : "are"} still over ${j.limit} s without ${still === 1 ? "its" : "their"} marked sentences: drop more or offer other moments; --max-seconds 100 only where the person wants such a passage and every platform chosen takes it (short passages then come back with more around them); never one over the limit. ` : "")
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
 }
 
