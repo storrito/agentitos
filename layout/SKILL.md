@@ -102,7 +102,7 @@ To the skill that builds the video, from the chosen candidate in `placement.json
 
 - `scale`, `left`, `top`: the source is drawn `scale` times its size with its top left corner at `left`, `top`. `window`: the part of the frame the sharp picture fills; outside it lies ground (the pages use a blurred, darker copy of the picture that covers the frame).
 - `parts` (stacked, side by side, screen-stacked): the same for each part, with the `source` it shows (a screen's webcam is source 2, also where it is baked into the screen), clipped to its `window`.
-- `circle`: the webcam's circle (`box`, in px of the frame), and `crop`, the square of the webcam's picture it shows, in px of the webcam's picture.
+- `circle`: the webcam's circle (`box`, in px of the frame), and `crop`, the square it shows, in px of the picture `of` names: `webcam` (the webcam's file) or `screen` (the screen recording, where the webcam is baked into it).
 - `text`: the `box` of the hook with its `font` in px (`style` `text`: two lines of big type with no card; `card`: a card of two lines; `big`: two big lines beside the picture in 16:9), and of the captions.
 
 To captions:

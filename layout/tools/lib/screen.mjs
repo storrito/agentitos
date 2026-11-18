@@ -90,6 +90,8 @@ export function screenFits(ctx, webcam, notes) {
       found.crop = [clamp(f[0] + f[2] / 2 - side / 2, 0, ww - side), clamp(f[1] + D.eyes * f[3] - 0.42 * side, 0, wh - side), side, side].map(r1);
       found.enlargement = r2(found.d / side);
       found.faceHeight = Math.round(f[3] * found.d / side);
+      // whose picture the crop is of: the webcam's file, or the screen's own where it is baked in
+      found.of = webcam.baked ? "screen" : "webcam";
     }
     return { ...found, first: order[0], size: full };
   };

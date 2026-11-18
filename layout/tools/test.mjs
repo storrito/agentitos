@@ -1092,7 +1092,8 @@ t("a webcam baked into the screen recording has one way, the one SKILL.md's tabl
   const r = cli("place", dir, "--frame", "9:16", ...args, "--text", "caption", "--json");
   ok(r.status === 0, `the row's options: ${r.stderr}`);
   const j = JSON.parse(r.stdout), c = j.candidates.find((q) => q.circle);
-  ok(j.sources && j.sources[1].baked && c && c.circle.crop, `sources ${JSON.stringify(j.sources)}, circle ${c && JSON.stringify(c.circle)}`);
+  ok(j.sources && j.sources[1].baked && c && c.circle.crop && c.circle.of === "screen", `sources ${JSON.stringify(j.sources)}, circle ${c && JSON.stringify(c.circle)}`);
+  ok(/in px of the picture `of` names: `webcam` \(the webcam's file\) or `screen`/.test(fs.readFileSync(path.join(HERE, "..", "SKILL.md"), "utf8")), "SKILL.md does not say whose px a circle's crop is in");
   return `${args.join(" ")}: the circle shows ${c.circle.crop.map(Math.round).join(",")} of the screen`;
 });
 
