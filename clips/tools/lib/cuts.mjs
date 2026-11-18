@@ -25,8 +25,11 @@ const HARD = 12, SURE = 35, POSSIBLE = 9, OVER_MOTION = 2.2;
 
 // every frame of the video as a small grey picture, in the order shown, none doubled or left out
 export function smallFrames(video) {
-  const r = spawnSync("ffmpeg", ["-v", "error", "-i", video, "-an", "-sn", "-vsync", "passthrough",
+  // -fps_mode from ffmpeg 5.1, -vsync before it
+  const read = (mode) => spawnSync("ffmpeg", ["-v", "error", "-i", video, "-an", "-sn", ...mode,
     "-vf", `scale=${SMALL_W}:${SMALL_H}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
+  let r = read(["-fps_mode", "passthrough"]);
+  if (r.status !== 0) r = read(["-vsync", "passthrough"]);
   if (r.status !== 0) throw new Error(`ffmpeg could not read the frames of ${video}`);
   const size = SMALL_W * SMALL_H, n = Math.floor(r.stdout.length / size);
   return Array.from({ length: n }, (_, i) => r.stdout.subarray(i * size, (i + 1) * size));
