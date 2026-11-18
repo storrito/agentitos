@@ -315,7 +315,7 @@ function cmdBuild(dir, opts) {
   let brollSaid = "";
   // the b-roll (cut.json "broll", see the broll command): beats on the cut's word numbers, so a
   // new cut keeps them on their words (a beat whose word went is left out, and said)
-  let broll = null;
+  let broll = null, brollMotion = null;
   fs.rmSync(path.join(out, "broll"), { recursive: true, force: true });
   if (cut.broll) {
     const tool = brollTool();
@@ -323,11 +323,15 @@ function cmdBuild(dir, opts) {
     const file = path.join(dir, "broll.words.json");
     fs.writeFileSync(file, JSON.stringify({ width, height, duration: r.duration, words: r.words.map((w) => ({ i: w.i, text: w.text, start: w.start, end: w.end })) }, null, 1));
     const brand = s.brand || cut.captions?.brand;
+    // with captions, where they stand: beats beside the person move them onto a band of their own
+    const area = captions && fs.existsSync(path.join(out, "captions", "area.json")) ? ["--captions-area", path.join(out, "captions", "area.json")] : [];
     const b = spawnSync(process.execPath, [tool, "build", cut.broll, file, path.join(out, "broll"), "--size", `${width}x${height}`,
-      ...(brand ? ["--brand", brand] : []), ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : [])], { encoding: "utf8" });
+      ...(brand ? ["--brand", brand] : []), ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []), ...area], { encoding: "utf8" });
     if (b.status) fail(`${(b.stdout || b.stderr).trim()}`);
     broll = b.stdout.match(/<div id="broll"[^\n]*<\/div>/)?.[0] ?? null;
-    brollSaid = b.stdout.split("\n").filter((l) => l.trim() && !/^Mount it|^\s*<div id="broll"/.test(l)).join("\n");
+    // beats beside the person: its script moves the pieces into the person's field
+    brollMotion = b.stdout.match(/<script id="broll-person-motion">[^\n]*<\/script>/)?.[0] ?? null;
+    brollSaid = b.stdout.split("\n").filter((l) => l.trim() && !/^Mount it|^Beats beside the person move|^\s*<div id="broll"|^\s*<script id="broll-person-motion"/.test(l)).join("\n");
   }
   // the hook: where place.json puts it, else a card at the top of the box the platforms leave free
   let hook = null, hookEnds = null;
@@ -354,7 +358,7 @@ function cmdBuild(dir, opts) {
     const plan = punchPlan({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop, raise: placed?.raise || "full" });
     return { ...p, scale: plan.scale, ...(plan.scale > 1 ? { origin: +Math.min(height, plan.origin).toFixed(1) } : {}), ...(plan.why ? { held: `${plan.why}` } : {}) };
   });
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, hook });
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
   // are timed in it. The preview does not need it, so a failure is said and the build goes on
   let voice = null;
