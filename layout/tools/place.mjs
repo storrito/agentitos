@@ -35,6 +35,12 @@
 //   node place.mjs captions <folder> [--candidate 1] [--json]
 //        the options that make agentitos' captions set its captions into the candidate's
 //        caption area
+//   node place.mjs text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook]
+//                  [--platform …] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>]… [--raise head|mouth|full] [--json]
+//        the picture is placed already (a clip's framing): where the text goes over all its shots,
+//        given every face over time; one place for the captions of the whole clip, how far each
+//        shot's picture is to be raised to clear it, the hook's place over its first seconds,
+//        and what still lies on a face, into <folder>/text.json (lib/placed.mjs)
 //
 // Boxes are x,y,w,h in px of the source: a face from the hairline to the chin and from cheek to
 // cheek. Every --face, --face-at, --face-track and --region belongs to the --source before it.
@@ -50,6 +56,7 @@ import { compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
+import { textOverTime, stillsText } from "./lib/placed.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
 import { besideSolve, printBeside } from "./lib/beside.mjs";
 import { areaFile, areaOfStyle } from "./lib/caption-area.mjs";
@@ -66,13 +73,14 @@ const sameFile = (a, b) => real(a) === real(b);
 // ---- options ----
 
 const FLAGS = new Set(["json", "all"]);
-const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still", "at"]);
+const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still", "at", "lift"]);
 const OPTIONS = {
   beside: ["frame", "source", "face", "face-at", "face-track", "material", "material-min", "material-ratio", "text", "caption-area", "caption-style", "before", "platform", "set", "json"],
   grid: ["at"],
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
   captions: ["candidate", "json"],
+  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "set", "json"],
 };
 function parseArgs(cmd, argv) {
   const o = { _: [], order: [] };
@@ -92,7 +100,7 @@ function parseArgs(cmd, argv) {
 
 // the sources in the order given: every --face belongs to the --source before it (faces before the
 // first --source: to the first)
-function parseSources(o) {
+function parseSources(o, { clamp = false } = {}) {
   const sources = [], early = [];
   const box = (f, what) => { const b = String(f).split(",").map(Number); if (b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[2] <= 0 || b[3] <= 0) fail(`--${what} is x,y,w,h in px of the source, as 300,570,600,900.`); return b; };
   for (const [k, v] of o.order) {
@@ -117,11 +125,22 @@ function parseSources(o) {
       (sources.at(-1)?.faces || early).push(...tracks);
     }
   }
-  // a box past the source's edge places a face that is not there
+  // A box past the source's edge places a face that is not there. beside (clamp) takes the part
+  // of a face's box inside the picture and says so in a note (`clamped`), since its caller often
+  // has a box from another tool; a box wholly outside stays an error.
   for (const q of sources) {
     const [sw, sh] = q.size;
+    q.clamped = [];
     for (const b of [...q.faces.flatMap((f) => (typeof f[0] === "number" ? [f] : f.map((m) => m.box))), ...(q.region ? [q.region] : [])]) {
-      if (b[0] < 0 || b[1] < 0 || b[0] + b[2] > sw || b[1] + b[3] > sh) fail(`The box ${b.join(",")} reaches past the source of ${sw}×${sh}: a face or region the picture's edge cuts ends at that edge, read it again off the grid.`);
+      if (!(b[0] < 0 || b[1] < 0 || b[0] + b[2] > sw || b[1] + b[3] > sh)) continue;
+      if (!clamp || b === q.region) fail(`The box ${b.join(",")} reaches past the source of ${sw}×${sh}: a face or region the picture's edge cuts ends at that edge, read it again off the grid.`);
+      const x0 = Math.max(0, b[0]), y0 = Math.max(0, b[1]), x1 = Math.min(sw, b[0] + b[2]), y1 = Math.min(sh, b[1] + b[3]);
+      if (x1 - x0 < 1 || y1 - y0 < 1) fail(`The face's box ${b.join(",")} lies outside the source of ${sw}×${sh}: read it again off ${self()} grid.`);
+      const was = b.join(","), given = b[3];
+      b.splice(0, 4, x0, y0, x1 - x0, y1 - y0);
+      // (the face is as large as given: only what can be shown is cut)
+      b.givenHeight = given;
+      q.clamped.push(`the face's box ${was} reaches past the source of ${sw}×${sh}: taken as ${b.map((v) => +v.toFixed(1)).join(",")}, its part inside the picture, the face's size still the ${given} px given`);
     }
   }
   return sources;
@@ -237,7 +256,7 @@ function cmdBeside(o) {
     const box = [Math.max(0, fx), Math.max(0, fy), Math.min(w / k, sw), Math.min(h / k, sh)].map((v) => Math.round(v));
     o.order = o.order.map(([kk, v]) => (kk === "face" && v === "assumed" ? [kk, box.join(",")] : [kk, v]));
   }
-  const sources = parseSources(o);
+  const sources = parseSources(o, { clamp: true });
   if (!folder || o._.length > 1 || !o.frame || !sources.length) fail(usage);
   if (sources.length > 1 || sources[0].faces.length !== 1) fail(`beside places one speaker from one recording: give one --source and one --face (or the moments of one face as --face-at), read off ${self()} grid.`);
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) fail(`${folder} is a file: beside writes its placement.json into a folder, name one.`);
@@ -268,10 +287,11 @@ function cmdBeside(o) {
     if (o["caption-area"] !== undefined) captionArea = areaFile(o["caption-area"]);
     else if (o["caption-style"] !== undefined) captionArea = areaOfStyle(o["caption-style"], needs.find((n) => n.role === "caption")?.lines, zones.size, platforms);
     res = besideSolve({
-      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
+      zones, captionArea, faceAssumed: assumed, source: sources[0].size, face: sources[0].faces[0], faceSize: sources[0].faces[0].givenHeight ?? null, material, needs, before,
       set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
     });
   } catch (e) { fail(e.message); }
+  if (sources[0].clamped.length) res.notes.unshift(...sources[0].clamped);
   res.asked = { frame: o.frame, platforms };
   const file = path.join(folder, "placement.json");
   try {
@@ -452,6 +472,8 @@ function cmdPage(o) {
     console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}${c.parts ? "" : ` ${c.scale}×`}${multi ? ` at ${v.at} s` : ""}: ${rel(page)}${shot ? `, ${rel(png)}` : " (Chrome took no picture of it: open the page)"}`);
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}`);
     console.log(`   solver:  ${c.problems.length ? c.problems.map((q) => `${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of} ${q.what}`).join("; ") : "✓ no problem"}`);
+    // (beside's crops of a feed or grid are notes, not problems: the checker reports them as soft)
+    if (c.crops?.length) console.log(`   note:    where the frame is shown cropped elsewhere, not a problem: ${c.crops.map((q) => `${q.of} ${q.what}`).join("; ")}`);
     console.log(`   checker: ${checked.findings.length ? checked.findings.map((f) => `${f.level} ${f.kind === "text" ? `"${f.label}"` : f.label} ${f.what}`).join("; ") : "✓ nothing under the apps' buttons, nothing on top of each other"}`);
     if (!cmp.verdictAgrees) { differ++; console.log(`   ✗ They differ: ${checked.ok ? "the checker passes what the solver fails" : "the checker fails what the solver passes"} (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}). The checker measured the page: do not take this candidate without looking at why.`); }
     else if (!cmp.agree) console.log(`   They agree on the verdict and differ in a finding (solver only: ${cmp.onlySolver.join(", ") || "nothing"}; checker only: ${cmp.onlyChecker.join(", ") || "nothing"}).`);
@@ -488,10 +510,74 @@ function cmdCaptions(o) {
   console.log(`captions answers "Placed where asked: …" when it took them. A captions that answers nothing of the kind does not know these options and sets the lowest line on the safe box's bottom whatever is there: look at its frame then.`);
 }
 
+// ---- text: the picture placed already, faces over time ----
+
+function cmdText(o) {
+  const usage = `${self()} text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] [--platform reels,tiktok] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>] [--raise head|mouth|full] [--json]
+  shots.json: {"shots": [{"start": 0, "end": 4.2, "faces": [{"who": "A", "track": [{"t": 0, "box": [x, y, w, h]}, …]}], "room": {"free": 0}}, …], "hook": {"start": 0, "end": 3}}
+  (boxes in px of the frame as the picture stands; room: how far a shot's picture may be raised, null where not at all)`;
+  const [folder] = o._;
+  if (!folder || o._.length > 1 || !o.frame || !o.shots) fail(usage);
+  if (!/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame)) fail(`--frame is a ratio or a size, as 9:16 or 1080x1920.`);
+  let input;
+  try { input = JSON.parse(fs.readFileSync(o.shots, "utf8")); } catch (e) { fail(`--shots ${o.shots} cannot be read (${e.message}): it is JSON, {"shots": [{"start", "end", "faces": [{"who", "track": [{"t", "box"}]}]}]}.`); }
+  const shots = Array.isArray(input) ? input : input.shots;
+  const goodBox = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] > 0 && b[3] > 0;
+  if (!Array.isArray(shots) || !shots.length || shots.some((s) => !Number.isFinite(s.start) || !(s.end > s.start) || !Array.isArray(s.faces) || s.faces.some((f) => !Array.isArray(f.track) || f.track.some((m) => !Number.isFinite(m.t) || !goodBox(m.box)))))
+    fail(`--shots ${o.shots}: every shot needs "start" < "end" in seconds and "faces", each a "track" of {"t": seconds, "box": [x, y, w, h]} in px of the frame (no face: an empty list).`);
+  const needs = parseNeeds(o.text.length ? o.text : ["caption"]).map((n) => {
+    if (n.role !== "hook") return n;
+    const h = input.hook;
+    if (!h || !Number.isFinite(h.start) || !(h.end > h.start)) fail(`--text hook needs "hook": {"start": seconds, "end": seconds} in ${o.shots}: when the hook is shown, on the shots' clock.`);
+    const spans = Array.isArray(h.spans) && h.spans.every((x) => Array.isArray(x) && x.length === 2 && x[1] > x[0]) ? h.spans : null;
+    return { ...n, start: h.start, end: h.end, ...(spans ? { spans } : {}), ...(h.calm === false ? { calm: false } : {}) };
+  });
+  const lifts = {};
+  for (const v of o.lift) {
+    const m = String(v).match(/^(\d+):(\d+)$/);
+    if (!m || +m[1] < 1 || +m[1] > shots.length) fail(`--lift is <shot>:<px>, the shot counted from 1 (of ${shots.length}) and how far its picture is raised, as 3:120 (3:0 not at all).`);
+    lifts[+m[1] - 1] = +m[2];
+  }
+  const fixed = { ...(o["caption-y"] !== undefined ? { y: Number(o["caption-y"]) } : {}), ...(o["font-size"] !== undefined ? { font: Number(o["font-size"]) } : {}), lifts };
+  if (fixed.y !== undefined && !(fixed.y > 0)) fail(`--caption-y is the y in px at which the captions' lowest line ends, as 1440.`);
+  if (fixed.font !== undefined && !(fixed.font > 0)) fail(`--font-size is the captions' type in px, as 77.`);
+  const platforms = platformList(o.platform);
+  let res;
+  try {
+    const Z = askZones(o.frame, platforms);
+    // under the safe box the apps lay their own text (the username, the caption, the sound)
+    if (fixed.y !== undefined && fixed.y > Z.safe[1] + Z.safe[3]) fail(`--caption-y ${fixed.y} is below the safe box's bottom (y ${Z.safe[1] + Z.safe[3]} for ${Z.platforms.map((p) => p.name).join(", ")}), where the apps lay their own text: give ${Z.safe[1] + Z.safe[3]} or less.`);
+    if (fixed.y !== undefined && fixed.y < Z.safe[1] + 40) fail(`--caption-y ${fixed.y} is above the safe box's top (y ${Z.safe[1]}) once a line stands on it: give more than ${Z.safe[1] + 40}.`);
+    if (o.raise !== undefined && !["head", "mouth", "full", "moderate"].includes(o.raise)) fail(`--raise is head (never a head cut by the frame: the type to its floor first, the chin or lower lip said), mouth (the default: as head, and past the head's top where the captions would lie on a mouth) or full (until the chin is clear, the head cut).`);
+    res = textOverTime({ zones: Z, shots, needs, fixed, raise: o.raise || "mouth", set: Object.fromEntries(o.set.map((x) => { const i = x.indexOf("="); if (i < 1) fail(`--set is key=value, as caption.padEm=0.6.`); return [x.slice(0, i), num(x.slice(i + 1))]; })) });
+  } catch (e) { fail(e.message); }
+  res.asked = { frame: o.frame, platforms, fixed, raise: o.raise || "mouth" };
+  const file = path.join(folder, "text.json");
+  try { fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(file, JSON.stringify(res, null, 1)); } catch (e) { fail(`${file} cannot be written (${e.code || e.message}): name a folder of yours.`); }
+  if (o.json) return console.log(JSON.stringify(res, null, 1));
+  const c = res.caption;
+  console.log(`${res.frame} for ${res.platforms.join(", ")}, ${plural(shots.length, "shot")}`);
+  if (c) console.log(`captions: one place for the clip, ${plural(c.lines, "line")} of ${c.font} px, ${boxText(c.box)} (its middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the clip: where published Shorts set them, as low as the safe box allows" : c.where}); ${c.seconds ? `on a face for ${c.seconds} s` : "on no face"}${c.lifted ? `, ${plural(c.lifted, "shot")} raised for it` : ""}`);
+  for (const s of res.shots) {
+    // the seconds on each part, the part named; a ✗ only where something can still be done
+    const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s${t.lipEst ? ` (${t.lipEst} s of it an estimate ${stillsText(t.stills)})` : ""}` : ""].filter(Boolean).join(", ");
+    const on = s.touches.map((t) => `${t.who}'s face ${t.from}–${t.to} s (${t.seconds} s${parts(t) ? `, of them ${parts(t)}` : ""}, up to ${Math.round(t.share * 100)} % of it)`).join("; ");
+    const what = s.fault === "nose" ? "✗ on the nose or eyes of" : s.fault === "mouth" ? "✗ on the mouth of" : s.fault ? "✗ on" : s.hair ? "above the head, on the hair of" : s.lip ? "on the lower lip and chin of" : "on the chin of";
+    const cut = s.headCut?.seconds ? `; the head cut at the top ${s.headCut.px} px for ${s.headCut.seconds} s${s.headCut.byLift ? ` (${s.headCut.byLift} px of it by the raise)` : ""}` : "";
+    console.log(`  shot ${s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.past ? ", past the head's top to keep the mouth free" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${cut}${on ? `  ${what} ${on}` : ""}`);
+  }
+  if (res.hook) console.log(`hook: ${res.hook.kind === "card" ? "a card" : "a text"} at ${res.hook.font} px, ${res.hook.where}, ${boxText(res.hook.box)}, ${res.hook.start}–${res.hook.until} s (${res.hook.kindWhy || ""}${res.hook.why ? `; ${res.hook.why}` : ""})${res.hook.onFace?.seconds ? `  ✗ on a face for ${res.hook.onFace.seconds} s` : ""}`);
+  for (const x of res.conflicts) console.log(`✗ ${x}`);
+  for (const n of res.notes) console.log(`note: ${n}`);
+  console.log(`Other places it weighed: ${res.candidates.slice(1).map((k) => `${k.font} px with its middle at ${k.middle} % (on faces ${k.seconds} s, ${k.lifted} raised, cost ${k.cost})`).join("; ") || "none"}.`);
+  console.log(`${file}: for agentitos' captions ${c ? Object.entries(c.options).map(([k, v]) => `--${k} ${v}`).join(" ") : "(no captions)"}; each shot's lift for the framing. The choice is yours: --caption-y, --font-size and --lift <shot>:<px> fix one, and the rest is placed around it.`);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "beside") cmdBeside(parseArgs(cmd, rest));
 else if (cmd === "grid") cmdGrid(parseArgs(cmd, rest));
 else if (cmd === "place") cmdPlace(parseArgs(cmd, rest));
 else if (cmd === "page") cmdPage(parseArgs(cmd, rest));
 else if (cmd === "captions") cmdCaptions(parseArgs(cmd, rest));
-else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1] | beside <folder> --frame 9:16 --source WxH --face x,y,w,h --material-min WxH [--text caption]`);
+else if (cmd === "text") cmdText(parseArgs(cmd, rest));
+else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1] | beside <folder> --frame 9:16 --source WxH --face x,y,w,h --material-min WxH [--text caption] | text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook]`);

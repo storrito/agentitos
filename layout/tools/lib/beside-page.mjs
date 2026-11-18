@@ -45,14 +45,16 @@ export function renderBeside(c, res, { stills = null, page = null, at = null } =
   parts.push(`<div data-zone="face" data-label="material" class="field" style="${st(F)}">${what
     ? `<img src="${what}" style="left:0;top:0;width:100%;height:100%;object-fit:contain">`
     : `<div class="card" style="left:0;top:0;width:100%;height:100%"><i style="top:22%;height:34%"></i><i style="top:66%;height:10%;right:30%"></i></div>`}</div>`);
-  // the speaker: the still at its scale and place, cut to its field; ground (a blurred copy) where
+  // the speaker: the still at its scale and place, cut to its card (the window, or the part of it
+  // under captions on the seam: what a caller shows), in its field; ground (a blurred copy) where
   // the picture does not cover the field
-  const q = c.speaker, Fs = q.field, round = q.shape === "circle";
-  const pic = [q.left - Fs[0], q.top - Fs[1], q.scale * sw, q.scale * sh];
+  const q = c.speaker, Fs = q.field, round = q.shape === "circle", K = q.card || q.window || Fs;
+  const cut = K.some((v, k) => Math.abs(v - (q.window || Fs)[k]) > 0.05);
+  const pic = [q.left - K[0], q.top - K[1], q.scale * sw, q.scale * sh];
   const ovals = res.speaker && !who ? `<i style="${st([res.speaker.face[0] * q.scale, res.speaker.face[1] * q.scale, res.speaker.face[2] * q.scale, res.speaker.face[3] * q.scale])}"></i>` : "";
-  const ground = q.ground > 0 && who ? (() => { const k = Math.max(Fs[2] / sw, Fs[3] / sh) * 1.17; return `<img src="${who}" style="${st([(Fs[2] - k * sw) / 2, (Fs[3] - k * sh) / 2, k * sw, k * sh])};filter:blur(36px) brightness(.5)">`; })() : "";
+  const ground = (q.ground > 0 || cut) && who ? (() => { const k = Math.max(Fs[2] / sw, Fs[3] / sh) * 1.17; return `<img src="${who}" style="${st([(Fs[2] - k * sw) / 2, (Fs[3] - k * sh) / 2, k * sw, k * sh])};filter:blur(36px) brightness(.5)">`; })() : "";
   const picture = who ? `<img src="${who}" style="${st(pic)}">` : `<div class="ph" style="${st(pic)}">${ovals}</div>`;
-  parts.push(`<div class="clip${round ? " round" : ""}"${round ? ` data-zone="face" data-label="speaker's circle"` : ""} style="${st(Fs)}">${ground}${picture}</div>`);
+  parts.push(`<div class="clip${round ? " round" : ""}"${round ? ` data-zone="face" data-label="speaker's circle"` : ""} style="${st(Fs)}">${ground}<div class="clip" style="${st([K[0] - Fs[0], K[1] - Fs[1], K[2], K[3]])}">${picture}</div></div>`);
   // the speaker's face as placed (a face that moves: its hull dotted, its box at this moment dashed)
   const f = c.faceInFrame[1];
   const tr = at != null ? (res.tracks || [])[0] : null;
