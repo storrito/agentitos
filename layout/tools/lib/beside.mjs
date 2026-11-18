@@ -185,7 +185,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   // (captions' area is its line boxes: the letters are judged in all of it)
   const caption = (y, where, x = capX, w = capW) => {
     const rows = CA ? [y, y + capH] : inkRows(y + D.caption.padEm * capF / 2, cap.lines, D.caption.line, capF);
-    return { role: "caption", where, box: [x, y, w, capH], ink: [x, rows[0], w, rows[1] - rows[0]], lines: cap.lines, font: capF, style: "cap", align: "center", band };
+    return { role: "caption", where, box: [x, y, w, capH], ink: [x, rows[0], w, rows[1] - rows[0]], lines: cap.lines, font: capF, style: "cap", align: "center", band, ...(CA ? { lineBox: true } : {}) };
   };
 
   // ---- above: the material above, the speaker's panel below, the captions on the seam ----
@@ -378,7 +378,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
       fit: `beside-${arr}`, arrangement: arr, ...(p.side ? { side: p.side, looks: p.looks } : {}),
       material: { field: p.field.map(r1), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
       speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), ...(faceAssumed ? { assumed: true } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
-      captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band } : null,
+      captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band, ...(p.caption.lineBox ? { lineBox: true } : {}) } : null,
       ...(p.seam != null ? { seam: r1(p.seam) } : {}),
       change: {
         before: { scale: prev.scale, left: prev.left, top: prev.top, window: prev.window, face: prevFace.map(r1), ...(prev.given ? {} : { assumed: true }) },

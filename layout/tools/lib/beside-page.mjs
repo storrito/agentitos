@@ -61,9 +61,15 @@ export function renderBeside(c, res, { stills = null, page = null, at = null } =
     parts.push(`<div data-zone="face" data-label="speaker" class="hull" style="${st(f)}"></div>`);
     parts.push(`<div class="moment" style="${st([q.left + q.scale * b[0], q.top + q.scale * b[1], q.scale * b[2], q.scale * b[3]])}"></div>`);
   } else parts.push(`<div data-zone="face" data-label="speaker" class="face" style="${st(f)}"></div>`);
+  // The captions: placeholder lines that fit the area's width at its type (about 0.62 em a
+  // letter); a band from captions (its area.json, or a style measured by its build) is its lines'
+  // boxes, so its lines are drawn exactly that tall, one line box each; the layout skill's own
+  // band holds a style's box around lines 1.3 em apart.
   for (const t of c.text) {
-    const [x, y, w, h] = t.box, lines = Array.from({ length: t.lines }, (_, i) => CAP_LINES[i % CAP_LINES.length]);
-    parts.push(`<div class="cap" style="left:${x}px;width:${w}px;bottom:${r1(H - y - h + D.caption.padEm * t.font / 2)}px;font-size:${t.font}px;text-align:${t.align};white-space:nowrap">${lines.map((l) => `<span>${l}</span>`).join("<br>")}</div>`);
+    const [x, y, w, h] = t.box, fits = (l) => l.length * 0.62 * t.font <= w;
+    const lines = Array.from({ length: t.lines }, (_, i) => [CAP_LINES[i % CAP_LINES.length], "of Stories", "Stories", "go"].find(fits) || "go");
+    if (t.lineBox) parts.push(`<div class="cap" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;font-size:${t.font}px;line-height:${r1(h / t.lines)}px;text-align:${t.align};white-space:nowrap">${lines.map((l) => `<span style="padding-top:0;padding-bottom:0">${l}</span>`).join("<br>")}</div>`);
+    else parts.push(`<div class="cap" style="left:${x}px;width:${w}px;bottom:${r1(H - y - h + D.caption.padEm * t.font / 2)}px;font-size:${t.font}px;text-align:${t.align};white-space:nowrap">${lines.map((l) => `<span>${l}</span>`).join("<br>")}</div>`);
   }
   const meta = { fit: c.fit, material: c.material, speaker: c.speaker, captions: c.captions, change: c.change, problems: c.problems };
   return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>

@@ -1381,6 +1381,25 @@ t("named platforms give beside their own boxes, as they give every other skill (
   return `${n} candidates${QUICK ? "" : ", each checked as a page"}`;
 });
 
+if (!QUICK) t("a band from captions is drawn on the page as tall as it is (an independent review: two lines at 96 px were drawn 250 px tall into a 202 px band, ran onto the card, and the checker failed what the solver passed; 78 of 81 disagreements had a caption area): the caller's case and five other caption areas, every candidate's page gets the solver's verdict and findings", () => {
+  const BR = { "beside.faceUpTo": 2, "beside.wish": 0.22, "weights.enlarge.softFrom": 1.25 }, Zrt = askZones("9:16", ["reels", "tiktok"]);
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const areas = [{ left: 180, width: 720, top: 1238, bottom: 1440, size: 96, lines: 2 }];
+  for (let i = 0; i < 5; i++) { const lines = rnd() < 0.5 ? 1 : 2, size = Math.round(60 + 40 * rnd()), bottom = Math.round(1380 + 60 * rnd()), left = Math.round(180 + 40 * rnd()); areas.push({ left, width: 900 - left, top: Math.round(bottom - lines * size * (1.05 + 0.2 * rnd())), bottom, size, lines }); }
+  let n = 0;
+  for (const [k, a] of areas.entries()) {
+    const r = besideSolve({ zones: Zrt, source: [1080, 1920], face: [300, 500, 480, 655], material: { min: [700, 330] }, needs: [cap(2)], set: BR, captionArea: { ...a, from: "test" } });
+    for (const [i, c] of r.candidates.entries()) {
+      const file = path.join(OUT, `beside-area-${k}-${i + 1}.html`);
+      fs.writeFileSync(file, renderBeside(c, r, { page: file }));
+      const cmp = compare(c, checkPage(file, ["reels", "tiktok"]));
+      ok(cmp.verdictAgrees && cmp.agree, `${JSON.stringify(a)} ${c.fit}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`);
+      n++;
+    }
+  }
+  return `${n} pages`;
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {
