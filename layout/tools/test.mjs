@@ -438,7 +438,7 @@ t("two people who walk shoulder to shoulder (their faces' boxes 1.05 face widths
   ok(first.fit === "crop" && !first.hard && !first.unmet.length && first.faceInFrame.length + (first.others || []).filter((o) => o.shows >= 0.999).length === 2, `the first is ${nameOf(first)}`);
   ok(st && st.splitsClose && /splits two people who stand close together/.test(st.behind), `stacked: ${st && st.behind}`);
   ok(res.candidates.filter((c) => !c.hard && !c.unmet.length && !c.leftOut && c.fit !== "stacked").every((c) => res.candidates.indexOf(c) < res.candidates.indexOf(st)), "a candidate that shows both in one picture stands behind stacked");
-  ok(res.notes.some((n) => /stand close together .*1\.05× the wider face's width/.test(n)), `the notes: ${res.notes.join(" | ")}`);
+  ok(res.notes.some((n) => /stand close together: about the same size .*1\.06 of their mean width/.test(n)), `the notes: ${res.notes.join(" | ")}`);
   const apart = solve({ zones: Z916, source: SRC2P, faces: TWO, needs: [cap(1)] });
   ok(apart.candidates[0].fit === "stacked" && !apart.notes.some((n) => /close together/.test(n)), `two people 2.9 widths apart: ${nameOf(apart.candidates[0])}`);
   return `${nameOf(first)} first, stacked ${res.candidates.indexOf(st) + 1}.`;
@@ -548,6 +548,14 @@ t("an inset goes below half the take's size while the face stays as tall as publ
   ok(first.text.every((x) => !overlap(x.box, kept)), "text within the margins around the face");
   agree(first, res, "inset-below-half");
   return `${nameOf(first)}, the face ${Math.round(100 * first.faceHeight / 1920)} %, ${Math.round(100 * first.ground)} % ground`;
+});
+
+t("close together means about the same size and near both ways (an independent review's inputs): a near person and a far one 1,100 px apart counted as close and stacked fell to the fifth place behind a square with the near face past the safe box; now they are not close and stacked leads. Two faces 950 px apart up and down are not close either", () => {
+  const far = solve({ zones: Z916, source: [3840, 2160], faces: [[1000, 500, 600, 750], [2700, 900, 120, 150]], needs: [cap(1)] });
+  ok(!far.notes.some((n) => /close together/.test(n)) && far.candidates[0].fit === "stacked", `a near and a far person: ${nameOf(far.candidates[0])}; ${far.notes.join(" | ")}`);
+  const updown = solve({ zones: Z916, source: [3840, 2160], faces: [[1500, 100, 200, 250], [1800, 1300, 200, 250]], needs: [cap(1)] });
+  ok(!updown.notes.some((n) => /close together/.test(n)), updown.notes.join(" | "));
+  return `${nameOf(far.candidates[0])} first for the near and the far person`;
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {

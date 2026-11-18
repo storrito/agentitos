@@ -172,10 +172,16 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
         const order = [0, 1].sort((a, b) => main.faces[a][0] + main.faces[a][2] / 2 - main.faces[b][0] - main.faces[b][2] / 2);
         // two who stand close together belong in one picture: stacked is listed behind every
         // candidate that shows both in one
-        const [a, b] = order.map((i) => main.faces[i]), gap = b[0] - X1(a), width = Math.max(a[2], b[2]);
-        if (gap <= D.together * width) {
+        // close: about the same size (the same distance from the camera: the smaller face at least
+        // `D.togetherSize` of the larger) and near each other both ways, the gaps between their
+        // boxes measured against their mean face: across at most `together` widths, up or down at
+        // most one height
+        const [a, b] = order.map((i) => main.faces[i]);
+        const mw = (a[2] + b[2]) / 2, mh = (a[3] + b[3]) / 2, size = Math.min(a[3], b[3]) / Math.max(a[3], b[3]);
+        const gx = Math.max(0, b[0] - X1(a)), gy = Math.max(0, Math.max(a[1], b[1]) - Math.min(Y1(a), Y1(b)));
+        if (size >= D.togetherSize && gx <= D.together * mw && gy <= mh) {
           ctx.close = true;
-          notes.push(`faces 1 and 2 stand close together (their boxes ${Math.max(0, Math.round(gap))} px apart, ${r2(Math.max(0, gap) / width)}× the wider face's width; close is up to ${D.together}×): one picture holds both, so stacked, which would split them into two halves of the same shot, is listed behind every candidate that shows both in one picture. Stacking is for people far apart or filmed apart`);
+          notes.push(`faces 1 and 2 stand close together: about the same size (the smaller ${pct(size)} of the larger; same distance from the camera from ${pct(D.togetherSize)}), their boxes ${Math.round(gx)} px apart across (${r2(gx / mw)} of their mean width; close up to ${D.together}) and ${Math.round(gy)} px up or down (close up to one face's height). One picture holds both, so stacked, which would split them into two halves of the same shot, is listed behind every candidate that shows both in one picture. Stacking is for people far apart, at different distances, or filmed apart`);
         }
         out.push(...splitFits(ctx, "stacked", order.map((i) => ({ src: 0, own: [i] }))));
       } else if (main.faces.length > 2) notes.push(`stacked parts are built for two people, not for ${main.faces.length}`);

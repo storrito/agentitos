@@ -91,13 +91,18 @@ export const DEFAULTS = {
   track: { far: 2 },
   // Two people in one picture who stand close together belong in one picture: stacked splits
   // them into two halves of the same shot, each half showing a shoulder of the other. They stand
-  // close when the gap between their faces' boxes is at most `together` times the wider face's
-  // width. Shoulder to shoulder the faces' centres are about a shoulder's width apart, three
+  // close when the gap across between their faces' boxes is at most `together` times their mean
+  // face's width. Shoulder to shoulder the faces' centres are about a shoulder's width apart, three
   // faces wide, and the gap two. Taken from the first use on real footage (2026-11-18): two people
   // walking side by side left 1.0–2.3 widths between their faces, four walking in a row with
   // room between them 2.2–3.8, two at a table 12.9; the made-up two people of the tests, who are
   // meant to be stacked, 2.9. Twelve cases, no published video measured.
   together: 2,
+  // and they stand at about the same distance from the camera: the smaller face at least
+  // `togetherSize` of the larger (two walking side by side: 0.98, two at a table: 0.93; a near
+  // person with a far one behind: 0.2, and an editor stacks those). Across, `together` counts
+  // against their mean face's width; up or down they are close within one face's height.
+  togetherSize: 0.67,
   // Two candidates whose pictures differ by less than a viewer sees are one: the same scale within
   // `scale` (a share), the picture, its window, a webcam's circle and every text within `px` of
   // the frame's shorter side of each other. The later one is dropped and named in the first's
