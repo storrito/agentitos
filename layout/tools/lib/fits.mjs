@@ -162,6 +162,18 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
         // the smallest zoom is a candidate where the faces need one (a crop always is)
         if (first && (!same || need > s0 + 1e-9)) out.push(first);
         if (hit && hit !== first && textUnmet) out.push(hit);
+        // A crop closer in: from a source with pixels to spare (4K into 1080 px), covering the frame
+        // leaves the face small. The closest crop that brings the smallest face towards the size
+        // published faces have (subject.from), without enlarging the source past softFrom and with
+        // every face still in the safe box; where the text finds no room there, a little less close.
+        if (!same && first && first.faceHeight) {
+          const per = first.faceHeight / first.scale, want = D.weights.subject.from / 100 * H / per;
+          const top = Math.min(want, D.weights.enlarge.softFrom, most);
+          for (let s = top; s > first.scale + step; s -= step) {
+            const c = bestVariant(ctx, name, s, "cover", "cover", { aroundFace: true, ratio: Z.frame });
+            if (clean(c)) { c.closer = true; out.push(c); break; }
+          }
+        }
       }
     }
     // a picture smaller than the frame over a ground

@@ -126,7 +126,7 @@ const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinit
 
 // ---- what is printed ----
 
-const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.side ? ` ${c.side}` : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
+const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.side ? ` ${c.side}` : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
 const markOf = (c) => (c.hard ? "✗" : c.unmet.length ? "–" : c.soft ? "!" : "✓");
 
 function printResult(res) {

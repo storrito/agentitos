@@ -34,7 +34,7 @@ Boxes are `x,y,w,h` in px of the source: the top left corner, then width and hei
 
 | what | options | what the solver does with it |
 | --- | --- | --- |
-| one face | `--source 1080x1920 --face 300,570,600,900` | every fit that holds the face in the safe box and leaves the text room |
+| one face | `--source 1080x1920 --face 300,570,600,900` | every fit that holds the face in the safe box and leaves the text room; from a wide source with pixels to spare (4K into 1080) also a crop closer in (`closer`), the smallest face brought towards 23 % of the frame's height (`subject.from`) without enlarging the source past 1.5× (`enlarge.softFrom`) |
 | several faces in one picture | `--face … --face … [--speaker N]` | the fits that hold them all; in a frame narrower than the picture also a crop on one person (on each, or only on the speaker) and, for two, `stacked` |
 | two people as two files | `--source A --face … --source B --face …` | `stacked` in an upright frame, `side-by-side` in a wide one, both in 4:5 and 1:1; the smaller face is brought towards the larger where that does not enlarge its file into what is soft |
 | a face that moves | `--face-at 0:300,570,600,900 --face-at 2.5:…` (every `--face-at` of one source is the same face), or `--face-track file.json` (`[{ "t": 0, "box": [x, y, w, h] }, …]`; two people who both move: one such list each, `[[…], […]]`) | placed for the hull of its boxes, so that the placement and the text hold for the whole clip; its size in the ranking is its usual (median) box; the moment that decides the placement is named |

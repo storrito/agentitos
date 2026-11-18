@@ -284,7 +284,7 @@ console.log("\nWeights: the ranking's terms from weights.json");
 const SRCW = SRC2, FACEW = FACE2;
 const Z45 = askZones("4:5"), Z11 = askZones("1:1");
 const ZONES = { "9:16": Z916, "16:9": Z169, "4:5": Z45, "1:1": Z11 };
-const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.side ? ` ${c.side}` : ""} ${r2(c.enlargement)}×`;
+const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.side ? ` ${c.side}` : ""} ${r2(c.enlargement)}×`;
 const needsOf = (list) => list.map((x) => (x === "hook" ? hook : x === "hook:card" ? card : cap(Number(x.split(":")[1]))));
 const table = [];
 
@@ -487,6 +487,18 @@ t("candidates a viewer cannot tell apart are one: the wide interview into 4:5 ga
   const px = DEFAULTS.same.px * 1080;
   ok(px === 21.6 && alike(base, moved(21), px, DEFAULTS.same.scale) && !alike(base, moved(32), px, DEFAULTS.same.scale), `moved 21 px: ${alike(base, moved(21), px, 0.02)}, 32 px: ${alike(base, moved(32), px, 0.02)}`);
   return `${nameOf(a)} (as well ${a.alike.map((x) => `${x.fit} ${x.crop || ""} ${x.apart} px away`).join(", ")}), then ${nameOf(b)}`;
+});
+
+t("a crop closer in from a source with pixels to spare: the guest of the 4K table with --speaker 2 was cropped at 0.89× (covering the frame, his face 10 % of its height) and nothing closer was offered; now a crop at the soft limit (1.5×, 17 %) comes first, the covering crop after it. From 1280×720, where covering already takes 2.67×, there is none", () => {
+  const res = solve({ zones: Z916, source: [3840, 2160], faces: TABLE, needs: [cap(1)], speaker: 2 }), first = res.candidates[0];
+  ok(first.fit === "crop" && first.crop === "9:16" && first.closer && first.speaker === 2 && !first.hard && !first.unmet.length && !first.soft, `the first is ${nameOf(first)} ${JSON.stringify(first.problems)}`);
+  near(first.scale, DEFAULTS.weights.enlarge.softFrom, 0.001, "its scale");
+  ok(100 * first.faceHeight / 1920 >= 16 && inside(Z916.safe, first.faceInFrame[0]), `its face: ${first.faceInFrame[0]}`);
+  ok(res.candidates.some((c) => c.crop === "9:16" && !c.closer && Math.abs(c.scale - 0.8889) < 0.001), "the covering crop is gone");
+  const small = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)] });
+  ok(!small.candidates.some((c) => c.closer), "a crop closer in from 1280×720");
+  agree(first, res, "closer-on-2");
+  return `${nameOf(first)} at ${first.scale}×, the face ${first.faceHeight} px (${Math.round(100 * first.faceHeight / 1920)} %)`;
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
