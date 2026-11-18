@@ -1254,6 +1254,14 @@ t("the change from full-frame: in 16:9 the column keeps the scale the speaker ha
   return `16:9: ${col.change.says}; 9:16: ${up.change.says}`;
 });
 
+t("the column never enlarges the footage past the soft limit to cover itself (an independent review: 1280×570, the face at its top, gave the column at 1.89× first): at 1.5× it stands with ground beside it, and no candidate goes past 1.5×", () => {
+  const r = beside(Z169, { source: [1280, 570], face: [555, 0, 180, 195] });
+  for (const c of r.candidates) ok(c.speaker.scale <= 1.5 + 1e-9, `${c.fit} at ${c.speaker.scale}×`);
+  const col = r.candidates.find((c) => c.arrangement === "column");
+  ok(col.speaker.ground > 0 && !col.hard, JSON.stringify(col.speaker));
+  return fitsOf(r);
+});
+
 t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
   const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
   ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);

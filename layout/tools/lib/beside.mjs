@@ -229,11 +229,13 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const fits = (s) => s * hull[2] <= band[2] - 2 * EPS && s * hull[3] <= band[3] - 2 * EPS;
     // the scale it had full-frame where that covers the column (the picture is then only cut to
     // the column and moved), else covering the column, the face as tall as published talking
-    // heads keep theirs where that needs more, never past the soft limit; smaller where the face
-    // would not fit the column
+    // heads keep theirs where that needs more, never past the soft limit (where covering needs
+    // more, the footage stands smaller with ground beside it); smaller where the face would not
+    // fit the column
     const sMost = Math.min(band[2] / hull[2], band[3] / hull[3]) * (1 - 1e-6), sTarget = (asked ?? WT.subject.from / 100) * H / usual[3];
     const keep = asked === null && prev.scale >= sCover - 1e-9 && prev.scale <= soft + 1e-9 && fits(prev.scale);
-    let s = keep ? prev.scale : Math.max(sCover, Math.min(soft, sTarget));
+    // (covering the column never takes the footage past the soft limit: ground beside it then)
+    let s = keep ? prev.scale : Math.min(soft, Math.max(sCover, Math.min(soft, sTarget)));
     const by = s > sMost + 1e-9 ? "room" : !keep && sTarget > soft + 1e-9 && s < sTarget - 1e-9 ? "sharp" : null;
     while (s > 1e-4 && !fits(s)) s *= 0.99;
     // across, the face in the column's middle; down, at the height it had full-frame
