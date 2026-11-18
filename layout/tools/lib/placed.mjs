@@ -67,11 +67,13 @@ export const SMALLER = [0.9, 0.8, 0.7];
 // of the way down it (text above it lies on the nose or the eyes), the lip line 88 % down (the
 // middle of the mouth: text above it covers both lips), and the mouth line its bottom and OPEN of
 // its height more (an open mouth's lower lip drops below the box the model gives of a still, and a
-// still is not every frame: text below that line lies on the chin). Without feat, the eyes, nose
+// head that tips between two stills carries its mouth lower in its box: on the rendered frames of
+// three talk-show clips the lower lip stood up to 7, 8 and 28 % of that height below the box in
+// nine frames of ten; text below that line lies on the chin). Without feat, the eyes, nose
 // and mouth are taken from the box by the head's proportions (IMPLIED: from 38 % to 86 % of its
 // height, the low end of the mouths measured on stills whose features were right, as clips'
 // framing takes them where the model's do not hold), so that a line is never above the real one.
-export const NOSE_IN_FEAT = 0.7, LIP_IN_FEAT = 0.88, OPEN = 0.08, IMPLIED = [0.38, 0.86];
+export const NOSE_IN_FEAT = 0.7, LIP_IN_FEAT = 0.88, OPEN = 0.15, IMPLIED = [0.38, 0.86];
 // (the mouth line without feat, a share of the box from its top)
 export const MOUTH = +(IMPLIED[0] + (1 + OPEN) * (IMPLIED[1] - IMPLIED[0])).toFixed(3);
 // How far a shot may be raised. moderate: while the whole head stays in the picture (the top of

@@ -51,7 +51,7 @@ const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.
 // of the mouth: text above it covers both lips) and the mouth line its bottom and OPEN of its height
 // more (an open mouth's lower lip drops below the box of a still: text below the line lies on the
 // chin). Without feat, from the box by the head's proportions (IMPLIED: 38 % to 86 % of its height).
-export const NOSE_IN_FEAT = 0.7, LIP_IN_FEAT = 0.88, OPEN = 0.08, IMPLIED = [0.38, 0.86];
+export const NOSE_IN_FEAT = 0.7, LIP_IN_FEAT = 0.88, OPEN = 0.15, IMPLIED = [0.38, 0.86];
 export const EYES = 0.42, ABOVE = 0.35, MOUTH = +(IMPLIED[0] + (1 + OPEN) * (IMPLIED[1] - IMPLIED[0])).toFixed(3);
 const featOf = (b, feat) => feat || [b[0] + 0.18 * b[2], b[1] + IMPLIED[0] * b[3], 0.64 * b[2], (IMPLIED[1] - IMPLIED[0]) * b[3]];
 const lineOf = (b, feat, k) => { const e = featOf(b, feat); return e[1] + k * e[3]; };
