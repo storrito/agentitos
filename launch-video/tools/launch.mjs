@@ -802,7 +802,7 @@ function cmdFinish(video) {
   // hidden beside it, so a half-written file never shows as an artifact
   const tmp = path.join(path.dirname(video), `.${path.basename(video, path.extname(video))}.levelled.mp4`);
   try {
-    ffmpeg(["-i", video, "-map", "0", "-c:v", "copy", "-af",
+    ffmpeg(["-i", video, "-map", "0", "-map_metadata", "-1", "-c:v", "copy", "-af",
       `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`,
       "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
     fs.renameSync(tmp, video);

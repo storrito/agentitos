@@ -184,17 +184,15 @@ function keepFacts(file) {
 }
 const readInfo = (dir, stem) => { try { return JSON.parse(fs.readFileSync(path.join(dir, `${stem}.info.json`), "utf8")); } catch { return {}; } };
 
-// A video file into <dir>/<stem>.mp4 as an mp4: copied when it is one, its streams copied into one
-// when they fit, encoded anew when not. Says why when it is no video or cannot be written.
+// A video file into <dir>/<stem>.mp4 as an mp4: its streams copied into one when they fit, encoded
+// anew when not; an mp4 too, never the file itself: written without its tags (a phone's video names
+// the place it was recorded at). Says why when it is no video or cannot be written.
 function intoMp4(file, out) {
   const p = probe(file);
   if (!p) return { why: "no video in it (a picture, a sound file or a page)" };
-  if (p.mp4) fs.copyFileSync(file, out);
-  else {
-    let r = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", "-movflags", "+faststart", out], { encoding: "utf8" });
-    if (r.status !== 0) r = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-crf", "16", "-preset", "veryfast", "-c:a", "aac", out], { encoding: "utf8" });
-    if (r.status !== 0) { fs.rmSync(out, { force: true }); return { why: `it could not be made an mp4 (${reason(r)})` }; }
-  }
+  let r = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "-1", "-c", "copy", "-movflags", "+faststart", out], { encoding: "utf8" });
+  if (r.status !== 0) r = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "-1", "-c:v", "libx264", "-crf", "16", "-preset", "veryfast", "-c:a", "aac", out], { encoding: "utf8" });
+  if (r.status !== 0) { fs.rmSync(out, { force: true }); return { why: `it could not be made an mp4 (${reason(r)})` }; }
   const made = probe(out);
   if (!made) { fs.rmSync(out, { force: true }); return { why: "what was written is no video" }; }
   return { p: made };
