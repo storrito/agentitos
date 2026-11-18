@@ -59,6 +59,28 @@ export function trackFace(moments) {
   };
 }
 
+// What another first candidate changes against the first, in words: another fit, or the same fit
+// at another scale, moved, its text elsewhere
+const fitName = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
+function whatChanges(alt, cur) {
+  if (fitName(alt) !== fitName(cur)) return `another candidate would come first: ${fitName(alt)} at ${alt.parts ? alt.parts.map((q) => `${q.scale}×`).join(" and ") : `${alt.scale}×`} instead of ${fitName(cur)}`;
+  const out = [], sa = alt.parts ? alt.parts.map((q) => q.scale) : [alt.scale], sc = cur.parts ? cur.parts.map((q) => q.scale) : [cur.scale];
+  if (sa.some((v, i) => Math.abs(v - sc[i]) > 1e-4)) out.push(`the picture at ${sa.join(" and ")}× instead of ${sc.join(" and ")}×`);
+  const pa = alt.parts || [alt], pc = cur.parts || [cur];
+  pa.forEach((q, i) => {
+    const dx = Math.round(q.left - pc[i].left), dy = Math.round(q.top - pc[i].top), part = pa.length > 1 ? ` of part ${i + 1}` : "";
+    if (dx || dy) out.push(`the picture${part} ${[dx ? `${Math.abs(dx)} px ${dx < 0 ? "further left" : "further right"}` : "", dy ? `${Math.abs(dy)} px ${dy < 0 ? "higher" : "lower"}` : ""].filter(Boolean).join(" and ")}`);
+  });
+  alt.text.forEach((t) => {
+    const u = cur.text.find((x) => x.role === t.role);
+    if (!u) out.push(`the ${t.role} placed ${t.where}`);
+    else if (u.where !== t.where) out.push(`the ${t.role} ${t.where} instead of ${u.where}`);
+    else if (Math.round(t.box[1] - u.box[1])) out.push(`the ${t.role} ${Math.abs(Math.round(t.box[1] - u.box[1]))} px ${t.box[1] < u.box[1] ? "higher" : "lower"}`);
+  });
+  for (const u of cur.text) if (!alt.text.some((t) => t.role === u.role)) out.push(`no place for the ${u.role}`);
+  return `the first candidate stays ${fitName(cur)} but ${out.length ? out.join(", ") : "moves by less than a px"}`;
+}
+
 export function solve(args) {
   const res = solveOnce(args);
   // a face that moves: how much larger its hull is than its usual box, and the moment that decides
@@ -83,7 +105,7 @@ export function solve(args) {
       const less = tf.at.filter((m) => m.t !== t);
       if (!less.length) continue;
       const alt = solveOnce({ ...args, source: undefined, faces: undefined, sources: list.map((q2, i2) => ({ size: q2.size, faces: (q2.faces || []).map((f2, j2) => (i2 === si && j2 === fi ? less : f2)) })) }).candidates[0];
-      if (sig(alt) !== sig(res.candidates[0])) info.decides.push({ t, edges, without: short(alt), change: Math.round(changeOf(alt, res.candidates[0])) });
+      if (sig(alt) !== sig(res.candidates[0])) info.decides.push({ t, edges, without: short(alt), says: whatChanges(alt, res.candidates[0]), change: Math.round(changeOf(alt, res.candidates[0])) });
     }
     // the moment whose absence changes the most comes first: that one decides
     info.decides.sort((a, b) => b.change - a.change);

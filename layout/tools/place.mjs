@@ -140,7 +140,7 @@ function printResult(res) {
   for (const tr of res.tracks || []) {
     console.log(`face ${tr.face}: usual box ${boxText(tr.usual)}, hull ${boxText(tr.hull)}; its edges come from: top ${tr.edges.top} s, bottom ${tr.edges.bottom} s, left ${tr.edges.left} s, right ${tr.edges.right} s`);
     if (!tr.decides.length) console.log(`   no single moment decides: with any one of them left out the first candidate stays (${tr.placed})`);
-    tr.decides.forEach((d, i) => console.log(`   ${i ? "also" : "decides"}: the box at ${d.t} s (the hull's ${d.edges.join(" and ")}): without it the first would be ${d.without}${i ? "" : ` instead of ${tr.placed}`}`));
+    tr.decides.forEach((d, i) => console.log(`   ${i ? "also" : "decides"}: the box at ${d.t} s, which gives the hull its ${d.edges.join(" and ")} edge. Placed without it, ${d.says}.`));
   }
   res.candidates.forEach((c, i) => {
     if (c.parts) {
@@ -399,7 +399,7 @@ function cmdCaptions(o) {
   const opts = { ...(centred ? {} : { x: Math.ceil(t.box[0]) }), y: Math.round(Y1(t.box)), "max-width": Math.floor(t.box[2] + 1e-6), ...(centred ? {} : { align: t.align === "center" ? "centre" : t.align }), "font-size": t.font, lines: t.lines };
   const args = Object.entries(opts).flatMap(([k, v]) => [`--${k}`, String(v)]);
   if (o.json) return console.log(JSON.stringify({ candidate: i + 1, fit: c.fit, where: t.where, box: t.box, options: opts, args, ...(c.notes ? { notes: c.notes } : {}) }, null, 1));
-  console.log(`${what}: ${plural(t.lines, "caption line")} ${t.where}, ${boxText(t.box)}, ${t.font} px type, ${centred ? "centred on the frame" : `${t.align === "center" ? "centred" : `${t.align}-aligned`} in a column`}.`);
+  console.log(`${what}: ${plural(t.lines, "caption line")} ${t.where}, ${boxText(t.box)}, ${t.font} px type, ${centred ? "centred on the frame" : `${t.align === "center" ? "centred" : `${t.align}-aligned`} in a column`}. --y is the area's bottom, where the lowest line ends (the area runs from y ${Math.round(t.box[1])} to ${opts.y}); --max-width its width${opts.x !== undefined ? ", --x its left edge" : ""}.`);
   console.log(`For agentitos' captions (build or project), with its --size ${res.size.join("x")}:`);
   console.log(`  ${args.join(" ")}`);
   if (c.hard) console.log(`! This candidate fails (${c.problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ")}): its caption area is only as good as the candidate.`);

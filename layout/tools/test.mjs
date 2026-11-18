@@ -1029,6 +1029,19 @@ if (!QUICK) t("a face that moves is looked at at every moment: page with a video
   return files().filter((f) => /png$/.test(f)).join(", ");
 });
 
+t("three messages an agent misread now say what they mean: a moment that decides names what changes without it, also where the first candidate keeps its fit (it named the same fit as if it were another); the note on a crop that cannot hold an upright take's face in 16:9 gives the scales and sizes it compares; captions says that --y is the bottom of the area", () => {
+  const dir = path.join(OUT, "cli-words"), track = path.join(OUT, "walk.json");
+  fs.writeFileSync(track, JSON.stringify(WALK));
+  let r = cli("place", dir, "--frame", "9:16", "--source", "3840x2160", "--face-track", track, "--text", "caption");
+  const line = r.stdout.split("\n").find((l) => /decides:/.test(l)) || "";
+  ok(/the box at [\d.]+ s, which gives the hull its .* edge\. Placed without it, (the first candidate stays crop 9:16 closer but the picture at [\d.]+× instead of [\d.]+×|another candidate would come first: )/.test(line), line);
+  r = cli("captions", dir, "--candidate", "1");
+  ok(/--y is the area's bottom, where the lowest line ends \(the area runs from y \d+ to \d+\)/.test(r.stdout), r.stdout.split("\n")[0]);
+  const note = solve({ zones: Z169, source: [1080, 1920], faces: [[80, 250, 445, 580]], needs: [cap(1)] }).notes.find((n) => /fills the frame/.test(n)) || "";
+  ok(/takes the source at 1\.78× or more \(1× of what covers the frame\), and there the face is 791×1031 px, more than the safe box's \d+×\d+; it fits the box only up to 1\.42×/.test(note), note);
+  return line.trim();
+});
+
 if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
   const dir = path.join(OUT, "cli-chromes");
   cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");

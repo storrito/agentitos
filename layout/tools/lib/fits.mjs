@@ -145,8 +145,11 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       const name = same ? "zoom" : "crop", step = D.zoomStep * s0;
       const need = fb ? Math.max(s0, minScale(W, sw, fb[0], fb[2], S[0], X1(S)), minScale(H, sh, fb[1], fb[3], S[1], Y1(S))) : s0;
       const most = fb ? Math.min(S[2] / (fb[2] - fb[0]), S[3] / (fb[3] - fb[1])) : Infinity;
-      if (!(need <= most + 1e-9)) notes.push(`no ${name} holds the face${faces.length > 1 ? "s" : ""} in the safe box: ${need === Infinity ? "a face touches the source's edge" : `it would take ${r2(need / s0)}× and the face then outgrows the box (at most ${r2(most / s0)}×)`}`);
-      else {
+      if (!(need <= most + 1e-9)) {
+        const pl = faces.length > 1, fw = fb ? fb[2] - fb[0] : 0, fh = fb ? fb[3] - fb[1] : 0;
+        notes.push(need === Infinity ? `no ${name} that fills the frame holds the face${pl ? "s" : ""} in the safe box: a face touches the source's edge`
+          : `no ${name} that fills the frame holds the face${pl ? "s" : ""} in the safe box: filling the frame with the face${pl ? "s" : ""} inside the box takes the source at ${r2(need)}× or more (${r2(need / s0)}× of what covers the frame), and there ${pl ? "they span" : "the face is"} ${Math.round(need * fw)}×${Math.round(need * fh)} px, more than the safe box's ${Math.round(S[2])}×${Math.round(S[3])}; ${pl ? "they fit" : "it fits"} the box only up to ${r2(most)}×, where the picture no longer fills the frame`);
+      } else {
         let k = Math.ceil((need - s0) / step - 1e-6);
         if (same && k < 1) k = 1;
         const kMax = Math.floor((Math.min(most, s0 * D.zoomMax) - s0) / step + 1e-6);
