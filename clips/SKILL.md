@@ -24,7 +24,7 @@ The look is the video's own: the speaker's footage, cut and framed, captions, at
 
 Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones`, `transcribe` and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp comes from the PATH or is downloaded once. When something is missing, say so in one sentence; never install it.
 
-Costs: the episode's words a few cents an hour, the moments about ten cents an hour, per clip about a cent to frame it and well under a cent for its words and captions.
+Costs: the episode's words a few cents an hour, the moments about ten cents an hour, per clip about three cents to frame it and well under a cent for its words and captions.
 
 ## From the long video to scheduled shorts, all in the chat
 
@@ -87,7 +87,7 @@ Read `<skill>/references/changes.md` before you carry out a change the person as
 
 After "They are good":
 
-1. Say in one sentence that you render N clips now, about two and a half times their length each.
+1. Say in one sentence that you render N clips now, about twice their length each.
 2. Render all with one command, in the foreground, never with `&` or `nohup`: `node <skill>/tools/clips.mjs render-all work/clips.json work/out` (a clip changed since stays in the list as before). Each is rendered with HyperFrames, brought to −14 LUFS, with subtitles beside it (`work/out/<k>.mp4`, `work/out/<k>.srt`), one after the other on a Sprite (a render already keeps every core busy; two at once only on a machine of 16 GB and more). One alone: `clips.mjs render work/<k> work/out/<k>.mp4`.
 3. Publish with agentitos' **publish-video**, following its SKILL.md for each clip, `<name>` = `clip-<k>`: `check work/out/<k>.mp4 publish/clip-<k>` (short), its `accounts`, the texts with video-descriptions, then `publish`. Ask what the clips share once for all of them: the accounts (those that fit every clip ticked), the style, TikTok's audience and the times (default: one clip a day at 18:00 in the person's time zone, the strongest first). Show the texts of all clips before the person says yes; a ✗ of `check` on one clip is said for that clip and the others go on.
 
