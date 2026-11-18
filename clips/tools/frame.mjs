@@ -191,6 +191,11 @@ export function stillsOf(shots, fps) {
 }
 
 const BOX = { type: "array", items: { type: "number" }, description: "[ymin, xmin, ymax, xmax] in thousandths of the image (0-1000)" };
+// one of the eyes, the nose and the mouth: asked for each on its own, so that a mouth the model
+// leaves out cannot pass as part of one box of all three (on a guest with glasses one box of
+// eyes, nose and mouth ended at the nose on five of eight close-up stills); null where it is not
+// in the picture
+const PART = { type: ["array", "null"], items: { type: "number" }, description: "[ymin, xmin, ymax, xmax] in thousandths of the image (0-1000), or null where it is not in the picture" };
 // where a face points, as seen in the picture
 const LOOKS = ["left", "right", "camera"];
 const SCHEMA = {
@@ -212,8 +217,8 @@ const SCHEMA = {
           properties: {
             still: { type: "string" },
             faces: { type: "array", items: {
-              type: "object", additionalProperties: false, required: ["person", "box_2d", "features_2d", "looks"],
-              properties: { person: { type: "integer" }, box_2d: BOX, features_2d: BOX, looks: { type: "string", enum: LOOKS } },
+              type: "object", additionalProperties: false, required: ["person", "box_2d", "eyes_2d", "nose_2d", "mouth_2d", "looks"],
+              properties: { person: { type: "integer" }, box_2d: BOX, eyes_2d: PART, nose_2d: PART, mouth_2d: PART, looks: { type: "string", enum: LOOKS } },
             } },
           },
         } },
@@ -248,9 +253,9 @@ const ask = async (or, content, log) => {
 };
 
 // the shots and the faces in them, from Gemini; kept in <video>.people.json:
-// { version: 3, model, cost, shots: [{ start, end, kind, subject, people: [{ who, speaker }],
-//   stills: [{ t, faces: [{ person, box_2d, features_2d, looks }] }] }], missed: [s] } (version 2:
-//   the faces without features_2d and looks)
+// { version: 4, model, cost, shots: [{ start, end, kind, subject, people: [{ who, speaker }],
+//   stills: [{ t, faces: [{ person, box_2d, eyes_2d, nose_2d, mouth_2d, looks }] }] }], missed: [s] }
+//   (version 3: one features_2d for all three; version 2: the faces without features and looks)
 export async function locate(video, words, shots, meta, { log = () => {} } = {}) {
   const cache = video.replace(/\.[^.]+$/, "") + ".people.json";
   if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return JSON.parse(fs.readFileSync(cache, "utf8"));
@@ -291,7 +296,7 @@ Then, for each shot above, in this order (its number in "shot"):
 - material: true when the picture is mainly something shown or talked about (slides, a screen, a document, a product, a photo, footage), with any person of the conversation small beside or inside it (a speaker inset beside slides); false when it is mainly the people;
 - its subject: the box of what must stay visible for the shot to make sense (the photo with everyone in it, both feeds, the scene; for "people" the people);
 - its people: everyone visible in it, people in photos and footage included: who they are (a name or a short description, the same words for the same person in every shot) and the voice label they speak with (null if they do not speak in the clip);
-- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0); box_2d, the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture); features_2d, the smallest box holding both its eyes (in a three-quarter view the far one too, with its outer corner, however narrow it looks; only in a full profile just the one eye that is seen), its nose with the tip and its mouth with both corners, from the eyebrows to the lower lip, only what is in the picture; looks: where the face points, as seen in the image: "left" or "right" (towards that side of the image: a three-quarter view or a profile), "camera" when it faces the camera or nearly.
+- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0); box_2d, the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture); eyes_2d, the smallest box holding both its eyes with their brows (in a three-quarter view the far one too, with its outer corner, however narrow it looks; only in a full profile just the one eye that is seen), also behind glasses; nose_2d, its nose from between the eyes to the tip and the nostrils; mouth_2d, its lips from corner to corner, from the top of the upper lip to the bottom of the lower lip (an open mouth with its lower lip where it is); each only where it is in the picture, else null; looks: where the face points, as seen in the image: "left" or "right" (towards that side of the image: a three-quarter view or a profile), "camera" when it faces the camera or nearly.
 Boxes are [ymin, xmin, ymax, xmax] in thousandths of the picture (0–1000, from its top and its left edge).
 missed_cuts: the time in seconds of every cut you see in the video that does not lie between two of the listed shots; none: an empty list.`;
     const content = [{ type: "text", text: prompt }, { type: "video_url", video_url: { url: `data:video/mp4;base64,${fs.readFileSync(small).toString("base64")}` } }];
@@ -306,7 +311,7 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
     const ans = JSON.parse(text.replace(/^```(json)?\s*|\s*```$/g, ""));
     const byId = Object.fromEntries(stills.map((s) => [s.id, s]));
     const people = {
-      version: 3, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
+      version: 4, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
       shots: shots.map((s, k) => {
         // the shot's own entry: the one holding most of its stills (a model may count shots from 0)
         const own = (a) => (a.stills || []).filter((y) => byId[y.still]?.shot === k).length;
@@ -372,6 +377,66 @@ export function partsOf(face, feat, looks) {
   const c = (v) => +Math.min(0.6, Math.max(-0.6, v)).toFixed(3);
   const lean = looks === "left" ? -1 : looks === "right" ? 1 : Math.min(0.45, Math.max(-0.45, l + r));
   return { l: c(l), r: c(r), t: c(t), b: c(b), lean: +lean.toFixed(2) };
+}
+
+// Whether the model's eyes, nose and mouth hold, against each other and against the head's box:
+// { feat: the box of all three (the footage's pixels) } or { why } where they do not. Every part
+// there, the eyes above the nose above the mouth, and from the eyes' top to the mouth's bottom at
+// least SPAN_MIN of the head's height: on the stills of three talk-show clips and a podcast whose
+// boxes were right it was 0.40 to 0.67 (the head's box from the hair to the chin); on the guest
+// with glasses whose box ended at the nose, 0.29 to 0.37. An answer of version 3 (one box of all
+// three) is checked by that share alone.
+export const SPAN_MIN = 0.38;
+export function featuresOf(f, meta) {
+  const head = pixels(f.box_2d, meta);
+  if (!head) return { why: "no head" };
+  const share = (b) => `${Math.round((b.h / head.h) * 100)} % of the head's height`;
+  if (!f.eyes_2d && !f.nose_2d && !f.mouth_2d) {
+    const one = pixels(f.features_2d, meta);
+    if (!one) return {};
+    return one.h < SPAN_MIN * head.h ? { why: `eyes, nose and mouth only ${share(one)}: the mouth left out` } : { feat: one };
+  }
+  const [eyes, nose, mouth] = [f.eyes_2d, f.nose_2d, f.mouth_2d].map((b) => pixels(b, meta));
+  const missing = [["the eyes", eyes], ["the nose", nose], ["the mouth", mouth]].filter(([, b]) => !b).map(([n]) => n);
+  if (missing.length) return { why: `${missing.join(" and ")} not given` };
+  if (!(eyes.y < nose.y && nose.y < mouth.y && mouth.y + mouth.h / 2 > nose.y + nose.h / 2)) return { why: "the mouth not below the nose, or the nose not below the eyes" };
+  const x0 = Math.min(eyes.x - eyes.w / 2, nose.x - nose.w / 2, mouth.x - mouth.w / 2), x1 = Math.max(eyes.x + eyes.w / 2, nose.x + nose.w / 2, mouth.x + mouth.w / 2);
+  const y0 = eyes.y - eyes.h / 2, y1 = mouth.y + mouth.h / 2;
+  const all = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
+  if (all.h < SPAN_MIN * head.h) return { why: `eyes to mouth only ${share(all)}` };
+  if (Math.abs(mouth.y - head.y) > head.h / 2 || Math.abs(mouth.x - head.x) > head.w / 2) return { why: "the mouth outside the head's box" };
+  return { feat: all };
+}
+// where the model's features do not hold on any still of a person: the head's own proportions
+// (on the stills whose features were right, the eyes' top at 0.38 to 0.46 of the box's height and
+// the mouth's bottom at 0.79 to 0.94, the box from the hair to the chin; the low end of the mouth
+// taken, so that a mouth line from them is never above the real one), as shares from the box's middle
+export const PROPORTIONS = { l: -0.32, r: 0.32, t: -0.12, b: 0.36 };
+// A still whose features jump against the stills beside it, which agree, while the face is said
+// to look the same way, is the model's slip (a box on the ear instead of the eyes): left out and
+// listed, as the tracker leaves out a head's box. Measured as the features' middle in shares of the
+// head's box, which the tracker follows, so a head that moves does not count
+export const JUMP = 0.2, AGREE = 0.12;
+export function featureJumps(track) {
+  const out = [];
+  for (let changed = true; changed;) {
+    changed = false;
+    const a = track.filter((s) => s.parts && !s.absent);
+    for (let i = 0; i < a.length && !changed; i++) {
+      const m = a[i];
+      // the nearest still on each side, or the two nearest on the one side there is
+      const side = i === 0 ? [a[1], a[2]] : i === a.length - 1 ? [a[i - 1], a[i - 2]] : [a[i - 1], a[i + 1]];
+      if (side.some((x) => !x) || side.some((x) => x.looks !== m.looks)) continue;
+      const mid = (p) => [(p.l + p.r) / 2, (p.t + p.b) / 2];
+      const [p, q] = side.map((x) => mid(x.parts)), at = mid(m.parts);
+      if (Math.hypot(p[0] - q[0], p[1] - q[1]) > AGREE) continue;
+      const f = side[1].t === side[0].t ? 0 : (m.t - side[0].t) / (side[1].t - side[0].t);
+      const between = i === 0 || i === a.length - 1 ? p : [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+      const off = Math.hypot(at[0] - between[0], at[1] - between[1]);
+      if (off > JUMP) { out.push({ t: m.t, why: `jump ${Math.round(off * 100)} % of the face against the stills beside them` }); delete m.parts; changed = true; }
+    }
+  }
+  return out;
 }
 
 // the features of a face at t: between two stills that have them on the straight line (still
@@ -441,14 +506,33 @@ export function shotsOf(answer, shots, meta) {
         const key = keyOf(p);
         let person = persons.find((q) => q.key === key);
         if (!person) persons.push((person = { key, who: p.who, speaker: p.speaker == null ? null : String(p.speaker), track: [] }));
-        const parts = partsOf(box, pixels(f.features_2d, meta), f.looks);
-        samples.push([person, { t: st.t, ...box, ...(parts ? { parts } : {}) }]);
+        const checked = featuresOf(f, meta);
+        const parts = checked.feat ? partsOf(box, checked.feat, f.looks) : null;
+        const why = checked.why || (checked.feat && !parts ? "a box that does not lie in the face" : null);
+        samples.push([person, { t: st.t, ...box, ...(parts ? { parts } : {}), ...(f.looks ? { looks: f.looks } : {}), ...(why ? { doubt: why } : {}) }]);
       }
     }
     for (const [person, sample] of samples) if (!person.track.some((x) => Math.abs(x.t - sample.t) < 1e-3)) person.track.push(sample);
     // a still on which a person is not: they are out of the picture then
     for (const p of persons) for (const t of seenAt) if (!p.track.some((x) => Math.abs(x.t - t) < 1e-3)) p.track.push({ t, absent: true });
     for (const p of persons) p.track.sort((a, b) => a.t - b.t);
+    // eyes, nose and mouth that do not hold (featuresOf) or jump (featureJumps): left out, the
+    // stills beside them hold; where no still of a person holds, the head's proportions; listed
+    const doubtful = [];
+    for (const p of persons) {
+      const name = p.who || p.speaker;
+      for (const x of p.track) if (x.doubt) doubtful.push({ who: name, t: x.t, features: x.doubt });
+      for (const d of featureJumps(p.track)) doubtful.push({ who: name, t: d.t, features: d.why });
+      const seen = p.track.filter((x) => !x.absent);
+      if (seen.some((x) => x.doubt) && !seen.some((x) => x.parts)) {
+        for (const x of seen) {
+          const lean = x.looks === "left" ? -1 : x.looks === "right" ? 1 : 0;
+          x.parts = { ...PROPORTIONS, lean, guess: true };
+        }
+        for (const d of doubtful) if (d.who === name) d.guess = true;
+      }
+      for (const x of p.track) { delete x.doubt; delete x.looks; }
+    }
     const people = persons.filter((p) => p.track.some((x) => !x.absent)).map(({ key, ...p }) => p);
     let kind = KINDS.includes(best.kind) ? best.kind : people.length ? "people" : "broll";
     const subject = (() => {
@@ -469,7 +553,7 @@ export function shotsOf(answer, shots, meta) {
       kind = "people";
     } else if (small && best.material === true) note = `material with the speaker small in it (${pct} % of the frame's height): shown whole (--follow cuts to the speaker)`;
     else if (small) note = `shown whole, the speaker ${pct} % of the frame's height: a wide shot of the room is better cut to them (--follow), slides or a screen stay whole`;
-    return { start: s.start, end: s.end, first: s.first, last: s.last, kind, subject, people, faces, ...(note ? { note } : {}) };
+    return { start: s.start, end: s.end, first: s.first, last: s.last, kind, subject, people, faces, ...(note ? { note } : {}), ...(doubtful.length ? { doubtful } : {}) };
   });
 }
 
@@ -1093,7 +1177,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         const what = e.part === "features" ? `the eyes, nose or mouth of ${e.who ?? "a face"}` : e.part === "side" ? `only the side of ${e.who ?? "a face"}'s face (an ear, a cheek, hair)` : e.who ?? "a face";
         console.log(`     ${e.part === "side" ? "·" : "⚠"} ${what} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s${e.part === "side" ? " (accepted in a close-up)" : ""}`);
       }
-      for (const d of s.doubtful || []) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
+      for (const d of (s.doubtful || []).filter((x) => !x.features)) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
+      // eyes, nose and mouth that do not hold: one line per face
+      const feats = (s.doubtful || []).filter((x) => x.features);
+      for (const who of [...new Set(feats.map((x) => x.who))]) {
+        const ds = feats.filter((x) => x.who === who), why = ds.length > 1 ? [...new Set(ds.map((x) => x.features.replace(/ only \d+ % of the head's height/, " too short").replace(/ \d+ % of the face/, "")))].join("; ") : ds[0].features;
+        console.log(`     ⚠ the model's eyes, nose and mouth of ${who ?? "a face"} do not hold at ${ds.map((x) => x.t.toFixed(1)).join(", ")} s (${why}): left out, ${ds[0].guess ? "taken from the head's proportions (no still of this face holds: the mouth line lies low in the head's box)" : "the stills beside them hold"}; look at those rows`);
+      }
     });
     if (r.sheets.missing?.length) console.log(`The sheet is missing ${r.sheets.missing.join("; ")}: look at framed.mp4 there yourself (ffmpeg -ss <second> -i framed.mp4 -frames:v 1 look.jpg).`);
     if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where eyes, nose or mouth are at an edge.${r.edges.some((e) => e.part !== "side") ? " A ⚠ above: look at that row. On a face the window already follows, the footage gives no better window: keep it, or move the cut so that stretch is left out. Someone or something that matters left out of a window (a second person, a photo): `reframe --whole <second>` shows the shot whole (smaller; never for a close-up). A shot shown whole whose speaker should fill the frame: `--follow <second>`." : ""}`);
