@@ -398,6 +398,12 @@ test("a key word in another typeface is measured in it; a short word that would 
   const two = built(t, ["--style", "bold", "--size", "1080x1920", "--max-width", "420"], wordsOf(said));
   assert.deepEqual(texts(two.data).slice(0, 2), ["Am Montagmorgen", "ist dann die"]);
   assert.match(two.said, /\n {2}Wider than a line of this area at 66 px, so each stands alone, set smaller \(or broken at its hyphen\): "Montagmorgen"\.\n {2}A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: "Am"\.\n/);
+  // every group set smaller is named with the size it comes out at (the review: groups of 27, 39 and 55 px went unnamed)
+  const at = Number(two.said.match(/Set smaller than 66 px: "Am Montagmorgen" at 0\.\d s (\d+) px\./)?.[1]);
+  assert.ok(at >= 40 && at < 66 && two.data.groups[0].size === at, two.said);
+  // with a soft hyphen where the word may break, in two lines, it stays at the type's size
+  const soft = built(t, ["--style", "bold", "--size", "1080x1920", "--max-width", "420"], wordsOf(said.replace("Montagmorgen", "Montag\u00admorgen")));
+  assert.doesNotMatch(soft.said, /Set smaller than/);
   const one = built(t, ["--style", "bold", "--size", "1080x1920", "--max-width", "420", "--lines", "1"], wordsOf(said));
   assert.deepEqual(texts(one.data).slice(0, 2), ["Am", "Montagmorgen"]);   // one line: no room for it
   assert.doesNotMatch(one.said, /flash by/);

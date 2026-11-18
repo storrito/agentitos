@@ -107,7 +107,9 @@ function withoutGhosts(words) {
   return words.filter((_, k) => !drop.has(k));
 }
 
-function cmdStyles() {
+function cmdStyles(opts = {}) {
+  // for a skill that sets captions with this one: each style's groups (words at most, lines)
+  if (opts.json) return console.log(JSON.stringify(Object.entries(STYLES).map(([name, s]) => ({ name, label: s.label, words: s.group.words, lines: s.group.lines, box: !!s.look.box }))));
   for (const [name, s] of Object.entries(STYLES)) console.log(`${name.padEnd(9)} ${s.label}: ${s.about}\n          ${s.look.font} ${s.look.weight}${s.look.keyFont ? `, key words in ${s.look.keyFont}` : ""}, ${s.group.words === 1 ? "one word" : `up to ${s.group.words} words`} at once`);
   console.log(`\nNext: node ${self()} build <words.json> <folder> --style <name>`);
 }
@@ -249,6 +251,8 @@ function placedAs(r, z, [width, height], platforms) {
   if (wide.length) said.push(`  Wider than a line of this area at ${a.size} px, so each stands alone, set smaller (or broken at its hyphen): ${wide.slice(0, 8).map((w) => `"${w}"`).join(", ")}${wide.length > 8 ? ", …" : ""}.`);
   const joined = [...new Set(r.joined)];
   if (joined.length) said.push(`  A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: ${joined.slice(0, 8).map((w) => `"${w}"`).join(", ")}${joined.length > 8 ? ", …" : ""}.`);
+  // every group that comes out smaller, with the size it comes out at
+  if (r.smaller?.length) said.push(`  Set smaller than ${a.size} px: ${r.smaller.map((g) => `"${g.text}" at ${g.start.toFixed(1)} s ${g.size} px`).join(", ")}. A soft hyphen (\\u00ad) where the word may break, and two lines (--lines 2), keep it larger.`);
   if (a.own && r.cards) said.push(`  A card keeps its words together whatever the area (${r.cards} here): it shrinks to the lines asked for and takes another line where it cannot.`);
   return said.join("\n");
 }
@@ -336,7 +340,7 @@ function cmdSrt(file, out) {
 const [command, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
 try {
-  if (command === "styles") cmdStyles();
+  if (command === "styles") cmdStyles(opts);
   else if (command === "transcribe") await cmdTranscribe(pos[0], pos[1]);
   else if (command === "mark") await cmdMark(pos[0], opts);
   else if (command === "box") cmdBox(pos[0], pos.slice(1), opts);

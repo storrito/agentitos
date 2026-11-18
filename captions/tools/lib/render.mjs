@@ -156,6 +156,15 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // joinFlash).
   const tooWide = (w) => type.word(w.text, w.key) > room;
   const wide = type ? gs.flatMap((g) => (g.box ? [] : g.words.filter(tooWide).map((w) => w.text))) : [];
+  // the size such a group comes out at: as large as its widest word fits a line (fit() below
+  // shrinks it so); a word with a soft hyphen breaks there where the area has two lines, its wider
+  // part then decides (with the hyphen drawn). `size` in the group, `smaller` for the caller
+  const across = (w) => (area.lines > 1 && w.text.includes("\u00AD") ? Math.max(...w.text.split("\u00AD").map((part, i, all) => type.word(part + (i < all.length - 1 ? "-" : ""), w.key))) : type.word(w.text, w.key));
+  const smaller = [];
+  if (type) for (const g of gs) if (!g.box) {
+    const widest = Math.max(...g.words.map(across));
+    if (widest > room) { g.size = Math.max(14, Math.floor(((room / widest) * area.type) / 2) * 2); smaller.push({ text: g.words.map((w) => w.text.replace(/\u00AD/g, "")).join(" "), start: g.start, size: g.size }); }
+  }
   const joined = type ? gs.flatMap((g) => (!g.box && g.words.length > 1 && g.words.some(tooWide) ? g.words.filter((w) => !tooWide(w)).map((w) => w.text) : [])) : [];
   // In capitals a few letters stay small, or they say something else: the letter of a paragraph
   // or a house number, when the word is a number with one small letter at its end ("§ 202a",
@@ -383,7 +392,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
   // are never cut to an area.
   const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
   const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : look.lineBox ? 2 * look.linePad[0] * area.type : 0;
-  return { groups: gs.length, cards, wide, joined, small, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
+  return { groups: gs.length, cards, wide, joined, small, smaller, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.
