@@ -10,7 +10,7 @@ node tools/place.mjs place placement/demo --frame 9:16 --source 1080x1920 --face
 node tools/place.mjs page placement/demo --still take.mp4 --at 3       # the first three candidates as pages and pictures, checked by platform-zones (a face that moves: at each moment)
 node tools/place.mjs captions placement/demo --candidate 1             # the options that set agentitos' captions into its caption area
 node tools/place.mjs text placement/clip --frame 9:16 --shots shots.json --text caption --text hook   # a clip placed already: one caption place over every face of every shot
-node tools/test.mjs                                                    # 74 tests; --quick: the 64 that need no Chrome and no ffmpeg
+node tools/test.mjs                                                    # 75 tests; --quick: the 65 that need no Chrome and no ffmpeg
 node tools/sweep.mjs sweep/                                            # for people who change the weights: which fit wins where
 ```
 
@@ -137,7 +137,7 @@ A clip of several shots whose picture another skill placed (clips' framing: a wi
 - **The hook** over its seconds on every shot it spans, raised as they are, beside the captions: `layoutText`'s own kinds and order (a text below the chin, above the head, a card at the top), its keep-outs the faces of every moment in its time; where the caller says the picture behind it is not calm (`"hook": {"calm": false}`: it knows the faces, not hands or things), a text's place takes a card. Where no place is free and the first shot changes within its time, it ends at that cut (from 1.2 s on); else the least bad of its usual places, said.
 - **What still lies on a face**: per shot who, from when to when, how long and how deep, and a sentence each that says why (how much higher it would have to stand than it may) and what would avoid it.
 
-Tested on made-up tracks (`test.mjs`: a face high, low, a tight close-up no lift clears, two shots that disagree, a shot that cannot be raised, a face that moves under the captions, faces low everywhere, the hook below the chin, the hook ending at a cut, the command) and on five passages of two channels through clips (2026-11-18): moderately raised, captions on no mouth (0.4 s before) and on chin or neck 6–27 s a talk-show clip (9–32 s before); fully raised 0–0.5 s on a chin, the face's box over the frame's top up to 36 s a clip. The cost's figures are guesses; none was judged against another by people.
+Tested on made-up tracks (`test.mjs`: a face high, low, a tight close-up no lift clears, two shots that disagree, a shot that cannot be raised, a face that moves under the captions, faces low everywhere, the hook below the chin, the hook ending at a cut, the command) and on five passages of two channels through clips (2026-11-18): with the mouth line from the framing's eyes, nose and mouth: moderately raised, captions on a mouth 0.1–1.4 s a talk-show clip (0.6–12 s before), on chin or neck 5–25 s, the type down to 54 px in two of them; fully raised 0 s on a mouth, 0–1.5 s on a chin, the face's box over the frame's top up to 36 s a clip. The cost's figures are guesses; none was judged against another by people.
 
 ## What it cannot do
 

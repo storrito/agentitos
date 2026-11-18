@@ -15,7 +15,7 @@
 
 - A `✗` line per shot where the captions still lie on a face: how long, how deep into the face (up from the chin), why (how much higher it would have to stand than it may) and what would avoid it.
 - A `note:` where a shot would keep its captions off a face with a place of its own, saving more than two seconds on the face. It is not taken: a change of place costs the reading the one place gives. Tell the person when it is a long shot and they care.
-- **Tight close-ups** (a face a good half of the frame tall and more, the chin at 70–90 % of the height, as a talk show's guest close-ups are) have no room below the chin inside what the apps leave free, and their head reaches the frame's top already. Moderately they are not raised: the list says "on the chin or neck, not avoidable without cutting the head or a smaller picture". That is no conflict to fix. Measured on three talk-show clips: 6–27 s a clip on chin or neck, 0 s on a mouth.
+- **Tight close-ups** (a face a good half of the frame tall and more, the chin at 70–90 % of the height, as a talk show's guest close-ups are) have no room below the chin inside what the apps leave free, and their head reaches the frame's top already. Moderately they are not raised: the list says "on the chin or neck, not avoidable without cutting the head or a smaller picture". That is no conflict to fix. Measured on three talk-show clips (the mouth line from the framing's eyes, nose and mouth): 5–25 s a clip on chin or neck, 0.1–1.4 s on the lower lip where even the smallest type reaches it (a `✗`), the type down to 54 px in two of them.
 
 ## When to change it
 
