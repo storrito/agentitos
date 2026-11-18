@@ -159,7 +159,15 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // the size such a group comes out at: as large as its widest word fits a line (fit() below
   // shrinks it so); a word with a soft hyphen breaks there where the area has two lines, its wider
   // part then decides (with the hyphen drawn). `size` in the group, `smaller` for the caller
-  const across = (w) => (area.lines > 1 && w.text.includes("\u00AD") ? Math.max(...w.text.split("\u00AD").map((part, i, all) => type.word(part + (i < all.length - 1 ? "-" : ""), w.key))) : type.word(w.text, w.key));
+  // (its parts go onto the lines in order, so with more parts than lines some share one: the
+  // widest line of the best such split decides)
+  const across = (w) => {
+    if (!(area.lines > 1 && w.text.includes("\u00AD"))) return type.word(w.text, w.key);
+    const parts = w.text.split("\u00AD");
+    const width = (a, b) => type.word(parts.slice(a, b).join("") + (b < parts.length ? "-" : ""), w.key);
+    const best = (a, lines) => (lines === 1 || a === parts.length - 1 ? width(a, parts.length) : Math.min(...parts.slice(a + 1).map((_, k) => Math.max(width(a, a + k + 1), best(a + k + 1, lines - 1)))));
+    return best(0, area.lines);
+  };
   const smaller = [];
   if (type) for (const g of gs) if (!g.box) {
     const widest = Math.max(...g.words.map(across));
