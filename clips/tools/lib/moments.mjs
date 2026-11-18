@@ -8,6 +8,8 @@
 //   checks(sentences, first, last, limit)   → { question, conjunction, voices, over } (arrange adds `asked`)
 //   dropSpans(sentences, first, last, drop) → [[from, to], …] in the episode's seconds
 //   keepsWithout(words, said, spans)        → the word ranges of a cut clip that stay
+//   dropPlan(sentences, first, last, drop)  → what of a drop can go, what stays, the asides that go with it
+//   cutKeeps(words, sentences, first, last, drop, from, said) → a cut clip's keeps without its dropped sentences
 //   sentenceWords(words, sentence, from)    → a sentence's own words among a cut clip's
 //   openingKeep(line)                       → the keep that opens a short with its strongest line
 //   openingNote(line, k)                    → what prepare prints for it
@@ -121,24 +123,47 @@ export function ranges(list) {
   return out.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(",");
 }
 
-// The stretches of the episode that go when the sentences `drop` are cut out of first..last:
-// each run of dropped sentences from where the last kept sentence before it ends (two voices
-// overlap now and then) to where the next kept sentence starts. The first and the last sentence
-// of a moment are never dropped: that would be another moment.
-export function dropSpans(sentences, first, last, drop) {
-  const gone = new Set(drop.filter((k) => k > first && k < last));
-  const spans = [];
-  let keptEnd = sentences[first].end;
-  for (let k = first + 1; k <= last; k++) {
-    if (!gone.has(k)) { keptEnd = Math.max(keptEnd, sentences[k].end); continue; }
-    let b = k;
-    while (gone.has(b + 1)) b++;
-    const from = Math.max(sentences[k].start, keptEnd), to = sentences[b + 1].start;
-    if (to - from > 0.05) spans.push([+from.toFixed(3), +to.toFixed(3)]);
-    k = b;
+// What goes when the sentences `drop` are cut out of first..last, by the sentences' own times.
+// The first and the last sentence of a moment are never dropped: that would be another moment.
+// sentences.json is not in time order where two voices overlap, so a marked sentence that
+// another voice speaks over (a kept sentence overlapping it by more than 0.1 s) cannot be cut
+// without cutting that voice too: it stays (`stays`: [[k, the kept sentence], …]). A kept aside
+// of another voice under 1.5 s ("Right.", "Okay.") that lies wholly inside what is cut goes with
+// it (`asides`). `spans`: the stretches of the episode that go, [[from, to], …], from where the
+// first of them starts to where the next kept sentence starts.
+// → { cut, stays, asides, spans }
+const overlap = (x, y) => Math.min(x.end, y.end) - Math.max(x.start, y.start);
+export function dropPlan(sentences, first, last, drop) {
+  const marked = new Set(drop.filter((k) => Number.isInteger(k) && k > first && k < last));
+  const within = (j, ks) => ks.some((k) => sentences[j].start >= sentences[k].start - 0.05 && sentences[j].end <= sentences[k].end + 0.05);
+  const aside = (j, ks) => j > first && j < last && brief(sentences[j]) && ks.some((k) => !sameVoice(sentences[j], sentences[k])) && within(j, ks);
+  const range = []; for (let k = first; k <= last; k++) range.push(k);
+  const others = (ks) => range.filter((j) => !ks.includes(j));
+  const stays = [];
+  let cut = [...marked].sort((x, y) => x - y);
+  // a marked sentence stays when a kept sentence (other than an aside inside it) overlaps it
+  for (const k of [...cut]) {
+    const over = others(cut).find((j) => !aside(j, [k]) && overlap(sentences[j], sentences[k]) > 0.1);
+    if (over != null) { stays.push([k, over]); cut = cut.filter((x) => x !== k); }
   }
-  return spans;
+  const asides = others(cut).filter((j) => aside(j, cut));
+  const gone = [...cut, ...asides].sort((x, y) => x - y), kept = others(gone);
+  const merged = [];
+  for (const k of [...gone].sort((x, y) => sentences[x].start - sentences[y].start)) {
+    const t = merged.at(-1), [x, y] = [sentences[k].start, sentences[k].end];
+    if (t && x <= t[1] + 0.05) t[1] = Math.max(t[1], y); else merged.push([x, y]);
+  }
+  const spans = [];
+  for (const [x, y] of merged) {
+    const after = kept.map((j) => sentences[j].start).filter((t) => t >= y);
+    const to = after.length ? Math.min(...after) : y, t = spans.at(-1);
+    if (t && x <= t[1]) t[1] = Math.max(t[1], +to.toFixed(3)); else spans.push([+x.toFixed(3), +to.toFixed(3)]);
+  }
+  return { cut, stays, asides, spans };
 }
+
+// The stretches of the episode that go when `drop` is cut out of first..last (dropPlan's spans)
+export const dropSpans = (sentences, first, last, drop) => dropPlan(sentences, first, last, drop).spans;
 
 // The word ranges of a cut clip that stay when `spans` (seconds of the clip) are left out of
 // the moment `said` ([from, to] in the clip): a word belongs where its middle lies. `words` are
@@ -181,6 +206,40 @@ export function sentenceWords(words, s, from = 0) {
   if (q == null) q = near.findLastIndex((w) => w.start < b - 0.03);
   if (p < 0 || q < 0 || p > q) return near.filter((w) => mid(w) >= a && mid(w) <= b);
   return near.slice(p, q + 1);
+}
+
+// The keeps of a cut clip for the moment first..last without its dropped sentences, cut by
+// those sentences' own words (sentenceWords): `spoken` the clip's words and fillers as best-takes
+// numbers them, `from` where the clip starts in the episode, `said` the moment in the clip's
+// seconds. A piece of two words or less, or under 0.8 s, left between two cuts ("um", "has")
+// would sound chopped: it goes with them (`folded`).
+// → { keeps: [[firstWord, lastWord], …], inside, plan (dropPlan's), gone: the words left out, folded }
+export function cutKeeps(spoken, sentences, first, last, drop, from, said) {
+  const { inside } = keepsWithout(spoken, said);
+  const plan = dropPlan(sentences, first, last, drop);
+  const out = new Set();
+  for (const k of [...plan.cut, ...plan.asides]) for (const w of sentenceWords(spoken, sentences[k], from)) out.add(w.i);
+  const runs = [];
+  let run = null;
+  for (const w of inside) {
+    if (out.has(w.i)) { run = null; continue; }
+    if (run) run.push(w); else runs.push((run = [w]));
+  }
+  const folded = [];
+  const keeps = runs.filter((r, k) => {
+    const short = r.length <= 2 || r.at(-1).end - r[0].start < 0.8;
+    if (k > 0 && k < runs.length - 1 && short) { folded.push(...r); for (const w of r) out.add(w.i); return false; }
+    return true;
+  }).map((r) => [r[0].i, r.at(-1).i]);
+  return { keeps, inside, plan, gone: inside.filter((w) => out.has(w.i)), folded };
+}
+
+// What prepare says of a drop: what is left out, truthfully, and what stays and why
+export function dropNote(plan, gone, folded, keeps, sentences) {
+  const lines = [];
+  if (plan.cut.length) lines.push(`Left out inside it: the sentences ${ranges(plan.cut)}${plan.asides.length ? `, with them the aside${plan.asides.length > 1 ? "s" : ""} of another voice ${plan.asides.map((j) => `${j} „${sentences[j].text}“`).join(", ")}` : ""}${folded.length ? `, and between two cuts ${folded.map((w) => `${w.i} "${w.text}"`).join(" ")} (too short to stand alone)` : ""} (${gone.length} words, about ${plan.spans.reduce((t, [x, y]) => t + y - x, 0).toFixed(1)} s), ${keeps.length} keeps: ${keeps.map(([x, y]) => `${x}–${y}`).join(", ")}. Read in the brief that each cut falls between two thoughts; move a keep's end where it does not.`);
+  for (const [k, j] of plan.stays) lines.push(`Sentence ${k} stays: another voice speaks over it (sentence ${j} „${sentences[j].text.slice(0, 60)}“), and cutting it would cut that voice too.`);
+  return lines.join("\n");
 }
 
 // The keep that opens a short with its strongest line spoken, from the line's words in the clip
@@ -242,16 +301,19 @@ export function arrange(answer, sentences, { limit = MAX_SECONDS } = {}) {
 export function shape(m, first, last, sentences, limit, more = {}) {
   const s0 = sentences[first], s1 = sentences[last], seconds = Math.round(s1.end - s0.start);
   const payoff = Number.isInteger(m.payoff) && m.payoff >= first && m.payoff <= last ? m.payoff : null;
-  const drop = seconds > limit
+  const marked = seconds > limit
     ? [...new Set((Array.isArray(m.drop) ? m.drop : []).filter((k) => Number.isInteger(k) && k > first && k < last && k !== payoff))].sort((a, b) => a - b)
     : [];
-  const gone = dropSpans(sentences, first, last, drop).reduce((a, [from, to]) => a + to - from, 0);
+  // what of the marked sentences can go: one another voice speaks over stays
+  const plan = dropPlan(sentences, first, last, marked);
+  const drop = plan.cut;
+  const gone = plan.spans.reduce((a, [from, to]) => a + to - from, 0);
   const { asked = m.checks?.asked ?? null, opens = m.opens, ...rest } = more;
   return {
     first, last, kind: KINDS.includes(m.kind) ? m.kind : "claim", title: m.title || "", why: m.why || "",
     opens, payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
     start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds, kept: Math.round(s1.end - s0.start - gone),
-    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null },
+    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null, stays: plan.stays.map(([k]) => k) },
     ...rest,
   };
 }
@@ -300,6 +362,7 @@ export function checkNotes(m, limit) {
     c.conjunction ? "opens on a conjunction in the middle of a turn: read the sentence before it" : null,
     c.voices > 1 ? `${c.voices} voices` : null,
     c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : null,
+    c.stays?.length ? `marked to drop but another voice speaks over ${c.stays.length > 1 ? "them" : "it"}, so ${c.stays.length > 1 ? "they stay" : "it stays"}: ${ranges(c.stays)}` : null,
   ].filter(Boolean).join("; ");
 }
 

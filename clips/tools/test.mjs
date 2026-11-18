@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -91,9 +91,9 @@ test("sentence numbers the transcript does not have are brought into it", () => 
 test("what goes with a dropped sentence runs to the next kept sentence, not into a voice that still speaks", () => {
   assert.deepEqual(dropSpans(INTERVIEW, 1, 7, [4, 5]), [[INTERVIEW[4].start, INTERVIEW[6].start]]);
   assert.deepEqual(dropSpans(INTERVIEW, 1, 7, []), []);
-  // B answers while A still asks: the dropped answer starts only where A ends
-  const talkOver = transcript([[5, "A", "So is it true?"], [3, "B", "Yes.", 4], [6, "A", "Tell me more."]]);
-  assert.deepEqual(dropSpans(talkOver, 0, 2, [1]), [[5, talkOver[2].start]]);
+  // B answers while A still asks: cutting B would cut A, so B stays
+  const talkOver = transcript([[5, "A", "So is it true?"], [3, "B", "Yes, it is.", 4], [6, "A", "Tell me more."]]);
+  assert.deepEqual(dropSpans(talkOver, 0, 2, [1]), []);
 });
 
 test("the words of a cut clip that stay: one keep, or one on each side of what is left out", () => {
@@ -166,7 +166,7 @@ test("each moment carries the checks the tool counts, an exchange is a kind of i
   const [m] = arrange({ moments: [moment(1, 7, { kind: "exchange" })] }, INTERVIEW);
   assert.equal(m.kind, "exchange");
   assert.ok(KINDS.includes("exchange"));
-  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null });
+  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null, stays: [] });
   assert.equal(arrange({ moments: [moment(2, 3, { kind: "banter" })] }, INTERVIEW)[0].kind, "claim");
   // shape: the same moment over other sentences keeps what still fits
   const wider = shape({ ...m, drop: [4, 5] }, 1, 8, INTERVIEW, 59);
@@ -333,4 +333,50 @@ test("the opening keep is the strongest line's own words, no neighbour's, as pre
   const misheard = HULA.words.map((w) => (w.i === 168 ? { ...w, text: "Id" } : w));
   assert.deepEqual(sentenceWords(misheard, HULA.sentences[68], HULA.from).map((w) => w.i), [168, 169, 170, 171]);
   assert.match(openingNote([], 68), /No word of the strongest line \(sentence 68\)/);
+});
+
+// Real words: Call Her Daddy with Jennifer Lawrence (PXagY52HcYQ), sentences 204-227 and their
+// words, as clips-eval fetched them; sentences.json is not in time order where two voices overlap.
+const PX = JSON.parse(fs.readFileSync(path.join(HERE, "test-data", "PXagY52HcYQ-204-227.json"), "utf8"));
+const PXS = []; for (const [k, s] of Object.entries(PX.sentences)) PXS[Number(k)] = s;
+
+test("a dropped sentence is cut by its own words; one another voice speaks over stays, and the message says so", () => {
+  // the drop of a saved run (s5 run1, moment 196-227): 206 and 224-225 played in full while
+  // prepare said they were left out, because the next kept sentence started before them
+  const drop = [206, 208, 224, 225];
+  const plan = dropPlan(PXS, 204, 227, drop);
+  assert.deepEqual(plan.cut, [208]);
+  assert.deepEqual(plan.stays.map(([k]) => k), [206, 224, 225]);
+  const said = [PXS[204].start, PXS[227].end];
+  const r = cutKeeps(PX.words, PXS, 204, 227, drop, 0, said);
+  const kept = new Set(r.keeps.flatMap(([x, y]) => PX.words.filter((w) => w.i >= x && w.i <= y).map((w) => w.i)));
+  const own = (k) => PX.words.filter((w) => w.i >= PXS[k].first && w.i <= PXS[k].last);
+  // nothing said to be gone plays, nothing of a kept sentence goes
+  assert.ok(own(208).every((w) => !kept.has(w.i)));
+  for (const k of [205, 207, 209, 226]) assert.ok(own(k).every((w) => kept.has(w.i)), `sentence ${k} keeps its words`);
+  const note = dropNote(r.plan, r.gone, r.folded, r.keeps, PXS);
+  assert.match(note, /^Left out inside it: the sentences 208 \(/);
+  assert.match(note, /Sentence 206 stays: another voice speaks over it \(sentence 207/);
+  assert.match(note, /Sentence 224 stays/);
+  // the moment as moments.json holds it marks what stays, its length counts it in
+  const m = shape(moment(204, 227, { drop, payoff: 210 }), 204, 227, PXS, 30);
+  assert.deepEqual([m.drop, m.checks.stays], [[208], [206, 224, 225]]);
+  assert.ok(m.kept > m.seconds - 6);
+});
+
+test("an aside of another voice inside a dropped sentence goes with it; a piece too short to stand alone between two cuts too", () => {
+  const t = transcript([[3, "A", "So tell me."], [6, "B", "It started in a garage, a tiny one, we had no money."], [0.6, "A", "Right.", 4.5],
+    [3, "B", "Then we sold it.", 9.4], [0.5, "B", "Um."], [3, "B", "And that was that."], [2, "A", "Wow."]]);
+  const plan = dropPlan(t, 0, 6, [1]);
+  assert.deepEqual([plan.cut, plan.asides, plan.stays], [[1], [2], []]);
+  const words = [];
+  t.forEach((s, k) => s.text.split(" ").forEach((text, n, all) => {
+    const d = (s.end - s.start) / all.length;
+    words.push({ i: words.length, text, start: +(s.start + n * d).toFixed(3), end: +(s.start + (n + 1) * d - 0.02).toFixed(3) });
+  }));
+  const r = cutKeeps(words, t, 0, 6, [3, 5], 0, [t[0].start, t[6].end]);
+  // "Um." between the two dropped sentences would be a keep of one word: it goes with them
+  assert.deepEqual(r.folded.map((w) => w.text), ["Um."]);
+  assert.equal(r.keeps.length, 2);
+  assert.match(dropNote(r.plan, r.gone, r.folded, r.keeps, t), /and between two cuts \d+ "Um\." \(too short to stand alone\)/);
 });

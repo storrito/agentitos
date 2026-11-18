@@ -39,7 +39,7 @@ import path from "node:path";
 import { execFileSync, spawnSync, spawn } from "node:child_process";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { numbers, ranges, dropSpans, keepsWithout, sentenceWords, openingNote } from "./lib/moments.mjs";
+import { numbers, ranges, cutKeeps, dropNote, sentenceWords, openingNote } from "./lib/moments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "drop", "payoff"];
@@ -161,19 +161,18 @@ function prepare(episode, dir, range, opts) {
   // sentences left out: best-takes plays the keeps in their order, with a jump cut between them.
   const { words: heard } = read(path.join(td, "source", "words.json"));
   const spoken = heard.filter((w) => w.kind === "word" || w.kind === "filler");
-  const gone = dropSpans(sentences, a, b, drop).map(([x, y]) => [x - from, y - from]);
-  const { keeps, inside, left } = keepsWithout(spoken, said, gone);
+  const { keeps, inside, plan, gone, folded } = cutKeeps(spoken, sentences, a, b, drop, from, said);
   if (!inside.length) fail(`✗ No word heard in the moment's sentences in ${rel(video)}: look at ${rel(path.join(td, "source", "brief.md"))} and write ${rel(path.join(td, "cut.json"))} yourself.`);
   if (!keeps.length) fail(`✗ --drop ${opts.drop} leaves no word of the moment: drop fewer sentences (rm -r ${rel(td)}, then prepare again).`);
   const first = inside[0].i, last = inside.at(-1).i;
   const outside = spoken.filter((w) => w.i < first || w.i > last).map((w) => `${w.i} "${w.text}"`);
   const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
   fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify({ keep: keeps.map(([x, y], k) => ({ words: x === y ? `${x}` : `${x}-${y}`,
-    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges(drop)} left out)` })) }, null, 1) + "\n");
+    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges([...plan.cut, ...plan.asides].sort((x, y) => x - y))} left out)` })) }, null, 1) + "\n");
 
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
-  if (drop.length) console.log(`Left out inside it: the sentences ${ranges(drop)} (${left} words, ${gone.reduce((s, [x, y]) => s + y - x, 0).toFixed(1)} s), ${keeps.length} keeps: ${keeps.map(([x, y]) => `${x}–${y}`).join(", ")}. Read in the brief that each cut falls between two thoughts; move a keep's end where it does not.`);
+  if (drop.length) console.log(dropNote(plan, gone, folded, keeps, sentences));
   if (payoff != null) console.log(openingNote(sentenceWords(spoken, sentences[payoff], from), payoff));
   if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (each shot: the footage left, the frame right). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
