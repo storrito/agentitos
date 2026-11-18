@@ -16,8 +16,9 @@
 // Who sits where: the clip goes to Gemini through OpenRouter (small, with its sound, and who
 // speaks when after the transcript), with stills of every shot (its first frame, its middle, its
 // last, and one every three seconds of a long shot): for each shot its kind and, on every still,
-// every face with the voice it speaks with; and any cut the frames did not show (a possible cut
-// of lib/cuts.mjs near one it names counts). Two cents a clip, asked once: the answer is kept
+// every face with the voice it speaks with, the box of its eyes, nose and mouth and where it
+// looks; and any cut the frames did not show (a possible cut of lib/cuts.mjs near one it names
+// counts). Three to seven cents a clip, asked once: the answer is kept
 // next to the video (<video>.people.json). Without OpenRouter (OPENROUTER_API_KEY, or the Sprites
 // gateway's OpenRouter connection) nothing is cut: the footage stays centred.
 //
@@ -25,28 +26,34 @@
 // a voice that speaks for less than a second and a half (a "ja", a laugh) moves nothing; a shot
 // of someone else (a reaction) shows them. The face is known on every still, and between the
 // stills followed in the frames (lib/track.mjs, ten a second): the window holds it all through,
-// still where it can, wider where that is enough, else following it. A face low in a wide shot (an empty wall above it) is brought up by a closer window, as
+// still where it can, wider where that is enough, else following it; of a close-up it holds the
+// eyes, nose and mouth with room on the side the face looks to (holdOf), calmly over a sway
+// (calm). A face low in a wide shot (an empty wall above it) is brought up by a closer window, as
 // far as the footage's sharpness allows. Within a shot the window pans in 0.4 s to another
 // speaker, at a cut it cuts. A wide shot (several people) from footage of 1440 lines and more is
 // cut closer.
 // What a window would cut apart is shown whole instead, above the captions over a blurred copy of
 // itself: B-roll (a photo, archive footage, a place, a document, a screen) and a picture split
-// into feeds side by side. Gemini says which a shot is and what in it must be seen. A wide shot of
-// the room in which someone of the conversation speaks is never shown whole, even when Gemini
-// calls it B-roll or split: whole, a face there is 2 to 5 % of the short's height, and the
-// channels' editors cut to who speaks there; `--whole` shows it whole all the same.
+// into feeds side by side. Gemini says which a shot is, whether it shows the people or material
+// (slides, a screen, a product), and what in it must be seen. A wide shot of the room in which
+// someone of the conversation speaks is cut to them even when Gemini calls it B-roll or split
+// (whole, a face there is 2 to 5 % of the short's height, and the channels' editors cut to who
+// speaks there), but only when Gemini says it shows the people: material with the speaker small
+// beside it stays whole, and so does a shot Gemini says nothing about, with a note in the list.
 // Two who speak, too far apart for one window, go one above the other: a split screen of two
 // voices always, a shot of both while they talk back and forth (three turns or more of under five
 // seconds each); the window then stops swinging from one to the other.
 //
 // The tool checks its own windows: on every still and at each piece's first, middle and last
-// frame, every face that the window cuts at its edge, or holds closer to an edge than 4 % of the
-// frame's width, is named with its time.
+// frame, every face whose eyes, nose or mouth the window cuts at its edge or holds closer to it
+// than 1.5 % of the frame's width (an answer without them: the face, 2 %) is named with its time,
+// a fault; only an ear, a cheek or hair of a close-up at the edge is named as accepted. Each
+// close-up's piece says how calm its window is and how long it holds the features (closeupOf).
 // framed.mp4: 1080 wide, at the footage's frame rate and timing, with its sound, a keyframe every
 // second (a preview seeks into it); framed.json the shots, the windows and the faces found at an
 // edge; framed.sheet.jpg (and -2, -3, … for more than eight shots) per shot a row: the footage at
 // its middle with the window drawn in, the frame at the shot's first, middle and last frame, a red
-// mark where a face is at an edge.
+// mark where eyes, nose or mouth are at an edge.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -54,7 +61,7 @@ import os from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { greyFrames, fillTrack } from "./lib/track.mjs";
+import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 export const FRAME_MODEL = "google/gemini-3.8-flash";
 import { openrouter, GATEWAY_MAX } from "./lib/openrouter.mjs";
@@ -66,9 +73,61 @@ const FACE_LOW = 0.4;
 const CLOSEST = 0.55, CLOSEST_LINES = 960;
 // the room a window keeps beside the face it holds (share of its width): to choose it, and to
 // warn of a face closer to the edge than EDGE
-const HOLD = 0.06, EDGE = 0.04;
-// a window that follows a face moves to where it is every FOLLOW seconds
-const FOLLOW = 0.4;
+const HOLD = 0.06, EDGE = 0.02;
+// a window that follows a face goes along only when the face pushes at its edge, at most VMAX
+// window widths a second, and turns back no sooner than REST seconds after its last turn
+const REST = 1, VMAX = 1.2, BIG = 0.5, SLACK = 0.03;
+// the room a following window keeps is taken as it is on average over SWAY seconds: a head that
+// sways to and fro within them moves nothing, only the features about to leave do
+const SWAY = 2;
+// of a close-up (a face wider than BIG of the window) the window holds the eyes, nose and mouth
+// never closer to its edge than FEAT_PAD of its width (best-takes' punch-in of 12 % takes 5.4 % of
+// each side, and the model's box of a three-quarter view ends at the far eye), with room beside
+// them: ROOM_BACK of the face's width or that pad and a little, and ROOM_FRONT of the face's width
+// more on the side the face looks to; the back of the head, an ear, hair at the side may be cut
+// (the channel's editors and OpusClip cut them so). Features at the edge: closer than FEAT_EDGE of
+// the window's width. Chosen on the five passages of the three-way test: with 8 % and 22 % of the
+// face a swaying close-up left the window too little play (0.65 turns a second), with a pad of
+// 3.5 % of the face the far eye and a pair of glasses came to the edge in the rendered clips.
+// Most of the head stays in (HEAD_IN of its box's width, a wish taken over a sway like the room):
+// the room on the looking side takes what it leaves, at most ROOM_SHARE of the window's play. With
+// none, half the frame stood empty before a face at a sway's end; with 80 % (or 65 % that the
+// window must keep at once) the window followed the sway again (0.5 to 0.8 turns a second)
+const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.06, FEAT_EDGE = 0.015, HEAD_IN = 0.75, ROOM_SHARE = 0.5;
+// an answer without the features (one of version 2): the middle CORE of the face's width (FRAME_CORE)
+const CORE = Math.min(1, Math.max(0.5, Number(process.env.FRAME_CORE) || 0.8));
+
+// what of a face a window of width ww must hold, [left, right] in the footage's pixels, with room
+// m (a share of ww) beside it; m = 0: the least (turning back early so that it does not leave)
+export function holdOf(f, ww, m = HOLD) {
+  if (f.w <= BIG * ww) return [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww];
+  if (!f.feat) { const e = Math.min(m, SLACK) * ww; return [f.x - (CORE / 2) * f.w - e, f.x + (CORE / 2) * f.w + e]; }
+  const { x0, x1, lean } = f.feat;
+  // never closer to the edge than FEAT_PAD of the window (best-takes' punch-in takes 5.4 % of each side)
+  const pad = FEAT_PAD * ww;
+  const hard = [x0 - pad, x1 + pad];
+  if (!m) return hard;
+  // most of the head in the picture (HEAD_IN of its box's width), as far as the features allow:
+  // where both do not fit, as much of the head as fits beside them
+  const hl = f.x - f.w / 2, hr = f.x + f.w / 2, keep = Math.min(HEAD_IN * f.w, f.w);
+  let must = [Math.min(hard[0], hr - keep), Math.max(hard[1], hl + keep)];
+  if (must[1] - must[0] > ww) must = hl + hr < hard[0] + hard[1] ? [Math.min(hard[0], hard[1] - ww), hard[1]] : [hard[0], Math.max(hard[1], hard[0] + ww)];
+  // the room beside the features, more on the side the face looks to, the window's middle on that
+  // side of theirs: a wish that takes what the head leaves
+  const back = Math.max(ROOM_BACK * f.w, pad + Math.min(m, SLACK) * ww), front = back + ROOM_FRONT * Math.abs(lean) * f.w;
+  const mid = (x0 + x1) / 2;
+  const room = lean <= -0.5 ? [Math.min(x0 - front, mid - ww / 2), x1 + back] : lean >= 0.5 ? [x0 - back, Math.max(x1 + front, mid + ww / 2)]
+    : lean < 0 ? [x0 - front, x1 + back] : [x0 - back, x1 + front];
+  const all = [Math.min(must[0], room[0]), Math.max(must[1], room[1])];
+  if (all[1] - all[0] <= ww) return all;
+  // not both: the head and the features, and towards the looking side half of what the window has
+  // left (the other half is the window's play, so that it can rest over a sway)
+  const left = (ww - (must[1] - must[0])) * ROOM_SHARE;
+  if (left <= 0) return must;
+  return lean < 0 ? [Math.max(room[0], must[0] - left), must[1]] : lean > 0 ? [must[0], Math.min(room[1], must[1] + left)] : must;
+}
+// a face followed until here, then on a still without it: gone this long after it was last seen
+const ABSENT_GAP = 0.15;
 // stills of a shot: its first, middle and last frame, and one at least every STILL_EVERY seconds
 const STILL_EVERY = 3, STILLS_MAX = 60;
 // a face shown whole in a 9:16 frame is this share of the footage's height times 0.32: under
@@ -103,15 +162,15 @@ export function turnsOf(words) {
   return turns;
 }
 
-// the cuts of the footage, to the frame, and its frame count: { cuts, frames }
+// the cuts of the footage, to the frame, its frame count and each frame's time: { cuts, frames, times }
 export function cutsOf(video, meta = probe(video)) {
   const frames = smallFrames(video);
-  return { cuts: findCuts(frames, meta.fps), frames: frames.length };
+  return { cuts: findCuts(frames, meta.fps), frames: frames.length, times: frames.times };
 }
 
 // the shots of the footage from its cuts (the possible ones where the model named a cut)
-export function shotList({ cuts, frames }, meta, named = []) {
-  return shotsBetween(confirmed(cuts, meta.fps, named), frames, meta.fps, { start: meta.start });
+export function shotList({ cuts, frames, times }, meta, named = []) {
+  return shotsBetween(confirmed(cuts, meta.fps, named, times), frames, meta.fps, { start: meta.start, times });
 }
 
 // the moments a model is shown of each shot: its first frame (past a wipe), its middle, its last,
@@ -122,7 +181,9 @@ export function stillsOf(shots, fps) {
   shots.forEach((s, k) => {
     // past the wipe that brings the shot in
     const a = Math.max(s.start + 1.5 / fps, s.settled ?? 0), b = Math.min(s.end - 1.5 / fps, (s.leaving ?? Infinity) - 0.5 / fps);
-    const n = b - a < 0.5 ? 1 : Math.max(3, Math.ceil((b - a) / every) + 1);
+    // an odd number, so that one still is the shot's middle
+    let n = b - a < 0.5 ? 1 : Math.max(3, Math.ceil((b - a) / every) + 1);
+    if (n % 2 === 0) n++;
     const ts = n === 1 ? [(s.start + s.end) / 2] : Array.from({ length: n }, (_, i) => a + ((b - a) * i) / (n - 1));
     ts.forEach((t, i) => out.push({ shot: k, id: `${k + 1}.${i + 1}`, t: +t.toFixed(3) }));
   });
@@ -130,14 +191,17 @@ export function stillsOf(shots, fps) {
 }
 
 const BOX = { type: "array", items: { type: "number" }, description: "[ymin, xmin, ymax, xmax] in thousandths of the image (0-1000)" };
+// where a face points, as seen in the picture
+const LOOKS = ["left", "right", "camera"];
 const SCHEMA = {
   type: "object", additionalProperties: false, required: ["shots", "missed_cuts"],
   properties: {
     shots: { type: "array", items: {
-      type: "object", additionalProperties: false, required: ["shot", "kind", "subject", "people", "stills"],
+      type: "object", additionalProperties: false, required: ["shot", "kind", "material", "subject", "people", "stills"],
       properties: {
         shot: { type: "integer" },
         kind: { type: "string", enum: KINDS },
+        material: { type: "boolean" },
         subject: BOX,
         people: { type: "array", items: {
           type: "object", additionalProperties: false, required: ["who", "speaker"],
@@ -148,8 +212,8 @@ const SCHEMA = {
           properties: {
             still: { type: "string" },
             faces: { type: "array", items: {
-              type: "object", additionalProperties: false, required: ["person", "box_2d"],
-              properties: { person: { type: "integer" }, box_2d: BOX },
+              type: "object", additionalProperties: false, required: ["person", "box_2d", "features_2d", "looks"],
+              properties: { person: { type: "integer" }, box_2d: BOX, features_2d: BOX, looks: { type: "string", enum: LOOKS } },
             } },
           },
         } },
@@ -184,8 +248,9 @@ const ask = async (or, content, log) => {
 };
 
 // the shots and the faces in them, from Gemini; kept in <video>.people.json:
-// { version: 2, model, cost, shots: [{ start, end, kind, subject, people: [{ who, speaker }],
-//   stills: [{ t, faces: [{ person, box_2d }] }] }], missed: [s] }
+// { version: 3, model, cost, shots: [{ start, end, kind, subject, people: [{ who, speaker }],
+//   stills: [{ t, faces: [{ person, box_2d, features_2d, looks }] }] }], missed: [s] } (version 2:
+//   the faces without features_2d and looks)
 export async function locate(video, words, shots, meta, { log = () => {} } = {}) {
   const cache = video.replace(/\.[^.]+$/, "") + ".people.json";
   if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return JSON.parse(fs.readFileSync(cache, "utf8"));
@@ -221,9 +286,10 @@ Then, for each shot above, in this order (its number in "shot"):
 - its kind: "people" when the camera shows people of the conversation itself (in the room or on a call, one or several in one picture, a wide shot of the room too);
   "split" when the picture is divided into separate feeds or pictures side by side (a split-screen call, two photos next to each other);
   "broll" for everything else: a photo, archive or news footage, a film clip, a place, an object, a document, a screen;
+- material: true when the picture is mainly something shown or talked about (slides, a screen, a document, a product, a photo, footage), with any person of the conversation small beside or inside it (a speaker inset beside slides); false when it is mainly the people;
 - its subject: the box of what must stay visible for the shot to make sense (the photo with everyone in it, both feeds, the scene; for "people" the people);
 - its people: everyone visible in it, people in photos and footage included: who they are (a name or a short description, the same words for the same person in every shot) and the voice label they speak with (null if they do not speak in the clip);
-- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0) and the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture).
+- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0); box_2d, the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture); features_2d, the smallest box holding both its eyes (in a three-quarter view the far one too, with its outer corner, however narrow it looks; only in a full profile just the one eye that is seen), its nose with the tip and its mouth with both corners, from the eyebrows to the lower lip, only what is in the picture; looks: where the face points, as seen in the image: "left" or "right" (towards that side of the image: a three-quarter view or a profile), "camera" when it faces the camera or nearly.
 Boxes are [ymin, xmin, ymax, xmax] in thousandths of the picture (0–1000, from its top and its left edge).
 missed_cuts: the time in seconds of every cut you see in the video that does not lie between two of the listed shots; none: an empty list.`;
     const content = [{ type: "text", text: prompt }, { type: "video_url", video_url: { url: `data:video/mp4;base64,${fs.readFileSync(small).toString("base64")}` } }];
@@ -238,7 +304,7 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
     const ans = JSON.parse(text.replace(/^```(json)?\s*|\s*```$/g, ""));
     const byId = Object.fromEntries(stills.map((s) => [s.id, s]));
     const people = {
-      version: 2, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
+      version: 3, model: FRAME_MODEL, cost: j.usage?.cost ?? 0,
       shots: shots.map((s, k) => {
         // the shot's own entry: the one holding most of its stills (a model may count shots from 0)
         const own = (a) => (a.stills || []).filter((y) => byId[y.still]?.shot === k).length;
@@ -256,12 +322,12 @@ missed_cuts: the time in seconds of every cut you see in the video that does not
               if (!p) return null;
               let i = people.findIndex((q) => (p.speaker != null ? q.speaker === p.speaker : q.who === p.who));
               if (i < 0) i = people.push(p) - 1;
-              return { person: i, box_2d: f.box_2d };
+              return { ...f, person: i };
             }).filter(Boolean);
           }
           return [];
         };
-        return { start: s.start, end: s.end, kind: entry.kind, subject: entry.subject, people,
+        return { start: s.start, end: s.end, kind: entry.kind, material: entry.material, subject: entry.subject, people,
           stills: stills.filter((x) => x.shot === k).map((x) => ({ t: x.t, faces: faces(x) })) };
       }),
       missed: (ans.missed_cuts || []).filter(Number.isFinite),
@@ -289,10 +355,49 @@ function pixels(b, { width, height }, { order = "yx" } = {}) {
   return { x: ((l + r) / 2) * width, y: ((t + bo) / 2) * height, w: (r - l) * width, h: (bo - t) * height };
 }
 
+// eyes, nose and mouth (the model's features_2d) as shares of the face's box, measured from its
+// middle, and where the face points (lean: -1 left, 1 right, 0 the camera): { l, r, t, b, lean },
+// or null where the answer has none or one that does not lie in the face. A face the model says
+// looks at the camera with its features to one side of its box leans that way, less than halfway
+// (holdOf's rule of the window's middle is for a face the model says looks to one side)
+// (on twenty stills it called three three-quarter views "camera")
+export function partsOf(face, feat, looks) {
+  if (!face || !feat) return null;
+  const l = (feat.x - feat.w / 2 - face.x) / face.w, r = (feat.x + feat.w / 2 - face.x) / face.w;
+  const t = (feat.y - feat.h / 2 - face.y) / face.h, b = (feat.y + feat.h / 2 - face.y) / face.h;
+  // a box mostly beside the face, or the whole face or a dot, is not the features
+  if (Math.abs((l + r) / 2) > 0.5 || Math.abs((t + b) / 2) > 0.5 || r - l < 0.08 || r - l > 1.1) return null;
+  const c = (v) => +Math.min(0.6, Math.max(-0.6, v)).toFixed(3);
+  const lean = looks === "left" ? -1 : looks === "right" ? 1 : Math.min(0.45, Math.max(-0.45, l + r));
+  return { l: c(l), r: c(r), t: c(t), b: c(b), lean: +lean.toFixed(2) };
+}
+
+// the features of a face at t: between two stills that have them on the straight line (still
+// while the head does not turn, from the one to the other when it does), the head's own place
+// from the track; before the first and after the last as there
+const anchors = new WeakMap();
+function partsAt(track, t) {
+  let a = anchors.get(track);
+  if (!a) anchors.set(track, (a = track.filter((s) => s.parts && !s.absent)));
+  if (!a.length) return null;
+  if (t <= a[0].t) return a[0].parts;
+  if (t >= a[a.length - 1].t) return a[a.length - 1].parts;
+  const k = a.findIndex((s) => s.t >= t), p = a[k - 1].parts, q = a[k].parts, f = (t - a[k - 1].t) / (a[k].t - a[k - 1].t);
+  const mix = (key) => p[key] + (q[key] - p[key]) * f;
+  return { l: mix("l"), r: mix("r"), t: mix("t"), b: mix("b"), lean: mix("lean") };
+}
+// a face with its features in the footage's pixels: feat { x0, x1, y0, y1, lean }
+const withParts = (person, f) => {
+  if (!f) return f;
+  const p = partsAt(person.track, f.t);
+  if (!p) return f;
+  return { ...f, feat: { x0: f.x + p.l * f.w, x1: f.x + p.r * f.w, y0: f.y + p.t * f.h, y1: f.y + p.b * f.h, lean: p.lean } };
+};
+
 // an answer of the first kind (one face per person and shot, the shots' times the model's own)
 // in the form of the second: each face a still at the middle of its shot
 function current(people) {
-  if (people?.version === 2) return people;
+  if (people?.version >= 2) return people;
   return {
     version: 1, model: people?.model, cost: people?.cost ?? 0, missed: [],
     shots: (people?.shots || []).filter((s) => Number.isFinite(s.start)).map((s) => ({
@@ -318,9 +423,11 @@ export function shotsOf(answer, shots, meta) {
     // every person once, by voice, else by who they are
     const persons = [];
     const keyOf = (p) => (p.speaker != null ? `v:${p.speaker}` : `w:${String(p.who || "").toLowerCase()}`);
-    const samples = [];
+    const samples = [], seenAt = [];
     for (const a of from.length ? from : [best]) {
       let stills = a.stills.filter((x) => x.t >= s.start && x.t <= s.end);
+      // only the shot's own stills say who is out of the picture
+      for (const st of stills) seenAt.push(st.t);
       if (!stills.length) {
         const mid = (s.start + s.end) / 2;
         stills = [...a.stills].sort((p, q) => Math.abs(p.t - mid) - Math.abs(q.t - mid)).slice(0, 1).map((x) => ({ ...x, t: Math.min(s.end, Math.max(s.start, x.t)) }));
@@ -332,41 +439,69 @@ export function shotsOf(answer, shots, meta) {
         const key = keyOf(p);
         let person = persons.find((q) => q.key === key);
         if (!person) persons.push((person = { key, who: p.who, speaker: p.speaker == null ? null : String(p.speaker), track: [] }));
-        samples.push([person, { t: st.t, ...box }]);
+        const parts = partsOf(box, pixels(f.features_2d, meta), f.looks);
+        samples.push([person, { t: st.t, ...box, ...(parts ? { parts } : {}) }]);
       }
     }
     for (const [person, sample] of samples) if (!person.track.some((x) => Math.abs(x.t - sample.t) < 1e-3)) person.track.push(sample);
+    // a still on which a person is not: they are out of the picture then
+    for (const p of persons) for (const t of seenAt) if (!p.track.some((x) => Math.abs(x.t - t) < 1e-3)) p.track.push({ t, absent: true });
     for (const p of persons) p.track.sort((a, b) => a.t - b.t);
-    const people = persons.filter((p) => p.track.length).map(({ key, ...p }) => p);
+    const people = persons.filter((p) => p.track.some((x) => !x.absent)).map(({ key, ...p }) => p);
     let kind = KINDS.includes(best.kind) ? best.kind : people.length ? "people" : "broll";
     const subject = (() => {
       const b = pixels(best.subject, meta);
       return b && b.w > meta.width * 0.05 && b.h > meta.height * 0.05 ? { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h } : null;
     })();
     const mid = (s.start + s.end) / 2;
-    const faces = people.map((p) => ({ speaker: p.speaker, who: p.who, ...faceAt(p, mid) }));
+    const faces = people.map((p) => ({ speaker: p.speaker, who: p.who, ...seenFace(p, mid) }));
     // a wide shot of the room called B-roll or split: someone of the conversation speaks in it,
-    // and shown whole their face would be too small to see
+    // and shown whole their face would be too small to see. Only when the model says the picture
+    // is the people, not material (slides, a screen, a product) with a speaker small beside it;
+    // when it does not say, it stays whole and the list says how to cut it to the speaker
     let note;
-    if (kind !== "people" && people.some((p) => p.speaker != null) && Math.max(...faces.map((f) => f.h)) < meta.height * SMALL_FACE) {
-      note = `called ${kind}, but someone of the conversation speaks in it and shown whole the faces would be ${Math.round((Math.max(...faces.map((f) => f.h)) / meta.height) * 32)} % of the frame's height: cut to who speaks`;
+    const small = kind !== "people" && people.some((p) => p.speaker != null) && faces.length && Math.max(...faces.map((f) => f.h)) < meta.height * SMALL_FACE;
+    const pct = small && Math.round((Math.max(...faces.map((f) => f.h)) / meta.height) * 32);
+    if (small && best.material === false) {
+      note = `called ${kind}, but it shows the people and shown whole their faces would be ${pct} % of the frame's height: cut to who speaks (--whole shows it whole)`;
       kind = "people";
-    }
+    } else if (small && best.material === true) note = `material with the speaker small in it (${pct} % of the frame's height): shown whole (--follow cuts to the speaker)`;
+    else if (small) note = `shown whole, the speaker ${pct} % of the frame's height: a wide shot of the room is better cut to them (--follow), slides or a screen stay whole`;
     return { start: s.start, end: s.end, first: s.first, last: s.last, kind, subject, people, faces, ...(note ? { note } : {}) };
   });
 }
 
 // where a person's face is at t: between two stills on the straight line, before the first and
 // after the last as there
+// export: a person out of the picture (on a still without them, and no longer followed in the
+// frames) has no face: null. With `feat` where the answer has the features (withParts)
 export function faceAt(person, t) {
+  return withParts(person, headAt(person, t));
+}
+function headAt(person, t) {
   const tr = person.track;
-  if (!tr.length) return null;
-  if (t <= tr[0].t) return { ...tr[0], t };
-  if (t >= tr[tr.length - 1].t) return { ...tr[tr.length - 1], t };
+  if (!tr?.length) return null;
+  const at = (s) => (s.absent ? null : { ...s, t });
+  if (t <= tr[0].t) return at(tr[0]);
+  if (t >= tr[tr.length - 1].t) return at(tr[tr.length - 1]);
   const k = tr.findIndex((s) => s.t >= t);
   const a = tr[k - 1], b = tr[k], f = (t - a.t) / (b.t - a.t);
+  if (a.absent || b.absent) {
+    // between the face seen and a still without it: there while the frames still show it
+    if (a.absent && b.absent) return null;
+    if (b.absent) return t - a.t <= ABSENT_GAP ? at(a) : null;
+    return b.t - t <= ABSENT_GAP ? at(b) : null;
+  }
   const mix = (p, q) => p + (q - p) * f;
   return { t, x: mix(a.x, b.x), y: mix(a.y, b.y), w: mix(a.w, b.w), h: mix(a.h, b.h) };
+}
+
+// the face at t, else where it was seen nearest to t
+export function seenFace(person, t) {
+  const f = faceAt(person, t);
+  if (f) return f;
+  const seen = person.track.filter((x) => !x.absent).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0];
+  return seen ? withParts(person, { ...seen }) : null;
 }
 
 // who is shown from when: at every moment the voice heard most within 1.2 s around it, a lead
@@ -460,7 +595,7 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
     const forced = kinds.find((o) => o.t >= s0.start && o.t < s0.end);
     let s = forced ? { ...s0, kind: forced.kind === "follow" ? "people" : forced.kind, single: forced.kind === "follow" } : s0;
     if (!s.people) s = { ...s, people: (s.faces || []).map((f) => ({ speaker: f.speaker, who: f.who, track: [{ t: (s.start + s.end) / 2, x: f.x, y: f.y, w: f.w, h: f.h }] })) };
-    const faces = s.faces || s.people.map((p) => ({ speaker: p.speaker, ...faceAt(p, (s.start + s.end) / 2) }));
+    const faces = s.faces || s.people.map((p) => ({ speaker: p.speaker, ...seenFace(p, (s.start + s.end) / 2) }));
     // a wide shot (several people, their faces small) from footage sharp enough is cut closer
     const biggest = Math.max(0, ...faces.map((f) => f.h));
     const zoom = height >= 1400 && faces.length >= 2 && biggest < height * 0.22 ? 0.72 : 1;
@@ -509,7 +644,7 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
       const segs = list.map((c, k) => {
         const t1 = list[k + 1]?.t ?? b, person = personOf(c.speaker);
         const ts = [c.t, ...(person?.track || []).map((x) => x.t).filter((t) => t > c.t && t < t1), t1];
-        return { t0: c.t, t1, person, at: person ? ts.map((t) => faceAt(person, t)) : [] };
+        return { t0: c.t, t1, person, at: person ? ts.map((t) => faceAt(person, t)).filter(Boolean) : [] };
       });
       // the window's height: closer where a face sits low (eyes high in the frame, not an empty
       // wall above them), never closer than the footage allows or than the face fits in
@@ -520,48 +655,57 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
         const low = (fy - Math.min(height - h, Math.max(0, fy - h * FACE_Y))) / h;
         if (low > FACE_LOW) h = Math.min(h, Math.max(hMin, fh / 0.4, (height - fy) / (1 - FACE_Y)));
       }
-      // wider where the face moves more than a still window holds
+      // wider where the face moves more than a still window holds (of a close-up its eyes, nose
+      // and mouth with room beside them: holdOf)
+      const core = holdOf;
       let hold = "still";
       for (const g of segs) {
-        if (!g.at.length) continue;
-        const span = Math.max(...g.at.map((f) => f.x + f.w / 2)) - Math.min(...g.at.map((f) => f.x - f.w / 2));
-        const need = ((span / (1 - 2 * HOLD)) * ah) / aw;
-        if (need > h) {
-          if (need <= hMax) { h = need; if (hold === "still") hold = "wider"; }
-          else hold = "follows";
-        }
+        const fs = g.at.filter(Boolean);
+        if (!fs.length) continue;
+        const spanOf = (ww) => Math.max(...fs.map((f) => core(f, ww)[1])) - Math.min(...fs.map((f) => core(f, ww)[0]));
+        if (spanOf((h * aw) / ah) <= (h * aw) / ah) continue;
+        // the smallest height whose width holds every core, if the footage has it
+        let need = h;
+        while (need < hMax && spanOf((need * aw) / ah) > (need * aw) / ah) need = Math.min(hMax, need * 1.03);
+        if (spanOf((need * aw) / ah) <= (need * aw) / ah) { h = need; if (hold === "still") hold = "wider"; }
+        else hold = "follows";
       }
       const w = (h * aw) / ah;
       const clampX = (x) => Math.min(width - w, Math.max(0, x)), clampY = (y) => Math.min(height - h, Math.max(0, y));
       const keys = [];
       const push = (key) => {
         const last = keys[keys.length - 1];
-        if (last && !key.linear && Math.abs(last.x - key.x) < w * 0.08 && Math.abs(last.y - key.y) < h * 0.08) return;
+        if (last && Math.abs(last.x - key.x) < w * 0.08 && Math.abs(last.y - key.y) < h * 0.08) return false;
         keys.push(key);
+        return true;
       };
+      let moves = 0;
       for (const g of segs) {
-        if (!g.at.length) { push({ t: g.t0, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) }); continue; }
-        const lo = Math.min(...g.at.map((f) => f.x - f.w / 2)), hi = Math.max(...g.at.map((f) => f.x + f.w / 2));
-        const fy = g.at.reduce((n, f) => n + f.y, 0) / g.at.length;
-        if (hi - lo <= w * (1 - 2 * HOLD)) { push({ t: g.t0, x: clampX((lo + hi) / 2 - w / 2), y: clampY(fy - h * FACE_Y) }); continue; }
-        // following: every FOLLOW seconds where the face is then (its path a little smoothed),
-        // straight from one to the next
-        const near = (t) => {
-          const xs = [-0.2, -0.1, 0, 0.1, 0.2].map((d) => faceAt(g.person, Math.min(g.t1, Math.max(g.t0, t + d))));
-          return { x: xs.reduce((n, f) => n + f.x, 0) / xs.length, y: xs.reduce((n, f) => n + f.y, 0) / xs.length };
-        };
-        const f0 = near(g.t0);
-        push({ t: g.t0, x: clampX(f0.x - w / 2), y: clampY(f0.y - h * FACE_Y) });
-        let free = keys.length > 1 ? g.t0 + PAN : g.t0;
-        for (let t = free + FOLLOW; t < g.t1 + FOLLOW - 1e-6; t += FOLLOW) {
-          const at = Math.min(t, g.t1), f = near(at);
-          if (at - free < 0.1) continue;
-          keys.push({ t: +free.toFixed(3), x: clampX(f.x - w / 2), y: clampY(f.y - h * FACE_Y), pan: +(at - free).toFixed(3), linear: true });
-          free = at;
+        const fs = g.at.filter(Boolean);
+        if (!fs.length) { push({ t: g.t0, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) }); continue; }
+        const y = clampY(fs.reduce((n, f) => n + f.y, 0) / fs.length - h * FACE_Y);
+        const prev = keys[keys.length - 1];
+        // the first place: a cut at the shot's start, a pan of PAN to a new speaker; from there
+        // the window follows lazily (calm)
+        const path = calm(g.person, g.t0, g.t1, { w, width, core, near: prev?.x });
+        const added = push({ t: g.t0, x: +path[0].x.toFixed(1), y });
+        let from = keys[keys.length - 1].t + (added && keys.length > 1 ? PAN : 0), fromX = keys[keys.length - 1].x;
+        // the path as straight moves: a key where its direction or speed changes
+        const pts = path.filter((p) => p.t >= from - 1e-6);
+        for (let k = 1; k < pts.length; k++) {
+          const a = pts[k - 1], b = pts[k], c = pts[k + 1];
+          const slope = (b.x - fromX) / Math.max(1e-6, b.t - from);
+          const straight = c && Math.abs(fromX + slope * (c.t - from) - c.x) < 2;
+          if (straight) continue;
+          if (Math.abs(b.x - fromX) >= 1) { keys.push({ t: +from.toFixed(3), x: +b.x.toFixed(1), y, pan: +(b.t - from).toFixed(3), linear: true }); moves++; }
+          from = b.t; fromX = b.x;
         }
       }
+      if (moves && hold !== "follows") hold = "follows";
       if (!keys.length) keys.push({ t: a, x: clampX((width - w) / 2), y: clampY((height - h) * 0.3) });
-      return { start: a, end: b, shot, kind: "people", hold, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys: keys.map((k) => ({ ...k, x: +k.x.toFixed(1), y: +k.y.toFixed(1) })) };
+      const piece = { start: a, end: b, shot, kind: "people", hold, w: Math.round(w / 2) * 2, h: Math.round(h / 2) * 2, keys: keys.map((k) => ({ ...k, x: +k.x.toFixed(1), y: +k.y.toFixed(1) })) };
+      const cu = closeupOf(piece, segs, fps);
+      return cu ? { ...piece, closeup: cu } : piece;
     };
     const out = [];
     let t = s.start;
@@ -579,17 +723,107 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
   });
 }
 
+// how calm a close-up's window is and how well it holds the face, frame by frame: { turns (a
+// second), held (share of the close-up's time the features are in with their room), inside (with
+// at least FEAT_PAD: not at the edge), seconds, features (whether the answer had them) }, or null
+// when the piece has no close-up. `segs`: [{ t0, t1, person }], whom the window holds when
+export function closeupOf(piece, segs, fps = 25) {
+  const dt = 1 / fps;
+  let n = 0, held = 0, inside = 0, turns = 0, dir = 0, prev = null, feat = false;
+  for (let t = piece.start + dt / 2; t < piece.end; t += dt) {
+    const x = windowAt(piece, t).x;
+    const g = segs.find((s) => t >= s.t0 && t < s.t1), f = g?.person && faceAt(g.person, t);
+    // the turns while it is a close-up (a pan to another speaker is none)
+    if (!f || f.w <= BIG * piece.w) { prev = null; dir = 0; continue; }
+    if (prev != null) {
+      const v = (x - prev) / dt, d = Math.abs(v) < 2 ? 0 : Math.sign(v);
+      if (d && dir && d !== dir) turns++;
+      if (d) dir = d;
+    }
+    prev = x;
+    n++;
+    feat ||= !!f.feat;
+    const [a, b] = holdOf(f, piece.w), [c, d] = holdOf(f, piece.w, 0);
+    if (a >= x - 0.5 && b <= x + piece.w + 0.5) held++;
+    if (c >= x - 0.5 && d <= x + piece.w + 0.5) inside++;
+  }
+  if (!n) return null;
+  return { turns: +(turns / (n * dt)).toFixed(2), held: +(held / n).toFixed(3), inside: +(inside / n).toFixed(3), seconds: +(n * dt).toFixed(2), features: feat };
+}
+
+// the window's place on one face from t0 to t1, every tenth of a second: [{ t, x }]. It rests
+// while the face with its room (holdOf: of a close-up the eyes, nose and mouth), taken over SWAY
+// seconds, stays inside, and when it pushes at an edge it goes along, at most VMAX window widths a
+// second, only as far as needed; it does not turn back within REST seconds of its last turn unless
+// the features themselves (holdOf's least) would leave the window (a swaying head is let into the
+// room beside it rather than chased), so a still face gets a still window, a walking one a
+// gliding window. `near`: the place before
+export function calm(person, t0, t1, { w, width, core, near = null }) {
+  // where the window may be for a face to be held with room m: [lo, hi] of its left edge
+  const span = (f, m) => {
+    const [a, b] = core(f, w, m);
+    let lo = Math.max(0, b - w), hi = Math.min(width - w, a);
+    if (lo > hi) lo = hi = Math.min(width - w, Math.max(0, (a + b) / 2 - w / 2));
+    return [lo, hi];
+  };
+  const dt = 0.1, vmax = VMAX * w;
+  const closeUp = (t) => { const f = faceAt(person, t); return !!f && f.w > BIG * w; };
+  // the room (a following window lets a face come closer to its edge than a still one is chosen
+  // with), as it is on average over SWAY seconds around t (less at the ends, always as much before
+  // t as after it, so that a face going one way is not led or followed): a head swaying to and fro
+  // moves nothing
+  const room = (t) => {
+    let lo = 0, hi = 0, n = 0;
+    // a face smaller than a close-up's (a wide shot, someone walking) as it is at t
+    const half = closeUp(t) ? Math.max(0, Math.min(SWAY / 2, t - t0, t1 - t)) : 0;
+    for (let u = t - half; u <= t + half + 1e-6; u += dt) {
+      const f = faceAt(person, u);
+      if (!f) continue;
+      const r = span(f, SLACK);
+      lo += r[0]; hi += r[1]; n++;
+    }
+    return n ? [lo / n, hi / n] : null;
+  };
+  const first = room(t0) || [0, width - w];
+  let x = near == null ? (first[0] + first[1]) / 2 : Math.min(first[1], Math.max(first[0], near));
+  let dir = 0, turned = -Infinity;
+  const path = [{ t: t0, x }];
+  for (let t = t0 + dt; t < t1 + dt - 1e-6; t += dt) {
+    const at = Math.min(t, t1), r = room(at);
+    let want = r ? Math.min(r[1], Math.max(r[0], x)) - x : 0;
+    // the face itself (its features, not only the room beside them) about to leave, within the
+    // next two tenths: the window goes at least as far as that needs, also straight back
+    let hard = null;
+    for (const u of closeUp(at) ? [at, at + dt, at + 2 * dt] : [at]) {
+      const f = u <= t1 + 1e-6 && faceAt(person, u);
+      if (!f) continue;
+      const s = span(f, 0);
+      hard = !hard ? s : Math.max(hard[0], s[0]) <= Math.min(hard[1], s[1]) ? [Math.max(hard[0], s[0]), Math.min(hard[1], s[1])] : hard;
+    }
+    const must = hard ? Math.min(hard[1], Math.max(hard[0], x)) - x : 0;
+    const leaving = Math.abs(must) >= 0.5;
+    if (leaving && (Math.sign(want) !== Math.sign(must) || Math.abs(want) < Math.abs(must))) want = must;
+    const d = Math.sign(Math.round(want));
+    if (d && (d === dir || at - turned >= REST || !dir || leaving)) {
+      x += Math.max(-vmax * dt, Math.min(vmax * dt, want));
+      if (d !== dir) { if (dir) turned = at; dir = d; }
+    }
+    path.push({ t: at, x });
+  }
+  return path;
+}
+
 // the faces a window cuts at its edge or holds too close to it: [{ piece, shot, t, who, edge,
 // gap, cut }] (gap: the room between face and edge, a share of the window's width; cut: part of
 // the face is outside). Looked at on every still, and at each piece's first, middle and last frame
-export function edgesOf(windows, shots, { fps = 25, height, at = [] } = {}) {
+export function edgesOf(windows, shots, { fps = 25, width, height, at = [] } = {}) {
   const found = [];
   windows.forEach((p, k) => {
     const s = shots[p.shot];
     if (!s || p.fit || !s.people?.length) return;
     const times = new Set([p.start + 0.5 / fps, (p.start + p.end) / 2, p.end - 0.5 / fps, ...at.filter((t) => t > p.start && t < p.end)]);
     for (const person of s.people) for (const x of person.track) if (x.t > p.start && x.t < p.end) times.add(x.t);
-    const biggest = Math.max(...s.people.map((q) => Math.max(...q.track.map((x) => x.h))));
+    const biggest = Math.max(...s.people.map((q) => Math.max(...q.track.filter((x) => !x.absent).map((x) => x.h))));
     const rects = p.stack ? p.stack.map((r, i) => ({ r, only: p.speakers[i] })) : [{ r: null }];
     for (const t of [...times].sort((a, b) => a - b)) {
       for (const { r, only } of rects) {
@@ -598,18 +832,33 @@ export function edgesOf(windows, shots, { fps = 25, height, at = [] } = {}) {
           if (only != null && person.speaker !== only) continue;
           const f = faceAt(person, t);
           if (!f || f.h < 0.4 * biggest) continue;
-          const l = f.x - f.w / 2, rr = f.x + f.w / 2, top = f.y - f.h / 2, bot = f.y + f.h / 2;
+          // the part of the face the footage has (a face half out of the picture is no window's fault)
+          const l = Math.max(0, f.x - f.w / 2), rr = Math.min(width ?? Infinity, f.x + f.w / 2), top = f.y - f.h / 2, bot = f.y + f.h / 2;
+          if (rr - l < 0.5 * f.w) continue;
           // a face wholly outside is not in the picture
           if (rr <= win.x || l >= win.x + win.w || bot <= win.y || top >= win.y + win.h) continue;
           const gaps = { left: (l - win.x) / win.w, right: (win.x + win.w - rr) / win.w, bottom: (win.y + win.h - bot) / win.h,
             // a forehead cut in a close-up is the editors' way: only half a face is a fault
             top: (top + f.h / 2 - win.y) / win.h };
           const [edge, gap] = Object.entries(gaps).sort((a, b) => a[1] - b[1])[0];
-          // a close-up's face is as wide as the frame (the editors' too): only a cut into it counts,
-          // and only beyond the model's own blur of a box (a tenth of the face)
-          const big = f.w >= 0.6 * win.w;
-          const cut = gap < (big ? -0.1 * (edge === "left" || edge === "right" ? f.w / win.w : f.h / win.h) : -0.02);
-          if (cut || (!big && edge !== "top" && edge !== "bottom" && gap < EDGE)) found.push({ piece: k, shot: p.shot, t: +t.toFixed(3), who: person.who || person.speaker, speaker: person.speaker, edge, gap: +gap.toFixed(3), cut });
+          const big = f.w > BIG * win.w;
+          const entry = { piece: k, shot: p.shot, t: +t.toFixed(3), who: person.who || person.speaker, speaker: person.speaker };
+          if (f.feat && big) {
+            // eyes, nose or mouth at the edge or over it: a fault; else only the side of the face
+            // (an ear, a cheek, hair) cut or close: listed, the editors' way in a close-up
+            // the features the footage has (a nose out of the picture itself is no window's fault)
+            const e = { ...f.feat, x0: Math.max(0, f.feat.x0), x1: Math.min(width ?? Infinity, f.feat.x1) };
+            const fg = { left: (e.x0 - win.x) / win.w, right: (win.x + win.w - e.x1) / win.w, top: (e.y0 - win.y) / win.h, bottom: (win.y + win.h - e.y1) / win.h };
+            const [fe, fgap] = Object.entries(fg).sort((a, b) => a[1] - b[1])[0];
+            if (fgap < FEAT_EDGE) { found.push({ ...entry, part: "features", edge: fe, gap: +fgap.toFixed(3), cut: fgap < 0 }); continue; }
+            const side = gaps.left < gaps.right ? "left" : "right", sgap = Math.min(gaps.left, gaps.right);
+            if (sgap < 0) found.push({ ...entry, part: "side", edge: side, gap: +sgap.toFixed(3), cut: sgap < 0 });
+            continue;
+          }
+          // a small face, or a close-up of an answer without the features (its face as wide as the
+          // frame, the editors' too): only a cut into it counts, beyond the model's blur of a box
+          const cut = gap < (big ? -((1 - CORE) / 2) * (edge === "left" || edge === "right" ? f.w / win.w : f.h / win.h) : -0.02);
+          if (cut || (!big && edge !== "top" && edge !== "bottom" && gap < EDGE)) found.push({ ...entry, edge, gap: +gap.toFixed(3), cut });
         }
       }
     }
@@ -687,55 +936,82 @@ export function spans(times, gap = 0.3) {
   return out.map(([a, b]) => (b - a < 0.05 ? a.toFixed(1) : `${a.toFixed(1)}–${b.toFixed(1)}`));
 }
 export function edgeLine(e) {
-  return `${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${sideOf[e.edge]} edge at ${e.t.toFixed(1)} s`;
+  const what = e.part === "features" ? `the eyes, nose or mouth of ${e.who ?? "a face"}` : e.part === "side" ? `only the side (an ear, a cheek, hair) of ${e.who ?? "a face"}` : e.who ?? "a face";
+  return `${what} ${e.cut ? "cut by" : "close to"} the ${sideOf[e.edge]} edge at ${e.t.toFixed(1)} s`;
 }
 
 // per shot a row: the footage at its middle with the window drawn in, the frame at the shot's
 // first, middle and last frame, labelled; a red frame and "EDGE" on a frame where a face is at
-// an edge. Eight shots a sheet: file, file-2.jpg, …
+// an edge. Eight shots a sheet: file, file-2.jpg, … Every cell is taken from the video by an
+// ffmpeg of its own, small, and the page is put together from the small pictures (one page of
+// 4K cells at once took 6.4 GB). Returns the files written; `.missing` lists what could not be
+// (a cell without a frame is grey and named there)
 export function sheet(video, framed, windows, shots, edges, file, { fps = 25 } = {}) {
   const H = 300, FW = Math.round((H * 9) / 16 / 2) * 2, PER = 8;
-  const files = [];
+  const files = [], missing = [];
   const meta = probe(video);
   const SW = Math.round((H * meta.width) / meta.height / 2) * 2;
   // the last frame both videos have
-  const last = Math.min(meta.duration, probe(framed).duration) - 1.5 / fps;
+  const length = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", framed], { encoding: "utf8" }).stdout) || meta.duration;
+  const last = Math.min(meta.duration, length) - 1.5 / fps;
   // drawtext takes no quotes, colons, commas or percent signs here
   const text = (s) => String(s).replace(/[\\':,%;\[\]]/g, " ");
-  for (let page = 0; page * PER < shots.length; page++) {
-    const rows = shots.map((s, k) => ({ s, k })).slice(page * PER, page * PER + PER);
-    const args = ["-v", "error", "-y"], chains = [];
-    let n = 0;
-    for (const { s, k } of rows) {
-      // the shot's very first frame (its time less a hair: -ss gives the first frame from there)
-      const ts = [s.start === 0 ? 0 : s.start + 0.5 / fps - 0.002, (s.start + s.end) / 2, Math.min(s.end - 0.5 / fps, last) - 0.002];
-      const mid = ts[1];
-      const piece = windows.find((w) => w.start <= mid && w.end > mid) || windows.find((w) => w.shot === k);
-      const rects = !piece ? [] : piece.fit ? [piece.fit] : piece.stack ? piece.stack : [windowAt(piece, mid)];
-      const scale = H / meta.height;
-      const boxes = rects.map((r) => `drawbox=x=${Math.round(r.x * scale)}:y=${Math.round(r.y * scale)}:w=${Math.round(r.w * scale)}:h=${Math.round(r.h * scale)}:color=yellow:t=3`).join(",");
-      const flagged = edges.filter((e) => e.shot === k);
-      const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${spans(flagged.map((e) => e.t)).slice(0, 4).join(" ").replace(/–/g, " to ")} s` : ""}`;
-      args.push("-ss", mid.toFixed(3), "-i", video);
-      chains.push(`[${n}:v]scale=${SW}:${H},setsar=1${boxes ? "," + boxes : ""},drawtext=text='${text(label)}':x=8:y=8:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=4[c${k}_0]`);
-      n++;
-      ts.forEach((t, i) => {
-        const bad = flagged.some((e) => Math.abs(e.t - t) < 0.6 / fps || (i === 1 && Math.abs(e.t - t) < 1e-3));
-        args.push("-ss", t.toFixed(3), "-i", framed);
-        chains.push(`[${n}:v]scale=${FW}:${H},setsar=1${bad ? ",drawbox=x=0:y=0:w=iw:h=ih:color=red:t=8" : ""},drawtext=text='${["first", "middle", "last"][i]} ${t.toFixed(2)}${bad ? " EDGE" : ""}':x=6:y=h-26:fontsize=15:fontcolor=white:box=1:boxcolor=${bad ? "red" : "black"}@0.8:boxborderw=3[c${k}_${i + 1}]`);
-        n++;
-      });
-      chains.push(`[c${k}_0][c${k}_1][c${k}_2][c${k}_3]hstack=inputs=4,pad=iw:ih+6:0:0:white[r${k}]`);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sheet-"));
+  let fonts = true;
+  // one cell: a frame of `src` at t (else up to a few frames earlier), scaled, with its marks
+  const cell = (src, t, w, filters, out) => {
+    for (const back of [0, 1, 2, 4, 8]) {
+      const at = Math.max(0, t - back / fps);
+      const vf = `scale=${w}:${H},setsar=1${filters.length ? "," + filters.join(",") : ""}`;
+      const run = (f) => spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", at.toFixed(3), "-i", src, "-frames:v", "1", "-vf", f, "-q:v", "3", out], { encoding: "utf8" });
+      fs.rmSync(out, { force: true });
+      // an ffmpeg without fonts: the cells without their labels
+      const bare = vf.replace(/,drawtext=.*$/, "");
+      let r = run(fonts ? vf : bare);
+      if (r.status !== 0 && fonts) { fonts = false; r = run(bare); }
+      if (fs.existsSync(out) && fs.statSync(out).size > 0) return true;
     }
-    const out = page ? file.replace(/\.jpg$/, `-${page + 1}.jpg`) : file;
-    const graph = chains.join(";") + ";" + rows.map(({ k }) => `[r${k}]`).join("") + (rows.length > 1 ? `vstack=inputs=${rows.length}[s]` : "copy[s]");
-    let r = spawnSync("ffmpeg", [...args, "-filter_complex", graph, "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
-    // an ffmpeg without fonts: the same sheet without its labels
-    if (r.status !== 0) r = spawnSync("ffmpeg", [...args, "-filter_complex", graph.replace(/,drawtext=[^\[;]*/g, ""), "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
-    // (a seek past the picture's last frame gives ffmpeg nothing to draw and no file, without an error)
-    if (r.status === 0 && fs.existsSync(out)) files.push(out);
+    spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=gray:s=${w}x${H}`, "-frames:v", "1", out]);
+    return false;
+  };
+  try {
+    for (let page = 0; page * PER < shots.length; page++) {
+      const rows = shots.map((s, k) => ({ s, k })).slice(page * PER, page * PER + PER);
+      const inputs = [];
+      for (const { s, k } of rows) {
+        // the shot's very first frame (its time less a hair: -ss gives the first frame from there)
+        const ts = [s.start === 0 ? 0 : s.start + 0.5 / fps - 0.002, (s.start + s.end) / 2, Math.min(s.end - 0.5 / fps, last) - 0.002];
+        const mid = ts[1];
+        const piece = windows.find((w) => w.start <= mid && w.end > mid) || windows.find((w) => w.shot === k);
+        const rects = !piece ? [] : piece.fit ? [piece.fit] : piece.stack ? piece.stack : [windowAt(piece, mid)];
+        const scale = H / meta.height;
+        const boxes = rects.map((r) => `drawbox=x=${Math.round(r.x * scale)}:y=${Math.round(r.y * scale)}:w=${Math.round(r.w * scale)}:h=${Math.round(r.h * scale)}:color=yellow:t=3`);
+        // red only for a fault: eyes, nose or mouth at the edge (an ear or a cheek is the editors' way)
+        const flagged = edges.filter((e) => e.shot === k && e.part !== "side");
+        const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${spans(flagged.map((e) => e.t)).slice(0, 4).join(" ").replace(/–/g, " to ")} s` : ""}`;
+        const c0 = path.join(tmp, `${k}-0.jpg`);
+        if (!cell(video, mid, SW, [...boxes, `drawtext=text='${text(label)}':x=8:y=8:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=4`], c0)) missing.push(`shot ${k + 1}: the footage at ${mid.toFixed(2)} s`);
+        inputs.push(c0);
+        ts.forEach((t, i) => {
+          const bad = flagged.some((e) => Math.abs(e.t - t) < 0.6 / fps || (i === 1 && Math.abs(e.t - t) < 1e-3));
+          const c = path.join(tmp, `${k}-${i + 1}.jpg`);
+          const marks = [...(bad ? ["drawbox=x=0:y=0:w=iw:h=ih:color=red:t=8"] : []), `drawtext=text='${["first", "middle", "last"][i]} ${t.toFixed(2)}${bad ? " EDGE" : ""}':x=6:y=h-26:fontsize=15:fontcolor=white:box=1:boxcolor=${bad ? "red" : "black"}@0.8:boxborderw=3`];
+          if (!cell(framed, t, FW, marks, c)) missing.push(`shot ${k + 1}: the frame at ${t.toFixed(2)} s`);
+          inputs.push(c);
+        });
+      }
+      const out = page ? file.replace(/\.jpg$/, `-${page + 1}.jpg`) : file;
+      const chains = rows.map((_, r) => `[${4 * r}:v][${4 * r + 1}:v][${4 * r + 2}:v][${4 * r + 3}:v]hstack=inputs=4,pad=iw:ih+6:0:0:white[r${r}]`);
+      const graph = chains.join(";") + ";" + rows.map((_, r) => `[r${r}]`).join("") + (rows.length > 1 ? `vstack=inputs=${rows.length}[s]` : "copy[s]");
+      fs.rmSync(out, { force: true });
+      spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs.flatMap((f) => ["-i", f]), "-filter_complex", graph, "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
+      if (fs.existsSync(out) && fs.statSync(out).size > 0) files.push(out);
+      else missing.push(`${path.basename(out)} (shots ${rows[0].k + 1}–${rows[rows.length - 1].k + 1})`);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
-  return files;
+  return Object.assign(files, { missing });
 }
 
 // does footage of this shape need cutting for the frame? (wider by more than 15 %)
@@ -756,7 +1032,13 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   const seen = shotsOf(people, shots, meta);
   // the faces between the stills, followed in the frames
   const grey = greyFrames(video, { start: meta.start });
-  for (const s of seen) if (s.kind === "people") for (const p of s.people) p.track = fillTrack(grey, p.track, s.start, s.end);
+  for (const s of seen) if (s.kind === "people") {
+    for (const p of s.people) {
+      p.track = fillTrack(grey, p.track, s.start, s.end);
+      for (const d of p.track.doubtful) (s.doubtful ||= []).push({ who: p.who || p.speaker, t: d.t, off: d.off });
+    }
+    uncross(s.people);
+  }
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
   const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, lifts, outW });
   const edges = edgesOf(windows, seen, meta);
@@ -768,7 +1050,7 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   fs.rmSync(out, { force: true });
   fs.renameSync(tmp, out);
   fs.writeFileSync(out.replace(/\.mp4$/, ".json"), JSON.stringify({ footage: path.basename(video), aspect, size: [meta.width, meta.height],
-    shots: seen.map((s) => ({ start: s.start, end: s.end, kind: s.kind, ...(s.note ? { note: s.note } : {}), people: s.people })), windows, edges }, null, 1));
+    shots: seen.map((s) => ({ start: s.start, end: s.end, kind: s.kind, ...(s.note ? { note: s.note } : {}), ...(s.doubtful ? { doubtful: s.doubtful } : {}), people: s.people })), windows, edges }, null, 1));
   const sheetFile = out.replace(/\.mp4$/, ".sheet.jpg");
   for (const f of fs.readdirSync(path.dirname(out))) if (/^framed\.sheet-\d+\.jpg$/.test(f) && out.endsWith("framed.mp4")) fs.rmSync(path.join(path.dirname(out), f));
   const sheets = sheet(video, out, windows, seen, edges, sheetFile, meta);
@@ -796,16 +1078,22 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const how = [...new Set(pieces.map((w) => SAY[w.kind] + (w.hold ? HOLDS[w.hold] : "")))].join(", then ");
       const lifted = pieces.find((w) => w.lift)?.lift;
       console.log(`  ${k + 1}. ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${how}${s.note ? ` (${s.note})` : ""}${lifted ? `, raised ${lifted.px} px${lifted.ground ? ` (${lifted.ground} over a ground)` : ""}` : ""}`);
+      for (const w of pieces.filter((w) => w.closeup)) console.log(`     close-up ${w.start.toFixed(1)}–${w.end.toFixed(1)} s: the window turns ${w.closeup.turns} times a second; ${w.closeup.features ? "eyes, nose and mouth" : "the middle of the face"} in with their room ${Math.round(w.closeup.held * 100)} % of the time, off the edge ${Math.round(w.closeup.inside * 100)} %`);
       const edges = r.edges.filter((e) => e.shot === k);
       const seen = new Set();
-      for (const e of edges) {
-        const key = `${e.who}|${e.edge}|${e.cut}`;
+      // a ⚠ where eyes, nose or mouth (or, in an answer without them, the face) are at an edge;
+      // only an ear, a cheek or hair at the edge of a close-up is listed without one
+      for (const e of [...edges].sort((a, b) => (a.part === "side") - (b.part === "side"))) {
+        const key = `${e.who}|${e.edge}|${e.cut}|${e.part}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const all = spans(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}` === key).map((x) => x.t));
-        console.log(`     ⚠ ${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s`);
+        const all = spans(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}|${x.part}` === key).map((x) => x.t));
+        const what = e.part === "features" ? `the eyes, nose or mouth of ${e.who ?? "a face"}` : e.part === "side" ? `only the side of ${e.who ?? "a face"}'s face (an ear, a cheek, hair)` : e.who ?? "a face";
+        console.log(`     ${e.part === "side" ? "·" : "⚠"} ${what} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s${e.part === "side" ? " (accepted in a close-up)" : ""}`);
       }
+      for (const d of s.doubtful || []) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
     });
-    if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where a face is at an edge.${r.edges.length ? " A ⚠ above: look at that row; a face that matters cut off, `reframe --whole <second>` shows the shot whole, `--follow <second>` one window on who speaks." : ""}`);
+    if (r.sheets.missing?.length) console.log(`The sheet is missing ${r.sheets.missing.join("; ")}: look at framed.mp4 there yourself (ffmpeg -ss <second> -i framed.mp4 -frames:v 1 look.jpg).`);
+    if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where eyes, nose or mouth are at an edge.${r.edges.some((e) => e.part !== "side") ? " A ⚠ above: look at that row. On a face the window already follows, the footage gives no better window: keep it, or move the cut so that stretch is left out. Someone or something that matters left out of a window (a second person, a photo): `reframe --whole <second>` shows the shot whole (smaller; never for a close-up). A shot shown whole whose speaker should fill the frame: `--follow <second>`." : ""}`);
   }
 }

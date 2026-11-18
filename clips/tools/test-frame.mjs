@@ -10,8 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline } from "./frame.mjs";
-import { greyFrames, fillTrack } from "./lib/track.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf } from "./frame.mjs";
+import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const FPS = 25;
@@ -143,8 +143,8 @@ test("a person low in a wide shot is brought up: eyes in the upper part, not an 
 });
 
 test("a wide shot called split or B-roll, in which someone of the talk speaks with a small face, is cut to who speaks", () => {
-  const ans = { version: 2, shots: [shotAnswer(0, 5, "split", [{ who: "host", speaker: "C" }, { who: "guest", speaker: null }],
-    [{ t: 2.5, faces: [{ person: 0, box_2d: [360, 140, 440, 185] }, { person: 1, box_2d: [360, 830, 430, 866] }] }])] };
+  const ans = { version: 2, shots: [{ ...shotAnswer(0, 5, "split", [{ who: "host", speaker: "C" }, { who: "guest", speaker: null }],
+    [{ t: 2.5, faces: [{ person: 0, box_2d: [360, 140, 440, 185] }, { person: 1, box_2d: [360, 830, 430, 866] }] }]), material: false }] };
   const shots = shotsOf(ans, [{ start: 0, end: 5 }], META);
   assert.equal(shots[0].kind, "people");
   assert.match(shots[0].note, /cut to who speaks/);
@@ -237,4 +237,303 @@ test("between two stills the face is followed in the frames, where a straight li
     const truth = [{ who: "square", speaker: "A", track: Array.from({ length: 37 }, (_, i) => at(0.2 + i * 0.1)) }];
     assert.deepEqual(edgesOf(windows, [{ ...shots[0], people: truth }], { fps: FPS }).filter((e) => e.cut), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("footage of a variable frame rate: the cut sits at the frames' own time, not at frame number over rate", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // 4 s at 15 frames a second, then 3 s at 30 (the file says 30): the cut is at 4.0 s, frame 60
+    const video = path.join(dir, "vfr.mp4");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=15:d=4", "-f", "lavfi", "-i", "smptehdbars=s=320x180:r=30:d=3",
+      "-filter_complex", "[0:v]settb=1/30[a];[1:v]settb=1/30[b];[a][b]concat=n=2:v=1,format=yuv420p[v]", "-map", "[v]", "-vsync", "vfr", "-c:v", "libx264", "-preset", "ultrafast", video], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const frames = smallFrames(video);
+    assert.equal(frames.times.length, frames.length);
+    const cuts = findCuts(frames, 30);
+    assert.deepEqual(cuts.map((c) => c.frame), [60]);
+    const shots = shotsBetween(cuts, frames.length, 30, { times: frames.times });
+    near(shots[1].start, 3.967, 0.02);
+    near(shots[1].end, 7.0, 0.05);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("someone standing up, or a hand waved in front of the lens, is no sure cut: a cut changes the whole picture and keeps it changed", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // a white body rising into a third of the picture over half a second (the reviewer's cook standing up, change 36)
+    const stand = path.join(dir, "stand.mp4");
+    let r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=320x180:r=${FPS}:d=4`, "-f", "lavfi", "-i", `color=c=white:s=150x160:r=${FPS}:d=4`,
+      "-filter_complex", "[0:v][1:v]overlay=x=150:y='if(lt(t,2),180,if(lt(t,2.48),180-(t-2)/0.48*170,10))',format=yuv420p[v]", "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", stand], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(findCuts(smallFrames(stand), FPS).filter((c) => c.sure), []);
+    // a hand that covers most of the picture over a few frames and is gone half a second later
+    const hand = path.join(dir, "hand.mp4");
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=320x180:r=${FPS}:d=4`, "-f", "lavfi", "-i", `color=c=0xd0a080:s=300x170:r=${FPS}:d=4`,
+      "-filter_complex", "[0:v][1:v]overlay=x='if(lt(t,1.5),330,if(lt(t,1.7),330-(t-1.5)/0.2*320,if(lt(t,2.1),10,if(lt(t,2.3),10+(t-2.1)/0.2*320,330))))':y=5,format=yuv420p[v]",
+      "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", hand], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(findCuts(smallFrames(hand), FPS).filter((c) => c.sure), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a white flash inside one shot is no cut; a flash between two different pictures is one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // the reviewer's 49g frames 1984/1991: the picture flashes white and fades back, a little brighter
+    const flash = (file, second) => spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=320x180:r=${FPS}:d=4`, "-f", "lavfi", "-i", `${second}=s=320x180:r=${FPS}:d=4`,
+      "-filter_complex", `[0:v]trim=0:2,setpts=PTS-STARTPTS[a];[1:v]trim=2:4,setpts=PTS-STARTPTS,eq=brightness=0.06[b];[a][b]concat=n=2:v=1[ab];`
+        + `[ab]geq=lum='if(between(T,1.96,2.24),255-(abs(T-2.04)*900),lum(X,Y))':cb='cb(X,Y)':cr='cr(X,Y)',format=yuv420p[v]`,
+      "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", file], { encoding: "utf8" });
+    const same = path.join(dir, "same.mp4"), other = path.join(dir, "other.mp4");
+    let r = flash(same, "testsrc2");
+    assert.equal(r.status, 0, r.stderr);
+    r = flash(other, "smptehdbars");
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(findCuts(smallFrames(same), FPS).filter((c) => c.sure), []);
+    assert.equal(findCuts(smallFrames(other), FPS).filter((c) => c.sure).length, 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a very dark hard cut, a two-second dissolve and a fade through black are each one sure cut, in the middle of a long one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const make = (name, graph, inputs) => {
+      const file = path.join(dir, name);
+      const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs.flatMap((i) => ["-f", "lavfi", "-t", "6", "-i", i]), "-filter_complex", graph, "-map", "[v]",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", file], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return smallFrames(file);
+    };
+    const bars = `smptehdbars=s=320x180:r=${FPS}`, rgb = `rgbtestsrc=s=320x180:r=${FPS}`;
+    // the reviewer's dark cut: a picture of mean 4 turns into another, a change of 4.6 against 0 beside it
+    const dark = make("dark.mp4", "[0:v]trim=0:3,eq=contrast=0.1:brightness=-0.42[a];[1:v]trim=0:3,vflip,eq=contrast=0.1:brightness=-0.42[b];[a][b]concat=n=2:v=1,format=yuv420p[v]", [bars, bars]);
+    assert.deepEqual(findCuts(dark, FPS).map((c) => [c.frame, c.sure]), [[75, true]]);
+    // a dissolve of two seconds (frames 25 to 75)
+    const diss = make("diss.mp4", `[0:v]settb=1/${FPS}[a];[1:v]settb=1/${FPS}[b];[a][b]xfade=transition=fade:duration=2:offset=1,format=yuv420p[v]`, [bars, rgb]);
+    const d = findCuts(diss, FPS);
+    assert.equal(d.length, 1);
+    assert.ok(d[0].sure && d[0].frame > 35 && d[0].frame < 65, JSON.stringify(d));
+    // two seconds to black, two from it (black around frames 44 to 64): one cut in the black
+    const fade = make("fade.mp4", `[0:v]settb=1/${FPS}[a];[1:v]settb=1/${FPS}[b];[a][b]xfade=transition=fadeblack:duration=4:offset=1,format=yuv420p[v]`, [bars, rgb]);
+    const f = findCuts(fade, FPS);
+    assert.equal(f.length, 1, JSON.stringify(f));
+    assert.ok(f[0].sure && f[0].frame >= 44 && f[0].frame <= 64, JSON.stringify(f));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// a person whose face is at every tenth of a second where `at(t)` says, for windowsOf
+const tracked = (who, speaker, at, t0, t1) => ({ who, speaker, track: Array.from({ length: Math.round((t1 - t0) * 10) + 1 }, (_, i) => ({ t: +(t0 + i / 10).toFixed(2), ...at(t0 + i / 10) })) });
+const HD = { width: 1920, height: 1080, fps: FPS };
+
+test("a window that follows a face does not stop at a change of speaker", () => {
+  // A walks across the picture; a second voice off the picture speaks in between (the window
+  // stays on A, the face it shows), then A again: two changes of speaker inside one shot
+  const A = tracked("A", "A", (t) => ({ x: 200 + 500 * t, y: 400, w: 300, h: 330 }), 0, 3);
+  const shots = [{ start: 0, end: 3, kind: "people", people: [A], faces: [{ speaker: "A", ...faceAt(A, 1.5) }] }];
+  const timeline = [{ t: 0, speaker: "A" }, { t: 1, speaker: "B" }, { t: 2, speaker: "A" }];
+  const windows = windowsOf(shots, timeline, { ...HD, aspect: [9, 16] });
+  for (let t = 0; t < 3; t += 1 / FPS) {
+    const p = windows.find((w) => w.start <= t && w.end > t), win = windowAt(p, t), f = faceAt(A, t);
+    assert.ok(f.x - f.w / 2 >= win.x - 1 && f.x + f.w / 2 <= win.x + win.w + 1, `A out of the window at ${t.toFixed(2)} s: face ${Math.round(f.x - f.w / 2)}–${Math.round(f.x + f.w / 2)}, window ${Math.round(win.x)}–${Math.round(win.x + win.w)}`);
+  }
+});
+
+test("a close-up that sways is held calmly: no move back within a second", () => {
+  // the reviewer's guest: a face 90 % of the window's width, swaying ±45 px at 0.7 Hz with a nod
+  // (its middle 80 % fits the window wherever it sways: the window stays)
+  const w = (1080 * 9) / 16;
+  const P = tracked("guest", "A", (t) => ({ x: 960 + 45 * Math.sin(2 * Math.PI * 0.7 * t), y: 420 + 20 * Math.sin(2 * Math.PI * 1.3 * t), w: 0.9 * w, h: 600 }), 0, 12);
+  const shots = [{ start: 0, end: 12, kind: "people", people: [P], faces: [{ speaker: "A", ...faceAt(P, 6) }] }];
+  const [win] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...HD, aspect: [9, 16] });
+  const xs = [];
+  for (let t = 0; t < 12; t += 1 / FPS) xs.push([t, windowAt(win, t).x]);
+  let lastDir = 0, lastTurn = -Infinity, turns = 0, fastest = 0;
+  for (let k = 1; k < xs.length; k++) {
+    const v = (xs[k][1] - xs[k - 1][1]) * FPS;
+    fastest = Math.max(fastest, Math.abs(v));
+    const dir = Math.abs(v) < 1 ? 0 : Math.sign(v);
+    if (dir && lastDir && dir !== lastDir) { assert.ok(xs[k][0] - lastTurn >= 1, `turned back at ${xs[k][0].toFixed(2)} s`); lastTurn = xs[k][0]; turns++; }
+    if (dir) lastDir = dir;
+  }
+  assert.ok(turns <= 6, `${turns} turns in 12 s`);
+  assert.ok(fastest < 0.8 * w, `${Math.round(fastest)} px/s`);
+  // the face's middle (its eyes, nose and mouth) never leaves the window
+  for (const [t, x] of xs) { const f = faceAt(P, t); assert.ok(f.x - 0.4 * f.w >= x - 1 && f.x + 0.4 * f.w <= x + w + 1, `face cut at ${t.toFixed(2)} s`); }
+});
+
+// a close-up of a face in a three-quarter view looking left (as seen): its box from the nose's
+// tip to the ear behind, the eyes, nose and mouth in its left half
+const threeQuarter = (t, x, looks = "left", side = -1) => ({ t, faces: [{ person: 0, box_2d: [100, x, 800, x + 300],
+  features_2d: side < 0 ? [300, x, 600, x + 150] : [300, x + 150, 600, x + 300], looks }] });
+
+test("a close-up in a three-quarter view keeps eyes, nose and mouth in, with more room on the side it looks to; the back of the head may go", () => {
+  const ans = { version: 3, shots: [shotAnswer(0, 6, "people", [{ who: "guest", speaker: "A" }], [0.1, 3, 5.9].map((t) => threeQuarter(t, 350)))] };
+  const shots = shotsOf(ans, [{ start: 0, end: 6 }], META);
+  const [w] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+  for (const t of [0.1, 3, 5.9]) {
+    const f = faceAt(shots[0].people[0], t), win = windowAt(w, t);
+    assert.ok(f.w > 0.9 * w.w, "a close-up as wide as the window");
+    const front = f.feat.x0 - win.x, back = win.x + w.w - f.feat.x1;
+    assert.ok(front >= 0.2 * f.w && back >= 0.04 * f.w, `room in front ${Math.round(front)}, behind ${Math.round(back)}`);
+    assert.ok(front > back, "more room on the side the face looks to");
+    assert.ok(f.x + f.w / 2 > win.x + w.w, "the back of the head is cut");
+    const head = (Math.min(f.x + f.w / 2, win.x + w.w) - Math.max(f.x - f.w / 2, win.x)) / f.w;
+    assert.ok(head >= 0.75 - 1e-3, `only ${Math.round(head * 100)} % of the head in the picture`);
+  }
+  // the check: no fault, the side of the face listed as such
+  const edges = edgesOf([w], shots, META);
+  assert.deepEqual(edges.filter((e) => e.part !== "side"), []);
+  assert.ok(edges.some((e) => e.part === "side" && e.edge === "right"), JSON.stringify(edges));
+  // an answer without the features centres the face's box: the nose close to the edge
+  const old = { version: 2, shots: [shotAnswer(0, 6, "people", [{ who: "guest", speaker: "A" }], [0.1, 3, 5.9].map((t) => ({ t, faces: [{ person: 0, box_2d: [100, 350, 800, 650] }] })))] };
+  const oshots = shotsOf(old, [{ start: 0, end: 6 }], META);
+  const [ow] = windowsOf(oshots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+  const nose = (0.35 * META.width - windowAt(ow, 3).x) / ow.w;
+  assert.ok(nose < 0.05, `the box centred leaves ${nose.toFixed(3)} of the window in front of the nose`);
+});
+
+test("a head that turns between two stills: its features go from the one side to the other, and the window keeps them in all the way", () => {
+  // the head stays where it is; at 0.1 s it looks left, at 3.1 s right
+  const ans = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [threeQuarter(0.1, 350, "left", -1), threeQuarter(3.1, 350, "right", 1)])] };
+  const shots = shotsOf(ans, [{ start: 0, end: 4 }], META);
+  const P = shots[0].people[0];
+  const mid = faceAt(P, 1.6);
+  near((mid.feat.x0 + mid.feat.x1) / 2, mid.x, 2);
+  assert.ok(faceAt(P, 0.5).feat.x0 < faceAt(P, 1.6).feat.x0 && faceAt(P, 1.6).feat.x0 < faceAt(P, 2.7).feat.x0);
+  const [w] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+  assert.equal(w.hold, "follows");
+  for (let t = 0; t < 4; t += 1 / FPS) {
+    const f = faceAt(P, t), win = windowAt(w, t);
+    assert.ok(f.feat.x0 >= win.x && f.feat.x1 <= win.x + w.w, `the features out of the window at ${t.toFixed(2)} s`);
+  }
+  const at0 = windowAt(w, 0.1), at4 = windowAt(w, 3.9), f0 = faceAt(P, 0.1), f4 = faceAt(P, 3.9);
+  assert.ok(f0.feat.x0 - at0.x > at0.x + w.w - f0.feat.x1, "looking left: the room on the left");
+  assert.ok(at4.x + w.w - f4.feat.x1 > f4.feat.x0 - at4.x, "looking right: the room on the right");
+  assert.deepEqual(edgesOf([w], shots, META).filter((e) => e.part === "features"), []);
+});
+
+test("a three-quarter close-up that sways does not make the window turn back within a second, and its features stay in", () => {
+  // the reviewer's guest in "deaths": a face 90 % of the window's width looking left, swaying
+  // ±100 px at 0.6 Hz, its features in the left half of its box
+  const w = (1080 * 9) / 16;
+  const P = tracked("guest", "A", (t) => ({ x: 960 + 100 * Math.sin(2 * Math.PI * 0.6 * t), y: 420, w: 0.9 * w, h: 600, parts: { l: -0.48, r: 0.05, t: -0.2, b: 0.3, lean: -1 } }), 0, 15);
+  const shots = [{ start: 0, end: 15, kind: "people", people: [P], faces: [{ speaker: "A", ...faceAt(P, 7) }] }];
+  const [win] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...HD, aspect: [9, 16] });
+  let lastDir = 0, lastTurn = -Infinity, turns = 0;
+  for (let t = 1 / FPS; t < 15; t += 1 / FPS) {
+    const x = windowAt(win, t).x, v = (x - windowAt(win, t - 1 / FPS).x) * FPS, dir = Math.abs(v) < 2 ? 0 : Math.sign(v);
+    const f = faceAt(P, t), [a, b] = holdOf(f, win.w, 0);
+    const leaving = a < x + 1 || b > x + win.w - 1;
+    if (dir && lastDir && dir !== lastDir) { assert.ok(t - lastTurn >= 1 || leaving, `turned back at ${t.toFixed(2)} s`); lastTurn = t; turns++; }
+    if (dir) lastDir = dir;
+    assert.ok(f.feat.x0 >= x - 1 && f.feat.x1 <= x + win.w + 1, `the features cut at ${t.toFixed(2)} s`);
+  }
+  assert.ok(turns / 15 <= 0.5, `${turns} turns in 15 s`);
+  assert.ok(win.closeup && win.closeup.features && win.closeup.inside === 1, JSON.stringify(win.closeup));
+  near(win.closeup.turns, turns / 15, 0.15);
+});
+
+test("the check tells eyes, nose or mouth at the edge (a fault) from only an ear or a cheek there", () => {
+  const ans = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [threeQuarter(2, 350)])] };
+  const shots = shotsOf(ans, [{ start: 0, end: 4 }], META);
+  const f = faceAt(shots[0].people[0], 2);
+  const at = (x) => edgesOf([{ start: 0, end: 4, shot: 0, kind: "people", w: 1216, h: 2160, keys: [{ t: 0, x, y: 0 }] }], shots, META).filter((e) => e.t === 2);
+  // the window's right edge through the ear: listed as the side only
+  assert.deepEqual(at(f.feat.x0 - 300).map((e) => [e.part, e.edge, e.cut]), [["side", "right", true]]);
+  // its left edge through the nose: a fault
+  assert.deepEqual(at(f.feat.x0 + 40).map((e) => [e.part, e.edge, e.cut]), [["features", "left", true]]);
+  // a small face (not a close-up) cut at its side is a fault, features or not
+  const small = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [{ t: 2, faces: [{ person: 0, box_2d: [300, 500, 450, 580], features_2d: [340, 500, 420, 540], looks: "left" }] }])] };
+  const sshots = shotsOf(small, [{ start: 0, end: 4 }], META);
+  const e = edgesOf([{ start: 0, end: 4, shot: 0, kind: "people", w: 1216, h: 2160, keys: [{ t: 0, x: 0.58 * 3840 - 30 - 1216, y: 0 }] }], sshots, META);
+  assert.ok(e.some((x) => x.cut && x.edge === "right" && x.part !== "side"), JSON.stringify(e));
+});
+
+test("the tracker does not trust a still that is far off its neighbours, keeps two crossing faces apart, and a face that leaves is absent, not cut", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const clip = (name, graph) => {
+      const file = path.join(dir, name);
+      const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=0x202020:s=1280x720:r=${FPS}:d=8`, "-f", "lavfi", "-i", `testsrc2=s=120x140:r=${FPS}:d=8`,
+        "-f", "lavfi", "-i", `mandelbrot=s=120x140:r=${FPS}`, "-filter_complex", graph, "-map", "[v]", "-t", "8", "-c:v", "libx264", "-preset", "ultrafast", file], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return greyFrames(file);
+    };
+    const box = (x) => ({ x: x + 60, y: 270, w: 120, h: 140 });
+    // a slip: the middle still put 500 px off
+    const walk = clip("walk.mp4", "[0:v][1:v]overlay=x='100+100*t':y=200,format=yuv420p[v]");
+    const slip = fillTrack(walk, [{ t: 0.5, ...box(150) }, { t: 4, ...box(500 + 500) }, { t: 7.5, ...box(850) }], 0, 8);
+    assert.deepEqual(slip.doubtful.map((d) => d.t), [4]);
+    near(faceAt({ track: slip }, 4).x, 560, 30);
+    // two faces crossing, the second in front: the one behind keeps its straight path
+    const cross = clip("cross.mp4", "[0:v][1:v]overlay=x='1000-120*t':y=200[a];[a][2:v]overlay=x='100+120*t':y=200,format=yuv420p[v]");
+    const back = { who: "back", speaker: "A", track: fillTrack(cross, [{ t: 0.5, ...box(940) }, { t: 7.5, ...box(100) }], 0, 8) };
+    const front = { who: "front", speaker: "B", track: fillTrack(cross, [{ t: 0.5, ...box(160) }, { t: 7.5, ...box(1000) }], 0, 8) };
+    uncross([back, front]);
+    for (let t = 3; t <= 5; t += 0.1) near(faceAt(back, t).x, 1060 - 120 * t, 40);
+    // leaving: out to the right after 3 s, back from 6 s; the still at 4.5 s has no face
+    const leave = clip("leave.mp4", "[0:v][1:v]overlay=x='if(lt(t,3),800+150*t,if(lt(t,6),1400,1400-150*(t-6)))':y=200,format=yuv420p[v]");
+    const away = { who: "A", speaker: "A", track: fillTrack(leave, [{ t: 1, ...box(950) }, { t: 4.5, absent: true }, { t: 7.5, ...box(1175) }], 0, 8) };
+    assert.equal(faceAt(away, 4.5), null);
+    assert.equal(faceAt(away, 3.8), null);
+    assert.ok(faceAt(away, 2));
+    const shots = [{ start: 0, end: 8, kind: "people", people: [away], faces: [{ speaker: "A", who: "A", ...box(950) }] }];
+    const windows = windowsOf(shots, [{ t: 0, speaker: "A" }], { width: 1280, height: 720, fps: FPS, aspect: [9, 16] });
+    assert.deepEqual(edgesOf(windows, shots, { fps: FPS }).filter((e) => e.t > 3.2 && e.t < 5.8), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a slide talk (the speaker a small inset beside the slides) stays whole; unsure, it stays whole and the list says how to cut it", () => {
+  // the reviewer's b6: one voice, its face 5 % of the height at the left, the slides filling the frame
+  const slide = (material) => ({ version: 2, shots: [{ ...shotAnswer(0, 40, "split", [{ who: "speaker", speaker: "A" }],
+    [5, 20, 35].map((t) => ({ t, faces: [{ person: 0, box_2d: [544, 93, 597, 126] }] }))), material }] });
+  for (const material of [true, undefined]) {
+    const [shot] = shotsOf(slide(material), [{ start: 0, end: 40 }], META);
+    assert.equal(shot.kind, "split");
+    assert.match(shot.note, material ? /material .* shown whole/ : /shown whole.*--follow/);
+    const [w] = windowsOf([shot], [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+    assert.ok(w.fit, "shown whole");
+  }
+});
+
+test("the sheet is there when it says so, also when the framed video ends a few frames before its sound", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const clip = path.join(dir, "clip.mp4"), framed = path.join(dir, "framed.mp4"), file = path.join(dir, "framed.sheet.jpg");
+    let r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=640x360:r=${FPS}:d=2.2`, "-c:v", "libx264", "-preset", "ultrafast", clip], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    // the reviewer's case: the picture 2.0 s, the sound 2.2 s, so its duration says 2.2
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=360x640:r=${FPS}:d=2.0`, "-f", "lavfi", "-i", "sine=d=2.2", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", framed], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const windows = [{ start: 0, end: 2.2, shot: 0, kind: "people", w: 202, h: 360, keys: [{ t: 0, x: 100, y: 0 }] }];
+    const files = sheet(clip, framed, windows, [{ start: 0, end: 2.2 }], [], file, { fps: FPS });
+    assert.deepEqual([...files], [file]);
+    assert.ok(fs.statSync(file).size > 1000);
+    assert.deepEqual(files.missing, []);
+    // a framed video with no picture at all: nothing is claimed, and what is missing is named
+    const empty = path.join(dir, "empty.mp4");
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=2.2", "-c:a", "aac", empty], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const none = sheet(clip, empty, windows, [{ start: 0, end: 2.2 }], [], path.join(dir, "none.jpg"), { fps: FPS });
+    assert.ok(none.missing.length >= 3, JSON.stringify(none.missing));
+    for (const f of none) assert.ok(fs.existsSync(f));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("prepare says a moment is too long only when it stays too long after its pauses are cut", async () => {
+  const { lengthNote } = await import("./lib/length.mjs");
+  assert.equal(lengthNote(58, 59), null);
+  // the reviewer's 59.5-66 s: they may fit once tightened (6-10 % off), so no warning, a word on what is known
+  assert.doesNotMatch(lengthNote(62, 59), /⚠/);
+  assert.match(lengthNote(62, 59), /about 56–58 s/);
+  // deaths: 79.3 s of words, 71.0 s cut
+  assert.match(lengthNote(79.3, 59), /⚠ .*stays over/);
+});
+
+test("a shot's stills are an odd number: the first, the middle and the last frame among them", () => {
+  for (const length of [2, 5, 7.5, 12, 30]) {
+    const stills = stillsOf([{ start: 0, end: length }], FPS);
+    assert.equal(stills.length % 2, 1, `${length} s: ${stills.length} stills`);
+    near(stills[(stills.length - 1) / 2].t, length / 2, 0.01);
+  }
 });
