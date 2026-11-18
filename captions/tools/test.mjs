@@ -31,10 +31,11 @@ import { cues } from "./lib/srt.mjs";
 import { measure } from "./lib/widths.mjs";
 import { zones, zonesTool } from "./lib/zones.mjs";
 
-// (ce60c3a, the last commit without the options, until 2026-11-18; then f6c0639, which changed
-// hormozi, karaoke and wipe on purpose; now the commit that lets every group shrink until its
-// widest word is inside its room)
-const BEFORE = process.env.CAPTIONS_BEFORE || "cecc7206272b1e36204750e39c652b2f0636fd29";
+// (ce60c3a, the last commit without the options, until 2026-11-18; then the commits of that day
+// that changed captions nobody placed on purpose: hormozi, karaoke and wipe; every group shrinks
+// until its widest word fits; now the one after the review, with one script for every style.
+// The commit must stay in the history: a merge that squashes it leaves the test skipped)
+const BEFORE = process.env.CAPTIONS_BEFORE || "72d9224c13c519ba7a9db00d091a198803b9b2eb";
 const TOOLS = path.dirname(fileURLToPath(import.meta.url)), REPO = path.dirname(path.dirname(TOOLS));
 const TOOL = path.join(TOOLS, "captions.mjs");
 const ZONES = zonesTool();
@@ -236,14 +237,15 @@ test("review 1: a narrow area holds every group in two lines, line by line, and 
   for (const text of texts(narrow.data)) assert.ok(!text.includes(" ") || linesOf(text, "hormozi", 420 / 96) <= 2, `"${text}" takes more than two lines of 420 px at 96 px`);
   assert.match(narrow.said, /\n {2}Wider than a line of this area at 96 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "browser"\.\n/);
   const named = built(t, ["--style", "hormozi", "--size", "1080x1920", "--max-width", "420", "--font-size", "110"], wordsOf(NARROW));
-  // ("which" is wider than a line at 110 px and stands alone, set smaller; "runs" after it would be on screen for a fifth of a second and stays with it)
-  assert.deepEqual(texts(named.data), ["For that", "I use", "Storrito,", "which runs", "in the", "browser", "and needs", "no app."]);
-  assert.match(named.said, /\n {2}A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: "runs"\.\n/);
+  // ("which" is wider than a line at 110 px and stands alone, set smaller; "runs" after it would be on screen for a fifth of a
+  // second and stays with it, as "and" stays with "browser": "needs" is wider than a line too, in the room hormozi keeps for the word that grows)
+  assert.deepEqual(texts(named.data), ["For that", "I use", "Storrito,", "which runs", "in the", "browser and", "needs", "no app."]);
+  assert.match(named.said, /\n {2}A short word beside one would only flash by: it stays with it, on a line of its own, and is set smaller too: "runs", "and"\.\n/);
   assert.doesNotMatch(narrow.said, /flash by/);   // at 96 px "which runs" sets: nothing joined
   // (but for the group of a word wider than a line, which is set smaller than 110 px)
-  const type = measure(STYLES.hormozi.look), tooWide = (text) => text.split(" ").some((w) => type.word(w) > 420 / 110);
-  for (const text of texts(named.data)) assert.ok(!text.includes(" ") || tooWide(text) || linesOf(text, "hormozi", 420 / 110) <= 2, `"${text}" takes more than two lines of 420 px at 110 px`);
-  assert.match(named.said, /at 110 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "which", "browser"\./);
+  const type = measure(STYLES.hormozi.look), grown = (420 - 2 * Math.ceil(0.04 * 420)) / 110, tooWide = (text) => text.split(" ").some((w) => type.word(w) > grown);
+  for (const text of texts(named.data)) assert.ok(!text.includes(" ") || tooWide(text) || linesOf(text, "hormozi", grown) <= 2, `"${text}" takes more than two lines of 420 px at 110 px`);
+  assert.match(named.said, /at 110 px, so each stands alone, set smaller \(or broken at its hyphen\): "Storrito,", "which", "browser", "needs"\./);
 });
 
 test("review 2: without a named size the groups set at the style's size, not at the least it shrinks to; a card stays whole and the tool says so", { skip: noZones }, (t) => {
@@ -264,12 +266,12 @@ test("review 3: the area holds a style's box whole, and the warning judges the b
   const left = built(t, [...opts, "--align", "left"], wordsOf(BIG_BOX));
   // the box counts with its padding, whatever the host sets, and the padding is no room for a word
   assert.match(left.html, /#root \.cap-group\.boxed \{ box-sizing: border-box; width: fit-content; max-width: 824px;/);
-  assert.match(left.html, /if \(el\.classList\.contains\("cap-card"\) \|\| el\.classList\.contains\("boxed"\)\) \{/);
+  assert.match(left.html, /if \(el\.classList\.contains\("cap-card"\) \|\| el\.classList\.contains\("padded"\) \|\| el\.classList\.contains\("boxed"\)\) \{/);
   assert.deepEqual(texts(left.data), ["That is", "straightforward,", "and it works", "automatically."]);
   assert.match(left.said, /\nThat is inside the safe box of /);
   assert.match(left.said, /hyphen\): "straightforward,", "automatically\."\./);
   // captions nobody placed keep the box they had
-  assert.match(built(t, ["--style", "clean", "--size", "1920x1080"], wordsOf(BIG_BOX)).html, /#root \.cap-group\.boxed \{ width: fit-content;[^}]*\}\n[\s\S]*if \(el\.classList\.contains\("cap-card"\)\) \{/);
+  assert.match(built(t, ["--style", "clean", "--size", "1920x1080"], wordsOf(BIG_BOX)).html, /#root \.cap-group\.boxed \{ width: fit-content;[^}]*\}\n[\s\S]*if \(el\.classList\.contains\("cap-card"\) \|\| el\.classList\.contains\("padded"\)\) \{/);
   // the letters of one line end inside the safe box, the box around them does not
   const safeTop = zones(1920, 1080).safe[1], y = safeTop + Math.round(110 * 1.3) + 10, top = Math.round(y - 110 * 1.3 - 0.44 * 110);
   const high = built(t, [...opts, "--lines", "1", "--y", String(y)], wordsOf(BIG_BOX));
@@ -334,6 +336,16 @@ test("a mark alone is no caption: it joins the word said beside it, or is left o
   assert.deepEqual(texts([w("„", 0, 0.02), w("Hallo", 0.03, 0.3), w("“", 0.31, 0.33), w("sagt", 0.4, 0.6), w("er", 0.61, 0.7), w("–", 0.72, 0.75), w("leise.", 0.8, 1.1)]), ["„Hallo“", "sagt", "er –", "leise."]);
   // the times are the words': a joined mark moves none
   assert.deepEqual(fold([w("Well", 0, 0.3), w("…", 0.35, 0.4)]).map((x) => [x.start, x.end]), [[0, 0.3]]);
+  // of a pair of double quotation marks the first opens and the second closes, whatever their shape; a currency sign goes with the number after it; "@" and "#" with their word
+  assert.deepEqual(texts([w("He", 0, 0.2), w("said", 0.25, 0.5), w('"', 0.55, 0.6), w("hello", 0.65, 0.9), w('"', 0.95, 1), w("and", 1.05, 1.2), w("costs", 1.25, 1.5), w("$", 1.55, 1.6), w("5", 1.65, 1.8), w("now.", 1.85, 2)]), ["He", "said", '"hello"', "and", "costs", "$5", "now."]);
+  assert.deepEqual(texts([w("sagte", 0, 0.3), w("»", 0.35, 0.4), w("Hallo", 0.45, 0.7), w("«", 0.75, 0.8), w("folgt", 0.85, 1.1), w("@", 1.15, 1.2), w("storrito", 1.25, 1.6)]), ["sagte", "»Hallo«", "folgt", "@storrito"]);
+  // a mark that waited for its word and was left behind by a pause is not carried to a later one
+  assert.deepEqual(texts([w("…", 1, 1.1), w("(", 3, 3.02), w("Hello", 3.05, 3.4)]), ["(Hello"]);
+  // a mark stays on its side of a card's edge, and what it carried goes to the word it joined
+  const card = fold([{ ...w("one", 0, 0.2), box: 1 }, { ...w("foot", 0.25, 0.5), box: 1 }, w("–", 0.55, 0.6), w("wide", 0.65, 0.9)]);
+  assert.deepEqual(card.map((x) => [x.text, x.box ?? null]), [["one", 1], ["foot", 1], ["– wide", null]]);
+  assert.deepEqual(fold([w("Tom", 0, 0.3), { ...w("&", 0.32, 0.4), highlight: true }, w("Jerry", 0.42, 0.8)]).map((x) => [x.text, !!x.highlight]), [["Tom &", true], ["Jerry", false]]);
+  assert.deepEqual(fold([{ ...w("–", 0, 0.1), box: 2, icon: "📏" }, { ...w("one", 0.15, 0.4), box: 2 }]).map((x) => [x.text, x.icon]), [["– one", "📏"]]);
   const plain = [w("a", 0, 1), w("b", 1, 2)];
   assert.equal(fold(plain), plain);   // nothing to join: the very words
   // in the pictures no group is a mark, in the subtitle file no cue; a soft hyphen is for the picture alone
@@ -351,15 +363,20 @@ test("in capitals the letter of a paragraph and a gender ending stay small; noth
     assert.deepEqual(all.filter((w) => w.own).map((w) => w.text), ["§ 202a", "GENERALIST:innen", "LEHRER*in"], style);
     assert.deepEqual(all.filter((w) => !w.own).map((w) => w.text), ["Nach", "sind", "und", "eine", "gefragt,", "10kg", "im", "5G", "Netz."], style);
     assert.match(b.html, /#root \.cap-word\.own \{ text-transform: none; \}/);
-    assert.match(b.html, /if \(w\.own\) s\.className \+= " own";/);
   }
   // other endings after their mark; a slash or an underscore only where it cannot be anything else
   const more = built(t, ["--style", "hormozi", "--size", "1080x1920"], wordsOf("Für jede:n Mitarbeiter/innen und/oder @brand_in mit 5km/h."));
   assert.deepEqual(more.data.groups.flatMap((g) => g.words).filter((w) => w.own).map((w) => w.text), ["JEDE:n", "MITARBEITER/innen"]);
-  // a style in sentence case writes the words as they are, and a file without such words has nothing of this
+  // only a number with one small letter at its end: an abbreviation, a unit or a compound with a digit in it is set in capitals as ever
+  const digits = built(t, ["--style", "hormozi", "--size", "1080x1920"], wordsOf("Im b2b mit h2o bei 5m/s im 3d-druck und 2l/100km. in Haus 12b, um 12:30h."));
+  assert.deepEqual(digits.data.groups.flatMap((g) => g.words).filter((w) => w.own).map((w) => w.text), ["12b,", "12:30h."]);
+  // the tool says which words it wrote so, and nothing where there are none
+  assert.match(more.said, /\n {2}\(in capitals but for small letters that would say something else: "JEDE:n", "MITARBEITER\/innen"\)\n/);
+  assert.doesNotMatch(built(t, ["--style", "hormozi", "--size", "1080x1920"]).said, /small letters/);
+  // a style in sentence case writes the words as they are
   const bold = built(t, ["--style", "bold", "--size", "1080x1920"], wordsOf(said));
-  assert.ok(!bold.data.groups.some((g) => g.words.some((w) => w.own)) && !/\.own/.test(bold.html));
-  assert.doesNotMatch(built(t, ["--style", "hormozi", "--size", "1080x1920"]).html, /\.own/);
+  assert.ok(!bold.data.groups.some((g) => g.words.some((w) => w.own)));
+  assert.doesNotMatch(bold.said, /small letters/);
 });
 
 test("a key word in another typeface is measured in it; a short word that would flash by beside a word wider than a line joins it", { skip: noZones }, (t) => {
@@ -390,7 +407,7 @@ test("a key word in another typeface is measured in it; a short word that would 
 // ---- the styles ---------------------------------------------------------------------------------
 
 test("every style builds in every frame, every word once and in order; what only some styles have is only in their files", { skip: noZones }, (t) => {
-  const has = { lineBox: /#root \.cap-box \{/, keyFont: /#root \.cap-word\.key \{/, fill: /M\.active === "fill"/ };
+  const has = { lineBox: /#root \.cap-box \{/, keyFont: /#root \.cap-word\.key \{/, sides: /#root \.cap-group\.padded \{/ };
   for (const [name, s] of Object.entries(STYLES)) for (const size of ["1080x1920", "1920x1080", "1080x1080"]) {
     const b = built(t, ["--style", name, "--size", size]), at = `${name} ${size}`;
     assert.equal(texts(b.data).join(" "), SAID, at);
@@ -398,7 +415,7 @@ test("every style builds in every frame, every word once and in order; what only
     for (const g of b.data.groups) assert.ok(g.words.length <= s.group.words, `${at}: "${g.words.map((w) => w.text).join(" ")}" has more words than the style's ${s.group.words}`);
     assert.equal(has.lineBox.test(b.html), !!s.look.lineBox, `${at}: a box for every line`);
     assert.equal(has.keyFont.test(b.html), !!s.look.keyFont, `${at}: key words in another typeface`);
-    assert.equal(has.fill.test(b.html), s.motion.active === "fill", `${at}: words that wait and fill`);
+    assert.equal(has.sides.test(b.html), !!s.look.pill || (s.motion.active === "color-scale" && s.look.grow > 1), `${at}: room kept at the sides of a line (a pill's overhang, a word that grows)`);
     // a style whose words wait says in which colour, one whose lines have a box how far it reaches
     if (s.motion.active === "fill") assert.ok(s.look.wait, `${name}: no look.wait`);
     if (s.look.lineBox) assert.ok(Array.isArray(s.look.linePad) && s.look.linePad.length === 2, `${name}: no look.linePad [above and below, left and right]`);
@@ -465,6 +482,9 @@ test("a brand's colour goes where the style shows one: the word being said, the 
   assert.equal(yellow.look.highlight, STYLES.label.look.highlight);
   assert.match(yellow.said, /would not be read on the box of its line/);
   // fill's key words keep the colour on the picture: weighed too, and then the word being said keeps the style's as well
+  // the build line names the brand's font where the captions take it, not where the style keeps its own
+  assert.match(branded(t, "bold", "#FF5A1F").said, /, font Brand Sans\n/);
+  assert.doesNotMatch(branded(t, "impact", "#FF5A1F").said, /font Brand Sans/);
   const filled = branded(t, "fill", "#1E3A8A");
   assert.deepEqual([filled.look.accent, filled.look.highlight], [STYLES.fill.look.accent, STYLES.fill.look.highlight]);
   assert.match(filled.said, /\n {2}\(the brand's #1E3A8A would not be read on a picture: the word being said and the key words keep the style's #FFE500\)\n/);
@@ -516,7 +536,8 @@ const CHROME = chromePath();
 // that sets `box-sizing: border-box` on everything (as `project` writes one) or sets nothing.
 // The style's font is loaded before the captions' own script fits the groups (else they would be
 // fitted in a stand-in font). Per group: { text, size, lines, box: [left, top, right, bottom] in
-// px of the frame, words: [left, right] of its words, lineBoxes: the box of each line as `box`
+// px of the frame, words: [left, right] of its words, tall: its highest word in the type's size
+// (a word that breaks inside itself is two lines high), lineBoxes: the box of each line as `box`
 // when the style has them }; null when Chrome gave nothing, "no font" when the font did not come.
 function laidOut(t, html, borderBox) {
   const template = html.match(/<template>([\s\S]*)<\/template>/)[1], [, w, h] = template.match(/data-width="(\d+)" data-height="(\d+)"/);
@@ -537,7 +558,8 @@ function measured(n) {
     var lines = tops.filter(function (y, i) { return !i || y - tops[i - 1] > size * 0.5; }).length;
     var laid = el.querySelectorAll(".cap-box"), reach = [Infinity, -Infinity];
     Array.prototype.forEach.call(el.querySelectorAll(".cap-word"), function (c) { var b = c.getBoundingClientRect(); reach = [Math.min(reach[0], Math.round(b.left - at.left)), Math.max(reach[1], Math.round(b.right - at.left))]; });
-    return { text: el.textContent, size: size, lines: lines, words: reach, box: [r.left - at.left, r.top - at.top, r.right - at.left, r.bottom - at.top].map(Math.round),
+    var tall = Math.max.apply(null, Array.prototype.map.call(el.querySelectorAll(".cap-word"), function (c) { return c.getBoundingClientRect().height / size; }));
+    return { text: el.textContent, size: size, lines: lines, words: reach, tall: Math.round(tall * 100) / 100, box: [r.left - at.left, r.top - at.top, r.right - at.left, r.bottom - at.top].map(Math.round),
       lineBoxes: laid.length ? Array.prototype.map.call(laid, function (c) { var b = c.getBoundingClientRect(); return [b.left - at.left, b.top - at.top, b.right - at.left, b.bottom - at.top].map(Math.round); }) : null };
   })));
 }
@@ -564,6 +586,8 @@ test("in Chrome: the review's sentences stand in the lines and at the size asked
     { words: BIG_BOX, opts: ["--style", "clean", "--size", "1920x1080", "--x", "1000", "--max-width", "824", "--align", "right", "--font-size", "110"] },
     { words: SAID, opts: ["--style", "karaoke", "--size", "1080x1350", "--max-width", "540", "--align", "left", "--font-size", "84"] },
     { words: SAID, opts: ["--style", "wipe", "--size", "1920x1080", "--x", "704", "--max-width", "1120", "--align", "left", "--font-size", "138"] },
+    // karaoke: a word's pill reaches past its letters, but only what its margin leaves counts against the line, in the browser as in the measure
+    { words: "We talk about Bedeutung today and more.", opts: ["--style", "karaoke", "--size", "1080x1350", "--max-width", "540", "--align", "left", "--font-size", "84"] },
     // a key word in a serif of its own, wider than the sans: measured in it, so the groups are cut for it and none is shrunk
     { words: "Today I show you how Storrito plans it all.", more: { 5: { highlight: true } }, opts: ["--style", "editorial", "--size", "1080x1920", "--max-width", "360"] },
     // a short word that stays with a word wider than a line: both set as small as the wide one takes
@@ -647,4 +671,40 @@ test("in Chrome: a word alone that is wider than its line is set as small as it 
     // the big styles' type would pass the area even at the least size the others shrink to: there the word goes under it
     if (["hormozi", "wipe"].includes(style)) assert.ok(sizes.whole < STYLES[style].look.size * 0.55, `${style}: ${sizes.whole} px`);
   }
+});
+
+test("a word's text that is a number builds as its digits, in the picture and in the subtitle file", { skip: noZones }, (t) => {
+  const words = [{ text: "Seit", start: 0.3, end: 0.5 }, { text: 2024, start: 0.52, end: 0.9 }, { text: "online.", start: 0.92, end: 1.3 }];
+  for (const style of ["hormozi", "bold"]) assert.deepEqual(texts(built(t, ["--style", style, "--size", "1080x1920"], words).data).join(" "), "Seit 2024 online.");
+  const dir = folder(t), r = run(TOOL, dir, ["srt", "words.json", "out.srt"], words);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(fs.readFileSync(path.join(dir, "out.srt"), "utf8"), /Seit 2024 online\./);
+});
+
+test("in Chrome: a key word that breaks inside itself has two lines, a label's box hugs each of them, and a word that grows has room to", { skip: noZones || (!CHROME && "no Chrome on this machine (CHROME names one)") }, (t) => {
+  const lay = (opts, words) => { const b = built(t, opts, words), seen = laidOut(t, b.html, true); return { b, seen }; };
+  const skipped = (seen, name) => (!seen ? t.skip(`Chrome did not lay the page out (${name})`) : seen === "no font" ? t.skip(`the style's font did not load, no network? (${name})`) : false);
+  // editorial: the compound is a key word and wider than a line in its serif: it breaks at its hyphen into two lines of the usual pitch (with no height of its own they lay on each other)
+  const ed = lay(["--style", "editorial", "--size", "1080x1920"], wordsOf("Unsere Content-Marketing-Strategie wirkt endlich.", { 1: { highlight: true } }));
+  if (skipped(ed.seen, "editorial") !== false) return;
+  const broken = ed.seen[ed.b.data.groups.findIndex((g) => g.words.some((w) => w.text === "Content-Marketing-Strategie"))];
+  assert.ok(broken.tall > 2 && broken.tall < 3.2, `the key word is ${broken.tall} of the type's size high: two lines of ${STYLES.editorial.look.lineHeight}`);
+  // and a line with a key word is as high as a line without: two-line captions are all the same height
+  const even = lay(["--style", "editorial", "--size", "1080x1920", "--max-width", "400"], wordsOf("Today I show you how Storrito plans it all for you.", { 5: { highlight: true } }));
+  const twoLines = even.seen.map((g, i) => ({ ...g, key: even.b.data.groups[i].words.some((w) => w.key) })).filter((g) => g.lines === 2 && g.size === even.b.data.size);
+  assert.ok(twoLines.some((g) => g.key) && twoLines.some((g) => !g.key), `two-line captions with and without a key word: ${twoLines.map((g) => `"${g.text}"`).join(", ")}`);
+  const heights = twoLines.map((g) => g.box[3] - g.box[1]);
+  assert.ok(Math.max(...heights) - Math.min(...heights) <= 1, `two-line captions are ${heights.join(", ")} px high`);
+  // label: a word that breaks at its soft hyphen has a box for each of its lines, each as wide as its text
+  const la = lay(["--style", "label", "--size", "1080x1920"], wordsOf("Viele Verwaltungs\u00ADwissenschaftler*innen sagen das."));
+  if (skipped(la.seen, "label") !== false) return;
+  const two = la.seen[la.b.data.groups.findIndex((g) => g.words.some((w) => w.text.includes("\u00AD")))].lineBoxes.sort((a, z) => a[1] - z[1]);
+  assert.equal(two.length, 2, "a box for each line of the broken word");
+  assert.ok(two[0][2] - two[0][0] < (two[1][2] - two[1][0]) * 0.85, `the box of "Verwaltungs-" is ${two[0][2] - two[0][0]} px wide, that of the longer line ${two[1][2] - two[1][0]}`);
+  for (const [x0, , x1] of two) assert.ok(x0 >= la.b.data.left - 1 && x1 <= la.b.data.left + la.b.data.maxWidth + 1, `a box (x ${x0}–${x1}) leaves the area`);
+  // hormozi: the word being said grows by 8 %; a full line keeps half of that at each side, so the grown word stays inside the area
+  const ho = lay(["--style", "hormozi", "--size", "1080x1920"], wordsOf("Am Montagmorgen ist dann die ganze Woche fertig."));
+  if (skipped(ho.seen, "hormozi") !== false) return;
+  const d = ho.b.data, room = Math.ceil(((STYLES.hormozi.look.grow - 1) / 2) * d.maxWidth);
+  for (const g of ho.seen) assert.ok(g.words[0] >= d.left + room - 1 && g.words[1] <= d.left + d.maxWidth - room + 1, `"${g.text}" reaches x ${g.words[0]}–${g.words[1]}: no room to grow in x ${d.left}–${d.left + d.maxWidth}`);
 });

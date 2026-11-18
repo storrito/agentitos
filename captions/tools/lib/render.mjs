@@ -8,14 +8,24 @@
 import fs from "node:fs";
 import path from "node:path";
 import { groups, activeSpans, fold } from "./group.mjs";
-import { measure } from "./widths.mjs";
+import { measure, PILL } from "./widths.mjs";
 
 export const ID = "captions";
-// a pill's padding left and right of its word, and how far a margin draws it back (em): what is
-// left, 2 × (pad − pull), is the room a word takes beyond its letters (widths.mjs counts it)
-export const PILL = { pad: 0.22, pull: 0.14 };
 const n = (x) => +x.toFixed(3);
 const json = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
+
+// A word as a style in capitals shows it: all capitals but for the letters that must stay small
+// (see writeCaptions); null when it has none and the style's own transform will do.
+const NUMBER_LETTER = /^([^\p{L}\d]*\d[\d.,:]*)(\p{Ll})[^\p{L}\d]*$/u;
+const ENDING = /(?<=\p{L}[:*·]\u00AD?)(?:innen|in|r|e|n)(?!\p{L})|(?<=\p{L}\/\u00AD?)(?:innen|in)(?!\p{L})|(?<=\p{L}_\u00AD?)innen(?!\p{L})/gu;
+function capitals(text) {
+  const keep = [...text.matchAll(ENDING)].map((m) => [m.index, m.index + m[0].length]), letter = NUMBER_LETTER.exec(text);
+  if (letter) keep.push([letter[1].length, letter[1].length + letter[2].length]);
+  if (!keep.length) return null;
+  let out = "", at = 0;
+  for (const [from, to] of keep.sort((a, b) => a[0] - b[0])) { out += text.slice(at, from).toUpperCase() + text.slice(from, to); at = to; }
+  return out + text.slice(at).toUpperCase();
+}
 
 // How far two colours are apart in lightness (WCAG's contrast ratio, 1 to 21); null when one is
 // neither a hex colour (#rgb, #rrggbb, #rrggbbaa) nor rgb() / rgba().
@@ -115,7 +125,11 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   // box each line has (linePad), is no room for them. A phrase whose groups set keeps them, any
   // other is cut anew (group.mjs). Captions
   // that are only moved or aligned keep the style's groups.
-  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : look.pill ? 2 * PILL.pull * area.type : 0)) / area.type;
+  // A word that grows while it is said (hormozi) would pass the area by half its growth at each
+  // end of a full line (22 px in a 696 px line): the group keeps that much room at both sides.
+  const inset = style.motion.active === "color-scale" && look.grow > 1 ? Math.ceil(((look.grow - 1) / 2) * area.maxWidth) : 0;
+  // (what a group keeps at its sides is no room for a word: a box's padding, a pill's overhang, the room to grow)
+  const type = area.own ? measure(style.look) : null, room = (area.maxWidth - (look.box ? area.type : look.lineBox ? 2 * look.linePad[1] * area.type : look.pill ? 2 * PILL.pull * area.type : 2 * inset)) / area.type;
   const group = type ? { ...style.group, fit: { lines: area.lines, room, space: type.space, word: (text, w) => type.word(text, !!w?.highlight) } } : style.group;
 
   // a box (a run of words with `box`): a card of its own, an emoji in front when its first word
@@ -132,20 +146,20 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   const wide = type ? gs.flatMap((g) => (g.box ? [] : g.words.filter(tooWide).map((w) => w.text))) : [];
   const joined = type ? gs.flatMap((g) => (!g.box && g.words.length > 1 && g.words.some(tooWide) ? g.words.filter((w) => !tooWide(w)).map((w) => w.text) : [])) : [];
   // In capitals a few letters stay small, or they say something else: the letter of a paragraph
-  // or a house number ("§ 202a", "12b": one small letter after a digit, at the word's end) and a
-  // gender ending after its mark ("Generalist:innen", "Lehrer*in", "jede:r", "Lehrer·innen";
-  // after a slash or an underscore only the unmistakable ones, "Mitarbeiter/innen", not
-  // "und/oder" or a handle "@name_in"). Such a word is written into the file in its capitals
-  // and is not transformed again (`own`).
+  // or a house number, when the word is a number with one small letter at its end ("§ 202a",
+  // "12b,", "5m": not "b2b", "5m/s" or "3d-druck"), and a gender ending after its mark
+  // ("Generalist:innen", "Lehrer*in", "jede:r", "Lehrer·innen"; after a slash or an underscore
+  // only the unmistakable ones, "Mitarbeiter/innen", not "und/oder" or a handle "@name_in").
+  // Such a word is written into the file in its capitals and is not transformed again (`own`);
+  // the caller is told which (`small`).
+  const small = [];
   if (look.case === "upper") for (const g of gs) for (const w of g.words) {
-    const small = [...w.text.matchAll(/(?<=\d)\p{Ll}(?![\p{L}\d])|(?<=\p{L}[:*·]\u00AD?)(?:innen|in|r|e|n)(?!\p{L})|(?<=\p{L}\/\u00AD?)(?:innen|in)(?!\p{L})|(?<=\p{L}_\u00AD?)innen(?!\p{L})/gu)];
-    if (!small.length) continue;
-    let text = "", at = 0;
-    for (const m of small) { text += w.text.slice(at, m.index).toUpperCase() + m[0]; at = m.index + m[0].length; }
-    w.text = text + w.text.slice(at).toUpperCase();
+    const text = capitals(w.text);
+    if (text == null) continue;
+    w.text = text;
     w.own = true;
+    small.push(text);
   }
-  const own = gs.some((g) => g.words.some((w) => w.own));
   // groupKey: a caption that holds a key word stands whole in the key colour
   if (look.groupKey) for (const g of gs) if (!g.box && g.words.some((w) => w.key)) for (const w of g.words) w.key = true;
   const data = { groups: gs, look, motion: style.motion, lines: area.lines,
@@ -155,8 +169,9 @@ export function writeCaptions(out, { words: said, style, width, height, duration
   const origin = area.align === "center" ? "" : ` transform-origin: ${area.align === "left" ? "0%" : "100%"} 50%;`;
   // Where the caller placed them, the area holds a style's box whole, its padding too, whatever
   // box-sizing the host sets: the box counts with its padding, and the padding is no room for a
-  // word (both go into the rule and into fit() of the script below).
-  const whole = place ? " box-sizing: border-box;" : "", padded = (place ? ' || el.classList.contains("boxed")' : "") + (look.lineBox ? ' || el.classList.contains("lined")' : "") + (look.pill ? " || true" : "");
+  // word (both go into the rule and into fit() of the script below). A group with room kept at
+  // its sides (a box for every line, a pill's overhang, a word that grows) is `padded` likewise.
+  const whole = place ? " box-sizing: border-box;" : "", padded = place ? ' || el.classList.contains("boxed")' : "";
   // (a box around two lines is as wide as the area: centred that is even, at one side it would
   // stand out past its text; this goes into fit() too)
   const hug = area.align === "center" ? "" : `
@@ -167,68 +182,33 @@ export function writeCaptions(out, { words: said, style, width, height, duration
               el.style.width = Math.ceil(to - from) + 1 + parseFloat(box.paddingLeft) + parseFloat(box.paddingRight) + 2 * parseFloat(box.borderLeftWidth) + "px";
             }`;
 
-  // What only some styles have, written only for them (the other styles' files stay as they were):
-  //   lineBox   each line on a box of its own that hugs its text: once a group is fitted, a box
-  //             is laid behind every line, as high as the line and as wide as its words, with
-  //             linePad around them. The boxes are sized by the line, not by the font's own
-  //             ascent and descent, so a brand's font sits in them as the style's does. The
-  //             padding left and right is no room for a word, and the lowest box ends where
-  //             the lowest line would (the group stands higher by the padding). A card keeps
-  //             its own box, in the lines' colour (its words are the style's, dark on light).
-  //   keyFont   key words in another typeface, larger (keyScale); they take no height of their
-  //             own (line-height 0), so a line with one is as high as a line without
-  //   active "fill"   the words wait in look.wait; the one being said takes the accent (a key word
-  //             its key colour) and stays in look.color once it is said. A word shorter than
-  //             the light-up is lit by its end, so two tweens never hold its colour at once
-  //             (the colour would depend on where the timeline was sought from)
+  // The rules only some looks have:
   //   pill      the word being said on a pill: every word has the pill's padding, drawn back by
   //             a margin so that the pill reaches into the gaps instead of widening them (the
   //             gaps were twice a word space); the group keeps the pill's overhang at a line's
   //             ends inside its area
-  const rules = (own ? `
-        #root .cap-word.own { text-transform: none; }` : "") + (look.pill ? `
-        #root .cap-group:not(.cap-card) { box-sizing: border-box; padding: 0 ${PILL.pull}em; }` : "") + (look.lineBox ? `
+  //   lineBox   each line on a box of its own that hugs its text: once a group is fitted, a box
+  //             is laid behind every line of text (a word that breaks inside itself has two),
+  //             as high as the line and as wide as its text, with linePad around it. The boxes
+  //             are sized by the line, not by the font's own ascent and descent, so a brand's
+  //             font sits in them as the style's does. The padding left and right is no room
+  //             for a word, and the lowest box ends where the lowest line would (the group
+  //             stands higher by the padding). A card keeps its own box, in the lines' colour
+  //             (its words are the style's, dark on light).
+  //   keyFont   key words in another typeface, larger (keyScale). Their lines keep the pitch of
+  //             the others (a key word that breaks inside itself has two lines too); a taller
+  //             typeface would push its line down, so its top counts a fifth of its size less.
+  const rules = (look.pill ? `
+        #root .cap-group.padded { box-sizing: border-box; padding: 0 ${PILL.pull}em; }` : "") + (inset ? `
+        #root .cap-group.padded { box-sizing: border-box; padding: 0 ${inset}px; }` : "") + (look.lineBox ? `
         #root .cap-group.lined { box-sizing: border-box; padding: 0 ${look.linePad[1]}em; margin-bottom: ${look.linePad[0]}em; }
         #root .cap-group.lined .cap-word { position: relative; }
         #root .cap-box { position: absolute; background: ${look.lineBox}; border-radius: ${look.lineRadius || "0.2em"}; }
         #root .cap-group.cap-card { background: ${look.lineBox}; }` : "") + (look.keyFont ? `
         #root .cap-word.key { font-family: "${look.keyFont}", serif; font-weight: ${look.keyWeight || look.weight}; font-style: ${look.keyItalic ? "italic" : "normal"};
-          font-size: ${look.keyScale || 1}em; line-height: 0; letter-spacing: 0; }` : "");
-  const wordMore = (own ? `
-              if (w.own) s.className += " own";` : "") + (look.keyFont ? `
-              if (w.key) s.className += " key";` : "") + (style.motion.active === "fill" ? `
-              s.style.color = L.wait;` : "");
-  const lined = look.lineBox ? `
-            if (!g.box) el.className += " lined";` : "";
-  const boxes = look.lineBox ? `
-          // a box behind every line of a fitted group: the words whose tops lie within half the type's size are one line
-          function boxes(el) {
-            var size = parseFloat(el.style.fontSize), padY = L.linePad[0] * size, padX = L.linePad[1] * size, lines = [];
-            Array.prototype.forEach.call(el.querySelectorAll(".cap-word"), function (w) {
-              var last = lines[lines.length - 1];
-              if (last && Math.abs(w.offsetTop - last.top) < size * 0.5) last.right = w.offsetLeft + w.offsetWidth;
-              else lines.push({ top: w.offsetTop, left: w.offsetLeft, right: w.offsetLeft + w.offsetWidth, height: w.offsetHeight });
-            });
-            lines.forEach(function (line) {
-              var box = document.createElement("div");
-              box.className = "cap-box";
-              box.style.left = line.left - padX + "px";
-              box.style.top = line.top - padY + "px";
-              box.style.width = line.right - line.left + 2 * padX + "px";
-              box.style.height = line.height + 2 * padY + "px";
-              el.insertBefore(box, el.firstChild);
-            });
-          }` : "", boxed = look.lineBox ? `
-              if (el.classList.contains("lined")) boxes(el);` : "";
-  // in "punch": the group is there at once, a little smaller, and snaps to its size (a pop without
-  // the frame in which it is half transparent: at 30 fps a word of a tenth of a second has three)
-  const punch = style.motion.in === "punch" ? `
-              if (M.in === "punch") tl.fromTo(el, { scale: 0.84 }, { scale: 1, duration: 0.1, ease: "power3.out" }, g.start);` : "";
-  const fill = style.motion.active === "fill" ? `
-                if (M.active === "fill") {
-                  tl.to(s, { color: w.key ? L.highlight : L.accent, duration: Math.max(0.01, Math.min(0.08, w.end - w.start)), ease: "power1.out" }, w.start);
-                  if (!w.key && L.accent !== L.color) tl.to(s, { color: L.color, duration: 0.05, ease: "power1.out" }, w.end);
-                }` : "";
+          font-size: ${look.keyScale || 1}em; line-height: ${n(look.lineHeight / (look.keyScale || 1))}; margin-top: -0.2em; letter-spacing: 0; }` : "");
+  // which groups keep room at their sides that is no room for a word (a card has its own padding)
+  const sides = look.lineBox ? "lined padded" : look.pill || inset ? "padded" : "";
 
   const html = `<!doctype html>
 <html>
@@ -252,13 +232,16 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
         #root .cap-icon { display: inline-block; margin-right: 0.3em; text-transform: none; font-weight: 400; }
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
           ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * area.grow)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
-          ${look.pill ? `padding: 0.04em ${PILL.pad}em; margin: 0 -${PILL.pull}em; border-radius: 0.28em;` : ""} transform-origin: 50% 60%; }${rules}
+          ${look.pill ? `padding: 0.04em ${PILL.pad}em; margin: 0 -${PILL.pull}em; border-radius: 0.28em;` : ""} transform-origin: 50% 60%; }
+        #root .cap-word.own { text-transform: none; }${rules}
       </style>
       <div id="root" data-composition-id="${ID}" data-width="${width}" data-height="${height}"${duration ? ` data-duration="${n(duration)}"` : ""}></div>
       <script>
         (function () {
           var DATA = ${json(data)};
           var L = DATA.look, M = DATA.motion, root = document.getElementById("root");
+          // SIDES: the classes of a group that keeps room at its sides; PULL: how much of a word's box a margin draws back (a pill's padding), in the type's size
+          var SIDES = ${JSON.stringify(sides)}, PULL = ${look.pill ? 2 * PILL.pull : 0};
           var els = DATA.groups.map(function (g, gi) {
             var el = document.createElement("div");
             el.className = "cap-group" + (L.box ? " boxed" : "") + (g.box ? " cap-card" : "");
@@ -276,9 +259,13 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
               s.className = "cap-word";
               s.id = "cap-g" + gi + "-w" + wi;
               s.textContent = w.text;
-              if (w.key) s.style.color = L.highlight;${wordMore}
+              if (w.key) s.style.color = L.highlight;
+              if (w.own) s.className += " own";
+              if (w.key && L.keyFont) s.className += " key";
+              if (M.active === "fill") s.style.color = L.wait;
               el.appendChild(s);
-            });${lined}
+            });
+            if (!g.box && SIDES) el.className += " " + SIDES;
             root.appendChild(el);
             return el;
           });
@@ -289,21 +276,44 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
             for (; size > least; size -= 2) {
               el.style.fontSize = size + "px";
               var high = el.offsetHeight, room = DATA.maxWidth;
-              if (el.classList.contains("cap-card")${padded}) {   // a card's own padding and border are no lines of text, and no room for a word
+              if (el.classList.contains("cap-card") || el.classList.contains("padded")${padded}) {   // a card's own padding and border are no lines of text, and no room for a word
                 var cs = getComputedStyle(el);
                 high = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
                 room = DATA.maxWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 2 * parseFloat(cs.borderLeftWidth);
               }
               var lines = high / (size * L.lineHeight);
-              var widest = Math.max.apply(null, Array.prototype.map.call(el.children, function (c) { return c.offsetWidth; }));
+              var widest = Math.max.apply(null, Array.prototype.map.call(el.children, function (c) { return c.offsetWidth; })) - PULL * size;
               // (the words are inline blocks between spaces: the lines balance, no word is left alone)
               if (lines <= DATA.lines + 0.35 && widest <= room) break;
             }
             el.style.fontSize = size + "px";
             // a word that is wider than its room even at the least size is set as small as it takes, alone or with the words of its group: it is never cut off at the frame's edge
-            var all = el.querySelectorAll(".cap-word"), widestWord = function () { return Math.max.apply(null, Array.prototype.map.call(all, function (c) { return c.offsetWidth; })); };
+            var all = el.querySelectorAll(".cap-word"), widestWord = function () { return Math.max.apply(null, Array.prototype.map.call(all, function (c) { return c.offsetWidth; })) - PULL * size; };
             while (size > 14 && widestWord() > room) { size -= 2; el.style.fontSize = size + "px"; }${hug}
-          }${boxes}
+          }
+          // a box behind every line of text of a fitted group. The lines are read from the text itself (a word that breaks at a hyphen has two); a line's middle is the middle of its letters whatever the font, its height the type's line
+          function boxes(el) {
+            var size = parseFloat(el.style.fontSize), high = size * L.lineHeight, padY = L.linePad[0] * size, padX = L.linePad[1] * size;
+            var at = el.getBoundingClientRect(), range = document.createRange(), lines = [];
+            Array.prototype.forEach.call(el.querySelectorAll(".cap-word"), function (w) {
+              range.selectNodeContents(w);
+              Array.prototype.forEach.call(range.getClientRects(), function (r) {
+                if (!r.width) return;
+                var mid = (r.top + r.bottom) / 2 - at.top, line = lines.filter(function (l) { return Math.abs(l.mid - mid) < size * 0.5; })[0];
+                if (line) { line.left = Math.min(line.left, r.left - at.left); line.right = Math.max(line.right, r.right - at.left); }
+                else lines.push({ mid: mid, left: r.left - at.left, right: r.right - at.left });
+              });
+            });
+            lines.forEach(function (line) {
+              var box = document.createElement("div");
+              box.className = "cap-box";
+              box.style.left = line.left - padX + "px";
+              box.style.top = line.mid - high / 2 - padY + "px";
+              box.style.width = line.right - line.left + 2 * padX + "px";
+              box.style.height = high + 2 * padY + "px";
+              el.insertBefore(box, el.firstChild);
+            });
+          }
           function reveal(w) {
             var spoken = Math.max(0.03, w.said - w.start);
             return Math.min(0.3, Math.max(0.045, spoken * 0.55), Math.max(0.025, spoken * 0.85));
@@ -312,11 +322,13 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
             var tl = gsap.timeline({ paused: true });
             DATA.groups.forEach(function (g, gi) {
               var el = els[gi], words = el.querySelectorAll(".cap-word");
-              fit(el);${boxed}
+              fit(el);
+              if (el.classList.contains("lined")) boxes(el);
               tl.set(el, { visibility: "visible", opacity: 1 }, g.start);
-              if (M.in === "pop") tl.fromTo(el, { scale: 0.82, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.12, ease: "back.out(2.2)" }, g.start);
+              // punch: there at once, a little smaller, snapping to its size (it never starts transparent: a frame of the video would show no caption)
+              if (M.in === "punch") tl.fromTo(el, { scale: 0.84 }, { scale: 1, duration: 0.1, ease: "power3.out" }, g.start);
               if (M.in === "rise") tl.fromTo(el, { y: 26, opacity: 0 }, { y: 0, opacity: 1, duration: 0.18, ease: "power2.out" }, g.start);
-              if (M.in === "fade") tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, g.start);${punch}
+              if (M.in === "fade") tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power1.out" }, g.start);
               g.words.forEach(function (w, wi) {
                 var s = words[wi], base = w.key ? L.highlight : L.color;
                 if (M.in === "wipe") tl.fromTo(s, { clipPath: "inset(-20% 100% -20% 0%)" }, { clipPath: "inset(-20% -10% -20% -10%)", duration: reveal(w), ease: "power2.out" }, w.start);
@@ -328,7 +340,12 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
                   tl.to(s, { backgroundColor: L.accent, color: "#FFFFFF", duration: 0.06 }, w.start);
                   tl.to(s, { backgroundColor: "rgba(0,0,0,0)", color: base, duration: 0.08 }, w.end);
                 }
-                if (M.active === "dim-after" && !w.key) tl.to(s, { color: L.dim, duration: 0.2 }, w.said);${fill}
+                if (M.active === "dim-after" && !w.key) tl.to(s, { color: L.dim, duration: 0.2 }, w.said);
+                // fill: the words wait in L.wait; the one being said takes the accent (a key word its key colour) and stays in L.color once said. A word shorter than the light-up is lit by its end, so two tweens never hold its colour at once
+                if (M.active === "fill") {
+                  tl.to(s, { color: w.key ? L.highlight : L.accent, duration: Math.max(0.01, Math.min(0.08, w.end - w.start)), ease: "power1.out" }, w.start);
+                  if (!w.key && L.accent !== L.color) tl.to(s, { color: L.color, duration: 0.05, ease: "power1.out" }, w.end);
+                }
               });
               var last = g.words[g.words.length - 1];
               var safe = Math.max(last.said, last.start + reveal(last) + 0.07);
@@ -353,7 +370,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
   // are never cut to an area.
   const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
   const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : look.lineBox ? 2 * look.linePad[0] * area.type : 0;
-  return { groups: gs.length, cards, wide, joined, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
+  return { groups: gs.length, cards, wide, joined, small, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.

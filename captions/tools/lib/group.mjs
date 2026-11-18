@@ -110,30 +110,40 @@ function byLength(ws, maxWords, maxChars, fit) {
 }
 
 // A token without a letter or a digit ("…", "–", "&", a quotation mark the recognizer set apart)
-// is no word to show by itself: it joins the word said just before it (a closing mark without a
-// space: "well…"), else the word said just after it (an opening mark without a space; a mark
-// that stands before its word, such as "§", always), each within NEAR seconds; a mark with no word near it is left out (a "…" for a pause stood in the
-// picture for most of a second), as are dots after a word that ends its sentence already. The words come back as they are when there is no such token.
+// is no word to show by itself: it joins a word said within NEAR seconds of it, or is left out
+// (a "…" for a pause stood in the picture for most of a second; dots after a word that ends
+// its sentence add nothing). Which word: a mark that opens or stands before its word goes with
+// the word after it (an opening bracket, "§ 202a", "#1", "@name", a currency sign before a
+// number, and every other double quotation mark: the first of a pair opens, the second closes,
+// whatever their shape, „…“, “…”, «…», »…«, "…"); any other mark goes with the word before
+// it. Without that word near it takes the other one. A mark never crosses the edge of a card
+// (the words of one `box`), and a `highlight` or `icon` it carried goes to the word it joined.
+// The words' times stay; without such tokens the words come back as they are.
 const NEAR = 0.6;
 const bare = (text) => !/[\p{L}\p{N}]/u.test(text);
-// (marks that can only belong to what follows them: an opening bracket, a low opening quotation
-// mark, "§ 202a". "$", "#", "@", "«" stand on either side, "5 $", "Hallo«": they go by what is near)
-const before = (text) => /^[(\[{„§¿¡]+$/.test(text);
 export function fold(words) {
   if (!words.some((w) => bare(w.text))) return words;
+  const boxOf = (w) => w.box || null, near = (a, b) => b.start - a.end < NEAR;
   const out = [];
-  let lead = null;   // marks waiting for the word after them
-  for (const w of words) {
-    const prev = out[out.length - 1];
-    if (bare(w.text)) {
-      // (dots after a word that ends its sentence add nothing: "das." stays "das.", not "das.…")
-      if (!before(w.text) && prev && !lead && w.start - prev.end < NEAR) { if (!(/^[.…]+$/.test(w.text) && /[.!?…]["»”)]*$/.test(prev.text))) out[out.length - 1] = { ...prev, text: prev.text + (/^[.,;:!?…)\]}»“”‘’"']+$/.test(w.text) ? "" : " ") + w.text }; }
-      else lead = lead ? { ...lead, text: `${lead.text} ${w.text}`, end: w.end } : w;
-      continue;
+  let pending = [], quotes = 0;   // the marks waiting for the word after them; the double quotation marks so far
+  words.forEach((w, i) => {
+    if (!bare(w.text)) {
+      const lead = pending.filter((m) => near(m.mark, w) && boxOf(m.mark) === boxOf(w)), icon = lead.find((m) => m.mark.icon)?.mark.icon;
+      pending = [];
+      out.push(!lead.length ? w : { ...w, text: lead.map((m) => m.mark.text + (m.glued ? "" : " ")).join("") + w.text,
+        ...(lead.some((m) => m.mark.highlight) ? { highlight: true } : {}), ...(icon && !w.icon ? { icon } : {}) });
+      return;
     }
-    out.push(lead && w.start - lead.end < NEAR ? { ...w, text: lead.text + (/^[(\[{«„‹“‘"'¿¡]+$/.test(lead.text) ? "" : " ") + w.text } : w);
-    lead = null;
-  }
+    const mark = w.text, prev = out[out.length - 1], next = words.slice(i + 1).find((x) => !bare(x.text));
+    const quote = /^["«»“”„‟]+$/.test(mark) ? ++quotes : 0;
+    const opens = /^[(\[{„¿¡#@]+$/.test(mark) || quote % 2 === 1 || (/^[$€£¥]+$/.test(mark) && !!next && /^\d/.test(next.text));
+    const closes = /^[.,;:!?…)\]}’']+$/.test(mark) || (quote > 0 && quote % 2 === 0);
+    const toPrev = !!prev && !pending.length && near(prev, w) && boxOf(prev) === boxOf(w), toNext = !!next && near(w, next) && boxOf(next) === boxOf(w);
+    if (/^[.…]+$/.test(mark) && toPrev && sentenceEnd(prev.text)) return;
+    const forward = opens || /^§+$/.test(mark);
+    if (forward ? toNext : !toPrev && toNext) pending.push({ mark: w, glued: opens });
+    else if (toPrev) out[out.length - 1] = { ...prev, text: prev.text + (closes ? "" : " ") + mark, ...(w.highlight ? { highlight: true } : {}) };
+  });
   return out;
 }
 
