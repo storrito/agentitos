@@ -18,7 +18,8 @@
 //        a face that moves: --face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …  |  --face-track file.json
 //                           (every --face-at of one source is the same face; two that move: one list each in the file)
 //        a screen:          --source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--readable 24]
-//                           [--face … | --source 1280x720 --face …]   (the webcam: a circle in a free corner)
+//                           [--face … | --source 1280x720 --face …]   (the webcam: baked into the screen,
+//                           or a file of its own; a circle in a free corner, a panel below the screen)
 //        the ranking:       [--weights file.json] [--set weights.enlarge.costAtForbidden=5] [--set hookCard.minFont=76]
 //                           [--all]   (every fit, also where the unchanged picture passes)
 //   node place.mjs page <folder> [--candidate 1,2,3 | all] [--still <video|image>]… [--at <s>]
@@ -252,6 +253,7 @@ function cmdGrid(o) {
   console.log(`  a face: from the hairline to the chin, from cheek to cheek (not the hair, the ears or the neck)   → --face x,y,w,h`);
   console.log(`  a face that moves: the grid at several moments (--at), one box each   → --face-at <seconds>:x,y,w,h (all of them are one face)`);
   console.log(`  a screen: the part that matters → --region x,y,w,h, and how tall a capital letter of its smallest text is → --min-text-height <px>`);
+  console.log(`  a webcam baked into the screen: its face → --face x,y,w,h after the screen's own --source (a webcam file of its own: a second --source with its face)`);
   console.log(`Then: ${self()} place <folder> --frame 9:16 --source ${w}x${h} --face … --text caption`);
 }
 

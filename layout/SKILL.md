@@ -49,7 +49,7 @@ One frame with a line every 10 %, each labelled with its px in the source. No to
 - **A bald head**, a cap or a headband: the box starts where the hairline would be, as far above the brows as the bottom of the nose is below them. **A profile**: from the front of the ear to the tip of the nose. Hair worn high (a bun, curls) reaches past the margin: look at the picture whether a text above the head lies on it.
 - **A face that moves** (a nod, a lean, a walk): the grid at three to five moments spread over the clip, among them the highest and the lowest the head gets, each box as `--face-at <s>:x,y,w,h`. In a calm take of eight seconds the top of the head moved 22 px and came within 8 px of the caption above it: a face read at one moment has no reserve.
 - **Several people**: one `--face` each. They count from 1 in the order you give them. Every `--face-at` of one source is one and the same face: two people who both move go into a file, one list of moments per person (`[[{"t": 0, "box": [x, y, w, h]}, …], […]]`), as `--face-track <file.json>`.
-- **A screen**: the part that matters at this moment as `--region`, and how tall a capital letter of its smallest text is, in px of the source, as `--min-text-height`. A webcam recorded as a file of its own: its face, read off a grid of that file, as a `--face` after a second `--source`.
+- **A screen**: the part that matters at this moment as `--region`, and how tall a capital letter of its smallest text is, in px of the source, as `--min-text-height`. A webcam recorded as a file of its own: its face, read off a grid of that file, as a `--face` after a second `--source`. A webcam baked into the screen recording (a corner with the speaker, a talk's stage camera): its face, read off the screen's grid, as a `--face` after the screen's own `--source`, never the same file as a second source: the circle and the panel are then cut from the screen's picture, and a candidate whose screen shows the speaker too says that he shows twice.
 
 ### 3. Place
 
@@ -63,6 +63,7 @@ node <skill>/tools/place.mjs place placement/<name> --frame 9:16 --source 1080x1
 | two people as two files | `--source 1280x720 --face … --source 1920x1080 --face …` |
 | a face that moves | `--face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …`, or `--face-track file.json` |
 | a screen, with or without a webcam | `--source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--source 1280x720 --face …]` |
+| a screen with the webcam baked in | `--source 1920x1080 --region 500,40,1340,310 --min-text-height 20 --face 130,555,70,85` |
 
 Every `--face`, `--face-at` and `--region` belongs to the `--source` before it. `--frame` is `9:16`, `4:5`, `1:1`, `16:9` or a size as `720x1280`: type and margins are in proportion to the frame.
 

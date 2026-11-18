@@ -993,6 +993,17 @@ if (!QUICK) t("a screen and its webcam as two files: page takes a still of each 
   return `${pages.length} pages; the baked webcam from the screen's still`;
 });
 
+t("a webcam baked into the screen recording has one way, the one SKILL.md's table gives: its face after the screen's own --source. That command runs as written, the placement marks the webcam as baked, and the circle is cut from the screen's picture", () => {
+  const row = fs.readFileSync(path.join(HERE, "..", "SKILL.md"), "utf8").split("\n").find((l) => /^\| a screen with the webcam baked in \|/.test(l));
+  ok(row, "SKILL.md has no row for a webcam baked into the screen");
+  const args = row.match(/`([^`]+)`/)[1].split(/\s+/), dir = path.join(OUT, "cli-baked-skill");
+  const r = cli("place", dir, "--frame", "9:16", ...args, "--text", "caption", "--json");
+  ok(r.status === 0, `the row's options: ${r.stderr}`);
+  const j = JSON.parse(r.stdout), c = j.candidates.find((q) => q.circle);
+  ok(j.sources && j.sources[1].baked && c && c.circle.crop, `sources ${JSON.stringify(j.sources)}, circle ${c && JSON.stringify(c.circle)}`);
+  return `${args.join(" ")}: the circle shows ${c.circle.crop.map(Math.round).join(",")} of the screen`;
+});
+
 if (!QUICK) t("the picture of a candidate is the frame down to its last row with every Chrome of this machine: one whose window is taller than its page left the lowest 87 px black", () => {
   const dir = path.join(OUT, "cli-chromes");
   cli("place", dir, "--frame", "9:16", "--source", "1080x1920", "--face", boxArg(FACE1), ...P1SET, "--text", "caption:1");
