@@ -46,7 +46,9 @@ export async function scribe(file, duration, { lang, log = () => {} } = {}) {
     // has little memory
     const pieces = await pool(starts, 3, async (at, k) => {
       const chunk = path.join(tmp, `c${k}.${fmt}`);
-      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-ac", "1", "-ar", "16000",
+      // without the file's tags: a phone's recording names the place it was made at, and ffmpeg
+      // would carry that into the piece sent to the model
+      await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-t", String(CH + OV), "-i", file, "-vn", "-map_metadata", "-1", "-ac", "1", "-ar", "16000",
         ...(fmt === "mp3" ? ["-codec:a", "libmp3lame", "-b:a", "48k"] : []), chunk]);
       const body = JSON.stringify({
         model: SCRIBE_MODEL, input_audio: { data: fs.readFileSync(chunk).toString("base64"), format: fmt },

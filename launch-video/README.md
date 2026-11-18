@@ -28,9 +28,10 @@ node tools/launch.mjs sample <work> --text "…" --voices a,b [--model <id>] [--
 node tools/launch.mjs voice <work> <script.json> <composition>  the lines spoken, every word timed
 node tools/launch.mjs words <work> <composition>                the voice's words at their times in the film
 node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
-node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--vocals]
+node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--vocals] [--under 17]
 node tools/launch.mjs image <out.png> --prompt "…" [--ratio 9:16] [--ref <image>]…
 node tools/launch.mjs finish <video.mp4>                        −14 LUFS, as the platforms play
+node --test tools/test.mjs                                      the music's level under the voice, no request
 ```
 
 `<work>` is the film's working folder (`launch/<name>/`): `launch.json` (the platforms, the size), `zones.json`, `voice.json` (every line's words with their times in the line), `words.json` (the same in the film), the planning files. `<composition>` is the HyperFrames project (`artifacts/<name>/composition/` in rragent).
@@ -39,7 +40,7 @@ node tools/launch.mjs finish <video.mp4>                        −14 LUFS, as t
 - **check** runs HyperFrames' own check (`hyperframes check --caption-zone`) once per band outside the safe box (and the wide stretch), sampling every quarter second, and names each text that reaches into one: when, where, under which app's buttons. Text under an app's buttons fails the check (✗); text only in the safe box's margin, a buffer for other phones, is a `!`. Text meant as texture under the buttons carries `data-layout-allow-caption-zone`. Words inside pictures it cannot read: `draw` puts the zones over the stills for the agent to look at.
 - **voice** reads `script.json`, `{"model"?, "voice"?, "instructions"?, "speed"?, "lines": [{"id", "text", "instructions"?}]}`, speaks every line through OpenRouter's speech endpoint into `<composition>/assets/voice/<id>.mp3`, hears it back with Scribe and aligns what was heard to the script, so every word keeps the script's spelling ("Storrito", "2026") with the time it is said. A line spoken before with the same words, model, voice and instructions is kept; a line taken out loses its file.
 - **words** and **captions** read where the root composition's `<audio>` elements play each line (`data-start`, `data-media-start`, `data-duration`) and put the words on the film's clock; captions builds them with the captions skill into `<composition>/captions/` for the saved platforms, in the brand's colour and font.
-- **music** streams a track from Lyria 3 (Clip up to 28 s, Pro beyond; `--model` to choose), keeps the whole take in `<work>` and writes `<composition>/assets/music.mp3` at the film's length with a fade at the end.
+- **music** streams a track from Lyria 3 (Clip up to 28 s, Pro beyond; `--model` to choose), keeps the whole take in `<work>` and writes `<composition>/assets/music.mp3` at the film's length with a fade at the end, and its `<audio>` at the volume that lays it 17 LU (`--under`) under the voice, both measured; `check` measures it again as the film places it.
 - **finish** levels the rendered video to −14 LUFS with peaks under −1 dBTP, in two passes, the picture untouched.
 
 ## How a film is made

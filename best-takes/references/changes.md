@@ -13,7 +13,8 @@ What to do when the person asks for a change to the cut. After each: build again
 | "More movement" / "zoom in at the cuts" | `--punch on`: at every jump cut the picture goes closer or back out, closer on a key word; `--punch off` takes it out |
 | "A hook at the start" | `--hook "Three words that promise"` (6 words or fewer, one `*word*` stands out): a card at the top until the first sentence ends; `--hook ""` takes it out |
 | "It looks as if no time passed" / "the wait is gone" | add the last word of the sentence that announces the wait to `"waits"` |
-| "That wait / that silence is too long" | it is a pause whose picture moves a little: look at it in `check`; drop it from its keep by ending the keep before it and starting the next after it |
+| "That wait / that silence is too long" | `check` says why each pause stayed; drop it from its keep by ending the keep before it and starting the next after it |
+| "Keep that moment" (a look, a reaction, a thing held up, cut as a pause) | `"pauses": "keep"` on its keep; its other pauses then stay too: for that one alone, make the sentences around it a keep of their own |
 | "That part is too quiet / loud" | `"gain": 3` / `"gain": -3` on its keep |
 | "Vertical" / "square" | `--aspect 9:16` / `--aspect 1:1` (with `--fit contain` the whole picture stays, with bars) |
 | a word in the subtitles is wrong | `"fixes": {"57": "Pentax"}` |

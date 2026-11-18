@@ -10,7 +10,8 @@
 //   node tools/launch.mjs zones <work> [platform…]        the zones of the film's frame → <work>/zones.json
 //        [--frame 9:16 | --size 1080x1920]                (and the platforms and size → <work>/launch.json)
 //   node tools/launch.mjs check <work> <composition>      text under the apps' buttons and bars, with
-//                                                         when and where (HyperFrames' check, per band)
+//                                                         when and where (HyperFrames' check, per band),
+//                                                         and how far under the voice the music sits
 //   node tools/launch.mjs draw <work> <stills-folder>     the zones drawn over every still → <folder>/zones/
 //   node tools/launch.mjs voices [--model <id>]           the speech models, their price and voices
 //   node tools/launch.mjs sample <work> --text "…" --voices a,b [--model <id>] [--out <folder>]
@@ -22,8 +23,10 @@
 //   node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
 //                                                         the captions (agentitos' captions skill) in
 //                                                         <composition>/captions, and the line that mounts them
-//   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30   music (Lyria 3)
-//                                                         → <composition>/assets/music.mp3, faded at its end
+//   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--under 17]   music
+//                                                         (Lyria 3) → <composition>/assets/music.mp3, faded
+//                                                         at its end, and its <audio> with the volume that
+//                                                         lays it 17 LU under the voice, both measured
 //   node tools/launch.mjs image <out.png> --prompt "…" [--ratio 9:16] [--ref <image>…]   a picture
 //   node tools/launch.mjs finish <video.mp4>              the rendered video at −14 LUFS, the loudness
 //                                                         the platforms play at (in place)
@@ -43,6 +46,7 @@ import { zonesTool, platformList } from "./lib/zones.mjs";
 import { post, postAudio, streamAudio } from "./lib/openrouter.mjs";
 import { align } from "./lib/align.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
+import { loudness, musicVolume, distance, inFilm } from "./lib/level.mjs";
 
 const SKILL = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fail = (msg) => { console.error(msg); process.exit(1); };
@@ -56,6 +60,8 @@ const SPEECH_MODEL = "elevenlabs/eleven-v3";
 const SPEECH_VOICE = "sarah";
 const MUSIC_MODELS = { clip: "google/lyria-3-clip-preview", pro: "google/lyria-3-pro-preview" };
 const IMAGE_MODEL = "google/gemini-3.1-flash-image";
+// LU the music lies under the voice: what HyperFrames' sound guide's 0.14 means for two equally loud files
+const UNDER = 17;
 
 // options that take no value
 const FLAGS = ["mark", "vocals", "json"];
@@ -247,6 +253,9 @@ function cmdCheck(work, composition) {
   if (!root.duration) fail(`✗ The root of ${rel(root.file)} has no data-duration.`);
   const cli = hyperframesCli();
   if (!cli) fail("✗ No HyperFrames CLI on this machine: the operator installs it.");
+  // the sound first: it is measured in seconds, the text takes minutes
+  const sound = soundLine(composition, work);
+  if (sound) console.log(`${sound}\n`);
   // a sample every quarter of a second, as fractions of the film
   const step = Math.max(0.25, root.duration / 400);
   const seek = Array.from({ length: Math.floor(root.duration / step) + 1 }, (_, k) => +Math.min(1, (k * step) / root.duration).toFixed(5)).join(",");
@@ -311,6 +320,36 @@ function cmdCheck(work, composition) {
     console.log(`\nMove each ✗ out from under the buttons: centred on the frame in ${box(z.centred)}${z.wide ? ` (or the wide stretch ${box(z.wide)})` : ""}. Text that is only texture, meant to run under the buttons, gets data-layout-allow-caption-zone. Then check again.`);
     process.exitCode = 1;
   } else console.log(`\nA ! may stay when the layout needs it (centred, bigger): the margin is a buffer for other phones. Pull it in when it costs nothing.`);
+}
+
+const lufs = (x) => x.toFixed(1).replace("-", "−");
+const lu = (x) => (Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1));
+
+// how far under the voice the music sits, as the root places both (each <audio> at its
+// data-volume): measured, so a music bed laid before the voice, or a voice or music changed since,
+// shows here. Nothing when the film has no music.
+export function soundLine(composition, work) {
+  try { return soundOf(composition, work); } catch (e) { return `! Sound: not measured (${e.message}).`; }
+}
+
+function soundOf(composition, work) {
+  const { music, voice } = inFilm(composition);
+  if (!music) return null;
+  if (!fs.existsSync(music.file)) return `✗ Sound: the music's file ${music.src} is not there.`;
+  const m = loudness([music.file]);
+  if (m == null) return `! Sound: the music ${music.src} is silent.`;
+  const placed = voice.filter((v) => fs.existsSync(v.file));
+  const spoken = work ? (readJson(path.join(work, "voice.json"), {}).lines || []).length : 0;
+  if (!voice.length && spoken) return `! Sound: ${rel(path.join(work, "voice.json"))} has ${spoken} line${spoken > 1 ? "s" : ""} of a voice, but the root places none (<audio id="vo-<id>" src="assets/voice/<id>.mp3">): nothing to measure the music against.`;
+  if (!placed.length) return `Sound: the music plays without a voice${voice.length ? ` (the voice's files are not there: ${voice.map((v) => v.src).join(", ")})` : ""}, at data-volume ${music.volume}: ${lufs(m + 20 * Math.log10(music.volume || 1e-9))} LUFS in the film (${lufs(m)} as made).`;
+  const v = loudness(placed);
+  if (v == null) return `! Sound: the voice (${placed.length} line${placed.length > 1 ? "s" : ""}) is silent.`;
+  if (!(music.volume > 0)) return `! Sound: the music is placed at data-volume ${music.volume}: it is not heard.`;
+  const d = distance(v, m, music.volume), want = music.under || UNDER, fit = musicVolume(v, m, want);
+  const numbers = `the voice at ${lufs(v)} LUFS as placed (${placed.length} line${placed.length > 1 ? "s" : ""}), the music at ${lufs(m)} as made, at data-volume ${music.volume}`;
+  if (Math.abs(d - want) <= 1) return `Sound: the music sits ${lu(d)} LU under the voice (${numbers}). Measured, not heard: say so.`;
+  if (fit.bound && Math.abs(music.volume - fit.volume) < 0.0005) return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): ${fit.volume} is the ${fit.bound} volume here; for ${want} LU, music ${fit.bound === "highest" ? "louder" : "quieter"} of its own (\`music\` again).`;
+  return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): its volume was set before the voice, or the voice or the music changed since. Set data-volume="${fit.volume}" on <audio id="music">${fit.bound ? ` (the ${fit.bound} volume here: it then sits ${lu(fit.under)} LU under)` : ""} and run check again. Another distance on purpose: data-under-voice="<LU>" on it.`;
 }
 
 function cmdDraw(work, folder) {
@@ -542,9 +581,25 @@ function kindOf(bytes) {
   return null;
 }
 
+// the <audio> of the music and a sentence on its volume: measured against the voice's lines when
+// the film has a voice (launch-video's `voice` wrote them), else the guide's level without one
+export function musicElement(work, composition, out, len, under) {
+  const element = (volume, tail = "") => `<audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="${volume}"${tail} data-track-index="<n>">`;
+  const without = `In the root: ${element(0.6)} (about 0.6 without a voice; a voice made later: \`check\` says the volume that lays the music ${under} LU under it).`;
+  const lines = (readJson(path.join(work, "voice.json"), {}).lines || []).map((l) => path.join(composition, l.file)).filter((f) => fs.existsSync(f));
+  if (!lines.length) return without;
+  const v = loudness(lines), m = loudness([out]);
+  if (v == null || m == null) return `${without}\n  ! The ${v == null ? "voice" : "music"} is silent: nothing to measure the music's volume by.`;
+  const fit = musicVolume(v, m, under);
+  const bound = fit.bound ? `, the ${fit.bound} volume here, it sits ${lu(fit.under)} LU under it, not ${under} (that would need ${fit.need.toFixed(3)})` : ` it sits ${under} LU under it`;
+  return `In the root: ${element(fit.volume, ` data-under-voice="${under}"`)}. The voice is at ${lufs(v)} LUFS, the music at ${lufs(m)}: at ${fit.volume}${bound}. Moved, changed or another volume: \`check\` measures it as the film places it.`;
+}
+
 async function cmdMusic(work, composition, opts) {
   const seconds = Number(opts.seconds);
-  if (!work || !composition || !opts.prompt || !(seconds > 0)) fail(`Usage: ${cmd('music <work> <composition> --prompt "<the feel, the tempo, the instruments>" --seconds <the film\'s length>')}`);
+  if (!work || !composition || !opts.prompt || !(seconds > 0)) fail(`Usage: ${cmd('music <work> <composition> --prompt "<the feel, the tempo, the instruments>" --seconds <the film\'s length> [--under 17]')}`);
+  const under = opts.under == null ? UNDER : Number(opts.under);
+  if (!(under >= 3 && under <= 30)) fail(`✗ --under is how many LU the music lies under the voice, 3 to 30 (${UNDER} by default).`);
   const model = opts.model || (seconds <= 28 ? MUSIC_MODELS.clip : MUSIC_MODELS.pro);
   const prompt = `${opts.prompt}. ${opts.vocals ? "" : "Instrumental, no vocals. "}About ${Math.round(seconds)} seconds long, with a clear ending.`;
   console.log(`Composing with ${model} (a minute or two) …`);
@@ -563,7 +618,7 @@ async function cmdMusic(work, composition, opts) {
   const len = Math.min(long, seconds), fade = Math.min(1.5, len / 4);
   ffmpeg(["-i", raw, "-t", String(len), "-af", `afade=t=out:st=${(len - fade).toFixed(3)}:d=${fade.toFixed(3)}`, "-codec:a", "libmp3lame", "-b:a", "192k", out]);
   console.log(`${rel(out)}: ${len.toFixed(1)} s of ${long.toFixed(1)} s made${r.cost ? `, $${r.cost.toFixed(3)}` : ""}${long < seconds - 0.5 ? ` — shorter than the film by ${(seconds - long).toFixed(1)} s: loop it, end the film with it, or make it again` : ""}${r.text ? `\n  the model: "${r.text.slice(0, 200).replace(/\s+/g, " ")}"` : ""}
-The whole take is ${rel(raw)}. In the root: <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="0.14" data-track-index="<n>"> (0.14 under a voice, as HyperFrames' sound guide says; about 0.6 without one). Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`);
+The whole take is ${rel(raw)}. ${musicElement(work, composition, out, len, under)} Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`);
 }
 
 // ------------------------------------------------------------------------------- pictures
@@ -624,9 +679,11 @@ function cmdFinish(video) {
 
 // ------------------------------------------------------------------------------- main
 
+// run as a program; imported (by tools/test.mjs), it only lends its functions
 const [command, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
-try {
+const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
+if (isMain) try {
   if (command === "guides") cmdGuides();
   else if (command === "zones") cmdZones(pos[0], pos.slice(1), opts);
   else if (command === "check") cmdCheck(pos[0], pos[1]);
