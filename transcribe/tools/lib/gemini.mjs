@@ -178,7 +178,7 @@ export async function gemini(file, total, { lang = "auto", speakers = true, voic
 
 // the words of the n voices that say the most; every other word takes the voice of the nearest
 // word (in time) of one of those, and the letters are given again by first appearance
-function atMost(words, n) {
+export function atMost(words, n) {
   const said = new Map();
   for (const w of words) if (w.speaker) said.set(w.speaker, (said.get(w.speaker) || 0) + 1);
   if (said.size <= n) return words;

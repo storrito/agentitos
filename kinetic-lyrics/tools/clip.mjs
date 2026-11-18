@@ -5,7 +5,7 @@
 //
 // <dir>/audio.wav     the voice, mono 48 kHz
 // <dir>/video.<ext>   the footage as it came (build.mjs transcodes what the renderer can't play)
-// <dir>/transcript.json   word timings and who speaks (A, B, …), from Gemini 3.5 Transcribe
+// <dir>/transcript.json   word timings and who speaks (A, B, …), from ElevenLabs Scribe
 //                     through OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), run by
 //                     agentitos' transcribe skill beside this one (tools/lib/transcribe.mjs)
 // Prints one JSON line: { duration, video, width, height, words, speakers, text }.
@@ -54,7 +54,7 @@ if (v) {
 }
 
 const lang = typeof opt.lang === "string" ? opt.lang : "auto";
-console.error("clip: transcribing with Gemini 3.5 Transcribe (OpenRouter) …");
+console.error("clip: transcribing with ElevenLabs Scribe (OpenRouter) …");
 let words, seconds;
 try { ({ words, duration: seconds } = await transcribeFile(wav, { speakers: true, lang, log: console.error })); } catch (e) { fail(`transcription failed: ${e.message}`); }
 if (!words.length) fail("no speech found");

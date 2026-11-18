@@ -17,9 +17,10 @@
 // A file instead of a link (an upload, a recording of the person's own) goes the same way: its
 // sound is written down as it is, its stretches are cut from it with ffmpeg.
 //
-// The words come from Gemini 3.5 Transcribe through OpenRouter, run by agentitos' transcribe skill
+// The words come from ElevenLabs Scribe through OpenRouter, run by agentitos' transcribe skill
 // beside this one (OPENROUTER_API_KEY or the Sprites gateway's OpenRouter connection, with
-// speakers, a few cents an hour, a few minutes), else from the video's captions on YouTube
+// speakers, about 22 cents an hour, twice that when the voices need its long requests, a few
+// minutes; the noises it marks among the words are left out), else from the video's captions on YouTube
 // (no speakers). yt-dlp: the one on the PATH, else a copy downloaded once into
 // ~/.cache/agentitos/.
 
@@ -129,7 +130,9 @@ function captionTrack(info) {
 // a path that exists, not a link
 const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
 
-function writeEpisode(dir, facts, words) {
+function writeEpisode(dir, facts, heard) {
+  // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
+  const words = heard.filter((w) => w.kind !== "event");
   if (!words.length) fail("No words found: is there speech in it?");
   const sentences = sentencesOf(words);
   const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };

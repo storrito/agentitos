@@ -7,7 +7,7 @@
 //                                       these times (seconds in the source) instead of asking Claude
 //
 // 1. transcript: given, cached next to the audio (<audio>.words.json), or made by agentitos'
-//    transcribe skill beside this one (Gemini 3.5 Transcribe through OpenRouter, with who
+//    transcribe skill beside this one (ElevenLabs Scribe through OpenRouter, with who
 //    speaks: A, B, …; tools/lib/transcribe.mjs)
 // 2. Claude reads the whole transcript as numbered sentences and picks the strongest
 //    self-contained moment: a hook at the start, a payoff at the end, understandable
@@ -50,7 +50,7 @@ if (fs.existsSync(cache)) {
   words = wordsOf(JSON.parse(fs.readFileSync(cache, "utf8")));
   console.error(`highlight: transcript ${path.basename(cache)} (${words.length} words)`);
 } else {
-  console.error("highlight: transcribing with Gemini 3.5 Transcribe (OpenRouter) …");
+  console.error("highlight: transcribing with ElevenLabs Scribe (OpenRouter) …");
   let result;
   try {
     result = await transcribeFile(audio, { speakers: true, lang: typeof opt.lang === "string" ? opt.lang : undefined, log: console.error });

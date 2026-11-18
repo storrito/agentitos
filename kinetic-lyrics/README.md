@@ -87,7 +87,7 @@ Across all presets:
 
 `--out <dir>` creates a separate HyperFrames project per video.
 
-**Transcription:** `tools/clip.mjs` and `tools/highlight.mjs` transcribe through OpenRouter (`OPENROUTER_API_KEY`, or a Sprite's gateway; Gemini 3.5 Transcribe, about a cent per minute, run by agentitos' [transcribe](../transcribe/) skill, which must be beside this one, or `TRANSCRIBE` naming its `tools/transcribe.mjs`): words, timings and who speaks, with nothing to install but ffmpeg. No model runs on this machine; without OpenRouter or the transcribe skill they stop with one sentence that says so. The model gives times in tenths of a second; the build snaps every onset to the voice (`tools/align.mjs`).
+**Transcription:** `tools/clip.mjs` and `tools/highlight.mjs` transcribe through OpenRouter (`OPENROUTER_API_KEY`, or a Sprite's gateway; ElevenLabs Scribe, about half a cent per minute, twice that when the voices need its long requests, run by agentitos' [transcribe](../transcribe/) skill, which must be beside this one, or `TRANSCRIBE` naming its `tools/transcribe.mjs`): words, timings and who speaks, with nothing to install but ffmpeg. No model runs on this machine; without OpenRouter or the transcribe skill they stop with one sentence that says so. A noise the transcription wrote among the words ("[laughs]") is never shown; the build snaps every onset to the voice (`tools/align.mjs`).
 
 ## Worlds
 
@@ -235,7 +235,7 @@ node tools/build.mjs examples/my-clip/transcript.json --audio examples/my-clip/a
   --aspect 9:16 --speakers "A=Jane Doe" --llm --out videos/my-clip
 ```
 
-The episode is transcribed once with who speaks (agentitos' transcribe, Gemini through OpenRouter, an hour in about a minute) and cached as `<audio>.words.json`; in the clip, the voices are named again in the order they speak (`A` speaks first). Claude reads the episode as numbered sentences and proposes up to three clips: understandable without the rest of the episode, with a hook at the start and a payoff at the end. `highlight.json` contains the title, the reasoning and the alternatives. `--hint "…"` steers the search, `--from`/`--to` (seconds in the source) set the cut by hand to the nearest sentence boundary.
+The episode is transcribed once with who speaks (agentitos' transcribe, ElevenLabs Scribe through OpenRouter) and cached as `<audio>.words.json`; in the clip, the voices are named again in the order they speak (`A` speaks first). Claude reads the episode as numbered sentences and proposes up to three clips: understandable without the rest of the episode, with a hook at the start and a payoff at the end. `highlight.json` contains the title, the reasoning and the alternatives. `--hint "…"` steers the search, `--from`/`--to` (seconds in the source) set the cut by hand to the nearest sentence boundary.
 
 **Quotes:** Claude picks the punchline (`quotes`), which appears as a whole sentence in quotation marks instead of in pieces. **Reading time:** phrases that would be shorter than the minimum reading time (podcast 1.25 s, social 0.95 s, lyric 0.8 s) merge with the nearest neighbour of the same voice.
 
