@@ -7,12 +7,11 @@
 //
 //   node --test tools/test.mjs
 //
-// "The version before" is the commit BEFORE, the last one without the options, read from this
-// repository's history into a temp folder and run on the same words (CAPTIONS_BEFORE names
-// another commit). Without git or without that commit (the skill's folder alone, a shallow
-// clone) that test is skipped. Whoever changes the captions nobody placed on purpose names the
-// commit that did it here; what the built files have since on purpose (SINCE below) is taken
-// out before they are compared.
+// "The version before" is the commit BEFORE, the last one that changed captions nobody placed
+// on purpose, read from this repository's history into a temp folder and run on the same words
+// (CAPTIONS_BEFORE names another commit). Without git or without that commit (the skill's
+// folder alone, a shallow clone) that test is skipped. Whoever changes the captions nobody
+// placed on purpose names the commit that did it here.
 //
 // The last test lays the built files out in a Chrome (CHROME, one on the PATH, puppeteer's or
 // HyperFrames' own) and measures lines, sizes and boxes; it loads the styles' fonts from Google
@@ -32,7 +31,9 @@ import { cues } from "./lib/srt.mjs";
 import { measure } from "./lib/widths.mjs";
 import { zones, zonesTool } from "./lib/zones.mjs";
 
-const BEFORE = process.env.CAPTIONS_BEFORE || "ce60c3a5dc639e9231a78762282d28c24fd67cd6";
+// (ce60c3a, the last commit without the options, until 2026-11-18; since then the commit that
+// changed hormozi, karaoke and wipe on purpose and keeps a word alone inside the frame)
+const BEFORE = process.env.CAPTIONS_BEFORE || "f6c0639a9b279503f8f7575c615024d8eba2e679";
 const TOOLS = path.dirname(fileURLToPath(import.meta.url)), REPO = path.dirname(path.dirname(TOOLS));
 const TOOL = path.join(TOOLS, "captions.mjs");
 const ZONES = zonesTool();
@@ -90,16 +91,6 @@ function linesOf(text, style, room) {
 }
 const video = (file, size) => assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=gray:s=${size}:r=30:d=9`, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", file]).status, 0);
 
-// What the built captions have on purpose that the version before did not: three lines of the
-// script that keep a word alone inside the frame when it is wider than its room even at the
-// least size (it was cut off at the frame's edge). The comparison takes them out and holds
-// everything else to the byte; "in Chrome: a word alone …" below says what they do.
-const SINCE = /\n {12}\/\/ a word alone that is wider than its room even at the least size[^\n]*\n {12}var only = [^\n]*\n {12}while \(only\.length === 1 [^\n]*?\}(?=\n| *\/\/|$)/;
-function withoutSince(html) {
-  assert.match(html, SINCE, "the lines that keep a word alone inside the frame are not in the built file as the test knows them");
-  return html.replace(SINCE, "");
-}
-
 // the tools of the version before the options, in `dir`; null when the history is not there
 function versionBefore(dir) {
   const git = (...args) => spawnSync("git", ["-C", REPO, ...args], { maxBuffer: 1 << 26 });
@@ -115,24 +106,16 @@ function versionBefore(dir) {
 test("without the options the built files and what the tool says are those of the version before", { skip: noZones }, (t) => {
   const dir = folder(t), old = versionBefore(path.join(dir, "before"));
   if (!old) return t.skip(`no commit ${BEFORE} in a git history here`);
-  // hormozi, karaoke and wipe were changed on purpose by the commit that carries this line (no
-  // frame without a caption at a change, a pill that does not widen the gaps, phrases cut by
-  // length): until the next commit names this one as the version before, clean alone is compared.
-  const changed = (args) => ["hormozi", "karaoke", "wipe"].includes(args.includes("--style") ? args[args.indexOf("--style") + 1] : "hormozi");
   // `put` lays what the run needs beside its words (a brand kit, a video) into both folders
   const same = (name, args, files, { words, put } = {}) => {
-    if (changed(args)) return;
     for (const side of ["a", "b"]) { fs.mkdirSync(path.join(dir, side, name), { recursive: true }); put?.(path.join(dir, side, name)); }
     const a = run(old, path.join(dir, "a", name), args, words), b = run(TOOL, path.join(dir, "b", name), args, words);
     assert.equal(a.status, 0, a.stderr); assert.equal(b.status, 0, b.stderr);
     assert.equal(b.stdout, a.stdout, `${name}: what the tool says`);
-    for (const f of files) {
-      const now = fs.readFileSync(path.join(dir, "b", name, f)), before = fs.readFileSync(path.join(dir, "a", name, f));
-      assert.ok((f.endsWith("captions/index.html") ? Buffer.from(withoutSince(now.toString())) : now).equals(before), `${name}: ${f} differs from the version before`);
-    }
+    for (const f of files) assert.ok(fs.readFileSync(path.join(dir, "b", name, f)).equals(fs.readFileSync(path.join(dir, "a", name, f))), `${name}: ${f} differs from the version before`);
   };
-  // 9:16, 16:9, 1:1, 4:5 and a small 9:16, in the styles the version before had
-  for (const style of ["hormozi", "karaoke", "wipe", "clean"]) for (const size of ["1080x1920", "1920x1080", "1080x1080", "1080x1350", "720x1280"]) {
+  // 9:16, 16:9, 1:1, 4:5 and a small 9:16, in every style
+  for (const style of Object.keys(STYLES)) for (const size of ["1080x1920", "1920x1080", "1080x1080", "1080x1350", "720x1280"]) {
     same(`${style}-${size}`, ["build", "words.json", "out/captions", "--style", style, "--size", size], ["out/captions/index.html"]);
   }
   same("one-platform", ["build", "words.json", "out/captions", "--style", "karaoke", "--size", "1080x1920", "--platform", "reels", "--duration", "9", "--track", "4"], ["out/captions/index.html"]);
