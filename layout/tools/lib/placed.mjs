@@ -320,11 +320,15 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   let hookOut = null;
   if (hook) {
     const lifts = best ? best.per.map((r) => r.lift) : list.map(() => 0);
+    // (spans: the stretches of the shots' clock the hook is shown over, where the cut plays them
+    // out of their order: a line heard twice that opens the short, then the moment from its start)
+    const spansOf = (from, to) => (hook.spans?.length > 1 && from === hook.start && to === hook.end ? hook.spans : [[from, to]]);
     const place = (from, to) => {
-      const over = list.filter((s) => s.end > from + EPS && s.start < to - EPS);
+      const spans = spansOf(from, to), inside = (t, pad = 0) => spans.some(([a, b]) => t >= a - pad && t <= b + pad);
+      const over = list.filter((s) => spans.some(([a, b]) => s.end > a + EPS && s.start < b - EPS));
       const faces = [], keep = [];
       for (const s of over) for (const m of s.moments) {
-        if (m.t < from - 0.05 || m.t > to + 0.05) continue;
+        if (!inside(m.t, 0.05)) continue;
         for (const f of m.faces) {
           const b = up(f.box, lifts[s.i]);
           faces.push(b); keep.push(keepOut(b, D));
@@ -338,7 +342,8 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     let h = place(hook.start, hook.end), until = hook.end, why = null;
     if (!h) {
       // the first shot changes within the hook's time and the next leaves it no place: it ends at the cut
-      const cut = list.find((s) => s.start > hook.start + 1.2 && s.start < hook.end - EPS);
+      const first = hook.spans?.length > 1 ? hook.spans[0] : [hook.start, hook.end];
+      const cut = list.find((s) => s.start > first[0] + 1.2 && s.start < first[1] - EPS);
       if (cut) { h = place(hook.start, cut.start); if (h) { until = cut.start; why = `it ends at the cut at ${r1(cut.start)} s: the shot after it leaves it no place`; } }
     }
     if (h) {
@@ -362,7 +367,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       for (const x of tries) {
         x.seconds = 0; x.share = 0;
         for (const s of list) for (const m of s.moments) {
-          if (m.t < hook.start || m.t > hook.end) continue;
+          if (hook.spans?.length > 1 ? !hook.spans.some(([a, b]) => m.t >= a && m.t <= b) : m.t < hook.start || m.t > hook.end) continue;
           const on = m.faces.filter((f) => inter(up(f.box, lifts[s.i]), x.box) > 0);
           if (on.length) { x.seconds += m.dt; x.share = Math.max(x.share, ...on.map((f) => inter(up(f.box, lifts[s.i]), x.box) / area(f.box))); }
         }

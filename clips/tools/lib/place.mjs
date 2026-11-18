@@ -66,12 +66,21 @@ export function hookUntil(words, duration) {
 
 // the hook's time on the framed clip's clock: from the cut's first frame until its first sentence
 // ends (before the edit is built: three seconds)
+// A cut that opens with a line heard twice (best-takes' "again" keep) plays that line's stretch of
+// the framed clip first and the moment from its start after it: the hook then lies over two
+// stretches, each placed as any other (spans, in the cut's order)
 export function hookSpan(span) {
-  if (span.built) {
-    const until = hookUntil(span.edit.words, span.edit.duration);
-    return { start: span.start, end: +toFramed(until - 1e-3, span.pieces).toFixed(3), until };
+  const until = span.built ? hookUntil(span.edit.words, span.edit.duration) : 3;
+  const spans = [];
+  for (const p of span.pieces) {
+    if (p.start >= until - 1e-3) break;
+    const a = p.in, b = p.in + Math.min(p.duration, until - p.start) * (p.rate || 1);
+    const prev = spans.at(-1);
+    if (prev && Math.abs(prev[1] - a) < 0.5) prev[1] = +b.toFixed(3); else spans.push([+a.toFixed(3), +b.toFixed(3)]);
   }
-  return { start: span.start, end: +(span.start + 3).toFixed(3), until: 3 };
+  if (!spans.length) spans.push([span.start, +(span.start + until).toFixed(3)]);
+  const start = Math.min(...spans.map((s) => s[0])), end = Math.max(...spans.map((s) => s[1]));
+  return { start, end, until, ...(spans.length > 1 ? { spans } : {}) };
 }
 
 // the shots the cut shows, each with the seconds of it the cut keeps, for layout's text
@@ -83,7 +92,7 @@ export function shotsInput(shots, span, hook = null) {
     index.push(k);
     list.push({ n: k + 1, start: s.start, end: s.end, weight: +weight.toFixed(3), picture: s.picture, faces: s.faces, room: s.room?.none ? null : { free: s.room?.free || 0 } });
   });
-  return { input: { shots: list, ...(hook ? { hook: { start: hook.start, end: hook.end, calm: calmBehind(shots, hook) } } : {}) }, index };
+  return { input: { shots: list, ...(hook ? { hook: { start: hook.start, end: hook.end, ...(hook.spans ? { spans: hook.spans } : {}), calm: calmBehind(shots, hook) } } : {}) }, index };
 }
 
 // Whether the picture behind a hook text is calm: the framing knows faces, not hands or things,
@@ -92,8 +101,9 @@ export function shotsInput(shots, span, hook = null) {
 // a shot shown whole (a photo, footage) or two panels is not, and gets a card in the text's place.
 export const CALM = 0.28;
 export function calmBehind(shots, hook, H = 1920) {
-  const under = shots.filter((s) => s.end > hook.start + 1e-3 && s.start < hook.end - 1e-3);
-  return under.length > 0 && under.every((s) => s.kind === "people" && Math.max(0, ...s.faces.flatMap((f) => f.track.filter((m) => m.t >= hook.start - 0.05 && m.t <= hook.end + 0.05).map((m) => m.box[3]))) >= CALM * H);
+  const spans = hook.spans || [[hook.start, hook.end]];
+  const under = shots.filter((s) => spans.some(([a, b]) => s.end > a + 1e-3 && s.start < b - 1e-3));
+  return under.length > 0 && under.every((s) => s.kind === "people" && Math.max(0, ...s.faces.flatMap((f) => f.track.filter((m) => spans.some(([a, b]) => m.t >= a - 0.05 && m.t <= b + 0.05)).map((m) => m.box[3]))) >= CALM * H);
 }
 
 // every face of the framed clip in px of the frame, every `step` seconds: for best-takes, which

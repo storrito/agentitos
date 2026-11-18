@@ -82,6 +82,12 @@ test("the clocks: a time of the cut on the framed clip and back, across a pause 
   const h = hookSpan(span);
   assert.equal(h.until, 2.6);
   near(h.end, 4.6, 0.01, "hook's end on the framed clip");
+  // a cut that opens with a line heard twice (best-takes' "again" keep, from 20 s of the framed clip), then the moment from 5 s: the hook over both stretches
+  const twice = { pieces: [{ in: 20, out: 23, start: 0, duration: 3, rate: 1 }, { in: 5, out: 30, start: 3, duration: 25, rate: 1 }], start: 20, end: 30, built: true, edit: { duration: 28, words: [{ text: "Opening", end: 1 }, { text: "then.", end: 4.5 }] } };
+  const hs = hookSpan(twice);
+  assert.deepEqual(hs.spans, [[20, 23], [5, 6.5]]);
+  const shots2 = [{ start: 0, end: 10, kind: "people", faces: [{ track: [{ t: 6, box: [200, 300, 600, 700] }] }] }, { start: 18, end: 25, kind: "people", faces: [{ track: [{ t: 21, box: [200, 300, 600, 700] }] }] }];
+  assert.deepEqual(shotsInput(shots2, twice, hs).input.hook.spans, [[20, 23], [5, 6.5]]);
   const { input, index } = shotsInput([{ start: 0, end: 2, faces: [], room: { free: 0 } }, { start: 3, end: 3.9, faces: [], room: { free: 0 } }, { start: 5, end: 9, faces: [], room: { none: true } }], span);
   assert.deepEqual(index, [0, 2], "a shot the cut does not show is left out");
   assert.equal(input.shots[0].weight, 1);

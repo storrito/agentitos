@@ -1304,6 +1304,12 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(r.hook && r.hook.kind === "text" && r.hook.where === "below-chin" && r.hook.until === 3, JSON.stringify(r.hook));
     ok(r.hook.box[1] >= 300 + 500 && r.hook.box[1] + r.hook.box[3] <= r.caption.box[1], `hook ${r.hook.box} between chin 800 and captions ${r.caption.box[1]}`);
   });
+  t("a hook over two stretches of the shots' clock (a line heard twice opens the short): placed against the faces of both, not of what lies between", () => {
+    // 0–4 s and 10–14 s: a face high (room below its chin); 4–10 s: a face that fills the middle, shown between the two stretches only
+    const shots = [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 10, [still([60, 700, 960, 900], 4, 10)], null), shot(10, 14, [still([355, 300, 370, 500], 10, 14)])];
+    const r = textOverTime({ zones: Z9, shots, needs: [...cap, { role: "hook", start: 1, end: 12, spans: [[10, 12], [1, 2.5]] }] });
+    ok(r.hook && r.hook.kind === "text" && r.hook.where === "below-chin" && !r.hook.onFace, JSON.stringify(r.hook));
+  });
   t("the first shot changes within the hook's time to one that leaves it no place: the hook ends at the cut", () => {
     const r = textOverTime({ zones: Z9, shots: [shot(0, 2, [still([355, 300, 370, 500], 0, 2)]), shot(2, 6, [still([60, 250, 960, 1000], 2, 6)], null)], needs: [{ role: "hook", start: 0, end: 3.5 }] });
     ok(r.hook && r.hook.until === 2 && /ends at the cut/.test(r.hook.why), JSON.stringify(r.hook));

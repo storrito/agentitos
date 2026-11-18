@@ -436,7 +436,8 @@ function cmdText(o) {
     if (n.role !== "hook") return n;
     const h = input.hook;
     if (!h || !Number.isFinite(h.start) || !(h.end > h.start)) fail(`--text hook needs "hook": {"start": seconds, "end": seconds} in ${o.shots}: when the hook is shown, on the shots' clock.`);
-    return { ...n, start: h.start, end: h.end, ...(h.calm === false ? { calm: false } : {}) };
+    const spans = Array.isArray(h.spans) && h.spans.every((x) => Array.isArray(x) && x.length === 2 && x[1] > x[0]) ? h.spans : null;
+    return { ...n, start: h.start, end: h.end, ...(spans ? { spans } : {}), ...(h.calm === false ? { calm: false } : {}) };
   });
   const lifts = {};
   for (const v of o.lift) {
