@@ -1261,6 +1261,26 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(f.shots[0].eyes < DEFAULTS.eyeLine && f.shots[0].lift > m.shots[0].lift, JSON.stringify(f.shots[0]));
     return `mouth: eyes at ${Math.round(m.shots[0].eyes * 100)} %, ${m.caption.font} px, the lower lip ${m.shots[0].on.lip} s; full: eyes at ${Math.round(f.shots[0].eyes * 100)} %`;
   });
+  t("the note for captions on the lower lip says a smaller type would clear it only where one does, at the size computed for that shot: a close-up whose lip reaches below the captions' bottom gets no such promise (the review's case: 62 px still touched the lip)", () => {
+    const one = (box, feat, raise) => textOverTime({ zones: Z9, ...(raise ? { raise } : {}), shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
+    const lipNote = (r) => r.notes.find((n) => /lower lip for/.test(n)) || "";
+    // the eyes at 600, the mouth line at 1520 (as the test before): the lower lip down to 1520, past
+    // the captions' bottom at 1440, and the shot cannot go higher: no type clears it
+    const none = one([140, 200, 800, 1500], [300, 600, 480, 800]);
+    ok(none.shots[0].on.lip > 0 && none.shots[0].clearsAt === 0, JSON.stringify(none.shots[0]));
+    ok(/no smaller type would: the lower lip reaches down to y \d+ and the captions end at y \d+/.test(lipNote(none)) && !/--font-size/.test(lipNote(none)), lipNote(none));
+    // the whole head kept, the mouth line at 1475 (35 px below the captions' bottom): none either,
+    // and --raise mouth (which clears it, past the head's top) is named
+    const head = one([140, 300, 800, 1500], [300, 800, 480, 587], "head");
+    ok(head.shots[0].on.lip > 0 && head.shots[0].clearsAt === 0 && /--raise mouth/.test(lipNote(head)) && /no smaller type would/.test(lipNote(head)), JSON.stringify([head.shots[0], lipNote(head)]));
+    // where a size is named, it is true: that size at the same place and lift clears the lip, one px more does not
+    const some = textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520] })) }])], needs: cap });
+    const s = some.shots[0], n = s.clearsAt;
+    ok(s.on.lip > 0 && n > 0 && n < some.caption.font && new RegExp(`${n} px or less \\(--font-size ${n}\\)`).test(lipNote(some)), JSON.stringify([s, lipNote(some)]));
+    const at = (font) => textOverTime({ zones: Z9, raise: "head", fixed: { y: some.caption.options.y, font, lifts: { 0: s.lift } }, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520] })) }])], needs: cap }).shots[0];
+    ok(at(n).on.lip === 0 && at(n + 1).on.lip > 0, JSON.stringify([n, at(n).on, at(n + 1).on]));
+    return `none: lip ${none.shots[0].on.lip} s; head: lip ${head.shots[0].on.lip} s; a lip that clears at ${n} px (of ${some.caption.font})`;
+  });
   t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
     const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
     const r = textOverTime({ zones: Z9, shots: [close(0, 3, 840), close(3, 6, 300), close(6, 9, 870), close(9, 12, 300), close(12, 15, 850)], needs: cap });

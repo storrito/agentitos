@@ -201,6 +201,20 @@ function shotUnder(cap, moments, most, D, exact = false, beyond = most, price = 
   return { ...r, lift: Math.max(0, lift), need: Math.ceil(need), needMouth: Math.ceil(needMouth), past, below };
 }
 
+// The largest type whose captions, ending where these end (cap: its box, font and lines), keep off
+// the lower lip of every face they reach in a shot raised by lift: the area shrinks from its top,
+// so the type must make it end below the lowest mouth line. { font: px (0: none), lip: that line }
+function lipClearing(cap, moments, lift, D) {
+  let lip = -Infinity;
+  for (const m of moments) for (const f of m.faces) {
+    if (!overlapsX(f.box, cap.box) || inter(keepOut(up(f.box, lift), D), cap.box) <= 0) continue;
+    lip = Math.max(lip, mouthOf(f) - lift);
+  }
+  if (!Number.isFinite(lip)) return { font: cap.font, lip: null };
+  const em = cap.lines * D.caption.line + D.caption.padEm;
+  return { font: Math.max(0, Math.floor((Y1(cap.box) - lip) / em)), lip };
+}
+
 // Returns of one framing (the same face, the same size, the same place in the frame: the camera
 // cut back to a close-up it showed before) stand at one height: a close-up that comes back
 // higher or lower each time reads as a camera that moves. [[shot index, …], …] of two or more.
@@ -424,9 +438,18 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         out.fault = "mouth";
         conflicts.push(`${span}: the captions cover ${who}'s mouth for ${r1(r.mouth)} s${raised} at ${best.font} px${best.font <= D.caption.font.least + 1 ? " (the smallest readable size)" : ", the type that leaves the least on the faces of the whole clip"}. What would avoid it: ${s.by === "fixed" ? "a larger lift than the one fixed, " : raise === "head" ? "--raise mouth (the head's top cut for it), " : ""}a cut to another shot here, or a smaller type by hand (--font-size).`);
       } else if (r.lip > 0.05) {
-        // on the lower lip at a readable size: said, not a fault
+        // on the lower lip: said, not a fault. Whether a smaller type would clear it is computed
+        // for this shot, never said by default: in a tight close-up the lower lip can reach down
+        // to where the captions end, and then no type clears it
         out.chin = true; out.lip = r1(r.lip);
-        notes.push(`${span}: the captions lie on ${who}'s lower lip for ${r1(r.lip)} s and on the chin for ${chin} s, not on the mouth${r.past ? `; raised ${r.lift} px past the head's top for it` : ""}: not avoidable at a readable size (${best.font} px; the low end of published captions is ${D.caption.font.least} px)${raise === "head" ? " with the whole head kept" : ""}. Nothing to fix; ${raise === "head" ? "--raise mouth (the head's top cut for it), " : ""}a cut to another shot or a smaller type by hand (--font-size) would avoid it.`);
+        const c = lipClearing(best, s.moments, r.lift, D), least = D.caption.font.least;
+        out.clearsAt = c.font;
+        // with the whole head kept: whether the default raise, past the head's top as far as the
+        // eye line allows, would clear it
+        const viaMouth = raise === "head" && !s.forced && (() => { const ml = maxLift(s, s.moments, { ...ctx, raise: "mouth" }); const q = shotUnder(best.box, s.moments, ml.beyond, D, true); return q.lip + q.mouth + q.nose <= 0.05; })();
+        const lead = `${span}: the captions lie on ${who}'s lower lip for ${r1(r.lip)} s and on the chin for ${chin} s, not on the mouth${r.past ? `; raised ${r.lift} px past the head's top for it` : ""}`;
+        if (c.font >= least && c.font < best.font) notes.push(`${lead}, at ${best.font} px, the type that leaves the least on the faces of the whole clip: ${c.font} px or less (--font-size ${c.font}) would clear it at this place, and a cut to another shot would avoid it.`);
+        else notes.push(`${lead}: not avoidable at a readable size (${best.font} px; the low end of published captions is ${least} px)${raise === "head" ? " with the whole head kept" : ""}. Nothing to fix; ${viaMouth ? "--raise mouth (the head's top cut for it) or " : ""}a cut to another shot would avoid it${raise === "head" && !viaMouth ? " (--raise mouth would not clear it either)" : ""}; ${c.font >= 1 ? `a smaller type only at ${c.font} px or less (--font-size ${c.font}), under that low end` : `no smaller type would: the lower lip reaches down to y ${r0(c.lip)} and the captions end at y ${r0(Y1(best.box))}`}.`);
       } else if (hair) {
         // above the face, within the margin kept for the hair: no face covered
         out.hair = true;
