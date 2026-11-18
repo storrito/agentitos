@@ -778,49 +778,75 @@ export function edgeLine(e) {
 
 // per shot a row: the footage at its middle with the window drawn in, the frame at the shot's
 // first, middle and last frame, labelled; a red frame and "EDGE" on a frame where a face is at
-// an edge. Eight shots a sheet: file, file-2.jpg, …
+// an edge. Eight shots a sheet: file, file-2.jpg, … Every cell is taken from the video by an
+// ffmpeg of its own, small, and the page is put together from the small pictures (one page of
+// 4K cells at once took 6.4 GB). Returns the files written; `.missing` lists what could not be
+// (a cell without a frame is grey and named there)
 export function sheet(video, framed, windows, shots, edges, file, { fps = 25 } = {}) {
   const H = 300, FW = Math.round((H * 9) / 16 / 2) * 2, PER = 8;
-  const files = [];
+  const files = [], missing = [];
   const meta = probe(video);
   const SW = Math.round((H * meta.width) / meta.height / 2) * 2;
   // the last frame both videos have
-  const last = Math.min(meta.duration, probe(framed).duration) - 1.5 / fps;
+  const length = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", framed], { encoding: "utf8" }).stdout) || meta.duration;
+  const last = Math.min(meta.duration, length) - 1.5 / fps;
   // drawtext takes no quotes, colons, commas or percent signs here
   const text = (s) => String(s).replace(/[\\':,%;\[\]]/g, " ");
-  for (let page = 0; page * PER < shots.length; page++) {
-    const rows = shots.map((s, k) => ({ s, k })).slice(page * PER, page * PER + PER);
-    const args = ["-v", "error", "-y"], chains = [];
-    let n = 0;
-    for (const { s, k } of rows) {
-      // the shot's very first frame (its time less a hair: -ss gives the first frame from there)
-      const ts = [s.start === 0 ? 0 : s.start + 0.5 / fps - 0.002, (s.start + s.end) / 2, Math.min(s.end - 0.5 / fps, last) - 0.002];
-      const mid = ts[1];
-      const piece = windows.find((w) => w.start <= mid && w.end > mid) || windows.find((w) => w.shot === k);
-      const rects = !piece ? [] : piece.fit ? [piece.fit] : piece.stack ? piece.stack : [windowAt(piece, mid)];
-      const scale = H / meta.height;
-      const boxes = rects.map((r) => `drawbox=x=${Math.round(r.x * scale)}:y=${Math.round(r.y * scale)}:w=${Math.round(r.w * scale)}:h=${Math.round(r.h * scale)}:color=yellow:t=3`).join(",");
-      const flagged = edges.filter((e) => e.shot === k);
-      const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${spans(flagged.map((e) => e.t)).slice(0, 4).join(" ").replace(/–/g, " to ")} s` : ""}`;
-      args.push("-ss", mid.toFixed(3), "-i", video);
-      chains.push(`[${n}:v]scale=${SW}:${H},setsar=1${boxes ? "," + boxes : ""},drawtext=text='${text(label)}':x=8:y=8:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=4[c${k}_0]`);
-      n++;
-      ts.forEach((t, i) => {
-        const bad = flagged.some((e) => Math.abs(e.t - t) < 0.6 / fps || (i === 1 && Math.abs(e.t - t) < 1e-3));
-        args.push("-ss", t.toFixed(3), "-i", framed);
-        chains.push(`[${n}:v]scale=${FW}:${H},setsar=1${bad ? ",drawbox=x=0:y=0:w=iw:h=ih:color=red:t=8" : ""},drawtext=text='${["first", "middle", "last"][i]} ${t.toFixed(2)}${bad ? " EDGE" : ""}':x=6:y=h-26:fontsize=15:fontcolor=white:box=1:boxcolor=${bad ? "red" : "black"}@0.8:boxborderw=3[c${k}_${i + 1}]`);
-        n++;
-      });
-      chains.push(`[c${k}_0][c${k}_1][c${k}_2][c${k}_3]hstack=inputs=4,pad=iw:ih+6:0:0:white[r${k}]`);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sheet-"));
+  let fonts = true;
+  // one cell: a frame of `src` at t (else up to a few frames earlier), scaled, with its marks
+  const cell = (src, t, w, filters, out) => {
+    for (const back of [0, 1, 2, 4, 8]) {
+      const at = Math.max(0, t - back / fps);
+      const vf = `scale=${w}:${H},setsar=1${filters.length ? "," + filters.join(",") : ""}`;
+      const run = (f) => spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", at.toFixed(3), "-i", src, "-frames:v", "1", "-vf", f, "-q:v", "3", out], { encoding: "utf8" });
+      fs.rmSync(out, { force: true });
+      // an ffmpeg without fonts: the cells without their labels
+      const bare = vf.replace(/,drawtext=.*$/, "");
+      let r = run(fonts ? vf : bare);
+      if (r.status !== 0 && fonts) { fonts = false; r = run(bare); }
+      if (fs.existsSync(out) && fs.statSync(out).size > 0) return true;
     }
-    const out = page ? file.replace(/\.jpg$/, `-${page + 1}.jpg`) : file;
-    const graph = chains.join(";") + ";" + rows.map(({ k }) => `[r${k}]`).join("") + (rows.length > 1 ? `vstack=inputs=${rows.length}[s]` : "copy[s]");
-    let r = spawnSync("ffmpeg", [...args, "-filter_complex", graph, "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
-    // an ffmpeg without fonts: the same sheet without its labels
-    if (r.status !== 0) r = spawnSync("ffmpeg", [...args, "-filter_complex", graph.replace(/,drawtext=[^\[;]*/g, ""), "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
-    if (r.status === 0) files.push(out);
+    spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=gray:s=${w}x${H}`, "-frames:v", "1", out]);
+    return false;
+  };
+  try {
+    for (let page = 0; page * PER < shots.length; page++) {
+      const rows = shots.map((s, k) => ({ s, k })).slice(page * PER, page * PER + PER);
+      const inputs = [];
+      for (const { s, k } of rows) {
+        // the shot's very first frame (its time less a hair: -ss gives the first frame from there)
+        const ts = [s.start === 0 ? 0 : s.start + 0.5 / fps - 0.002, (s.start + s.end) / 2, Math.min(s.end - 0.5 / fps, last) - 0.002];
+        const mid = ts[1];
+        const piece = windows.find((w) => w.start <= mid && w.end > mid) || windows.find((w) => w.shot === k);
+        const rects = !piece ? [] : piece.fit ? [piece.fit] : piece.stack ? piece.stack : [windowAt(piece, mid)];
+        const scale = H / meta.height;
+        const boxes = rects.map((r) => `drawbox=x=${Math.round(r.x * scale)}:y=${Math.round(r.y * scale)}:w=${Math.round(r.w * scale)}:h=${Math.round(r.h * scale)}:color=yellow:t=3`);
+        const flagged = edges.filter((e) => e.shot === k);
+        const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${spans(flagged.map((e) => e.t)).slice(0, 4).join(" ").replace(/–/g, " to ")} s` : ""}`;
+        const c0 = path.join(tmp, `${k}-0.jpg`);
+        if (!cell(video, mid, SW, [...boxes, `drawtext=text='${text(label)}':x=8:y=8:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=4`], c0)) missing.push(`shot ${k + 1}: the footage at ${mid.toFixed(2)} s`);
+        inputs.push(c0);
+        ts.forEach((t, i) => {
+          const bad = flagged.some((e) => Math.abs(e.t - t) < 0.6 / fps || (i === 1 && Math.abs(e.t - t) < 1e-3));
+          const c = path.join(tmp, `${k}-${i + 1}.jpg`);
+          const marks = [...(bad ? ["drawbox=x=0:y=0:w=iw:h=ih:color=red:t=8"] : []), `drawtext=text='${["first", "middle", "last"][i]} ${t.toFixed(2)}${bad ? " EDGE" : ""}':x=6:y=h-26:fontsize=15:fontcolor=white:box=1:boxcolor=${bad ? "red" : "black"}@0.8:boxborderw=3`];
+          if (!cell(framed, t, FW, marks, c)) missing.push(`shot ${k + 1}: the frame at ${t.toFixed(2)} s`);
+          inputs.push(c);
+        });
+      }
+      const out = page ? file.replace(/\.jpg$/, `-${page + 1}.jpg`) : file;
+      const chains = rows.map((_, r) => `[${4 * r}:v][${4 * r + 1}:v][${4 * r + 2}:v][${4 * r + 3}:v]hstack=inputs=4,pad=iw:ih+6:0:0:white[r${r}]`);
+      const graph = chains.join(";") + ";" + rows.map((_, r) => `[r${r}]`).join("") + (rows.length > 1 ? `vstack=inputs=${rows.length}[s]` : "copy[s]");
+      fs.rmSync(out, { force: true });
+      spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs.flatMap((f) => ["-i", f]), "-filter_complex", graph, "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
+      if (fs.existsSync(out) && fs.statSync(out).size > 0) files.push(out);
+      else missing.push(`${path.basename(out)} (shots ${rows[0].k + 1}–${rows[rows.length - 1].k + 1})`);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
-  return files;
+  return Object.assign(files, { missing });
 }
 
 // does footage of this shape need cutting for the frame? (wider by more than 15 %)
@@ -896,6 +922,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       }
       for (const d of s.doubtful || []) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
     });
+    if (r.sheets.missing?.length) console.log(`The sheet is missing ${r.sheets.missing.join("; ")}: look at framed.mp4 there yourself (ffmpeg -ss <second> -i framed.mp4 -frames:v 1 look.jpg).`);
     if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where a face is at an edge.${r.edges.length ? " A ⚠ above: look at that row; a face that matters cut off, `reframe --whole <second>` shows the shot whole, `--follow <second>` one window on who speaks." : ""}`);
   }
 }

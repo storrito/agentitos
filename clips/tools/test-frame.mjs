@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline } from "./frame.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet } from "./frame.mjs";
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -405,4 +405,28 @@ test("a slide talk (the speaker a small inset beside the slides) stays whole; un
     const [w] = windowsOf([shot], [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
     assert.ok(w.fit, "shown whole");
   }
+});
+
+test("the sheet is there when it says so, also when the framed video ends a few frames before its sound", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const clip = path.join(dir, "clip.mp4"), framed = path.join(dir, "framed.mp4"), file = path.join(dir, "framed.sheet.jpg");
+    let r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=640x360:r=${FPS}:d=2.2`, "-c:v", "libx264", "-preset", "ultrafast", clip], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    // the reviewer's case: the picture 2.0 s, the sound 2.2 s, so its duration says 2.2
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=360x640:r=${FPS}:d=2.0`, "-f", "lavfi", "-i", "sine=d=2.2", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", framed], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const windows = [{ start: 0, end: 2.2, shot: 0, kind: "people", w: 202, h: 360, keys: [{ t: 0, x: 100, y: 0 }] }];
+    const files = sheet(clip, framed, windows, [{ start: 0, end: 2.2 }], [], file, { fps: FPS });
+    assert.deepEqual([...files], [file]);
+    assert.ok(fs.statSync(file).size > 1000);
+    assert.deepEqual(files.missing, []);
+    // a framed video with no picture at all: nothing is claimed, and what is missing is named
+    const empty = path.join(dir, "empty.mp4");
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=2.2", "-c:a", "aac", empty], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const none = sheet(clip, empty, windows, [{ start: 0, end: 2.2 }], [], path.join(dir, "none.jpg"), { fps: FPS });
+    assert.ok(none.missing.length >= 3, JSON.stringify(none.missing));
+    for (const f of none) assert.ok(fs.existsSync(f));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
