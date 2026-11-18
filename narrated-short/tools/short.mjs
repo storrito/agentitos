@@ -7,13 +7,13 @@
 //   node tools/short.mjs clock <work> [--gap 0.3]
 //        <work>/voice.json (launch-video's `voice`: a line a sentence) → the film's clock: where
 //        each line plays, every sentence and word with its time; <work>/clock.json
-//   node tools/short.mjs build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 16]
+//   node tools/short.mjs build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17]
 //        <work>/beats.json and the clock → one clip per beat cut into <composition>/assets/clips/
 //        and checked (dark, cut short, standing still, a dark first frame, a cut of the source
 //        inside), the captions built by agentitos' captions (paused under the comparison card,
 //        the key words marked, the beats' "boxes" as cards of their own), the first beat's freeze
 //        by agentitos' freeze-cutout when the beat asks for one, and <composition>/index.html:
-//        clips, voice, music (measured, 16 LU under the voice), hook text, card, credit, handle.
+//        clips, voice, music (measured, 17 LU under the voice), hook text, card, credit, handle.
 //        Changed beats: build again; a clip whose beat and source did not change is kept.
 //   node tools/short.mjs sheet <work> <composition>
 //        stills of the composition at the moments that matter (the first frame, the hook, the
@@ -29,7 +29,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
 
-const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 16] | sheet <work> <composition>";
+const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
 const log = (s) => console.error(s);
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -56,7 +56,7 @@ const DARK_MAX = { whole: 12, fill: 24, native: 24 };
 const SHORT_TOL = 0.15;     // seconds a clip may be shorter than its beat
 const FROZEN_PART = 0.5;    // part of a clip that stands still before it is mentioned
 const OPEN_PART = 0.5;      // the hook's first frame reaches this part of the clip's median luma
-const UNDER = 16;           // LU the music lies under the voice: what a fixed 0.16 meant for two equally loud files
+const UNDER = 17;           // LU the music lies under the voice: as launch-video's `music` lays it, the distance the owner chose by ear
 const lufs = (x) => x.toFixed(1).replace("-", "−");
 
 function parse(args, valued = [], flags = []) {
@@ -485,8 +485,8 @@ function build(args) {
   if (hasMusic) {
     // --under LU under the voice, both measured as the film plays them (the voice's lines at volume 1)
     const v = loudness(ck.lines.map((l) => path.join(comp, l.file))), m = loudness([music]);
-    let volume = 0.16;
-    if (v == null || m == null) warn.push(`the ${v == null ? "voice" : "music"} is silent: the music is at 0.16, as if both were equally loud`);
+    let volume = 0.14;
+    if (v == null || m == null) warn.push(`the ${v == null ? "voice" : "music"} is silent: the music is at 0.14, as if both were equally loud`);
     else {
       const fit = musicVolume(v, m, musicUnder);
       volume = fit.volume;
