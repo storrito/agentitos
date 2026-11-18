@@ -287,7 +287,12 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const off = ux / sw - 0.5, looks = off < -B.look ? "right" : off > B.look ? "left" : null;
     const side = B.side !== "look" ? B.side : looks === "left" ? "right" : "left";
     const col = side === "left" ? [0, 0, cw, H] : [W - cw, 0, cw, H];
-    const band = [Math.max(S[0], col[0]), S[1], Math.min(X1(S), X1(col)) - Math.max(S[0], col[0]), S[3]];
+    // (captions that stay where they stand reach over the column: the face keeps above them,
+    // with the margin below a chin, wherever their line may run)
+    const capOver = cap && B.captions === "stay" && capX < X1(col) && capX + capW > col[0];
+    // (the margin below a chin taken for the largest face the column could hold)
+    const faceBottom = capOver ? Math.min(Y1(S), capTop - Math.max(D.free.belowMin, D.free.below * (capTop - S[1]))) : Y1(S);
+    const band = [Math.max(S[0], col[0]), S[1], Math.min(X1(S), X1(col)) - Math.max(S[0], col[0]), faceBottom - S[1]];
     const sCover = Math.max(cw / sw, H / sh);
     const fits = (s) => s * hull[2] <= band[2] - 2 * EPS && s * hull[3] <= band[3] - 2 * EPS;
     // the scale it had full-frame where that covers the column (the picture is then only cut to

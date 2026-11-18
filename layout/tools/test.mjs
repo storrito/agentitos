@@ -1400,6 +1400,17 @@ if (!QUICK) t("a band from captions is drawn on the page as tall as it is (an in
   return `${n} pages`;
 });
 
+t("captions that stay in 16:9 (beside.captions=stay) keep the column's face above them, so that solver and checker agree and the caller who asked for it gets a column that passes (an independent review: 720×1280, the face 48,312,636,719, column right: the solver failed text on the face, the checker passed)", () => {
+  let n = 0;
+  for (const [source, face] of [[[720, 1280], [48, 312, 636, 719]], [[1080, 1920], [80, 250, 445, 580]], [[1280, 720], [555, 330, 180, 195]]]) for (const side of ["left", "right"]) {
+    const r = beside(Z169, { source, face, set: { "beside.side": side, "beside.captions": "stay" } }), c = r.candidates.find((k) => k.arrangement === "column");
+    ok(!c.hard && !c.unmet.length && c.faceInFrame[1][1] + c.faceInFrame[1][3] <= c.captions.box[1] - 23, `${source} ${side}: ${JSON.stringify([c.faceInFrame[1], c.captions.box, c.problems])}`);
+    if (!QUICK) { const file = path.join(OUT, `beside-stay-${n}.html`); fs.writeFileSync(file, renderBeside(c, r, { page: file })); const cmp = compare(c, checkPage(file)); ok(cmp.verdictAgrees && cmp.agree, `${source} ${side}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`); }
+    n++;
+  }
+  return `${n} columns`;
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {
