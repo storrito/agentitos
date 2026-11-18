@@ -1,4 +1,5 @@
-// The music's volume under the voice, on made-up sounds (tones and noise at different levels). No
+// The music's volume under the voice, on made-up sounds (tones and noise at different levels), and
+// the board on made-up stills (flat colours named as `hyperframes snapshot` names its stills). No
 // request, no key.
 //
 //   node --test tools/test.mjs
@@ -10,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loudness, musicVolume, distance, inFilm, LOWEST, HIGHEST } from "./lib/level.mjs";
-import { soundLine, musicElement } from "./launch.mjs";
+import { soundLine, musicElement, boardLayout, storyboardFrames } from "./launch.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
@@ -154,4 +155,111 @@ test("check: how far under the voice the music sits, from the composition's own 
     ({ comp } = composition(dir));
     assert.equal(soundLine(comp), null);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ------------------------------------------------------------------------------- the board
+
+const TOOL = path.join(path.dirname(new URL(import.meta.url).pathname), "launch.mjs");
+const drawtext = ffmpeg && /\sdrawtext\s/.test(spawnSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" }).stdout || "");
+const launch = (cwd, ...args) => spawnSync(process.execPath, [TOOL, ...args], { cwd, encoding: "utf8" });
+const COLOURS = { red: [255, 0, 0], lime: [0, 255, 0], blue: [0, 0, 255], yellow: [255, 255, 0], magenta: [255, 0, 255], cyan: [0, 255, 255], black: [0, 0, 0] };
+
+// stills as `hyperframes snapshot --at … --no-end` names them, one flat colour each, written last first
+function stills(folder, colours, size, step = 2.5) {
+  fs.mkdirSync(folder, { recursive: true });
+  [...colours.entries()].reverse().forEach(([i, c]) =>
+    run(["-f", "lavfi", "-i", `color=c=${c}:s=${size}`, "-frames:v", "1", path.join(folder, `frame-${String(i).padStart(2, "0")}-at-${+(i * step + 1).toFixed(2)}s.png`)]));
+}
+function size(file) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", file], { encoding: "utf8" });
+  return r.stdout.trim().split(",").map(Number);
+}
+// the colour nearest to the picture's pixel at x, y
+function colourAt(file, [W], x, y) {
+  const raw = spawnSync("ffmpeg", ["-v", "error", "-i", file, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 64 << 20 }).stdout;
+  const k = (Math.round(y) * W + Math.round(x)) * 3, px = [raw[k], raw[k + 1], raw[k + 2]];
+  return Object.entries(COLOURS).sort(([, a], [, b]) => a.reduce((s, v, j) => s + (v - px[j]) ** 2, 0) - b.reduce((s, v, j) => s + (v - px[j]) ** 2, 0))[0][0];
+}
+
+test("board: the stills of a vertical film as one picture, three a row, in film order, named from STORYBOARD.md", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const work = path.join(dir, "launch", "demo"), board = path.join(work, "board");
+    const colours = ["red", "lime", "blue", "yellow", "magenta", "cyan", "black"];
+    stills(board, colours, "1080x1920");
+    fs.writeFileSync(path.join(work, "STORYBOARD.md"), `---\nformat: 1080x1920\n---\n\n${colours.map((c, i) => `## Frame ${i + 1}: Beat ${c} (${i * 2.5}-${i * 2.5 + 2.5}s)\n\n- status: built\n`).join("\n")}`);
+    const r = launch(dir, "board", "launch/demo", "launch/demo/board");
+    assert.equal(r.status, 0, r.stderr);
+    const out = path.join(dir, "uploads", "demo-board.jpg");
+    assert.ok(fs.existsSync(out));
+    const [W, H] = size(out);
+    assert.equal(W, 1080);
+    // the tiles counted by the picture's size: seven stills are three rows, three stills one
+    stills(path.join(dir, "three"), colours.slice(0, 3), "1080x1920");
+    assert.equal(launch(dir, "board", "launch/demo", "three", "--out", "three.jpg").status, 1, "three stills against seven frames");
+    fs.rmSync(path.join(work, "STORYBOARD.md"));
+    const r3 = launch(dir, "board", "launch/demo", "three", "--out", "three.jpg");
+    assert.equal(r3.status, 0, r3.stderr);
+    const [W3, H3] = size(path.join(dir, "three.jpg"));
+    assert.equal(W3, 1080);
+    assert.equal(H - 24, 3 * (H3 - 24));
+    // film order: the colour in the middle of each tile is its still's
+    const L = boardLayout(colours.length, [1080, 1920], { labels: drawtext });
+    assert.deepEqual(L.size, [W, H]);
+    assert.equal(L.cols, 3);
+    L.tiles.forEach((t, i) => assert.equal(colourAt(out, [W, H], t.still[0] + t.still[2] / 2, t.still[1] + t.still[3] / 2), colours[i], `tile ${i + 1}`));
+    // its lines: every frame with its number, name and time, in order, and what to do next
+    const lines = r.stdout.split("\n").filter((l) => /^\s+\d\d\s/.test(l));
+    assert.deepEqual(lines.map((l) => l.trim().slice(0, 2)), ["01", "02", "03", "04", "05", "06", "07"]);
+    assert.match(lines[2], /03\s+Beat blue\s+5–7.5 s\s+frame-02-at-6s\.png/);
+    assert.match(r.stdout, /show it in the chat \(an <img> of uploads\/demo-board\.jpg\) and stop until they say go/);
+    // without STORYBOARD.md: numbers and moments, and the sentence that names are missing
+    assert.match(r3.stdout, /01\s+at 1 s/);
+    assert.match(r3.stdout, /No launch\/demo\/STORYBOARD\.md: the tiles carry their number and moment, no name/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("board: a wide film two a row; a redo folder and the contact sheet are not frames", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const colours = ["red", "lime", "blue"];
+    stills(path.join(dir, "board"), colours, "1920x1080");
+    // what snapshot leaves beside the stills
+    stills(path.join(dir, "board", "redo"), ["yellow"], "1920x1080");
+    run(["-f", "lavfi", "-i", "color=c=black:s=640x360", "-frames:v", "1", path.join(dir, "board", "contact-sheet.jpg")]);
+    const r = launch(dir, "board", "work", "board", "--out", "out/board.jpg");
+    assert.equal(r.status, 0, r.stderr);
+    const out = path.join(dir, "out", "board.jpg");
+    const [W, H] = size(out);
+    const L = boardLayout(3, [1920, 1080], { labels: drawtext });
+    assert.equal(L.cols, 2);
+    assert.equal(L.rows, 2);
+    assert.deepEqual([W, H], L.size);
+    L.tiles.forEach((t, i) => assert.equal(colourAt(out, [W, H], t.still[0] + t.still[2] / 2, t.still[1] + t.still[3] / 2), colours[i], `tile ${i + 1}`));
+    assert.match(r.stdout, /3 stills of 1920×1080 in film order, 2 a row/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("board: a missing folder or one without stills is one sentence", () => {
+  const dir = tmp();
+  try {
+    const one = (r) => { assert.equal(r.status, 1); assert.equal(r.stderr.trim().split("\n").length, 1); return r.stderr; };
+    assert.match(one(launch(dir, "board", "work", "nowhere")), /^✗ There is no nowhere: pose every beat, then snapshot them in one run/);
+    fs.mkdirSync(path.join(dir, "empty"));
+    fs.writeFileSync(path.join(dir, "empty", "notes.txt"), "");
+    assert.match(one(launch(dir, "board", "work", "empty")), /^✗ No stills \(frame-NN-at-<seconds>s\.png\) in empty: snapshot every beat in one run/);
+    assert.match(one(launch(dir, "board")), /^Usage: .*board <work> <stills-folder>/);
+    assert.equal(fs.existsSync(path.join(dir, "uploads")), false);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("storyboardFrames: both of HyperFrames' headings, times from a range or the durations", () => {
+  const frames = storyboardFrames(`---\nformat: 1080x1920\nduration: 12s\n---\n\n## Frame 1: The hook (0-3s)\n- act: 1\n\n## Frame 2 — The problem\n- duration: 4s\n- scene: a timer spins\n\n### Beat 3: The fix (7–9.5 s)\n\n## Frame 4 — The end card\n\nfree text\n## Notes\n`);
+  assert.deepEqual(frames, [
+    { number: 1, name: "The hook", range: [0, 3] },
+    { number: 2, name: "The problem", range: [3, 7] },
+    { number: 3, name: "The fix", range: [7, 9.5] },
+    { number: 4, name: "The end card", range: null },
+  ]);
+  assert.deepEqual(storyboardFrames("# A title\nno frames here"), []);
 });
