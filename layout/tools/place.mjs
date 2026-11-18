@@ -363,7 +363,7 @@ function cmdPage(o) {
   let differ = 0;
   for (const i of picks) for (const v of views) {
     const c = res.candidates[i], page = path.join(folder, `candidate-${i + 1}${tag(v)}.html`), png = path.join(folder, `candidate-${i + 1}${tag(v)}.png`);
-    fs.writeFileSync(page, renderPage(c, res, { stills: v.stills.length ? v.stills : null, page }));
+    fs.writeFileSync(page, renderPage(c, res, { stills: v.stills.length ? v.stills : null, page, at: v.at ?? null }));
     let checked;
     try { checked = checkPage(page, res.asked?.platforms || []); } catch (e) { written.push(path.basename(page)); save(); fail(e.message); }
     const shot = picture(chrome, page, png, res.size);

@@ -98,7 +98,7 @@ export function solve(args) {
   list.forEach((q, si) => (q.faces || []).forEach((f, fi) => {
     n++;
     if (typeof f[0] === "number") return;
-    const tf = trackFace(Array.isArray(f) ? f : f.at), info = { face: n, source: si + 1, ...tf.track, times: tf.at.map((m) => m.t), placed: short(res.candidates[0]), decides: [] };
+    const tf = trackFace(Array.isArray(f) ? f : f.at), info = { face: n, source: si + 1, ...tf.track, times: tf.at.map((m) => m.t), boxes: tf.at.map((m) => ({ t: m.t, box: m.box })), placed: short(res.candidates[0]), decides: [] };
     const by = new Map();
     for (const [edge, t] of Object.entries(tf.track.edges)) by.set(t, [...(by.get(t) || []), edge]);
     for (const [t, edges] of by) {

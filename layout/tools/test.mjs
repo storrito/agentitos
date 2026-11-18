@@ -558,6 +558,17 @@ t("close together means about the same size and near both ways (an independent r
   return `${nameOf(far.candidates[0])} first for the near and the far person`;
 });
 
+t("on the picture of one moment a face that moves shows its box at that moment, dashed, and the hull it is placed by thin behind it: the review saw the hull drawn at 4.5 s, 1.5× wider than the face, and SKILL.md had the agent read such a box again, without end", () => {
+  const res = solve({ zones: Z916, source: [3840, 2160], faces: WALK, needs: [cap(1)] }), c = res.candidates[0];
+  const html = renderPage(c, res, { at: 4.5 }), boxes = [...html.matchAll(/class="moment" style="left:([-\d.]+)px;top:([-\d.]+)px;width:([\d.]+)px;height:([\d.]+)px/g)].map((m) => m.slice(1).map(Number));
+  ok(boxes.length === 2 && (html.match(/class="hull"/g) || []).length === 2, `${boxes.length} moments, ${(html.match(/class="hull"/g) || []).length} hulls`);
+  const want = WALK.map((tr) => tr.find((m) => m.t === 4.5).box).map((b) => [c.left + c.scale * b[0], c.top + c.scale * b[1], c.scale * b[2], c.scale * b[3]]);
+  for (const w of want) ok(boxes.some((b) => b.every((v, i) => Math.abs(v - w[i]) < 0.6)), `no box at ${w.map(Math.round)}: ${JSON.stringify(boxes)}`);
+  ok(!/class="moment"/.test(renderPage(c, res, {})), "a page of no moment draws a moment's box");
+  ok(/its box at that picture's moment/.test(fs.readFileSync(path.join(HERE, "..", "SKILL.md"), "utf8")), "SKILL.md does not say which box is drawn");
+  return `face 1 at 4.5 s: ${boxes[0].map(Math.round).join(",")}`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);
