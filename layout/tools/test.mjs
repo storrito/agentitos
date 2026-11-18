@@ -540,6 +540,16 @@ t("with a speaker named, the speaker's face sets the size, not a bystander's: a 
   return `${nameOf(first)} on face 1, then ${res.candidates.slice(1, 3).map(nameOf).join(", ")}`;
 });
 
+t("an inset goes below half the take's size while the face stays as tall as published faces are (19 % of the frame's height at the least): an upright take with a face half its height, a hook and two caption lines gave only – and ✗ (the floor was half the size), and SKILL.md then had the agent ask for less text; now an inset at 0.46× passes, the face 23 %, no text within the margins around it", () => {
+  const face = [168, 576, 744, 960], res = solve({ zones: Z916, source: [1080, 1920], faces: [face], needs: [hook, cap(2)] }), first = res.candidates[0];
+  ok(first.fit === "inset" && !first.hard && !first.unmet.length && first.scale < DEFAULTS.insetMin, `the first is ${nameOf(first)}: ${JSON.stringify(first.problems)}`);
+  ok(100 * first.faceHeight / 1920 >= DEFAULTS.insetFace, `the face is ${first.faceHeight} px`);
+  const f = first.faceInFrame[0], kept = [f[0] - 0.25 * f[2], f[1] - 0.35 * f[3], 1.5 * f[2], 1.43 * f[3]];
+  ok(first.text.every((x) => !overlap(x.box, kept)), "text within the margins around the face");
+  agree(first, res, "inset-below-half");
+  return `${nameOf(first)}, the face ${Math.round(100 * first.faceHeight / 1920)} %, ${Math.round(100 * first.ground)} % ground`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);

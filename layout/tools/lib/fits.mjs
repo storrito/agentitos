@@ -179,7 +179,12 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
         }
       }
     }
-    // a picture smaller than the frame over a ground
+    // a picture smaller than the frame over a ground. How small: down to insetMin of where it
+    // starts, and further while the smallest face is still insetFace % of the frame's height (the
+    // lower end of what published faces are): a take with a large face finds room for its text
+    // only well below half its size
+    const faceSrc = faces.length ? Math.min(...faces.map((f) => f[3])) : 0;
+    const floorOf = (from) => (faceSrc ? Math.min(D.insetMin, D.insetFace / 100 * H / faceSrc / from) : D.insetMin);
     const scanDown = (fit, from, floor, modeX, modeY, extra) => {
       let best = null, firstMet = null, firstFull = null;
       for (let k = from === s0 ? 1 : 0; ; k++) {
@@ -210,7 +215,7 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
         if (wh < H - 1 && rs > ratioOf(r) * 1.02) out.push(bestVariant(ctx, "crop", wh / sh, "cover", "inside", { aroundFace: true, ratio: r }));
       }
       between();
-    } else if (same) { if (textOpen) scanDown("inset", s0, D.insetMin, "inside", "inside"); }   // smaller on every side: only for the text's sake
+    } else if (same) { if (textOpen) scanDown("inset", s0, floorOf(s0), "inside", "inside"); }   // smaller on every side: only for the text's sake
     else if (rs > rf) {
       // a source wider than the frame's shape: crops as bands across an upright frame, and the whole source
       if (ctx.tall) for (const r of D.bands) {
@@ -221,7 +226,7 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       out.push(bestVariant(ctx, "inset", sc, "inside", "inside"));
       // where neither a crop nor the whole source at the frame's width holds the faces and the
       // text, a smaller whole source may: a face near the source's edge comes into the safe box
-      if (!out.some(met)) scanDown("inset", sc, D.insetMin, "inside", "inside");
+      if (!out.some(met)) scanDown("inset", sc, floorOf(sc), "inside", "inside");
     } else if (!ctx.tall) {
       // a frame wider than the source: a panel at one side, the text beside it; and the whole
       // picture in the middle, the sides filled with ground, the captions over its bottom (as an
@@ -234,12 +239,12 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       // whole picture, and where even that leaves text without a place, a smaller one
       between();
       out.push(bestVariant(ctx, "inset", sc, "inside", "inside"));
-      if (!out.some(met)) scanDown("inset", sc, D.insetMin, "inside", "inside");
+      if (!out.some(met)) scanDown("inset", sc, floorOf(sc), "inside", "inside");
     }
     // Still nothing that passes, in an upright frame: the whole picture smaller and also at the
     // left and the right of the safe box, where so far it stood only in the frame's middle. A
     // face at one side of the picture then leaves the frame's middle to the text.
-    if (!cropsOnly && ctx.tall && !out.some(met)) scanDown("inset", same ? s0 : sc, D.insetMin, "inside", "inside", { across: true });
+    if (!cropsOnly && ctx.tall && !out.some(met)) scanDown("inset", same ? s0 : sc, floorOf(same ? s0 : sc), "inside", "inside", { across: true });
   }
 
   // The text in the bands: where the picture stands smaller than an upright frame, the same

@@ -206,5 +206,6 @@ named or a weight changed moves them.
 - **Into 4:5 and 1:1.** An upright take fills the frame with one caption line up to a face of
   35–45 % of its height, with a hook and two lines up to 20–30 %; above that a band down the frame
   or the whole take smaller. A wide take fills it up to 50 % (one line) and 30–40 % (a hook and
-  two lines). In a square an upright take with a face half its height finds no place for a hook
-  and two caption lines at all (14 cells).
+  two lines). An upright take with a face half its height takes, with a hook and two caption
+  lines, an inset below half its size, the face about a fifth of the frame tall (sweep of
+  2026-11-18).

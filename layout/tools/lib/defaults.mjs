@@ -79,6 +79,11 @@ export const DEFAULTS = {
   // (from where enlarging the source's pixels is soft and from where forbidden: weights.json)
   // zoom and inset are searched on a grid of 1 % of the covering scale
   zoomStep: 0.01, zoomMax: 1.6, insetStep: 0.01, insetMin: 0.5, panelMin: 0.6,
+  // an inset goes below insetMin while the smallest face stays at least this tall, in per cent of
+  // the frame's height: the lower end of the middle 80 % of faces in published talking heads
+  // (19–42 %, layout study of 240 Shorts, 2026-11-17). Below half the picture's size a take with
+  // a large face (half the take tall) finds room for a hook and two caption lines.
+  insetFace: 19,
   // crops shown as a band across an upright frame (besides the crop that fills it)
   bands: ["4:5", "1:1"],
   // a face that moves: when the hull of its boxes has over `far` times its usual box's area, the
