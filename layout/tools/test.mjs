@@ -1237,11 +1237,11 @@ t("a material field that cannot be given is said in one sentence with what can b
   return `1:1, 600×500: ${fitsOf(r)}; ${r.limits.above?.says || "no panel"}`;
 });
 
-t("a picture of fixed size (a 1920×1080 screenshot) gets the largest box of its shape: in 9:16 960×540 above the panel (screen-stacked gave it 828 wide), its scale given; a field it would have to be enlarged into past 2× fails", () => {
+t("a picture of fixed size (a 1920×1080 screenshot) gets the largest box of its shape: in 9:16 960×540 above the panel (screen-stacked gave it 828 wide), its scale given; a small one stays at 1.5× of its pixels", () => {
   const c = beside(Z916, { material: { fixed: [1920, 1080], min: [828, 466] } }).candidates[0];
   near(c.material.field[2], 960, 0.5, "the width"); near(c.material.field[3], 540, 0.5, "the height"); near(c.material.scale, 0.5, 0.001, "the scale");
   const small = beside(Z916, { material: { fixed: [320, 180] } }).candidates[0];
-  ok(small.hard && small.problems.some((q) => q.code === "enlarged" && q.of === "material"), JSON.stringify(small.problems));
+  ok(!small.hard && small.material.scale === 1.5, JSON.stringify(small.material));
 });
 
 t("the change from full-frame: in 16:9 the column keeps the scale the speaker had full-frame (1.5×: the picture is only cut to the column and moved, the face moves across, not up or down); in 9:16 the panel keeps the face where it was across (no sideways jump) and gives the numbers to animate (before and after: scale, left, top, window, face)", () => {
@@ -1284,6 +1284,16 @@ t("a panel's picture that cannot cover its field fills it from the middle, not f
     out.push(`${Z.frame} ${Math.round(left)}|${Math.round(right)}`);
   }
   return out.join(", ");
+});
+
+t("a picture of fixed size is shown at most at the soft limit of its pixels, and the arrangement that shows it largest comes first (an independent review: --material 400x225 in 9:16 was blown up 2.3–2.4×, every candidate ✗, no word what to do; 1080x1920 put the panel first with a 295×525 field where the circle gives 561×997)", () => {
+  const small = beside(Z916, { material: { fixed: [400, 225] } });
+  for (const c of small.candidates) { ok(!c.hard && c.material.scale <= 1.5 + 1e-9, `${c.fit}: ${c.material.scale}× ${JSON.stringify(c.problems)}`); }
+  const need = beside(Z916, { material: { fixed: [400, 225], min: [800, 400] } });
+  ok(need.notes.some((n) => /^the picture of 400×225 stays sharp up to 600×337 px .*give a larger picture of it, or a smaller --material-min$/.test(n)), need.notes.join(" | "));
+  const tall = beside(Z916, { material: { fixed: [1080, 1920] } }), [a, b] = tall.candidates;
+  ok(a.arrangement === "pip" && a.material.field[2] * a.material.field[3] > 1.5 * b.material.field[2] * b.material.field[3] && /under two thirds as large/.test(b.behind), `${fitsOf(tall)}: ${b.behind}`);
+  return `1080×1920: ${Math.round(a.material.field[2])}×${Math.round(a.material.field[3])} with the circle first`;
 });
 
 t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {

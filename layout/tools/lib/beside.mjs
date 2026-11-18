@@ -102,9 +102,11 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
 
   // The material's field in a room: all of it, or the largest box of the shape it prefers (a
   // picture of fixed size: its own), in the room's middle.
+  // A picture of fixed size is shown at most at the soft limit of its own pixels (larger it looks
+  // soft): its field may be smaller than the room.
   const fieldIn = (room) => {
     if (!mat.ratio) return room;
-    const w = Math.min(room[2], room[3] * mat.ratio), h = w / mat.ratio;
+    const w = Math.min(room[2], room[3] * mat.ratio, mat.fixed ? mat.fixed[0] * soft : Infinity), h = w / mat.ratio;
     return [room[0] + (room[2] - w) / 2, room[1] + (room[3] - h) / 2, w, h];
   };
   const meets = (f) => !mat.min || (f[2] >= mat.min[0] - 0.5 && f[3] >= mat.min[1] - 0.5);
@@ -345,7 +347,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
       ...(sp.shape === "circle" ? { circle: { box: sp.field.map(r1), d: Math.round(sp.field[2]), corner: sp.corner, crop: crop.map(r1), of: "speaker", enlargement: r2(s), faceHeight: Math.round(faceH) } } : {}),
       text: p.caption ? [{ ...p.caption, box: p.caption.box.map(r1), ink: p.caption.ink.map(r1) }] : [],
       ...(cNotes.length ? { notes: cNotes } : {}),
-      problems, hard, soft: softN, unmet, terms, cost, rank: [hard ? 1 : 0, unmet.length, order, Math.round(cost * 1000)],
+      problems, hard, soft: softN, unmet, terms, cost, rank: [hard ? 1 : 0, unmet.length, 0, order, Math.round(cost * 1000)],
     };
     c.why = [
       hard ? `fails: ${problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ")}` : "no hard problem",
@@ -361,13 +363,17 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   }
 
   const built = (fam === "wide" ? [columnOf(), aboveOf(), pipOf()] : [aboveOf(), pipOf()]).filter(Boolean);
+  // A picture of fixed size shown under two thirds of the area another arrangement gives it stands
+  // behind that one, whatever the frame's usual order
+  if (mat.fixed) { const most = Math.max(...built.map((c) => area(c.material.field))); for (const c of built) c.rank[2] = area(c.material.field) < (2 / 3) * most ? 1 : 0; }
   const cands = built.sort((a, b) => { for (let i = 0; i < a.rank.length; i++) if (a.rank[i] !== b.rank[i]) return a.rank[i] - b.rank[i]; return 0; });
   cands.forEach((c, i) => {
     c.score = c.hard || c.unmet.length ? 0 : +(100 - c.cost).toFixed(3);
     if (!i) return;
     const top = cands[0];
-    c.behind = c.rank[0] !== top.rank[0] ? "behind the first because it has a hard problem" : c.rank[1] !== top.rank[1] ? "behind the first because it leaves a need unmet" : c.rank[2] !== top.rank[2] ? (c.rank[2] === 9 ? "behind the first because its panel leaves the face under the least a panel gives it" : `behind the first by the usual order of this frame (${ORDER[fam].join(", then ")})`) : `behind the first by ${r2(c.cost - top.cost)} points`;
+    c.behind = c.rank[0] !== top.rank[0] ? "behind the first because it has a hard problem" : c.rank[1] !== top.rank[1] ? "behind the first because it leaves a need unmet" : c.rank[2] !== top.rank[2] ? "behind the first because it shows the picture under two thirds as large" : c.rank[3] !== top.rank[3] ? (c.rank[3] === 9 ? "behind the first because its panel leaves the face under the least a panel gives it" : `behind the first by the usual order of this frame (${ORDER[fam].join(", then ")})`) : `behind the first by ${r2(c.cost - top.cost)} points`;
   });
+  if (mat.fixed && mat.min && (mat.fixed[0] * soft < mat.min[0] - 0.5 || mat.fixed[1] * soft < mat.min[1] - 0.5)) notes.unshift(`the picture of ${mat.fixed.join("×")} stays sharp up to ${Math.floor(mat.fixed[0] * soft)}×${Math.floor(mat.fixed[1] * soft)} px (${soft}× its pixels), under the ${mat.min.join("×")} it needs: give a larger picture of it, or a smaller --material-min`);
   if (fam === "mid") notes.push(`in ${W}×${H} the panel holds the face at ${pct(B.faceMin)} of the frame's height or more while the material's field is at most ${limits.above ? `${limits.above.field[2]}×${limits.above.field[3]} px` : "nothing"}; a material that needs more height gets the circle (nothing was measured in this frame)`);
   if (fam === "wide") notes.push("nothing in 16:9 was measured: the column is the catalogue's sketch, the panel below the material is offered only where the material keeps its smallest field");
   if (!prev.given) notes.push(`no --before: the speaker full-frame before is taken as the source covering the frame (${prev.scale}× at ${prev.left}, ${prev.top}); give the placement you used, as --before scale,left,top, for the change's numbers`);
