@@ -7,6 +7,17 @@
 //   stretches(words, spots)                    → [{ i, j, from, to }] : the spots [i, j] with their surroundings, merged
 //   adopt(words, stretch, heard)               → how many words of the stretch took the second hearing's times
 //   hearAgain(file, words, spots, hear, log)   → { heard, stretches }; `hear(file, seconds)` → words of a short file
+//   fillIn(file, words, gaps, hear, log)       → { added, stretches, left }: speech no word covers (timing.mjs'
+//                                                unwritten) heard again, its words put in
+//   written(words, gap, heard)                 → the words of a second hearing that belong into the gap
+//
+// Speech not written down (lib/timing.mjs' unwritten) is heard again the same way: the stretch
+// with two words on either side, alone. What the second hearing writes inside it goes into the
+// words, `"by": "second hearing", "added": true`, when its clock agrees with ours: a word of
+// the context it also wrote lies within AGREE of where it is (at least one on each side that has
+// words). A recognizer that skipped two attempts of a sentence in five minutes writes them in
+// five seconds: on a narration read with retries (2026-11-18) 137 of the 177 words three
+// transcriptions had left out came back, for $0.014 (see the README).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -67,6 +78,79 @@ export function adopt(words, stretch, heard) {
   if (got.some(([, h]) => h.start < lo || h.end > hi)) return 0;
   for (const [k, h] of got) { words[k].start = +h.start.toFixed(2); words[k].end = +h.end.toFixed(2); words[k].by = "second hearing"; }
   return got.length;
+}
+
+// words of context on either side of a stretch not written down: two, and where that hearing
+// writes nothing there, once more with six (a recognizer that skipped retries in five minutes
+// may skip them in ten seconds too, and not in twenty)
+const SIDES = [2, 6];
+export const MOST_GAPS = 60;   // such stretches heard again per recording, four at a time
+
+// The words of a second hearing (on the recording's clock) that belong into `gap` (after the
+// word `gap.after`, timing.mjs' unwritten): those that lie between the words around it and are
+// none of them; [] when the context does not agree. Each is clipped to its room, has a length,
+// and carries the kind the recognizer gave it. The room is where the words around it ended and
+// began before their edges were set (`was`: word → [start, end]): an edge drawn outward over the
+// first or last sound of a skipped attempt does not take it.
+export function written(words, gap, heard, side = SIDES[0], was = new Map()) {
+  const prev = words[gap.after], next = words[gap.after + 1];
+  const lo = prev ? Math.min(prev.end, was.get(prev)?.[1] ?? Infinity) : 0, hi = next ? Math.max(next.start, was.get(next)?.[0] ?? -Infinity) : Infinity;
+  const context = (way) => (way < 0 ? words.slice(Math.max(0, gap.after - side + 1), gap.after + 1) : words.slice(gap.after + 1, gap.after + 1 + side)).filter(speech);
+  const agrees = (list) => !list.length || list.some((w) => heard.some((h) => norm(h) === norm(w) && Math.abs(h.start - w.start) <= AGREE));
+  if (!agrees(context(-1)) || !agrees(context(1))) return [];
+  const ours = [...context(-1), ...context(1)];
+  return heard
+    .filter((h) => h.start >= lo - 0.05 && h.end <= hi + 0.05 && h.end - h.start > 0.045 && norm(h))
+    .filter((h) => !ours.some((w) => norm(w) === norm(h) && Math.abs(w.start - h.start) <= AGREE))
+    .map((h) => ({ text: h.text, start: +Math.max(lo, h.start).toFixed(2), end: +Math.min(hi, h.end).toFixed(2), kind: h.kind ?? "word" }))
+    .filter((h) => h.end - h.start > 0.045);
+}
+
+// The stretches not written down heard again, the words they get put in among the others (in
+// place, by time; a word around it whose edge was drawn over one gives that room back). `gaps`
+// as timing.mjs' unwritten gives them for these words; `was` the words' times before the edges.
+export async function fillIn(file, words, gaps, hear, log = () => {}, was = new Map()) {
+  const list = gaps.slice(0, MOST_GAPS);
+  if (!list.length) return { added: 0, stretches: 0, left: gaps.length };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-fill-"));
+  const found = [];
+  try {
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, list.length) }, async () => {
+      while (next < list.length) {
+        const k = next++, g = list[k];
+        try {
+          for (const side of SIDES) {
+            const first = words[Math.max(0, g.after - side + 1)], last = words[Math.min(words.length - 1, g.after + side)];
+            const from = Math.max(0, Math.min(g.from, first ? first.start : g.from) - PAD);
+            const to = Math.max(g.to, last && g.after + 1 < words.length ? last.end : g.to) + PAD;
+            const piece = path.join(tmp, `g${k}-${side}.flac`);
+            await promisify(execFile)("ffmpeg", ["-v", "error", "-y", "-ss", from.toFixed(3), "-t", (to - from).toFixed(3), "-i", file, "-vn", "-map_metadata", "-1", "-ac", "1", "-ar", "16000", piece]);
+            const again = await hear(piece, to - from);
+            const got = written(words, g, again.map((w) => ({ ...w, start: w.start + from, end: w.end + from })), side, was);
+            found.push(...got.map((w) => ({ ...w, after: g.after })));
+            if (got.length) break;
+          }
+        } catch (e) { log(`  transcribe: speech at ${g.from.toFixed(1)} s was not heard again (${String(e.message).split("\n")[0]})`); }
+      }
+    }));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  // in by time, each after the word its gap follows; the speaker of the words around it when they
+  // agree (of the one there is, at the recording's start or end)
+  found.sort((a, b) => b.after - a.after || b.start - a.start);
+  for (const { after, ...w } of found) {
+    const prev = words[after], next = words[after + 1];
+    let at = after + 1;
+    while (at < words.length && words[at].added && words[at].start < w.start) at++;
+    const who = prev && next ? (prev.speaker === next.speaker ? prev.speaker : null) : (prev ?? next)?.speaker;
+    words.splice(at, 0, { ...w, ...(who ? { speaker: who } : {}), by: "second hearing", added: true });
+    const before = words[at - 1], beyond = words[at + 1];
+    if (before && !before.added && before.end > w.start) before.end = Math.max(before.start + 0.04, w.start);
+    if (beyond && !beyond.added && beyond.start < w.end) beyond.start = Math.min(beyond.end - 0.04, w.end);
+  }
+  return { added: found.length, stretches: list.length, left: gaps.length - list.length };
 }
 
 export async function hearAgain(file, words, spots, hear, log = () => {}) {
