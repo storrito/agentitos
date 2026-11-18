@@ -77,7 +77,7 @@ The video: ${width}×${height}, ${clock(duration)}, ${words.length} words.${bran
    card over the whole frame.
 8. **The face.** For beats beside the person the tool needs where their face is:
    \`node <b-roll>/tools/broll.mjs face <video> <file.jpg>\` shows a frame with a grid; write
-   \`"face": [x, y, width, height]\` (forehead to chin, the video's own px) and the
+   \`"face": [x, y, width, height]\` (hairline to chin, cheek to cheek: the face, not the head; a box too large shows the person smaller; the video's own px) and the
    \`"source"\` size it prints at the top of \`broll.json\`, once per video. Without it the face
    is assumed in the upper third, in the middle; the sheet shows whether that holds.
 9. **Never** the speaker's own face as b-roll; never a picture with someone else's watermark,

@@ -473,7 +473,7 @@ function cmdFace(video, file, opts) {
   if (r.status) r = run(frame);
   if (r.status) fail(`✗ ffmpeg: ${(r.stderr || "").trim().split("\n").pop()}`);
   console.log(`${rel(file)}: the video at ${clock(at)}, ${W}×${H}, a line every ${step} px.`);
-  console.log(`Read the face off it (forehead to chin, cheek to cheek) and write it at the top of broll.json: "face": [x, y, width, height], "source": [${W}, ${H}].`);
+  console.log(`Read the face off it (hairline to chin, cheek to cheek: the face, not the head) and write it at the top of broll.json: "face": [x, y, width, height], "source": [${W}, ${H}].`);
 }
 
 // ----------------------------------------------------------------------------------- sheet
