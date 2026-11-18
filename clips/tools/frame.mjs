@@ -77,14 +77,15 @@ const REST = 1, VMAX = 1.2, BIG = 0.5, SLACK = 0.03;
 // sways to and fro within them moves nothing, only the features about to leave do
 const SWAY = 2;
 // of a close-up (a face wider than BIG of the window) the window holds the eyes, nose and mouth
-// with ROOM_BACK of the face's width beside them, and ROOM_FRONT more on the side the face looks
-// to; the back of the head, an ear, hair at the side may be cut (the channel's editors and OpusClip
-// cut them so). Turning back early, the features themselves with FEAT_PAD, behind a face that looks
-// to one side with BACK_PAD (the model's box of a three-quarter view stops short of the far eye
-// there: on the five passages it came within 3 % of the edge with 3.5 %). Features at the edge:
-// closer than FEAT_EDGE of the window's width. Chosen on the five passages of the three-way test:
-// with 0.08 and 0.22 a swaying close-up left the window too little play (0.65 turns a second)
-const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.035, BACK_PAD = 0.07, FEAT_EDGE = 0.015;
+// never closer to its edge than FEAT_PAD of its width (best-takes' punch-in of 12 % takes 5.4 % of
+// each side, and the model's box of a three-quarter view ends at the far eye), with room beside
+// them: ROOM_BACK of the face's width or that pad and a little, and ROOM_FRONT of the face's width
+// more on the side the face looks to; the back of the head, an ear, hair at the side may be cut
+// (the channel's editors and OpusClip cut them so). Features at the edge: closer than FEAT_EDGE of
+// the window's width. Chosen on the five passages of the three-way test: with 8 % and 22 % of the
+// face a swaying close-up left the window too little play (0.65 turns a second), with a pad of
+// 3.5 % of the face the far eye and a pair of glasses came to the edge in the rendered clips
+const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.06, FEAT_EDGE = 0.015;
 // an answer without the features (one of version 2): the middle CORE of the face's width (FRAME_CORE)
 const CORE = Math.min(1, Math.max(0.5, Number(process.env.FRAME_CORE) || 0.8));
 
@@ -94,9 +95,10 @@ export function holdOf(f, ww, m = HOLD) {
   if (f.w <= BIG * ww) return [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww];
   if (!f.feat) { const e = Math.min(m, SLACK) * ww; return [f.x - (CORE / 2) * f.w - e, f.x + (CORE / 2) * f.w + e]; }
   const { x0, x1, lean } = f.feat;
-  const behind = (Math.abs(lean) >= 0.5 ? BACK_PAD : FEAT_PAD) * f.w;
-  if (!m) return lean < 0 ? [x0 - FEAT_PAD * f.w, x1 + behind] : lean > 0 ? [x0 - behind, x1 + FEAT_PAD * f.w] : [x0 - FEAT_PAD * f.w, x1 + FEAT_PAD * f.w];
-  const back = Math.max(ROOM_BACK * f.w, behind), front = ROOM_BACK * f.w + ROOM_FRONT * Math.abs(lean) * f.w;
+  // never closer to the edge than FEAT_PAD of the window (best-takes' punch-in takes 5.4 % of each side)
+  const pad = FEAT_PAD * ww;
+  if (!m) return [x0 - pad, x1 + pad];
+  const back = Math.max(ROOM_BACK * f.w, pad + Math.min(m, SLACK) * ww), front = back + ROOM_FRONT * Math.abs(lean) * f.w;
   // a face that looks to one side: the window's middle on that side of the features' middle, so
   // that it has more room there than behind
   const mid = (x0 + x1) / 2;
