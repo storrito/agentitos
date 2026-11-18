@@ -19,7 +19,7 @@
 //                                                         assets/voice/<id>.mp3, its words timed → <work>/voice.json
 //   node tools/launch.mjs words <work> <composition>      the voice's words at their times in the film,
 //                                                         as the film's <audio> places the lines → <work>/words.json
-//   node tools/launch.mjs captions <work> <composition> --style hormozi|karaoke|wipe|clean [--mark]
+//   node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
 //                                                         the captions (agentitos' captions skill) in
 //                                                         <composition>/captions, and the line that mounts them
 //   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30   music (Lyria 3)
@@ -513,7 +513,7 @@ function captionsTool() {
 }
 
 function cmdCaptions(work, composition, opts) {
-  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style hormozi|karaoke|wipe|clean [--mark] [--product <name>] [--brand brand/DESIGN.md]")}`);
+  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md]")}`);
   const tool = captionsTool();
   if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
   const file = cmdWords(work, composition);
