@@ -114,9 +114,25 @@ test("place on a made-up clip: the close-up is raised over a ground, the caption
     // moderate, the default: the close-up's head is at the frame's top already, so it is not raised, and its chin carries the captions
     const r0 = place();
     assert.equal(r0.status, 0, r0.stdout + r0.stderr);
-    assert.match(r0.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions (on the chin or neck of guest .*not avoidable without cutting the head|✗ on the mouth of guest)/);
+    assert.match(r0.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions on the chin or neck of guest [\d.]+ s, below the mouth\n/);
     assert.match(r0.stdout, /Raised moderately/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8")).raise, "moderate");
+    // captions asked higher, over the close-up's mouth: moderately it goes up past its head's top (as far as the eyes allow) until they lie on the lower lip at most
+    const rm = place("--caption-y", "1260");
+    assert.equal(rm.status, 0, rm.stdout + rm.stderr);
+    assert.match(rm.stdout, / 1\. 0\.0–3\.0 s {2}raised \d+ px, a blurred band of \d+ px at the bottom .*, past the head's top so that the captions keep off the mouth; captions (on the chin or neck of guest|on guest: the lower lip [\d.]+ s.*not on the mouth)/);
+    assert.doesNotMatch(rm.stdout, /captions ✗|✗ Shot/);
+    // two lines asked for (a style of phrases, or a long word broken at its soft hyphen): layout gives them room, captions gets them
+    const r2l = place("--caption-y", "", "--lines", "2");
+    assert.equal(r2l.status, 0, r2l.stdout + r2l.stderr);
+    assert.match(r2l.stdout, /up to two lines of \d+ px/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8")).caption.lines, 2);
+    assert.equal(place("--lines", "").status, 0);
+    // below the safe box, where the apps lay their own text: refused in one sentence
+    const low = place("--caption-y", "1750");
+    assert.equal(low.status, 1);
+    assert.match(low.stdout + low.stderr, /--caption-y 1750 is below the safe box's bottom/);
+    assert.equal(place("--caption-y", "").status, 0);
     // full: raised over a ground, the band said
     const r = place("--raise", "full");
     const said = r.stdout + r.stderr;
@@ -130,14 +146,19 @@ test("place on a made-up clip: the close-up is raised over a ground, the caption
     const framedNow = JSON.parse(fs.readFileSync(path.join(dir, "framed.json"), "utf8"));
     assert.ok(framedNow.windows[0].lift?.ground > 0, "the close-up raised in framed.json");
     const kept = JSON.parse(fs.readFileSync(path.join(dir, "reframe.json"), "utf8"));
-    assert.equal(kept.lifts.length, 1);
+    assert.ok(kept.lifts.length >= 1, JSON.stringify(kept));
     const faces = JSON.parse(fs.readFileSync(path.join(td, "faces.json"), "utf8"))["01.mp4"];
     assert.ok(faces.faces.length > 50);
     assert.ok(fs.existsSync(path.join(dir, "placed.sheet.jpg")), said);
     // fixed by the agent: the close-up not raised; kept for the next run (as is --raise full)
     const r2 = place("--lift", "1.5:0");
     assert.equal(r2.status, 0, r2.stdout + r2.stderr);
-    assert.match(r2.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions (✗|on the chin)/);
+    assert.match(r2.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions (on the chin or neck of guest|✗ on the mouth of guest: the mouth [\d.]+ s[\s\S]*✗ Shot 1 .*a larger lift than the one fixed)/);
+    // held where it is with the captions over the mouth: a fault, named, with what would avoid it
+    const rx = place("--caption-y", "1260");
+    assert.match(rx.stdout, /captions ✗ on the (mouth|nose or eyes) of guest: the (mouth|nose or eyes) [\d.]+ s/);
+    assert.match(rx.stdout, /✗ Shot 1 \(0–3 s\): the captions (cover guest.s mouth|lie on guest.s nose or eyes) for [\d.]+ s .*What would avoid it: a larger lift than the one fixed/);
+    assert.equal(place("--caption-y", "").status, 0);
     const p2 = JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8"));
     assert.equal(p2.fixed.lifts["1.5"], 0);
     assert.equal(p2.raise, "full");
