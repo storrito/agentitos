@@ -80,6 +80,7 @@ const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
 
 export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {}, captionArea = null, faceAssumed = false }) {
   const [W, H] = Z.size;
+  for (const k of Object.keys(set)) if (k.startsWith("beside.") && !(k.slice(7) in BESIDE)) throw new Error(`There is no default "${k}" to set: beside's own are ${Object.keys(BESIDE).map((x) => `beside.${x}`).join(", ")} (tools/lib/beside.mjs, each with its source).`);
   const D = scaled(merged({ ...DEFAULTS, beside: BESIDE }, set), Z.size);
   const S = Z.safe, g = D.gap, B = D.beside, WT = D.weights, soft = WT.enlarge.softFrom, forbidden = WT.enlarge.forbiddenFrom;
   const [sw, sh] = source;

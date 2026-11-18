@@ -1408,9 +1408,9 @@ t("the face's target is one number (--set beside.face): the b-roll session's upr
   return `22 %: face ${big.speaker.faceHeight} px, field ${Math.round(big.material.field[2])}×${Math.round(big.material.field[3])}`;
 });
 
-t("beside's input it cannot use it says in one sentence: no material need, a hook, two faces, a bad --before", () => {
+t("beside's input it cannot use it says in one sentence: no material need, a hook, two faces, a bad --before, an unknown beside.* key (it pointed to defaults.mjs, where beside's own are not)", () => {
   const dir = path.join(OUT, "beside-bad"), base = ["--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195"];
-  for (const [extra, says] of [[[], /needs what the material needs/], [["--material-min", "600x340", "--text", "hook"], /captions only/], [["--material-min", "600x340", "--face", "100,100,50,50"], /one speaker/], [["--material-min", "600x340", "--before", "1,2"], /--before is scale,left,top/], [["--material-min", "600x340", "--material-ratio", "wide"], /--material-ratio is/]]) {
+  for (const [extra, says] of [[[], /needs what the material needs/], [["--material-min", "600x340", "--text", "hook"], /captions only/], [["--material-min", "600x340", "--face", "100,100,50,50"], /one speaker/], [["--material-min", "600x340", "--before", "1,2"], /--before is scale,left,top/], [["--material-min", "600x340", "--material-ratio", "wide"], /--material-ratio is/], [["--material-min", "600x340", "--set", "beside.facemin=0.1"], /beside's own are beside\.faceMin, .*\(tools\/lib\/beside\.mjs/]]) {
     const e = cli("beside", dir, ...base, ...extra);
     sentence(e, extra.join(" ")); ok(says.test(e.stderr), e.stderr);
   }
