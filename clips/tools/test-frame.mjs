@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet } from "./frame.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf } from "./frame.mjs";
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -359,6 +359,92 @@ test("a close-up that sways is held calmly: no move back within a second", () =>
   assert.ok(fastest < 0.8 * w, `${Math.round(fastest)} px/s`);
   // the face's middle (its eyes, nose and mouth) never leaves the window
   for (const [t, x] of xs) { const f = faceAt(P, t); assert.ok(f.x - 0.4 * f.w >= x - 1 && f.x + 0.4 * f.w <= x + w + 1, `face cut at ${t.toFixed(2)} s`); }
+});
+
+// a close-up of a face in a three-quarter view looking left (as seen): its box from the nose's
+// tip to the ear behind, the eyes, nose and mouth in its left half
+const threeQuarter = (t, x, looks = "left", side = -1) => ({ t, faces: [{ person: 0, box_2d: [100, x, 800, x + 300],
+  features_2d: side < 0 ? [300, x, 600, x + 150] : [300, x + 150, 600, x + 300], looks }] });
+
+test("a close-up in a three-quarter view keeps eyes, nose and mouth in, with more room on the side it looks to; the back of the head may go", () => {
+  const ans = { version: 3, shots: [shotAnswer(0, 6, "people", [{ who: "guest", speaker: "A" }], [0.1, 3, 5.9].map((t) => threeQuarter(t, 350)))] };
+  const shots = shotsOf(ans, [{ start: 0, end: 6 }], META);
+  const [w] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+  for (const t of [0.1, 3, 5.9]) {
+    const f = faceAt(shots[0].people[0], t), win = windowAt(w, t);
+    assert.ok(f.w > 0.9 * w.w, "a close-up as wide as the window");
+    const front = f.feat.x0 - win.x, back = win.x + w.w - f.feat.x1;
+    assert.ok(front >= 0.2 * f.w && back >= 0.04 * f.w, `room in front ${Math.round(front)}, behind ${Math.round(back)}`);
+    assert.ok(front > back, "more room on the side the face looks to");
+    assert.ok(f.x + f.w / 2 > win.x + w.w, "the back of the head is cut");
+  }
+  // the check: no fault, the side of the face listed as such
+  const edges = edgesOf([w], shots, META);
+  assert.deepEqual(edges.filter((e) => e.part !== "side"), []);
+  assert.ok(edges.some((e) => e.part === "side" && e.edge === "right"), JSON.stringify(edges));
+  // an answer without the features centres the face's box: the nose close to the edge
+  const old = { version: 2, shots: [shotAnswer(0, 6, "people", [{ who: "guest", speaker: "A" }], [0.1, 3, 5.9].map((t) => ({ t, faces: [{ person: 0, box_2d: [100, 350, 800, 650] }] })))] };
+  const oshots = shotsOf(old, [{ start: 0, end: 6 }], META);
+  const [ow] = windowsOf(oshots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+  const nose = (0.35 * META.width - windowAt(ow, 3).x) / ow.w;
+  assert.ok(nose < 0.05, `the box centred leaves ${nose.toFixed(3)} of the window in front of the nose`);
+});
+
+test("a head that turns between two stills: its features go from the one side to the other, and the window keeps them in all the way", () => {
+  // the head stays where it is; at 0.1 s it looks left, at 3.1 s right
+  const ans = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [threeQuarter(0.1, 350, "left", -1), threeQuarter(3.1, 350, "right", 1)])] };
+  const shots = shotsOf(ans, [{ start: 0, end: 4 }], META);
+  const P = shots[0].people[0];
+  const mid = faceAt(P, 1.6);
+  near((mid.feat.x0 + mid.feat.x1) / 2, mid.x, 2);
+  assert.ok(faceAt(P, 0.5).feat.x0 < faceAt(P, 1.6).feat.x0 && faceAt(P, 1.6).feat.x0 < faceAt(P, 2.7).feat.x0);
+  const [w] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...META, aspect: [9, 16] });
+  assert.equal(w.hold, "follows");
+  for (let t = 0; t < 4; t += 1 / FPS) {
+    const f = faceAt(P, t), win = windowAt(w, t);
+    assert.ok(f.feat.x0 >= win.x && f.feat.x1 <= win.x + w.w, `the features out of the window at ${t.toFixed(2)} s`);
+  }
+  const at0 = windowAt(w, 0.1), at4 = windowAt(w, 3.9), f0 = faceAt(P, 0.1), f4 = faceAt(P, 3.9);
+  assert.ok(f0.feat.x0 - at0.x > at0.x + w.w - f0.feat.x1, "looking left: the room on the left");
+  assert.ok(at4.x + w.w - f4.feat.x1 > f4.feat.x0 - at4.x, "looking right: the room on the right");
+  assert.deepEqual(edgesOf([w], shots, META).filter((e) => e.part === "features"), []);
+});
+
+test("a three-quarter close-up that sways does not make the window turn back within a second, and its features stay in", () => {
+  // the reviewer's guest in "deaths": a face 90 % of the window's width looking left, swaying
+  // ±100 px at 0.6 Hz, its features in the left half of its box
+  const w = (1080 * 9) / 16;
+  const P = tracked("guest", "A", (t) => ({ x: 960 + 100 * Math.sin(2 * Math.PI * 0.6 * t), y: 420, w: 0.9 * w, h: 600, parts: { l: -0.48, r: 0.05, t: -0.2, b: 0.3, lean: -1 } }), 0, 15);
+  const shots = [{ start: 0, end: 15, kind: "people", people: [P], faces: [{ speaker: "A", ...faceAt(P, 7) }] }];
+  const [win] = windowsOf(shots, [{ t: 0, speaker: "A" }], { ...HD, aspect: [9, 16] });
+  let lastDir = 0, lastTurn = -Infinity, turns = 0;
+  for (let t = 1 / FPS; t < 15; t += 1 / FPS) {
+    const x = windowAt(win, t).x, v = (x - windowAt(win, t - 1 / FPS).x) * FPS, dir = Math.abs(v) < 2 ? 0 : Math.sign(v);
+    const f = faceAt(P, t), [a, b] = holdOf(f, win.w, 0);
+    const leaving = a < x + 1 || b > x + win.w - 1;
+    if (dir && lastDir && dir !== lastDir) { assert.ok(t - lastTurn >= 1 || leaving, `turned back at ${t.toFixed(2)} s`); lastTurn = t; turns++; }
+    if (dir) lastDir = dir;
+    assert.ok(f.feat.x0 >= x - 1 && f.feat.x1 <= x + win.w + 1, `the features cut at ${t.toFixed(2)} s`);
+  }
+  assert.ok(turns / 15 <= 0.5, `${turns} turns in 15 s`);
+  assert.ok(win.closeup && win.closeup.features && win.closeup.inside === 1, JSON.stringify(win.closeup));
+  near(win.closeup.turns, turns / 15, 0.15);
+});
+
+test("the check tells eyes, nose or mouth at the edge (a fault) from only an ear or a cheek there", () => {
+  const ans = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [threeQuarter(2, 350)])] };
+  const shots = shotsOf(ans, [{ start: 0, end: 4 }], META);
+  const f = faceAt(shots[0].people[0], 2);
+  const at = (x) => edgesOf([{ start: 0, end: 4, shot: 0, kind: "people", w: 1216, h: 2160, keys: [{ t: 0, x, y: 0 }] }], shots, META).filter((e) => e.t === 2);
+  // the window's right edge through the ear: listed as the side only
+  assert.deepEqual(at(f.feat.x0 - 300).map((e) => [e.part, e.edge, e.cut]), [["side", "right", true]]);
+  // its left edge through the nose: a fault
+  assert.deepEqual(at(f.feat.x0 + 40).map((e) => [e.part, e.edge, e.cut]), [["features", "left", true]]);
+  // a small face (not a close-up) cut at its side is a fault, features or not
+  const small = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [{ t: 2, faces: [{ person: 0, box_2d: [300, 500, 450, 580], features_2d: [340, 500, 420, 540], looks: "left" }] }])] };
+  const sshots = shotsOf(small, [{ start: 0, end: 4 }], META);
+  const e = edgesOf([{ start: 0, end: 4, shot: 0, kind: "people", w: 1216, h: 2160, keys: [{ t: 0, x: 0.58 * 3840 - 30 - 1216, y: 0 }] }], sshots, META);
+  assert.ok(e.some((x) => x.cut && x.edge === "right" && x.part !== "side"), JSON.stringify(e));
 });
 
 test("the tracker does not trust a still that is far off its neighbours, keeps two crossing faces apart, and a face that leaves is absent, not cut", { skip: !ffmpeg && "no ffmpeg" }, () => {
