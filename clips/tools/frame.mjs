@@ -223,7 +223,7 @@ const SCHEMA = {
   },
 };
 
-const ask = async (or, content, log) => {
+const ask = async (or, content, log, schema = SCHEMA, name = "people") => {
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await fetch(`${or.base}/chat/completions`, {
@@ -232,7 +232,7 @@ const ask = async (or, content, log) => {
         body: JSON.stringify({
           model: FRAME_MODEL,
           messages: [{ role: "user", content }],
-          response_format: { type: "json_schema", json_schema: { name: "people", strict: true, schema: SCHEMA } },
+          response_format: { type: "json_schema", json_schema: { name, strict: true, schema } },
         }),
         signal: AbortSignal.timeout(300e3),
       });
@@ -1074,25 +1074,113 @@ export function needsFrame({ width, height }, [aw, ah]) {
   return width / height > (aw / ah) * 1.15;
 }
 
+// Where a close-up's head moves or tips between two stills (its followed box leaves the straight
+// line between them by more than MOVE of its height or width), its eyes, nose and mouth are not
+// known in between: the stills place them in the head's box, and a head that tips down carries its
+// mouth lower in it (robe, 2026-11-18: 0.4 of the features' height too high 1.3 s after a still).
+// A still more there, at the moment furthest off the line, EXTRA at most a shot.
+export const MOVE = 0.1, EXTRA = 3;
+export function extraStills(seen, { height }, aspect = [9, 16]) {
+  const ww = (height * aspect[0]) / aspect[1], out = [];
+  seen.forEach((s, k) => {
+    if (s.kind !== "people") return;
+    const found = [];
+    for (const p of s.people) {
+      const tr = p.track.filter((x) => !x.absent), stills = tr.filter((x) => x.seen);
+      for (let i = 0; i + 1 < stills.length; i++) {
+        const a = stills[i], b = stills[i + 1];
+        if (a.w <= BIG * ww || b.t - a.t < 1) continue;
+        let worst = null;
+        for (const x of tr) {
+          if (x.t <= a.t + 0.3 || x.t >= b.t - 0.3) continue;
+          const f = (x.t - a.t) / (b.t - a.t);
+          const off = Math.max(Math.abs(x.y - (a.y + (b.y - a.y) * f)) / a.h, Math.abs(x.x - (a.x + (b.x - a.x) * f)) / a.w, Math.abs(x.h - (a.h + (b.h - a.h) * f)) / a.h);
+          if (!worst || off > worst.off) worst = { t: x.t, off, x: x.x, y: x.y };
+        }
+        if (worst && worst.off > MOVE) found.push({ shot: k, t: +worst.t.toFixed(3), off: +worst.off.toFixed(2), who: p.who, speaker: p.speaker, box: { x: worst.x, y: worst.y } });
+      }
+    }
+    out.push(...found.sort((p, q) => q.off - p.off).slice(0, EXTRA));
+  });
+  return out;
+}
+const EXTRA_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["stills"],
+  properties: { stills: { type: "array", items: {
+    type: "object", additionalProperties: false, required: ["still", "box_2d", "eyes_2d", "nose_2d", "mouth_2d", "looks"],
+    properties: { still: { type: "string" }, box_2d: BOX, eyes_2d: PART, nose_2d: PART, mouth_2d: PART, looks: { type: "string", enum: LOOKS } },
+  } } },
+};
+// the model's eyes, nose and mouth on the extra stills (images only, one face named in each), added
+// to the answer's stills of the shot each falls in and kept in its cache
+export async function locateMore(video, people, extra, meta, { log = () => {} } = {}) {
+  const or = await openrouter();
+  if (!or || !extra.length) return people;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "frame-more-"));
+  try {
+    const content = [{ type: "text", text: `These are frames of a video clip. In each one person is named. For that person's face give box_2d, the box of the face, forehead to chin, ear to ear (only its visible part); eyes_2d, the smallest box holding both its eyes with their brows (in a three-quarter view the far one too; only in a full profile just the one eye that is seen), also behind glasses; nose_2d, its nose from between the eyes to the tip and the nostrils; mouth_2d, its lips from corner to corner, from the top of the upper lip to the bottom of the lower lip (an open mouth with its lower lip where it is); each only where it is in the picture, else null; looks: "left" or "right" (towards that side of the image), "camera" when it faces the camera or nearly. Boxes are [ymin, xmin, ymax, xmax] in thousandths of the picture (0–1000). One entry per frame, its "still" as labelled.` }];
+    extra.forEach((x, i) => {
+      const f = path.join(tmp, `${i}.jpg`);
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", x.t.toFixed(3), "-i", video, "-map_metadata", "-1", "-frames:v", "1", "-vf", "scale=768:-2", "-q:v", "5", f]);
+      content.push({ type: "text", text: `still x${i + 1} (${x.t.toFixed(2)} s): ${x.who || "the person"}, the face around x ${Math.round((x.box.x / meta.width) * 1000)}, y ${Math.round((x.box.y / meta.height) * 1000)} (thousandths):` });
+      content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(f).toString("base64")}`, detail: "low" } });
+    });
+    log(`frame: ${extra.length} still(s) more where a close-up's head moves or tips (${FRAME_MODEL}) …`);
+    const j = await ask(or, content, log, EXTRA_SCHEMA, "features");
+    const ans = JSON.parse((j.choices[0].message.content || "").replace(/^```(json)?\s*|\s*```$/g, ""));
+    const out = structuredClone(people);
+    let added = 0;
+    for (const [i, x] of extra.entries()) {
+      // (a model may write the label as "still x1" or "x1")
+      const a = (ans.stills || []).find((y) => String(y.still).match(/(\d+)\D*$/)?.[1] === String(i + 1)) || (ans.stills?.length === extra.length ? ans.stills[i] : null);
+      const sh = out.shots.find((q) => x.t >= q.start && x.t <= q.end);
+      if (!a || !sh) { log(`frame: no answer for the still more at ${x.t.toFixed(2)} s (${JSON.stringify(ans).slice(0, 160)})`); continue; }
+      let person = (sh.people || []).findIndex((q) => (x.speaker != null && q.speaker != null ? String(q.speaker) === String(x.speaker) : q.who === x.who));
+      if (person < 0 && (sh.people || []).length === 1) person = 0;
+      if (person < 0) { log(`frame: ${x.who ?? "the face"} at ${x.t.toFixed(2)} s is not among the shot's people`); continue; }
+      sh.stills.push({ t: x.t, extra: true, faces: [{ person, box_2d: a.box_2d, eyes_2d: a.eyes_2d, nose_2d: a.nose_2d, mouth_2d: a.mouth_2d, looks: a.looks }] });
+      sh.stills.sort((p, q) => p.t - q.t);
+      added++;
+    }
+    out.extra = { stills: added, cost: j.usage?.cost ?? 0 };
+    out.cost = (out.cost || 0) + (j.usage?.cost ?? 0);
+    log(`frame: ${added} still(s) added, $${(j.usage?.cost ?? 0).toFixed(4)}`);
+    return out;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 export async function frame(video, words, { aspect = [9, 16], out, kinds = [], log = () => {} }) {
   const meta = probe(video);
   if (!needsFrame(meta, aspect)) return null;
   log("frame: the cuts, frame by frame …");
   const found = cutsOf(video, meta);
   let shots = shotList(found, meta);
-  const people = await locate(video, words, shots, meta, { log });
+  let people = await locate(video, words, shots, meta, { log });
   if (!people) return null;
   // the cuts the model saw and the frames only hinted at
   shots = shotList(found, meta, people.missed || []);
-  const seen = shotsOf(people, shots, meta);
   // the faces between the stills, followed in the frames
   const grey = greyFrames(video, { start: meta.start });
-  for (const s of seen) if (s.kind === "people") {
-    for (const p of s.people) {
-      p.track = fillTrack(grey, p.track, s.start, s.end);
-      for (const d of p.track.doubtful) (s.doubtful ||= []).push({ who: p.who || p.speaker, t: d.t, off: d.off });
+  const follow = (answer) => {
+    const seen = shotsOf(answer, shots, meta);
+    for (const s of seen) if (s.kind === "people") {
+      for (const p of s.people) {
+        p.track = fillTrack(grey, p.track, s.start, s.end);
+        for (const d of p.track.doubtful) (s.doubtful ||= []).push({ who: p.who || p.speaker, t: d.t, off: d.off });
+      }
+      uncross(s.people);
     }
-    uncross(s.people);
+    return seen;
+  };
+  let seen = follow(people);
+  // a still more where a close-up's head moves or tips between two (once: the answer keeps them)
+  if (people.version >= 4 && !people.extra) {
+    const extra = extraStills(seen, meta, aspect);
+    people = extra.length ? await locateMore(video, people, extra, meta, { log }) : { ...people, extra: { stills: 0, cost: 0 } };
+    fs.writeFileSync(video.replace(/\.[^.]+$/, "") + ".people.json", JSON.stringify(people, null, 1));
+    if (people.extra.stills) seen = follow(people);
   }
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
   const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, outW });
