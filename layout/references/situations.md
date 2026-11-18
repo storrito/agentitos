@@ -79,8 +79,9 @@ videos from the bottom third by views per follower: 5 of 69 comparisons fall und
 | P1 | Hook card at the top | a hook that stays: a reply to a comment, a part of a series | 9:16: a card of 3–8 words in the wide stretch, the face under it. 16:9: big lines beside the panel, captions small under them | `--text hook:card`; in 16:9 big lines |
 | P2 wide | Cropped close | from about 2.7K material | 9:16: a crop around the face, 31.6 % of the source's width. 16:9: the source as it is, one caption line at the bottom | `crop 9:16`; 16:9 `full` |
 | P2 | Square plus text | 1080-line material and less, or when keywords stand beside the speaking | 9:16: a square across the frame, captions under it on calm ground. 16:9: the person on a third, the keyword on the free side | `crop 1:1`, `crop 4:5`, `crop band` |
-| P4 speaker and material | Material on top, person below | the person speaks about the material for a while and stays visible | 9:16: material in the wide stretch, the person under it, captions on the seam. 16:9: material on two thirds, the person as a panel | 9:16: the material as `--region` with the speaker as the webcam: `screen-stacked`; 16:9 not built |
+| P4 speaker and material | Material on top, person below | the person speaks about the material for a while and stays visible | 9:16: material in the wide stretch, the person under it, captions on the seam. 16:9: material on two thirds, the person as a panel | material made for the moment (a card, a quote): `beside` (`beside-above`; 16:9 `beside-column`, unmeasured); footage or a screen recording as material: `--region` with the speaker as the webcam, `screen-stacked` |
 | P4 | Material fills, person in a circle | the material carries many sentences | circle 22 % of the frame's width, left above the captions (9:16); 20 % of the height, top right (16:9) | a screen or picture as `--region` with the speaker as the webcam |
+| P4 | Material beside the speaker | b-roll of 2–4 s (a number, a quote, a screenshot) while the speaker stays in the picture | 9:16, 4:5, 1:1: the material above, the speaker's panel below, captions on the seam; else the speaker as a circle. 16:9: the speaker as a column on a third, the material on two | `beside` (below) |
 | P4 | Insert | proof of 2–5 seconds, the voice goes on | upright material fills; wide material as a band over a blurred copy in 9:16, hence short | `inset`, `crop band` |
 
 - **Which hook is which.** The text in the middle is what creators publish (240 Shorts): short,
@@ -127,6 +128,41 @@ videos from the bottom third by views per follower: 5 of 69 comparisons fall und
 - "1.5 s" is sketch; the pan of 0.4 s and the face at 32 % of the height are from clips. Stacked
   and side by side were run only on drawn faces (computed): never on a recording of two people.
   Name tags are not placed.
+
+## Material beside the speaker (`beside`)
+
+What it builds rests on figures from screens beside a face, not from cards over a talking head
+(240 Shorts: 53 frames that show a screen and a face, from 33 videos of 18 channels): the face
+below the screen in 35 (66 %), 18.0 % of the frame's height tall (middle half 17.1–19.4 %); above
+it in 9; a small picture in or at the screen in 9 (14.2 %; in the frames whose layout is a
+picture in a picture the median face is 12.0 %, 12 frames); beside it in none, and two pictures
+side by side over the frame's whole height in none of 1,200 frames. The screen of a stacked frame
+takes about half the frame (51 % of its area), nearly always the full width, and the captions of
+stacked frames stand on the seam. In a quarter of the frames with a screen (41 of 165) no face
+shows at all. **Usual, not shown to work**, and none of it for 4:5, 1:1 or 16:9.
+
+| frame | first | then | marked |
+| --- | --- | --- | --- |
+| 9:16 | material above, speaker's panel below, the face towards 18 %, captions on the seam | the speaker as a circle bottom left | 240 Shorts (the order and the 18 %); the circle's size from screencast-cut |
+| 4:5, 1:1 | the same, while the panel keeps the face at 12 % or more | the circle top right; first where the material needs more height | computed: the frame's height carries the panel (with one caption line and the face at 12 %, whatever the take: a field up to 828×662 in 9:16, 972×775 in 4:5, 810×549 in 1:1) |
+| 16:9 | the speaker as a column on a third, on the side they look to the material from | the panel below only where the material keeps its field, then the circle | sketch: nothing measured; the look is a guess from the face's place in the source |
+
+- **The 12 %** below which a panel gives way to the circle is the median face of the picture in a
+  picture (240 Shorts). That a face of 11 % in a panel is worse than one of 6 % in a circle is
+  not shown: it only keeps the panel from shrinking the speaker past what published videos show.
+- **A card is laid out into its field** (computed): the field is the room above the seam,
+  inside the safe box or the wide stretch above the buttons, inside every feed's crop where it
+  keeps its size. A screenshot or a clip of fixed size gets the largest box of its shape.
+- **Measured on two stills** (2026-11-18, `layout-proben/beside/`, a made number card): the card
+  reads in every field, the checker passes all 16 candidates. The panel in 9:16 and 4:5 looks
+  like the published layout. Weak: the circle's face (6–11 % of the height) is small; in 16:9 the
+  panel below the card leaves a banner of a card and ground beside the speaker; an upright take
+  with a large face fills no panel's width in 9:16, 4:5, 1:1 or 16:9 and stands in the panel's
+  middle with ground on both sides (before 2026-11-18 at one side: an independent review).
+- **Built into a video** once (b-roll's draft pull request 80, 2026-11-18, its own geometry, which
+  this command's numbers now match within about 10 px on its close-up): 9:16 and 16:9 looked at;
+  its owner took the face at 22 % where the footage stays under 1.25×, 18 % up to 2× (a judgement
+  on those videos, not a measurement: the default stays 18 %).
 
 ## The screen is the subject
 
