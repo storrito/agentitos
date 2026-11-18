@@ -79,10 +79,12 @@ const SWAY = 2;
 // of a close-up (a face wider than BIG of the window) the window holds the eyes, nose and mouth
 // with ROOM_BACK of the face's width beside them, and ROOM_FRONT more on the side the face looks
 // to; the back of the head, an ear, hair at the side may be cut (the channel's editors and OpusClip
-// cut them so). Turning back early, the features themselves with FEAT_PAD. Features at the edge:
+// cut them so). Turning back early, the features themselves with FEAT_PAD, behind a face that looks
+// to one side with BACK_PAD (the model's box of a three-quarter view stops short of the far eye
+// there: on the five passages it came within 3 % of the edge with 3.5 %). Features at the edge:
 // closer than FEAT_EDGE of the window's width. Chosen on the five passages of the three-way test:
 // with 0.08 and 0.22 a swaying close-up left the window too little play (0.65 turns a second)
-const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.035, FEAT_EDGE = 0.015;
+const ROOM_BACK = 0.05, ROOM_FRONT = 0.18, FEAT_PAD = 0.035, BACK_PAD = 0.07, FEAT_EDGE = 0.015;
 // an answer without the features (one of version 2): the middle CORE of the face's width (FRAME_CORE)
 const CORE = Math.min(1, Math.max(0.5, Number(process.env.FRAME_CORE) || 0.8));
 
@@ -92,8 +94,9 @@ export function holdOf(f, ww, m = HOLD) {
   if (f.w <= BIG * ww) return [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww];
   if (!f.feat) { const e = Math.min(m, SLACK) * ww; return [f.x - (CORE / 2) * f.w - e, f.x + (CORE / 2) * f.w + e]; }
   const { x0, x1, lean } = f.feat;
-  if (!m) return [x0 - FEAT_PAD * f.w, x1 + FEAT_PAD * f.w];
-  const back = ROOM_BACK * f.w, front = back + ROOM_FRONT * Math.abs(lean) * f.w;
+  const behind = (Math.abs(lean) >= 0.5 ? BACK_PAD : FEAT_PAD) * f.w;
+  if (!m) return lean < 0 ? [x0 - FEAT_PAD * f.w, x1 + behind] : lean > 0 ? [x0 - behind, x1 + FEAT_PAD * f.w] : [x0 - FEAT_PAD * f.w, x1 + FEAT_PAD * f.w];
+  const back = Math.max(ROOM_BACK * f.w, behind), front = ROOM_BACK * f.w + ROOM_FRONT * Math.abs(lean) * f.w;
   // a face that looks to one side: the window's middle on that side of the features' middle, so
   // that it has more room there than behind
   const mid = (x0 + x1) / 2;
@@ -263,7 +266,7 @@ Then, for each shot above, in this order (its number in "shot"):
 - material: true when the picture is mainly something shown or talked about (slides, a screen, a document, a product, a photo, footage), with any person of the conversation small beside or inside it (a speaker inset beside slides); false when it is mainly the people;
 - its subject: the box of what must stay visible for the shot to make sense (the photo with everyone in it, both feeds, the scene; for "people" the people);
 - its people: everyone visible in it, people in photos and footage included: who they are (a name or a short description, the same words for the same person in every shot) and the voice label they speak with (null if they do not speak in the clip);
-- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0); box_2d, the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture); features_2d, the smallest box holding its eyes, its nose with the tip and its mouth (from the eyebrows to the lower lip; in a three-quarter view or a profile only the eye that is seen and the nose's tip, wherever they are; only what is in the picture); looks: where the face points, as seen in the image: "left" or "right" (towards that side of the image: a three-quarter view or a profile), "camera" when it faces the camera or nearly.
+- its stills (the images below, each labelled with its still and time): for every still of the shot, every face visible in it: the person (its place in the shot's people, from 0); box_2d, the box of the face, forehead to chin, ear to ear, as it is in that still (only its visible part when the face is partly out of the picture); features_2d, the smallest box holding both its eyes (in a three-quarter view the far one too, with its outer corner, however narrow it looks; only in a full profile just the one eye that is seen), its nose with the tip and its mouth with both corners, from the eyebrows to the lower lip, only what is in the picture; looks: where the face points, as seen in the image: "left" or "right" (towards that side of the image: a three-quarter view or a profile), "camera" when it faces the camera or nearly.
 Boxes are [ymin, xmin, ymax, xmax] in thousandths of the picture (0–1000, from its top and its left edge).
 missed_cuts: the time in seconds of every cut you see in the video that does not lie between two of the listed shots; none: an empty list.`;
     const content = [{ type: "text", text: prompt }, { type: "video_url", video_url: { url: `data:video/mp4;base64,${fs.readFileSync(small).toString("base64")}` } }];
