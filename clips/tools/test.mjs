@@ -158,9 +158,12 @@ test("the moments come in the order of the episode; of two that overlap, the one
   assert.deepEqual(arrange({ moments: [moment(1, 3, { opens: 40 }), moment(8, 9, { opens: "x" })] }, INTERVIEW).map((m) => m.opens), [10, 1]);
   const two = arrange({ moments: [moment(1, 7, { opens: 3 }), moment(6, 9, { opens: 8 })] }, INTERVIEW, { limit: 90 });
   assert.deepEqual(two.map((m) => [m.first, m.last]), [[6, 9]]);
-  // on the same rating, the one the model listed first
+  // on the same rating, the one the model listed first (it is asked to list them in the
+  // episode's order, so that is the earlier one), whichever it is
   const tie = arrange({ moments: [moment(6, 9, { opens: 5 }), moment(1, 7, { opens: 5 })] }, INTERVIEW, { limit: 90 });
   assert.deepEqual(tie.map((m) => [m.first, m.last]), [[6, 9]]);
+  const tie2 = arrange({ moments: [moment(1, 7, { opens: 5 }), moment(6, 9, { opens: 5 })] }, INTERVIEW, { limit: 90 });
+  assert.deepEqual(tie2.map((m) => [m.first, m.last]), [[1, 7]]);
 });
 
 test("each moment carries the checks the tool counts, an exchange is a kind of its own", () => {
