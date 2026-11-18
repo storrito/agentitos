@@ -257,13 +257,16 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         const price = (s) => (q, l, past) => q.nose * costs.nose + q.mouth * costs.mouth + q.lip * costs.lip + (q.seconds - q.nose - q.mouth - q.lip) * costs.touch
           + (s.end - s.start) * ((l * costs.liftGround) / (0.1 * H) + (past ? costs.past : 0));
         const raw = list.map((s) => shotUnder(box, s.moments, s.most, D, s.forced, s.beyond, price(s)));
-        // the returns of one framing at the height of the one that needs most (as far as each may go)
+        // the returns of one framing at one height: that of the one that needs most, as far as
+        // every one of them may go (a return whose eyes would reach the top bar sooner holds the
+        // others down with it); a return goes past its own head's top only for its own mouth
         for (const g of returns) {
-          const want = Math.max(...g.map((i) => raw[i].lift));
-          for (const i of g) if (!list[i].forced && raw[i].lift < want) {
-            // (past its own head's top only where its own mouth or lower lip would be under the captions)
-            const own = raw[i].past || raw[i].mouth + raw[i].lip + raw[i].nose > 0;
-            const r = shotUnder(box, list[i].moments, Math.min(want, own ? list[i].beyond : list[i].most), D, true);
+          const free = g.filter((i) => !list[i].forced);
+          if (free.length < 2) continue;
+          const limit = (i) => (raw[i].past || raw[i].mouth + raw[i].lip + raw[i].nose > 0 ? list[i].beyond : list[i].most);
+          const want = Math.min(Math.max(...free.map((i) => raw[i].lift)), ...free.map(limit));
+          for (const i of free) if (raw[i].lift !== want) {
+            const r = shotUnder(box, list[i].moments, want, D, true);
             raw[i] = { ...r, need: raw[i].need, needMouth: raw[i].needMouth, past: r.lift > list[i].most, below: raw[i].below, returned: true };
           }
         }
