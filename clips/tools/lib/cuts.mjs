@@ -2,7 +2,7 @@
 // spread a change of shot over a few frames (a talk show's short push wipes). Read from every
 // frame at the footage's own rate, shrunk to a small grey picture; no model.
 //
-// Over one frame, two, three, … up to a second, the picture before and after is compared: a
+// Over one frame, two, three, … up to 2.2 seconds, the picture before and after is compared: a
 // change of shot is a stretch over which the picture changes far more (OVER_MOTION times) than
 // over as many frames within the shots on either side, each stretch measured against its own
 // neighbourhood, not one threshold for the whole clip. The smallest stretch that holds the change
@@ -11,19 +11,27 @@
 // whose picture comes back within a second (a hand waved in front of the lens), is a movement.
 // Those, and a change that is small, are only "possible": a cut only where a model watching the
 // clip names one within a second of it. A flash inside one shot (white or black for a few
-// frames, then the same picture) is no cut at all. The cut is placed on the first frame of the stretch that looks more
+// frames, then the same picture) is no cut at all. Over a second and more only a dissolve counts
+// (every frame between a blend of its two ends), and a fade through black is one cut in the
+// black; a long dissolve is one cut where the new picture outweighs the old. A hard cut in dark
+// footage counts from a smaller change, when nothing else moves. The cut is placed on the first frame of the stretch that looks more
 // like the shot after it than like the shot before.
 
 import { spawnSync } from "node:child_process";
 
 export const SMALL_W = 64, SMALL_H = 36;
-// the spans (in frames) a change of shot is looked for over: one frame for a hard cut, up to a
-// second for a dissolve
-const SPANS = [1, 2, 3, 4, 6, 8, 12, 16, 24];
+// the spans (in frames) a change of shot is looked for over: one frame for a hard cut, up to
+// LONGEST seconds for a dissolve or a fade
+const SPANS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 36, 48, 64], LONGEST = 2.2;
 // a hard cut: the frame differs from the one before by at least HARD (mean grey levels of 255);
 // over more frames a change is sure from SURE, possible from POSSIBLE; and always OVER_MOTION
 // times more than as many frames change within the shots on either side
 const HARD = 12, SURE = 35, POSSIBLE = 9, OVER_MOTION = 2.2;
+// a hard cut in dark footage: at least DARK, and DARK_OVER times more than the frames beside it
+// (the reviewer's dark cut: 7.4 against 0.1)
+const DARK = 4, DARK_OVER = 15, DIM = 40;
+// a frame inside a long dissolve differs from a blend of its two ends by at most this share of the change
+const BLEND = 0.15;
 // a change over several frames is sure only when its least changed third changed at least this
 // share of the whole change (true wipes and dissolves: 0.5 and more; a person standing up: 0.05)
 const SPREAD = 0.3;
@@ -50,6 +58,8 @@ export function smallFrames(video) {
   return frames;
 }
 
+const mean = (f) => f.reduce((n, v) => n + v, 0) / f.length;
+
 export function diff(a, b) {
   let d = 0;
   for (let k = 0; k < a.length; k++) d += Math.abs(a[k] - b[k]);
@@ -64,24 +74,32 @@ export function findCuts(frames, fps) {
   if (n < 3) return [];
   const found = [];
   for (const k of SPANS) {
-    if (k >= n) break;
+    if (k >= n || k > LONGEST * fps) break;
     // how much the picture changes over k frames, ending at each frame
     const D = new Float64Array(n);
     for (let i = k; i < n; i++) D[i] = diff(frames[i - k], frames[i]);
     const passing = [];
+    const dark = new Set();
     for (let i = k; i < n; i++) {
+      const beside = Math.max(i - k >= k ? D[i - k] : 0, i + k < n ? D[i + k] : 0);
+      if (k === 1 && D[i] < HARD && D[i] >= DARK && D[i] >= DARK_OVER * beside + 1 && mean(frames[i - 1]) < DIM && mean(frames[i]) < DIM && spread(frames[i - 1], frames[i]) >= SPREAD * D[i]) { passing.push(i); dark.add(i); continue; }
       if (D[i] < (k === 1 ? HARD : POSSIBLE)) continue;
       // as many frames within the shots on either side change far less
-      if (D[i] < OVER_MOTION * Math.max(i - k >= k ? D[i - k] : 0, i + k < n ? D[i + k] : 0) + 1) continue;
+      if (D[i] < OVER_MOTION * beside + 1) continue;
       passing.push(i);
     }
     for (const i of passing) {
       // the most change of those near it
       if (passing.some((j) => j !== i && Math.abs(j - i) < k + 1 && (D[j] > D[i] || (D[j] === D[i] && j < i)))) continue;
       const s = i - k + 1;
-      // already found over fewer frames
-      if (found.some((c) => c.from <= i && c.to >= s)) continue;
+      // already found over fewer frames (a longer stretch that is sure takes the place of a
+      // shorter one that is only possible: a long dissolve)
+      const over = found.filter((c) => c.from <= i && c.to >= s);
+      if (over.some((c) => c.sure)) continue;
       const before = frames[s - 1], after = frames[i];
+      // over a second and more only a dissolve or a fade counts: every frame between a blend of
+      // the two ends (a moving picture changes as much over that long)
+      if (k >= 24 && !blends(frames, s, i, D[i])) continue;
       let at = s;
       while (at < i && diff(frames[at], after) >= diff(frames[at], before)) at++;
       const moved = k > 1 && shifted(before, after) < 0.5 * D[i];
@@ -90,10 +108,31 @@ export function findCuts(frames, fps) {
       const part = k > 1 && spread(before, after) < SPREAD * D[i];
       // and keeps it changed: a hand waved in front of the lens is gone again within a second
       const back = k > 1 && returns(frames, s - 1, i, fps, D[i]);
-      found.push({ frame: at, from: s, to: i, change: +D[i].toFixed(1), sure: !moved && !part && !back && D[i] >= (k === 1 ? HARD : SURE) });
+      const sure = !moved && !part && !back && (D[i] >= (k === 1 ? HARD : SURE) || dark.has(i));
+      // only a dissolve over a second takes the place of what was found over fewer frames
+      if (over.length && (!sure || k < 24)) continue;
+      for (const c of over) found.splice(found.indexOf(c), 1);
+      found.push({ frame: at, from: s, to: i, change: +D[i].toFixed(1), sure });
     }
   }
   return flashesOut(found.sort((a, b) => a.frame - b.frame), frames, fps);
+}
+
+// are the frames from..to-1 blends of the frame before `from` and frame `to`, within BLEND of the
+// change? (a few of them checked)
+function blends(frames, from, to, change) {
+  const A = frames[from - 1], B = frames[to];
+  for (let m = from; m < to; m += Math.max(1, Math.floor((to - from) / 6))) {
+    const M = frames[m];
+    let best = Infinity;
+    for (let w = 0; w <= 1.0001; w += 0.1) {
+      let d = 0;
+      for (let p = 0; p < M.length; p++) d += Math.abs(M[p] - (w * A[p] + (1 - w) * B[p]));
+      best = Math.min(best, d / M.length);
+    }
+    if (best > BLEND * change) return false;
+  }
+  return true;
 }
 
 // does the picture before frame `from` come back within a second after frame `to`?
@@ -106,7 +145,6 @@ function returns(frames, from, to, fps, change) {
 // or two of something else inside one shot, or a flash (white or black between, the picture
 // after the same as before but for its brightness). Neither is a cut; a flash between two
 // different pictures is one cut, at its peak
-const mean = (f) => f.reduce((n, v) => n + v, 0) / f.length;
 export function likeness(a, b) {
   const ma = mean(a), mb = mean(b);
   let ab = 0, aa = 0, bb = 0;
@@ -117,15 +155,19 @@ function flashesOut(cuts, frames, fps) {
   const out = [];
   for (let k = 0; k < cuts.length; k++) {
     const a = cuts[k], b = cuts[k + 1];
-    if (b && b.frame - a.frame <= fps) {
+    // a fade through black takes up to twice the longest dissolve, a flash a second
+    const throughBlack = b && Math.min(...frames.slice(a.from, b.to).map(mean)) < 16;
+    if (b && b.frame - a.frame <= (throughBlack ? 2 * LONGEST : 1) * fps) {
       const before = frames[a.from - 1], after = frames[b.to];
       const same = diff(before, after) < BACK * Math.min(a.change, b.change);
       const between = frames.slice(a.from, b.from + 1).map(mean), lit = Math.max(...between), dark = Math.min(...between);
       const flash = (lit > 200 && mean(before) < 180 && mean(after) < 180) || (dark < 16 && mean(before) > 30 && mean(after) > 30);
-      if (same || (flash && likeness(before, after) >= SAME_LOOK)) { k++; continue; }
+      if ((same && b.frame - a.frame <= fps) || (flash && likeness(before, after) >= SAME_LOOK)) { k++; continue; }
       // a flash between two pictures: one cut, at its brightest (or darkest) frame
       if (flash) {
-        const peak = a.from + between.indexOf(lit > 200 ? lit : dark);
+        // the middle of its brightest (or darkest) stretch
+        const top = lit > 200 ? lit : dark, near = between.map((v, j) => (Math.abs(v - top) <= 2 ? j : -1)).filter((j) => j >= 0);
+        const peak = a.from + near[Math.floor(near.length / 2)];
         out.push({ frame: peak, from: a.from, to: b.to, change: Math.max(a.change, b.change), sure: a.sure || b.sure });
         k++;
         continue;

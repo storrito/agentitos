@@ -293,3 +293,30 @@ test("a white flash inside one shot is no cut; a flash between two different pic
     assert.equal(findCuts(smallFrames(other), FPS).filter((c) => c.sure).length, 1);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a very dark hard cut, a two-second dissolve and a fade through black are each one sure cut, in the middle of a long one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const make = (name, graph, inputs) => {
+      const file = path.join(dir, name);
+      const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs.flatMap((i) => ["-f", "lavfi", "-t", "6", "-i", i]), "-filter_complex", graph, "-map", "[v]",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", file], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return smallFrames(file);
+    };
+    const bars = `smptehdbars=s=320x180:r=${FPS}`, rgb = `rgbtestsrc=s=320x180:r=${FPS}`;
+    // the reviewer's dark cut: a picture of mean 4 turns into another, a change of 4.6 against 0 beside it
+    const dark = make("dark.mp4", "[0:v]trim=0:3,eq=contrast=0.1:brightness=-0.42[a];[1:v]trim=0:3,vflip,eq=contrast=0.1:brightness=-0.42[b];[a][b]concat=n=2:v=1,format=yuv420p[v]", [bars, bars]);
+    assert.deepEqual(findCuts(dark, FPS).map((c) => [c.frame, c.sure]), [[75, true]]);
+    // a dissolve of two seconds (frames 25 to 75)
+    const diss = make("diss.mp4", `[0:v]settb=1/${FPS}[a];[1:v]settb=1/${FPS}[b];[a][b]xfade=transition=fade:duration=2:offset=1,format=yuv420p[v]`, [bars, rgb]);
+    const d = findCuts(diss, FPS);
+    assert.equal(d.length, 1);
+    assert.ok(d[0].sure && d[0].frame > 35 && d[0].frame < 65, JSON.stringify(d));
+    // two seconds to black, two from it (black around frames 44 to 64): one cut in the black
+    const fade = make("fade.mp4", `[0:v]settb=1/${FPS}[a];[1:v]settb=1/${FPS}[b];[a][b]xfade=transition=fadeblack:duration=4:offset=1,format=yuv420p[v]`, [bars, rgb]);
+    const f = findCuts(fade, FPS);
+    assert.equal(f.length, 1, JSON.stringify(f));
+    assert.ok(f[0].sure && f[0].frame >= 44 && f[0].frame <= 64, JSON.stringify(f));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
