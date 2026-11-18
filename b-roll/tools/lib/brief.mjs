@@ -67,7 +67,7 @@ The video: ${width}×${height}, ${clock(duration)}, ${words.length} words.${bran
    runs to the end of the sentence, 2–4 s (or \`"seconds"\`).
 7. **The frame.** \`"beside"\`: the frame is shared, the person stays in view: the material
    above them (in a wide frame to their right), the person moved into the lower field (left
-   third), their face 18 % of the frame, the captions between them. For what is read or counted: numbers, pages,
+   third), their face 22 % of the frame, the captions between them. For what is read or counted: numbers, pages,
    posts, headlines. \`"fill"\`: fills the frame, cut at its edges, the person gone for the
    beat (a cutaway that is the point: footage, a photo of about the frame's shape).
    \`"whole"\`: all of it over the frame, over a blurred copy of itself (another shape; a
