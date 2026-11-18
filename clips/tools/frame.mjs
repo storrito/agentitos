@@ -3,7 +3,11 @@
 // cut to the short's frame, the window on whoever speaks.
 //
 //   node tools/frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4>
-//        [--whole <s>,…] [--follow <s>,…]
+//        [--whole <s>,…] [--follow <s>,…] [--lift <s>:<px>,…]
+//
+// --lift raises the picture of the shot at <s> by <px> of the frame (clips.mjs place decides it,
+// so that the captions clear a chin): the window moves down in the footage as far as it can, the
+// rest over a ground, as under a shot shown whole.
 //
 // The shots: the footage's own cuts, to the frame (lib/cuts.mjs: every frame at the footage's
 // rate, hard cuts and the short wipes and dissolves of a talk show alike), none shorter than six
@@ -72,10 +76,11 @@ const STILL_EVERY = 3, STILLS_MAX = 60;
 const SMALL_FACE = 0.12;
 // where a shot shown whole sits in the frame, in thousandths of its height: above the captions,
 // below the apps' top bar
-const FIT_TOP = 0.115, FIT_BOTTOM = 0.645;
+export const FIT_TOP = 0.115, FIT_BOTTOM = 0.645;
 // two above each other: each panel this share of the height, from the top, a seam between; the
 // captions sit on the lower one's chest, below its face
-const PANEL = 0.36, SEAM = 6, PANEL_FACE_Y = 0.42, BANTER = 5, BANTER_TURNS = 3;
+export const PANEL = 0.36, SEAM = 6;
+const PANEL_FACE_Y = 0.42, BANTER = 5, BANTER_TURNS = 3;
 export const KINDS = ["people", "split", "broll"];
 
 export const probe = (file) => {
@@ -427,7 +432,24 @@ export function windowAt(piece, t) {
 // a shot shown whole has `fit`, the part of the footage it shows; two above each other `stack`.
 // `kinds` overrides a shot's kind: [{ t, kind }]. Each piece says how it holds its face (`hold`:
 // still, wider, follows)
-export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], outW = 1080, fps = 25 }) {
+// how far the picture of a piece that follows a face may be raised in the frame without a ground:
+// its window moved down in the footage as far as the footage goes, in px of the frame
+export function roomBelow(w, height, outW = 1080) {
+  if (w.fit || w.stack || !w.keys?.length) return 0;
+  const lowest = Math.max(...w.keys.map((k) => k.y));
+  return Math.max(0, ((height - (lowest + w.h)) * outW) / w.w);
+}
+
+// a shot's picture raised by px in the frame (clips' place: the captions clear its chin): its
+// window first moved down in the footage as far as that goes, the rest over a ground (a blurred,
+// darker copy, as under a shot shown whole), which the frame's bottom shows
+export function raise(w, px, { height, outW = 1080 }) {
+  if (!(px > 0) || w.fit || w.stack) return w;
+  const free = Math.min(px, Math.floor(roomBelow(w, height, outW))), dy = (free * w.w) / outW;
+  return { ...w, keys: w.keys.map((k) => ({ ...k, y: +(k.y + dy).toFixed(1) })), lift: { px, free, ground: px - free } };
+}
+
+export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], lifts = [], outW = 1080, fps = 25 }) {
   const [aw, ah] = aspect;
   const outH = Math.round((outW * ah) / aw / 2) * 2;
   const panelH = Math.round((outH * PANEL) / 2) * 2;
@@ -551,7 +573,9 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
     }
     if (s.end - t >= shortest || !out.length) out.push(single(t, s.end));
     else out[out.length - 1].end = s.end;
-    return out;
+    // a lift asked for this shot (clips' place, or --lift)
+    const lift = lifts.filter((o) => o.t >= s0.start && o.t < s0.end).pop();
+    return lift ? out.map((w) => raise(w, lift.px, { height, outW })) : out;
   });
 }
 
@@ -631,6 +655,13 @@ export function render(video, windows, out, { outW, outH, fps, start = 0 }) {
         + `[bb${k}][ff${k}]overlay=${fx}:${fy},setsar=1,setpts=PTS-STARTPTS[v${k}]`;
     }
     const x = moving(s.keys, "x"), y = moving(s.keys, "y");
+    // raised over a ground: the picture higher by lift.ground, the frame's bottom a blurred, darker copy
+    if (s.lift?.ground > 0) {
+      return `${trim},split=2[b${k}][f${k}];`
+        + `[b${k}]crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH},gblur=sigma=35,eq=brightness=-0.12[bb${k}];`
+        + `[f${k}]crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH}:flags=lanczos[ff${k}];`
+        + `[bb${k}][ff${k}]overlay=0:${-Math.round(s.lift.ground)},setsar=1,setpts=PTS-STARTPTS[v${k}]`;
+    }
     return `${trim},crop=w=${s.w}:h=${s.h}:x='${x}':y='${y}',scale=${outW}:${outH}:flags=lanczos,setsar=1,setpts=PTS-STARTPTS[v${k}]`;
   });
   // footage whose picture starts a little after its sound (a frame, as cut from YouTube): the
@@ -701,7 +732,8 @@ export function sheet(video, framed, windows, shots, edges, file, { fps = 25 } =
     let r = spawnSync("ffmpeg", [...args, "-filter_complex", graph, "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
     // an ffmpeg without fonts: the same sheet without its labels
     if (r.status !== 0) r = spawnSync("ffmpeg", [...args, "-filter_complex", graph.replace(/,drawtext=[^\[;]*/g, ""), "-map", "[s]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
-    if (r.status === 0) files.push(out);
+    // (a seek past the picture's last frame gives ffmpeg nothing to draw and no file, without an error)
+    if (r.status === 0 && fs.existsSync(out)) files.push(out);
   }
   return files;
 }
@@ -711,7 +743,7 @@ export function needsFrame({ width, height }, [aw, ah]) {
   return width / height > (aw / ah) * 1.15;
 }
 
-export async function frame(video, words, { aspect = [9, 16], out, kinds = [], log = () => {} }) {
+export async function frame(video, words, { aspect = [9, 16], out, kinds = [], lifts = [], log = () => {} }) {
   const meta = probe(video);
   if (!needsFrame(meta, aspect)) return null;
   log("frame: the cuts, frame by frame …");
@@ -726,7 +758,7 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   const grey = greyFrames(video, { start: meta.start });
   for (const s of seen) if (s.kind === "people") for (const p of s.people) p.track = fillTrack(grey, p.track, s.start, s.end);
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
-  const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, outW });
+  const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, lifts, outW });
   const edges = edgesOf(windows, seen, meta);
   const whole = windows.filter((s) => s.fit).length, two = windows.filter((s) => s.stack).length;
   log(`frame: ${seen.length} shot(s), ${windows.length} piece(s), ${whole ? `${whole} shown whole, ` : ""}${two ? `${two} with two above each other, ` : ""}${meta.width}×${meta.height} → ${outW}×${outH} …`);
@@ -735,7 +767,7 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
   render(video, windows, tmp, { outW, outH, fps: meta.fps, start: meta.start });
   fs.rmSync(out, { force: true });
   fs.renameSync(tmp, out);
-  fs.writeFileSync(out.replace(/\.mp4$/, ".json"), JSON.stringify({ footage: path.basename(video), aspect,
+  fs.writeFileSync(out.replace(/\.mp4$/, ".json"), JSON.stringify({ footage: path.basename(video), aspect, size: [meta.width, meta.height],
     shots: seen.map((s) => ({ start: s.start, end: s.end, kind: s.kind, ...(s.note ? { note: s.note } : {}), people: s.people })), windows, edges }, null, 1));
   const sheetFile = out.replace(/\.mp4$/, ".sheet.jpg");
   for (const f of fs.readdirSync(path.dirname(out))) if (/^framed\.sheet-\d+\.jpg$/.test(f) && out.endsWith("framed.mp4")) fs.rmSync(path.join(path.dirname(out), f));
@@ -748,12 +780,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   const opt = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : undefined; };
   const [video, transcript] = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
-  if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…]"); process.exit(1); }
+  if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…] [--lift <s>:<px>,…]"); process.exit(1); }
   const at = (k, kind) => String(opt(k) || "").split(",").filter(Boolean).map((v) => ({ t: Number(v), kind })).filter((o) => Number.isFinite(o.t));
   const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
   const r = await frame(video, Array.isArray(raw) ? raw : raw.words, {
     aspect: (opt("aspect") || "9:16").split(":").map(Number), out: opt("out"), log: console.error,
     kinds: [...at("whole", "broll"), ...at("follow", "follow")],
+    lifts: String(opt("lift") || "").split(",").filter(Boolean).map((v) => { const [t, px] = v.split(":").map(Number); return { t, px }; }).filter((o) => Number.isFinite(o.t) && o.px >= 0),
   });
   if (!r) console.log("Nothing to cut: the footage has the frame's shape, there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above).");
   else {
@@ -761,7 +794,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     r.shots.forEach((s, k) => {
       const pieces = r.windows.filter((w) => w.shot === k);
       const how = [...new Set(pieces.map((w) => SAY[w.kind] + (w.hold ? HOLDS[w.hold] : "")))].join(", then ");
-      console.log(`  ${k + 1}. ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${how}${s.note ? ` (${s.note})` : ""}`);
+      const lifted = pieces.find((w) => w.lift)?.lift;
+      console.log(`  ${k + 1}. ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${how}${s.note ? ` (${s.note})` : ""}${lifted ? `, raised ${lifted.px} px${lifted.ground ? ` (${lifted.ground} over a ground)` : ""}` : ""}`);
       const edges = r.edges.filter((e) => e.shot === k);
       const seen = new Set();
       for (const e of edges) {
