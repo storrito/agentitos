@@ -39,7 +39,7 @@ export function evaluate(ctx, p) {
   if (ctx.baked) parts.forEach((q) => {
     if (!sources[q.src].screen) return;
     const b = ctx.baked, box = [q.left + q.s * b[0], q.top + q.s * b[1], q.s * b[2], q.s * b[3]], part = clipBox(box, clipBox(q.win, frame) || q.win);
-    if (part) { others.push({ box: part, label: "the speaker in the screen", share: area(part) / area(box), height: q.s * b[3] }); twice = part; }
+    if (part) { others.push({ box: part, label: "the speaker in the screen", share: area(part) / area(box), height: q.s * b[3], baked: true }); twice = part; }
   });
   const keep = [...faces.map((f) => (f.screen ? grow(f.box, D.gap) : keepOut(f.box, D))), ...others.map((o) => keepOut(o.box, D)), ...(p.circle ? [grow(p.circle.box, D.gap)] : [])];
   const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null, card: split || !!sources[0].screen, ground: !!p.onGround });
@@ -63,6 +63,8 @@ export function evaluate(ctx, p) {
   }
   // another person in a crop on one, or in the other's part
   for (const o of others) {
+    // (the speaker baked into the screen is said once: that he shows twice)
+    if (o.baked) continue;
     if (split) problems.push({ level: "soft", code: "other-shows", kind: "face", of: o.label, what: `shows in the other person's part (${pct(o.share)} of it)` });
     else if (o.share < 0.999) problems.push({ level: "soft", code: "other-cut", kind: "face", of: o.label, what: `is cut by the picture's edge (${pct(o.share)} of it shows)` });
   }
@@ -129,7 +131,10 @@ export function evaluate(ctx, p) {
   // usual size when it moves). A screen region has no measured band: the per cent of the frame's
   // width or height it spans, whichever is more, is the better the larger, up to subject.regionEnough.
   const size = screen ? 100 * Math.max(faces[0].box[2] / W, faces[0].box[3] / H) : 100 * c.faceHeight / H, SU = Wt.subject;
-  const subject = screen ? SU.smaller * Math.max(0, SU.regionEnough - size) : faces.length ? SU.smaller * Math.max(0, SU.from - size) + SU.larger * Math.max(0, size - SU.to) : 0;
+  // (a screen above a webcam's panel: the webcam's face counts too, short of the 18 % published
+  // Shorts give it below a screen, at the same rate as any face short of its band)
+  const camFace = screen && split ? faces.find((f) => !f.screen) : null;
+  const subject = screen ? SU.smaller * Math.max(0, SU.regionEnough - size) + (camFace ? SU.smaller * Math.max(0, 100 * D.screenFace.height - 100 * camFace.height / H) : 0) : faces.length ? SU.smaller * Math.max(0, SU.from - size) + SU.larger * Math.max(0, size - SU.to) : 0;
   c.terms = {
     enlargement: Math.max(0, (p.s - EN.softFrom) / (EN.forbiddenFrom - EN.softFrom)) * EN.costAtForbidden,
     ground: Wt.ground.cost * 100 * c.ground,

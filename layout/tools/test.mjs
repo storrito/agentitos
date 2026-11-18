@@ -660,12 +660,13 @@ t("a region too large to read: 640×420 px with 16 px text would be 960×630 at 
 });
 
 t("with a webcam: the circle (238 px, 22 % of the width) stands bottom left above the captions, where screencast-cut puts it, and the region moves up to keep 24 px from it; a region at the screen's bottom left takes the circle to the top left, so that the screen still fills the frame; the circle never touches the region or text", () => {
-  const res = screenOf(Z916, REGION, [cap(2)], { cam: "file" }), c = res.candidates[0], k = c.circle, r = c.faceInFrame[0];
-  ok(c.fit === "screen-zoom" && !c.hard && !c.unmet.length, `the first is ${nameOf(c)}: ${JSON.stringify(c.problems)}`);
+  // (the first with a circle: screen-stacked, the screen above the webcam's panel, may stand before it)
+  const res = screenOf(Z916, REGION, [cap(2)], { cam: "file" }), c = res.candidates.find((q) => q.circle), k = c.circle, r = c.faceInFrame[0];
+  ok(c.fit === "screen-zoom" && !c.hard && !c.unmet.length, `the first with a circle is ${nameOf(c)}: ${JSON.stringify(c.problems)}`);
   ok(k.corner === "bottom-left" && k.d === 238 && k.box[0] === Z916.safe[0] && Math.abs(Y1(k.box) - (c.text[0].box[1] - DEFAULTS.gap)) < 0.6, `the circle: ${JSON.stringify(k)}`);
   ok(Y1(r) <= k.box[1] - DEFAULTS.gap + 0.1 && inside(Z916.safe, r) && inside(Z916.safe, k.box), "the region does not keep the gap above the circle");
   ok(k.crop && k.crop[2] === 720 && k.enlargement < 1, `the circle's crop of the webcam: ${k.crop}`);
-  const low = screenOf(Z916, [60, 700, 480, 300], [cap(2)], { cam: "same" }), c2 = low.candidates[0], k2 = c2.circle, r2b = c2.faceInFrame[0];
+  const low = screenOf(Z916, [60, 700, 480, 300], [cap(2)], { cam: "same" }), c2 = low.candidates.find((q) => q.circle), k2 = c2.circle, r2b = c2.faceInFrame[0];
   ok(c2.fit === "screen-zoom" && !c2.hard && k2.corner === "top-left" && k2.d === 238, `region at the bottom left: ${nameOf(c2)}, circle ${JSON.stringify(k2)}`);
   ok(!overlap(k2.box, r2b) && c2.window[2] === 1080 && Y1(c2.window) >= c2.text[0].box[1] - DEFAULTS.gap - 0.1, "the screen does not fill the frame down to the captions");
   for (const q of [c, c2]) ok(q.text.every((x) => !overlap(x.box, q.circle.box) && !overlap(x.box, q.faceInFrame[0])), "text touches the circle or the region");
@@ -718,6 +719,23 @@ t("a screen above, the webcam as a panel below it (screen-stacked), the common l
   const talk = solve({ zones: Z916, sources: [TALK], needs: [cap(1)] });
   ok(!talk.candidates.some((c) => c.fit === "screen-stacked") && talk.notes.some((n) => /no panel under the screen/.test(n)), `the talk: ${talk.notes.join(" | ")}`);
   return `the screen at ${st.parts[0].scale}× (text ${st.textHeight} px) above y ${seam}, the face ${Math.round(face[3])} px at ${st.parts[1].scale}×; cost ${st.cost} against the circle's ${res.candidates.find((c) => c.circle)?.cost}`;
+});
+
+t("screen-stacked where its first try failed (an independent review's inputs): a tall region left the webcam at 1.5× with its face under every app's bottom bar, now the webcam goes smaller, its picture narrower than the frame where need be, and passes; a phone's screen was pinned to the frame's left edge with its region under the buttons, now its region stands in the safe box; a region too tall for a panel says so in plain numbers (it said '-598 px'); in 4:5 a note says the layout is for upright frames; a baked speaker is not reported as 'the other person'", () => {
+  const cam = { size: [1280, 720], faces: [[635, 415, 180, 175]] };
+  const one = (screen, z = Z916) => solve({ zones: z, sources: [screen, cam], needs: [cap(1)] });
+  const tall = one({ size: [2560, 1600], region: [1000, 300, 400, 700], minTextHeight: 20 }).candidates.find((c) => c.fit === "screen-stacked");
+  ok(tall && !tall.hard && !tall.unmet.length && inside(Z916.safe, tall.faceInFrame[1]), `the tall region: ${tall && JSON.stringify(tall.problems)}`);
+  const phone = one({ size: [1170, 2532], region: [100, 600, 970, 800], minTextHeight: 30 }).candidates.find((c) => c.fit === "screen-stacked");
+  ok(phone && !phone.hard && inside(Z916.safe, phone.faceInFrame[0]), `the phone: ${phone && `${phone.faceInFrame[0]} ${JSON.stringify(phone.problems)}`}`);
+  const none = one({ size: [2560, 1600], region: [1000, 100, 400, 1400], minTextHeight: 20 });
+  ok(!none.candidates.some((c) => c.fit === "screen-stacked") && none.notes.some((n) => /need \d+ px of the frame's height above the seam/.test(n)) && !none.notes.some((n) => /-\d+ px/.test(n)), none.notes.join(" | "));
+  const feed = one({ size: [2560, 1600], region: [384, 614, 486, 160], minTextHeight: 15 }, Z45);
+  ok(feed.notes.some((n) => /built for upright frames/.test(n)), feed.notes.join(" | "));
+  const baked = solve({ zones: Z916, sources: [{ size: [2560, 1600], region: [900, 300, 500, 300], minTextHeight: 15, faces: [[100, 1100, 200, 250]] }], needs: [cap(1)] }).candidates.find((c) => c.fit === "screen-stacked");
+  ok(baked && !baked.problems.some((q) => /other/.test(q.code)), `the baked speaker's panel: ${baked && JSON.stringify(baked.problems)}`);
+  agree(tall, one({ size: [2560, 1600], region: [1000, 300, 400, 700], minTextHeight: 20 }), "screen-stacked-tall"); agree(phone, one({ size: [1170, 2532], region: [100, 600, 970, 800], minTextHeight: 30 }), "screen-stacked-phone");
+  return `the tall region: webcam ${tall.parts[1].scale}×; the phone: region x ${Math.round(phone.faceInFrame[0][0])}–${Math.round(X1(phone.faceInFrame[0]))}`;
 });
 
 // =============================================================================================

@@ -136,7 +136,7 @@ export function screenFits(ctx, webcam, notes) {
 
 export function screenStacked(ctx, cam, notes) {
   const { W, H, Z, D, sw, sh, cap, hook } = ctx, S = Z.safe, g = D.gap;
-  if (H < 1.5 * W) return [];
+  if (H < 1.5 * W) { notes.push(`no screen above a webcam's panel (screen-stacked): it is built for upright frames as 9:16, not for ${W}×${H}; the circle stands for the webcam here`); return []; }
   const main = ctx.sources[0], R = main.faces[0], f = cam.faces[0], [cw, ch] = cam.size;
   const soft = D.weights.enlarge.softFrom, capH = captionHeight(ctx);
   const sCam = Math.max(W / cw, Math.min(D.screenFace.height * H / f[3], soft));
@@ -146,33 +146,50 @@ export function screenStacked(ctx, cam, notes) {
     notes.push(`no panel under the screen: the speaker baked into the screen is ${f[3]} px tall, and head and shoulders (${3 * f[3]} px) would fill half the frame's width only enlarged ${r2(W / 2 / (3 * f[3]))}×; the circle shows him`);
     return [];
   }
-  // the screen: as large as reads, at least as wide as the frame, its region no wider than the safe box
+  // the screen: as large as reads and at least as wide as the frame, but its region never wider
+  // than the safe box; where that makes it narrower than the frame, it stands in the middle with
+  // ground beside it
   const sRead = main.minText ? ctx.readable / main.minText : 0;
-  const s = Math.min(S[2] / R[2], Math.max(W / sw, sRead));
-  const top0 = hook ? (Z.wide || S)[1] + D.hookCard.font * D.hookCard.heightEm + g : Math.max(0, S[1] - 0);
-  // the seam: the panel takes at most half the frame and no more than the webcam covers at sCam;
-  // the screen's part above keeps room for the region, the captions' upper half and the gaps
+  const s = Math.min(S[2] / R[2] * (1 - 1e-9), Math.max(W / sw, sRead));
+  const top0 = hook ? (Z.wide || S)[1] + D.hookCard.font * D.hookCard.heightEm + g : 0;
+  // the seam: the panel takes at most half the frame and no more than the webcam covers; the
+  // screen's part above keeps room for the region, the captions' upper half and the gaps
   const capHalf = cap ? capH / 2 : 0;
-  const needUp = top0 + s * R[3] + 2 * g + capHalf;
-  const panelH = Math.min(D.screenFace.panel * H, sCam * ch, H - needUp);
-  const seam = H - panelH;
-  if (panelH < 0.25 * H) { notes.push(`no panel under the screen: the region at ${r2(s)}× leaves the webcam ${Math.round(panelH)} px of the frame's height, under a quarter`); return []; }
-  const up = [0, 0, W, seam], down = [0, seam, W, panelH];
-  // the screen: the region on the frame's middle across, as low as the seam's captions allow
-  const ry1 = seam - capHalf - g, ry0 = Math.max(S[1], top0);
-  const x = holdAxis(s, 0, W, sw, R[0], X1(R), S[0], X1(S), W / 2 - s * (R[0] + R[2] / 2), 0);
-  const y = holdAxis(s, up[1], up[3], sh, R[1], Y1(R), ry0, ry1, ry1 - s * Y1(R), 0, [], [up[3], 0]);
-  // the panel: the face on the middle across, its eyes a third down the panel, below the seam's
-  // captions and the margin kept above a head, above the safe box's bottom
-  const fh = sCam * f[3], above = Math.max(D.free.aboveMin, D.free.above * fh), below = Math.max(D.free.belowMin, D.free.below * fh);
-  const fx = holdAxis(sCam, 0, W, cw, f[0], X1(f), S[0], X1(S), W / 2 - sCam * (f[0] + f[2] / 2), D.facePad);
-  // (below the safe box's bottom, under the apps' bars, the panel may leave ground: a face low in
-  // the webcam's picture comes up above the captions' line)
-  const fy = holdAxis(sCam, seam, panelH, ch, f[1], Y1(f), seam + capHalf + above, Y1(S) - below, seam + panelH / 3 - sCam * (f[1] + D.eyes * f[3]), D.facePad, [], [0, Math.max(0, H - Y1(S))]);
+  const needUp = Math.max(top0, S[1]) + s * R[3] + 2 * g + capHalf;
+  if (H - needUp < 0.25 * H) { notes.push(`no panel under the screen: the region at ${r2(s)}× and the text need ${Math.round(needUp)} px of the frame's height above the seam, which leaves the webcam less than a quarter of the frame; a shorter region gives room for one`); return []; }
+  // across: a screen narrower than the frame has its region on the safe box's middle and may run
+  // past one of the frame's edges (ground at the other); one as wide holds it as any covering picture
+  const tx = W / 2 - s * (R[0] + R[2] / 2), xLo = S[0] - s * R[0], xHi = X1(S) - s * X1(R);
+  const x = s * sw < W ? { v: clamp(tx, Math.min(xLo, xHi), Math.max(xLo, xHi)), ok: xLo <= xHi + 0.05 } : holdAxis(s, 0, W, sw, R[0], X1(R), S[0], X1(S), tx, 0);
   const win = (l, t, sc, w, h, part) => clipBox([l, t, sc * w, sc * h], part) || part;
-  const parts = [
-    { src: 0, s, left: x.v, top: y.v, win: win(x.v, y.v, s, sw, sh, up), own: null },
-    { src: 1, s: sCam, left: fx.v, top: fy.v, win: win(fx.v, fy.v, sCam, cw, ch, down), own: null },
-  ];
-  return [evaluate(ctx, { fit: "screen-stacked", parts, seam: cap ? seam : null })];
+  // the webcam: from the scale that makes its face 18 % of the frame down to half the one that
+  // covers the frame's width (below that one the panel is narrower than the frame, ground beside
+  // it), the first at which the face stands in the safe box below the seam's captions and the
+  // margin kept above a head
+  let best = null;
+  const least = 0.5 * W / cw;
+  for (let sc = sCam; ; sc = Math.max(least, sc - D.zoomStep * sCam)) {
+    // the seam: the panel takes at most half the frame, less where the screen's part needs more;
+    // a webcam's picture shorter than its panel leaves ground below it, under the apps' bars
+    const seam = Math.max(needUp, H - D.screenFace.panel * H), panelH = H - seam;
+    const up = [0, 0, W, seam], down = [0, seam, W, panelH];
+    const ry1 = seam - capHalf - g, ry0 = Math.max(S[1], top0);
+    const y = holdAxis(s, up[1], up[3], sh, R[1], Y1(R), ry0, ry1, ry1 - s * Y1(R), 0, [], [up[3], 0]);
+    const fh = sc * f[3], above = Math.max(D.free.aboveMin, D.free.above * fh), below = Math.max(D.free.belowMin, D.free.below * fh);
+    // (a webcam's picture smaller than its panel is placed by its face alone, clipped to the panel)
+    const free = (t, a0, a1, f0, f1) => { const lo = a0 - sc * f0, hi = a1 - sc * f1; return { v: clamp(t, Math.min(lo, hi), Math.max(lo, hi)), ok: lo <= hi + 0.05 }; };
+    const fx = sc * cw < W ? free(W / 2 - sc * (f[0] + f[2] / 2), S[0], X1(S), f[0], X1(f)) : holdAxis(sc, 0, W, cw, f[0], X1(f), S[0], X1(S), W / 2 - sc * (f[0] + f[2] / 2), D.facePad);
+    // (below the safe box's bottom, under the apps' bars, the panel may leave ground: a face low in
+    // the webcam's picture comes up above the captions' line)
+    const ty = seam + panelH / 3 - sc * (f[1] + D.eyes * f[3]);
+    const fy = sc * ch < panelH ? free(ty, seam + capHalf + above, Y1(S) - below, f[1], Y1(f)) : holdAxis(sc, seam, panelH, ch, f[1], Y1(f), seam + capHalf + above, Y1(S) - below, ty, D.facePad, [], [0, Math.max(0, H - Y1(S))]);
+    const build = { seam, parts: [
+      { src: 0, s, left: x.v, top: y.v, win: win(x.v, y.v, s, sw, sh, up), own: null },
+      { src: 1, s: sc, left: fx.v, top: fy.v, win: win(fx.v, fy.v, sc, cw, ch, down), own: null },
+    ] };
+    best ||= build;
+    if (fx.ok && fy.ok && y.ok) { best = build; break; }
+    if (sc <= least + 1e-9) break;
+  }
+  return [evaluate(ctx, { fit: "screen-stacked", parts: best.parts, seam: cap ? best.seam : null })];
 }
