@@ -1341,6 +1341,14 @@ t("in 16:9 the column's side can be fixed (beside.side) and the captions left wh
   sentence(e, "beside.side=up"); ok(/look, left or right/.test(e.stderr), e.stderr);
 });
 
+t("speaker.scale, left and top place the footage itself (frame px per footage px, its top left corner in frame px); speaker.host gives the same placement as a transform of the footage filling the frame (as b-roll moves its host): both put the face on the same px", () => {
+  for (const [Z, source, face] of [[Z916, [1280, 720], [555, 150, 180, 195]], [Z169, [1080, 1920], [80, 250, 445, 580]], [Z45, [1920, 1080], [830, 220, 270, 295]]]) for (const c of beside(Z, { source, face }).candidates) {
+    const [W, H] = Z.size, k = Math.max(W / source[0], H / source[1]), ox = (W - k * source[0]) / 2, oy = (H - k * source[1]) / 2, h = c.speaker.host;
+    const viaHost = [h.left + h.scale * (ox + k * face[0]), h.top + h.scale * (oy + k * face[1])], own = [c.speaker.left + c.speaker.scale * face[0], c.speaker.top + c.speaker.scale * face[1]];
+    ok(Math.abs(viaHost[0] - own[0]) < 1 && Math.abs(viaHost[1] - own[1]) < 1 && Math.abs(own[0] - c.speaker.face[0]) < 0.6, `${Z.frame} ${c.fit}: ${viaHost} against ${own}`);
+  }
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {

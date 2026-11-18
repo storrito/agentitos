@@ -313,6 +313,12 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     return build("column", { field: fld.field, area: side === "left" ? [cw, 0, W - cw, H] : [0, 0, W - cw, H], speaker: { ...sp, field: col, shape: "rect" }, caption: capBox, side, looks, fixed: B.side !== "look", keep, target: a.aimed, by, room: sMost * usual[3] / H });
   }
 
+  // The same placement for a caller that shows the footage filling the frame (object-fit: cover,
+  // centred) and moves that picture by one transform (scale, then a shift, origin top left): a
+  // point p of that picture lands at left + scale · p.
+  const c0 = Math.max(W / sw, H / sh), ox = (W - c0 * sw) / 2, oy = (H - c0 * sh) / 2;
+  const hostOf = (s, l, t) => ({ scale: r4(s / c0), left: r1(l - (s / c0) * ox), top: r1(t - (s / c0) * oy) });
+
   // ---- one candidate, judged and costed ----
   function build(arr, p) {
     const sp = p.speaker, s = sp.s;
@@ -370,7 +376,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     const c = {
       fit: `beside-${arr}`, arrangement: arr, ...(p.side ? { side: p.side, looks: p.looks } : {}),
       material: { field: p.field.map(r1), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
-      speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
+      speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), host: hostOf(s, sp.left, sp.top), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
       captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band } : null,
       ...(p.seam != null ? { seam: r1(p.seam) } : {}),
       change: {
