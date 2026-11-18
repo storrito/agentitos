@@ -516,6 +516,20 @@ t("text in the ground band: the wide interview into 9:16 with a caption line and
   return `${nameOf(band)}: the hook y ${Math.round(hk.box[1])}–${Math.round(Y1(hk.box))} above the picture from y ${band.window[1]}; behind it ${band.groundShows.behind.find((b) => b.role === "hook").shows}`;
 });
 
+t("an upright take into 16:9 also as the whole picture in the middle, the sides filled with ground and the caption over its bottom, beside the panel at the left (which looked weak as a video): the stand-in upright take of the first use on real footage, one caption line; with a hook only the panel holds it beside the picture", () => {
+  const face = [80, 250, 445, 580];
+  const res = solve({ zones: Z169, source: [1080, 1920], faces: [face], needs: [cap(1)] });
+  const mid = res.candidates.find((c) => c.fit === "inset"), panel = res.candidates.find((c) => c.fit === "panel");
+  ok(mid && !mid.hard && !mid.unmet.length && Math.abs(mid.window[0] + mid.window[2] / 2 - 960) < 1 && mid.window[3] >= 1080 - 0.1, `the picture in the middle: ${mid && `${mid.window} ${JSON.stringify(mid.problems)}`}`);
+  const cp = mid.text[0];
+  ok(cp.on === "picture" && cp.box[0] >= mid.window[0] && X1(cp.box) <= X1(mid.window) && Math.abs(Y1(cp.box) - Y1(Z169.safe)) < 1, `its caption: ${cp.on} ${cp.box}`);
+  ok(panel && !panel.hard && panel.text[0].where === "beside", `the panel: ${panel && panel.text[0].where}`);
+  const withHook = solve({ zones: Z169, source: [1080, 1920], faces: [face], needs: [cap(1), hook] }).candidates[0];
+  ok(withHook.fit === "panel" && !withHook.unmet.length, `with a hook: ${nameOf(withHook)}`);
+  agree(mid, res, "upright-169-middle");
+  return `${res.candidates.slice(0, 2).map((c) => `${nameOf(c)} (cost ${c.cost})`).join(" before ")}; with a hook ${nameOf(withHook)}`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);

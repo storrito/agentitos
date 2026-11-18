@@ -54,7 +54,7 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
   // horizontally: the picture centred (a crop: the face centred); in a wide frame also the face as
   // far left and right as the fit allows, which frees a column beside it
   const faceX = fb && extra.aroundFace ? W / 2 - s * (fb[0] + fb[2]) / 2 : centredX;
-  let xs = extra.sides ? [-Infinity, Infinity] : tall && !extra.across ? [faceX] : [faceX, -Infinity, Infinity];
+  let xs = extra.sides ? [-Infinity, Infinity] : extra.centre ? [centredX] : tall && !extra.across ? [faceX] : [faceX, -Infinity, Infinity];
   // vertically: centred (a crop that may choose: eyes on the upper third), the face as low and as
   // high as the fit allows, the chin just high enough for the captions below it, and for a picture
   // smaller than the frame: ending above the captions, starting below the hook
@@ -219,7 +219,13 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
       // where neither a crop nor the whole source at the frame's width holds the faces and the
       // text, a smaller whole source may: a face near the source's edge comes into the safe box
       if (!out.some(met)) scanDown("inset", sc, D.insetMin, "inside", "inside");
-    } else if (!ctx.tall) scanDown("panel", sc, D.panelMin, "inside", "inside", { sides: true }); // a frame wider than the source: a panel at one side
+    } else if (!ctx.tall) {
+      // a frame wider than the source: a panel at one side, the text beside it; and the whole
+      // picture in the middle, the sides filled with ground, the captions over its bottom (as an
+      // upright clip stands in a wide video)
+      scanDown("panel", sc, D.panelMin, "inside", "inside", { sides: true });
+      out.push(bestVariant(ctx, "inset", sc, "inside", "inside", { centre: true }));
+    }
     else {
       // an upright source in a frame less upright (4:5, 1:1): between covering and whole, the
       // whole picture, and where even that leaves text without a place, a smaller one

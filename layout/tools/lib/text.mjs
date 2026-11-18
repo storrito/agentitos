@@ -96,6 +96,12 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
     if (opts.seam != null) capOpts.push({ ...mk([x, opts.seam - h / 2, w, h], "center", C, 0), seam: true });                  // on the seam between two stacked parts
     capOpts.push(mk([x, Y1(S) - h, w, h], "center", C, 0));                                                // lowest line on the safe box's bottom
     if (isWin && Y1(win) < Y1(S) - EPS) capOpts.push(mk([x, Y1(win) - D.edgePad - h, w, h], "center", C, 1)); // in the picture, at its bottom
+    // a picture in the middle narrower than the captions' width (an upright one in a wide frame):
+    // over its bottom, as wide as the picture, while that holds a long word
+    if (isWin && !tall && Math.abs(win[0] + win[2] / 2 - W / 2) < 1 && win[2] - 2 * D.edgePad < w && win[2] - 2 * D.edgePad >= D.caption.longWord * f) {
+      const cw = win[2] - 2 * D.edgePad;
+      capOpts.push(mk([win[0] + D.edgePad, Math.min(Y1(S), Y1(win) - D.edgePad) - h, cw, h], "center", [win[0], S[1], win[2], S[3]], 1));
+    }
     if (!tall) for (const col of columns(D.caption.minWidth.wide)) capOpts.push(mk([col.x, Y1(S) - h, Math.min(col.w, D.caption.maxEm * f), h], "left", S, 2));
     if (topKeep !== null) capOpts.push(mk([x, topKeep - h, w, h], "center", C, 3));                         // directly above the head
     if (isWin && win[1] > S[1] + EPS) capOpts.push(mk([x, win[1] - g - h, w, h], "center", C, 4));            // on the ground above the picture

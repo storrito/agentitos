@@ -74,7 +74,7 @@ videos from the bottom third by views per follower: 5 of 69 comparisons fall und
 
 | situation | layout | when | how | from `place` |
 | --- | --- | --- | --- | --- |
-| P1 upright | The person alone | every part in which someone only speaks | 9:16: the take fills the frame, captions below the chin. 16:9: the take as a tall panel on the left, the words beside it | 9:16 `full`, `zoom` or `inset`; 16:9 `panel` |
+| P1 upright | The person alone | every part in which someone only speaks | 9:16: the take fills the frame, captions below the chin. 16:9: the take in the middle, the sides ground, the captions over its bottom; or as a tall panel on the left, the words beside it | 9:16 `full`, `zoom` or `inset`; 16:9 `inset` (middle) or `panel` |
 | P1 | Hook in the middle | the first second or two; then the captions take its place | 9:16: a short text of about six words on the chest, above the captions when both show | `--text hook`: a text below the chin, else above the head |
 | P1 | Hook card at the top | a hook that stays: a reply to a comment, a part of a series | 9:16: a card of 3–8 words in the wide stretch, the face under it. 16:9: big lines beside the panel, captions small under them | `--text hook:card`; in 16:9 big lines |
 | P2 wide | Cropped close | from about 2.7K material | 9:16: a crop around the face, 31.6 % of the source's width. 16:9: the source as it is, one caption line at the bottom | `crop 9:16`; 16:9 `full` |
@@ -176,7 +176,7 @@ middle at 74 % of the height (240 Shorts, 41 videos).
 | hook text on the chest, or a card in the wide stretch | hook as big lines beside the person |
 | captions in one line of about three words, at most as wide as `centred` | one line at the bottom, or big words in the free area |
 | a wide source as a crop, or shortly as a band | a wide source fills the frame |
-| an upright source fills the frame | an upright source as a tall panel on a third, text beside it: weak as a video (measured, above) |
+| an upright source fills the frame | an upright source in the middle, the sides ground, captions over it; or as a tall panel on a third, text beside it: weak as a video (measured, above). The middle is offered since 2026-11-18 and was not looked at as a video |
 
 ## Where the solver changes its mind (computed)
 
