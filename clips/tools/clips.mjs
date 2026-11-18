@@ -23,7 +23,7 @@
 //        Sprite), at most 4
 //   node tools/clips.mjs render-all <clips.json> <folder> [--jobs N]
 //        render for every clip, <folder>/<clip's folder name>.mp4, one after the other: a
-//        HyperFrames render already keeps every core busy, two at once only on 8 GB and more
+//        HyperFrames render already keeps every core busy, two at once only on 16 GB and more
 //        (two on a 4 GB Sprite filled its memory and took longer than one by one)
 //
 // The edit itself is best-takes' (build, check, captions; its README): this tool only sets it up
