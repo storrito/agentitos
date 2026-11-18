@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { voiceTrack } from "./lib/tracks.mjs";
 import { plan, capitalised, endsSentence } from "./lib/cut.mjs";
 import { HOP } from "./lib/voice.mjs";
+import { overTarget, rules } from "./brief.mjs";
 
 // ------------------------------------------------------------------------------ the pauses
 // One video of 20 s: words every half second from 1 to 8 s and from 12 to 18 s, a pause of
@@ -136,6 +137,31 @@ test("the cut's voice: every piece its length, silence where a piece only shows 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// the names of a file's tags, its own and its streams'
+function tagsOf(file) {
+  const j = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], { encoding: "utf8" }).stdout);
+  return [j.format.tags, ...j.streams.map((s) => s.tags)].flatMap((t) => Object.keys(t || {}));
+}
+
+test("finish: the levelled video names no place, even made from a file that names one", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-test-"));
+  try {
+    // a made-up place, written the way a phone writes one, into a video quieter than -14 LUFS
+    const video = path.join(dir, "out.mp4");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", recording(dir, "plain.mp4", 440, 1), "-c", "copy",
+      "-metadata", "location=+12.3456-012.3456/", "-metadata", "location-eng=+12.3456-012.3456/", video], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(tagsOf(video).some((k) => /location/i.test(k)), "the made-up video should name a place");
+    const takes = path.join(dir, "takes");
+    fs.mkdirSync(path.join(takes, "source"), { recursive: true });
+    fs.writeFileSync(path.join(takes, "edit.json"), JSON.stringify({ duration: seconds(video), words: [{ text: "Hallo.", start: 1, end: 1.5 }] }));
+    const done = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs"), "finish", takes, video], { encoding: "utf8" });
+    assert.equal(done.status, 0, done.stdout + done.stderr);
+    assert.match(done.stdout, /-14 LUFS \(was /);
+    assert.deepEqual(tagsOf(video).filter((k) => /location|gps/i.test(k)), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a video that is not there is said in one sentence", { skip: !ffmpeg && "no ffmpeg" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-test-"));
   try {
@@ -191,6 +217,31 @@ test("the text of the cut: a sentence end the speech model put on the filler goe
   assert.equal(r.words[0].text, "Fertig.");
   // the words in the source stay as they were
   assert.equal(words[0].text, "Fertig,");
+});
+
+test("a target far under the clean cut is no cut: check names the script's words instead", () => {
+  const far = overTarget(120, 30);
+  assert.match(far, /no longer a matter of cutting/);
+  assert.match(far, /script of 30 s spoken, about 72 words/);
+  assert.doesNotMatch(far, /over the 30 s/);
+});
+
+test("a target a little under the clean cut is a trim: the ordinary warning", () => {
+  const near = overTarget(40, 30);
+  assert.match(near, /10\.0 s over the 30 s it should be at most: drop what repeats first, then the weakest parts/);
+  assert.doesNotMatch(near, /matter of cutting|script/);
+  // the line between the two: exactly half left out is still a trim
+  assert.doesNotMatch(overTarget(60, 30), /matter of cutting/);
+  assert.match(overTarget(61, 30), /matter of cutting/);
+});
+
+test("without a target, or within it, check says nothing of the length", () => {
+  assert.equal(overTarget(120, undefined), null);
+  assert.equal(overTarget(120, 0), null);
+  assert.equal(overTarget(30.4, 30), null);
+  // the brief has no rule 8 without a target, and names the line with one
+  assert.doesNotMatch(rules(false, {}), /The length/);
+  assert.match(rules(false, { target: 30 }), /Longer than 60 s, 30 s would leave out more than half/);
 });
 
 test("capitalised: Unicode's first letter, by the language; names and digits as they are", () => {

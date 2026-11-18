@@ -7,7 +7,7 @@
 //                                       these times (seconds in the source) instead of asking Claude
 //
 // 1. transcript: given, cached next to the audio (<audio>.words.json), or made by agentitos'
-//    transcribe skill beside this one (Gemini 3.5 Transcribe through OpenRouter, with who
+//    transcribe skill beside this one (ElevenLabs Scribe through OpenRouter, with who
 //    speaks: A, B, …; tools/lib/transcribe.mjs)
 // 2. Claude reads the whole transcript as numbered sentences and picks the strongest
 //    self-contained moment: a hook at the start, a payoff at the end, understandable
@@ -45,12 +45,14 @@ const wordsOf = (d) => (Array.isArray(d) ? d : d.words);
 
 // ---------------------------------------------------------------- 1. transcript
 const cache = opt.transcript || audio.replace(/\.[^.]+$/, "") + ".words.json";
-let words;
+let words, edges;
 if (fs.existsSync(cache)) {
-  words = wordsOf(JSON.parse(fs.readFileSync(cache, "utf8")));
+  const raw = JSON.parse(fs.readFileSync(cache, "utf8"));
+  words = wordsOf(raw);
+  edges = Array.isArray(raw) ? undefined : raw.edges;
   console.error(`highlight: transcript ${path.basename(cache)} (${words.length} words)`);
 } else {
-  console.error("highlight: transcribing with Gemini 3.5 Transcribe (OpenRouter) …");
+  console.error("highlight: transcribing with ElevenLabs Scribe (OpenRouter) …");
   let result;
   try {
     result = await transcribeFile(audio, { speakers: true, lang: typeof opt.lang === "string" ? opt.lang : undefined, log: console.error });
@@ -58,7 +60,7 @@ if (fs.existsSync(cache)) {
     console.error(`highlight: ${e.message}`);
     process.exit(1);
   }
-  words = result.words;
+  ({ words, edges } = result);
   fs.writeFileSync(cache, JSON.stringify(result));
 }
 
@@ -134,7 +136,9 @@ const voices = new Map();
 for (const w of words.slice(a.first, b.last + 1)) if (w.speaker != null && !voices.has(w.speaker)) voices.set(w.speaker, String.fromCharCode(65 + voices.size));
 const clip = words.slice(a.first, b.last + 1).map((w) => ({ ...w, start: +(w.start - t0).toFixed(3), end: +(w.end - t0).toFixed(3),
   ...(w.speaker != null ? { speaker: voices.get(w.speaker) } : {}) }));
-fs.writeFileSync(path.join(opt.out, "transcript.json"), JSON.stringify(clip, null, 0));
+// the transcribe skill's shape: edges "sound" (the edges the sound set stay on it in the cut clip),
+// so that build.mjs does not align them a second time
+fs.writeFileSync(path.join(opt.out, "transcript.json"), JSON.stringify({ ...(edges === "sound" ? { edges } : {}), words: clip }, null, 0));
 const gaps = clip.slice(1).filter((w, i) => w.start - clip[i].end > 3).map((w) => +w.start.toFixed(1));
 fs.writeFileSync(path.join(opt.out, "highlight.json"), JSON.stringify({
   source: path.basename(audio), from: +t0.toFixed(3), to: +t1.toFixed(3), title: best.title, why: best.why,

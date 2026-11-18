@@ -22,7 +22,7 @@ The look is the video's own: the speaker's footage, cut and framed, captions, at
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `layout`, `platform-zones`, `transcribe` and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp comes from the PATH or is downloaded once. When something is missing, say so in one sentence; never install it.
+Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `layout`, `platform-zones`, `transcribe`, for b-roll `b-roll`, and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp comes from the PATH or is downloaded once. When something is missing, say so in one sentence; never install it.
 
 Costs: the episode's words a few cents an hour, the moments about ten cents an hour, per clip about three cents to frame it and well under a cent for its words and captions.
 
@@ -78,7 +78,7 @@ node <skill>/tools/clips.mjs prepare-all work/episode work/clips.json --platform
 
 The hook: the moment's hook where the first line is weak, rewritten when it is a label, none where the first line carries itself. One `*word*` may stand out. Change it with `node <takes> build work/<k>/takes --hook "…"` (`--hook ""` takes it out), then `place`. It shows on the first frame, where `place` put it, and stays while the first sentence is said.
 
-Then show the list (title and length per clip) with buttons "They are good" and "Change something", and `[:button {:open "artifacts/clips"} "Show the previews"]`.
+Then show the list (title and length per clip) with a button "They are good", `[:button {:open "artifacts/clips"} "Show the previews ↗"]`, and a line that they can type what to change.
 
 ### 5. Changes
 
@@ -94,11 +94,16 @@ After "They are good":
 
 Never call Storrito's schedule procedures yourself: publish-video does it, so that nothing is posted twice.
 
+## B-roll
+
+A clip whose words name something that can be shown (a product, a page, a post, a number) can get b-roll: offer it once for the clips that have such moments, when the person agreed to them, naming the moments in a sentence. Then follow agentitos' **b-roll** skill (`<skill>/../b-roll/SKILL.md`, on a Sprite else `/home/sprite/skills/b-roll/SKILL.md`), "For another skill", on `work/<k>/takes` (its `edit.json`, `takes.mjs broll work/<k>/takes …`), clip by clip; the moments of a podcast need little of it.
+
 ## UI in the chat
 
 A ```hiccup block in your answer becomes part of the page. EDN hiccup, data only: `div span p ul ol li strong em b i s small h1–h4 a img video button table thead tbody tr th td label input br`. `:send "text"` on a button sends that text as the person's next message; `:open "artifacts/clips"` shows the previews; an `input` is a checkbox or a radio button, and `{checked}` in a button's `:send` becomes the ticked `:value`s. No text fields: a hook or a time they type.
 
 - One question per block, buttons for the likely answers when a click is the whole answer, and a hint that they can type anything else. Several picks from one list (accounts, platforms, moments): checkboxes and one button. Several questions that must all be answered before you go on, none depending on another: one block, a group per question (`[:input {:type "radio" :name "<question>" :value "<question>: <answer>"}]`, or checkboxes), each its own `:name`, at most four groups, one button whose `:send` holds `{checked}`; every `:value` says what it answers ("captions: hormozi"). An answer that leaves a group out is asked again for that group only. One after the other only when a question depends on the answer before, or on work the person should see first. Nothing ticked where the choice is the person's; the likely answer ticked where it is yours to propose.
+- A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
 - `:class "primary"` on the one button that moves on; the person decides the moments, platforms and plan, so nothing there is marked as recommended.
 - Never a token, a path of `work/`, a word number or a raw error in the chat.
 

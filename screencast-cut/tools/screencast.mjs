@@ -57,7 +57,7 @@ import { fileURLToPath } from "node:url";
 import { probe, prepare, samples, hyperframes, clock, seconds } from "./lib/media.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from "./lib/voice.mjs";
 import { align, clarity } from "./lib/sync.mjs";
-import { grid, differ, samplesOf, mirrors, scenes, level, busy, moving, focus, MOVING, ACTIVE } from "./lib/activity.mjs";
+import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
 import { plan, range, timeRange } from "./lib/cut.mjs";
 import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
@@ -73,6 +73,10 @@ const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const VIDEO = ["screen", "phone-screen", "phone", "webcam"];
 const VIEWS = ["screen", "phone-screen", "phone", "face"];
+// the sources that film something (a person, a hand, a thing) rather than show a screen: their
+// picture always moves a little, so a pause shows something on them only where it moves clearly
+// more than while the person speaks (activity.pauseMoves)
+const CAMERAS = ["phone", "webcam"];
 // what says that something is there now: a result that needs its proof on screen
 const CLAIM = /\b(posted|published|live|there it is|here it is|arrived|it's there|online|gepostet|veröffentlicht|da ist (es|er|sie)|angekommen)\b/i;
 
@@ -445,7 +449,7 @@ function cmdWords(dir, file) {
   if (!list.length) fail(`${file} holds no words.`);
   const bare = lengthless(list);
   if (bare) fail(`✗ ${bare} Take the words with ${cmd(`transcribe ${rel(dir)}`)} (ElevenLabs Scribe, every word with its start and end); names it mishears go into cut.json's "fixes".`);
-  keepWords(dir, list, j.model || "rragent transcribe", j.edges === "sound");
+  keepWords(dir, list, j.model || "another tool", j.edges === "sound");
 }
 
 async function cmdTranscribe(dir) {
@@ -500,7 +504,8 @@ ${meta.sessions ? `${meta.sessions.length} recordings one after the other: ${met
 - **\`zoom\`: what must be readable** while the words are about it, \`[x0, y0, x1, y1]\` in 0–1 off the sheet's grid (the field typed in, the answer, the list picked from). The build makes it as large as the safe area allows and shows the screen around it; when what matters moves, split the keep at that word.
 - **\`view\`** only where it is not the screen: \`phone-screen\` when the words are about the phone, \`face\` for an opening line or the last words.
 - **What happens without words** (a click, a box ticked, a result coming in) is a keep by its time: \`{"at": "7:01.5-7:06", "zoom": [...]}\`, the picture alone; the table's "moves" and the sheets show where.
-- **Waits** (an agent working, an upload): the last word before them in \`waits\`, played fast. **Results** ("posted", "there it is") get \`"hold": 2.5\` and show the proof. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s.
+${meta.sources.phone?.video ? `- **Pauses** inside a keep (over ${read(source(dir, "settings.json")).pause ?? 1} s) are cut where nothing moves and kept, muted, where a screen moves; on the phone's camera only where it moves clearly more than while the person speaks (something held into it, the phone turned), not the hand that holds it. A silent moment worth seeing that the build cuts: \`"pauses": "keep"\` on its keep, or a keep by its time.
+` : ""}- **Waits** (an agent working, an upload): the last word before them in \`waits\`, played fast. **Results** ("posted", "there it is") get \`"hold": 2.5\` and show the proof. Every keep holds ${read(source(dir, "settings.json")).tail ?? 0.45} s after its last word, the last one ${read(source(dir, "settings.json")).end ?? 1.5} s.
 
 ## What is said, sentence by sentence
 
@@ -545,6 +550,8 @@ function cmdPropose(dir) {
   // every sentence a keep, with a hold after a result; what each shows is the agent's to decide
   // (sheets), not a guess of this tool
   const keep = [], waits = [];
+  // a camera's picture (the phone's) counts as moving only from its own limit, as in build
+  const { limits } = pauseMoves(activity, Object.keys(activity).filter((x) => x !== "webcam"), { cameras: CAMERAS, words, maxPause: settings(dir, {}).pause });
   for (const s of sentences(words)) {
     keep.push({ words: `${s.from}-${s.to}`, ...(CLAIM.test(s.text) ? { hold: 2.5 } : {}), start: s.start, end: s.end, text: s.text, session: s.session });
   }
@@ -553,7 +560,7 @@ function cmdPropose(dir) {
     const a = keep[k].end, b = keep[k + 1].start;
     // no wait across into another recording: the cut goes there
     if (b - a < 3 || keep[k].session !== keep[k + 1].session) continue;
-    const moves = Object.keys(activity).some((x) => x !== "webcam" && busy(activity[x], a, b, MOVING) > 0.15);
+    const moves = Object.keys(activity).some((x) => x !== "webcam" && busy(activity[x], a, b, limits[x]?.limit ?? MOVING) > 0.15);
     // the last word said, not an "äh" after it: plan() looks for a wait after a word
     const [first, last] = range(keep[k].words);
     const said = words.slice(first, last + 1).filter((w) => w.kind === "word").at(-1);
@@ -755,18 +762,11 @@ async function cmdBuild(dir, opts) {
     if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
   }
 
-  // the pictures that move in a pause: any of the screens; in a wait someone named, anything
-  // that changes on them (an agent's chat, a progress bar change a few pixels, but they are
-  // the action)
+  // the pictures that move in a pause: any source but the webcam; a camera among them (the
+  // phone's) only where it moves clearly more than while the person speaks; in a wait someone
+  // named, anything that changes on them (pauseMoves)
   const shows = Object.keys(activity).filter((k) => k !== "webcam");
-  const moves = (_clip, from, to, wait = false) => {
-    const spans = shows.flatMap((k) => moving(activity[k], from, to, wait ? ACTIVE : MOVING)).sort((a, b) => a.from - b.from);
-    return spans.reduce((out, x) => {
-      const last = out.at(-1);
-      if (last && x.from <= last.to) last.to = Math.max(last.to, x.to); else out.push({ ...x });
-      return out;
-    }, []);
-  };
+  const { moves, limits } = pauseMoves(activity, shows, { cameras: CAMERAS, words, maxPause: s.pause });
   const { env, thr, blocks } = voiceOf(dir);
   const voices = { 1: { env, thr, blocks, duration: meta.duration, sessions: meta.sessions } };
   // the speed: as asked, or by how fast the person speaks in the cut (pace())
@@ -933,7 +933,7 @@ async function cmdBuild(dir, opts) {
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
-    removed: r.removed, warnings: r.warnings, words: r.words,
+    removed: r.removed, ...(Object.keys(limits).length ? { motion: limits } : {}), warnings: r.warnings, words: r.words,
   });
   const views = {};
   for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
@@ -945,6 +945,10 @@ async function cmdBuild(dir, opts) {
   console.log(`Laid out clear of ${layout.zones.platforms.map((p) => p.name).join(", ")}${layout.zones.fallback ? " (no --platform: the usual ones of this frame; name where it goes with --platform)" : ""}.`);
   // a platform named that has no numbers for this frame: who stands in for it
   for (const n of layout.zones.notes.filter((n) => n.includes("stand in") || n.includes("stands in"))) console.log(`  ${n}`);
+  // a camera's pauses: how much it moves while the person speaks, and from where a pause shows it
+  for (const [k, m] of Object.entries(limits)) {
+    console.log(`Pauses on ${k === "phone" ? "the phone's camera" : `the ${k}`}: while speaking ${(m.base * 100).toFixed(2)} % of its picture changes (${m.seconds} s measured${m.enough ? "" : ", too little speech: all of it"}); a pause shows it from ${(m.limit * 100).toFixed(2)} % on, else it is cut. A silent moment worth seeing that it cuts: "pauses": "keep" on its keep, or a keep by its time ("at").`);
+  }
   console.log(`Next: ${cmd(`check ${rel(dir)}`)}`);
 }
 
@@ -1168,7 +1172,7 @@ function cmdFinish(dir, file) {
   const before = lufsOf(file);
   if (!(Math.abs(before.lufs - s.final) <= 0.5 && before.peak <= -1)) {
     const tmp = path.join(path.dirname(path.resolve(file)), `.${path.basename(file)}.part.mp4`);
-    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "-1", "-c:v", "copy",
       "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.79:attack=5:release=60:level=disabled`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out], { stdio: ["ignore", "ignore", "inherit"] });
     try {
       let gain = s.final - before.lufs;

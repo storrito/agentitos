@@ -44,7 +44,7 @@ test("the computed volume lays the music the asked distance under the voice, mea
     run([...lines.flatMap((f) => ["-i", f]), "-filter_complex", "[0:a]pan=stereo|c0=c0|c1=c0[x];[1:a]pan=stereo|c0=c0|c1=c0[y];[x][y]concat=n=2:v=0:a=1", voiceFile]);
     const voice = loudness(lines);
     near(voice, plain(voiceFile), 0.2);
-    for (const [db, under] of [[-4, 16], [-28, 16], [-12, 20]]) {
+    for (const [db, under] of [[-4, 17], [-28, 17], [-12, 20]]) {
       const music = bed(path.join(dir, `m${db}.mp3`), db);
       const fit = musicVolume(voice, loudness([music]), under);
       assert.equal(fit.bound, null);
@@ -56,13 +56,13 @@ test("the computed volume lays the music the asked distance under the voice, mea
 });
 
 test("the volume stays within its bounds and says which one it hit", () => {
-  const low = musicVolume(-30, -4, 16);
+  const low = musicVolume(-30, -4, 17);
   assert.deepEqual([low.volume, low.bound], [LOWEST, "lowest"]);
   near(low.under, distance(-30, -4, LOWEST), 1e-9);
-  const high = musicVolume(-14, -40, 16);
+  const high = musicVolume(-14, -40, 17);
   assert.deepEqual([high.volume, high.bound], [HIGHEST, "highest"]);
-  // two equally loud files: today's 0.16 for 16 LU
-  near(musicVolume(-20, -20, 16).volume, 0.158, 0.001);
+  // two equally loud files: 0.14 for 17 LU, as launch-video's `music`
+  near(musicVolume(-20, -20, 17).volume, 0.141, 0.001);
   assert.equal(loudness([]), null);
 });
 
@@ -89,7 +89,7 @@ function short(dir) {
 }
 const musicTag = (comp) => fs.readFileSync(path.join(comp, "index.html"), "utf8").match(/<audio id="music"[^>]*>/)?.[0];
 
-test("build: the music's volume and its lane lay it 16 LU under the voice, --under another distance, the summary says it", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") }, () => {
+test("build: the music's volume and its lane lay it 17 LU under the voice, --under another distance, the summary says it", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") }, () => {
   const dir = tmp();
   try {
     const { comp, build } = short(dir);
@@ -101,8 +101,8 @@ test("build: the music's volume and its lane lay it 16 LU under the voice, --und
     // music louder than the voice
     const music = bed(path.join(comp, "assets", "music.mp3"), -2);
     const voice = loudness([path.join(comp, "assets", "voice", "s1.mp3"), path.join(comp, "assets", "voice", "s2.mp3")]);
-    for (const under of [16, 22]) {
-      r = build(...(under === 16 ? [] : ["--under", String(under)]));
+    for (const under of [17, 22]) {
+      r = build(...(under === 17 ? [] : ["--under", String(under)]));
       assert.equal(r.status, 0, r.stdout + r.stderr);
       const tag = musicTag(comp);
       const volume = Number(tag.match(/data-volume="([\d.]+)"/)[1]);
@@ -120,7 +120,7 @@ test("build: the music's volume and its lane lay it 16 LU under the voice, --und
     r = build();
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(musicTag(comp), /data-volume="0.6"/);
-    assert.match(r.stdout, /! the music would need [\d.]+ to lie 16 LU under the voice; at 0.6, the highest volume here, it lies [\d.]+ LU under it/);
+    assert.match(r.stdout, /! the music would need [\d.]+ to lie 17 LU under the voice; at 0.6, the highest volume here, it lies [\d.]+ LU under it/);
     r = build("--under", "40");
     assert.equal(r.status, 1);
     assert.match(r.stdout, /--under is how many LU/);

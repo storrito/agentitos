@@ -6,6 +6,7 @@
 
 const TAIL = 0.35;   // seconds a group stays after its last word
 const GAP = 0.02;    // seconds between one group's end and the next one's start (a style's `gap` says otherwise)
+const SQUEEZE = 0.85;   // words that share a caption (`brief`) may be set this much smaller to fit its line, no more
 const sentenceEnd = (text) => /[.!?…]["»”)]*$/.test(text);
 const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 
@@ -37,7 +38,17 @@ const phraseEnd = (text) => /[,;:–—]["»”)]*$/.test(text);
 // words alone ("Wir | haben | letzte | Woche" where "Wir haben letzte | Woche vierundzwanzig"
 // holds): in 190 captions of two or three words about twenty single words that need not be,
 // and as many captions on screen for under 0.4 s; by length half and a quarter of that.
-export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit, gap = GAP, even }, duration = Infinity) {
+//
+// `brief` (a style of one word at a time): a word on screen for less than this many seconds
+// would be three or four frames of the video (one word in ten of four real takes, nearly all
+// of them "die", "und", "ich", "für", "ist"). It shares its caption with the word after it in
+// its phrase, and where that cannot be (the phrase's last word, or the two too wide) with the
+// one before it: "für die", "ist dann". Three words at most, and with a `fit` only words that
+// set in its lines at 85 % of the size or more (SQUEEZE; a long word alone is set smaller than
+// that): "im Browser." shares a caption at 92 %, "die" stays alone before "Digitalisierung"
+// rather than stand at 60 % with it. Of the 9690 words of a podcast episode 176 stay brief so,
+// 33 if any two were joined, and then 565 captions were smaller than their line, down to 35 %.
+export function groups(words, { words: maxWords, chars: maxChars, pause, min, fit, gap = GAP, even, brief }, duration = Infinity) {
   const boxOf = (w) => w.box || null;
   const phrases = [];
   let cur = null;
@@ -69,6 +80,18 @@ export function groups(words, { words: maxWords, chars: maxChars, pause, min, fi
     const natural = Math.max(last.end + TAIL, first.start + min);
     g.end = Math.max(last.end, Math.min(natural, next - gap, duration));
   });
+  if (brief) {
+    const phraseAt = (i) => phrases.findIndex((p) => i >= p.from && i <= p.to);
+    // (a card is a phrase of its own: it is never joined)
+    const together = (a, b) => phraseAt(a.from) === phraseAt(b.from) && b.to - a.from < 3 && (!fit || sets(words.slice(a.from, b.to + 1), { ...fit, room: fit.room / SQUEEZE }));
+    for (let k = 0; k < out.length; ) {
+      const g = out[k], prev = out[k - 1], next = out[k + 1];
+      if ((next ? Math.min(next.start, g.end) : g.end) - g.start >= brief) k++;
+      else if (next && together(g, next)) out.splice(k, 2, { from: g.from, to: next.to, start: g.start, end: next.end });   // (looked at again: it may still be brief)
+      else if (prev && together(prev, g)) out.splice(k - 1, 2, { from: prev.from, to: g.to, start: prev.start, end: g.end });
+      else k++;
+    }
+  }
   return out;
 }
 
