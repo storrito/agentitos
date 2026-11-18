@@ -1692,6 +1692,70 @@ t("what page and captions print of a beside candidate names it, never \"[object 
   ok(r.status === 0 && /Candidate 2 \(beside-pip/.test(r.stdout) && !/object Object/.test(r.stdout), r.stdout.split("\n")[0]);
 });
 
+// b-roll's settings, as its first builds with beside passed them (branch b-roll-uses-layout)
+const BROLL = ["--set", "beside.wish=0.22", "--set", "beside.faceUpTo=2", "--set", "weights.enlarge.softFrom=1.25"];
+const besideRun = (dir, ...a) => { const r = cli("beside", path.join(OUT, dir), ...a); ok(r.status === 0, r.stderr || r.stdout); return { out: r.stdout, res: JSON.parse(fs.readFileSync(path.join(OUT, dir, "placement.json"), "utf8")) }; };
+
+t("the 16:9 column follows the panel's three figures (b-roll's first builds: a medium shot with beside.wish and beside.faceUpTo but no beside.face gave the column at 1.53×, soft, as the column aimed at 23 % by itself; with beside.face=0.18 1.25× and 18.8 %): without beside.face it is now 1.25× and 18.8 % too, nothing soft, the wish said as given way; with nothing set the column's reason names 18 %, the panel's target", () => {
+  const base = ["--frame", "1280x720", "--platform", "youtube", "--source", "1280x720", "--face", "582.8,216,86.4,108", "--material-min", "221x130", "--before", "1,0,0", ...BROLL, "--set", "beside.side=left", "--set", "beside.captions=stay"];
+  const a = besideRun("beside-col-wish", ...base).res.candidates[0], b = besideRun("beside-col-face", ...base, "--set", "beside.face=0.18").res.candidates[0];
+  for (const [what, c] of [["without beside.face", a], ["with beside.face=0.18", b]]) {
+    ok(c.fit === "beside-column" && c.speaker.scale === 1.25 && Math.abs(c.speaker.facePct - 18.8) < 0.1 && !c.soft && !c.hard, `${what}: ${c.fit} ${c.speaker.scale}× ${c.speaker.facePct} % ${JSON.stringify(c.problems)}`);
+    ok(/the wish of 22 % needs the footage at 1\.47×/.test((c.notes || []).join(" ")), `${what}: ${JSON.stringify(c.notes)}`);
+  }
+  const plain = beside(Z169, { source: [1080, 1920], face: [80, 250, 445, 580] }).candidates.find((c) => c.arrangement === "column");
+  ok(plain.why.some((w) => /18 % is the usual below a screen, the panel's target, taken by the column too/.test(w)), plain.why.join(" | "));
+  return `${a.speaker.scale}× ${a.speaker.facePct} %`;
+});
+
+t("captions on the seam stand on the panel's ground: speaker.card is speaker.window cut at the top to the captions' bottom, the face and the margin above the head below it (b-roll's first builds: the window began at the seam, y 795, and the lower caption line lay over the video down to y 896, so b-roll cut its card there itself); speaker.window keeps its meaning; card equals window for the circle, without captions and where they stay; the page shows the picture in the card and the checker agrees", () => {
+  const { res, out } = besideRun("beside-card", "--frame", "1080x1920", "--platform", "reels", "--source", "1080x1920", "--face", "280,700,560,760", "--material-min", "588x346", "--caption-area", "120,840,1298,1500,96,2", "--text", "caption:2", "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18");
+  const c = res.candidates[0], q = c.speaker, capBottom = c.captions.box[1] + c.captions.box[3];
+  ok(c.captions.where === "seam" && q.window[1] === 795 && capBottom === 896, `window ${q.window}, captions ${c.captions.box}`);
+  ok([q.window[0], 896, q.window[2], q.window[1] + q.window[3] - 896].every((v, k) => Math.abs(v - q.card[k]) < 0.11), `card ${q.card} against window ${q.window}`);
+  ok(q.card[1] <= c.faceInFrame[1][1] - Math.max(DEFAULTS.free.aboveMin, DEFAULTS.free.above * c.faceInFrame[1][3]) + 0.5, `the card ${q.card} begins below the head's margin of ${c.faceInFrame[1]}`);
+  ok(/card {6}x 240–840, y 896–1722/.test(out), out);
+  const pip = res.candidates.find((k) => k.arrangement === "pip");
+  ok(JSON.stringify(pip.speaker.card) === JSON.stringify(pip.speaker.window), `the circle's card ${pip.speaker.card}`);
+  for (const [Z, o] of [[Z916, { needs: [] }], [Z169, { set: { "beside.captions": "stay" } }]]) for (const k of beside(Z, o).candidates.filter((x) => x.captions?.where !== "seam")) ok(JSON.stringify(k.speaker.card) === JSON.stringify(k.speaker.window), `${Z.frame} ${k.fit}: card ${k.speaker.card}, window ${k.speaker.window}`);
+  const file = path.join(OUT, "beside-card", "card.html");
+  fs.writeFileSync(file, renderBeside(c, res, { page: file }));
+  ok(fs.readFileSync(file, "utf8").includes(`<div class="clip" style="left:${q.card[0]}px;top:${Math.round((q.card[1] - q.field[1]) * 10) / 10}px;width:${q.card[2]}px;height:${q.card[3]}px">`), "the page does not cut the picture to the card");
+  if (!QUICK) { const cmp = compare(c, checkPage(file, ["reels"])); ok(cmp.verdictAgrees && cmp.agree, `solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`); }
+  return `card ${q.card.join(",")}, window ${q.window.join(",")}`;
+});
+
+t("covering the panel's width never makes the face larger than it aims at (b-roll's first builds: 4:5 and 1:1, a close-up without captions, kept the face at 40 % of the frame's height at 1×, twice the 22 % asked for): the picture stands narrower with ground beside it, the face at its aim, and the reason says why; with nothing set 18 %; a face just over its aim, where the ground would be a sliver under 24 px a side, still covers", () => {
+  const out = [];
+  for (const [frame, face, min] of [["1080x1350", "337.5,486,405,540", "413x243"], ["1080x1080", "378,388.8,324,432", "330x194"]]) {
+    const c = besideRun("beside-close", "--frame", frame, "--source", frame, "--face", face, "--material-min", min, "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18").res.candidates[0];
+    ok(c.fit === "beside-above" && Math.abs(c.speaker.facePct - 22) < 0.2 && c.speaker.ground > 0 && !c.hard && !c.soft, `${frame}: ${c.speaker.facePct} % ${JSON.stringify(c.problems)}`);
+    ok(c.why.some((w) => /narrower than the panel: covering its width would make the face 40 %/.test(w)), c.why.join(" | "));
+    const w = c.speaker.window, f = c.speaker.field;
+    ok(Math.abs(w[0] - f[0] - (f[0] + f[2] - w[0] - w[2])) <= 1, `${frame}: the picture off the middle: ${w}`);
+    const plain = besideRun("beside-close", "--frame", frame, "--source", frame, "--face", face, "--material-min", min).res.candidates[0];
+    ok(Math.abs(plain.speaker.facePct - 18) < 0.2, `${frame} with nothing set: ${plain.speaker.facePct} %`);
+    out.push(`${frame} ${c.speaker.facePct} %`);
+  }
+  const just = beside(Z45, { source: [1080, 1350], face: [415, 500, 250, 250], needs: [] }).candidates[0];
+  ok(just.speaker.scale === 1 && just.speaker.ground === 0, `a face 1 % over its aim: ${just.speaker.scale}× ground ${just.speaker.ground}`);
+  return out.join(", ");
+});
+
+t("a feed's or grid's crop is a note, not a problem (b-roll's first builds showed them as ⚠ a caller cannot act on: the Instagram feed's 4:5 at the material in 9:16, the profile grid's 3:4 at the captions in 1:1, no platform named): in `crops` and the candidate's notes, the mark ✓; and a --face past the source's edge is taken to the edge with a note (it ended the command), one wholly outside is an error", () => {
+  const feed = besideRun("beside-crops", "--frame", "1080x1920", "--source", "1080x1920", "--face", "252,691.2,576,768", "--material-min", "588x346", "--caption-area", "192,696,1238,1440,96,2", "--text", "caption:2", "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18");
+  const c = feed.res.candidates[0];
+  ok(!c.problems.some((q) => q.code === "crop") && c.crops.some((q) => q.of === "material" && /Instagram feed shows 4:5/.test(q.what)) && !c.soft, JSON.stringify([c.problems, c.crops]));
+  ok(/1\. ✓ beside-above/.test(feed.out) && /note: not a problem, a note: the material is 9 % cut where the Instagram feed shows 4:5/.test(feed.out), feed.out);
+  const grid = besideRun("beside-crops", "--frame", "1080x1080", "--source", "1080x1080", "--face", "475.2,324,129.6,162", "--material-min", "330x194", "--caption-area", "54,972,758,960,96,2", "--text", "caption:2", "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18").res;
+  for (const k of grid.candidates) ok(k.crops.some((q) => q.of === "caption" && /profile grid shows 3:4/.test(q.what)) && !k.problems.some((q) => q.code === "crop") && (k.notes || []).some((n) => /captions are 16 % cut/.test(n)), `${k.fit}: ${JSON.stringify(k.crops)}`);
+  const edge = besideRun("beside-edge", "--frame", "9:16", "--source", "1280x720", "--face", "1200,150,180,195", "--material-min", "600x340", "--text", "caption");
+  ok(/^note: the face's box 1200,150,180,195 reaches past the source of 1280×720: taken as 1200,150,80,195/m.test(edge.out) && JSON.stringify(edge.res.speaker.face) === "[1200,150,80,195]", edge.out.split("\n").slice(0, 4).join(" | "));
+  const e = cli("beside", path.join(OUT, "beside-edge"), "--frame", "9:16", "--source", "1280x720", "--face", "1300,150,180,195", "--material-min", "600x340");
+  sentence(e, "a face wholly outside"); ok(/lies outside the source of 1280×720/.test(e.stderr), e.stderr);
+  ok(cli("place", path.join(OUT, "place-edge"), "--frame", "9:16", "--source", "1280x720", "--face", "1200,150,180,195").status === 1, "place takes a box past the edge");
+});
+
 if (!QUICK) t("every candidate of beside in every frame, as a page, gets the same verdict and findings from the checker as from the solver (the material's field is marked as something to be seen, the face, the circle and the caption measured by their letters); page takes the speaker's still and the material's picture", () => {
   let n = 0;
   for (const Z of [Z916, Z45, Z11, Z169]) for (const face of [WIDE.face, [555, 500, 180, 195]]) {
