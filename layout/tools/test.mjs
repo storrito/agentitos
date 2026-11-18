@@ -1296,6 +1296,20 @@ t("a picture of fixed size is shown at most at the soft limit of its pixels, and
   return `1080×1920: ${Math.round(a.material.field[2])}×${Math.round(a.material.field[3])} with the circle first`;
 });
 
+t("sharpness in two steps, as b-roll's owner settled it on built videos (beside.faceUpTo=2, beside.wish=0.22, weights.enlarge.softFrom=1.25): the wish holds where the footage stays under 1.25× (4K: 22 %), gives way to as much as stays under it (1080p: 19 % at 1.25×), and the base 18 % holds up to 2×, reported as soft (720p: 18 % at 1.77×, soft); nothing past 2× (a face 60 px tall in 720p: under the base, said). A caller that passes nothing gets what it got before (720p: 15 % at 1.5×)", () => {
+  const BR = { "beside.faceUpTo": 2, "beside.wish": 0.22, "weights.enlarge.softFrom": 1.25 };
+  const at = (source, face) => beside(Z916, { source, face, set: BR }).candidates.find((c) => c.arrangement === "above");
+  const k4 = at([3840, 2160], [1660, 440, 360, 390]), hd = at([1920, 1080], [830, 220, 270, 295]), sd = at([1280, 720], [555, 150, 180, 195]), tiny = at([1280, 720], [600, 150, 55, 60]);
+  near(k4.speaker.facePct, 22, 0.2, "4K"); ok(k4.speaker.scale <= 1.25, `4K at ${k4.speaker.scale}`);
+  near(hd.speaker.scale, 1.25, 0.001, "1080p's scale"); ok(hd.speaker.facePct > 18 && hd.speaker.facePct < 22 && /the wish of 22 % needs the footage at 1\.43×/.test(hd.notes.join(" ")), JSON.stringify(hd.speaker.target));
+  near(sd.speaker.facePct, 18, 0.2, "720p"); ok(sd.problems.some((q) => q.code === "enlarged" && q.level === "soft") && !sd.hard, JSON.stringify(sd.problems));
+  ok(tiny.speaker.scale <= 2 + 1e-9 && tiny.speaker.facePct < 18 && /past 2×/.test(tiny.notes.join(" ")), JSON.stringify([tiny.speaker.scale, tiny.notes]));
+  ok(sd.speaker.target.asked.wish === 22 && sd.speaker.target.given === sd.speaker.facePct && sd.speaker.target.enlargement === 1.77, JSON.stringify(sd.speaker.target));
+  const plain = beside(Z916).candidates[0];
+  near(plain.speaker.facePct, 15.3, 0.2, "nothing passed"); near(plain.speaker.scale, 1.5, 1e-4, "nothing passed, the scale");
+  return `4K ${k4.speaker.facePct} %, 1080p ${hd.speaker.facePct} %, 720p ${sd.speaker.facePct} % at ${sd.speaker.scale}×`;
+});
+
 t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
   const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
   ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);
@@ -1323,7 +1337,7 @@ t("the face's target is one number (--set beside.face): the b-roll session's upr
   const e = cli("beside", path.join(OUT, "beside-face"), ...base, "beside.face=0.1");
   sentence(e, "beside.face=0.1"); ok(/from 0\.12 .* to 0\.5; 0\.1 is outside that\./.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
   const most = beside(Z916, { ...close, set: { "beside.face": 0.45 } }).candidates.find((c) => c.arrangement === "above");
-  ok(most && !most.hard && !most.unmet.length && /a face of 45 % .* was asked for; it is \d+ %: the panel holds no more beside the material's field/.test((most.notes || []).join(" ")) && most.speaker.target.asked === 45, JSON.stringify(most?.speaker.target));
+  ok(most && !most.hard && !most.unmet.length && /a face of 45 % .* was asked for; it is \d+ %: the panel holds no more beside the material's field/.test((most.notes || []).join(" ")) && most.speaker.target.asked.face === 45, JSON.stringify(most?.speaker.target));
   const sharp = beside(Z916, { needs: [cap(2)], set: { "beside.face": 0.22 } }).candidates[0];
   ok(sharp.fit === "beside-above" && /it is 15 %: the footage gives no more without enlarging past 1\.5×/.test((sharp.notes || []).join(" ")), JSON.stringify(sharp.notes));
   return `22 %: face ${big.speaker.faceHeight} px, field ${Math.round(big.material.field[2])}×${Math.round(big.material.field[3])}`;
