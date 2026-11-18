@@ -74,7 +74,7 @@ const NAMES = { above: "the material above, the speaker as a panel below it", pi
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
 
-export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {} }) {
+export function besideSolve({ zones: Z, source, face, material = {}, needs = [], before = null, set = {}, captionArea = null }) {
   const [W, H] = Z.size;
   const D = scaled(merged({ ...DEFAULTS, beside: BESIDE }, set), Z.size);
   const S = Z.safe, g = D.gap, B = D.beside, WT = D.weights, soft = WT.enlarge.softFrom, forbidden = WT.enlarge.forbiddenFrom;
@@ -103,8 +103,12 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     return { s, up: s > sBase ? wishUp : baseUp, aimed: wish ?? t, says: said.join("; ") || null };
   };
   if (asked !== null && (asked < B.faceMin - 1e-9 || asked > 0.5)) throw new Error(`--set beside.face is the speaker's face as a share of the frame's height, from ${B.faceMin} (the least a panel gives it) to 0.5; ${asked} is outside that.`);
-  const cap = needs.find((n) => n.role === "caption") || null, upright = W <= H;
-  const capH = captionHeight({ cap, D, tall: upright }), capF = upright ? D.caption.font.tall : D.caption.font.wide;
+  // The captions' band: from captions' own area (area.json, or its style measured by its build:
+  // lib/caption-area.mjs), else the solver's (the tallest block of captions' styles at its type)
+  const CA = captionArea, upright = W <= H;
+  const cap = CA ? { role: "caption", lines: CA.lines } : needs.find((n) => n.role === "caption") || null;
+  const capH = CA ? CA.bottom - CA.top : captionHeight({ cap, D, tall: upright }), capF = CA ? CA.size : upright ? D.caption.font.tall : D.caption.font.wide;
+  const band = !cap ? null : CA ? CA.from : `the layout skill's own (the tallest block of captions' styles: ${cap.lines} line${cap.lines > 1 ? "s" : ""} at ${capF} px)`;
   // what every feed's and grid's crop of the frame shows
   const crops = Z.crops || [];
   const cx0 = Math.max(0, ...crops.map((c) => c.box[0])), cx1 = Math.min(W, ...crops.map((c) => X1(c.box)));
@@ -169,10 +173,12 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   };
 
   // captions as the solver sets them: centred, as wide as `centred` and every feed's crop allow
-  const capW = Math.min(Z.centred[2], D.caption.maxEm * capF, Math.max(upright ? D.caption.minWidth.tall : D.caption.minWidth.wide, 2 * Math.min(W / 2 - cx0, cx1 - W / 2)));
-  const caption = (y, where, x = W / 2 - capW / 2, w = capW) => {
-    const rows = inkRows(y + D.caption.padEm * capF / 2, cap.lines, D.caption.line, capF);
-    return { role: "caption", where, box: [x, y, w, capH], ink: [x, rows[0], w, rows[1] - rows[0]], lines: cap.lines, font: capF, style: "cap", align: "center" };
+  const capW = CA ? CA.width : Math.min(Z.centred[2], D.caption.maxEm * capF, Math.max(upright ? D.caption.minWidth.tall : D.caption.minWidth.wide, 2 * Math.min(W / 2 - cx0, cx1 - W / 2)));
+  const capX = CA ? CA.left : W / 2 - capW / 2, capTop = CA ? CA.top : Y1(S) - capH;
+  // (captions' area is its line boxes: the letters are judged in all of it)
+  const caption = (y, where, x = capX, w = capW) => {
+    const rows = CA ? [y, y + capH] : inkRows(y + D.caption.padEm * capF / 2, cap.lines, D.caption.line, capF);
+    return { role: "caption", where, box: [x, y, w, capH], ink: [x, rows[0], w, rows[1] - rows[0]], lines: cap.lines, font: capF, style: "cap", align: "center", band };
   };
 
   // ---- above: the material above, the speaker's panel below, the captions on the seam ----
@@ -222,7 +228,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   function pipOf() {
     const short = Math.min(W, H);
     const d = Math.round(fam === "tall" ? D.circle.tall * W : (fam === "mid" ? D.circle.square : D.circle.wide) * short);
-    const bottom = cap ? Y1(S) - capH - g : Y1(S);
+    const bottom = cap ? capTop - g : Y1(S);
     // where screencast-cut and the circle beside a screen put it: bottom left in an upright frame,
     // top right in the others
     const corner = fam === "tall" ? "bottom-left" : "top-right";
@@ -249,7 +255,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     let q = at(inside);
     if (outOfDisc(q).length) q = at(centred);
     q.win = clipBox([q.left, q.top, q.s * sw, q.s * sh], C) || C;
-    return build("pip", { field: fld.field, area: [0, 0, W, H], speaker: q, caption: cap ? caption(Y1(S) - capH, "below") : null });
+    return build("pip", { field: fld.field, area: [0, 0, W, H], speaker: q, caption: cap ? caption(capTop, "below") : null });
   }
 
   // What of a face (its hull, and the margin kept above a head) lies outside a circle's disc: the
@@ -291,13 +297,13 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     while (s > 1e-4 && !fits(s)) s *= 0.99;
     // across, the face in the column's middle; down, at the height it had full-frame
     const sp = placeIn(s, col, band, col[0] + cw / 2 - s * ux, prevFace[1] - s * usual[1]);
-    const bottom = cap ? Y1(S) - capH - g : Y1(S);
+    const bottom = cap ? capTop - g : Y1(S);
     const mx0 = side === "left" ? X1(col) + g : S[0], mx1 = side === "left" ? X1(S) : col[0] - g;
     const fld = bestField([[mx0, S[1], mx1 - mx0, bottom - S[1]]]);
     if (!fld) { notes.push("no column: the frame leaves the material no room beside the speaker"); return null; }
     most.column = fld.field;
     const w = Math.min(mx1 - mx0, D.caption.maxEm * capF);
-    return build("column", { field: fld.field, area: side === "left" ? [cw, 0, W - cw, H] : [0, 0, W - cw, H], speaker: { ...sp, field: col, shape: "rect" }, caption: cap ? caption(Y1(S) - capH, "under-material", (mx0 + mx1) / 2 - w / 2, w) : null, side, looks, keep, target: a.aimed, by, room: sMost * usual[3] / H });
+    return build("column", { field: fld.field, area: side === "left" ? [cw, 0, W - cw, H] : [0, 0, W - cw, H], speaker: { ...sp, field: col, shape: "rect" }, caption: cap ? caption(capTop, "under-material", (mx0 + mx1) / 2 - w / 2, w) : null, side, looks, keep, target: a.aimed, by, room: sMost * usual[3] / H });
   }
 
   // ---- one candidate, judged and costed ----
@@ -358,7 +364,7 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
       fit: `beside-${arr}`, arrangement: arr, ...(p.side ? { side: p.side, looks: p.looks } : {}),
       material: { field: p.field.map(r1), area: p.area.map(r1), share: +(area(p.field) / (W * H)).toFixed(3), ...(mat.fixed ? { scale: r4(p.field[2] / mat.fixed[0]) } : {}) },
       speaker: { field: sp.field.map(r1), shape: sp.shape, ...(sp.corner ? { corner: sp.corner } : {}), scale: r4(s), left: r1(sp.left), top: r1(sp.top), window: sp.win.map(r1), crop: crop.map(r1), face: faceUsual.map(r1), ...(moving ? { hull: faceBox.map(r1) } : {}), faceHeight: Math.round(faceH), facePct: r1(100 * faceH / H), ...(given ? { target: given } : {}), share: +(area(sp.field) / (W * H)).toFixed(3), ground: +ground.toFixed(3) },
-      captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align } : null,
+      captions: p.caption ? { where: p.caption.where, box: p.caption.box.map(r1), font: p.caption.font, lines: p.caption.lines, align: p.caption.align, band: p.caption.band } : null,
       ...(p.seam != null ? { seam: r1(p.seam) } : {}),
       change: {
         before: { scale: prev.scale, left: prev.left, top: prev.top, window: prev.window, face: prevFace.map(r1), ...(prev.given ? {} : { assumed: true }) },

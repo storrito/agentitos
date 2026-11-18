@@ -52,6 +52,7 @@ import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
 import { besideSolve, printBeside } from "./lib/beside.mjs";
+import { areaFile, areaOfStyle } from "./lib/caption-area.mjs";
 import { renderBeside } from "./lib/beside-page.mjs";
 
 const fail = (msg) => { console.error(msg); process.exit(1); };
@@ -67,7 +68,7 @@ const sameFile = (a, b) => real(a) === real(b);
 const FLAGS = new Set(["json", "all"]);
 const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text", "platform", "set", "still", "at"]);
 const OPTIONS = {
-  beside: ["frame", "source", "face", "face-at", "face-track", "material", "material-min", "material-ratio", "text", "before", "platform", "set", "json"],
+  beside: ["frame", "source", "face", "face-at", "face-track", "material", "material-min", "material-ratio", "text", "caption-area", "caption-style", "before", "platform", "set", "json"],
   grid: ["at"],
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
@@ -247,10 +248,15 @@ function cmdBeside(o) {
     before = { scale: b[0], left: b[1], top: b[2], ...(b.length === 7 ? { window: b.slice(3) } : {}) };
   }
   const platforms = platformList(o.platform);
-  let res;
+  // the captions' band as captions builds it: its area.json, or a style it measures
+  if (o["caption-area"] !== undefined && o["caption-style"] !== undefined) fail(`--caption-area and --caption-style both give the captions' band: give one.`);
+  let res, captionArea = null;
   try {
+    const zones = askZones(o.frame, platforms);
+    if (o["caption-area"] !== undefined) captionArea = areaFile(o["caption-area"]);
+    else if (o["caption-style"] !== undefined) captionArea = areaOfStyle(o["caption-style"], needs.find((n) => n.role === "caption")?.lines, zones.size, platforms);
     res = besideSolve({
-      zones: askZones(o.frame, platforms), source: sources[0].size, face: sources[0].faces[0], material, needs, before,
+      zones, captionArea, source: sources[0].size, face: sources[0].faces[0], material, needs, before,
       set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
     });
   } catch (e) { fail(e.message); }

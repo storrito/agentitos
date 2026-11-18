@@ -1310,6 +1310,23 @@ t("sharpness in two steps, as b-roll's owner settled it on built videos (beside.
   return `4K ${k4.speaker.facePct} %, 1080p ${hd.speaker.facePct} %, 720p ${sd.speaker.facePct} % at ${sd.speaker.scale}×`;
 });
 
+t("the captions' band comes from captions itself: its area.json (or the six values), or a style it measures by its build; the candidate says which (b-roll's two lines of hormozi are 202 px, the layout skill's own band 234 px)", () => {
+  const dir = path.join(OUT, "beside-band"), area = path.join(OUT, "area.json");
+  fs.writeFileSync(area, JSON.stringify({ left: 192, width: 696, top: 1238, bottom: 1440, size: 96, lines: 2 }));
+  const base = ["--frame", "9:16", "--source", "1080x1920", "--face", "300,500,480,655", "--material-min", "700x330"];
+  const read = () => JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8")).candidates;
+  let r = cli("beside", dir, ...base, "--caption-area", area);
+  ok(r.status === 0, r.stderr); let c = read();
+  ok(c[0].captions.box[3] === 202 && c[0].captions.font === 96 && /area\.json/.test(c[0].captions.band) && c.find((k) => k.arrangement === "pip").captions.box[1] === 1238, JSON.stringify(c[0].captions));
+  r = cli("beside", dir, ...base, "--caption-area", "192,696,1238,1440,96,2");
+  ok(r.status === 0 && read()[0].captions.box[3] === 202 && /six values/.test(read()[0].captions.band), r.stderr);
+  r = cli("beside", dir, ...base, "--text", "caption:2", "--caption-style", "hormozi");
+  ok(r.status === 0 && read()[0].captions.box[3] === 202 && /style hormozi, 2 lines/.test(read()[0].captions.band), r.stderr || JSON.stringify(read()[0].captions));
+  r = cli("beside", dir, ...base, "--text", "caption:2");
+  ok(r.status === 0 && Math.round(read()[0].captions.box[3]) === 234 && /layout skill's own/.test(read()[0].captions.band), JSON.stringify(read()[0].captions));
+  for (const [opt, v, says] of [["--caption-area", "1,2,3", /no caption area|cannot be read/], ["--caption-style", "nosuch", /could not measure the style "nosuch"/]]) { const e = cli("beside", dir, ...base, opt, v); sentence(e, `${opt} ${v}`); ok(says.test(e.stderr), e.stderr); }
+});
+
 t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
   const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
   ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);
