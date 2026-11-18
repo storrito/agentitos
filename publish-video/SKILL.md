@@ -52,6 +52,7 @@ Look at the sheet for what no tool measures: does the first frame make someone s
 
 - **✗ that `prepare` fixes** (size, codec, container, bitrate, the place of the recording in the file): run it without asking. `--crop` for a nearly 9:16 video only when the sheet shows nothing near the edges; else ask: cropped or thin bars.
 - **⚠ about the sound** (too quiet, too loud, peaks): `prepare --loudness`. **Black or silence at the start or end**, plainly empty: `prepare --start <s>` / `--end <s>`.
+- **⚠ black or a flash frame inside the video** (no option of `prepare` fixes it): in a video you built yourself, fix its source and render again; else name the moment to the person in one sentence ("At 0:04.8 a single white frame flashes up.").
 - All fixes in one `prepare` call; it writes `publish/<name>/video.mp4` and checks it again.
 - The sheet shows twelve moments, not every frame. A subtitle touching a red outline in a frame or two, a word in the margin that stays readable, the edge of a picture under the buttons: leave it and say nothing.
 - **Ask only when it hides what must be read or seen** (the hook or a title under the buttons, a name, a price, a call to action, a face cut by the caption area, subtitles under the buttons through most of the video), or for a weak first second, a cut-off end, a typo in the picture, another app's watermark: one sentence of what you see with the frame's time, then
