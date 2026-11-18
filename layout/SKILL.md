@@ -1,6 +1,6 @@
 ---
 name: layout
-description: Says how a recording is placed in a frame (9:16, 4:5, 1:1, 16:9) and where captions and a hook can go, computed from where the faces or the part of a screen that matters are and from what the apps cover, as ranked, checked candidates with a picture of each to choose from; the step before a skill builds a video from a camera's or a screen's recording.
+description: Says how a recording is placed in a frame (9:16, 4:5, 1:1, 16:9) and where captions and a hook can go, computed from where the faces or the part of a screen that matters are and from what the apps cover, as ranked, checked candidates with a picture of each to choose from; the step before a skill builds a video from a camera's or a screen's recording, and the place of material (a card, a quote, a screenshot) beside a speaker who stays in the picture.
 license: MIT
 metadata:
   title: "Layout"
@@ -112,6 +112,35 @@ node <skill>/tools/place.mjs captions placement/<name> --candidate N
 ```
 
 It prints the options for captions' `build` and `project` that set the captions into the candidate's caption area (`--y`: the area's bottom, where the lowest line ends; `--max-width`, `--font-size`, `--lines`, and `--x`, `--align` for a column at one side). The area is as tall as the tallest block of captions' styles at that type; a style that pads more needs `--set caption.padEm=…` in `place`, and a card of captions' own (`box`) `--set caption.padEm=0.8`. captions answers "Placed where asked: …" when it took them. When it answers nothing of the kind, its version does not know them and the captions stand on the safe box's bottom whatever is there: say so, never move the picture to make room.
+
+## Material beside the speaker (for another skill)
+
+A card, a quote, a screenshot or a clip that shows for a few seconds while the person who talks stays in the picture (b-roll's frame "beside"). A card is made, not filmed: it gets a field and lays itself out into it.
+
+```bash
+node <skill>/tools/place.mjs beside placement/<name> --frame 9:16 --source 1280x720 --face 555,150,180,195 --material-min 600x340 --text caption --before 1.875,-669.4,285,0,285,1080,1350
+```
+
+- `--face` (or `--face-at` for a face that moves) is read off `grid` as in step 2. `--material-min WxH`: the smallest field the material reads in, in px of the frame. `--material-ratio 16:9` where it prefers a shape (the field is then the largest box of that shape); `--material WxH` for a picture or clip of fixed size (the largest box of its shape, `scale` given; over 2× fails). `--before`: the speaker's placement just before, as `place` handed it over (`scale,left,top`, and its `window` after them where it did not fill the frame); without it the source covering the frame is assumed.
+- No arrangement gives the material its field: it says so in one sentence with the most each gives. Ask for a smaller field, or show the material alone for its seconds.
+- The candidates: 9:16, 4:5, 1:1 `beside-above` (the material above, the speaker as a panel below, the captions on the seam: what published Shorts do most with a screen and a face, usual, not shown to work), then `beside-pip` (a circle in a corner). 16:9 `beside-column` (the speaker as a column on a third of the width, on the side from which they look at the material), `beside-above` only where the field keeps its size, `beside-pip`: nothing in 16:9 was measured. A panel never leaves the face under 12 % of the frame's height; a material that needs more height gets the circle first, and a note says up to which field the panel holds.
+- `page placement/<name> --still <speaker's video|image> --still <the material as a picture>` and `captions placement/<name> --candidate N` work as for `place`. Look at the pictures before handing over.
+
+What `candidates[N-1]` holds, in px of the frame:
+
+| key | what |
+| --- | --- |
+| `material.field` | the box the material lays itself out in (inside the safe box, clear of the captions) |
+| `material.area` | the part of the frame that belongs to the material: its own ground (a card's colour) may fill it |
+| `material.scale` | with `--material WxH`: the picture's scale in its field |
+| `speaker.field`, `speaker.shape` | the speaker's box (`rect`, or `circle` inside that box) |
+| `speaker.scale`, `left`, `top` | the footage drawn `scale` times its size with its corner at `left`, `top`, clipped to `speaker.field` |
+| `speaker.crop`, `face`, `faceHeight`, `facePct` | the part of the footage the field shows (px of the footage), the face as placed |
+| `captions` | `where` (`seam`, `below`, `under-material`), `box`, `font`, `lines`, `align`; `captions` turns it into captions' options |
+| `change` | `before` and `after` (`scale`, `left`, `top`, `window`, `face`; `round` for the circle), `face` (`dx`, `dy`, `zoom`), `says` |
+| `problems`, `hard`, `unmet`, `why`, `score` | as for `place` |
+
+**At the change** from the speaker full-frame to the panel and back: the panel is a crop of the same footage, never a second clip. Draw the footage at `change.after`'s scale, left and top, clipped to its window, from the material's first frame to its last; outside it the material's area. Cut there and back (what b-roll does today), or animate: interpolate `scale`, `left`, `top` and `window` in a straight line from `before` to `after` (the face then moves straight, by `change.face`) and back at the end, the material's area coming in with it. The crop is chosen so that the face jumps as little as the arrangement lets it: in a panel it keeps its place across (it only moves down), in the 16:9 column the footage keeps its scale and the face its height (it only moves across). How long a move takes was not measured here; clips pans 0.4 s from one speaker to the other.
 
 ## UI in the chat
 
