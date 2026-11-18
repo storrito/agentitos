@@ -134,7 +134,7 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
   const main = srcs[0], [sw, sh] = main.size;
   const s0 = Math.max(W / sw, H / sh);
   const ctx = {
-    W, H, Z, D, sw, sh, s0, merge: merge && !all, faces: main.faces, fb: main.faces.length ? hullOf(main.faces) : null, sources: srcs, tall: W <= H, speakerNamed: speaker != null,
+    W, H, Z, D, sw, sh, s0, merge: merge && !all, faces: main.faces, fb: main.faces.length ? hullOf(main.faces) : null, sources: srcs, tall: W <= H, speakerNamed: speaker != null, speakerFace: speaker != null ? speaker - 1 : null,
     cap: needs.find((n) => n.role === "caption") || null, hook: needs.find((n) => n.role === "hook") || null,
   };
   const rs = sw / sh, rf = W / H, same = Math.abs(rs / rf - 1) < 0.02;
@@ -237,7 +237,7 @@ function why(c, ctx) {
   if (c.unmet.includes("readable")) out.push("the screen's smallest text does not read");
   out.push(c.enlargement <= 1 ? `the source's pixels are not enlarged (${c.enlargement}×)` : c.enlargement <= D.weights.enlarge.softFrom ? `the source's pixels are enlarged ${c.enlargement}×, not over the ${D.weights.enlarge.softFrom}× from where it shows` : `the source's pixels are enlarged ${c.enlargement}×`);
   if (ctx.sources?.[0].screen) { const b = c.faceInFrame[0]; out.push(`the region is ${Math.round(b[2])}×${Math.round(b[3])} px${c.textHeight != null ? `, its smallest text ${c.textHeight} px tall` : ""}`); }
-  else if (c.faceInFrame.length) out.push(`the ${c.faceInFrame.length > 1 ? "smallest " : ""}face is ${c.faceHeight} px tall (${pct(c.faceHeight / ctx.H)} of the frame's height)`);
+  else if (c.faceInFrame.length) out.push(`the ${ctx.speakerFace != null ? `speaker's face (face ${ctx.speakerFace + 1})` : `${c.faceInFrame.length > 1 ? "smallest " : ""}face`} is ${c.faceHeight} px tall (${pct(c.faceHeight / ctx.H)} of the frame's height)`);
   if (c.circle) out.push(`the webcam's circle (${c.circle.d} px) ${c.circle.corner}${c.circle.corner !== c.circle.first ? `, not ${c.circle.first}: the region would not fit beside it there with the screen filling the frame` : ""}${c.circle.d < c.circle.size ? `, smaller than its ${c.circle.size} px` : ""}`);
   out.push(c.ground ? `${pct(c.ground)} of the frame is ground` : "the picture fills the frame");
   const soft = c.problems.filter((q) => q.level === "soft" && q.code !== "enlarged");
@@ -252,7 +252,7 @@ const CRIT = ["it has a hard problem", "it leaves a need unmet", "it leaves a pe
 function behind(c, top) {
   for (let i = 0; i < CRIT.length; i++) if (c.rank[i] !== top.rank[i]) return `behind the first because ${CRIT[i]}`;
   const d = Math.round((c.cost - top.cost) * 1000) / 1000;
-  if (!d) return c.variant !== top.variant ? "equal in cost to the first, further from the usual hold" : "equal to the first";
+  if (!d) return c.rank[5] !== top.rank[5] ? "equal in cost to the first, which is the crop made for the speaker" : c.variant !== top.variant ? "equal in cost to the first, further from the usual hold" : "equal to the first";
   // the terms that put it behind, the largest first
   const diff = Object.keys(TERM).map((k) => [k, Math.round(((c.terms[k] || 0) - (top.terms[k] || 0)) * 1000) / 1000]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   return `behind the first by ${d} points (${diff.map(([k, v]) => `${TERM[k]} +${v}`).join(", ")})`;

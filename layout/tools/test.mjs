@@ -530,6 +530,16 @@ t("an upright take into 16:9 also as the whole picture in the middle, the sides 
   return `${res.candidates.slice(0, 2).map((c) => `${nameOf(c)} (cost ${c.cost})`).join(" before ")}; with a hook ${nameOf(withHook)}`;
 });
 
+t("with a speaker named, the speaker's face sets the size, not a bystander's: a near speaker (500 px of 2160) and a small face behind him (110 px), --speaker 1. The closer crop that enlarged the picture for the bystander and pinned the speaker to the safe box's edge came first, and the crop on the speaker said its face was 136 px; now the crop on the speaker comes first, centred, his face 444 px (23 %), and every candidate counts his face", () => {
+  const res = solve({ zones: Z916, source: [3840, 2160], faces: [[1500, 600, 400, 500], [2000, 900, 90, 110]], needs: [cap(1)], speaker: 1 }), first = res.candidates[0];
+  ok(first.fit === "crop" && first.speaker === 1 && !first.closer && !first.hard && !first.unmet.length, `the first is ${nameOf(first)}${first.speaker ? ` on ${first.speaker}` : ""}`);
+  near(first.faceInFrame[0][0] + first.faceInFrame[0][2] / 2, 540, 1, "the speaker's face across");
+  for (const c of res.candidates.filter((q) => !q.hard)) ok(Math.abs(c.faceHeight - c.scale * 500) < 1, `${nameOf(c)}: its size is ${c.faceHeight} px, the speaker's face ${Math.round(c.scale * 500)}`);
+  ok(/the speaker's face \(face 1\) is 444 px/.test(first.why.join("; ")), first.why.join("; "));
+  agree(first, res, "speaker-not-bystander");
+  return `${nameOf(first)} on face 1, then ${res.candidates.slice(1, 3).map(nameOf).join(", ")}`;
+});
+
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
   // the two of TWO 120 px lower: above their heads a third of a face's height is kept clear for the skull, and the hook needs room over that
   const low = TWO.map(([x, y, w, h]) => [x, y + 120, w, h]);

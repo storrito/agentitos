@@ -29,8 +29,8 @@ export function evaluate(ctx, p) {
     src.faces.forEach((f, i) => {
       const box = [q.left + q.s * f[0], q.top + q.s * f[1], q.s * f[2], q.s * f[3]];
       const label = src.screen ? "region" : src.label || (total > 1 ? `face ${(src.first || 0) + i + 1}` : "face");
-      if (!q.own || q.own.includes(i)) faces.push({ box, label, win: q.win, part: k, height: q.s * (src.heights ? src.heights[i] : f[3]), screen: !!src.screen });
-      else { const part = clipBox(box, shown); if (part) others.push({ box: part, label, share: area(part) / area(box), height: q.s * (src.heights ? src.heights[i] : f[3]) }); }
+      if (!q.own || q.own.includes(i)) faces.push({ box, label, src: q.src, i, win: q.win, part: k, height: q.s * (src.heights ? src.heights[i] : f[3]), screen: !!src.screen });
+      else { const part = clipBox(box, shown); if (part) others.push({ box: part, label, src: q.src, i, share: area(part) / area(box), height: q.s * (src.heights ? src.heights[i] : f[3]) }); }
     });
   });
   // a webcam baked into the screen recording: where the screen's picture shows it, its face is in
@@ -105,7 +105,9 @@ export function evaluate(ctx, p) {
     ground: Math.max(0, +(1 - parts.reduce((a, q) => a + inter(q.win, frame), 0) / (W * H)).toFixed(3)),
     // the smallest face the picture shows whole: another person a crop on one shows whole is as
     // much in the picture as the one it is made for
-    faceHeight: faces.length ? Math.round(Math.min(...faces.map((f) => f.height), ...(split ? [] : others.filter((o) => o.share >= 0.999).map((o) => o.height)))) : 0,
+    // with a speaker named, the speaker's face sets the size (another person is judged, cut or
+    // covered, but a bystander's small face does not make the speaker's crop look loose)
+    faceHeight: !faces.length ? 0 : Math.round(spoken(ctx, faces, others) ?? Math.min(...faces.map((f) => f.height), ...(split ? [] : others.filter((o) => o.share >= 0.999).map((o) => o.height)))),
     textPenalty: text.penalty,
     variant: p.variant || 0,
   };
@@ -120,7 +122,8 @@ export function evaluate(ctx, p) {
   //                short of that, subject.larger for every per cent over it. No reward for a larger face.
   //   soft         soft.cost for every soft problem other than enlargement
   //   text, hook   text.away for every step a text stands from its usual place, text.hookSmaller for a hook under its size
-  // Last, among equals: the hold nearest the fit's usual one.
+  // Among equals: with a speaker named, the crop made for the speaker; last, the hold nearest the
+  // fit's usual one.
   const softOther = problems.filter((q) => q.level === "soft" && q.code !== "enlarged").length;
   // the subject's size: the face's height in per cent of the frame's (the smallest of several, its
   // usual size when it moves). A screen region has no measured band: the per cent of the frame's
@@ -139,8 +142,15 @@ export function evaluate(ctx, p) {
   c.cost = Math.round(Object.values(c.terms).reduce((a, b) => a + b, 0) * 1000) / 1000;
   // two people of one picture who stand close together, split into two parts (solve.mjs: ctx.close)
   if (split && ctx.close && parts.every((q) => q.src === 0)) c.splitsClose = true;
-  c.rank = [c.hard ? 1 : 0, c.unmet.length, leftOut && !ctx.speakerNamed ? 1 : 0, c.splitsClose ? 1 : 0, Math.round(c.cost * 1000), c.variant];
+  c.rank = [c.hard ? 1 : 0, c.unmet.length, leftOut && !ctx.speakerNamed ? 1 : 0, c.splitsClose ? 1 : 0, Math.round(c.cost * 1000), ctx.speakerFace != null && p.speaker == null ? 1 : 0, c.variant];
   return c;
+}
+
+// the speaker's face height where one is named and it shows (whole or held), else null
+function spoken(ctx, faces, others) {
+  if (ctx.speakerFace == null) return null;
+  const f = [...faces, ...others].find((x) => x.src === 0 && x.i === ctx.speakerFace && (x.share == null || x.share >= 0.999));
+  return f ? f.height : null;
 }
 
 export const cmpRank = (a, b) => { for (let i = 0; i < a.rank.length; i++) if (a.rank[i] !== b.rank[i]) return a.rank[i] - b.rank[i]; return 0; };
