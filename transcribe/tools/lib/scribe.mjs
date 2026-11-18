@@ -108,7 +108,7 @@ export async function scribe(file, duration, { lang, log = () => {}, long = fals
             method: "POST",
             headers: { ...or.headers, "Content-Type": "application/json" },
             body,
-            signal: AbortSignal.any([stop, AbortSignal.timeout(300e3)]),
+            signal: AbortSignal.any ? AbortSignal.any([stop, AbortSignal.timeout(300e3)]) : AbortSignal.timeout(300e3),
           });
           text = await res.text();
         } catch (e) {

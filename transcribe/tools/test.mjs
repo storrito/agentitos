@@ -357,16 +357,23 @@ test("a voice with under 5 s of speech does not count: its words go to the neare
   assert.deepEqual([...new Set(named(pieces, r.person).words.map((w) => w.speaker))].sort(), ["A", "B"]);
 });
 
-test("one voice is one person, whatever number a piece gives it", () => {
-  const { samples, said } = talk(90, [["ann", 0, 90]]);
-  const pieces = [heardAs(said, 0, 30, { ann: "0" }), heardAs(said, 30, 60, { ann: "3" }), heardAs(said, 60, 90, { ann: "0" })];
-  const r = bySound(fingerprints(framesFrom(samples), pieces));
-  assert.equal(r.why, undefined);
-  assert.equal(r.people, 1);
-  assert.equal(r.margin, null);
-  assert.deepEqual(r.decisions.map((d) => [d.piece, d.voices, d.margin]), [[1, 1, null], [2, 1, null]]);
-  assert.ok(r.decisions.every((d) => d.apart < APART), JSON.stringify(r.decisions));
-  assert.ok(named(pieces, r.person).words.every((w) => w.speaker === "A"));
+test("one voice a piece is one person or two who take turns: no speakers from the pieces", () => {
+  // what the second review found: two people who sound alike (ann and dan lie within APART),
+  // one in each piece, came out as one person
+  const { samples, said } = talk(180, [["ann", 0, 90], ["dan", 90, 180]]);
+  const frames = framesFrom(samples);
+  const one = [heardAs(said, 0, 30, { ann: "0" }), heardAs(said, 30, 60, { ann: "3" }), heardAs(said, 60, 90, { ann: "0" })];
+  const turns = [heardAs(said, 0, 90, { ann: "0" }), heardAs(said, 90, 180, { dan: "0" })];
+  for (const pieces of [one, turns]) {
+    const r = bySound(fingerprints(frames, pieces));
+    assert.match(r.why, /^no piece names two voices: one voice a piece is one person or two who take turns/);
+    assert.equal(r.person, undefined);
+  }
+  // one piece alone (one request) is its one voice
+  const alone = bySound(fingerprints(frames, [one[0]]));
+  assert.equal(alone.why, undefined);
+  assert.equal(alone.people, 1);
+  assert.ok(named([one[0]], alone.person).words.every((w) => w.speaker === "A"));
 });
 
 // what the reviewer found: a voice that is someone else was put to the nearer person unchecked
@@ -375,7 +382,7 @@ test("someone else is not taken for one of two people: no speakers from the piec
   const frames = framesFrom(samples), at = (from, to, numbers) => heardAs(said, from, to, numbers);
   const why = (pieces) => bySound(fingerprints(frames, pieces)).why;
   // one voice a piece, two people who take turns: not one person, and not told
-  assert.match(why([at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" })]), /^every piece names one voice, and that of piece 2 sounds unlike/);
+  assert.match(why([at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" })]), /^no piece names two voices/);
   // the same once a piece names both: the pieces before it are put to them
   const both = bySound(fingerprints(frames, [at(0, 40, { ann: "0" }), at(40, 80, { ben: "0" }), at(80, 120, { ann: "1", ben: "0" })]));
   assert.equal(both.why, undefined);
@@ -387,16 +394,28 @@ test("someone else is not taken for one of two people: no speakers from the piec
   const { samples: s4, said: w4 } = talk(80, [...inTurns(["ann", "ben"], 0, 40), ...inTurns(["cyd", "dan"], 40, 80)]);
   const four = fingerprints(framesFrom(s4), [heardAs(w4, 0, 40, { ann: "0", ben: "1" }), heardAs(w4, 40, 80, { cyd: "0", dan: "1" })]);
   assert.match(bySound(four).why, /^a voice of piece 2 sounds unlike both people/);
+  // what the sound cannot see (README, "How far a voice is"): someone else who sounds like one
+  // of the two and never speaks beside both. dan lies within APART of ann and is taken for her.
+  const { samples: s3, said: w3 } = talk(80, [...inTurns(["ann", "ben"], 0, 40), ["dan", 40, 80]]);
+  const blind = bySound(fingerprints(framesFrom(s3), [heardAs(w3, 0, 40, { ann: "0", ben: "1" }), heardAs(w3, 40, 80, { dan: "0" })]));
+  assert.equal(blind.why, undefined);
+  assert.equal(blind.person.get("1:0"), blind.person.get("0:0"));
+  assert.ok(blind.decisions[0].apart < APART, JSON.stringify(blind.decisions));
 });
 
-test("one request: its voices with 5 s of speech are its people, one with less the nearest of them when it sounds like them", () => {
+test("one request: its voices are its people, however little they say", () => {
   const { samples, said } = talk(64, [...inTurns(["ann", "ben"], 0, 40), ["ann", 40, 42], ["cyd", 42, 44], ...inTurns(["ann", "ben"], 44, 64)]);
   // the request heard ann's two seconds as a voice of its own, and cyd's
   const words = said.map(({ who, ...w }, i) => ({ ...w, kind: "word", voice: who === "ben" ? "1" : who === "cyd" ? "3" : w.start >= 40 && w.start < 42 ? "2" : "0" }));
   const r = bySound(fingerprints(framesFrom(samples), [words]));
   assert.equal(r.why, undefined);
-  assert.equal(r.people, 3);
-  assert.deepEqual(["0:0", "0:1", "0:2", "0:3"].map((id) => r.person.get(id)), [0, 1, 0, 2]);
+  assert.equal(r.people, 4);
+  assert.deepEqual(["0:0", "0:1", "0:2", "0:3"].map((id) => r.person.get(id)), [0, 1, 2, 3]);
+  // a clip of two who say four seconds each: two people, not one
+  const clip = talk(8, [["ann", 0, 4], ["dan", 4, 8]]);
+  const short = bySound(fingerprints(framesFrom(clip.samples), [heardAs(clip.said, 0, 8, { ann: "0", dan: "1" })]));
+  assert.equal(short.people, 2);
+  assert.notEqual(short.person.get("0:0"), short.person.get("0:1"));
 });
 
 test("voices too close to tell whose is whose leave the speakers to the long requests", () => {
@@ -415,8 +434,12 @@ test("voices too close to tell whose is whose leave the speakers to the long req
   assert.deepEqual(["1:0", "1:1", "2:5"].map((id) => clear.person.get(id)), [1, 0, 0]);
   near(clear.margin, 1.8 / 0.2, 0.001);
   // a voice without a fingerprint goes with its piece's voice that says most
-  const bare = bySound([...two, { piece: 0, voice: "2", words: 1, seconds: 0.1, f0: null, mfcc: null }]);
-  assert.equal(bare.person.get("0:2"), 0);
+  const none = (piece, voice, words) => ({ piece, voice, words, seconds: 0, f0: null, mfcc: null });
+  const bare = bySound([...two, fp(1, "0", 7.9), fp(1, "1", 7.1), none(1, "2", 1)]);
+  assert.equal(bare.why, undefined);
+  assert.equal(bare.person.get("1:2"), bare.person.get("1:0"));
+  // a piece that speaks and has no fingerprint at all (the sound ended before it): not person A
+  assert.match(bySound([...two, none(1, "0", 200), none(1, "1", 150)]).why, /^the voices of piece 2 have no sound to tell them by/);
 });
 
 test("the voices of long pieces are the people who wrote the same words where both pieces heard", () => {

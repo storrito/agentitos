@@ -95,8 +95,7 @@ async function peopleOf(parts, frames) {
   if (!voiced(parts)) return { why: NONE };
   const sound = await frames;
   if (sound.failed) return { why: sound.failed };
-  // one request keeps its voices apart by itself: its voices that say little go to the nearest
-  // of those that say more, as across pieces (the same rule, lib/voices.mjs)
+  // one request keeps its voices apart by itself: they are its people (lib/voices.mjs)
   const r = bySound(fingerprints(sound, pieces));
   if (r.why || parts.length === 1) return r.why ? r : { person: r.person };
   return { person: r.person, linked: "sound", ...(r.margin == null ? {} : { margin: +r.margin.toFixed(2) }) };
@@ -170,6 +169,7 @@ async function heard(sure) {
     if (people) return { words, cost, speakers: { by: "gemini", people, because: why }, why: "" };
     return { words: x.words, cost, speakers: null, why: `${why}, and ${STT_MODEL} named no voices either` };
   } catch (e) {
+    cost += e.cost ?? 0;
     return { words: x.words, cost, speakers: null, why: `${why}, and ${STT_MODEL} failed too (${first(e).slice(0, 120)})` };
   }
 }
@@ -197,8 +197,10 @@ try {
   } else r = await heard(Boolean(opts.speakers));
 } catch (e) {
   const why = String(e.message).split("\n")[0].replace(/\.$/, "");
+  // what the pieces that answered cost is paid all the same
+  const spent = e.cost > 0 ? ` $${e.cost.toFixed(4)} was spent on the pieces that answered.` : "";
   // no OpenRouter: need() says how to get it
-  fail(/^The transcription needs/.test(why) ? `${why}.` : `The transcription with ${model} failed (${why}); ${/OpenRouter 40[13]\b/.test(why) ? "check OPENROUTER_API_KEY or the gateway's OpenRouter connection" : "try again in a while"}.`);
+  fail(/^The transcription needs/.test(why) ? `${why}.` : `The transcription with ${model} failed (${why}); ${/OpenRouter 40[13]\b/.test(why) ? "check OPENROUTER_API_KEY or the gateway's OpenRouter connection" : "try again in a while"}.${spent}`);
 }
 
 // Scribe's words against the sound (their speakers stay with them). Gemini's tenths of a second

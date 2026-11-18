@@ -30,7 +30,7 @@ const WAIT = 5 * 60e3;
 // ffmpeg in the background, so that the pieces are cut side by side, not one after the other
 const ffmpeg = (args) => promisify(execFile)("ffmpeg", args);
 
-async function request(body, log) {
+async function request(body, log, stop) {
   const or = await need("The transcription");
   for (let attempt = 1; ; attempt++) {
     let res, text;
@@ -39,10 +39,11 @@ async function request(body, log) {
         method: "POST",
         headers: { ...or.headers, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(WAIT),
+        signal: stop && AbortSignal.any ? AbortSignal.any([stop, AbortSignal.timeout(WAIT)]) : AbortSignal.timeout(WAIT),
       });
       text = await res.text();
     } catch (e) {
+      if (stop?.aborted) throw stop.reason;
       if (attempt >= 3) throw e;
       log(`  transcribe: ${e.name === "TimeoutError" ? `no answer in ${WAIT / 60e3} min` : e.message}, again …`);
       continue;
@@ -57,13 +58,18 @@ async function request(body, log) {
   }
 }
 
-// fn over the items, n at a time, the results in order
+// fn over the items, n at a time, the results in order; one that fails calls the others off
+// (none is begun after it, those on their way are aborted)
 async function inTurns(items, n, fn) {
-  const out = new Array(items.length);
-  let next = 0;
+  const out = new Array(items.length), stop = new AbortController();
+  let next = 0, failed = null;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
-    while (next < items.length) { const k = next++; out[k] = await fn(items[k], k); }
+    while (next < items.length && !failed) {
+      const k = next++;
+      try { out[k] = await fn(items[k], k, stop.signal); } catch (e) { if (!failed) { failed = e; stop.abort(e); } }
+    }
   }));
+  if (failed) throw failed;
   return out;
 }
 
@@ -111,7 +117,7 @@ export async function gemini(file, total, { lang = "auto", speakers = true, voic
   if (starts.length > 1) log(`  transcribe: ${starts.length} pieces of ${CH / 60} min, ${Math.min(atOnce, starts.length)} at a time …`);
   let pieces;
   try {
-    pieces = await inTurns(starts, atOnce, async (at, k) => {
+    pieces = await inTurns(starts, atOnce, async (at, k, stop) => {
       // FLAC, unless the piece would not fit OpenRouter's 50 MB request (as base64), then MP3 at
       // 48 kbit/s, which it transcribes as well; MP3 always through the Sprites gateway, which
       // refuses a request of several megabytes
@@ -129,7 +135,7 @@ export async function gemini(file, total, { lang = "auto", speakers = true, voic
         timestamp_granularities: ["word"],
         // the provider's own switch: OpenRouter passes it through to Google
         ...(speakers ? { provider: { options: { "google-ai-studio": { diarization_mode: "speaker" } } } } : {}),
-      }, log);
+      }, log, stop);
       cost += j.usage?.cost ?? 0;
       if (starts.length > 1) log(`  transcribe: ${++done}/${starts.length}`);
       return (j.words || []).flatMap((w) => {
@@ -137,6 +143,9 @@ export async function gemini(file, total, { lang = "auto", speakers = true, voic
         return text ? [{ text, start: w.start + at, end: Math.max(w.end, w.start + 0.05) + at, speaker: w.speaker == null ? null : String(w.speaker) }] : [];
       });
     });
+  } catch (e) {
+    // what the pieces answered before is paid, and the caller counts it
+    throw Object.assign(e instanceof Error ? e : new Error(String(e)), { cost });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
