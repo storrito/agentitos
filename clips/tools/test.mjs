@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, checkNotes, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, lengthNote, OPENING_LONGEST, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, checkNotes, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -166,7 +166,7 @@ test("each moment carries the checks the tool counts, an exchange is a kind of i
   const [m] = arrange({ moments: [moment(1, 7, { kind: "exchange" })] }, INTERVIEW);
   assert.equal(m.kind, "exchange");
   assert.ok(KINDS.includes("exchange"));
-  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null, stays: [], refused: [], trimmed: null });
+  assert.deepEqual(m.checks, { question: true, conjunction: false, voices: 2, over: 12, asked: null, stays: [], refused: [], trimmed: null, still: 12 });
   assert.equal(arrange({ moments: [moment(2, 3, { kind: "banter" })] }, INTERVIEW)[0].kind, "claim");
   // shape: the same moment over other sentences keeps what still fits
   const wider = shape({ ...m, drop: [4, 5] }, 1, 8, INTERVIEW, 59);
@@ -392,4 +392,32 @@ test("a passage trimmed to 1.7 times the limit says so, and of its payoff; a dro
   const [all] = arrange({ moments: [moment(1, 7, { drop: [3, 4, 5, 6] })] }, INTERVIEW, { limit: 59 });
   assert.deepEqual([all.drop, all.checks.refused, all.kept], [[], [3, 4, 5, 6], all.seconds]);
   assert.match(checkNotes(all, 59), /the model marked 3-6 to drop, more than half of it: not taken/);
+});
+
+test("the limit travels: a moment still over it after its drop is said to be in the list and by prepare, an opening counts", () => {
+  // INTERVIEW 1-7 is 75 s; without 4-5 it is about 57 s: still over a limit of 50
+  const [m] = arrange({ moments: [moment(1, 7, { drop: [4, 5], payoff: 7 })] }, INTERVIEW, { limit: 50 });
+  assert.equal(m.checks.still, m.kept - 50);
+  assert.match(checkNotes(m, 50), new RegExp(`${m.kept} s without the sentences 4-5, still ${m.kept - 50} s over: drop more of it, run moments again with a higher --max-seconds where the platforms take it, or take another moment; never one over the limit`));
+  assert.equal(arrange({ moments: [moment(1, 7, { drop: [4, 5] })] }, INTERVIEW, { limit: 59 })[0].checks.still, 0);
+  assert.equal(lengthNote(58.4, 59), null);
+  assert.match(lengthNote(64.6, 59), /^⚠ Without what is left out the moment is still about 65 s of words, over the 59 s a short may be here: drop more/);
+  // the opening: none for the first sentence, none too long, none that brings the short over the limit
+  const line = TEETH.words.filter((w) => w.i >= 149 && w.i <= 159);
+  assert.match(openingNote(line, 100, { first: 85, estimate: 50, limit: 59 }), /"words":"149-159"/);
+  assert.match(openingNote(line, 100, { first: 100, estimate: 50, limit: 59 }), /is the moment's first sentence: it opens the short already, so no opening keep/);
+  assert.match(openingNote(line, 100, { first: 85, estimate: 57, limit: 59 }), /would bring the short to about 60 s, over the 59 s: no opening keep/);
+  const long = line.map((w, k) => ({ ...w, end: w.end + (k === line.length - 1 ? OPENING_LONGEST : 0) }));
+  assert.match(openingNote(long, 100, { first: 85, estimate: 20, limit: 100 }), /too long to open a short with \(at most 10 s\), so no opening keep/);
+});
+
+test("prepare refuses a limit that is no length of a short, before anything is cut", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-test-"));
+  fs.writeFileSync(path.join(dir, "words.json"), "[]");
+  fs.writeFileSync(path.join(dir, "sentences.json"), JSON.stringify(INTERVIEW));
+  const r = run("clips.mjs", ["prepare", dir, path.join(dir, "01"), "1-7", "--max-seconds", "5"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^--max-seconds 5: how long the short may be, 15 to 600 seconds/);
+  assert.ok(!fs.existsSync(path.join(dir, "01")));
+  fs.rmSync(dir, { recursive: true });
 });

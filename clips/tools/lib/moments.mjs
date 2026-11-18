@@ -234,6 +234,16 @@ export function cutKeeps(spoken, sentences, first, last, drop, from, said) {
   return { keeps, inside, plan, gone: inside.filter((w) => out.has(w.i)), folded };
 }
 
+// An opening longer than this is a second moment, not a line to open a short with
+export const OPENING_LONGEST = 10;
+
+// What prepare says when the moment, as cut, is longer than the limit it was found for
+// (`estimate`: its words without what is left out, before best-takes shortens its pauses)
+export function lengthNote(estimate, limit) {
+  if (!(estimate > limit)) return null;
+  return `⚠ Without what is left out the moment is still about ${Math.round(estimate)} s of words, over the ${limit} s a short may be here: drop more of it (rm -r the clip's takes/, then prepare again with a longer --drop), run moments again with a higher --max-seconds where the platforms take it, or choose another moment. check says so until it fits; never publish it over the limit.`;
+}
+
 // What prepare says of a drop: what is left out, truthfully, and what stays and why
 export function dropNote(plan, gone, folded, keeps, sentences) {
   const lines = [];
@@ -254,8 +264,12 @@ export function openingKeep(line) {
 
 // What prepare prints for the strongest line (sentence `k`, its words in the clip `line`, from
 // sentenceWords): the keep to put first, or why there is none
-export function openingNote(line, k) {
+export function openingNote(line, k, { first = null, estimate = 0, limit = Infinity } = {}) {
   if (!line.length) return `No word of the strongest line (sentence ${k}) was heard in the clip: look for it in the brief.`;
+  if (k === first) return `The strongest line (sentence ${k}) is the moment's first sentence: it opens the short already, so no opening keep.`;
+  const long = line.at(-1).end - line[0].start;
+  if (long > OPENING_LONGEST) return `The strongest line (sentence ${k}) takes ${long.toFixed(1)} s: too long to open a short with (at most ${OPENING_LONGEST} s), so no opening keep; the hook card instead.`;
+  if (estimate + long > limit) return `The strongest line (sentence ${k}, ${long.toFixed(1)} s) would bring the short to about ${Math.round(estimate + long)} s, over the ${limit} s: no opening keep unless the moment is shortened first; the hook card instead.`;
   const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
   const fused = CONJUNCTIONS.has(firstWord(line[0].text)) && line.length > 1
     ? ` It begins on "${line[0].text}": start a word later only where the brief shows the next word heard on its own (an "and I" is often one sound).` : "";
@@ -320,7 +334,8 @@ export function shape(m, first, last, sentences, limit, more = {}) {
     first, last, kind: KINDS.includes(m.kind) ? m.kind : "claim", title: m.title || "", why: m.why || "",
     opens, payoff, hook: m.hook || "", crosstalk: !!m.crosstalk, drop,
     start: +s0.start.toFixed(1), end: +s1.end.toFixed(1), seconds, kept: Math.round(s1.end - s0.start - gone),
-    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null, stays: plan.stays.map(([k]) => k), refused, trimmed: cutAt },
+    checks: { ...checks(sentences, first, last, limit), asked: asked != null && asked < first ? asked : null, stays: plan.stays.map(([k]) => k), refused, trimmed: cutAt,
+      still: Math.max(0, Math.round(s1.end - s0.start - gone) - limit) },
     ...rest,
   };
 }
@@ -368,7 +383,8 @@ export function checkNotes(m, limit) {
     c.asked != null ? `answers the question at sentence ${c.asked} just before it: start there when the question belongs to it` : null,
     c.conjunction ? "opens on a conjunction in the middle of a turn: read the sentence before it" : null,
     c.voices > 1 ? `${c.voices} voices` : null,
-    c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop") : null,
+    c.over ? `${c.over} s over the ${limit}: ` + (m.drop.length ? `${m.kept} s without the sentences ${ranges(m.drop)}` : "no sentence marked to drop")
+      + (c.still ? `, still ${c.still} s over: drop more of it, run moments again with a higher --max-seconds where the platforms take it, or take another moment; never one over the limit` : "") : null,
     c.trimmed ? `the model's passage ran to sentence ${c.trimmed.from}, over ${longest(limit)} s: its end was cut back to ${m.last}; read where it really ends${c.trimmed.payoff != null ? `, the strongest line it named (${c.trimmed.payoff}) lies past it` : ""}` : null,
     c.refused?.length ? `the model marked ${ranges(c.refused)} to drop, more than half of it: not taken` : null,
     c.stays?.length ? `marked to drop but another voice speaks over ${c.stays.length > 1 ? "them" : "it"}, so ${c.stays.length > 1 ? "they stay" : "it stays"}: ${ranges(c.stays)}` : null,

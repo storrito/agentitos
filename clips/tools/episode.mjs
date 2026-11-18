@@ -364,9 +364,10 @@ const withLinks = (list, sentences, episode) => list.map((m) => ({ ...m, opening
 function report(dir, episode, sentences, j, cost) {
   const pieces = Object.values(j.inventory || {}).reduce((a, b) => a + (Number(b) || 0), 0);
   console.log(listing(j, sentences, pieces));
-  const over = j.moments.filter((m) => m.checks.over).length;
+  const over = j.moments.filter((m) => m.checks.over).length, still = j.moments.filter((m) => m.checks.still).length;
   console.log(`${j.moments.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${cost.toFixed(4)}. `
-    + (over ? `${over} are whole passages longer than ${j.limit} s: where the platforms allow it, run moments again with a higher --max-seconds; else leave their marked sentences out (clips.mjs prepare … --drop <sentences>). ` : "")
+    + (over ? `${over} ${over === 1 ? "is a whole passage" : "are whole passages"} longer than ${j.limit} s: where the platforms allow it, run moments again with a higher --max-seconds; else leave their marked sentences out (clips.mjs prepare … --drop <sentences>). ` : "")
+    + (still ? `${still} ${still === 1 ? "is" : "are"} still over ${j.limit} s without ${still === 1 ? "its" : "their"} marked sentences: drop more, raise --max-seconds where every platform chosen takes it, or offer other moments; never one over the limit. ` : "")
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
 }
 
