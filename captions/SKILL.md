@@ -1,12 +1,12 @@
 ---
 name: captions
-description: Burn word-timed captions (Hormozi, karaoke pill, wipe, clean) into a video, key words in colour, clear of the apps' buttons, previewed then rendered with an .srt; also other skills' captions step.
+description: Burn word-timed captions into a video in one of twelve styles (Hormozi, bold words, impact, karaoke, label, editorial, subtitles …), key words in colour, clear of the apps' buttons, previewed then rendered with an .srt; also other skills' captions step.
 license: MIT
 metadata:
   title: "Captions"
   title-de: "Untertitel"
-  summary: "Captions for your video, word by word in the rhythm of the speech: Hormozi, karaoke, wipe or clean, the key words in colour."
-  summary-de: "Untertitel für dein Video, Wort für Wort im Takt der Sprache: Hormozi, Karaoke, Wipe oder schlicht, die wichtigen Wörter in Farbe."
+  summary: "Captions for your video, word by word in the rhythm of the speech, in one of twelve styles from loud Hormozi capitals to quiet subtitles, the key words in colour."
+  summary-de: "Untertitel für dein Video, Wort für Wort im Takt der Sprache, in einem von zwölf Stilen von lauten Hormozi-Versalien bis zu ruhigen Untertiteln, die wichtigen Wörter in Farbe."
   ask: "Upload a video with someone speaking. I put the words on it as they are said, in the style you pick, the key words in colour. You see a preview first."
   ask-de: "Lade ein Video hoch, in dem jemand spricht. Ich setze die Wörter so ins Bild, wie sie gesagt werden, im Stil deiner Wahl, die wichtigen Wörter in Farbe. Du siehst zuerst eine Vorschau."
   placeholder: "Upload a video"
@@ -27,19 +27,31 @@ Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` (where the ap
 
 The person attaches a video, named in their message as `video: uploads/<file>`. Files: `captions/<name>/` (`<name>` a short slug of the topic: lowercase letters, digits, dashes). Artifacts: the project `artifacts/<name>/`, at the end `artifacts/<name>.mp4` and `artifacts/<name>.srt`. Messages: one or two sentences and a hiccup block, in the person's language.
 
-1. **The words.** `node <skill>/tools/captions.mjs transcribe uploads/<file> captions/<name>/words.json`. Read them: fix a misspelt name (the product, a person) in `words.json` yourself, keeping the times.
-2. **The style.** Ask which one, one button each (`node <skill>/tools/captions.mjs styles` lists them): **Hormozi** (one to three big words in capitals, the word being said in colour, for punchy reels), **Karaoke pill** (the word being said on a coloured pill), **Wipe** (each word wiped in, said words dim), **Clean subtitles** (whole phrases on a soft box, for explainers and interviews). Say in a sentence which fits the video's tone, but mark none as recommended. A brand kit (`brand/DESIGN.md` in the working directory) gives its colour and font: say so.
+1. **The words.** `node <skill>/tools/captions.mjs transcribe uploads/<file> captions/<name>/words.json`. Read them: fix a misspelt name (the product, a person) in `words.json` yourself, keeping the times. A word too long for a line (a German compound of some 16 letters or more) is set smaller than the rest: put a soft hyphen (`\u00ad`) into its text where it may break ("Verwaltungs\u00adwissenschaft"), and it breaks there with a hyphen instead.
+2. **The style.** Read `<skill>/references/styles.md` before asking: what each of the twelve styles looks like and which ones videos of this kind carry. Copy `<skill>/references/styles.jpg` (every style on the same frame) to `uploads/caption-styles.jpg` and ask which one with the block under "UI in the chat": the picture, one button a style in three rows. Say in a sentence which styles videos of this kind usually carry (a podcast clip, a talking head, a screen with a face, a narrated video), but mark none as recommended. A brand kit (`brand/DESIGN.md` in the working directory) gives its colour and font: say so.
 3. **The key words.** `node <skill>/tools/captions.mjs mark captions/<name>/words.json` (`--product "<name>"` when the video is about a product): a model picks about one word in eight (numbers, names, the key word of a claim, a call to action). Check its choice; set `"highlight": true` in `words.json` where it missed one.
    **Cards, only when they are asked for.** A spoken phrase can stand as a card of its own: a box, an emoji in front, its numbers in colour, on screen while it is said. `node <skill>/tools/captions.mjs box captions/<name>/words.json "📏 32 centimetres wide" "🛰️ Space Station"`: the phrases as they are said, two to four words, an emoji in front when one fits; `--clear` takes them away. Only when the person asks for cards or boxes (or the skill you work for does): captions without them are the rule, and never every key word a card. One or two a quarter minute at most.
 4. **The preview.** Make the project once with the `project` tool: `create`, name `<name>`, kind `hyperframes`. Then
    ```
    node <skill>/tools/captions.mjs project uploads/<file> captions/<name>/words.json artifacts/<name>/composition --style <style> [--brand brand/DESIGN.md]
    ```
-   The video becomes the host composition, the captions a sub-composition (`composition/captions/`), placed for any frame from 16:9 to 9:16, clear of what the apps lay over it; the player beside the chat reloads by itself. When the person said where the video goes, add `--platform reels` (or `tiktok`, `shorts`, `story`, several with commas); otherwise the frame's usual platforms count together, and the tool says which. For another frame than the video's (a wide video for a reel): `--size 1080x1920` with `--fit cover` (fill, cut at the edges) or `--fit contain` (bars), and say which. Ask whether it is right: "Looks good" (`:class "primary"`), "Another style", "Change words", and the button that shows the preview.
-5. **Changes.** Another style, key word, card or spelling: change `words.json` (or `box` again) or the option and run `project` again.
+   The video becomes the host composition, the captions a sub-composition (`composition/captions/`), placed for any frame from 16:9 to 9:16, clear of what the apps lay over it; the player beside the chat reloads by itself. When the person said where the video goes, add `--platform reels` (or `tiktok`, `shorts`, `story`, several with commas); otherwise the frame's usual platforms count together, and the tool says which. For another frame than the video's (a wide video for a reel): `--size 1080x1920` with `--fit cover` (fill, cut at the edges) or `--fit contain` (bars), and say which. Ask whether it is right: "Looks good" (`:class "primary"`) and "Show the preview ↗" (`:open "artifacts/<name>"`; a button that opens an artifact ends its text with " ↗"); under them one line: for another style or other key words they name it ("Impact instead", "Storrito in colour").
+5. **Changes.** Another style, key word, card or spelling: change `words.json` (or `box` again) or the option and run `project` again. Another place for the captions: "Where the captions go" below.
 6. **The video.** After their yes: the `render` tool with `<name>` makes `artifacts/<name>.mp4`; then `node <skill>/tools/captions.mjs srt captions/<name>/words.json artifacts/<name>.srt` writes the subtitles for the platforms' own captions. Say in one sentence that it is ready, with the download links.
 
 `remember` the style and product name the person chose and use them for the next video without asking.
+
+## Where the captions go
+
+`build` and `project` set the captions where the apps leave room: the lowest line on the bottom of the platforms' safe box, centred on the frame, in the style's size, two lines at most. The tool never looks at the picture and never chooses another place. A caller that knows a better one (the person names it, you saw it on a frame of the video, a skill laid the frame out) says where, in px of the frame. Each option alone or with the others; what is not given stays as above:
+
+- `--y <px>`: the y, counted from the frame's top, at which the lowest line ends. Needed when the safe box's bottom lies on what must be seen: in a close selfie it is the chin, and the free picture is the wall above the head.
+- `--x <px>` and `--max-width <px>`: where the captions' area starts from the left and how wide it is. Needed when the free area lies at one side: the speaker as a tall panel on the left of a 16:9 frame, a screen beside the face. `--max-width` alone stays centred on the frame; `--x` alone reaches to the right edge of the platforms' centred box.
+- `--align left|centre|right`: the lines inside that area. Left (or right) when the area begins beside something, so that every group starts at the same edge; for captions centred on the frame, leave it out.
+- `--font-size <px>`: the type's size instead of the style's (`--size` is the frame's size). Needed when the area is much larger or smaller than the strip the styles are made for: the free half of a wide frame carries type twice as large. In a width, in lines or at a size of your own the groups are cut so that each stands in its lines at the type's size; a word wider than a line stands alone and smaller (with a short word beside it that would only flash by), and the tool names it: give more width or a smaller size when it matters.
+- `--lines 1|2`: one line when the area is low: a strip of wall above a head, a bar under a screen.
+
+The tool answers where it put them and whether that is inside the safe box of the platforms; a line that begins with `!` says how far the area leaves it (or the frame) and what the apps lay there. It builds all the same: the place is the caller's. The area holds a style's box whole, its padding too. A card (`box`) is never cut to an area: it keeps its words together and may take another line.
 
 ## Captions for another skill
 
@@ -53,17 +65,31 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 - The button that moves on gets `:class "primary"`; alternative answers (the styles) stay plain.
 - Never a token, a `captions/` path or a raw error in the chat.
 
-The style:
+The style (the rows as in the picture; the last line is yours: what videos of this kind usually carry):
 
 ```hiccup
 [:div
  [:p "Which style should the captions have?"]
- [:button {:send "Captions in the Hormozi style"} "Hormozi"] " "
- [:button {:send "Captions as a karaoke pill"} "Karaoke pill"] " "
- [:button {:send "Captions with a wipe"} "Wipe"] " "
- [:button {:send "Clean subtitles"} "Clean"]
- [:p [:small "Hormozi: big words in capitals, for punchy reels. Karaoke: the word being said on a pill. Wipe: words wiped in as they are said. Clean: whole phrases on a soft box."]]]
+ [:img {:src "uploads/caption-styles.jpg" :alt "The twelve caption styles on the same frame" :style {:max-width "100%"}}]
+ [:p [:small "Loud"] [:br]
+  [:button {:send "Captions in the style Hormozi"} "Hormozi"] " "
+  [:button {:send "Captions in the style Outline"} "Outline"] " "
+  [:button {:send "Captions in the style Impact"} "Impact"] " "
+  [:button {:send "Captions in the style One word"} "One word"]]
+ [:p [:small "Following the voice"] [:br]
+  [:button {:send "Captions in the style Karaoke pill"} "Karaoke pill"] " "
+  [:button {:send "Captions in the style Karaoke fill"} "Karaoke fill"] " "
+  [:button {:send "Captions in the style Wipe"} "Wipe"] " "
+  [:button {:send "Captions in the style Label"} "Label"]]
+ [:p [:small "Calm"] [:br]
+  [:button {:send "Captions in the style Bold words"} "Bold words"] " "
+  [:button {:send "Captions in the style Editorial"} "Editorial"] " "
+  [:button {:send "Captions in the style Plain subtitles"} "Plain subtitles"] " "
+  [:button {:send "Captions in the style Clean subtitles"} "Clean subtitles"]]
+ [:p [:small "Podcast clips mostly carry Bold words or Impact. Something else in mind? Describe it."]]]
 ```
+
+The styles' names stay as they are in every language. What `--style` takes for each: Hormozi `hormozi`, Outline `outline`, Impact `impact`, One word `single`, Karaoke pill `karaoke`, Karaoke fill `fill`, Wipe `wipe`, Label `label`, Bold words `bold`, Editorial `editorial`, Plain subtitles `subtitle`, Clean subtitles `clean`.
 
 ## Rules
 

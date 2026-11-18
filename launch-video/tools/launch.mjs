@@ -10,8 +10,13 @@
 //   node tools/launch.mjs zones <work> [platform…]        the zones of the film's frame → <work>/zones.json
 //        [--frame 9:16 | --size 1080x1920]                (and the platforms and size → <work>/launch.json)
 //   node tools/launch.mjs check <work> <composition>      text under the apps' buttons and bars, with
-//                                                         when and where (HyperFrames' check, per band)
+//                                                         when and where (HyperFrames' check, per band),
+//                                                         and how far under the voice the music sits
 //   node tools/launch.mjs draw <work> <stills-folder>     the zones drawn over every still → <folder>/zones/
+//   node tools/launch.mjs board <work> <stills-folder> [--out <file>]   the posed stills as one sheet
+//                                                         for the chat, in film order, each with its
+//                                                         number, name and time from <work>/STORYBOARD.md
+//                                                         → uploads/<work's name>-board.jpg
 //   node tools/launch.mjs voices [--model <id>]           the speech models, their price and voices
 //   node tools/launch.mjs sample <work> --text "…" --voices a,b [--model <id>] [--out <folder>]
 //                                                         one line in a few voices, to choose by ear
@@ -19,11 +24,13 @@
 //                                                         assets/voice/<id>.mp3, its words timed → <work>/voice.json
 //   node tools/launch.mjs words <work> <composition>      the voice's words at their times in the film,
 //                                                         as the film's <audio> places the lines → <work>/words.json
-//   node tools/launch.mjs captions <work> <composition> --style hormozi|karaoke|wipe|clean [--mark]
+//   node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
 //                                                         the captions (agentitos' captions skill) in
 //                                                         <composition>/captions, and the line that mounts them
-//   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30   music (Lyria 3)
-//                                                         → <composition>/assets/music.mp3, faded at its end
+//   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--under 17]   music
+//                                                         (Lyria 3) → <composition>/assets/music.mp3, faded
+//                                                         at its end, and its <audio> with the volume that
+//                                                         lays it 17 LU under the voice, both measured
 //   node tools/launch.mjs image <out.png> --prompt "…" [--ratio 9:16] [--ref <image>…]   a picture
 //   node tools/launch.mjs finish <video.mp4>              the rendered video at −14 LUFS, the loudness
 //                                                         the platforms play at (in place)
@@ -43,6 +50,7 @@ import { zonesTool, platformList } from "./lib/zones.mjs";
 import { post, postAudio, streamAudio } from "./lib/openrouter.mjs";
 import { align } from "./lib/align.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
+import { loudness, musicVolume, distance, inFilm } from "./lib/level.mjs";
 
 const SKILL = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fail = (msg) => { console.error(msg); process.exit(1); };
@@ -56,6 +64,8 @@ const SPEECH_MODEL = "elevenlabs/eleven-v3";
 const SPEECH_VOICE = "sarah";
 const MUSIC_MODELS = { clip: "google/lyria-3-clip-preview", pro: "google/lyria-3-pro-preview" };
 const IMAGE_MODEL = "google/gemini-3.1-flash-image";
+// LU the music lies under the voice: what HyperFrames' sound guide's 0.14 means for two equally loud files
+const UNDER = 17;
 
 // options that take no value
 const FLAGS = ["mark", "vocals", "json"];
@@ -138,6 +148,8 @@ function cmdGuides() {
     ["references/types/vertical.md", "a vertical clip (its zone numbers: take platform-zones' instead)"],
     ["references/story.md", "the one thing, three storylines, the hook, the beats"],
     ["references/spec.md", "SPEC.md: every adjective a number; BANNED by default"],
+    ["references/storyboard.md", "every beat posed as a still for the person's go, before animating"],
+    ["references/storyboard-format.md", "STORYBOARD.md: the frames, their names and times"],
     ["references/look.md", "the look"], ["references/motion.md", "motion, transitions, the camera"],
     ["references/format.md", "scenes, attributes, media, fonts"], ["references/sound.md", "music, effects, levels"],
     ["references/review.md", "the review and REVIEW.md"],
@@ -247,6 +259,9 @@ function cmdCheck(work, composition) {
   if (!root.duration) fail(`✗ The root of ${rel(root.file)} has no data-duration.`);
   const cli = hyperframesCli();
   if (!cli) fail("✗ No HyperFrames CLI on this machine: the operator installs it.");
+  // the sound first: it is measured in seconds, the text takes minutes
+  const sound = soundLine(composition, work);
+  if (sound) console.log(`${sound}\n`);
   // a sample every quarter of a second, as fractions of the film
   const step = Math.max(0.25, root.duration / 400);
   const seek = Array.from({ length: Math.floor(root.duration / step) + 1 }, (_, k) => +Math.min(1, (k * step) / root.duration).toFixed(5)).join(",");
@@ -313,6 +328,36 @@ function cmdCheck(work, composition) {
   } else console.log(`\nA ! may stay when the layout needs it (centred, bigger): the margin is a buffer for other phones. Pull it in when it costs nothing.`);
 }
 
+const lufs = (x) => x.toFixed(1).replace("-", "−");
+const lu = (x) => (Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1));
+
+// how far under the voice the music sits, as the root places both (each <audio> at its
+// data-volume): measured, so a music bed laid before the voice, or a voice or music changed since,
+// shows here. Nothing when the film has no music.
+export function soundLine(composition, work) {
+  try { return soundOf(composition, work); } catch (e) { return `! Sound: not measured (${e.message}).`; }
+}
+
+function soundOf(composition, work) {
+  const { music, voice } = inFilm(composition);
+  if (!music) return null;
+  if (!fs.existsSync(music.file)) return `✗ Sound: the music's file ${music.src} is not there.`;
+  const m = loudness([music.file]);
+  if (m == null) return `! Sound: the music ${music.src} is silent.`;
+  const placed = voice.filter((v) => fs.existsSync(v.file));
+  const spoken = work ? (readJson(path.join(work, "voice.json"), {}).lines || []).length : 0;
+  if (!voice.length && spoken) return `! Sound: ${rel(path.join(work, "voice.json"))} has ${spoken} line${spoken > 1 ? "s" : ""} of a voice, but the root places none (<audio id="vo-<id>" src="assets/voice/<id>.mp3">): nothing to measure the music against.`;
+  if (!placed.length) return `Sound: the music plays without a voice${voice.length ? ` (the voice's files are not there: ${voice.map((v) => v.src).join(", ")})` : ""}, at data-volume ${music.volume}: ${lufs(m + 20 * Math.log10(music.volume || 1e-9))} LUFS in the film (${lufs(m)} as made).`;
+  const v = loudness(placed);
+  if (v == null) return `! Sound: the voice (${placed.length} line${placed.length > 1 ? "s" : ""}) is silent.`;
+  if (!(music.volume > 0)) return `! Sound: the music is placed at data-volume ${music.volume}: it is not heard.`;
+  const d = distance(v, m, music.volume), want = music.under || UNDER, fit = musicVolume(v, m, want);
+  const numbers = `the voice at ${lufs(v)} LUFS as placed (${placed.length} line${placed.length > 1 ? "s" : ""}), the music at ${lufs(m)} as made, at data-volume ${music.volume}`;
+  if (Math.abs(d - want) <= 1) return `Sound: the music sits ${lu(d)} LU under the voice (${numbers}). Measured, not heard: say so.`;
+  if (fit.bound && Math.abs(music.volume - fit.volume) < 0.0005) return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): ${fit.volume} is the ${fit.bound} volume here; for ${want} LU, music ${fit.bound === "highest" ? "louder" : "quieter"} of its own (\`music\` again).`;
+  return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): its volume was set before the voice, or the voice or the music changed since. Set data-volume="${fit.volume}" on <audio id="music">${fit.bound ? ` (the ${fit.bound} volume here: it then sits ${lu(fit.under)} LU under)` : ""} and run check again. Another distance on purpose: data-under-voice="<LU>" on it.`;
+}
+
 function cmdDraw(work, folder) {
   if (!work || !folder) fail(`Usage: ${cmd("draw <work> <stills-folder>")}`);
   const z = zonesOf(work);
@@ -332,6 +377,135 @@ function cmdDraw(work, folder) {
     if (r.status) fail(`✗ ${(r.stderr || r.stdout).trim()}`);
   }
   console.log(`${rel(out)}/: ${stills.length} still${stills.length > 1 ? "s" : ""} with the zones of ${z.platforms.map((p) => p.name).join(", ")} drawn (red: covered, green: safe, yellow: where a feed crops). Look at each: a word in a picture, a face, the product's button under red is to move.`);
+}
+
+// ------------------------------------------------------------------------------- the board
+
+// the frames of a STORYBOARD.md (HyperFrames' format): `## Frame 1: The hook (0-3s)` or
+// `## Frame 1 — The hook` with `- duration: 3s` (Beat and Scene too, at H2 or H3), in its order,
+// each with its name and its range in seconds when the file gives one
+export function storyboardFrames(text) {
+  const frames = [];
+  for (const line of String(text).split("\n")) {
+    const h = line.match(/^#{2,3}\s+(?:Frame|Beat|Scene)\s+(\d+)\b\s*[:—–-]?\s*(.*)$/i);
+    if (h) {
+      let name = h[2].trim(), range = null;
+      const r = name.match(/\(\s*(\d+(?:\.\d+)?)\s*s?\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*s?\s*\)\s*$/i);
+      if (r) { range = [Number(r[1]), Number(r[2])]; name = name.slice(0, r.index).trim(); }
+      frames.push({ number: Number(h[1]), name, range, duration: null });
+      continue;
+    }
+    const d = frames.length && line.match(/^\s*[-*]\s*duration\s*:\s*(\d+(?:\.\d+)?)\s*s?\s*$/i);
+    if (d) frames.at(-1).duration = Number(d[1]);
+  }
+  // a range from the durations where a heading gives none, as long as every frame before has one
+  let t = 0;
+  for (const f of frames) {
+    if (!f.range && f.duration != null && Number.isFinite(t)) f.range = [t, +(t + f.duration).toFixed(3)];
+    t = f.range ? f.range[1] : NaN;
+  }
+  return frames.map(({ duration, ...f }) => f);
+}
+
+// the stills `hyperframes snapshot --at … --no-end` writes (frame-NN-at-<seconds>s.png), in film
+// order by their number, with their moment
+export function boardStills(folder) {
+  if (!folder || !fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) return [];
+  return fs.readdirSync(folder)
+    .map((file) => ({ file, m: file.match(/^frame-(\d+)-at-(\d+(?:\.\d+)?)s\.(png|jpe?g)$/i) }))
+    .filter((s) => s.m)
+    .map(({ file, m }) => ({ file, index: Number(m[1]), at: Number(m[2]) }))
+    .sort((a, b) => a.index - b.index || a.at - b.at);
+}
+
+// the sheet: about a phone picture wide (1080 px), three tiles a row for a vertical film, two for
+// any other; each tile its still with a label band under it. Every box in the picture's pixels.
+export function boardLayout(n, still, { width = 1080, labels = true } = {}) {
+  const tall = still[1] > still[0];
+  const cols = Math.max(1, Math.min(n, tall ? 3 : 2)), rows = Math.ceil(n / cols);
+  const margin = 12, gap = 12;
+  const even = (x) => 2 * Math.floor(x / 2);
+  const tw = even((width - 2 * margin - cols * 2 * gap) / cols);
+  const th = even((tw * still[1]) / still[0]);
+  const name = Math.max(18, Math.min(40, Math.round(tw * 0.085))), time = Math.round(name * 0.8);
+  const band = labels ? even(name + time + 30) : 0;
+  const cell = [tw + 2 * gap, th + band + 2 * gap];
+  const tiles = Array.from({ length: n }, (_, i) => {
+    const x = margin + (i % cols) * cell[0] + gap, y = margin + Math.floor(i / cols) * cell[1] + gap;
+    return { still: [x, y, tw, th], label: [x, y + th, tw, band] };
+  });
+  return { cols, rows, tile: [tw, th], band, font: { name, time }, cell, size: [2 * margin + cols * cell[0], 2 * margin + rows * cell[1]], tiles };
+}
+
+// a sans-serif bold for the labels, when this ffmpeg can draw text at all (as publish-video's sheet)
+function labelFont() {
+  const filters = spawnSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" }).stdout || "";
+  if (!/\sdrawtext\s/.test(filters)) return null;
+  const fc = spawnSync("fc-match", ["-f", "%{file}", "sans:bold"], { encoding: "utf8" });
+  const found = fc.status === 0 && fc.stdout.trim();
+  return [found, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"].find((f) => f && fs.existsSync(f)) || null;
+}
+
+const secs = (x) => String(+Number(x).toFixed(2));
+const frameTime = (f, s) => (f?.range ? `${secs(f.range[0])}–${secs(f.range[1])} s` : `at ${secs(s.at)} s`);
+
+function cmdBoard(work, folder, opts) {
+  if (!work || !folder) fail(`Usage: ${cmd("board <work> <stills-folder> [--out uploads/<name>-board.jpg]")}`);
+  if (!fs.existsSync(folder)) fail(`✗ There is no ${rel(folder)}: pose every beat, then snapshot them in one run (\`${cliCommand()} snapshot <composition> --at <every beat's moment> --no-end -o ${rel(folder)}\`).`);
+  const stills = boardStills(folder);
+  if (!stills.length) fail(`✗ No stills (frame-NN-at-<seconds>s.png) in ${rel(folder)}: snapshot every beat in one run (\`${cliCommand()} snapshot <composition> --at <every beat's moment> --no-end -o ${rel(folder)}\`).`);
+  const sbFile = path.join(work, "STORYBOARD.md");
+  const frames = fs.existsSync(sbFile) ? storyboardFrames(fs.readFileSync(sbFile, "utf8")) : null;
+  if (frames && frames.length && frames.length !== stills.length) fail(`✗ ${rel(sbFile)} has ${frames.length} frames, ${rel(folder)} ${stills.length} still${stills.length > 1 ? "s" : ""}: snapshot every frame's moment in one run, in film order, or make the frames of STORYBOARD.md the ones you posed.`);
+  const named = frames && frames.length ? frames : null;
+  const out = opts.out ? String(opts.out) : path.join("uploads", `${path.basename(path.resolve(work))}-board.jpg`);
+  const v = probe(path.join(folder, stills[0].file)).streams.find((x) => x.codec_type === "video");
+  if (!v?.width || !v?.height) fail(`✗ ${stills[0].file} is no picture ffmpeg can read.`);
+  const font = labelFont();
+  const L = boardLayout(stills.length, [v.width, v.height], { labels: !!font });
+  const [tw, th] = L.tile;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "launch-board-"));
+  // the light page of HyperFrames' board: dark words on a pale ground
+  const page = "0xF4F4F5", ink = "0x18181B", grey = "0x52525B";
+  const esc = (p) => p.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/:/g, "\\:").replace(/,/g, "\\,");
+  // a name longer than its tile: cut, with an ellipsis (the letters about 0.6 of the size wide)
+  const fit = (s, size) => { const max = Math.floor(tw / (size * 0.6)); return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s; };
+  try {
+    const inputs = [], parts = [];
+    stills.forEach((s, i) => {
+      inputs.push("-i", path.join(folder, s.file));
+      let label = "";
+      if (font) {
+        const f = named?.[i];
+        const title = path.join(tmp, `${i}-name.txt`), time = path.join(tmp, `${i}-time.txt`);
+        fs.writeFileSync(title, fit(`${String(i + 1).padStart(2, "0")}${f?.name ? `  ${f.name}` : ""}`, L.font.name));
+        fs.writeFileSync(time, frameTime(f, s));
+        const text = (file, size, color, y) => `,drawtext=fontfile='${esc(font)}':textfile='${esc(file)}':expansion=none:fontsize=${size}:fontcolor=${color}:x=0:y=${y}`;
+        label = `,pad=${tw}:${th + L.band}:0:0:color=${page}${text(title, L.font.name, ink, th + 10)}${text(time, L.font.time, grey, th + 16 + L.font.name)}`;
+      }
+      parts.push(`[${i}:v]scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:color=${page},setsar=1,format=rgb24,drawbox=x=0:y=0:w=iw:h=ih:color=0xD4D4D8:t=2${label},pad=${L.cell[0]}:${L.cell[1]}:${(L.cell[0] - tw) / 2}:${(L.cell[1] - th - L.band) / 2}:color=${page}[c${i}]`);
+    });
+    // empty cells fill the last row
+    for (let i = stills.length; i < L.rows * L.cols; i++) {
+      inputs.push("-f", "lavfi", "-i", `color=c=${page}:s=${L.cell[0]}x${L.cell[1]}:d=0.1`);
+      parts.push(`[${i}:v]trim=end_frame=1,format=rgb24[c${i}]`);
+    }
+    for (let r = 0; r < L.rows; r++) parts.push(L.cols > 1 ? `${Array.from({ length: L.cols }, (_, c) => `[c${r * L.cols + c}]`).join("")}hstack=inputs=${L.cols}[r${r}]` : `[c${r}]null[r${r}]`);
+    parts.push(`${L.rows > 1 ? `${Array.from({ length: L.rows }, (_, r) => `[r${r}]`).join("")}vstack=inputs=${L.rows}` : "[r0]null"},pad=${L.size[0]}:${L.size[1]}:12:12:color=${page},format=yuvj420p[out]`);
+    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+    fs.rmSync(out, { force: true });
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs, "-filter_complex", parts.join(";"), "-map", "[out]", "-frames:v", "1", "-q:v", "3", out], { encoding: "utf8" });
+    if (r.status || !fs.existsSync(out)) fail(`✗ ffmpeg made no board: ${(r.stderr || "").trim().split("\n").pop()}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  console.log(`${rel(out)}: ${stills.length} still${stills.length > 1 ? "s" : ""} of ${v.width}×${v.height} in film order, ${L.cols} a row (${L.size.join("×")}):`);
+  stills.forEach((s, i) => {
+    const f = named?.[i];
+    const off = f?.range && (s.at < f.range[0] || s.at > f.range[1]) ? `   ! its moment ${secs(s.at)} s lies outside the frame's ${frameTime(f, s)}` : "";
+    console.log(`  ${String(i + 1).padStart(2, "0")}  ${(f?.name || "").padEnd(28)} ${frameTime(f, s).padEnd(12)} ${s.file}${off}`);
+  });
+  if (!named) console.log(`! ${frames ? `${rel(sbFile)} has no "## Frame N: <name> (<from>-<to>s)" headings` : `No ${rel(sbFile)}`}: the tiles carry their number and moment, no name. Write the frames there and run board again.`);
+  if (!font) console.log(`! This ffmpeg cannot draw text (no drawtext): the tiles carry no labels. Name them in your message, row by row, as listed above.`);
+  console.log(`Look at it yourself first. Then show it in the chat (an <img> of ${out.split(path.sep).join("/")}) and stop until they say go. A note on a frame changes only that frame: re-pose it, snapshot its moment alone into ${rel(path.join(folder, "redo"))}/, move that still over the frame's old one (the new time in its name if it moved), and run board again.`);
 }
 
 // ------------------------------------------------------------------------------- the voice
@@ -513,7 +687,7 @@ function captionsTool() {
 }
 
 function cmdCaptions(work, composition, opts) {
-  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style hormozi|karaoke|wipe|clean [--mark] [--product <name>] [--brand brand/DESIGN.md]")}`);
+  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md]")}`);
   const tool = captionsTool();
   if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
   const file = cmdWords(work, composition);
@@ -542,9 +716,25 @@ function kindOf(bytes) {
   return null;
 }
 
+// the <audio> of the music and a sentence on its volume: measured against the voice's lines when
+// the film has a voice (launch-video's `voice` wrote them), else the guide's level without one
+export function musicElement(work, composition, out, len, under) {
+  const element = (volume, tail = "") => `<audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="${volume}"${tail} data-track-index="<n>">`;
+  const without = `In the root: ${element(0.6)} (about 0.6 without a voice; a voice made later: \`check\` says the volume that lays the music ${under} LU under it).`;
+  const lines = (readJson(path.join(work, "voice.json"), {}).lines || []).map((l) => path.join(composition, l.file)).filter((f) => fs.existsSync(f));
+  if (!lines.length) return without;
+  const v = loudness(lines), m = loudness([out]);
+  if (v == null || m == null) return `${without}\n  ! The ${v == null ? "voice" : "music"} is silent: nothing to measure the music's volume by.`;
+  const fit = musicVolume(v, m, under);
+  const bound = fit.bound ? `, the ${fit.bound} volume here, it sits ${lu(fit.under)} LU under it, not ${under} (that would need ${fit.need.toFixed(3)})` : ` it sits ${under} LU under it`;
+  return `In the root: ${element(fit.volume, ` data-under-voice="${under}"`)}. The voice is at ${lufs(v)} LUFS, the music at ${lufs(m)}: at ${fit.volume}${bound}. Moved, changed or another volume: \`check\` measures it as the film places it.`;
+}
+
 async function cmdMusic(work, composition, opts) {
   const seconds = Number(opts.seconds);
-  if (!work || !composition || !opts.prompt || !(seconds > 0)) fail(`Usage: ${cmd('music <work> <composition> --prompt "<the feel, the tempo, the instruments>" --seconds <the film\'s length>')}`);
+  if (!work || !composition || !opts.prompt || !(seconds > 0)) fail(`Usage: ${cmd('music <work> <composition> --prompt "<the feel, the tempo, the instruments>" --seconds <the film\'s length> [--under 17]')}`);
+  const under = opts.under == null ? UNDER : Number(opts.under);
+  if (!(under >= 3 && under <= 30)) fail(`✗ --under is how many LU the music lies under the voice, 3 to 30 (${UNDER} by default).`);
   const model = opts.model || (seconds <= 28 ? MUSIC_MODELS.clip : MUSIC_MODELS.pro);
   const prompt = `${opts.prompt}. ${opts.vocals ? "" : "Instrumental, no vocals. "}About ${Math.round(seconds)} seconds long, with a clear ending.`;
   console.log(`Composing with ${model} (a minute or two) …`);
@@ -563,7 +753,7 @@ async function cmdMusic(work, composition, opts) {
   const len = Math.min(long, seconds), fade = Math.min(1.5, len / 4);
   ffmpeg(["-i", raw, "-t", String(len), "-af", `afade=t=out:st=${(len - fade).toFixed(3)}:d=${fade.toFixed(3)}`, "-codec:a", "libmp3lame", "-b:a", "192k", out]);
   console.log(`${rel(out)}: ${len.toFixed(1)} s of ${long.toFixed(1)} s made${r.cost ? `, $${r.cost.toFixed(3)}` : ""}${long < seconds - 0.5 ? ` — shorter than the film by ${(seconds - long).toFixed(1)} s: loop it, end the film with it, or make it again` : ""}${r.text ? `\n  the model: "${r.text.slice(0, 200).replace(/\s+/g, " ")}"` : ""}
-The whole take is ${rel(raw)}. In the root: <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="0.14" data-track-index="<n>"> (0.14 under a voice, as HyperFrames' sound guide says; about 0.6 without one). Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`);
+The whole take is ${rel(raw)}. ${musicElement(work, composition, out, len, under)} Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`);
 }
 
 // ------------------------------------------------------------------------------- pictures
@@ -624,13 +814,16 @@ function cmdFinish(video) {
 
 // ------------------------------------------------------------------------------- main
 
+// run as a program; imported (by tools/test.mjs), it only lends its functions
 const [command, ...rest] = process.argv.slice(2);
 const [pos, opts] = parse(rest);
-try {
+const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
+if (isMain) try {
   if (command === "guides") cmdGuides();
   else if (command === "zones") cmdZones(pos[0], pos.slice(1), opts);
   else if (command === "check") cmdCheck(pos[0], pos[1]);
   else if (command === "draw") cmdDraw(pos[0], pos[1]);
+  else if (command === "board") cmdBoard(pos[0], pos[1], opts);
   else if (command === "voices") await cmdVoices(opts);
   else if (command === "sample") await cmdSample(pos[0], opts);
   else if (command === "voice") await cmdVoice(pos[0], pos[1], pos[2], opts);
@@ -639,7 +832,7 @@ try {
   else if (command === "music") await cmdMusic(pos[0], pos[1], opts);
   else if (command === "image") await cmdImage(pos[0], opts);
   else if (command === "finish") cmdFinish(pos[0]);
-  else fail(`${cmd("guides | zones <work> [platform…] | check <work> <composition> | draw <work> <stills> | voices | sample <work> | voice <work> <script.json> <composition> | words <work> <composition> | captions <work> <composition> | music <work> <composition> | image <out.png> | finish <video.mp4>")}   (options: the head of ${self()})`);
+  else fail(`${cmd("guides | zones <work> [platform…] | check <work> <composition> | draw <work> <stills> | board <work> <stills> | voices | sample <work> | voice <work> <script.json> <composition> | words <work> <composition> | captions <work> <composition> | music <work> <composition> | image <out.png> | finish <video.mp4>")}   (options: the head of ${self()})`);
 } catch (e) {
   fail(`✗ ${e.message}`);
 }

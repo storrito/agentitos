@@ -24,7 +24,7 @@ The look is the video's own: the speaker's footage, cut and framed, captions, at
 
 Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`). agentitos' `best-takes`, `captions`, `platform-zones`, `transcribe` and, for publishing, `publish-video` (with its `video-descriptions`) beside this one. Without OpenRouter nothing can be cut: say so. yt-dlp comes from the PATH or is downloaded once. When something is missing, say so in one sentence; never install it.
 
-Costs (measured on twelve episodes, November 2026): the episode's words 34 to 44 cents an hour, the moments 5 to 9 cents an hour, per clip about a cent to frame it and well under a cent for its words and captions.
+Costs: the episode's words about 22 cents an hour, twice that when the voices need the transcription's long requests; the moments 5 to 9 cents an hour (measured on twelve episodes, November 2026); per clip about a cent to frame it and well under a cent for its words and captions.
 
 ## From the long video to scheduled shorts, all in the chat
 
@@ -39,7 +39,7 @@ Say in one sentence that you listen to the whole video now and that it takes a f
 Ask this before the moments: the platforms set how long a moment may be. First `list-social-accounts` of the Storrito connection (rragent: `(storrito/list-social-accounts {})` in your REPL), only to know which apps are connected; `disconnected: true` counts as not there. The accounts themselves are picked when publishing (step 6). Then one block:
 
 1. **The platforms**: a checkbox per short-video app with a connected account ("Instagram Reel", "Instagram Story", "TikTok", "YouTube Short", …), all ticked but the Story. Keep them as platform-zones names them (`reels,story,tiktok,shorts,facebook-reels,spotlight,linkedin`): the captions and the hook keep clear of what those apps lay over the video.
-2. **The captions**: radio buttons, none ticked: **Hormozi** (one to three big words in capitals), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for interviews and explainers), or none. One button sends both (`:send "Platforms and captions: {checked}"`).
+2. **The captions**: radio buttons, none ticked: **Bold words** (two or three bold words, white, nothing behind them: what most podcast clips carry), **Impact** (tall narrow capitals, a caption that holds a key word in lime: the look of sports and podcast clips), **Hormozi** (one to three big words in capitals, the word being said in colour), **Karaoke pill**, **Wipe**, **Clean subtitles** (whole phrases on a soft box, for interviews and explainers), or none. One button sends both (`:send "Platforms and captions: {checked}"`). As `--style` they are `bold`, `impact`, `hormozi`, `karaoke`, `wipe`, `clean`; a person who names another look gets it from captions' other styles (`outline` heavy with a black outline, `single` one word at a time, `fill` words that fill as they are said, `label` a white box a line, `editorial` key words in a serif italic, `subtitle` phrases without a box).
 
 With a `brand/DESIGN.md` in your working directory (agentitos' brand-kit), its colour and font go into the captions and the hook: say so, do not ask.
 

@@ -5,6 +5,9 @@
 //   zones(width, height, platforms)  → { safe: [x, y, w, h], centred, wide, covers, crops,
 //                                        platforms, fallback, … } in px of the frame; no
 //                                        platforms: the usual ones of the frame together
+//   checkBox(width, height, platforms, box)  → what of a box [x, y, w, h] is clear:
+//                                        { inside, inWide, outside: { bottom: 70, … }, offFrame,
+//                                        covered: [{ what, platform, share }], … }
 //   platformList(value)              → "reels,tiktok" (an option) as ["reels", "tiktok"]
 
 import fs from "node:fs";
@@ -31,4 +34,14 @@ export function zones(width, height, platforms = []) {
   const z = JSON.parse(r.stdout);
   cache.set(key, z);
   return z;
+}
+
+// platform-zones' own check of a box: inside the safe box (or the wide stretch above the buttons),
+// or how far past which edge, and what the apps lay over it
+export function checkBox(width, height, platforms = [], box) {
+  const tool = zonesTool();
+  if (!tool) throw new Error("The platforms' zones need agentitos' platform-zones skill beside this one (or PLATFORM_ZONES naming its tools/zones.mjs).");
+  const r = spawnSync(process.execPath, [tool, "check", box.join(","), ...platforms, "--size", `${width}x${height}`, "--json"], { encoding: "utf8" });
+  if (r.status) throw new Error(`platform-zones: ${(r.stderr || r.stdout).trim()}`);
+  return JSON.parse(r.stdout);
 }

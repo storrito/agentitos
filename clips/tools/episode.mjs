@@ -7,7 +7,7 @@
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
 //   node tools/episode.mjs moments <dir> [--count N] [--max-seconds N]
 //        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (five to
-//        nine cents an hour), best first, each a whole passage: <dir>/moments.json and a short list
+//        nine cents an hour), in the order of the episode, each a whole passage: <dir>/moments.json and a short list
 //        to read. --max-seconds is how long a short may be (59: it fits every post type); a passage
 //        that is longer is returned whole, with the sentences that can go marked (`drop`)
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
@@ -19,13 +19,13 @@
 // A file instead of a link (an upload, a recording of the person's own) goes the same way: its
 // sound is written down as it is, its stretches are cut from it with ffmpeg.
 //
-// The words come from Gemini 3.5 Transcribe through OpenRouter, run by agentitos' transcribe skill
+// The words come from ElevenLabs Scribe through OpenRouter, run by agentitos' transcribe skill
 // beside this one (OPENROUTER_API_KEY or the Sprites gateway's OpenRouter connection, with
-// speakers, 34 to 44 cents an hour as measured on twelve episodes in November 2026, a minute or
-// two), else from the video's captions on YouTube (no speakers): without OpenRouter, or when the
-// transcription fails, and then fetch says so in its last line. A key that OpenRouter turns away
-// ends fetch at once: nothing after it would work. yt-dlp: the one on the PATH, else a copy
-// downloaded once into ~/.cache/agentitos/.
+// speakers, about 22 cents an hour, twice that when the voices need its long requests, a few
+// minutes; the noises it marks among the words are left out), else from the video's captions on
+// YouTube (no speakers): without OpenRouter, or when the transcription fails, and then fetch says
+// so in its last line. A key that OpenRouter turns away ends fetch at once: nothing after it would
+// work. yt-dlp: the one on the PATH, else a copy downloaded once into ~/.cache/agentitos/.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -138,7 +138,9 @@ const CAPTIONS_INSTEAD = (why) => `These are YouTube's captions, without voices,
 // a path that exists, not a link
 const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
 
-function writeEpisode(dir, facts, words, note = "") {
+function writeEpisode(dir, facts, heard, note = "") {
+  // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
+  const words = heard.filter((w) => w.kind !== "event");
   if (!words.length) fail("No words found: is there speech in it?");
   const sentences = sentencesOf(words);
   const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };
@@ -189,8 +191,9 @@ async function fetchEpisode(url, dir) {
     let audio = null;
     try {
       // the full-rate m4a (about 130 kbit/s): at about 50 kbit/s the download is a few seconds
-      // shorter, but the model's speakers fall apart, nine to thirteen voices where the full rate
-      // hears four (measured 2026-10-19)
+      // shorter, but Gemini's speakers fell apart there, nine to thirteen voices where the full
+      // rate heard four (measured 2026-10-19, when Gemini wrote the episode down; Scribe's at the
+      // lower rate are not measured)
       download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
       audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {
@@ -283,11 +286,12 @@ function cut(dir, a, b, c) {
 // channels' own editors cut them (clips-eval, 2026-11-17: their passages have a median of 60 s
 // in the episode, and they cut a median of 10 s of words out of the inside). The length a short
 // may have comes with --max-seconds; a passage up to 1.7 times that long is returned whole, with
-// the sentences that can go marked (`drop`). The model lists its moments as they come in the
-// episode and then orders them, best first, no two equal: a score of points out of 10 gave all
-// 77 moments of the first measurement 8 to 10 and ordered nothing. What can be counted (a
-// question at the start, a conjunction in the middle of a turn, the voices, the length against
-// the limit) the tool counts itself (`checks`). The model also counts what the episode holds
+// the sentences that can go marked (`drop`). The moments come in the order of the episode and
+// nothing ranks them: the old score (8 to 10 points for all 77 moments of the first measurement),
+// the model's own ranking and its rating of the first line (`opens`, which only settles which of
+// two overlapping moments stays) put the editors' picks no further ahead than chance. What can be
+// counted (a question at the start, the question just before it that it answers, a conjunction in
+// the middle of a turn, the voices, the length against the limit) the tool counts itself (`checks`). The model also counts what the episode holds
 // (claims, stories, numbers, mistakes, how-tos, answers, exchanges: under four in all it is too
 // thin for clips), writes an on-screen hook for a moment whose first line does not hook, names
 // the sentence with the strongest line (`payoff`), and the ideas spread too far over the episode
