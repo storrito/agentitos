@@ -104,6 +104,7 @@ The bottom of the safe box is wrong for some pictures: in a close selfie it is t
 ### The sub-composition (`tools/lib/render.mjs`)
 
 - `build` writes `<folder>/index.html` and prints the clip to put into the host composition: `<div id="captions" data-composition-id="captions" data-composition-src="captions/index.html" data-start="0" data-duration="…" data-track-index="9" data-track-kind="captions" data-width="…" data-height="…">`.
+- Beside it `<folder>/area.json` says where they stand, in px of the frame, as high as their lines can be: `{"left", "width", "top", "bottom", "size", "lines"}`. agentitos' b-roll reads it to lay its beats beside the person out around the captions, and moves the mount onto the band it keeps for them while such a beat shows.
 - The file follows the sub-composition rules of the HyperFrames core skill: everything the runtime needs (style, root, script) inside the `<template>`, the root styled by `#root`, the host slot, the root and the timeline all with the id `captions`.
 - The groups, words and times are written into the file. The script builds the words, waits for the fonts (`document.fonts.ready`), fits each group, then registers one paused GSAP timeline. Deterministic: no random, no clock.
 - Every group is set hidden at its end (`tl.set`), whatever its exit; an exit never starts before the last word is fully in and said.

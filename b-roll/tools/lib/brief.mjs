@@ -65,13 +65,22 @@ The video: ${width}×${height}, ${clock(duration)}, ${words.length} words.${bran
 6. **On the word, never before it.** \`"at"\` is the number of the word that names the thing:
    the beat starts as it is said. \`"until"\` is the last word it belongs to; without one it
    runs to the end of the sentence, 2–4 s (or \`"seconds"\`).
-7. **The frame.** \`"fill"\`: fills the frame, cut at its edges (photos and footage of about
-   the frame's shape). \`"whole"\`: all of it, over a blurred copy of itself (another shape; a
+7. **The frame.** \`"beside"\`: the frame is shared, the person stays in view: the material
+   above them (in a wide frame to their right), the person moved into the lower field (left
+   third), their face 18 % of the frame, the captions between them. For what is read or counted: numbers, pages,
+   posts, headlines. \`"fill"\`: fills the frame, cut at its edges, the person gone for the
+   beat (a cutaway that is the point: footage, a photo of about the frame's shape).
+   \`"whole"\`: all of it over the frame, over a blurred copy of itself (another shape; a
    product or a person that must not be cut). \`"read"\`: all of it inside the area the apps
-   leave free, over a blurred copy or the brand's colour (pages, posts, headlines, anything
-   with text). Without \`"fit"\` the tool takes fill or whole by the shape, and read for what
-   \`shot\` took.
-8. **Never** the speaker's own face as b-roll; never a picture with someone else's watermark,
+   leave free, over the whole frame. Without \`"fit"\` a number and what \`shot\` took go
+   beside, any other picture fill or whole by its shape; a number with \`"fit": "fill"\` is a
+   card over the whole frame.
+8. **The face.** For beats beside the person the tool needs where their face is:
+   \`node <b-roll>/tools/broll.mjs face <video> <file.jpg>\` shows a frame with a grid; write
+   \`"face": [x, y, width, height]\` (hairline to chin, cheek to cheek: the face, not the head; a box too large shows the person smaller; the video's own px) and the
+   \`"source"\` size it prints at the top of \`broll.json\`, once per video. Without it the face
+   is assumed in the upper third, in the middle; the sheet shows whether that holds.
+9. **Never** the speaker's own face as b-roll; never a picture with someone else's watermark,
    burned-in subtitles or a stranger's name; nothing the person may not use. Someone else's
    post or article gets \`"credit": true\` (the source in small type at the bottom).
 
@@ -79,6 +88,8 @@ The video: ${width}×${height}, ${clock(duration)}, ${words.length} words.${bran
 
 \`\`\`json
 {
+  "face": [300, 640, 480, 620],
+  "source": [1080, 1920],
   "beats": [
     {"at": 12, "show": "uploads/shop.jpg", "why": "the shop she names"},
     {"at": 40, "until": 47, "show": "broll/post.png", "credit": true, "why": "the post he quotes"},
@@ -92,7 +103,7 @@ The video: ${width}×${height}, ${clock(duration)}, ${words.length} words.${bran
 - \`show\`: a picture (PNG, JPEG, WebP, HEIC) or a video (played muted, from second \`from\`),
   a path from the working directory. Or \`number\` (short: "+300 %", "2,4 Mio.", "€ 19") with an
   optional \`label\` of a few words.
-- \`fit\`: fill, whole or read. \`credit\`: true (the source \`shot\` noted) or a text ("Spiegel").
+- \`fit\`: beside, fill, whole or read. \`face\`, \`source\`: the face, see 8. \`credit\`: true (the source \`shot\` noted) or a text ("Spiegel").
 - \`why\`: what the sentence is about and why this shows it, in a few words; the person sees
   it in the chat.
 
