@@ -31,10 +31,11 @@ import { cues } from "./lib/srt.mjs";
 import { measure } from "./lib/widths.mjs";
 import { zones, zonesTool } from "./lib/zones.mjs";
 
-// (ce60c3a, the last commit without the options, until 2026-11-18; then f6c0639, which changed
-// hormozi, karaoke and wipe on purpose; now the commit that lets every group shrink until its
-// widest word is inside its room)
-const BEFORE = process.env.CAPTIONS_BEFORE || "0000000000000000000000000000000000000000";   // (this commit changes every built file on purpose: the next one names it)
+// (ce60c3a, the last commit without the options, until 2026-11-18; then the commits of that day
+// that changed captions nobody placed on purpose: hormozi, karaoke and wipe; every group shrinks
+// until its widest word fits; now the one after the review, with one script for every style.
+// The commit must stay in the history: a merge that squashes it leaves the test skipped)
+const BEFORE = process.env.CAPTIONS_BEFORE || "72d9224c13c519ba7a9db00d091a198803b9b2eb";
 const TOOLS = path.dirname(fileURLToPath(import.meta.url)), REPO = path.dirname(path.dirname(TOOLS));
 const TOOL = path.join(TOOLS, "captions.mjs");
 const ZONES = zonesTool();
