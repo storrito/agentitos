@@ -9,7 +9,8 @@ node tools/place.mjs grid take.mp4 placement/demo/grid.jpg --at 3      # a frame
 node tools/place.mjs place placement/demo --frame 9:16 --source 1080x1920 --face 340,420,400,540 --text caption --text hook
 node tools/place.mjs page placement/demo --still take.mp4 --at 3       # the first three candidates as pages and pictures, checked by platform-zones (a face that moves: at each moment)
 node tools/place.mjs captions placement/demo --candidate 1             # the options that set agentitos' captions into its caption area
-node tools/test.mjs                                                    # 62 tests; --quick: the 52 that need no Chrome and no ffmpeg
+node tools/place.mjs text placement/clip --frame 9:16 --shots shots.json --text caption --text hook   # a clip placed already: one caption place over every face of every shot
+node tools/test.mjs                                                    # 72 tests; --quick: the 62 that need no Chrome and no ffmpeg
 node tools/sweep.mjs sweep/                                            # for people who change the weights: which fit wins where
 ```
 
@@ -124,15 +125,28 @@ It says what the weights do, not what looks good. Moderate changes move little: 
 
 Beside screencast-cut's own layout for a screen with a webcam (its code run on the same case on 2026-11-17, before the type sizes changed: a 1920×1080 screen, a region of 480×300 with 14 px text, 9:16, two caption lines of 56 px): screencast-cut scales what matters as large as its room allows, up to 2× (1.48×, the text 20.7 px); this solver takes the smallest scale that reads (1.71×, 24 px) and says when that cannot be had. screencast-cut pads the region by 10 % and never shows less than 38 % of the screen's width; this takes the region as given. screencast-cut's circle always stands bottom left in 9:16, above a band of 216 px kept for captions whatever their lines (y 962–1200); this one stands above the lines asked for (y 1030–1268) and moves to another corner, or shrinks, when the region is there.
 
+## Text over a clip placed already (`text`)
+
+A clip of several shots whose picture another skill placed (clips' framing: a window on whoever speaks, shots shown whole, two panels) needs no candidates for the picture, only where its text goes, given every face over time. `text` takes the shots (`--shots shots.json`: each `start`, `end`, `weight` (its seconds in the cut), `faces` as tracks of `{ t, box }` in px of the frame, `room` how far its picture may be raised without a ground, `null` for none at all) and the hook's time, and gives back (`<folder>/text.json`, `lib/placed.mjs`):
+
+- **One place for the captions of the whole clip.** A caption that jumps from shot to shot reads badly, and published Shorts keep theirs fixed within a video (the layout study: the middle at 60–75 % of the height, below the chin in 88 % of the frames with a face, one line of about three words in 77 %). Every height of the safe box in steps of half a per cent, at the usual type (`caption.font`) and at 90 and 80 % of it, one line (or the lines asked for), centred and as wide as `place` makes them.
+- **Each shot's lift**: how far its picture goes up so that every face's keep-out (the box and the margins of `free`, the same as `place` keeps) clears the captions at every moment; once for the shot, by its lowest moment. At most what its `room` allows without a ground plus a ground that stays under the apps' bottom (below the safe box), and never so far that a face's eyes (`eyes` of its box) reach above the safe box's top.
+- **The cost** that ranks the places (`COSTS` in `lib/placed.mjs`, guesses set so that a second of text on a face outweighs the rest): 10 points a second on a face's keep-out, and 100 times how deep into the face from its chin the area reaches (a share of the face's height) a second; raising a shot 1 point a second for every tenth of the frame's height by its window, 4 over a ground; a middle outside 60–75 % 1 point for every per cent and every ten seconds of the clip; smaller type 0.3 a px and ten seconds. The smallest wins; the next four are listed.
+- **A place that changes at a cut** is only proposed (`changes`, a `note:`): for a shot of four seconds or more where another height saves more than two seconds on a face. Taking it is the caller's.
+- **The hook** over its seconds on every shot it spans, raised as they are, beside the captions: `layoutText`'s own kinds and order (a text below the chin, above the head, a card at the top), its keep-outs the faces of every moment in its time. Where no place is free and the first shot changes within its time, it ends at that cut (from 1.2 s on); else the least bad of its usual places, said.
+- **What still lies on a face**: per shot who, from when to when, how long and how deep, and a sentence each that says why (how much higher it would have to stand than it may) and what would avoid it.
+
+Tested on made-up tracks (`test.mjs`: a face high, low, a tight close-up no lift clears, two shots that disagree, a shot that cannot be raised, a face that moves under the captions, faces low everywhere, the hook below the chin, the hook ending at a cut, the command) and on five passages of two channels through clips (2026-11-18): the captions on no face's box after, beside 9–32 s a clip before; in a talk show's tight close-ups 0.4–1.8 s a shot remain in the margin below the chin. The cost's figures are guesses; none was judged against another by people.
+
 ## What it cannot do
 
 - **See.** The boxes are an agent's reading of a grid; a wrong box is a wrong layout, with every check passing. Whether the picture behind a text is calm, it never knows.
 - **Measure words.** A caption block and a hook are taken as wide as their area; the pages show placeholder words (caption lines of three words, a hook of two short lines). The video's own words are checked where the video is built.
 - **Follow a face.** A moving face gets one placement for the whole clip, by its hull; following it, or cutting the clip where it moves, is only suggested in a note. Moments that give the hull no edge are not tried as deciding.
-- **Time.** It lays out one moment of a video. Which layout a part gets, how long a hook stays and what changes when it leaves are the agent's.
+- **Time.** `place` lays out one moment of a video; `text` places a clip's text over time where the picture is placed already, but never chooses the picture of a shot. Which layout a part gets, how long a hook stays and what changes when it leaves are the agent's.
 - **Name tags, step texts, a second picture** (material above a person): not placed. `stacked` is two people.
 - **Other subjects than faces and screens.** A product, a hand, a thing shown: [auto-reframe](../auto-reframe/) follows one moving subject.
 
 ## The code
 
-`tools/place.mjs` is the command line. `tools/lib/`: `solve.mjs` (the cases, the ranking and its reasons), `fits.mjs` (the fits of one picture), `parts.mjs` (two people in two halves), `screen.mjs` (a screen and a webcam's circle), `evaluate.mjs` (one placement judged and costed), `text.mjs` (where the text finds room), `judge.mjs` (the zones' rules on the solver's boxes, and the comparison with the checker), `page.mjs` (a candidate as a page), `png.mjs` (a picture cut back to the frame), `zones.mjs` (platform-zones as a program), `defaults.mjs` (what is assumed, and the weights), `boxes.mjs` (the geometry), `sweep-page.mjs` (the sweep's page).
+`tools/place.mjs` is the command line. `tools/lib/`: `placed.mjs` (text over a clip placed already, over time), `solve.mjs` (the cases, the ranking and its reasons), `fits.mjs` (the fits of one picture), `parts.mjs` (two people in two halves), `screen.mjs` (a screen and a webcam's circle), `evaluate.mjs` (one placement judged and costed), `text.mjs` (where the text finds room), `judge.mjs` (the zones' rules on the solver's boxes, and the comparison with the checker), `page.mjs` (a candidate as a page), `png.mjs` (a picture cut back to the frame), `zones.mjs` (platform-zones as a program), `defaults.mjs` (what is assumed, and the weights), `boxes.mjs` (the geometry), `sweep-page.mjs` (the sweep's page).

@@ -113,6 +113,16 @@ node <skill>/tools/place.mjs captions placement/<name> --candidate N
 
 It prints the options for captions' `build` and `project` that set the captions into the candidate's caption area (`--y`: the area's bottom, where the lowest line ends; `--max-width`, `--font-size`, `--lines`, and `--x`, `--align` for a column at one side). The area is as tall as the tallest block of captions' styles at that type; a style that pads more needs `--set caption.padEm=…` in `place`, and a card of captions' own (`box`) `--set caption.padEm=0.8`. captions answers "Placed where asked: …" when it took them. When it answers nothing of the kind, its version does not know them and the captions stand on the safe box's bottom whatever is there: say so, never move the picture to make room.
 
+## A clip whose picture is placed already
+
+A skill that framed a clip itself (clips' `frame.mjs`) knows every face of every shot over time and asks where the text goes over all of them at once, with no picture of its own to place:
+
+```bash
+node <skill>/tools/place.mjs text placement/<name> --frame 9:16 --shots shots.json --text caption [--text hook] [--platform reels,tiktok]
+```
+
+`shots.json`: `{"shots": [{"start": 0, "end": 4.2, "weight": 3.9, "faces": [{"who": "guest", "track": [{"t": 0, "box": [x, y, w, h]}, …]}], "room": {"free": 0}}, …], "hook": {"start": 0, "end": 3}}`, boxes in px of the frame as the picture stands, ten moments a second or so; `room` how far the shot's picture may be raised without a ground (`null`: not at all, a shot shown whole). It answers one place for the captions of the whole clip, how far each shot is to be raised so that its chins clear them (over a ground under the apps' bottom, never past where the eyes reach the safe box's top), the hook's place over its seconds (it ends at a cut where the next shot leaves it none), and a `✗` sentence for what still lies on a face, into `text.json`. `--caption-y`, `--font-size` and `--lift <shot>:<px>` fix one choice; the rest is placed around it. The calling skill's documents say how its agent looks at the result.
+
 ## UI in the chat
 
 Short messages in the person's language. A ```hiccup block in your answer becomes part of the page. EDN hiccup, data only. `:send "text"` on a button sends that text as the person's next message; pictures point at `uploads/…`: copy a candidate's picture there first.
