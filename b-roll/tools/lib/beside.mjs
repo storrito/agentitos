@@ -135,14 +135,10 @@ export function besideLayout({ width, height, face, source, captions, platforms 
     // the host's captions move there by a shift of their block: from where they stand to the box
     caps = { where: C.captions.where, box: b, font: C.captions.font ?? cap.size, shift: { x: Math.round(C.captions.box[0] - cap.left), y: Math.round(C.captions.box[1] - cap.top) } };
   }
-  // The command's captions straddle the seam: their lower line lies over the top of the person's
-  // field. b-roll lets the person's card begin under them, so that they stand on the panel and
-  // not on the video; the face and the hair's room are below them in any case.
-  let card = round(S.window);
-  if (caps?.where === "seam") {
-    const under = caps.box[1] + caps.box[3];
-    if (under > card[1] && under <= S.face[1]) card = [card[0], under, card[2], card[1] + card[3] - under];
-  }
+  // The command lays the captions across the seam, their lower line over the top of the person's
+  // window. Its `speaker.card` is that window beginning under them, so that they stand on the
+  // panel and not on the video (the same as the window where no captions stand on the seam).
+  const card = round(S.card ?? S.window);
   if (S.ground > 0) notes.push(`the person shows as a card of ${card[2]}×${card[3]} in their field, the face ${S.facePct} % of the frame's height`);
   return {
     side: C.arrangement === "column",

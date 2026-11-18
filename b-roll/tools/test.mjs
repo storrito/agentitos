@@ -138,8 +138,9 @@ test("the owner's close-up (1080×1920, Reels, two caption lines): the face 22 %
   assert.ok(Math.abs(L.speaker.card[2] - 600) <= 15, `card ${L.speaker.card}`);
   assert.equal(L.captions.where, "seam");
   assert.ok(apart(L.captions.box, L.speaker.face) && apart(L.captions.box, L.material.field));
-  // the captions stand on the panel: the person's card begins under them (the command's own
-  // window begins at the seam, under their lower line), with the face whole in it
+  // the captions stand on the panel: the person's card (the command's `speaker.card`) begins
+  // under them, where its window begins at the seam, under their lower line; the face whole in it
+  assert.deepEqual(L.speaker.card, L.placement.candidates[L.candidate - 1].speaker.card.map(Math.round));
   assert.equal(L.speaker.card[1], L.captions.box[1] + L.captions.box[3]);
   assert.ok(apart(L.captions.box, L.speaker.card), `captions ${L.captions.box} over the card ${L.speaker.card}`);
   assert.ok(inside(L.speaker.face, L.speaker.card), `face ${L.speaker.face} in ${L.speaker.card}`);
