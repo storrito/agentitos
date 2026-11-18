@@ -377,6 +377,8 @@ test("a close-up in a three-quarter view keeps eyes, nose and mouth in, with mor
     assert.ok(front >= 0.2 * f.w && back >= 0.04 * f.w, `room in front ${Math.round(front)}, behind ${Math.round(back)}`);
     assert.ok(front > back, "more room on the side the face looks to");
     assert.ok(f.x + f.w / 2 > win.x + w.w, "the back of the head is cut");
+    const head = (Math.min(f.x + f.w / 2, win.x + w.w) - Math.max(f.x - f.w / 2, win.x)) / f.w;
+    assert.ok(head >= 0.75 - 1e-3, `only ${Math.round(head * 100)} % of the head in the picture`);
   }
   // the check: no fault, the side of the face listed as such
   const edges = edgesOf([w], shots, META);
