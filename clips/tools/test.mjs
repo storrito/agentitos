@@ -10,7 +10,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, lengthNote, OPENING_LONGEST, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, checkNotes, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
+import { arrange, shape, questionStart, continues, checks, dropSpans, dropPlan, cutKeeps, dropNote, lengthNote, playedSeconds, OPENING_LONGEST, keepsWithout, openingKeep, sentenceWords, openingNote, numbers, ranges, longest, momentsPrompt, listing, checkNotes, KINDS, MAX_SECONDS } from "./lib/moments.mjs";
 import { keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -408,7 +408,7 @@ test("the limit travels: a moment still over it after its drop is said to be in 
   assert.match(checkNotes(m, 50), new RegExp(`${m.kept} s without the sentences 4-5, still ${m.kept - 50} s over: drop more of it, run moments again with a higher --max-seconds where the platforms take it, or take another moment; never one over the limit`));
   assert.equal(arrange({ moments: [moment(1, 7, { drop: [4, 5] })] }, INTERVIEW, { limit: 59 })[0].checks.still, 0);
   assert.equal(lengthNote(58.4, 59), null);
-  assert.match(lengthNote(64.6, 59), /^⚠ Without what is left out the moment is still about 65 s of words, over the 59 s a short may be here: drop more/);
+  assert.match(lengthNote(64.6, 59), /^⚠ Without what is left out the moment still plays about 65 s, over the 59 s a short may be here: drop more/);
   // the opening: none for the first sentence, none too long, none that brings the short over the limit
   const line = TEETH.words.filter((w) => w.i >= 149 && w.i <= 159);
   assert.match(openingNote(line, 100, { first: 85, estimate: 50, limit: 59 }), /"words":"149-159"/);
@@ -481,4 +481,13 @@ test("moments: a thin episode is said as one, and fewer moments than asked are s
   const few = await momentsWith(answer([{ ...moment(1, 3), opens: 7 }]), { count: 3 });
   assert.equal(few.status, 0);
   assert.match(few.err, /the model gave 1 moments that hold, of the 3 asked for/);
+});
+
+test("how long keeps play once best-takes cut them tight: words, fillers out, pauses down to 0.4 s", () => {
+  // 149-159 of the teeth clip: 48.6-51.54 with a pause of 0.42 s after "in,"
+  assert.equal(+playedSeconds(TEETH.words, [[149, 159]]).toFixed(2), 2.92);
+  const um = TEETH.words.map((w) => (w.i === 154 ? { ...w, kind: "filler" } : w));
+  assert.ok(playedSeconds(um, [[149, 159]]) < 2.92 - 0.2);
+  // two keeps: nothing between them counts
+  assert.equal(+playedSeconds(TEETH.words, [[149, 153], [160, 162]]).toFixed(2), 2.16);
 });

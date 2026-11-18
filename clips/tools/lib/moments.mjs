@@ -237,11 +237,28 @@ export function cutKeeps(spoken, sentences, first, last, drop, from, said) {
 // An opening longer than this is a second moment, not a line to open a short with
 export const OPENING_LONGEST = 10;
 
+// How long the keeps play once best-takes has cut them with --pauses tight: their words, the
+// fillers out, a pause over 0.4 s down to 0.4 s: a little over what plays (on three cut clips of
+// the e2e run 95.7, 87.2 and 62.0 s for 93.2, 85.4 and 60.3 s). `words` the clip's words and
+// fillers ({ i, start, end, kind }).
+export function playedSeconds(words, keeps) {
+  let t = 0;
+  for (const [x, y] of keeps) {
+    let prev = null;
+    for (const w of words) {
+      if (w.i < x || w.i > y || w.kind === "filler") continue;
+      t += w.end - w.start + (prev ? Math.min(0.4, Math.max(0, w.start - prev.end)) : 0);
+      prev = w;
+    }
+  }
+  return t;
+}
+
 // What prepare says when the moment, as cut, is longer than the limit it was found for
-// (`estimate`: its words without what is left out, before best-takes shortens its pauses)
+// (`estimate`: playedSeconds of its keeps)
 export function lengthNote(estimate, limit) {
   if (!(estimate > limit)) return null;
-  return `⚠ Without what is left out the moment is still about ${Math.round(estimate)} s of words, over the ${limit} s a short may be here: drop more of it (rm -r the clip's takes/, then prepare again with a longer --drop), run moments again with a higher --max-seconds where the platforms take it, or choose another moment. check says so until it fits; never publish it over the limit.`;
+  return `⚠ Without what is left out the moment still plays about ${Math.round(estimate)} s, over the ${limit} s a short may be here: drop more of it (rm -r the clip's takes/, then prepare again with a longer --drop), run moments again with a higher --max-seconds where the platforms take it, or choose another moment. check says so until it fits; never publish it over the limit.`;
 }
 
 // What prepare says of a drop: what is left out, truthfully, and what stays and why

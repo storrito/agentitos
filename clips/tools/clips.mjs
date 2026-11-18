@@ -39,7 +39,7 @@ import path from "node:path";
 import { execFileSync, spawnSync, spawn } from "node:child_process";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { numbers, ranges, cutKeeps, dropNote, sentenceWords, openingNote, lengthNote, MAX_SECONDS } from "./lib/moments.mjs";
+import { numbers, ranges, cutKeeps, dropNote, sentenceWords, openingNote, lengthNote, playedSeconds, MAX_SECONDS } from "./lib/moments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "drop", "payoff", "max-seconds"];
@@ -178,10 +178,8 @@ function prepare(episode, dir, range, opts) {
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
   if (drop.length) console.log(dropNote(plan, gone, folded, keeps, sentences));
-  // how long the moment is as cut, its words without what is left out (best-takes' tight pauses
-  // take a little more), against the limit it was found for
-  const at = new Map(spoken.map((w) => [w.i, w]));
-  const estimate = keeps.reduce((t, [x, y]) => t + at.get(y).end - at.get(x).start, 0);
+  // how long the moment plays as cut, against the limit it was found for
+  const estimate = playedSeconds(spoken, keeps);
   const note = lengthNote(estimate, limit);
   if (note) console.log(note);
   if (payoff != null) console.log(openingNote(sentenceWords(spoken, sentences[payoff], from), payoff, { first: a, estimate, limit }));
