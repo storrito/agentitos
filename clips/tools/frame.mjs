@@ -41,13 +41,15 @@
 // seconds each); the window then stops swinging from one to the other.
 //
 // The tool checks its own windows: on every still and at each piece's first, middle and last
-// frame, every face that the window cuts at its edge, or holds closer to an edge than 2 % of the
-// frame's width, is named with its time.
+// frame, every face whose eyes, nose or mouth the window cuts at its edge or holds closer to it
+// than 1.5 % of the frame's width (an answer without them: the face, 2 %) is named with its time,
+// a fault; only an ear, a cheek or hair of a close-up at the edge is named as accepted. Each
+// close-up's piece says how calm its window is and how long it holds the features (closeupOf).
 // framed.mp4: 1080 wide, at the footage's frame rate and timing, with its sound, a keyframe every
 // second (a preview seeks into it); framed.json the shots, the windows and the faces found at an
 // edge; framed.sheet.jpg (and -2, -3, … for more than eight shots) per shot a row: the footage at
 // its middle with the window drawn in, the frame at the shot's first, middle and last frame, a red
-// mark where a face is at an edge.
+// mark where eyes, nose or mouth are at an edge.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -794,11 +796,24 @@ export function edgesOf(windows, shots, { fps = 25, width, height, at = [] } = {
             // a forehead cut in a close-up is the editors' way: only half a face is a fault
             top: (top + f.h / 2 - win.y) / win.h };
           const [edge, gap] = Object.entries(gaps).sort((a, b) => a[1] - b[1])[0];
-          // a close-up's face is as wide as the frame (the editors' too): only a cut into it counts,
-          // and only beyond the model's own blur of a box (a tenth of the face)
           const big = f.w > BIG * win.w;
+          const entry = { piece: k, shot: p.shot, t: +t.toFixed(3), who: person.who || person.speaker, speaker: person.speaker };
+          if (f.feat && big) {
+            // eyes, nose or mouth at the edge or over it: a fault; else only the side of the face
+            // (an ear, a cheek, hair) cut or close: listed, the editors' way in a close-up
+            // the features the footage has (a nose out of the picture itself is no window's fault)
+            const e = { ...f.feat, x0: Math.max(0, f.feat.x0), x1: Math.min(width ?? Infinity, f.feat.x1) };
+            const fg = { left: (e.x0 - win.x) / win.w, right: (win.x + win.w - e.x1) / win.w, top: (e.y0 - win.y) / win.h, bottom: (win.y + win.h - e.y1) / win.h };
+            const [fe, fgap] = Object.entries(fg).sort((a, b) => a[1] - b[1])[0];
+            if (fgap < FEAT_EDGE) { found.push({ ...entry, part: "features", edge: fe, gap: +fgap.toFixed(3), cut: fgap < 0 }); continue; }
+            const side = gaps.left < gaps.right ? "left" : "right", sgap = Math.min(gaps.left, gaps.right);
+            if (sgap < 0) found.push({ ...entry, part: "side", edge: side, gap: +sgap.toFixed(3), cut: sgap < 0 });
+            continue;
+          }
+          // a small face, or a close-up of an answer without the features (its face as wide as the
+          // frame, the editors' too): only a cut into it counts, beyond the model's blur of a box
           const cut = gap < (big ? -((1 - CORE) / 2) * (edge === "left" || edge === "right" ? f.w / win.w : f.h / win.h) : -0.02);
-          if (cut || (!big && edge !== "top" && edge !== "bottom" && gap < EDGE)) found.push({ piece: k, shot: p.shot, t: +t.toFixed(3), who: person.who || person.speaker, speaker: person.speaker, edge, gap: +gap.toFixed(3), cut });
+          if (cut || (!big && edge !== "top" && edge !== "bottom" && gap < EDGE)) found.push({ ...entry, edge, gap: +gap.toFixed(3), cut });
         }
       }
     }
@@ -869,7 +884,8 @@ export function spans(times, gap = 0.3) {
   return out.map(([a, b]) => (b - a < 0.05 ? a.toFixed(1) : `${a.toFixed(1)}–${b.toFixed(1)}`));
 }
 export function edgeLine(e) {
-  return `${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${sideOf[e.edge]} edge at ${e.t.toFixed(1)} s`;
+  const what = e.part === "features" ? `the eyes, nose or mouth of ${e.who ?? "a face"}` : e.part === "side" ? `only the side (an ear, a cheek, hair) of ${e.who ?? "a face"}` : e.who ?? "a face";
+  return `${what} ${e.cut ? "cut by" : "close to"} the ${sideOf[e.edge]} edge at ${e.t.toFixed(1)} s`;
 }
 
 // per shot a row: the footage at its middle with the window drawn in, the frame at the shot's
@@ -918,7 +934,8 @@ export function sheet(video, framed, windows, shots, edges, file, { fps = 25 } =
         const rects = !piece ? [] : piece.fit ? [piece.fit] : piece.stack ? piece.stack : [windowAt(piece, mid)];
         const scale = H / meta.height;
         const boxes = rects.map((r) => `drawbox=x=${Math.round(r.x * scale)}:y=${Math.round(r.y * scale)}:w=${Math.round(r.w * scale)}:h=${Math.round(r.h * scale)}:color=yellow:t=3`);
-        const flagged = edges.filter((e) => e.shot === k);
+        // red only for a fault: eyes, nose or mouth at the edge (an ear or a cheek is the editors' way)
+        const flagged = edges.filter((e) => e.shot === k && e.part !== "side");
         const label = `${k + 1}  ${s.start.toFixed(2)}-${s.end.toFixed(2)} s  ${piece ? (piece.kind === "people" ? `follows${piece.hold && piece.hold !== "still" ? ` (${piece.hold})` : ""}` : piece.kind) : ""}${flagged.length ? `  EDGE at ${spans(flagged.map((e) => e.t)).slice(0, 4).join(" ").replace(/–/g, " to ")} s` : ""}`;
         const c0 = path.join(tmp, `${k}-0.jpg`);
         if (!cell(video, mid, SW, [...boxes, `drawtext=text='${text(label)}':x=8:y=8:fontsize=17:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=4`], c0)) missing.push(`shot ${k + 1}: the footage at ${mid.toFixed(2)} s`);
@@ -1007,18 +1024,22 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const pieces = r.windows.filter((w) => w.shot === k);
       const how = [...new Set(pieces.map((w) => SAY[w.kind] + (w.hold ? HOLDS[w.hold] : "")))].join(", then ");
       console.log(`  ${k + 1}. ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${how}${s.note ? ` (${s.note})` : ""}`);
+      for (const w of pieces.filter((w) => w.closeup)) console.log(`     close-up ${w.start.toFixed(1)}–${w.end.toFixed(1)} s: the window turns ${w.closeup.turns} times a second; ${w.closeup.features ? "eyes, nose and mouth" : "the middle of the face"} in with their room ${Math.round(w.closeup.held * 100)} % of the time, off the edge ${Math.round(w.closeup.inside * 100)} %`);
       const edges = r.edges.filter((e) => e.shot === k);
       const seen = new Set();
-      for (const e of edges) {
-        const key = `${e.who}|${e.edge}|${e.cut}`;
+      // a ⚠ where eyes, nose or mouth (or, in an answer without them, the face) are at an edge;
+      // only an ear, a cheek or hair at the edge of a close-up is listed without one
+      for (const e of [...edges].sort((a, b) => (a.part === "side") - (b.part === "side"))) {
+        const key = `${e.who}|${e.edge}|${e.cut}|${e.part}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const all = spans(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}` === key).map((x) => x.t));
-        console.log(`     ⚠ ${e.who ?? "a face"} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s`);
+        const all = spans(edges.filter((x) => `${x.who}|${x.edge}|${x.cut}|${x.part}` === key).map((x) => x.t));
+        const what = e.part === "features" ? `the eyes, nose or mouth of ${e.who ?? "a face"}` : e.part === "side" ? `only the side of ${e.who ?? "a face"}'s face (an ear, a cheek, hair)` : e.who ?? "a face";
+        console.log(`     ${e.part === "side" ? "·" : "⚠"} ${what} ${e.cut ? "cut by" : "close to"} the ${e.edge} edge at ${all.join(", ")} s${e.part === "side" ? " (accepted in a close-up)" : ""}`);
       }
       for (const d of s.doubtful || []) console.log(`     ⚠ the model put ${d.who ?? "a face"} at ${d.t.toFixed(1)} s ${d.off} px from where the frames before and after lead: that still is left out; look at the row`);
     });
     if (r.sheets.missing?.length) console.log(`The sheet is missing ${r.sheets.missing.join("; ")}: look at framed.mp4 there yourself (ffmpeg -ss <second> -i framed.mp4 -frames:v 1 look.jpg).`);
-    if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where a face is at an edge.${r.edges.length ? " A ⚠ above: look at that row. On a face the window already follows, the footage gives no better window: keep it, or move the cut so that stretch is left out. Someone or something that matters left out of a window (a second person, a photo): `reframe --whole <second>` shows the shot whole (smaller; never for a close-up). A shot shown whole whose speaker should fill the frame: `--follow <second>`." : ""}`);
+    if (r.sheets.length) console.log(`Look at ${r.sheets.join(", ")}: one row per shot as listed, the footage with the window in yellow, then the frame at the shot's first, middle and last frame; red where eyes, nose or mouth are at an edge.${r.edges.some((e) => e.part !== "side") ? " A ⚠ above: look at that row. On a face the window already follows, the footage gives no better window: keep it, or move the cut so that stretch is left out. Someone or something that matters left out of a window (a second person, a photo): `reframe --whole <second>` shows the shot whole (smaller; never for a close-up). A shot shown whole whose speaker should fill the frame: `--follow <second>`." : ""}`);
   }
 }
