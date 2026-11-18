@@ -1301,6 +1301,13 @@ t("place.mjs beside writes placement.json, and captions reads it: on the seam ce
   ok(r.status === 0 && /--x 664 /.test(r.stdout) && /--align centre/.test(r.stdout), r.stderr || r.stdout);
 });
 
+t("what page and captions print of a beside candidate names it, never \"[object Object]\" (an independent review: nameOf read the speaker object as a face's number)", () => {
+  const dir = path.join(OUT, "beside-names");
+  cli("beside", dir, "--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  const r = cli("captions", dir, "--candidate", "2");
+  ok(r.status === 0 && /Candidate 2 \(beside-pip/.test(r.stdout) && !/object Object/.test(r.stdout), r.stdout.split("\n")[0]);
+});
+
 if (!QUICK) t("every candidate of beside in every frame, as a page, gets the same verdict and findings from the checker as from the solver (the material's field is marked as something to be seen, the face, the circle and the caption measured by their letters); page takes the speaker's still and the material's picture", () => {
   let n = 0;
   for (const Z of [Z916, Z45, Z11, Z169]) for (const face of [WIDE.face, [555, 500, 180, 195]]) {
