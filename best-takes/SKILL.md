@@ -64,6 +64,8 @@ The title is the topic in the person's words. `build` cuts between words, evens 
 
 One message: length before and now, what you left out in plain words (each retry and why, the talk about the recording, the ähs, pauses cut, stretches played faster), what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**: "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
 
+When `check` says the length is no longer a matter of cutting (the target would leave out more than half of the cut), do not cut it shorter on your own: ask instead, the two lengths and two buttons, as in "Too long to cut" below. After "a script to record": write it in the chat, in their own words and language, one sentence a line, within the words `check` named, and say in one sentence that a new recording of it goes through this skill again; no tool is needed. After "the strongest parts": cut by the brief's rule 8, build, check, and ask as above, naming in plain words what was left out.
+
 ### 5. Changes
 
 Read `<skill>/references/changes.md` before making a change they ask for. Change `cut.json` (or a setting), build again with the same `--out` (the preview updates by itself), check, and ask again as in step 4, saying in one sentence what changed.
@@ -115,6 +117,17 @@ The question after the preview:
  [:button {:class "primary" :send "The cut is good, make the video"} "Looks good"] " "
  [:button {:open "artifacts/kameras"} "Show the preview ↗"]
  [:p [:small "Or tell me what should be different."]]]
+```
+
+Too long to cut (`check` says the target would leave out more than half):
+
+```hiccup
+[:div
+ [:p "Without slips and repeats it is " [:strong "2:10"] "; " [:strong "0:45"] " would leave out more than half of what you said."]
+ [:p "Shall I write a 45-second script from it for you to record again, or cut it to the strongest parts anyway?"]
+ [:button {:class "primary" :send "Write me a 45-second script from what I said, to record again"} "A 45 s script to record"] " "
+ [:button {:send "Cut it to the strongest parts anyway"} "Cut to the strongest parts"]
+ [:p [:small "Or tell me what else you have in mind."]]]
 ```
 
 The finished video:

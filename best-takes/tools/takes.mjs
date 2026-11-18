@@ -61,7 +61,7 @@ import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
-import { brief, shown } from "./brief.mjs";
+import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
 const FLAGS = ["off"];
@@ -395,7 +395,8 @@ function cmdCheck(dir) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
     console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; finish brings the rendered video to ${s.final} LUFS.`);
   }
-  if (s.target && e.duration > s.target + 0.5) warnings.push(`the cut is ${e.duration.toFixed(1)} s long, ${(e.duration - s.target).toFixed(1)} s over the ${s.target} s it should be at most`);
+  const over = overTarget(e.duration, s.target);
+  if (over) warnings.push(over);
 
   // HyperFrames' own check of the project
   const [cmd, ...pre] = hyperframes();

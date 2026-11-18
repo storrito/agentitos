@@ -3,6 +3,26 @@
 
 import { clock } from "./lib/media.mjs";
 
+// --target: a cut longer than its target is trimmed to it as long as that leaves out at most this
+// share of the clean cut (rules 1–7, nothing dropped for the length). Up to half, what stays is the
+// recording with its weaker parts out, its thread intact; beyond, most of what was said goes and
+// the rest is scattered sentences stitched into a story, against rule 4, which no human editor is
+// asked to do either: a short script written from what was said, recorded anew, is the answer.
+export const TRIM_AT_MOST = 0.5;
+// how fast a script is spoken: narrated-short/references/script.md counts 90–100 words in 35–46 s
+export const WORDS_A_SECOND = 2.4;
+// the longest clean cut that is still trimmed to the target
+export const trimmable = (target) => Math.round(target / (1 - TRIM_AT_MOST));
+
+// what check says of a cut longer than the target; null when it is not
+export function overTarget(duration, target) {
+  if (!target || duration <= target + 0.5) return null;
+  if ((duration - target) / duration <= TRIM_AT_MOST) {
+    return `the cut is ${duration.toFixed(1)} s long, ${(duration - target).toFixed(1)} s over the ${target} s it should be at most: drop what repeats first, then the weakest parts; keep the opening and the ending`;
+  }
+  return `the cut is ${duration.toFixed(1)} s long and should be at most ${target} s: that would leave out more than half of what it says, which is no longer a matter of cutting, so do not thin it out but ask the person (SKILL.md, step 4) whether you write a script of ${target} s spoken, about ${Math.round(target * WORDS_A_SECOND)} words, from what they said, to record again, or cut it to the strongest parts anyway`;
+}
+
 export const shown = (w) => (w.kind === "filler" ? `(${w.text.replace(/[,.;:!?]+$/, "")})` : w.text);
 
 // one line per sentence or after a pause, each word with its number: [41]Die [42]erste …
@@ -62,8 +82,11 @@ should see: **the best take of every part, in the order of the story, without sl
    never cuts that pause away: a picture that moves (a clock, a progress bar) plays as a
    timelapse of 3–5 s, a still one holds 3 s before the cut. This works inside a keep and
    between two keeps (the pause up to the next keep's first word).${settings.target ? `
-8. **The length.** It should be at most ${settings.target} s. First drop what repeats, then the
-   weakest parts; keep the opening and the ending.` : ""}
+8. **The length.** It should be at most ${settings.target} s, but the first cut keeps to rules
+   1–7 alone and drops nothing for the length. Then, by that cut's length: up to
+   ${trimmable(settings.target)} s, first drop what repeats, then the weakest parts; keep the opening and the
+   ending. Longer than ${trimmable(settings.target)} s, ${settings.target} s would leave out more than half of what is said:
+   that is no cut, so leave it as it is; the person decides.` : ""}
 
 The order of the keeps is the order they play: normally the order they were said. Put a part
 first only when the person asks for it (e.g. a strong sentence as a hook).`;
