@@ -126,14 +126,17 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
   };
 
   // The speaker's source at scale s in its field: covering the field where the face can then lie
-  // inside `band` (as near to the target offsets tx, ty as that allows), else placed by the face
-  // alone, smaller than the field or moved, with ground beside it. slackBelow: how much of the
-  // field's bottom (under the apps' bars) the picture may leave uncovered.
+  // inside `band` (as near to the target offsets tx, ty as that allows). Where it cannot, the field
+  // is filled with picture as far as the face's band lets it: a picture smaller than the field in
+  // the field's middle, a larger one as near to covering it as the face allows; ground beside it.
+  // (Keeping the face where it was is a wish that gives way to an empty side.) slackBelow: how much
+  // of the field's bottom (under the apps' bars) the picture may leave uncovered.
   const placeIn = (s, field, band, tx, ty, slackBelow = 0) => {
     const axis = (cover, w0, wL, src, f0, f1, a0, a1, t, slack) => {
       if (cover) { const h = holdAxis(s, w0, wL, src, f0, f1, a0, a1, t, D.facePad, [], slack); if (h.ok) return h; }
-      const lo = a0 - s * f0, hi = a1 - s * f1;
-      return { v: clamp(t, Math.min(lo, hi), Math.max(lo, hi)), ok: lo <= hi + 0.05 };
+      const lo = a0 - s * f0, hi = a1 - s * f1, span = s * src;
+      const fill = span < wL ? w0 + (wL - span) / 2 : clamp(t, w0 + wL - span - slack[1], w0 + slack[0]);
+      return { v: clamp(fill, Math.min(lo, hi), Math.max(lo, hi)), ok: lo <= hi + 0.05 };
     };
     const x = axis(s * sw >= field[2] - EPS, field[0], field[2], sw, hull[0], X1(hull), band[0], X1(band), tx, [0, 0]);
     const y = axis(s * sh >= field[3] - EPS, field[1], field[3], sh, hull[1], Y1(hull), band[1], Y1(band), ty, [0, slackBelow]);
@@ -213,13 +216,14 @@ export function besideSolve({ zones: Z, source, face, material = {}, needs = [],
     // screen has them (0.42 of the square down); kept inside the footage where the face and the
     // margin above the head then still lie in the disc, else on the face with ground where the
     // footage ends (a face at the footage's edge)
-    const side = B.pipCrop * hull[3], s = d / side;
-    const at = (c) => ({ s, left: C[0] - c[0] * s, top: C[1] - c[1] * s, field: C, shape: "circle", corner, crop: c, ok: true });
+    const side = B.pipCrop * hull[3], small = Math.min(side, sw, sh);
+    const at = (c) => { const s = d / c[2]; return { s, left: C[0] - c[0] * s, top: C[1] - c[1] * s, field: C, shape: "circle", corner, crop: c, ok: true }; };
     const centred = [hull[0] + hull[2] / 2 - side / 2, hull[1] + D.eyes * hull[3] - 0.42 * side, side, side];
-    const inside = side <= Math.min(sw, sh) ? [clamp(centred[0], 0, sw - side), clamp(centred[1], 0, sh - side), side, side] : centred;
+    // (the square no larger than the footage's shorter side, inside it)
+    const inside = [clamp(hull[0] + hull[2] / 2 - small / 2, 0, sw - small), clamp(hull[1] + D.eyes * hull[3] - 0.42 * small, 0, sh - small), small, small];
     let q = at(inside);
     if (outOfDisc(q).length) q = at(centred);
-    q.win = clipBox([q.left, q.top, s * sw, s * sh], C) || C;
+    q.win = clipBox([q.left, q.top, q.s * sw, q.s * sh], C) || C;
     return build("pip", { field: fld.field, area: [0, 0, W, H], speaker: q, caption: cap ? caption(Y1(S) - capH, "below") : null });
   }
 

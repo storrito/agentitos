@@ -1275,6 +1275,17 @@ t("the circle is judged as a disc, with the margin above a head (an independent 
   return `${n} circles pass, all inside their disc`;
 });
 
+t("a panel's picture that cannot cover its field fills it from the middle, not from where the face was full-frame (an independent review: the upright take's picture stood at x 122–765 in the 9:16 panel, 315 px of ground on the right): in 9:16, 4:5 and 1:1 the ground beside it is the same on both sides", () => {
+  const out = [];
+  for (const Z of [Z916, Z45, Z11]) {
+    const c = beside(Z, { source: [1080, 1920], face: [80, 250, 445, 580] }).candidates.find((k) => k.arrangement === "above"), w = c.speaker.window, f = c.speaker.field;
+    const left = w[0] - f[0], right = f[0] + f[2] - (w[0] + w[2]);
+    ok(!c.hard && Math.abs(left - right) <= 1, `${Z.frame}: ground ${Math.round(left)} px left, ${Math.round(right)} px right`);
+    out.push(`${Z.frame} ${Math.round(left)}|${Math.round(right)}`);
+  }
+  return out.join(", ");
+});
+
 t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
   const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
   ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);
