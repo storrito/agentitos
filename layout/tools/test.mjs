@@ -1357,6 +1357,30 @@ t("a caller without a face's box passes --face assumed: the usual framing of a t
   ok(JSON.stringify(res.speaker.face) === "[396,448,288,384]" && res.speaker.assumed && res.candidates.every((c) => c.speaker.assumed) && res.candidates[0].why.some((w) => /assumed/.test(w)), JSON.stringify(res.speaker));
 });
 
+t("named platforms give beside their own boxes, as they give every other skill (b-roll builds for reels, or reels and tiktok): reels, tiktok, shorts, reels+tiktok in 9:16 and youtube in 16:9, each with the wide interview and b-roll's close-up; every candidate passes and is sane in those zones; with reels alone the face ends lower and the panel's field is wider than with the usual apps; as pages, the checker for those platforms agrees with the solver on every one", () => {
+  let n = 0;
+  const lower = (Z) => beside(Z, { source: [1080, 1920], face: [300, 500, 480, 655], material: { min: [700, 330] }, needs: [cap(2)] }).candidates[0];
+  ok(lower(askZones("9:16", ["reels"])).speaker.face[1] + lower(askZones("9:16", ["reels"])).speaker.face[3] > lower(Z916).speaker.face[1] + lower(Z916).speaker.face[3] + 30, "reels alone does not let the face end lower");
+  for (const [frame, platforms] of [["9:16", ["reels"]], ["9:16", ["tiktok"]], ["9:16", ["shorts"]], ["9:16", ["reels", "tiktok"]], ["16:9", ["youtube"]]]) {
+    const Z = askZones(frame, platforms);
+    for (const take of [{}, { source: [1080, 1920], face: [300, 500, 480, 655], material: { min: [700, 330] }, needs: [cap(2)] }]) {
+      const r = beside(Z, take);
+      for (const c of r.candidates) {
+        ok(!c.hard && !c.unmet.length, `${platforms} ${c.fit}: ${JSON.stringify(c.problems)}`);
+        const bad = sane(Z, c, take.material?.min || CARD.min); ok(!bad.length, `${platforms} ${c.fit}: ${bad.join("; ")}`);
+        if (!QUICK) {
+          const file = path.join(OUT, `beside-${platforms.join("-")}-${n}.html`);
+          fs.writeFileSync(file, renderBeside(c, r, { page: file }));
+          const cmp = compare(c, checkPage(file, platforms));
+          ok(cmp.verdictAgrees && cmp.agree, `${file}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`);
+        }
+        n++;
+      }
+    }
+  }
+  return `${n} candidates${QUICK ? "" : ", each checked as a page"}`;
+});
+
 t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
   const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
   for (const Z of [Z916, Z169]) {
