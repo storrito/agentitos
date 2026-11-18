@@ -64,7 +64,8 @@ const SPEECH_MODEL = "elevenlabs/eleven-v3";
 const SPEECH_VOICE = "sarah";
 const MUSIC_MODELS = { clip: "google/lyria-3-clip-preview", pro: "google/lyria-3-pro-preview" };
 const IMAGE_MODEL = "google/gemini-3.1-flash-image";
-// LU the music lies under the voice: what HyperFrames' sound guide's 0.14 means for two equally loud files
+// LU the music lies under the voice: what HyperFrames' sound guide's 0.14 means for two equally loud
+// files, and the distance the owner chose by ear from samples at 11, 14, 17, 20 and 23 LU
 const UNDER = 17;
 
 // options that take no value
