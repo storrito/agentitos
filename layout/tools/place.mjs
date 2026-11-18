@@ -126,7 +126,7 @@ const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinit
 
 // ---- what is printed ----
 
-const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.side ? ` ${c.side}` : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
+const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}${c.side ? ` ${c.side}` : ""}${c.speaker ? ` on face ${c.speaker}` : ""}`;
 const markOf = (c) => (c.hard ? "✗" : c.unmet.length ? "–" : c.soft ? "!" : "✓");
 
 function printResult(res) {
@@ -155,6 +155,7 @@ function printResult(res) {
     for (const t of c.text) console.log(`   ${t.role.padEnd(7)} ${t.where}, ${boxText(t.box)}${t.role === "hook" ? `, ${t.style === "text" ? "text" : t.style === "card" ? "a card" : "big lines"} at ${t.font} px${t.shrunk ? " (shrunk)" : ""}` : `, ${plural(t.lines, "line")} at ${t.font} px`}`);
     for (const q of c.problems) console.log(`   ${q.level === "hard" ? "✗" : q.level === "soft" ? "!" : "–"} ${q.of}: ${q.what}`);
     for (const n of c.notes || []) console.log(`   note: ${n}`);
+    for (const b of c.groundShows?.behind || []) console.log(`   ground  behind the ${b.role}: ${b.shows} (the ground is ${c.groundShows.kind})`);
     if (c.alike) console.log(`   the same to the eye as ${c.alike.map((a) => `${nameOf(a)} at ${a.scale}× (${a.apart} px from it)`).join("; ")}: listed once`);
     console.log(`   why: ${c.why.join("; ")}${c.behind ? `; ${c.behind}` : ""}`);
   });

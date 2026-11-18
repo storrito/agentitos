@@ -87,7 +87,7 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
     if (seen.has(key)) continue;
     seen.add(key);
     const win = [modeX === "cover" ? 0 : left, modeY === "cover" ? 0 : top, modeX === "cover" ? W : s * sw, modeY === "cover" ? H : s * sh];
-    const c = evaluate(ctx, { fit, s, left, top, win, variant, ratio: extra.ratio, speaker: ctx.speaker, side: extra.sides ? (left + s * sw / 2 < W / 2 ? "left" : "right") : undefined });
+    const c = evaluate(ctx, { fit, s, left, top, win, variant, ratio: extra.ratio, speaker: ctx.speaker, side: extra.sides ? (left + s * sw / 2 < W / 2 ? "left" : "right") : undefined, onGround: !!extra.onGround });
     if (!best || cmpRank(c, best) < 0) best = c;
     // the best hold at which every text stands at its full size (it may differ from the best one)
     if (!c.hard && !c.unmet.length && c.fullSize && (!bestFull || cmpRank(c, bestFull) < 0)) bestFull = c;
@@ -233,5 +233,14 @@ export function pictureFits(ctx, { all = false, cropsOnly = false, always = fals
     if (!cropsOnly && ctx.tall && !out.some(met)) scanDown("inset", same ? s0 : sc, D.insetMin, "inside", "inside", { across: true });
   }
 
+  // The text in the bands: where the picture stands smaller than an upright frame, the same
+  // picture with the hook and the captions on the ground above and below it, so that the agent
+  // can choose a calm band over the picture's own (candidate.groundShows says what lies there).
+  if (ctx.tall && (ctx.cap || ctx.hook)) for (const c of [...out]) {
+    if (!(c.ground > 0) || !(c.fit === "inset" || c.fit === "crop") || c.text.every((t) => t.on === "ground") && c.text.length) continue;
+    const mx = c.window[2] >= W - EPS ? "cover" : "inside", my = c.window[3] >= H - EPS ? "cover" : "inside";
+    const v = bestVariant(ctx, c.fit, c.scale, mx, my, { aroundFace: c.fit === "crop", ratio: c.crop, onGround: true });
+    if (met(v) && v.text.some((t) => t.on === "ground")) { v.onGround = true; out.push(v); }
+  }
   return { out, notes };
 }

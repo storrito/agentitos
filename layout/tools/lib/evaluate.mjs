@@ -42,7 +42,7 @@ export function evaluate(ctx, p) {
     if (part) { others.push({ box: part, label: "the speaker in the screen", share: area(part) / area(box), height: q.s * b[3] }); twice = part; }
   });
   const keep = [...faces.map((f) => (f.screen ? grow(f.box, D.gap) : keepOut(f.box, D))), ...others.map((o) => keepOut(o.box, D)), ...(p.circle ? [grow(p.circle.box, D.gap)] : [])];
-  const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null, card: split || !!sources[0].screen });
+  const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null, card: split || !!sources[0].screen, ground: !!p.onGround });
   // every face that shows is judged, whoever the placement is about: one under what an app covers
   // or in the safe box's margin is a finding also where it is another person's in a crop on one
   const problems = judge(Z, [
@@ -101,6 +101,7 @@ export function evaluate(ctx, p) {
     fullSize: text.fullSize,
     ...(textPx !== null ? { textHeight: r1(textPx) } : {}),
     ...(p.circle ? { circle: { ...p.circle, box: p.circle.box.map(r1) } } : {}),
+    ...(!split && isWin ? { groundShows: groundOf(ctx, text.placed) } : {}),
     ground: Math.max(0, +(1 - parts.reduce((a, q) => a + inter(q.win, frame), 0) / (W * H)).toFixed(3)),
     // the smallest face the picture shows whole: another person a crop on one shows whole is as
     // much in the picture as the one it is made for
@@ -143,3 +144,18 @@ export function evaluate(ctx, p) {
 }
 
 export const cmpRank = (a, b) => { for (let i = 0; i < a.rank.length; i++) if (a.rank[i] !== b.rank[i]) return a.rank[i] - b.rank[i]; return 0; };
+
+// What the ground shows where a text stands on it. The pages (and what the agent hands over unless
+// it chooses otherwise) lay a blurred, darker copy of the picture over the whole frame, larger than
+// covering it (1.17× of that), centred: a face of the picture lies there as a large blur. The agent
+// chooses a calm ground by this: another colour or picture as ground is the builder's.
+export const GROUND_ZOOM = 1.17;
+function groundOf(ctx, placed) {
+  const { W, H, sw, sh } = ctx, faces = ctx.sources?.[0]?.screen ? [] : ctx.faces || [];
+  const k = Math.max(W / sw, H / sh) * GROUND_ZOOM, gx = (W - k * sw) / 2, gy = (H - k * sh) / 2;
+  const behind = placed.filter((t) => t.on === "ground").map((t) => {
+    const hits = faces.map((f, i) => [i, inter(t.box, [gx + k * f[0], gy + k * f[1], k * f[2], k * f[3]]) / area(t.box)]).filter(([, v]) => v > 0.02);
+    return { role: t.role, shows: hits.length ? `the blur of ${hits.map(([i]) => (faces.length > 1 ? `face ${i + 1}` : "the face")).join(" and ")} (${Math.round(100 * Math.max(...hits.map(([, v]) => v)))} % of the text's box)` : "no face: the blur of the picture's rest" };
+  });
+  return { kind: `a blurred, darker copy of the picture, ${r2(k)}× the source, centred`, ...(behind.length ? { behind } : {}) };
+}

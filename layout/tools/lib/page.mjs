@@ -12,6 +12,7 @@
 
 import path from "node:path";
 import { r1 } from "./boxes.mjs";
+import { GROUND_ZOOM } from "./evaluate.mjs";
 
 // A caption line of three words, as most are in published Shorts (the median of 188): the type
 // is so large that the centred area of the usual vertical platforms holds about sixteen letters.
@@ -50,7 +51,7 @@ export function renderPage(c, res, { still = null, stills = null, page = null } 
   const parts = [];
   // the ground: a blurred, darker copy of the still that covers the frame
   if (c.ground > 0) {
-    const k = Math.max(W / sw, H / sh) * 1.17;
+    const k = Math.max(W / sw, H / sh) * GROUND_ZOOM;
     parts.push(src ? `<img src="${src}" style="${st([(W - k * sw) / 2, (H - k * sh) / 2, k * sw, k * sh])};filter:blur(36px) brightness(.5)">` : `<div class="ground"></div>`);
   }
   // each picture: the still at its place, clipped to its window where the window is smaller

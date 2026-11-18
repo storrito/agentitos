@@ -100,6 +100,9 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
     if (topKeep !== null) capOpts.push(mk([x, topKeep - h, w, h], "center", C, 3));                         // directly above the head
     if (isWin && win[1] > S[1] + EPS) capOpts.push(mk([x, win[1] - g - h, w, h], "center", C, 4));            // on the ground above the picture
   }
+  // opts.ground: the text only on the ground beside the picture (a candidate that offers the bands)
+  const onGround = (b) => !opts.ground || !(inter(b, win) > 0);
+  if (opts.ground) for (let i = capOpts.length - 1; i >= 0; i--) if (!onGround(capOpts[i].box)) capOpts.splice(i, 1);
 
   // The type a hook is set in at its full size, by its style
   const base = (style) => (style === "text" ? D.hookText.font : style === "card" ? D.hookCard.font : D.hookBig.font);
@@ -123,6 +126,12 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
           const bottom = Math.min(topKeep, ...placed.filter((q) => over(q.box) && q.box[1] < topKeep).map((q) => q.box[1] - g));
           font = fit(bottom - S[1]);
           if (font >= ht.minFont) list.push({ role: "hook", style: "text", lines: 2, font, box: [x, bottom - font * ht.heightEm, w, font * ht.heightEm], align: "center", zone: C, pref: 1, full: font >= ht.font, order: 0 });
+        }
+        // on the ground above the picture, above captions that stand there
+        if (isWin && win[1] > S[1] + EPS) {
+          const bottom = Math.min(win[1] - g, ...placed.filter((q) => over(q.box) && Y1(q.box) <= win[1] + EPS).map((q) => q.box[1] - g));
+          font = fit(bottom - S[1]);
+          if (font >= ht.minFont) list.push({ role: "hook", style: "text", lines: 2, font, box: [x, bottom - font * ht.heightEm, w, font * ht.heightEm], align: "center", zone: C, pref: 2, full: font >= ht.font, order: 0 });
         }
       }
       if (kind !== "text") {
@@ -153,7 +162,7 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
     }
     // The text before the card. Among the text's places the usual one first (under the chin, then
     // above the head); among a card's or big lines' places the one that holds the larger type.
-    return list.filter((o) => free(o.box, o.zone, placed)).sort((a, b) => a.order - b.order || (a.style === "text" ? a.pref - b.pref || b.font - a.font : b.font - a.font || a.pref - b.pref))[0] || null;
+    return list.filter((o) => onGround(o.box) && free(o.box, o.zone, placed)).sort((a, b) => a.order - b.order || (a.style === "text" ? a.pref - b.pref || b.font - a.font : b.font - a.font || a.pref - b.pref))[0] || null;
   };
   // how good a hook's place is, to choose among the captions' places: the text before the card,
   // then the larger type against the style's own

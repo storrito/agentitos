@@ -284,15 +284,16 @@ console.log("\nWeights: the ranking's terms from weights.json");
 const SRCW = SRC2, FACEW = FACE2;
 const Z45 = askZones("4:5"), Z11 = askZones("1:1");
 const ZONES = { "9:16": Z916, "16:9": Z169, "4:5": Z45, "1:1": Z11 };
-const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.side ? ` ${c.side}` : ""} ${r2(c.enlargement)}×`;
+const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? " text on the ground" : ""}${c.side ? ` ${c.side}` : ""} ${r2(c.enlargement)}×`;
 const needsOf = (list) => list.map((x) => (x === "hook" ? hook : x === "hook:card" ? card : cap(Number(x.split(":")[1]))));
 const table = [];
 
 t("the judged wide take (1280×720 into 9:16, two caption lines): the 4:5 crop (1.875×, soft) first, the square (1.5×, no problem) second, the whole picture as a strip third, the 2.67× crop fails", () => {
   const res = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], merge: false });
-  const order = res.candidates.map((c) => (c.fit === "crop" ? `crop ${c.crop}` : c.fit));
+  // (each band also with its text on the ground: listed behind it, left out here)
+  const order = res.candidates.filter((c) => !c.onGround).map((c) => (c.fit === "crop" ? `crop ${c.crop}` : c.fit));
   ok(order.slice(0, 3).join(", ") === "crop 4:5, crop 1:1, inset", `the order is ${order.join(", ")}`);
-  const [c45, c11, strip] = res.candidates, c916 = res.candidates.find((c) => c.crop === "9:16");
+  const [c45, c11, strip] = res.candidates.filter((c) => !c.onGround), c916 = res.candidates.find((c) => c.crop === "9:16");
   ok(!c45.hard && c45.problems.some((q) => q.code === "enlarged" && q.level === "soft"), "1.875× is not a soft problem");
   ok(!c11.problems.some((q) => q.code === "enlarged"), "1.5× (judged crisp) carries a problem");
   ok(c916.hard && c916.problems.some((q) => q.code === "enlarged" && q.level === "hard"), "2.67× is not a hard problem");
@@ -329,7 +330,8 @@ t("the size of a face is a target, not a reward: as tall as published talking he
 
 t("one term changed changes the order: with enlargement at 5 points at the limit the crisp square leads", () => {
   const res = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], set: { "weights.enlarge.costAtForbidden": 5 } });
-  ok(res.candidates[0].crop === "1:1" && res.candidates[1].crop === "4:5", `the order is ${res.candidates.map(nameOf).join(", ")}`);
+  const own = res.candidates.filter((c) => !c.onGround);
+  ok(own[0].crop === "1:1" && own[1].crop === "4:5", `the order is ${res.candidates.map(nameOf).join(", ")}`);
   const far = solve({ zones: Z916, source: SRCW, faces: [FACEW], needs: [cap(2)], set: { "weights.enlarge.forbiddenFrom": 3 }, merge: false }).candidates.find((c) => c.crop === "9:16");
   ok(!far.hard, "with the limit at 3× the 2.67× crop still fails");
 });
@@ -399,7 +401,7 @@ t("two people in one wide picture into 9:16, two caption lines: a crop on each, 
 
 t("--speaker 2: only the crops on the second person are listed, leaving the first out costs nothing, and the crop that fills the frame (1.78×, soft) leads before stacked", () => {
   const res = solve({ zones: Z916, source: SRC2P, faces: TWO, needs: [cap(2)], speaker: 2 });
-  const crops = res.candidates.filter((c) => c.speaker);
+  const crops = res.candidates.filter((c) => c.speaker && !c.onGround);
   ok(crops.length === 3 && crops.every((c) => c.speaker === 2), `crops on: ${crops.map((c) => c.speaker)}`);
   const first = res.candidates[0];
   ok(first.fit === "crop" && first.crop === "9:16" && first.speaker === 2 && first.leftOut === 1, `the first is ${nameOf(first)}`);
@@ -499,6 +501,19 @@ t("a crop closer in from a source with pixels to spare: the guest of the 4K tabl
   ok(!small.candidates.some((c) => c.closer), "a crop closer in from 1280×720");
   agree(first, res, "closer-on-2");
   return `${nameOf(first)} at ${first.scale}×, the face ${first.faceHeight} px (${Math.round(100 * first.faceHeight / 1920)} %)`;
+});
+
+t("text in the ground band: the wide interview into 9:16 with a caption line and a hook left the bands above and below the square empty, a huge blurred face in the one above, while the hook squeezed onto the chest; now the square is also offered with its text on the ground (the hook in the band above), and every candidate says what lies behind a text on the ground: here the blur of the face, under the inset's caption the picture's rest", () => {
+  const res = solve({ zones: Z916, source: [1280, 720], faces: [[555, 150, 180, 195]], needs: [cap(1), hook] });
+  const band = res.candidates.find((c) => c.onGround && c.crop === "1:1");
+  ok(band && !band.hard && !band.unmet.length, `the square with its text on the ground: ${band ? JSON.stringify(band.problems) : "not listed"}`);
+  const hk = band.text.find((x) => x.role === "hook");
+  ok(hk.on === "ground" && hk.where === "band-above" && Y1(hk.box) <= band.window[1], `the hook stands ${hk.on} ${hk.where}`);
+  ok(/blurred, darker copy/.test(band.groundShows.kind) && band.groundShows.behind.some((b) => b.role === "hook" && /blur of the face/.test(b.shows)), `the ground: ${JSON.stringify(band.groundShows)}`);
+  const inset = res.candidates.find((c) => c.fit === "inset" && !c.onGround), under = inset.groundShows.behind.find((b) => b.role === "caption");
+  ok(under && /no face/.test(under.shows), `behind the inset's caption: ${JSON.stringify(inset.groundShows)}`);
+  agree(band, res, "ground-band-square");
+  return `${nameOf(band)}: the hook y ${Math.round(hk.box[1])}–${Math.round(Y1(hk.box))} above the picture from y ${band.window[1]}; behind it ${band.groundShows.behind.find((b) => b.role === "hook").shows}`;
 });
 
 t("the same picture in 16:9 stays whole: the caption stands under both chins and the hook above both heads, on neither face; faces far apart take the hook between them", () => {
