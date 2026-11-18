@@ -26,7 +26,8 @@ export function keepOut(f, D) {
 // faces: the boxes text is named by (above the head, below the chin); keep: what text stays out of
 // (a face with its margins, another person's visible part, a screen region, a webcam's circle);
 // opts.seam: the y of the seam between two stacked parts, where captions stand first; opts.card:
-// a hook is a card at the top whatever kind was asked for (a screen, two people in two parts)
+// a hook is a card at the top whatever kind was asked for (a screen, two people in two parts);
+// opts.placed: boxes of text set already (a clip's captions), which the hook keeps clear of
 export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
   const { W, H, Z, D, tall, cap, hook } = ctx;
   const S = Z.safe, C = Z.centred, g = D.gap;
@@ -174,19 +175,21 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
   // then the larger type against the style's own
   const hookWorth = (hk) => (hk ? 2 - hk.order + hk.font / base(hk.style) / 2 : 0);
 
+  // opts.placed: text set already (captions whose place a clip keeps), which a hook keeps clear of
+  const pre = (opts.placed || []).map((b) => ({ role: "caption", style: "cap", box: b, pre: true, pref: 0 }));
   let best = null;
   for (const c of cap ? [...capOpts, null] : [null]) {
     if (c && !free(c.box, c.zone, [])) continue;
-    const placed = c ? [c] : [];
+    const placed = c ? [c] : [...pre];
     const hk = hook ? placeHook(placed) : null;
     if (hk) placed.push(hk);
-    const arr = { placed, met: placed.length, hook: hookWorth(hk), penalty: placed.reduce((s, q) => s + q.pref, 0) };
+    const arr = { placed, met: placed.filter((q) => !q.pre).length, hook: hookWorth(hk), penalty: placed.reduce((s, q) => s + q.pref, 0) };
     if (!best || arr.met > best.met || (arr.met === best.met && arr.hook > best.hook)) best = arr;
     if (best.met === want && (!hook || best.placed.at(-1).full)) break;
   }
 
   const top = faces.length ? Math.min(...faces.map((f) => f[1])) : Infinity, chin = faces.length ? Math.max(...faces.map((f) => Y1(f))) : -Infinity;
-  const placed = best.placed.map((t) => {
+  const placed = best.placed.filter((t) => !t.pre).map((t) => {
     const [x, y, w, h] = t.box;
     const onPicture = !isWin || inter(t.box, win) >= 0.5 * area(t.box);
     const between = faces.length > 1 && faces.some((f) => X1(f) <= x + EPS) && faces.some((f) => f[0] >= x + w - EPS);

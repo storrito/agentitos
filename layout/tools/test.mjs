@@ -20,6 +20,7 @@ import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { alike, solve as solveAny } from "./lib/solve.mjs";
+import { textOverTime } from "./lib/placed.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -1155,6 +1156,86 @@ if (!QUICK) t("the picture of a candidate is the frame down to its last row with
   }
   return seen.join(", ");
 });
+
+console.log("\nText over a placed picture, for a whole clip (text): faces over time");
+{
+  const Z9 = askZones("9:16");
+  const still = (box, a, b) => ({ who: "A", track: Array.from({ length: Math.round((b - a) * 10) + 1 }, (_, i) => ({ t: +(a + i / 10).toFixed(2), box })) });
+  const shot = (a, b, faces, room = { free: 0 }) => ({ start: a, end: b, faces, room });
+  const cap = [{ role: "caption", lines: 1 }];
+  const safeBottom = Z9.safe[1] + Z9.safe[3];
+  t("a face that sits high: the captions stand on the safe box's bottom, below the chin, and nothing is raised", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: cap });
+    ok(r.caption.options.y === safeBottom, `captions end at ${r.caption.options.y}, not on the safe box's bottom ${safeBottom}`);
+    ok(r.caption.font === DEFAULTS.caption.font.tall && r.caption.lines === 1, `type ${r.caption.font}, ${r.caption.lines} lines`);
+    ok(r.shots[0].lift === 0 && !r.conflicts.length, JSON.stringify(r.shots[0]));
+    return `middle at ${r.caption.middle} %`;
+  });
+  t("a face that sits low: its shot is raised just enough that the captions clear the chin and the margin below it, over a ground that stays under the apps' bottom", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 850, 370, 500], 0, 5)])], needs: cap });
+    const keepBottom = 850 + 500 + Math.max(DEFAULTS.free.belowMin, DEFAULTS.free.below * 500);
+    near(r.shots[0].lift, keepBottom - r.caption.box[1], 1, "lift");
+    ok(r.shots[0].ground === r.shots[0].lift && r.shots[0].lift <= 1920 - safeBottom, JSON.stringify(r.shots[0]));
+    ok(r.caption.seconds === 0 && !r.conflicts.length, r.conflicts.join(" "));
+    return `raised ${r.shots[0].lift} px`;
+  });
+  t("a tight close-up whose chin no lift can clear (the eyes would go under the apps' top): raised as far as allowed, the seconds and the share on the face named, and one sentence that says what would avoid it", () => {
+    const f = [100, 0, 880, 1700];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [still(f, 0, 4)])], needs: cap });
+    near(r.shots[0].lift, Math.floor(f[1] + DEFAULTS.eyes * f[3] - Z9.safe[1]), 1, "lift: as far as the eyes allow");
+    ok(r.caption.seconds >= 3.9 && r.shots[0].touches.length === 1, JSON.stringify(r.shots[0]));
+    ok(r.conflicts.length === 1 && /Shot 1 .*lie on A's face for 4 s.*What would avoid it/.test(r.conflicts[0]), r.conflicts[0]);
+    return r.conflicts[0].slice(0, 90) + " …";
+  });
+  t("two shots that disagree (a face high, a face low): one place for the clip, each shot raised for itself, no change of place proposed", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 9, [still([355, 850, 370, 500], 4, 9)])], needs: cap });
+    ok(r.shots[0].lift === 0 && r.shots[1].lift > 0, r.shots.map((s) => s.lift).join(", "));
+    ok(r.caption.seconds === 0 && !r.changes.length, JSON.stringify(r.changes));
+  });
+  t("a shot that cannot be raised (shown whole) with a low face, beside one that can: the place stays one, and the shot shown whole keeps its seconds on the face; with a long one, a place of its own is proposed, not taken", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 10, [still([300, 300, 480, 900], 0, 10)]), shot(10, 20, [still([355, 950, 370, 400], 10, 20)], { none: true })], needs: cap });
+    ok(r.shots[1].lift === 0 && r.shots[1].touches.length, JSON.stringify(r.shots[1]));
+    ok(r.changes.length === 1 && r.changes[0].shot === 1 && r.notes.some((n) => /proposed, not taken/.test(n)), JSON.stringify(r.changes));
+  });
+  t("a face that moves under the captions inside a shot: the shot is raised for its lowest moment, once for the whole shot", () => {
+    const track = Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [355, 300 + (i / 40) * 550, 370, 500] }));
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track }])], needs: cap });
+    const keepBottom = 850 + 500 + Math.max(DEFAULTS.free.belowMin, DEFAULTS.free.below * 500);
+    near(r.shots[0].lift, keepBottom - r.caption.box[1], 1, "lift for the lowest moment");
+    ok(r.caption.seconds === 0, `${r.caption.seconds} s on the face`);
+    const fixed = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track }])], needs: cap, fixed: { lifts: { 0: 0 } } });
+    ok(fixed.shots[0].lift === 0 && fixed.caption.seconds >= 0.4 && fixed.caption.seconds < 3, `a lift fixed at 0: ${fixed.caption.seconds} s on the face, only where it is low`);
+  });
+  t("faces low in every shot and nothing that can be raised: the captions go above the heads", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 6, [still([355, 1000, 370, 400], 0, 6)], null)], needs: cap });
+    ok(r.caption.box[1] + r.caption.box[3] <= 1000 - DEFAULTS.free.above * 400 + 1 && r.caption.seconds === 0, JSON.stringify(r.caption));
+    ok(r.caption.where === "above-head", r.caption.where);
+  });
+  t("the hook on the first shot: a short text below the chin, above the captions, while the face is high", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.hook && r.hook.kind === "text" && r.hook.where === "below-chin" && r.hook.until === 3, JSON.stringify(r.hook));
+    ok(r.hook.box[1] >= 300 + 500 && r.hook.box[1] + r.hook.box[3] <= r.caption.box[1], `hook ${r.hook.box} between chin 800 and captions ${r.caption.box[1]}`);
+  });
+  t("the first shot changes within the hook's time to one that leaves it no place: the hook ends at the cut", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 2, [still([355, 300, 370, 500], 0, 2)]), shot(2, 6, [still([60, 250, 960, 1000], 2, 6)], null)], needs: [{ role: "hook", start: 0, end: 3.5 }] });
+    ok(r.hook && r.hook.until === 2 && /ends at the cut/.test(r.hook.why), JSON.stringify(r.hook));
+  });
+  t("the command: text writes text.json and lists every shot; a --lift fixes one shot; a wrong --lift and a shots file without tracks are refused in one sentence", () => {
+    const dir = fs.mkdtempSync(path.join(OUT, "text-")), file = path.join(dir, "shots.json");
+    fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 8, [still([355, 850, 370, 500], 4, 8)])], hook: { start: 0, end: 2.5 } }));
+    let r = cli("text", dir, "--frame", "9:16", "--shots", file, "--text", "caption", "--text", "hook");
+    ok(r.status === 0 && /shot 2 .*raised \d+ px/.test(r.stdout) && /hook: a text/.test(r.stdout), r.stdout + r.stderr);
+    const j = JSON.parse(fs.readFileSync(path.join(dir, "text.json"), "utf8"));
+    ok(j.caption.options.y === safeBottom && j.shots.length === 2, JSON.stringify(j.caption));
+    r = cli("text", dir, "--frame", "9:16", "--shots", file, "--lift", "2:0");
+    ok(r.status === 0 && /shot 2 .*as it stands/.test(r.stdout) && /✗/.test(r.stdout), r.stdout);
+    r = cli("text", dir, "--frame", "9:16", "--shots", file, "--lift", "5:10");
+    ok(r.status === 1 && r.stderr.trim().split("\n").length === 1 && /--lift is <shot>:<px>/.test(r.stderr), r.stderr);
+    fs.writeFileSync(file, JSON.stringify({ shots: [{ start: 0, end: 2, faces: [{ who: "A" }] }] }));
+    r = cli("text", dir, "--frame", "9:16", "--shots", file);
+    ok(r.status === 1 && /"track"/.test(r.stderr), r.stderr);
+  });
+}
 
 if (table.length) {
   console.log("\nWinners of the hand cases with the weights of weights.json");
