@@ -537,7 +537,7 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
       }
       // wider where the face moves more than a still window holds (of a face as wide as the
       // window, its middle: CORE of its width)
-      const core = (f, ww, m = HOLD) => (f.w > BIG * ww ? [f.x - (CORE / 2) * f.w, f.x + (CORE / 2) * f.w] : [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww]);
+      const core = (f, ww, m = HOLD) => (f.w > BIG * ww ? [f.x - (CORE / 2) * f.w - Math.min(m, SLACK) * ww, f.x + (CORE / 2) * f.w + Math.min(m, SLACK) * ww] : [f.x - f.w / 2 - m * ww, f.x + f.w / 2 + m * ww]);
       let hold = "still";
       for (const g of segs) {
         const fs = g.at.filter(Boolean);
@@ -602,8 +602,9 @@ export function windowsOf(shots, timeline, { width, height, aspect, kinds = [], 
 // the window's place on one face from t0 to t1, every tenth of a second: [{ t, x }]. It rests
 // while the face (its core) stays inside, and when the face pushes at an edge it goes along, at
 // most VMAX window widths a second, only as far as needed; it does not turn back within REST
-// seconds of its last turn (a swaying head is let go a little rather than chased), so a still
-// face gets a still window, a walking one a gliding window. `near`: the place before
+// seconds of its last turn unless the face itself (its core) would leave the window (a swaying
+// head is let into the room beside it rather than chased), so a still face gets a still window,
+// a walking one a gliding window. `near`: the place before
 export function calm(person, t0, t1, { w, width, core, near = null }) {
   const room = (t) => {
     const f = faceAt(person, t);
@@ -624,7 +625,10 @@ export function calm(person, t0, t1, { w, width, core, near = null }) {
     if (r) {
       const want = Math.min(r[1], Math.max(r[0], x)) - x;
       const d = Math.sign(Math.round(want));
-      if (d && (d === dir || at - turned >= REST || !dir)) {
+      // the face itself (not only the room beside it) about to leave: turn back all the same
+      const f = faceAt(person, at), [a, b] = f ? core(f, w, 0) : [x, x + w];
+      const leaving = a < x || b > x + w;
+      if (d && (d === dir || at - turned >= REST || !dir || leaving)) {
         x += Math.max(-vmax * dt, Math.min(vmax * dt, want));
         if (d !== dir) { if (dir) turned = at; dir = d; }
       }
