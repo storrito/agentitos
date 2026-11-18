@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
 import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
-import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing, edgesPrompt, EDGES_SCHEMA, applyEdges } from "./lib/moments.mjs";
+import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing } from "./lib/moments.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -315,15 +315,14 @@ const MOMENTS_SCHEMA = {
   },
 };
 
-const USAGE = "episode.mjs moments <dir> [--count N] [--max-seconds N] [--edges]";
-function momentsOptions(rest, usage = USAGE) {
+const USAGE = "episode.mjs moments <dir> [--count N] [--max-seconds N]";
+function momentsOptions(rest) {
   const opts = {};
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === "--edges" && usage === USAGE) { opts.edges = true; continue; }
-    const k = { "--count": usage === USAGE ? "count" : null, "--max-seconds": "limit" }[rest[i]];
+    const k = { "--count": "count", "--max-seconds": "limit" }[rest[i]];
     const v = Number(rest[i + 1]);
-    if (!k) fail(`Unknown option ${rest[i]}: ${usage}`);
-    if (!Number.isInteger(v) || v < 1) fail(`${rest[i]} takes a whole number: ${usage}`);
+    if (!k) fail(`Unknown option ${rest[i]}: ${USAGE}`);
+    if (!Number.isInteger(v) || v < 1) fail(`${rest[i]} takes a whole number: ${USAGE}`);
     opts[k] = v; i++;
   }
   if (opts.limit != null && (opts.limit < 15 || opts.limit > 600)) fail(`--max-seconds ${opts.limit}: a short is 15 to 600 seconds long (59 fits every post type; Reels, TikTok and Shorts take more).`);
@@ -357,31 +356,11 @@ async function ask(or, prompt, name, schema, timeout = 300e3) {
 const withLinks = (list, sentences, episode) => list.map((m) => ({ ...m, opening: sentences[m.first].text,
   link: episode.id ? `https://youtu.be/${episode.id}?t=${Math.floor(m.start)}` : null }));
 
-// The second pass: one small call per moment with the sentences around it, four at a time; it
-// only moves the edges (lib/moments.mjs applyEdges). → { moments, calls, failed, cost }
-async function edgesPass(or, episode, sentences, list, limit) {
-  const edges = new Array(list.length).fill(null);
-  let cost = 0, next = 0, failed = 0;
-  log(`episode: the edges of ${list.length} moments, one small call each …`);
-  await Promise.all(Array.from({ length: Math.min(4, list.length) }, async () => {
-    while (next < list.length) {
-      const i = next++;
-      try {
-        const r = await ask(or, edgesPrompt(episode, sentences, list[i], limit), "edges", EDGES_SCHEMA, 120e3);
-        edges[i] = r.answer; cost += r.cost;
-      } catch (e) { failed++; log(`episode: the edges of moment ${i + 1} stay as they were (${e.message.slice(0, 120)})`); }
-    }
-  }));
-  return { moments: withLinks(applyEdges(list, edges, sentences, { limit }), sentences, episode), calls: list.length, failed, cost };
-}
-
 function report(dir, episode, sentences, j, cost) {
   const pieces = Object.values(j.inventory || {}).reduce((a, b) => a + (Number(b) || 0), 0);
   console.log(listing(j, sentences, pieces));
   const over = j.moments.filter((m) => m.checks.over).length;
-  const moved = j.moments.filter((m) => m.edges && (m.edges.start !== "kept" || m.edges.end !== "kept")).length;
   console.log(`${j.moments.length} moments in ${path.join(dir, "moments.json")}${episode.id ? " (with their YouTube links)" : ""}, $${cost.toFixed(4)}. `
-    + (j.edges ? `The edges pass moved the start or the end of ${moved} (${j.edges.calls} calls${j.edges.failed ? `, ${j.edges.failed} failed` : ""}). ` : "")
     + (over ? `${over} are whole passages longer than ${j.limit} s: where the platforms allow it, run moments again with a higher --max-seconds; else leave their marked sentences out (clips.mjs prepare … --drop <sentences>). ` : "")
     + `A moment's words: sed -n '<first+1>,<last+1>p' ${path.join(dir, "sentences.txt")}. Cut one: episode.mjs cut ${dir} <first>-<last> <clip.mp4>.`);
 }
@@ -400,42 +379,16 @@ async function moments(dir, ...rest) {
   let r;
   try { r = await ask(or, momentsPrompt(episode, text, count, limit), "moments", MOMENTS_SCHEMA); } catch (e) { fail(`Picking the moments failed (${e.message}): read sentences.txt yourself.`); }
   const { answer } = r;
-  let picked = withLinks(arrange(answer, sentences, { limit }), sentences, episode);
-  let cost = r.cost, edges;
-  if (given.edges) {
-    const e = await edgesPass(or, episode, sentences, picked, limit);
-    picked = e.moments; cost += e.cost; edges = { calls: e.calls, failed: e.failed, cost: +e.cost.toFixed(4) };
-  }
+  const picked = withLinks(arrange(answer, sentences, { limit }), sentences, episode);
   const ideas = (answer.ideas || []).map((d) => ({ ...d, sentences: (d.sentences || []).filter((k) => sentences[k]),
     at: (d.sentences || []).filter((k) => sentences[k]).map((k) => mmss(sentences[k].start)) }));
-  const j = { limit, count, inventory: answer.inventory || {}, moments: picked, ideas, ...(edges ? { edges } : {}) };
+  const j = { limit, count, inventory: answer.inventory || {}, moments: picked, ideas };
   fs.writeFileSync(path.join(dir, "moments.json"), JSON.stringify(j, null, 1));
-  report(dir, episode, sentences, j, cost);
-}
-
-// `edges` on its own: the second pass on a moments.json written before (another --max-seconds
-// changes what may be dropped)
-async function edgesCommand(dir, ...rest) {
-  const usage = "episode.mjs edges <dir> [--max-seconds N]";
-  if (!dir) fail(usage);
-  const given = momentsOptions(rest, usage);
-  const file = path.join(dir, "moments.json");
-  if (!fs.existsSync(file)) fail(`No ${file}: run episode.mjs moments ${dir} first.`);
-  const or = await openrouter();
-  if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): read the sentences around each moment yourself.");
-  const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
-  const sentences = JSON.parse(fs.readFileSync(path.join(dir, "sentences.json"), "utf8"));
-  const j = JSON.parse(fs.readFileSync(file, "utf8"));
-  const limit = given.limit ?? j.limit ?? MAX_SECONDS;
-  const e = await edgesPass(or, episode, sentences, j.moments, limit);
-  const out = { ...j, limit, moments: e.moments, edges: { calls: e.calls, failed: e.failed, cost: +e.cost.toFixed(4) } };
-  fs.writeFileSync(file, JSON.stringify(out, null, 1));
-  report(dir, episode, sentences, out, e.cost);
+  report(dir, episode, sentences, j, r.cost);
 }
 
 const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
 else if (command === "moments") await moments(...args);
-else if (command === "edges") await edgesCommand(...args);
-else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] [--max-seconds N] [--edges] | edges <dir> [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>");
+else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>");
