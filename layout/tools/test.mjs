@@ -604,6 +604,22 @@ t("with a hook and a caption line the 480×400 region at 1.71× leaves the circl
   return `9:16: ${res.notes[0]}; 16:9: ${cw.scale}×, circle ${cw.circle.d} px ${cw.circle.corner}; 4:5 from a 2880×1800 screen: ${cf.scale}×, circle ${cf.circle.d} px ${cf.circle.corner}`;
 });
 
+// A talk recorded as slides with the speaker's stage camera baked in at the left (1920×1080, the
+// first use on real footage, 2026-11-18): the region is the slide's title and bullets, the face
+// the speaker's in the baked picture.
+const TALK = { size: [1920, 1080], region: [500, 40, 1340, 310], minTextHeight: 20, faces: [[130, 555, 70, 85]] };
+
+t("a webcam baked into the screen recording (its face given with the screen's own source): the circle shows that part of the screen's picture, and where the screen's picture shows the baked speaker as well, the speaker shows twice: a soft finding (the whole slide passed it without a word); the baked face is judged and kept clear of text like any face that shows", () => {
+  const res = solve({ zones: Z916, sources: [TALK], needs: [cap(1)] });
+  const whole = res.candidates.find((c) => c.fit === "screen-whole"), fit = res.candidates.find((c) => c.fit === "screen-fit");
+  ok(whole.circle.crop && whole.circle.crop[0] <= 130 && whole.circle.crop[0] + whole.circle.crop[2] >= 200, `the circle shows ${JSON.stringify(whole.circle.crop)} of the screen's picture`);
+  ok(whole.problems.some((q) => q.code === "twice" && q.level === "soft") && whole.others.some((o) => /speaker/.test(o.of)), `the whole slide: ${JSON.stringify(whole.problems)}`);
+  ok(!fit.problems.some((q) => q.code === "twice"), `the region alone shows the speaker twice: ${JSON.stringify(fit.problems)}`);
+  for (const c of res.candidates) for (const o of c.others || []) ok(c.text.every((x) => !overlap(x.box, o.box)), `${nameOf(c)}: text on the baked speaker`);
+  agree(whole, res, "screen-baked-whole");
+  return `the whole slide: ${whole.problems.filter((q) => q.code === "twice").map((q) => q.what.split(":")[0]).join("")}; the circle crops ${whole.circle.crop.map(Math.round).join(",")} of the screen`;
+});
+
 // =============================================================================================
 console.log("\nFrames 4:5 (1080×1350) and 1:1 (1080×1080)");
 // =============================================================================================

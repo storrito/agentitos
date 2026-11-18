@@ -55,7 +55,7 @@ export function judge(Z, items) {
 // same thing, so that the two verdicts can be compared.
 const CHECKER_CODE = (what) => (/^under /.test(what) ? "covered" : /outside the frame/.test(what) ? "off-frame" : /^lies on/.test(what) ? "text-on-face" : /^overlaps/.test(what) ? "text-on-text" : /cut off by its box/.test(what) ? "clipped" : /safe box's margin/.test(what) ? "margin" : /cut where/.test(what) ? "crop" : /centred in the safe box/.test(what) ? "off-centre" : "other");
 // what only the solver can know (the source's sharpness, the crop inside the frame, the text asked for)
-const SOLVER_ONLY = new Set(["enlarged", "cut", "no-room", "other-cut", "other-shows", "small", "circle-on-region"]);
+const SOLVER_ONLY = new Set(["enlarged", "cut", "no-room", "other-cut", "other-shows", "small", "circle-on-region", "twice"]);
 export function compare(c, checked) {
   const mine = c.problems.filter((q) => !SOLVER_ONLY.has(q.code)).map((q) => `${q.level === "hard" ? "✗" : "!"} ${q.kind} ${q.code}`);
   const theirs = checked.findings.map((f) => `${f.level} ${f.kind} ${CHECKER_CODE(f.what)}`);

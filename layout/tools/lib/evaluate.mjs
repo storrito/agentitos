@@ -33,6 +33,14 @@ export function evaluate(ctx, p) {
       else { const part = clipBox(box, shown); if (part) others.push({ box: part, label, share: area(part) / area(box), height: q.s * (src.heights ? src.heights[i] : f[3]) }); }
     });
   });
+  // a webcam baked into the screen recording: where the screen's picture shows it, its face is in
+  // the frame as any other person's, and with the circle the speaker shows twice
+  let twice = null;
+  if (ctx.baked) parts.forEach((q) => {
+    if (!sources[q.src].screen) return;
+    const b = ctx.baked, box = [q.left + q.s * b[0], q.top + q.s * b[1], q.s * b[2], q.s * b[3]], part = clipBox(box, clipBox(q.win, frame) || q.win);
+    if (part) { others.push({ box: part, label: "the speaker in the screen", share: area(part) / area(box), height: q.s * b[3] }); twice = part; }
+  });
   const keep = [...faces.map((f) => (f.screen ? grow(f.box, D.gap) : keepOut(f.box, D))), ...others.map((o) => keepOut(o.box, D)), ...(p.circle ? [grow(p.circle.box, D.gap)] : [])];
   const text = layoutText(ctx, [...faces, ...others].map((f) => f.box), keep, win, isWin, { seam: p.seam ?? null, card: split || !!sources[0].screen });
   // every face that shows is judged, whoever the placement is about: one under what an app covers
@@ -43,6 +51,7 @@ export function evaluate(ctx, p) {
     ...(p.circle ? [{ kind: "face", label: "webcam", box: p.circle.box }] : []),
     ...text.placed.map((t) => ({ kind: "text", label: t.role, box: t.box, ink: t.ink })),
   ]);
+  if (twice && (p.circle || split)) problems.push({ level: "soft", code: "twice", kind: "face", of: "the speaker", what: `shows twice: in the screen's own picture (x ${Math.round(twice[0])}–${Math.round(X1(twice))}, y ${Math.round(twice[1])}–${Math.round(Y1(twice))}) and in the ${split ? "panel" : "circle"}: take the region or a candidate whose screen leaves the webcam's corner out` });
   if (p.circle?.covers > 0) problems.push({ level: "hard", code: "circle-on-region", kind: "face", of: "webcam", what: `${p.circle.covers < 0.005 ? "touches the region or its margin" : `covers ${pct(p.circle.covers)} of the region`}: the region leaves it no corner` });
   // a screen's smallest text, in px of the frame
   const screen = sources[0].screen ? sources[0] : null, textPx = screen?.minText ? parts[0].s * screen.minText : null;

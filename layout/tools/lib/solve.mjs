@@ -119,7 +119,10 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
   ctx.readable = D.readable.height * W / D.readable.per;
   if (main.screen) {
     // a screen and its region; the webcam: the second source's face, or a face given with the screen
-    const cam = srcs[1] ? { size: srcs[1].size, face: srcs[1].faces[0] || null } : main.webcam ? { size: null, face: main.webcam } : null;
+    // (a face given with the screen is a webcam baked into the screen recording: the circle shows
+    // that part of the screen's own picture)
+    const cam = srcs[1] ? { size: srcs[1].size, face: srcs[1].faces[0] || null } : main.webcam ? { size: main.size, face: main.webcam, baked: true } : null;
+    if (cam?.baked) ctx.baked = cam.face;
     ctx.sources = [main];
     out.push(...screenFits(ctx, cam, notes));
     if (!main.minText) notes.push("no --min-text-height given: whether the screen's text reads is not judged");
