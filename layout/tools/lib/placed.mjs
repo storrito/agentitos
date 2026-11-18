@@ -76,11 +76,17 @@ export const SMALLER = [0.9, 0.8, 0.7];
 export const NOSE_IN_FEAT = 0.7, LIP_IN_FEAT = 0.88, OPEN = 0.15, IMPLIED = [0.38, 0.86];
 // (the mouth line without feat, a share of the box from its top)
 export const MOUTH = +(IMPLIED[0] + (1 + OPEN) * (IMPLIED[1] - IMPLIED[0])).toFixed(3);
-// How far a shot may be raised. moderate: while the whole head stays in the picture (the top of
-// the face's box and the margin layout keeps above a head for the hair, DEFAULTS.free.above, stay
-// below the frame's top), and further, the head's top cut, only where the captions would otherwise
-// cover a mouth; full: until the eyes reach the safe box's top, the head cut by the frame.
-export const RAISE = ["moderate", "full"];
+// How far a shot may be raised, the caller's choice of three:
+//   head  never so far that a head inside the picture goes over the frame's top (its box's top
+//         and the margin layout keeps above a head for the hair, DEFAULTS.free.above), nor a head
+//         the frame cuts already further: the type goes to its floor first, and what is left lies
+//         on the chin or the lower lip, said;
+//   mouth (the default) as head, and further, the head's top cut, where the captions would
+//         otherwise lie on a mouth or a lower lip and that costs less than the seconds it saves;
+//   full  until the chin is clear, as far as the eyes reach the safe box's top.
+// "moderate" (the name of before) is mouth.
+export const RAISE = ["head", "mouth", "full"];
+export const raiseOf = (r) => (r === "moderate" ? "mouth" : r);
 const featOf = (f) => f.feat || [f.box[0] + 0.18 * f.box[2], f.box[1] + IMPLIED[0] * f.box[3], 0.64 * f.box[2], (IMPLIED[1] - IMPLIED[0]) * f.box[3]];
 const lineOf = (f, k) => { const e = featOf(f); return e[1] + k * e[3]; };
 const noseOf = (f) => lineOf(f, NOSE_IN_FEAT), lipOf = (f) => lineOf(f, LIP_IN_FEAT), mouthOf = (f) => lineOf(f, 1 + OPEN);
@@ -124,12 +130,15 @@ function maxLift(shot, moments, ctx) {
     const eyes = eyesOf(f, ctx.D) - ctx.Z.safe[1];
     if (eyes < most) { most = eyes; by = "eyes"; }
   }
-  const beyond = Math.max(0, Math.floor(most));
+  let beyond = Math.max(0, Math.floor(most));
   if (ctx.raise !== "full") for (const m of moments) for (const f of m.faces) {
     const head = f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3]);
     if (head < most) { most = head; by = "head"; }
   }
-  return { most: Math.max(0, Math.floor(most)), beyond, by };
+  most = Math.max(0, Math.floor(most));
+  // head: not past the head's top for a mouth either
+  if (ctx.raise === "head") beyond = most;
+  return { most, beyond, by };
 }
 
 // One shot under one caption box: the least lift that clears it (within `most`), the seconds and
@@ -216,8 +225,9 @@ function aboveHeads(cap, list) {
   return above > below;
 }
 
-export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}, costs = COSTS, raise = "moderate" }) {
-  if (!RAISE.includes(raise)) throw new Error(`raise is ${RAISE.join(" or ")}, not "${raise}".`);
+export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}, costs = COSTS, raise: asked = "mouth" }) {
+  const raise = raiseOf(asked);
+  if (!RAISE.includes(raise)) throw new Error(`raise is ${RAISE.join(", ")}, not "${asked}".`);
   const [W, H] = Z.size;
   const D = scaled(merged(DEFAULTS, set), Z.size);
   const tall = W <= H;
@@ -370,7 +380,19 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   const conflicts = [];
   const shotsOut = list.map((s, i) => {
     const r = best ? best.per[i] : { lift: 0, free: 0, ground: 0, seconds: 0, share: 0, who: [], need: 0, nose: 0, mouth: 0, lip: 0 };
-    const out = { shot: i, start: s.start, end: s.end, lift: r.lift, free: r.free, ground: r.ground, band: r.ground, most: s.most, limit: r.past ? "mouth" : s.by, ...(s.forced ? { fixed: true } : {}), ...(r.past ? { past: true } : {}), ...(r.returned ? { returned: true } : {}),
+    // how far the frame cuts a head at the top: its box's top and the margin for the hair over the
+    // frame's top, px at most and seconds, and how much of that the lift adds
+    const headCut = { seconds: 0, px: 0, byLift: 0 };
+    for (const m of s.moments) {
+      let cut = 0, before = 0;
+      for (const f of m.faces) {
+        const top = f.box[1] - Math.max(D.free.aboveMin, D.free.above * f.box[3]);
+        cut = Math.max(cut, -(top - r.lift)); before = Math.max(before, -top);
+      }
+      if (cut > 0.5) { headCut.seconds += m.dt; headCut.px = Math.max(headCut.px, cut); headCut.byLift = Math.max(headCut.byLift, cut - Math.max(0, before)); }
+    }
+    headCut.seconds = r1(headCut.seconds); headCut.px = r0(headCut.px); headCut.byLift = r0(headCut.byLift);
+    const out = { shot: i, start: s.start, end: s.end, lift: r.lift, headCut, free: r.free, ground: r.ground, band: r.ground, most: s.most, limit: r.past ? "mouth" : s.by, ...(s.forced ? { fixed: true } : {}), ...(r.past ? { past: true } : {}), ...(r.returned ? { returned: true } : {}),
       touches: r.who.map((w) => ({ role: "caption", who: w.who, from: r1(w.from), to: r1(w.to), seconds: r1(w.seconds), nose: r1(w.nose), mouth: r1(w.mouth), lip: r1(w.lip), share: Math.round(w.share * 100) / 100 })) };
     if (best && r.seconds > 0.05) {
       const who = [...new Set(r.who.map((w) => w.who))].join(" and "), short = r.need - r.lift;
@@ -389,7 +411,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       } else if (r.lip > 0.05) {
         // on the lower lip at a readable size: said, not a fault
         out.chin = true; out.lip = r1(r.lip);
-        notes.push(`${span}: the captions lie on ${who}'s lower lip for ${r1(r.lip)} s and on the chin for ${chin} s, not on the mouth${r.past ? `; raised ${r.lift} px past the head's top for it` : ""}: not avoidable at a readable size (${best.font} px; the low end of published captions is ${D.caption.font.least} px). Nothing to fix; a cut to another shot or a smaller type by hand (--font-size) would avoid it.`);
+        notes.push(`${span}: the captions lie on ${who}'s lower lip for ${r1(r.lip)} s and on the chin for ${chin} s, not on the mouth${r.past ? `; raised ${r.lift} px past the head's top for it` : ""}: not avoidable at a readable size (${best.font} px; the low end of published captions is ${D.caption.font.least} px)${raise === "head" ? " with the whole head kept" : ""}. Nothing to fix; ${raise === "head" ? "--raise mouth (the head's top cut for it), " : ""}a cut to another shot or a smaller type by hand (--font-size) would avoid it.`);
       } else if (hair) {
         // above the face, within the margin kept for the hair: no face covered
         out.hair = true;
@@ -420,7 +442,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     seconds: r1(best.touch), lifted: best.per.filter((r) => r.lift > 0).length,
   } : null;
   return {
-    frame: `${W}x${H}`, size: [W, H], platforms: (Z.platforms || []).map((p) => p.name), safe: S,
+    frame: `${W}x${H}`, size: [W, H], platforms: (Z.platforms || []).map((p) => p.name), safe: S, raise,
     caption: capOut, shots: shotsOut, hook: hookOut, changes, conflicts, notes,
     candidates: candidates.filter((c, i, a) => a.findIndex((d) => d.font === c.font && Math.abs(d.box[1] - c.box[1]) < H * 0.02) === i).slice(0, 5)
       .map((c) => ({ box: c.box, font: c.font, cost: r1(c.cost), seconds: r1(c.touch), lifted: c.per.filter((r) => r.lift > 0).length, liftPx: c.per.reduce((n, r) => n + r.lift, 0), middle: Math.round(((c.box[1] + c.box[3] / 2) / H) * 1000) / 10 })),

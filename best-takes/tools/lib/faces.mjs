@@ -67,8 +67,10 @@ export const mouthOf = (b, feat) => lineOf(b, feat, 1 + OPEN);
 //         a line above the captions' top stays above it, one below it goes no further down. The
 //         placement was made for the picture without the punch-in; the punch-in may not undo it.
 //   eyes: its eyes (feat's top, else EYES of the box) stay below `safeTop`, under the apps' top bar;
-//   moderate: a head inside the frame (its box's top and ABOVE of its height for the hair, layout's
-//         margin) stays inside it, as far as the hard lines allow;
+//   head, mouth (place.json's raise; "moderate" is mouth): a head inside the frame (its box's top
+//         and ABOVE of its height for the hair, layout's margin) stays inside it, and one the frame
+//         cuts already is not cut further for a chin, as far as the hard lines allow; with head
+//         never, the hard lines' price being a punch-in less close or none;
 //   wish: its chin and the margin below it (layout's, BELOW of its height, BELOW_MIN at least)
 //         clear the captions' top where they did; the origin as close to a third from the top as that allows.
 // The origin lies in the frame (0 to its height): grown from below its bottom the picture would
@@ -92,11 +94,12 @@ export function punchPlan({ faces, scale, frame: [W, H], cap, safeTop = 0, raise
       for (const line of [noseOf(b, feat), lipOf(b, feat), mouthOf(b, feat)]) lower = Math.max(lower, line <= top ? from(line, top) : line);
       upper = Math.min(upper, from(feat ? feat[1] : b[1] + EYES * b[3], safeTop));
       // (a head the frame cuts already is not cut further to free a chin: the origin then stays at a third from the top, the hard lines aside)
-      if (raise === "moderate") { const head = b[1] - ABOVE * b[3]; headIn = Math.min(headIn, head >= 0 ? from(head, 0) : low); }
+      if (raise !== "full") { const head = b[1] - ABOVE * b[3]; headIn = Math.min(headIn, head >= 0 ? from(head, 0) : low); }
       const chin = b[1] + b[3] + Math.max(BELOW_MIN, BELOW * b[3]);
       wish = Math.max(wish, from(chin, top));
     }
-    if (lower > upper + 1e-6) { why ||= "the mouth or the nose would go into the captions, or the eyes under the apps' top bar"; continue; }
+    if (raise === "head") upper = Math.min(upper, Math.max(headIn, low));
+    if (lower > upper + 1e-6) { why ||= raise === "head" ? "the mouth or the nose would go into the captions, or the head over the frame's top" : "the mouth or the nose would go into the captions, or the eyes under the apps' top bar"; continue; }
     const origin = Math.min(upper, Math.max(lower, low, Math.min(wish, headIn)));
     return { scale: s, origin, ...(s < scale ? { why: `smaller, ${s}× instead of ${scale}×: ${why}` } : {}) };
   }

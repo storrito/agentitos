@@ -374,3 +374,14 @@ test("the check names the part a text lies on: the nose or the eyes, the mouth (
   const h = run(low, [192, 940, 696, 100]);
   assert.ok(h.hair >= 2.9 && h.nose === 0, JSON.stringify(h));
 });
+
+test("raise head: a punch-in never cuts a head further, it goes less close or not at all", () => {
+  const cap = [192, 1375, 696, 65];
+  // the mouth line below the captions' top: the lines want the origin below it, which lifts the head the frame cuts already
+  const face = { box: [190, -60, 700, 1560], feat: [300, 640, 480, 700] };
+  const mouth = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "mouth" });
+  const head = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "head" });
+  assert.equal(mouth.scale, 1.12);
+  assert.equal(head.scale, 1);
+  assert.match(head.why, /the head over the frame's top/);
+});

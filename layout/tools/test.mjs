@@ -1232,6 +1232,18 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
     ok(r.caption.font < DEFAULTS.caption.font.tall && !r.shots[0].past && r.shots[0].lift === 0 && r.shots[0].on.mouth === 0, JSON.stringify([r.caption.font, r.shots[0]]));
   });
+  t("the three levels on one tight close-up: head keeps the whole head (type to its floor, the lower lip said), mouth goes past the head's top until the mouth is clear (the default), full until the chin is clear; each shot says how far the frame cuts the head", () => {
+    // the lip line at 1325, the mouth line at 1517, the eyes at 700; the head's top over the frame's top already
+    const box = [140, 300, 800, 1500], feat = [300, 700, 480, 710];
+    const run = (raise) => textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap, ...(raise ? { raise } : {}) });
+    const head = run("head"), mouth = run(), full = run("full");
+    ok(head.shots[0].lift === 0 && head.caption.font < DEFAULTS.caption.font.tall && head.shots[0].on.mouth === 0 && head.shots[0].headCut.byLift === 0 && !head.conflicts.length, JSON.stringify([head.caption.font, head.shots[0]]));
+    ok(head.notes.some((n) => /lower lip .*with the whole head kept\. Nothing to fix; --raise mouth/.test(n)), JSON.stringify(head.notes));
+    ok(mouth.raise === "mouth" && mouth.shots[0].past && mouth.shots[0].on.mouth === 0 && mouth.shots[0].on.lip === 0 && mouth.shots[0].headCut.byLift === mouth.shots[0].lift, JSON.stringify(mouth.shots[0]));
+    ok(full.shots[0].lift >= mouth.shots[0].lift && full.shots[0].headCut.px >= mouth.shots[0].headCut.px, JSON.stringify([full.shots[0], mouth.shots[0].lift]));
+    ok(run("moderate").raise === "mouth", "moderate is mouth");
+    return `head ${head.caption.font} px unraised, mouth ${mouth.caption.font} px raised ${mouth.shots[0].lift} px, full raised ${full.shots[0].lift} px`;
+  });
   t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
     const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
     const r = textOverTime({ zones: Z9, shots: [close(0, 3, 840), close(3, 6, 300), close(6, 9, 870), close(9, 12, 300), close(12, 15, 850)], needs: cap });

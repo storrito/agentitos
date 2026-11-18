@@ -114,14 +114,23 @@ test("place on a made-up clip: the close-up is raised over a ground, the caption
     // moderate, the default: the close-up's head is at the frame's top already, so it is not raised, and its chin carries the captions
     const r0 = place();
     assert.equal(r0.status, 0, r0.stdout + r0.stderr);
-    assert.match(r0.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions on the chin or neck of guest [\d.]+ s, below the mouth\n/);
-    assert.match(r0.stdout, /Raised moderately/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8")).raise, "moderate");
+    assert.match(r0.stdout, / 1\. 0\.0–3\.0 s {2}as framed(; the head cut at the top \d+ px for [\d.]+ s)?; captions on the chin or neck of guest [\d.]+ s, below the mouth\n/);
+    assert.match(r0.stdout, /Raised \(--raise mouth\)/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "takes", "place.json"), "utf8")).raise, "mouth");
+    // the close-up's head over the frame's top already: said per shot, with what the raise adds
+    assert.match(r0.stdout, / 1\. 0\.0–3\.0 s {2}as framed; the head cut at the top \d+ px for [\d.]+ s; captions/);
     // captions asked higher, over the close-up's mouth: moderately it goes up past its head's top (as far as the eyes allow) until they lie on the lower lip at most
     const rm = place("--caption-y", "1260");
     assert.equal(rm.status, 0, rm.stdout + rm.stderr);
-    assert.match(rm.stdout, / 1\. 0\.0–3\.0 s {2}raised \d+ px, a blurred band of \d+ px at the bottom .*, past the head's top so that the captions keep off the mouth; captions (on the chin or neck of guest|on guest: the lower lip [\d.]+ s.*not on the mouth)/);
+    assert.match(rm.stdout, / 1\. 0\.0–3\.0 s {2}raised \d+ px, a blurred band of \d+ px at the bottom .*, past the head's top so that the captions keep off the mouth(; the head cut at the top \d+ px for [\d.]+ s \(\d+ px of it by the raise\))?; captions (on the chin or neck of guest|on guest: the lower lip [\d.]+ s.*not on the mouth)/);
     assert.doesNotMatch(rm.stdout, /captions ✗|✗ Shot/);
+    // head: never a head cut further, the mouth's price said instead
+    const rh = place("--raise", "head");
+    assert.equal(rh.status, 0, rh.stdout + rh.stderr);
+    assert.match(rh.stdout, /Raised \(--raise head\)/);
+    assert.match(rh.stdout, / 1\. 0\.0–3\.0 s {2}as framed; the head cut at the top \d+ px for [\d.]+ s; captions/);
+    assert.doesNotMatch(rh.stdout, /so that the captions keep off the mouth/);
+    assert.equal(place("--raise", "").status, 0);
     // two lines asked for (a style of phrases, or a long word broken at its soft hyphen): layout gives them room, captions gets them
     const r2l = place("--caption-y", "", "--lines", "2");
     assert.equal(r2l.status, 0, r2l.stdout + r2l.stderr);
@@ -153,7 +162,7 @@ test("place on a made-up clip: the close-up is raised over a ground, the caption
     // fixed by the agent: the close-up not raised; kept for the next run (as is --raise full)
     const r2 = place("--lift", "1.5:0");
     assert.equal(r2.status, 0, r2.stdout + r2.stderr);
-    assert.match(r2.stdout, / 1\. 0\.0–3\.0 s {2}as framed; captions (on the chin or neck of guest|✗ on the mouth of guest: the mouth [\d.]+ s[\s\S]*✗ Shot 1 .*a larger lift than the one fixed)/);
+    assert.match(r2.stdout, / 1\. 0\.0–3\.0 s {2}as framed(; the head cut at the top \d+ px for [\d.]+ s)?; captions (on the chin or neck of guest|✗ on the mouth of guest: the mouth [\d.]+ s[\s\S]*✗ Shot 1 .*a larger lift than the one fixed)/);
     // held where it is with the captions over the mouth: a fault, named, with what would avoid it
     const rx = place("--caption-y", "1260");
     assert.match(rx.stdout, /captions ✗ on the (mouth|nose or eyes) of guest: the (mouth|nose or eyes) [\d.]+ s/);
