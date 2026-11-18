@@ -9,11 +9,11 @@
 //   textOverTime({ zones, shots, needs, set, fixed }) → { caption, shots, hook, candidates,
 //       changes, conflicts, notes }
 //
-// shots: [{ start, end, weight?, picture?: [x, y, w, h], faces: [{ who, track: [{ t, box }] }],
+// shots: [{ n?, start, end, weight?, picture?: [x, y, w, h], faces: [{ who, track: [{ t, box }] }],
 //   room?: { free, ground? } | null }]: times in seconds of one clock, boxes in px of the frame
 //   as the picture stands unraised; weight: the seconds of the shot the video shows (default
-//   end − start); room: how far the picture may be raised without a ground (free: the framing
-//   moves its window in the footage) and at most (ground: over a ground; default as far as the
+//   end − start); n: the shot's number in the caller's list, for the sentences; room: how far
+//   the picture may be raised without a ground (free: the framing moves its window in the footage) and at most (ground: over a ground; default as far as the
 //   ground stays under the apps' bottom), null or { none: true }: not at all (a shot shown whole,
 //   two panels).
 // needs: [{ role: "caption", lines }, { role: "hook", kind?, start, end }]
@@ -245,12 +245,12 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       const short = r.need - r.lift;
       const why = s.room?.none ? "its picture is shown whole or as two panels and is not raised"
         : short > 0 ? `it would have to stand ${r0(short)} px higher than it may (${r.lift} px raised; ${s.most} px is as far as its ${s.most < (s.room?.free || 0) + (s.room?.ground ?? H - Y1(S)) ? "faces' eyes stay below the apps' top" : "framing and the apps' bottom allow"})` : "the face lies below the captions' middle";
-      conflicts.push(`Shot ${i + 1} (${r1(s.start)}–${r1(s.end)} s): the captions lie on ${[...new Set(r.who.map((w) => w.who))].join(" and ")}'s face for ${r1(r.seconds)} s, ${r.share > 0 ? `up to ${Math.round(r.share * 100)} % of its height up from the chin` : "within the margin below its chin"}, because ${why}. What would avoid it: ${s.room?.none ? "a framing that follows the speaker in this shot" : "a smaller picture for this shot (the face higher and smaller over a ground), or a cut to another shot here"}.`);
+      conflicts.push(`Shot ${s.n ?? i + 1} (${r1(s.start)}–${r1(s.end)} s): the captions lie on ${[...new Set(r.who.map((w) => w.who))].join(" and ")}'s face for ${r1(r.seconds)} s, ${r.share > 0 ? `up to ${Math.round(r.share * 100)} % of its height up from the chin` : "within the margin below its chin"}, because ${why}. What would avoid it: ${s.room?.none ? "a framing that follows the speaker in this shot" : "a smaller picture for this shot (the face higher and smaller over a ground), or a cut to another shot here"}.`);
     }
     return out;
   });
   if (hookOut?.onFace?.seconds > 0) conflicts.push(`The hook lies on a face for ${hookOut.onFace.seconds} s (up to ${Math.round(hookOut.onFace.share * 100)} % of it) wherever it stands on the first shot: no hook (the first line carries the clip), a shorter one that ends before the face reaches it, or a start on another shot would avoid it.`);
-  for (const c of changes) notes.push(`Shot ${c.shot + 1} (${r1(c.start)}–${r1(c.end)} s) would keep its captions off the face with a place of its own (y ${r0(c.box[1])}–${r0(Y1(c.box))}), saving ${c.saves} s: proposed, not taken; a place that changes at a cut costs the reading the one place gives.`);
+  for (const c of changes) notes.push(`Shot ${list[c.shot].n ?? c.shot + 1} (${r1(c.start)}–${r1(c.end)} s) would keep its captions off the face with a place of its own (y ${r0(c.box[1])}–${r0(Y1(c.box))}), saving ${c.saves} s: proposed, not taken; a place that changes at a cut costs the reading the one place gives.`);
 
   const capOut = best ? {
     box: best.box, font: best.font, lines: best.lines, align: "center",
