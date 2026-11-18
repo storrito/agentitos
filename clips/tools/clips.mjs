@@ -35,6 +35,7 @@ import path from "node:path";
 import { execFileSync, spawnSync, spawn } from "node:child_process";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { lengthNote } from "./lib/length.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "target"];
@@ -163,7 +164,8 @@ function prepare(episode, dir, range, opts) {
 
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
-  if (said[1] - said[0] > longest + 0.5) console.log(`⚠ The moment is ${Math.round(said[1] - said[0])} s long, over the ${longest} s a short may be here (pauses cut, it stays over): leave sentences out in cut.json before you build; best-takes' check names it until it fits.`);
+  const long = lengthNote(said[1] - said[0], longest);
+  if (long) console.log(long);
   if (video === framed) console.log(`Look at ${rel(path.join(dir, "framed.sheet.jpg"))} (one row per shot: the footage with the window in yellow, the frame at the shot's first, middle and last frame; red where a face is at an edge, as framing listed with ⚠). Someone or something that matters cut off: node ${rel(path.join(HERE, "clips.mjs"))} reframe ${rel(dir)} --whole <second>; a speaker shown whole who should be followed: --follow <second>.`);
   console.log(`Next: read ${rel(path.join(td, "source", "brief.md"))}; fix misheard names in cut.json "fixes", move the start or the end when a word at the edge belongs to the moment or is a stray "und"; then
   node ${t} build ${d}${opts.out ? "" : " --out <composition>"}
