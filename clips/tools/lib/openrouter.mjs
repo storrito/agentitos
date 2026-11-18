@@ -8,6 +8,8 @@
 //   openrouter() → { base, headers, gateway } or null   (base: the API's root, OpenRouter's
 //                  …/api/v1 or the connection's …/v1, no slash at the end)
 //   need(what)   → the same, or a throw that says how to get one
+//   keyRejected(or) → why OpenRouter turns the key away ("401 User not found."), or null
+//   REJECTED(why)   → the sentence for it
 //
 // The gateway takes a request of up to about 7 MB (measured 2026-10-23: 6 MB answered, 8 MB
 // "413 request body too large"); OpenRouter itself about 50 MB.
@@ -51,3 +53,25 @@ export async function need(what) {
   if (!r) throw new Error(`${what} needs OpenRouter: OPENROUTER_API_KEY in the environment, or on a Sprite the gateway's OpenRouter connection`);
   return r;
 }
+
+// A key that OpenRouter turns away (revoked, mistyped, of another account) fails every call
+// after it, and a tool with a fallback would go on without saying so: asked once, before any
+// work, at the API's own /key. Only a 401 or 403 counts; a gateway adds its key itself and
+// anything else (no answer, another API behind OPENROUTER_BASE_URL) is not a rejection.
+export async function keyRejected(or, ask = fetch) {
+  if (!or || or.gateway) return null;
+  try {
+    const res = await ask(`${or.base}/key`, { headers: or.headers, signal: AbortSignal.timeout(10000) });
+    if (res.status !== 401 && res.status !== 403) return null;
+    const j = await res.json().catch(() => ({}));
+    return `${res.status}${j?.error?.message ? " " + j.error.message : ""}`;
+  } catch {
+    return null;
+  }
+}
+
+// the same said by a call that failed: "… (OpenRouter 401: {…})"
+export const rejectedIn = (message) => (/OpenRouter (401|403)\b/.exec(String(message)) || [])[1] || null;
+
+export const REJECTED = (why) => `OpenRouter turned the key away (${why}), so nothing was written: put a valid OPENROUTER_API_KEY into the environment`
+  + ` (on a Sprite, unset it to go through the gateway's OpenRouter connection) and run this again.`;

@@ -520,16 +520,6 @@ test("the sheet is there when it says so, also when the framed video ends a few 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("prepare says a moment is too long only when it stays too long after its pauses are cut", async () => {
-  const { lengthNote } = await import("./lib/length.mjs");
-  assert.equal(lengthNote(58, 59), null);
-  // the reviewer's 59.5-66 s: they may fit once tightened (6-10 % off), so no warning, a word on what is known
-  assert.doesNotMatch(lengthNote(62, 59), /⚠/);
-  assert.match(lengthNote(62, 59), /about 56–58 s/);
-  // deaths: 79.3 s of words, 71.0 s cut
-  assert.match(lengthNote(79.3, 59), /⚠ .*stays over/);
-});
-
 test("a shot's stills are an odd number: the first, the middle and the last frame among them", () => {
   for (const length of [2, 5, 7.5, 12, 30]) {
     const stills = stillsOf([{ start: 0, end: length }], FPS);

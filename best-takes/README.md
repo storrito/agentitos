@@ -56,6 +56,7 @@ Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, 
 | `keep[].pauses` | `"keep"`: its pauses play as they are, no jump cut, no timelapse |
 | `keep[].sounds` | `"keep"`: fillers in it stay (a "hm" that is an answer) |
 | `keep[].gain` | dB on top of the evened-out level |
+| `keep[].again` | `true`: it plays words another keep plays too (a line said later that opens the video as its hook, heard again where it was said); without it a word in two keeps is an error. A word number then stands for two places: the captions mark both, b-roll's beats (`takes.mjs broll`) sit on the later one |
 | `keep[].why` | for the agent and the person |
 | `fixes` | the subtitles' spelling by word number; `""` drops a word from the text, not from the cut |
 | `waits` | word numbers that end a sentence announcing a wait ("let's wait until then"): the pause after it, inside a keep or up to the next keep, plays as a wait (a timelapse of 3–5 s when the picture moves, else 3 s held before the cut) instead of being cut away |
