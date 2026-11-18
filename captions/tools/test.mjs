@@ -35,7 +35,7 @@ import { zones, zonesTool } from "./lib/zones.mjs";
 // that changed captions nobody placed on purpose: hormozi, karaoke and wipe; every group shrinks
 // until its widest word fits; now the one after the review, with one script for every style.
 // The commit must stay in the history: a merge that squashes it leaves the test skipped)
-const BEFORE = process.env.CAPTIONS_BEFORE || "72d9224c13c519ba7a9db00d091a198803b9b2eb";
+const BEFORE = process.env.CAPTIONS_BEFORE || "c020d5f8a247062567ab3855ec7c4a8eb2f42bc6";
 const TOOLS = path.dirname(fileURLToPath(import.meta.url)), REPO = path.dirname(path.dirname(TOOLS));
 const TOOL = path.join(TOOLS, "captions.mjs");
 const ZONES = zonesTool();
@@ -370,6 +370,9 @@ test("in capitals the letter of a paragraph and a gender ending stay small; noth
   // only a number with one small letter at its end: an abbreviation, a unit or a compound with a digit in it is set in capitals as ever
   const digits = built(t, ["--style", "hormozi", "--size", "1080x1920"], wordsOf("Im b2b mit h2o bei 5m/s im 3d-druck und 2l/100km. in Haus 12b, um 12:30h."));
   assert.deepEqual(digits.data.groups.flatMap((g) => g.words).filter((w) => w.own).map((w) => w.text), ["12b,", "12:30h."]);
+  // a capital I inside a word is a gender mark that capitals would swallow: it is the one small letter; "LinkedIn" and "PlugIn" are no such words
+  const inner = built(t, ["--style", "hormozi", "--size", "1080x1920"], wordsOf("GeneralistInnen und jede LehrerIn, jede KollegIn im LehrerInnenzimmer, alle Mitarbeiter­Innen bei LinkedIn mit PlugIn, LogIn, StandIn und ChatIn."));
+  assert.deepEqual(inner.data.groups.flatMap((g) => g.words).filter((w) => w.own).map((w) => w.text), ["GENERALISTiNNEN", "LEHRERiN,", "KOLLEGiN", "LEHRERiNNENZIMMER,", "MITARBEITER­iNNEN"]);
   // the tool says which words it wrote so, and nothing where there are none
   assert.match(more.said, /\n {2}\(in capitals but for small letters that would say something else: "JEDE:n", "MITARBEITER\/innen"\)\n/);
   assert.doesNotMatch(built(t, ["--style", "hormozi", "--size", "1080x1920"]).said, /small letters/);
@@ -412,7 +415,8 @@ test("every style builds in every frame, every word once and in order; what only
     const b = built(t, ["--style", name, "--size", size]), at = `${name} ${size}`;
     assert.equal(texts(b.data).join(" "), SAID, at);
     b.data.groups.forEach((g, i) => { if (i) assert.ok(g.start >= b.data.groups[i - 1].end, `${at}: one group at a time`); });
-    for (const g of b.data.groups) assert.ok(g.words.length <= s.group.words, `${at}: "${g.words.map((w) => w.text).join(" ")}" has more words than the style's ${s.group.words}`);
+    // (one word at a time: a word too short to be read shares its caption, three at most)
+    for (const g of b.data.groups) assert.ok(g.words.length <= (s.group.brief ? 3 : s.group.words), `${at}: "${g.words.map((w) => w.text).join(" ")}" has more words than the style's ${s.group.words}`);
     assert.equal(has.lineBox.test(b.html), !!s.look.lineBox, `${at}: a box for every line`);
     assert.equal(has.keyFont.test(b.html), !!s.look.keyFont, `${at}: key words in another typeface`);
     assert.equal(has.sides.test(b.html), !!s.look.pill || (s.motion.active === "color-scale" && s.look.grow > 1), `${at}: room kept at the sides of a line (a pill's overhang, a word that grows)`);
@@ -496,15 +500,35 @@ test("a brand's colour goes where the style shows one: the word being said, the 
   assert.equal(branded(t, "hormozi", "#1E3A8A").look.accent, "#1E3A8A");
 });
 
-test("single: one word a caption, each on screen until the next is said", { skip: noZones }, (t) => {
-  const b = built(t, ["--style", "single", "--size", "1080x1920"]);
-  assert.equal(b.data.groups.length, WORDS.length);
+test("single: one word a caption, each on screen until the next is said; a word too short to be read shares its caption", { skip: noZones }, (t) => {
+  const b = built(t, ["--style", "single", "--size", "1080x1920"]), brief = STYLES.single.group.brief;
+  assert.equal(texts(b.data).join(" "), SAID);
   b.data.groups.forEach((g, i) => {
-    assert.equal(g.words.length, 1);
-    const next = b.data.groups[i + 1];
-    // inside a sentence a word ends in the moment the next one starts: no frame without a word between them
-    if (next && next.start - g.words[0].said < 0.3) assert.equal(g.end, next.start, `"${g.words[0].text}" ends ${(next.start - g.end).toFixed(3)} s before "${next.words[0].text}" starts`);
+    const next = b.data.groups[i + 1], last = g.words[g.words.length - 1];
+    assert.ok(g.words.length <= 3, `"${g.words.map((w) => w.text).join(" ")}"`);
+    // inside a sentence a caption ends in the moment the next one starts: no frame without a word between them
+    if (next && next.start - last.said < 0.3) assert.equal(g.end, next.start, `"${last.text}" ends ${(next.start - g.end).toFixed(3)} s before "${next.words[0].text}" starts`);
   });
+  // "Das" and "im" would be on screen for a tenth of a second: each goes with the word after it. "Ja," is a phrase of its own and has no word to go with
+  const w = (text, start, end) => ({ text, start, end });
+  const said = [w("Das", 0.3, 0.4), w("läuft", 0.42, 0.8), w("im", 0.82, 0.9), w("Browser.", 0.92, 1.4), w("Ja,", 2, 2.1), w("genau", 2.12, 2.5), w("so,", 2.52, 2.6), w("und", 2.62, 2.9), w("fertig.", 2.92, 3)];
+  const cut = (group) => groups(said, group, 60).map((g) => said.slice(g.from, g.to + 1).map((x) => x.text).join(" "));
+  // ("so," ends its phrase and the next begins at once: it goes with the word before it. "fertig." is as short, but stays after it is said: nothing to do)
+  assert.deepEqual(cut(STYLES.single.group), ["Das läuft", "im Browser.", "Ja,", "genau so,", "und", "fertig."]);
+  assert.deepEqual(cut({ ...STYLES.single.group, brief: undefined }), ["Das", "läuft", "im", "Browser.", "Ja,", "genau", "so,", "und", "fertig."]);
+  // six fast words: no caption is on screen for less than `brief`, and none holds more than three
+  const fast = [w("in", 0.3, 0.38), w("der", 0.4, 0.48), w("Tat", 0.5, 0.6), w("so", 0.62, 0.7), w("ist", 0.72, 0.8), w("es.", 0.82, 1.2)];
+  const gs = groups(fast, STYLES.single.group, 60);
+  assert.deepEqual(gs.map((g) => fast.slice(g.from, g.to + 1).map((x) => x.text).join(" ")), ["in der", "Tat so", "ist es."]);
+  gs.forEach((g, i) => { if (gs[i + 1]) assert.ok(gs[i + 1].start - g.start >= brief, `"${fast[g.from].text} …" is on screen for ${(gs[i + 1].start - g.start).toFixed(2)} s`); });
+  // where the words are measured (the tool does, always): "im Browser." shares a caption a little smaller, "die" stays alone
+  // before a word that fills the line, and goes with the word before it where that sets
+  const wide = [w("für", 0.3, 0.4), w("die", 0.42, 0.5), w("Digitalisierung", 0.52, 1.3), w("im", 2, 2.1), w("Browser.", 2.12, 2.6), w("Und", 3.2, 3.3), w("Digitalisierung", 3.32, 4)];
+  const tool = built(t, ["--style", "single", "--size", "1080x1920"], wide);
+  assert.deepEqual(texts(tool.data), ["für die", "Digitalisierung", "im Browser.", "Und", "Digitalisierung"]);
+  // a card is a phrase of its own: it is never joined, and nothing is joined into one
+  const card = [w("Das", 0.3, 0.4), { ...w("eine", 0.42, 0.5), box: 1 }, { ...w("Woche", 0.52, 0.9), box: 1 }, w("lang.", 0.92, 1.3)];
+  assert.deepEqual(groups(card, STYLES.single.group, 60).map((g) => card.slice(g.from, g.to + 1).map((x) => x.text).join(" ")), ["Das", "eine Woche", "lang."]);
 });
 
 test("label: a line's box is no room for a word, and the area asked for holds the boxes", { skip: noZones }, (t) => {
