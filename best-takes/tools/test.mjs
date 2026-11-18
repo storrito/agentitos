@@ -256,30 +256,31 @@ test("capitalised: Unicode's first letter, by the language; names and digits as 
 });
 
 // ------------------------------------------------------------------- text and faces (faces.json)
+// (the tests of the lines below pass fills: Infinity: their faces are tall to make the lines plain, and a face that fills the frame gets no punch-in at all)
 import { punchOrigin, punchPlan, textOnFaces, toFrame, noseOf, lipOf, mouthOf, OPEN } from "./lib/faces.mjs";
 import { hookCard } from "./lib/hook.mjs";
 
 const FRAME = [1080, 1920], CAP = [192, 1306, 696, 134];
 test("a punch-in grows from a third from the top while every chin clears the captions with room to spare", () => {
-  assert.equal(punchOrigin({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, cap: CAP }), 0.32 * 1920);
+  assert.equal(punchOrigin({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP }), 0.32 * 1920);
 });
 test("a punch-in on a face whose chin stands just above the captions grows from lower down, so that the chin and the margin below it stay above them", () => {
   const face = [300, 600, 480, 640], chin = 600 + 640 + 0.08 * 640;
-  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP });
+  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP });
   assert.ok(y > 0.32 * 1920, `origin ${y}`);
   // the chin after the punch-in, grown from y
   assert.ok(y + (chin - y) * 1.12 <= CAP[1] + 1e-6, `chin after ${y + (chin - y) * 1.12}`);
 });
 test("a punch-in on a face that lies on the captions already grows from the frame's bottom at most: the chin goes up, not down; but never so far that the eyes go under the apps' top bar", () => {
-  const y = punchOrigin({ faces: [[100, 0, 880, 1700]], scale: 1.12, frame: FRAME, cap: CAP });
+  const y = punchOrigin({ faces: [[100, 0, 880, 1700]], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP });
   assert.equal(y, 1920);
   const f = [100, -414, 880, 1700], eyes = -414 + 0.42 * 1700;
-  const kept = punchOrigin({ faces: [f], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 });
+  const kept = punchOrigin({ faces: [f], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250 });
   assert.ok(kept < 1920 && Math.abs(kept + (eyes - kept) * 1.12 - 250) < 0.01, `origin ${kept}`);
 });
 test("without captions, or on a face below them (captions above a head), the punch-in grows from a third from the top", () => {
-  assert.equal(punchOrigin({ faces: [[300, 600, 480, 640]], scale: 1.12, frame: FRAME, cap: null }), 0.32 * 1920);
-  assert.equal(punchOrigin({ faces: [[355, 1000, 370, 400]], scale: 1.12, frame: FRAME, cap: [192, 700, 696, 134] }), 0.32 * 1920);
+  assert.equal(punchOrigin({ faces: [[300, 600, 480, 640]], scale: 1.12, frame: FRAME, fills: Infinity, cap: null }), 0.32 * 1920);
+  assert.equal(punchOrigin({ faces: [[355, 1000, 370, 400]], scale: 1.12, frame: FRAME, fills: Infinity, cap: [192, 700, 696, 134] }), 0.32 * 1920);
 });
 test("the check finds the seconds a text lies on a face, through the piece's punch-in, and how deep into the face from its chin", () => {
   const clips = { 1: { file: "01.mp4" } };
@@ -311,14 +312,14 @@ test("the hook stands where it is placed: a text without a card in the middle of
 test("raise moderate: a punch-in keeps a whole head inside the frame and the mouth line above the captions", () => {
   // a face whose chin is near the captions, its head's top 0.35 of it above its box, inside the frame
   const face = [300, 450, 480, 900];
-  const full = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 });
-  const mod = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250, raise: "moderate" });
+  const full = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250 });
+  const mod = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250, raise: "moderate" });
   const head = 450 - 0.35 * 900;
   assert.ok(mod <= full, `${mod} ${full}`);
   assert.ok(mod + (head - mod) * 1.12 >= -1e-6, `the head's top after: ${mod + (head - mod) * 1.12}`);
   // a mouth line just above the captions stays above them grown closer, whatever the head
   const tight = [100, 160, 880, 1700], line = 160 + 0.65 * 1700;
-  const y = punchOrigin({ faces: [tight], scale: 1.12, frame: FRAME, cap: [192, 1306, 696, 134].map((v, i) => (i === 1 ? line + 10 : v)), safeTop: 250, raise: "moderate" });
+  const y = punchOrigin({ faces: [tight], scale: 1.12, frame: FRAME, fills: Infinity, cap: [192, 1306, 696, 134].map((v, i) => (i === 1 ? line + 10 : v)), safeTop: 250, raise: "moderate" });
   assert.ok(y + (line - y) * 1.12 <= line + 10 + 1e-6, `mouth line after ${y + (line - y) * 1.12}`);
 });
 
@@ -326,10 +327,10 @@ test("raise moderate: a head the frame cuts already is not pushed further up to 
   // no features: the head's proportions put its nose line at 1134, its lip line at 1264, its mouth line below the captions' top (1306)
   const face = [100, 60, 880, 1500];
   const cap = [192, 1306, 696, 134];
-  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
   near(y, 60 + (0.38 + (1 + OPEN) * 0.48) * 1500, 0.5);
   // full: as far as the eyes allow, for the chin
-  assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 }), Math.min(1920, (1.12 * (60 + 0.42 * 1500) - 250) / 0.12));
+  assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250 }), Math.min(1920, (1.12 * (60 + 0.42 * 1500) - 250) / 0.12));
 });
 
 const at = (o, s, y) => o + (y - o) * s;
@@ -337,12 +338,12 @@ test("the review's zoom-ins: a close-up whose head the frame cuts keeps its mout
   const cap = [192, 1375, 696, 65];
   // robe at 20.9 s: the features' bottom at 1276, the mouth line (with room for an open mouth) at 1372, just above the captions
   const robe = { box: [190, -60, 700, 1560], feat: [300, 640, 480, 636] };
-  const p = punchPlan({ faces: [robe], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  const p = punchPlan({ faces: [robe], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
   assert.equal(p.scale, 1.12);
   for (const line of [noseOf(robe.box, robe.feat), lipOf(robe.box, robe.feat), mouthOf(robe.box, robe.feat)]) assert.ok(at(p.origin, p.scale, line) <= cap[1] + 1e-6, `a line from ${line} to ${at(p.origin, p.scale, line)}`);
   // the lower lip just inside the area, the nose line at 1190: the nose line went to 1424 before
   const lip = { box: [240, -60, 600, 1560], feat: [330, 700, 420, 700] };
-  const q = punchPlan({ faces: [lip], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  const q = punchPlan({ faces: [lip], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
   assert.ok(at(q.origin, q.scale, noseOf(lip.box, lip.feat)) <= cap[1] && at(q.origin, q.scale, lipOf(lip.box, lip.feat)) <= cap[1], JSON.stringify(q));
   assert.ok(at(q.origin, q.scale, mouthOf(lip.box, lip.feat)) <= mouthOf(lip.box, lip.feat) + 1e-6, "the mouth line goes no lower than it stood");
 });
@@ -350,11 +351,11 @@ test("a zoom-in that would push a mouth into the captions or the eyes under the 
   const cap = [192, 1375, 696, 65];
   // the eyes 5 px below the top bar, the mouth line below the captions' top: growing from below the mouth lifts the eyes under the bar
   const tight = { box: [190, -200, 700, 1700], feat: [300, 255, 480, 1150] };
-  const p = punchPlan({ faces: [tight], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  const p = punchPlan({ faces: [tight], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
   assert.equal(p.scale, 1);
   assert.match(p.why, /^none: the mouth or the nose would go into the captions, or the eyes under/);
   // a face clear of the captions keeps its punch-in as asked
-  assert.equal(punchPlan({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, cap }).scale, 1.12);
+  assert.equal(punchPlan({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, fills: Infinity, cap }).scale, 1.12);
 });
 
 test("the check names the part a text lies on: the nose or the eyes, the mouth (both lips), the lower lip, the chin, or above a head on the hair", () => {
@@ -379,9 +380,17 @@ test("raise head: a punch-in never cuts a head further, it goes less close or no
   const cap = [192, 1375, 696, 65];
   // the mouth line below the captions' top: the lines want the origin below it, which lifts the head the frame cuts already
   const face = { box: [190, -60, 700, 1560], feat: [300, 640, 480, 700] };
-  const mouth = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "mouth" });
-  const head = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "head" });
+  const mouth = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "mouth" });
+  const head = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "head" });
   assert.equal(mouth.scale, 1.12);
   assert.equal(head.scale, 1);
   assert.match(head.why, /the head over the frame's top/);
+});
+
+test("a face that fills the frame already (its box half the frame's height or more) gets no punch-in, and build says why", () => {
+  const tight = { box: [190, 300, 700, 1000], feat: [300, 700, 480, 450] };
+  const p = punchPlan({ faces: [tight], scale: 1.12, frame: FRAME, cap: [192, 1375, 696, 65] });
+  assert.equal(p.scale, 1);
+  assert.match(p.why, /^none: the face fills 52 % of the frame's height already/);
+  assert.equal(punchPlan({ faces: [{ box: [300, 300, 480, 800] }], scale: 1.12, frame: FRAME, cap: [192, 1375, 696, 65] }).scale, 1.12);
 });

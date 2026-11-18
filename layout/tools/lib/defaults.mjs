@@ -81,6 +81,12 @@ export const DEFAULTS = {
   facePad: 20,
   // where the eyes sit in a face's box (from its top), for fits that choose the height freely
   eyes: 0.42,
+  // the highest the eyes may stand when a shot is raised at the default level (text: --raise mouth),
+  // a share of the frame's height from its top: the upper end of where published Shorts have them.
+  // layout-data/report/findings.md (240 Shorts, the eye line estimated at 38 % down the face's box):
+  // "Augenlinie … Median 32 % bei p1, 33 % bei g1, mittlere Hälfte 27–38 %". Above it the frame
+  // starts at the brows (deaths, 2026-11-18: the eyes at 12–20 % for 37 s of 71 s).
+  eyeLine: 0.27,
   // (from where enlarging the source's pixels is soft and from where forbidden: weights.json)
   // zoom and inset are searched on a grid of 1 % of the covering scale
   zoomStep: 0.01, zoomMax: 1.6, insetStep: 0.01, insetMin: 0.5, panelMin: 0.6,

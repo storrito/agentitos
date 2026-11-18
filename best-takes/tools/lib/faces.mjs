@@ -77,8 +77,19 @@ export const mouthOf = (b, feat) => lineOf(b, feat, 1 + OPEN);
 // leave a band empty. punchPlan → { scale, origin } at the scale asked, at a smaller one (halfway)
 // where the hard lines and the eyes leave no origin at it, or none (scale 1: the piece stays as it
 // is) where they leave none at that either; `why` then says what kept it.
-export function punchPlan({ faces, scale, frame: [W, H], cap, safeTop = 0, raise = "full" }) {
+// A face that fills the frame already is not brought closer: hairline to chin is 26 % of the
+// height in published Shorts (layout-data/report/findings.md, 240 Shorts: "Haaransatz bis Kinn
+// im Median 26 % … mittlere Hälfte 23–34 %"); a box half the frame tall (a talk show's tight
+// close-up, 0.48–0.57 of it in deaths and robe) is half again past the upper quartile, and 12 %
+// closer pushes every line of it towards the captions and the edges. FILLS of the height, the
+// face's box at its middle moment over the piece, a choice: no punch-in from there.
+export const FILLS = 0.45;
+export function punchPlan({ faces, scale, frame: [W, H], cap, safeTop = 0, raise = "full", fills = FILLS }) {
   const low = ORIGIN_Y * H;
+  if (scale > 1 && faces.length) {
+    const hs = faces.map((f) => (Array.isArray(f) ? f : f.box)[3]).sort((a, b) => a - b), mid = hs[hs.length >> 1];
+    if (mid >= fills * H) return { scale: 1, origin: low, why: `none: the face fills ${Math.round((mid / H) * 100)} % of the frame's height already` };
+  }
   if (!cap || !(scale > 1)) return { scale, origin: low };
   const top = cap[1];
   let why = "";

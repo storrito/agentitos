@@ -1233,8 +1233,8 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(r.caption.font < DEFAULTS.caption.font.tall && !r.shots[0].past && r.shots[0].lift === 0 && r.shots[0].on.mouth === 0, JSON.stringify([r.caption.font, r.shots[0]]));
   });
   t("the three levels on one tight close-up: head keeps the whole head (type to its floor, the lower lip said), mouth goes past the head's top until the mouth is clear (the default), full until the chin is clear; each shot says how far the frame cuts the head", () => {
-    // the lip line at 1325, the mouth line at 1517, the eyes at 700; the head's top over the frame's top already
-    const box = [140, 300, 800, 1500], feat = [300, 700, 480, 710];
+    // the lip line at 1328, the mouth line at 1490, the eyes at 800; the head's top over the frame's top already
+    const box = [140, 300, 800, 1500], feat = [300, 800, 480, 600];
     const run = (raise) => textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap, ...(raise ? { raise } : {}) });
     const head = run("head"), mouth = run(), full = run("full");
     ok(head.shots[0].lift === 0 && head.caption.font < DEFAULTS.caption.font.tall && head.shots[0].on.mouth === 0 && head.shots[0].headCut.byLift === 0 && !head.conflicts.length, JSON.stringify([head.caption.font, head.shots[0]]));
@@ -1243,9 +1243,19 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(full.shots[0].lift >= mouth.shots[0].lift && full.shots[0].headCut.px >= mouth.shots[0].headCut.px, JSON.stringify([full.shots[0], mouth.shots[0].lift]));
     ok(run("moderate").raise === "mouth", "moderate is mouth");
     // a mouth the floor's type still covers: under head a fault that names --raise mouth
-    const low = textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat: [300, 700, 480, 760] })) }])], needs: cap });
+    const low = textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat: [300, 800, 480, 650] })) }])], needs: cap });
     ok(low.shots[0].lift === 0 && low.conflicts.some((c) => /cover A's mouth .*--raise mouth/.test(c)), JSON.stringify([low.shots[0], low.conflicts]));
     return `head ${head.caption.font} px unraised, mouth ${mouth.caption.font} px raised ${mouth.shots[0].lift} px, full raised ${full.shots[0].lift} px`;
+  });
+  t("mouth, the default, raises a close-up no further than the eyes at 27 % of the height (the upper end of where published Shorts have them): where the mouth clears only above that line, the shot stays below it, a smaller type where that helps, and the captions lie on the lower lip, said; full goes on to the apps' top bar", () => {
+    // the eyes at 600: 82 px above them to the line at 518; the mouth line at 1520 would need some 200
+    const box = [140, 200, 800, 1500], feat = [300, 600, 480, 800];
+    const run = (raise) => textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap, ...(raise ? { raise } : {}) });
+    const m = run(), f = run("full");
+    ok(m.shots[0].eyes >= DEFAULTS.eyeLine - 1e-3 && m.shots[0].on.mouth === 0 && m.shots[0].on.lip > 0 && m.caption.font >= DEFAULTS.caption.font.least && !m.conflicts.length, JSON.stringify([m.caption.font, m.shots[0], m.conflicts]));
+    ok(m.notes.some((n) => /lower lip for [\d.]+ s .*not avoidable at a readable size/.test(n)), JSON.stringify(m.notes));
+    ok(f.shots[0].eyes < DEFAULTS.eyeLine && f.shots[0].lift > m.shots[0].lift, JSON.stringify(f.shots[0]));
+    return `mouth: eyes at ${Math.round(m.shots[0].eyes * 100)} %, ${m.caption.font} px, the lower lip ${m.shots[0].on.lip} s; full: eyes at ${Math.round(f.shots[0].eyes * 100)} %`;
   });
   t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
     const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
@@ -1276,7 +1286,8 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
   });
   t("a face that moves under the captions inside a shot: the shot is raised for its lowest moment, once for the whole shot", () => {
     const track = Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [355, 300 + (i / 40) * 550, 370, 500] }));
-    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track }])], needs: cap });
+    // (head: a raise that keeps the whole head; mouth would also hold the eyes below 27 % of the height, which this face, high at first, reaches)
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track }])], needs: cap, raise: "head" });
     const keepBottom = 850 + 500 + Math.max(DEFAULTS.free.belowMin, DEFAULTS.free.below * 500);
     near(r.shots[0].lift, keepBottom - r.caption.box[1], 1, "lift for the lowest moment");
     ok(r.caption.seconds === 0, `${r.caption.seconds} s on the face`);
