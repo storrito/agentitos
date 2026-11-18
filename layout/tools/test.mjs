@@ -1223,10 +1223,13 @@ t("a face at the source's edge (the upright take's, x 80 of 1080, and a wide tak
   return out.join("; ");
 });
 
-t("a material field that cannot be given is said in one sentence with what can be: 1000×900 in 9:16, 800×700 in 1:1; a card too tall for the panel but not for the circle (600 px of height in 1:1, where the panel keeps the face at 12 % up to 549) gets the circle first, and the note says up to which height the panel keeps the face at 12 %", () => {
+t("a material field that cannot be given is said in one sentence with what can be, and the best candidates come back with their problems (an independent review: a calling skill needs an answer every time; it exited before): 1000×900 in 9:16, 800×700 in 1:1, a panel (shape rect) among them; a card too tall for the panel but not for the circle (600 px of height in 1:1, where the panel keeps the face at 12 % up to 549) gets the circle first, and the note says up to which height the panel keeps the face at 12 %", () => {
   for (const [frame, min] of [["9:16", "1000x900"], ["1:1", "800x700"]]) {
     const e = cli("beside", path.join(OUT, "beside-none"), "--frame", frame, "--source", "1280x720", "--face", "555,150,180,195", "--material-min", min, "--text", "caption");
-    sentence(e, `beside ${frame} ${min}`); ok(/^No arrangement gives the material a field of \d+×\d+ px in .*: the most is \d+×\d+ px .*; ask for a smaller field, or show the material alone for its seconds\.$/.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
+    const line = e.stdout.split("\n").find((l) => /^note: No arrangement/.test(l)) || "";
+    ok(e.status === 0 && /^note: No arrangement gives the material a field of \d+×\d+ px in .*: the most is \d+×\d+ px .*; ask for a smaller field, or show the material alone for its seconds\.$/.test(line), e.stdout + e.stderr);
+    const res = JSON.parse(fs.readFileSync(path.join(OUT, "beside-none", "placement.json"), "utf8"));
+    ok(res.noField && res.candidates.length && res.candidates.every((c) => c.unmet.includes("material")) && res.candidates.some((c) => c.speaker.shape === "rect"), fitsOf(res));
   }
   const r = beside(Z11, { material: { min: [600, 600] } });
   ok(r.candidates[0].fit === "beside-pip", fitsOf(r));
@@ -1266,7 +1269,7 @@ t("a face that moves is held by its hull: the panel holds every moment's box, it
   }
 });
 
-t("the face's target is one number (--set beside.face): the b-roll session's upright close-up with a card of 700×330 has its face at 18 % in the panel; at 0.22 it is 22 % and the reason names the target asked for; in 16:9 the column takes it too, and says where the footage gives no more without enlarging past 1.5×; under the 12 % floor and over what any panel holds (0.45 in 9:16: at most 25 %) it says so in one sentence", () => {
+t("the face's target is one number (--set beside.face): the b-roll session's upright close-up with a card of 700×330 has its face at 18 % in the panel; at 0.22 it is 22 % and the reason names the target asked for; in 16:9 the column takes it too, and says where the footage gives no more without enlarging past 1.5×; under the 12 % floor it says so in one sentence; over what the panel holds (0.45 in 9:16) or what stays sharp (an independent review: 0.22 from 720p with two caption lines was refused as at most 21 %, 0.21 then gave 15 %) the face gets the most it can and a note says what was asked and what was given", () => {
   const close = { source: [1080, 1920], face: [80, 250, 445, 580], material: { min: [700, 330] } };
   near(beside(Z916, close).candidates[0].speaker.facePct, 18, 0.2, "the usual target");
   const big = beside(Z916, { ...close, set: { "beside.face": 0.22 } }).candidates[0];
@@ -1275,10 +1278,12 @@ t("the face's target is one number (--set beside.face): the b-roll session's upr
   const col = beside(Z169, { set: { "beside.face": 0.3 } }).candidates[0];
   ok(col.fit === "beside-column" && col.why.some((w) => /30 % is the target asked for .*no more without enlarging past 1\.5×/.test(w)), col.why.join(" | "));
   const base = ["--frame", "9:16", "--source", "1080x1920", "--face", "80,250,445,580", "--material-min", "700x330", "--text", "caption", "--set"];
-  for (const [v, says] of [["beside.face=0.1", /from 0\.12 .* to 0\.5; 0\.1 is outside that\./], ["beside.face=0.45", /^A face of 45 % .* fits no panel in 9:16 .*: at most \d+ % \(--set beside\.face=0\.\d+\); ask for a smaller face or a smaller field\.$/]]) {
-    const e = cli("beside", path.join(OUT, "beside-face"), ...base, v);
-    sentence(e, v); ok(says.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
-  }
+  const e = cli("beside", path.join(OUT, "beside-face"), ...base, "beside.face=0.1");
+  sentence(e, "beside.face=0.1"); ok(/from 0\.12 .* to 0\.5; 0\.1 is outside that\./.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
+  const most = beside(Z916, { ...close, set: { "beside.face": 0.45 } }).candidates.find((c) => c.arrangement === "above");
+  ok(most && !most.hard && !most.unmet.length && /a face of 45 % .* was asked for; it is \d+ %: the panel holds no more beside the material's field/.test((most.notes || []).join(" ")) && most.speaker.target.asked === 45, JSON.stringify(most?.speaker.target));
+  const sharp = beside(Z916, { needs: [cap(2)], set: { "beside.face": 0.22 } }).candidates[0];
+  ok(sharp.fit === "beside-above" && /it is 15 %: the footage gives no more without enlarging past 1\.5×/.test((sharp.notes || []).join(" ")), JSON.stringify(sharp.notes));
   return `22 %: face ${big.speaker.faceHeight} px, field ${Math.round(big.material.field[2])}×${Math.round(big.material.field[3])}`;
 });
 

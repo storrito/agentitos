@@ -254,7 +254,6 @@ function cmdBeside(o) {
       set: Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as beside.faceMin=0.1.`); return [s.slice(0, i), num(s.slice(i + 1))]; })),
     });
   } catch (e) { fail(e.message); }
-  if (res.none) fail(res.none);
   res.asked = { frame: o.frame, platforms };
   const file = path.join(folder, "placement.json");
   try {
