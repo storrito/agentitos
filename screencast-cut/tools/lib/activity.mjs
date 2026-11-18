@@ -194,6 +194,73 @@ export function moving(samples, from, to, threshold = MOVING) {
   return spans.map((s) => ({ from: Math.max(from, s.from), to: Math.min(to, s.to) })).filter((s) => s.to - s.from > 0);
 }
 
+// A pause shows something on a camera's picture (the phone's camera) only from ABOVE times its
+// movement while the person speaks (the median of its samples) on, never under MOVING. A screen
+// stands still while someone talks over it, but a camera always moves a little (the hand that
+// holds it, breathing, blinking): by MOVING alone nearly every pause stayed, as a muted, faster
+// stretch of nothing. After best-takes' motion.mjs, which measured in November 2026: a phone
+// held in the hand 7–9 % while speaking and up to 3.1 times that in single samples, something
+// held into the picture 3.6–25 times. Two webcams measured on this file's grid (the cells that
+// change all the time left out), November 2026: a median of 0.13–0.18 %, 45 % of the samples
+// over MOVING.
+export const ABOVE = 4;
+// Under this many seconds of speech the movement while speaking is guesswork: all the source's
+// samples count then.
+export const BASE_SECONDS = 3;
+
+// The middle of the samples' changes, 0 without any
+export function median(samples) {
+  const v = samples.map((s) => s.c).sort((a, b) => a - b);
+  return v.length ? (v[(v.length - 1) >> 1] + v[v.length >> 1]) / 2 : 0;
+}
+
+// The change from which a sample of a pause shows something, given the movement while speaking
+export const limit = (base) => Math.max(MOVING, ABOVE * base);
+
+// How much a source's picture moves while the person speaks: the median of its samples inside
+// the stretches of speech (words with no more than `maxPause` between them; a sample stands for
+// the quarter second before it). All the recording's words count, not only the cut's: the
+// movement is measured for the whole recording already, and so it stays the same while the cut
+// changes. { base, limit, seconds, enough }
+export function whileSpeaking(samples, words, maxPause) {
+  const talk = [];
+  for (const w of words) {
+    if (w.kind !== "word") continue;
+    const last = talk.at(-1);
+    if (last && w.start - last[1] <= maxPause && w.session === last[2]) last[1] = Math.max(last[1], w.end);
+    else talk.push([w.start, w.end, w.session]);
+  }
+  const spoken = [];
+  let j = 0;
+  for (const s of samples) {
+    while (j < talk.length && talk[j][1] + 0.01 < s.t) j++;
+    if (j < talk.length && s.t - 1 / RATE >= talk[j][0] - 0.01) spoken.push(s);
+  }
+  const enough = spoken.length >= BASE_SECONDS * RATE;
+  const base = median(enough ? spoken : samples);
+  return { base: +base.toFixed(5), limit: +limit(base).toFixed(5), seconds: +((enough ? spoken : samples).length / RATE).toFixed(1), enough };
+}
+
+// What moves in a pause, over the sources that can show something in one (`shows`): the spans of
+// each, joined. A screen moves from MOVING on, as it always did; a camera (`cameras`) only from
+// its own limit (whileSpeaking). In a wait the person announced, anything that changes counts,
+// on a camera too (ACTIVE): an agent's chat, a progress bar change a few pixels, but they are the
+// action, and a wait announced stays a timelapse when its picture moves at all.
+// → { moves(clip, from, to, wait), limits: { source: whileSpeaking(…) } }
+export function pauseMoves(activity, shows, { cameras = [], words = [], maxPause = 1 } = {}) {
+  const limits = {};
+  for (const k of shows) if (cameras.includes(k) && activity[k]) limits[k] = whileSpeaking(activity[k], words, maxPause);
+  const moves = (_clip, from, to, wait = false) => {
+    const spans = shows.flatMap((k) => moving(activity[k] || [], from, to, wait ? ACTIVE : limits[k]?.limit ?? MOVING)).sort((a, b) => a.from - b.from);
+    return spans.reduce((out, x) => {
+      const last = out.at(-1);
+      if (last && x.from <= last.to) last.to = Math.max(last.to, x.to); else out.push({ ...x });
+      return out;
+    }, []);
+  };
+  return { moves, limits };
+}
+
 // Where a span's changes are: { box, centre, heat }. The heat of a cell of the grid is how much
 // it changed in the frames it changed in, on average: what appears at once (an answer, a page
 // loading, typed words) changes a cell a lot in a few frames, what fidgets (a webcam's preview
