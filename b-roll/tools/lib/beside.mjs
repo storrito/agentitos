@@ -1,7 +1,7 @@
 // A beat shown "beside" the person: the frame is shared. One geometry per video and frame (with or
 // without captions), whatever the material, so that beats in a row need no rule of their own.
 //
-// Tall and square frames, built from the bottom up: the face at its target height (18 % of the
+// Tall and square frames, built from the bottom up: the face at its target height (22 % of the
 // frame's) ends where the apps' bottom zone begins; above it the hair's room (35 % of the face's
 // height); above that the captions' band when there are captions (as high as their block can be,
 // moved there while the beat shows); the material gets what is left above, from the safe box's
@@ -35,7 +35,12 @@
 // with it (object-fit: cover). `captions` is where the captions stand without b-roll,
 // { left, width, top, bottom, size } (agentitos' captions' area.json).
 
-export const FACE_TARGET = 0.18;     // the face's height, of the frame's (measured)
+// The face's height, of the frame's. Published Shorts show 18 % (the study's median, FACE_NORM);
+// the owner found the person's card too small at that and asked for a little more. 0.22 is the
+// most that still leaves a number its field under two lines of captions in a 9:16 frame with the
+// usual apps. The more is taken only as far as the video stays sharp (aim()).
+export const FACE_TARGET = 0.22;
+export const FACE_NORM = 0.18;
 export const FACE_LEAST = 0.12;      // the face gives way to the material down to this, no further
 export const HAIR = 0.35;            // room above a face box for the hair (and text above a head), of its height
 export const MATERIAL_LEAST = 0.18;  // the material's field at least this high, of the frame's (a number with a two-line label)
@@ -46,6 +51,15 @@ const SIDE = 1.2;                    // wider than this (width / height): the pe
 export const isSide = (width, height) => width / height > SIDE;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const overlaps = ([x, y, w, h], [X, Y, W, H]) => x < X + W && X < x + w && y < Y + H && Y < y + h;
+
+// The height the face aims at, in px of the frame: the target, but where the source's own pixels
+// would be enlarged over SOFT for it, only what stays sharp, and never less for that than the
+// norm asks (a small face is enlarged for the norm as it always was, and said to look soft).
+// `fh` is the face's height as the host shows the source, `cover` how much that enlarges it.
+export function aim(height, fh, cover = 1) {
+  const want = FACE_TARGET * height, sharp = (SOFT / cover) * fh;
+  return want <= sharp ? want : Math.max(sharp, Math.min(want, FACE_NORM * height));
+}
 
 // the face in the upper third, in the middle: what a talking head usually is (px of the frame)
 export function assumedFace(width, height) {
@@ -99,7 +113,7 @@ export function besideLayout({ width, height, zones, face, source, captions }) {
     // the face at the target, or larger where that lets the video fill its tall field
     const fits = Math.min(FACE_MOST * height, (room[1] - room[0]) / (1 + HAIR));
     const fill = Math.max(pw / width, height / height);
-    scale = (FACE_TARGET * height) / fh;
+    scale = aim(height, fh, cover) / fh;
     if (scale < fill && fill * fh <= fits) scale = fill;
     const H = fh * scale, block = H * (1 + HAIR);
     faceTop = room[0] + Math.max(0, room[1] - room[0] - block) * 0.35 + HAIR * H;
@@ -107,7 +121,8 @@ export function besideLayout({ width, height, zones, face, source, captions }) {
     // from the bottom up: the face, the hair's room, the captions' band, the material above
     const bandH = cap ? cap.bottom - cap.top : 0;
     const above = (H) => bottom - H * (1 + HAIR) - (cap ? bandH : 0) - margin - sy;   // the material's height
-    let H = FACE_TARGET * height;
+    let H = aim(height, fh, cover);
+    if (H < FACE_TARGET * height - 0.5) notes.push(`the face is small in the video: it shows at ${Math.round((H / height) * 100)} % of the frame's height, not ${Math.round(FACE_TARGET * 100)} %, so that the video stays sharp`);
     const least = MATERIAL_LEAST * height;
     if (above(H) < least) {
       const fit = (bottom - (cap ? bandH : 0) - margin - sy - least) / (1 + HAIR);
