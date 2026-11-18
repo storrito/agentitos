@@ -331,7 +331,8 @@ function cmdPage(o) {
     if (ats.length !== o.still.length) fail(`The placement has 1 source and ${o.still.length} pictures: if they are moments of a face that moves, give an --at for each, in the same order (--still a.jpg --at 2.5 --still b.jpg --at 4.5).`);
     views = o.still.map((f, k) => ({ at: ats[k], inputs: [f], seek: false }));
   } else {
-    if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}${res.sources?.some((q) => q.baked) ? " (the webcam baked into the screen shows in the screen's still)" : ""}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many.`);
+    const order = res.screen ? (sources.length > 1 ? "the screen's, then the webcam's" : "the screen's") : sources.length > 1 ? "the first --source's, then the second's" : "the recording's";
+    if (o.still.length > sources.length) fail(`The placement has ${plural(sources.length, "source")}${res.sources?.some((q) => q.baked) ? " (the webcam baked into the screen shows in the screen's still)" : ""}: ${plural(o.still.length, "still")} ${o.still.length === 1 ? "is" : "are"} too many; give ${sources.length > 1 ? "one --still per source, in their order" : "one --still"}: ${order}${(res.tracks || []).length ? " (a face that moves: a video, or one picture per moment with an --at each)" : ""}.`);
     const moving = [...new Set((res.tracks || []).flatMap((t) => t.times || []))].sort((a, b) => a - b);
     const moments = ats.length ? ats : o.still.some((f) => !image(f)) && moving.length > 1 ? moving : [undefined];
     views = moments.map((t) => ({ at: t, inputs: o.still, seek: true }));

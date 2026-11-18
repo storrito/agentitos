@@ -1078,7 +1078,10 @@ if (!QUICK) t("a screen and its webcam as two files: page takes a still of each 
   r = cli("page", baked, "--still", screen, "--candidate", "all");
   ok(r.status === 0 && fs.readdirSync(baked).filter((f) => /\.html$/.test(f)).some((f) => /class="cam"[^>]*><img src="still\.jpg"/.test(fs.readFileSync(path.join(baked, f), "utf8"))), `the baked webcam: ${r.stderr}`);
   const e = cli("page", baked, "--still", screen, "--still", cam);
-  sentence(e, "a second still for a baked webcam"); ok(/baked into the screen/.test(e.stderr), e.stderr);
+  sentence(e, "a second still for a baked webcam"); ok(/baked into the screen.*give one --still: the screen's/.test(e.stderr), e.stderr);
+  // too many stills say which to give
+  const e3 = cli("page", dir, "--still", screen, "--still", cam, "--still", cam);
+  sentence(e3, "three stills for a screen and its webcam"); ok(/give one --still per source, in their order: the screen's, then the webcam's/.test(e3.stderr), e3.stderr);
   return `${pages.length} pages; the baked webcam from the screen's still`;
 });
 
