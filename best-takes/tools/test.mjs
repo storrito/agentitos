@@ -256,7 +256,7 @@ test("capitalised: Unicode's first letter, by the language; names and digits as 
 });
 
 // ------------------------------------------------------------------- text and faces (faces.json)
-import { punchOrigin, textOnFaces, toFrame } from "./lib/faces.mjs";
+import { punchOrigin, punchPlan, textOnFaces, toFrame, noseOf, lipOf, mouthOf } from "./lib/faces.mjs";
 import { hookCard } from "./lib/hook.mjs";
 
 const FRAME = [1080, 1920], CAP = [192, 1306, 696, 134];
@@ -322,22 +322,55 @@ test("raise moderate: a punch-in keeps a whole head inside the frame and the mou
   assert.ok(y + (line - y) * 1.12 <= line + 10 + 1e-6, `mouth line after ${y + (line - y) * 1.12}`);
 });
 
-test("raise moderate: a head the frame cuts already is not pushed further up to free a chin", () => {
+test("raise moderate: a head the frame cuts already is not pushed further up to free a chin; only its lines keep it from sinking into the captions", () => {
+  // no features: the head's proportions put its nose line at 1134, its lip line at 1264, its mouth line at 1408 (below the captions' top, 1306)
   const face = [100, 60, 880, 1500];
-  assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: [192, 1440, 696, 0].map((v, i) => (i === 3 ? 134 : i === 1 ? 1306 : v)), safeTop: 250, raise: "moderate" }), 0.32 * 1920 > (1.12 * (60 + 0.65 * 1500) - 1306) / 0.12 ? 0.32 * 1920 : (1.12 * (60 + 0.65 * 1500) - 1306) / 0.12);
+  const cap = [192, 1306, 696, 134];
+  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  near(y, 60 + (0.38 + 1.08 * 0.48) * 1500, 0.5);
+  // full: as far as the eyes allow, for the chin
   assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250 }), Math.min(1920, (1.12 * (60 + 0.42 * 1500) - 250) / 0.12));
 });
 
-test("with the eyes, nose and mouth known (faces.json feat), the mouth line is their bottom: the check counts the seconds on it, and a moderate punch-in keeps it above the captions", () => {
+const at = (o, s, y) => o + (y - o) * s;
+test("the review's zoom-ins: a close-up whose head the frame cuts keeps its mouth line, its lip line and its nose line where the placement put them (above the captions, or no lower than they stood)", () => {
+  const cap = [192, 1375, 696, 65];
+  // robe at 20.9 s: the features' bottom at 1318, the mouth line (with room for an open mouth) at 1372, just above the captions
+  const robe = { box: [190, -60, 700, 1560], feat: [300, 640, 480, 678] };
+  const p = punchPlan({ faces: [robe], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  assert.equal(p.scale, 1.12);
+  for (const line of [noseOf(robe.box, robe.feat), lipOf(robe.box, robe.feat), mouthOf(robe.box, robe.feat)]) assert.ok(at(p.origin, p.scale, line) <= cap[1] + 1e-6, `a line from ${line} to ${at(p.origin, p.scale, line)}`);
+  // the lower lip just inside the area, the nose line at 1190: the nose line went to 1424 before
+  const lip = { box: [240, -60, 600, 1560], feat: [330, 700, 420, 700] };
+  const q = punchPlan({ faces: [lip], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  assert.ok(at(q.origin, q.scale, noseOf(lip.box, lip.feat)) <= cap[1] && at(q.origin, q.scale, lipOf(lip.box, lip.feat)) <= cap[1], JSON.stringify(q));
+  assert.ok(at(q.origin, q.scale, mouthOf(lip.box, lip.feat)) <= mouthOf(lip.box, lip.feat) + 1e-6, "the mouth line goes no lower than it stood");
+});
+test("a zoom-in that would push a mouth into the captions or the eyes under the apps' top bar is made smaller, else left out, and says why", () => {
+  const cap = [192, 1375, 696, 65];
+  // the eyes 5 px below the top bar, the mouth line below the captions' top: growing from below the mouth lifts the eyes under the bar
+  const tight = { box: [190, -200, 700, 1700], feat: [300, 255, 480, 1150] };
+  const p = punchPlan({ faces: [tight], scale: 1.12, frame: FRAME, cap, safeTop: 250, raise: "moderate" });
+  assert.equal(p.scale, 1);
+  assert.match(p.why, /^none: the mouth or the nose would go into the captions, or the eyes under/);
+  // a face clear of the captions keeps its punch-in as asked
+  assert.equal(punchPlan({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, cap }).scale, 1.12);
+});
+
+test("the check names the part a text lies on: the nose or the eyes, the mouth (both lips), the lower lip, the chin, or above a head on the hair", () => {
   const clips = { 1: { file: "01.mp4" } };
-  // the box runs to 1600, the features end at 1280, just above the captions at 1306
-  const face = { who: "A", box: [140, 300, 800, 1300], feat: [340, 700, 400, 580] };
-  const faces = { "01.mp4": { size: [1080, 1920], faces: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, boxes: [face] })) } };
   const piece = { clip: 1, in: 0, out: 3, start: 0, duration: 3 };
-  const on = textOnFaces({ pieces: [piece], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 3 }], frame: FRAME });
-  assert.ok(on[0].seconds >= 2.9 && on[0].mouth === 0, JSON.stringify(on));
-  const y = punchOrigin({ faces: [{ box: face.box, feat: face.feat }], scale: 1.12, frame: FRAME, cap: CAP, safeTop: 250, raise: "moderate" });
-  assert.ok(y + (1280 - y) * 1.12 <= CAP[1] + 1e-6, `the mouth line after the punch-in: ${y + (1280 - y) * 1.12}`);
-  const pushed = textOnFaces({ pieces: [{ ...piece, scale: 1.12, origin: 614.4 }], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 3 }], frame: FRAME });
-  assert.ok(pushed[0].mouth >= 2.9 && pushed[0].nose === 0, `grown from a third from the top, the mouth (not the nose) reaches the captions: ${JSON.stringify(pushed)}`);
+  const run = (face, box) => textOnFaces({ pieces: [piece], clips, faces: { "01.mp4": { size: [1080, 1920], faces: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, boxes: [face] })) } }, texts: [{ role: "captions", box, from: 0, to: 3 }], frame: FRAME })[0];
+  // the features from 700 to 1280: the nose line at 1106, the lip line at 1210, the mouth line at 1326
+  const face = { who: "A", box: [140, 300, 800, 1300], feat: [340, 700, 400, 580] };
+  assert.ok(run(face, [192, 1340, 696, 100]).chin >= 2.9);
+  assert.ok(run(face, [192, 1306, 696, 134]).lip >= 2.9);
+  // the review's tight close-up: the whole area between the nose line and the lower lip is on the mouth, never "the lower lip"
+  const m = run(face, [192, 1150, 696, 134]);
+  assert.ok(m.mouth >= 2.9 && m.lip === 0 && m.nose === 0, JSON.stringify(m));
+  assert.ok(run(face, [192, 1000, 696, 134]).nose >= 2.9);
+  // captions above a low head, on its hair
+  const low = { who: "A", box: [340, 1000, 400, 500], feat: [420, 1200, 240, 240] };
+  const h = run(low, [192, 940, 696, 100]);
+  assert.ok(h.hair >= 2.9 && h.nose === 0, JSON.stringify(h));
 });

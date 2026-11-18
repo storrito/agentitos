@@ -64,7 +64,7 @@ import { propose, PROPOSE_MODEL } from "./lib/propose.mjs";
 import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
-import { readFaces, facesAt, toFrame, punchOrigin, textOnFaces } from "./lib/faces.mjs";
+import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
@@ -267,8 +267,11 @@ function captionArea(file, height) {
     const html = fs.readFileSync(file, "utf8");
     const d = JSON.parse(html.match(/var DATA = (\{[\s\S]*?\});\n/)[1]);
     const lh = d.look?.lineHeight || 1.2, pad = d.look?.box ? 0.44 * d.size : 0;
+    // the ink below the lowest line: half the outline and the shadow's drop, at the type's size
+    const em = d.size / (d.look?.size || d.size), drop = Math.max(0, ...[...String(d.look?.shadow || "").matchAll(/(?:^|,)\s*-?[\d.]+(?:px)?\s+(-?[\d.]+)px/g)].map((m) => Number(m[1])));
+    const below = d.look?.box ? 0 : ((d.look?.stroke || 0) / 2 + drop) * em;
     const bottom = height - d.bottom, h = d.lines * d.size * lh + pad;
-    return { area: [d.left, +(bottom - h).toFixed(1), d.maxWidth, +h.toFixed(1)], groups: d.groups.map((g) => [g.start, g.end]) };
+    return { area: [d.left, +(bottom - h).toFixed(1), d.maxWidth, +(h + below).toFixed(1)], groups: d.groups.map((g) => [g.start, g.end]) };
   } catch { return { area: null, groups: [] }; }
 }
 
@@ -348,7 +351,8 @@ function cmdBuild(dir, opts) {
     if (!(scales[k] > 1)) return { ...p, scale: scales[k] };
     const list = faces?.[clips[p.clip].file], seen = [];
     if (list) for (let t = p.in; t <= p.out; t += 0.1) for (const f of facesAt(list, t)) seen.push({ box: toFrame(f.box, list.size, [width, height]), ...(f.feat ? { feat: toFrame(f.feat, list.size, [width, height]) } : {}) });
-    return { ...p, scale: scales[k], origin: +Math.min(height, punchOrigin({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop, raise: placed?.raise || "full" })).toFixed(1) };
+    const plan = punchPlan({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop, raise: placed?.raise || "full" });
+    return { ...p, scale: plan.scale, ...(plan.scale > 1 ? { origin: +Math.min(height, plan.origin).toFixed(1) } : {}), ...(plan.why ? { held: `${plan.why}` } : {}) };
   });
   writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, hook });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
@@ -374,9 +378,11 @@ function cmdBuild(dir, opts) {
   if (hook) console.log(`Hook: „${s.hook}“ until ${hookEnds} s, ${placed?.hook ? `${placed.hook.kind === "text" ? "a text" : "a card"} where ${rel(placeFile)} puts it` : "a card at the top"}`);
   if (placed?.caption && cut.captions) console.log(`Captions placed as ${rel(placeFile)} says: ${Object.entries(placed.caption).map(([k, v]) => `--${k} ${v}`).join(" ")}`);
   const moved = pieces.filter((p) => p.origin != null && p.origin > 0.32 * height + 0.5).length;
-  if (moved) console.log(`Punch: ${moved} piece(s) grow from lower down, so that no chin is pushed into the captions`);
+  if (moved) console.log(`Punch: ${moved} piece(s) grow from lower down, so that no chin, mouth or nose is pushed into the captions`);
+  const held = pieces.filter((p) => p.held);
+  if (held.length) console.log(`Punch: ${held.map((p) => `piece ${pieces.indexOf(p) + 1} at ${clock(p.start)} ${p.held.startsWith("none") ? "stays as it is" : "goes less close"} (${p.held.replace(/^none: |^smaller, [^:]*: /, "")})`).join("; ")}`);
   if (tight) console.log(`Pauses: tight, every pause over ${s.pause} s cut`);
-  if (s.punch === "on") console.log(`Punch: ${scales.filter((v) => v > 1).length} of ${scales.length} pieces closer, at the jump cuts`);
+  if (s.punch === "on") console.log(`Punch: ${pieces.filter((p) => p.scale > 1).length} of ${scales.length} pieces closer, at the jump cuts`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
 }
 
@@ -483,15 +489,18 @@ function cmdCheck(dir) {
   if (faces && e.text) {
     const texts = [...(e.text.caption ? e.text.caption.groups.map(([a, b]) => ({ role: "captions", box: e.text.caption.box, from: a, to: b })) : []),
       ...(e.text.hook ? [{ role: "hook", box: e.text.hook.box, from: 0, to: e.text.hook.until }] : [])];
-    const on = textOnFaces({ pieces: e.pieces, clips, faces, texts, frame: [e.width, e.height] }), chin = [];
+    const on = textOnFaces({ pieces: e.pieces, clips, faces, texts, frame: [e.width, e.height] }), said = [];
+    // the seconds on each part, the part named: the nose or the eyes and the mouth (both lips) are
+    // a fault to fix (✗); the lower lip, the chin and the hair above a head are what a readable
+    // caption over a tight close-up or a low head leaves, said as such
+    const parts = (x) => [x.nose ? `the nose or eyes ${x.nose} s` : "", x.mouth ? `the mouth ${x.mouth} s` : "", x.lip ? `the lower lip ${x.lip} s` : "", x.chin ? `the chin ${x.chin} s` : "", x.hair ? `the hair above the head ${x.hair} s` : ""].filter(Boolean).join(", ");
     for (const x of on.filter((q) => q.seconds >= 0.3)) {
-      // above the mouth line (MOUTH of the box from its top) is the mouth, the nose, the eyes
-      // the nose and the eyes are a fault; the chin and the lower lip are what a readable caption over a tight close-up leaves
-      const mouth = x.nose >= 0.3;
-      if (x.role !== "hook" && !mouth) { chin.push(`${x.who ?? "a face"} ${x.seconds} s${x.mouth >= 0.1 ? ` (the lower lip ${x.mouth} s)` : ""}`); continue; }
-      warnings.push(`the ${x.role === "hook" ? "hook" : "captions' area"} lies on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)}, up to ${Math.round(x.share * 100)} % of its height up from the chin${mouth ? ` (on the nose or the eyes for ${x.nose} s)` : ""}: ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "a place clear of it from the skill that laid the frame out (clips: place: a smaller type, another height), or a cut to another shot there"}`);
+      const fault = x.nose >= 0.3 || x.mouth >= 0.3;
+      if (x.role !== "hook" && !fault) { said.push(`${x.who ?? "a face"}: ${parts(x)}`); continue; }
+      const line = `the ${x.role === "hook" ? "hook" : "captions"} lie${x.role === "hook" ? "s" : ""} on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)} (${parts(x)}): ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "place them again where the skill that laid the frame out can (clips: place: a smaller type by hand, --font-size), or cut to another shot there"}`;
+      if (x.role !== "hook") errors.push(line); else warnings.push(line);
     }
-    if (chin.length) console.log(`\nText and faces: the captions lie on the chin or neck of ${chin.join(", ")}, never on the nose or the eyes (the skill that framed the video says where that is not avoidable at a readable size or without cutting a head).`);
+    if (said.length) console.log(`\nText and faces: the captions lie on ${said.join("; ")}; never on the nose, the eyes or the mouth (the skill that framed the video says where that is not avoidable at a readable size).`);
     else if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
   }
   const over = overTarget(e.duration, s.target);
