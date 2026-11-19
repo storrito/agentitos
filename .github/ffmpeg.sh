@@ -27,5 +27,7 @@ curl -fsSL --retry 3 -o "$tmp/ffmpeg.tar.xz" \
 echo "$SHA256  $tmp/ffmpeg.tar.xz" | sha256sum --quiet -c -
 tar -xJf "$tmp/ffmpeg.tar.xz" -C "$tmp" "$NAME/bin/ffmpeg" "$NAME/bin/ffprobe"
 mkdir -p "$dest"
-install -m 755 "$tmp/$NAME/bin/ffmpeg" "$tmp/$NAME/bin/ffprobe" "$dest/"
+# each program written beside its place and moved there in one step: never a half-written one
+for program in ffmpeg ffprobe; do install -m 755 "$tmp/$NAME/bin/$program" "$dest/.$program.new"; done
+for program in ffmpeg ffprobe; do mv -f "$dest/.$program.new" "$dest/$program"; done
 "$dest/ffmpeg" -hide_banner -version | head -1

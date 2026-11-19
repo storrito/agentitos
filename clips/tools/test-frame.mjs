@@ -210,7 +210,10 @@ test("the rendered window keeps a moving box inside the frame, at the footage's 
     near(frames, 101, 1);
     // every frame: the box is in the picture, and not at its left or right edge
     const g = spawnSync("ffmpeg", ["-v", "error", "-i", out, SYNC, "passthrough", "-vf", "format=gray", "-f", "rawvideo", "-"], { maxBuffer: 1 << 28 });
+    // (the frames were read: an ffmpeg that refuses the command gives none, and no frame is no proof)
+    assert.equal(g.status, 0, String(g.stderr));
     const W = 180, H = 320, n = g.stdout.length / (W * H);
+    near(n, 101, 1);
     let seen = 0;
     for (let i = 2; i < n; i++) {
       const f = g.stdout.subarray(i * W * H, (i + 1) * W * H);
