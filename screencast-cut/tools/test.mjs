@@ -1782,7 +1782,7 @@ test("a screen picture of the layout skill's marked ! carries its reason (\"enla
 });
 
 // ------------------------------------------------------------------ the stack (stack-916, stack-panel)
-import { STACK, CIRCLE, stackPicture, stackQuestion, webcamPeople } from "./lib/screenview.mjs";
+import { STACK, CIRCLE, stackPicture, stackQuestion, webcamPeople, stackWindow } from "./lib/screenview.mjs";
 const LABEL_TEXT = "02 · The mission";
 // screen keeps through screenView with one caption line (as captions built it) and the webcam's
 // face known; the first keep is the face view with its picture, so the stack hears where it was
@@ -1854,9 +1854,12 @@ test("the stack: a tight zoom keeps the circle at main's place and size, the lin
       assert.match(r.said, /keep 4 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): the keep names "screen-circle"/);
       assert.ok(!fs.existsSync(path.join(r.dir, "placement", "screen-4", "stack")), "a keep that names main's form asks nothing more");
       assert.equal(r.ps[1].screen.notStacked.startsWith("the region at 2×"), true);
-      // a flat strip (a tab bar) gets no stack either (decided: stack-strip; layout answers "strip")
-      assert.notEqual(r.ps[4].screenPic?.fit, STACK, r.said); assert.ok(camLayers(r.placed[4])[0].pip);
-      assert.match(r.said, /keep 5 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): [^\n]*under the 400 px/);
+      // a flat strip (a tab bar) is stacked as the screen around it, 16:9 of its width, at the strip's own scale (stack-window)
+      const sp = r.ps[4].screenPic;
+      assert.equal(sp?.fit, STACK, r.said);
+      assert.match(r.said, /keep 5 [^\n]*the screen's part shows the screen around the region \(its 1744×51 px grown to 1744×981, 16:9 at most\)/);
+      assert.ok(Math.abs(sp.window[3] - sp.window[2] * 9 / 16) < 2 && sp.region[3] < 60, JSON.stringify([sp.window, sp.region]));
+      assert.ok(sp.region[1] >= sp.window[1] - 0.5 && sp.region[1] + sp.region[3] <= sp.window[1] + sp.window[3] + 0.5);
     } finally { r.done(); }
   }
 });
@@ -1974,4 +1977,39 @@ test("the stack with two people in the webcam (the rig's two-mix webcam, the mod
       assert.ok(fb[0] >= pb[0] - 0.5 && fb[0] + fb[2] <= pb[0] + pb[2] + 0.5, "both faces inside the panel");
     } else assert.match(r.said, /not the stack \([^)]*\): /);
   } finally { r.done(); }
+});
+
+test("the stack's window: a region flatter than 16:9 of its width is shown with the screen around it at its own width, grown both ways and shifted at the screen's edges; a taller one stays as it is", () => {
+  const src = { width: 1920, height: 1080 };
+  // a strip in the middle: grown both ways
+  const a = stackWindow([0.1, 0.5, 0.9, 0.55], src);
+  assert.ok(a.grown); assert.deepEqual(a.region, [192, 540, 1536, 54]); assert.deepEqual(a.window, [192, 135, 1536, 864]);
+  // a strip at the top edge: grown downwards only
+  const b = stackWindow([0.046, 0.038, 0.954, 0.085], src);
+  assert.equal(b.window[1], 0); assert.equal(b.window[3], 981); assert.equal(b.window[2], b.region[2]);
+  // at the bottom edge: grown upwards; the whole screen and a tall card: unchanged
+  const c = stackWindow([0, 0.9, 1, 1], src);
+  assert.deepEqual(c.window, [0, 0, 1920, 1080]);
+  assert.equal(stackWindow([0, 0, 1, 1], src).grown, false);
+  assert.equal(stackWindow([0.4, 0.3, 0.6, 0.7], src).grown, false);
+});
+
+test("the stacked keeps of one cut stand still: where one has a label, every stacked keep keeps that label's room above its screen; without a label in the cut, none does", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [w, h] of [[1080, 1920], [1080, 1350]]) {
+    const r = stackRun({ width: w, height: h, keeps: [{ zoom: "off", label: LABEL_TEXT }, { zoom: [0.24, 0, 1, 0.76] }] });
+    try {
+      const [a, b] = [r.ps[1].screenPic, r.ps[2].screenPic];
+      assert.equal(a?.fit, STACK, r.said); assert.equal(b?.fit, STACK, r.said);
+      assert.equal(a.window[1], b.window[1], `${w}x${h}: the screens' tops`);
+      // (the zoom's picture is 0.2 px taller than the whole screen's: the panels' tops within a pixel)
+      assert.ok(Math.abs(a.stack.panel[1] - b.stack.panel[1]) <= 1, `${w}x${h}: the panels' tops ${a.stack.panel[1]} ${b.stack.panel[1]}`);
+      assert.match(r.said, /keep 3 [^\n]*; under the room of the cut's label \(from y \d+\), as every stacked keep of this cut/);
+      assert.equal(r.ps[2].screen.stack.labelRoom, Math.round(r.a.label[1] + labelBoxHeight(w, h)));
+    } finally { r.done(); }
+    const n = stackRun({ width: w, height: h, keeps: [{ zoom: "off" }, { zoom: [0.24, 0, 1, 0.76] }] });
+    try {
+      assert.ok(!/under the room of the cut's label/.test(n.said));
+      assert.equal(n.ps[2].screen.stack.labelRoom, undefined);
+    } finally { n.done(); }
+  }
 });
