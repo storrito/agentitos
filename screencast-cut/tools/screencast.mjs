@@ -70,7 +70,7 @@ import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcri
 import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
 import { screenView, isScreenPiece, beyondZoom, MOST as ZOOM_MOST } from "./lib/screenview.mjs";
-import { showOf, showProblem, placeShows, cutShownSound, shownVideo, circleOn, soundSaid } from "./lib/show.mjs";
+import { showOf, showProblem, placeShows, cutShownSound, shownVideo, circleOn, soundSaid, listenShown, heardSaid } from "./lib/show.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal", "recording"];
@@ -987,7 +987,12 @@ async function cmdBuild(dir, opts) {
     const audio = `${i.key}.m4a`;
     const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
     i.lufs = a.lufs; i.gain = a.gain;
-    if (a.ok) { i.audio = audio; shown.notes.push(soundSaid(i, TAKE_LEVEL, clock)); }
+    if (a.ok) {
+      i.audio = audio;
+      // whether the clip speaks under the words: heard once (kept), for this line only
+      const heard = i.spoken > 0.3 ? await listenShown({ dir, src: i.src, from: i.from, duration: i.duration, audio: path.join(out, "assets", audio) }) : null;
+      shown.notes.push(soundSaid(i, TAKE_LEVEL, clock, heardSaid(i, heard, r.words, clock)));
+    }
     else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
   }
   const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });

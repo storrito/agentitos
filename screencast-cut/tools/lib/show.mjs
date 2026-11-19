@@ -24,7 +24,9 @@
 import path from "node:path";
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import { prepare, probe } from "./media.mjs";
+import { transcribeFile, transcribeTool } from "./transcribe.mjs";
 
 export const RISE = 1.5, FADE = 0.25;
 
@@ -131,13 +133,74 @@ export function soundPoints({ sound, duration, spoken }) {
     .filter((x, j, all) => j === 0 || x.t > all.slice(0, j).reduce((m, y) => Math.max(m, y.t), -1));
 }
 
+// Whether a shown video speaks while its sound plays: agentitos' transcribe skill hears its stretch
+// once (the cut-out sound, `audio`), kept in source/shown/ under the clip's content (sha256 of the
+// converted copy), "from" and the stretch's length, so a second build does not ask again and a
+// changed clip or stretch is heard anew. Only the build's line uses it, never the composition.
+// Returns { words: [{ start, end }] in seconds of the stretch, cost (dollars), seconds, kept } or
+// { why } (no tool, no key or route, a failure, nonsense, over LISTEN s): the line then says what it
+// says without it.
+export const LISTEN = 20;
+export async function listenShown({ dir, src, from, duration, audio, timeout = LISTEN, tool = transcribeTool() }) {
+  let key;
+  try { key = crypto.createHash("sha256").update(fs.readFileSync(src)).digest("hex").slice(0, 16); } catch (e) { return { why: `the clip could not be read (${e.message.split("\n")[0]})` }; }
+  const kept = path.join(dir, "source", "shown", `heard-${key}-${(+from).toFixed(3)}-${(+duration).toFixed(3)}.json`);
+  try {
+    const k = JSON.parse(fs.readFileSync(kept, "utf8"));
+    if (k.key === key && k.from === +from && k.duration === +duration && Array.isArray(k.words)) return { words: k.words, cost: k.cost, seconds: k.seconds, kept: true };
+  } catch {}
+  if (!tool) return { why: "agentitos' transcribe skill is not beside this one" };
+  const t0 = Date.now();
+  let r;
+  try { r = await transcribeFile(audio, { timeout }); } catch (e) { return { why: String(e?.message || e).split("\n")[0].slice(0, 160) }; }
+  const seconds = +((Date.now() - t0) / 1000).toFixed(1);
+  if (!r || !Array.isArray(r.words)) return { why: "transcribe answered no words list" };
+  const words = r.words.filter((w) => w && (w.kind === undefined || w.kind === "word") && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start && w.start >= -0.5 && w.end <= duration + 1)
+    .map((w) => ({ start: +w.start.toFixed(2), end: +w.end.toFixed(2) }));
+  if (words.length !== r.words.filter((w) => w?.kind === undefined || w?.kind === "word").length) return { why: "transcribe answered words outside the clip's stretch" };
+  const cost = Number.isFinite(r.cost) ? r.cost : null;
+  try { fs.mkdirSync(path.dirname(kept), { recursive: true }); fs.writeFileSync(kept, JSON.stringify({ key, from: +from, duration: +duration, words, cost, seconds }) + "\n"); } catch {}
+  return { words, cost, seconds, kept: false };
+}
+
+// stretches of speech from words (gaps under GAP s joined)
+const GAP = 0.6;
+function spans(words) {
+  const out = [];
+  for (const w of [...words].sort((a, b) => a.start - b.start)) {
+    const last = out.at(-1);
+    if (last && w.start - last[1] < GAP) last[1] = Math.max(last[1], w.end); else out.push([w.start, w.end]);
+  }
+  return out;
+}
+
+// What was heard, for the build's line (i: the insert; heard: listenShown's answer; said: the
+// speaker's words in the cut's seconds). null where nothing was heard: the general sentence then.
+export function heardSaid(i, heard, said, clock) {
+  if (!heard || heard.why) return null;
+  const cost = `${heard.kept ? "heard before, kept" : `heard in ${heard.seconds} s`}${heard.cost != null && !heard.kept ? `, ${+(heard.cost * 100).toFixed(2)} cents` : ""}`;
+  if (!heard.words.length) return `it has no words (${cost})`;
+  const clip = spans(heard.words.map((w) => ({ start: i.start + w.start, end: i.start + w.end })));
+  const mine = spans(said.filter((w) => w.end > i.start && w.start < i.start + i.duration));
+  const both = [];
+  for (const [a, b] of clip) for (const [c, d] of mine) { const x = Math.max(a, c), y = Math.min(b, d); if (y - x > 0.05) both.push([x, y]); }
+  const at = (l) => `${clock(l[0][0])} to ${clock(l.at(-1)[1])}`;
+  if (both.length) {
+    const sum = both.reduce((t, [a, b]) => t + b - a, 0);
+    return `two voices at once from ${at(both)} (${sum.toFixed(1)} s: the clip speaks ${at(clip)}, the speaker ${at(mine)}): drop "sound", or show it where you do not speak, or let it speak in the "hold" after your last word (${cost})`;
+  }
+  return `it speaks ${at(clip)}, where the speaker does not: no two voices at once (${cost})`;
+}
+
 // The build's line for a shown video whose sound plays (i: an insert of placeShows, measured by
 // cutShownSound): where it runs under the keep's words, that it does, and so when "sound" is right.
 // The tool cannot know whether a clip speaks; the run of 2026-11-19 had a clip's speech under the
 // speaker's for 2.7 s, two voices at once.
-export function soundSaid(i, target, clock) {
-  const under = i.spoken > 0.3
-    ? `runs under the keep's words (${i.spoken > i.duration - FADE ? "at a quarter of its level, the video ending before the last word" : `at a quarter of its level under the first, up to ${i.sound} by the last at ${clock(i.start + i.spoken)}`}), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; `
+// heard: heardSaid's sentence where the clip was listened to, else null (the general sentence).
+export function soundSaid(i, target, clock, heard = null) {
+  const level = i.spoken > i.duration - FADE ? "at a quarter of its level, the video ending before the last word" : `at a quarter of its level under the first, up to ${i.sound} by the last at ${clock(i.start + i.spoken)}`;
+  const under = heard ? `runs under the keep's words (${level}); ${heard}; `
+    : i.spoken > 0.3 ? `runs under the keep's words (${level}), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; `
     : "";
   return `keep ${i.k + 1}: the sound of ${i.file} ${under}measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${target} LUFS ("sound": 1 is the voice's level), through the voice's bus.`;
 }

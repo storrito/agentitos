@@ -1576,3 +1576,62 @@ test("frame before the first build: a moment of the recording, the screen with i
     assert.match(late.stdout + late.stderr, /a moment of the recording, which is 0:03\.0 long/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// whether a shown video speaks under the words: the transcribe skill as a stand-in (TRANSCRIBE)
+import { listenShown, heardSaid } from "./lib/show.mjs";
+test("show with sound: the clip is heard once through the transcribe skill, kept by its content and stretch; speech under the words, only in the hold or none is said; a missing, failing, slow or nonsense tool leaves the general sentence", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-listen-"));
+  const before = process.env.TRANSCRIBE;
+  try {
+    const src = path.join(dir, "clip.mp4"), audio = path.join(dir, "show-6.m4a");
+    fs.writeFileSync(src, "clip one"); fs.writeFileSync(audio, "sound");
+    const calls = path.join(dir, "calls");
+    const standIn = (name, body) => { const f = path.join(dir, `${name}.mjs`); fs.writeFileSync(f, `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(calls)}, "x"); const out = process.argv[process.argv.indexOf("--out") + 1];\n${body}\n`); return f; };
+    const words = (list) => `fs.writeFileSync(out, JSON.stringify({ cost: 0.0006, words: ${JSON.stringify(list)} }));`;
+    const n = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8").length : 0);
+    const clock = (t) => `0:${t.toFixed(1).padStart(4, "0")}`;
+    // the run's keep 6: from 25.8 s of the cut, 8.4 s, the speaker's last word at 32.7 s; the clip speaks from 6.0 to 8.3 s of its stretch
+    const i = { k: 5, file: "uploads/result.mp4", sound: 0.8, start: 25.8, duration: 8.4, spoken: 6.9, lufs: -13.7, gain: -0.3 };
+    const said = [{ start: 26, end: 29.3 }, { start: 29.9, end: 32.7 }];
+    const ask = (extra = {}) => listenShown({ dir, src, from: 0, duration: 8.4, audio, ...extra });
+    // speech under the words
+    process.env.TRANSCRIBE = standIn("speaks", words([{ text: "we", start: 4.2, end: 4.5, kind: "word" }, { text: "went", start: 4.6, end: 6.9, kind: "word" }, { text: "(laughs)", start: 7, end: 7.5, kind: "event" }]));
+    const h = await ask();
+    assert.deepEqual(h.words, [{ start: 4.2, end: 4.5 }, { start: 4.6, end: 6.9 }]);
+    assert.equal(h.kept, false);
+    assert.equal(heardSaid(i, h, said, clock).replace(/heard in [\d.]+ s/, "heard in T s"), `two voices at once from 0:30.0 to 0:32.7 (2.7 s: the clip speaks 0:30.0 to 0:32.7, the speaker 0:26.0 to 0:32.7): drop "sound", or show it where you do not speak, or let it speak in the "hold" after your last word (heard in T s, 0.06 cents)`);
+    assert.match(soundSaid(i, -14, clock, heardSaid(i, h, said, clock)), /^keep 6: the sound of uploads\/result\.mp4 runs under the keep's words \(at a quarter of its level under the first, up to 0\.8 by the last at 0:32\.7\); two voices at once from 0:30\.0/);
+    // kept: a second build does not ask again; another stretch or another clip does
+    const again = await ask();
+    assert.equal(again.kept, true); assert.equal(n(), 1);
+    assert.match(heardSaid(i, again, said, clock), /\(heard before, kept\)$/);
+    await ask({ from: 1 }); assert.equal(n(), 2, "another stretch is heard anew");
+    fs.writeFileSync(src, "clip two"); await ask(); assert.equal(n(), 3, "another clip is heard anew");
+    // speech only in the hold, after the last word
+    process.env.TRANSCRIBE = standIn("hold", words([{ text: "yes", start: 7.1, end: 7.9, kind: "word" }]));
+    fs.writeFileSync(src, "clip three");
+    assert.match(heardSaid(i, await ask(), said, clock), /^it speaks 0:32\.9 to 0:33\.7, where the speaker does not: no two voices at once \(heard in [\d.]+ s, 0\.06 cents\)$/);
+    // no speech: nothing more than that
+    process.env.TRANSCRIBE = standIn("none", words([{ text: "(music)", start: 0, end: 8, kind: "event" }]));
+    fs.writeFileSync(src, "clip four");
+    assert.match(heardSaid(i, await ask(), said, clock), /^it has no words \(heard in [\d.]+ s, 0\.06 cents\)$/);
+    // missing, failing, nonsense, slow: no sentence of its own (the general one stays), nothing kept
+    const general = soundSaid(i, -14, clock);
+    assert.match(general, /so speech in it is heard under the speaker's, two voices at once/);
+    for (const [name, got] of [
+      ["missing", (fs.writeFileSync(src, "clip missing"), await ask({ tool: null }))],
+      ["failing", (process.env.TRANSCRIBE = standIn("fails", `console.log("no key"); process.exit(1);`), fs.writeFileSync(src, "clip five"), await ask())],
+      ["nonsense", (process.env.TRANSCRIBE = standIn("nonsense", `fs.writeFileSync(out, JSON.stringify({ words: "none" }));`), await ask())],
+      ["outside", (process.env.TRANSCRIBE = standIn("outside", words([{ text: "x", start: 50, end: 51, kind: "word" }])), await ask())],
+      ["slow", (process.env.TRANSCRIBE = standIn("slow", `await new Promise((r) => setTimeout(r, 30000));`), await ask({ timeout: 1 }))],
+    ]) {
+      assert.ok(got.why, `${name}: a reason`);
+      assert.equal(heardSaid(i, got, said, clock), null, name);
+      assert.equal(soundSaid(i, -14, clock, heardSaid(i, got, said, clock)), general, `${name}: the general sentence`);
+    }
+    assert.equal(fs.readdirSync(path.join(dir, "source", "shown")).length, 5, "one kept file per clip and stretch heard, none for a failure");
+  } finally {
+    if (before === undefined) delete process.env.TRANSCRIBE; else process.env.TRANSCRIBE = before;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
