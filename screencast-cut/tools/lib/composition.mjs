@@ -21,7 +21,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { fit, largest, place, spread, cover, circle } from "./layout.mjs";
+import { fit, largest, place, spread, cover, circle, labelSize, labelBox } from "./layout.mjs";
 import { geometry } from "./placement.mjs";
 import { soundPoints } from "./show.mjs";
 
@@ -60,17 +60,12 @@ function timing(start, duration) {
   return `data-start="${a}" data-duration="${d}"`;
 }
 
-// a label's type (px) in a frame, and the most of it a letter takes across (800 Inter's widest
-// capitals and digits, with the letter spacing; most are narrower)
-const labelSize = (width, height) => Math.round(Math.min(width, height) * 0.036);
-const LABEL_EM = 0.75;
-
 // The shots of the cut: per piece its view's main video (and the webcam's circle), where it sits.
 // pieces: plan()'s, each with { view, crop } set (a face piece: its picture, placement.mjs, where
 // the layout skill placed it); sources: { name: { offset, width, height } }; a: the frame's areas
 // (layout.areas); labels: [{ text, start, duration }], the labels and when each is on
 export function shots(pieces, sources, width, height, a, labels = []) {
-  const short = Math.min(width, height), size = labelSize(width, height);
+  const short = Math.min(width, height);
   return pieces.map((p) => {
     const out = [];
     const src = sources[p.source];
@@ -83,13 +78,14 @@ export function shots(pieces, sources, width, height, a, labels = []) {
     const whole = (aspect) => {
       if (!a.whole) return [];
       const box = fit(a.whole, aspect);
-      const meets = on.some((l) => { const [lx, ly] = a.label, lw = String(l.text).length * size * LABEL_EM + 44, lh = size * 1.25 + 24;
+      const meets = on.some((l) => { const [lx, ly, lw, lh] = labelBox(l.text, a, width, height);
         return lx < box[0] + box[2] && box[0] < lx + lw && ly < box[1] + box[3] && box[1] < ly + lh; });
       return [meets && a.wholeLabelled ? a.wholeLabelled : a.whole];
     };
+    // the circle where the layout skill put it for the piece's (first) screen picture, else the areas' place
     const pip = () => {
       if (!sources.webcam || p.pip === false) return;
-      const [x, y, d] = a.pip;
+      const [x, y, d] = (p.segments?.[0] || p).screenPic?.circle || a.pip;
       out.push({ source: "webcam", box: [x, y, d, d], crop: circle(sources.webcam), pip: true });
     };
     if (p.show) {
@@ -132,8 +128,12 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         // frame's edges. (Until 2026-11 also never less than 30 % of the screen's width across the
         // room: a tight zoom on a 2560 px screen came out at 1.1 times, small in a sea of the
         // screen's empty margins, and bot 4585's agent cut the screen narrower by hand.)
+        // Since 2026-11-19 a screen's part whose picture as before fails the layout skill's checks
+        // (screenview.mjs: the region past the safe box's margins, the circle or a label on it, its
+        // text too small) is drawn as layout placed it: at its scale, clipped to its window
+        const pic = p.segments?.length ? seg.screenPic : p.screenPic;
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
-        const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
+        const at = pic ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
         const [x, , w] = at.box;
         out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });

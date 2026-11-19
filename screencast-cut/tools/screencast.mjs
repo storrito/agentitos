@@ -67,6 +67,7 @@ import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
+import { screenView, isScreenPiece } from "./lib/screenview.mjs";
 import { showOf, showProblem, placeShows, cutShownSound, shownVideo } from "./lib/show.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
@@ -768,7 +769,8 @@ async function cmdBuild(dir, opts) {
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
     if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
-    if (keep.layout !== undefined && (typeof keep.layout !== "string" || !keep.layout.trim())) fail(`✗ keep ${k + 1}: "layout" names how the face view lays the webcam into the frame, as the build lists it ("crop 4:5", "inset", "cover"), or is left out`);
+    if (keep.layout !== undefined && (typeof keep.layout !== "string" || !keep.layout.trim())) fail(`✗ keep ${k + 1}: "layout" names how the face view lays the webcam into the frame, or how a screen keep shows the screen, as the build lists it ("crop 4:5", "inset", "cover"; "screen-fit", "as before"), or is left out`);
+    if (keep.text !== undefined && !(typeof keep.text === "number" && keep.text > 0 && keep.text < 400)) fail(`✗ keep ${k + 1}: "text" is how tall a capital letter of the smallest text that must be read is, in px of the screen (off the sheet's grid: a tenth of the grid is a tenth of the screen's height), as 14; or leave it out`);
     // "show": another video over the keep (show.mjs), read once; a fault is one sentence
     if (keep.show !== undefined) {
       const file = showOf(keep).file;
@@ -930,7 +932,11 @@ async function cmdBuild(dir, opts) {
   // keep that shows another video is none)
   const showKeeps = new Set((cut.keep || []).flatMap((keep, k) => (keep.show !== undefined ? [k] : [])));
   const faceCut = showKeeps.size ? { ...cut, keep: cut.keep.map((keep, k) => { if (!showKeeps.has(k)) return keep; const { layout, ...rest } = keep; return rest; }) } : cut;
-  const faceSaid = faceView(dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null });
+  const screenKeeps = new Set(r.pieces.filter((p) => isScreenPiece(p, sources) && !showKeeps.has(p.keep)).map((p) => p.keep));
+  const faceSaid = faceView(dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, screens: screenKeeps });
+  // a screen keep (the screen whole or a zoom box): the picture as before where it passes the layout
+  // skill's checks, else layout's (lib/screenview.mjs); a keep that shows another video is none
+  const screenSaid = screenView(dir, faceCut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, zones: layout.zones, areas: layout.areas, labels });
   let music = null;
   if (cut.music?.file) {
     if (!fs.existsSync(cut.music.file)) fail(`✗ cut.json "music": there is no ${cut.music.file}`);
@@ -989,7 +995,7 @@ async function cmdBuild(dir, opts) {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
       view: p.view, source: p.source, ...(p.show ? { show: showOf(cut.keep[p.keep]).file } : {}), ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
-      ...(p.picture ? { picture: p.picture } : {}),
+      ...(p.picture ? { picture: p.picture } : {}), ...(p.screen ? { screen: p.screen } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
@@ -1000,7 +1006,7 @@ async function cmdBuild(dir, opts) {
   for (const p of r.pieces) { const v = p.show ? "another video (show)" : p.view; views[v] = (views[v] || 0) + p.duration; }
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
-  for (const line of [...shown.notes, ...faceSaid]) console.log(line);
+  for (const line of [...shown.notes, ...faceSaid, ...screenSaid]) console.log(line);
   if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
   else if (cut.captions !== false) console.log("No captions: agentitos' captions skill is not beside this one.");
   if (talk.rate) console.log(`Speech: ${talk.rate} syllables a second where someone speaks${s.speed === "auto" ? (speed > 1 ? ` → played at ${speed}× (--speed auto: towards ${TARGET} a second, at most ${MOST}×; --speed 1 as recorded)` : `: fast enough, played as recorded (--speed auto)`) : `; played at ${speed}× (--speed ${s.speed})`}.`);
@@ -1078,6 +1084,18 @@ function cmdCheck(dir) {
     const pic = e.pieces.find((p) => p.keep === k && p.picture).picture;
     if (pic.mouth) { warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×${pic.named ? ", as the keep names it" : ""}) has the captions on the mouth for ${pic.mouth.seconds} s of its ${pic.mouth.of} s (${pic.mouth.from}–${pic.mouth.to} s of the recording): ${pic.mouth.split ? `split it ("words": ${pic.mouth.split.map((r) => `"${r}"`).join(", ")}) and name another picture on the part with the lean` : "split it where the lean begins"}${pic.mouth.smaller ? `, or name "${pic.mouth.smaller}" on it` : ""}`); continue; }
     warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×) ${pic.mark === "✗" ? "fails the layout skill's checks (enlarged over 2×, or the face under the apps' buttons)" : "leaves the captions no place clear of the face"}${pic.named ? ` and is the one the keep names ("layout")` : ": nothing passes"}; the build's list says which pass`);
+  }
+
+  // a screen keep: its scale, the ground, its text's height where the keep says it; ✗ where that
+  // text comes out too small to read or the region lies under an app's bar
+  const screenKeeps = [...new Set(e.pieces.filter((p) => p.screen).map((p) => p.keep))];
+  if (screenKeeps.length) console.log("\nThe screen:");
+  for (const k of screenKeeps) {
+    const sc = e.pieces.find((p) => p.keep === k && p.screen).screen;
+    const bad = sc.faults.includes("text") || sc.faults.includes("bars");
+    console.log(`  ${bad ? "✗" : sc.faults.length ? "!" : "✓"} keep ${k + 1}: ${sc.fit} at ${sc.scale}×, ${Math.round(sc.ground * 100)} % ground${sc.text ? `, its text ${sc.text} px → ${sc.textHeight} px${sc.readable ? ` (reads from ${sc.readable})` : ""}` : ", its text's height not given (\"text\")"}${sc.under.length ? `, the region under the bars of ${sc.under.join(", ")}` : ""}${sc.faults.filter((f) => f !== "text" && f !== "bars").length ? `; ${sc.faults.filter((f) => f !== "text" && f !== "bars").map((f) => (f === "across" ? "the region past the safe box's margins" : `the ${f} on the region`)).join(", ")}` : ""}`);
+    if (sc.faults.includes("text")) warnings.push(`keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall, under the ${sc.readable} px that read: a narrower "zoom" on what is talked about (the build's list says how wide one reads)`);
+    if (sc.faults.includes("bars")) warnings.push(`keep ${k + 1}'s zoom box lies under the bars of ${sc.under.join(", ")}: name another picture with "layout" from the build's list`);
   }
 
   // the sources are on one clock
