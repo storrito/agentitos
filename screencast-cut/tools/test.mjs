@@ -823,3 +823,27 @@ test("a label over the whole phone: where it would lie on the phone's screen the
   const [s] = shots([{ ...phonePiece({ view: "screen", source: "screen" }), show: { source: "show-1", in: 0, until: 3 } }], { "show-1": PHONE, screen: { width: 1920, height: 1080, offset: 0 } }, w, h, a, [{ text: "01 · Upload", start: 0, duration: 3 }]);
   assert.deepEqual(s.layers[0].box, fit([a.tall, ...a.solo, a.wholeLabelled], PHONE.width / PHONE.height));
 });
+
+test("a whole phone under the apps' headers: the build's sentence names the px per app from the zones and what to do; none for a phone that gave way to a label or keeps the circle, none where the zones lay no header over the top", async () => {
+  const { underHeaders, headerSentence } = await import("./lib/layout.mjs");
+  // made-up zones as platform-zones answers them: two apps with headers of 180 and 140 px, one cover at the side
+  const z = { ...ZONES["9:16"][2], platforms: [{ id: "app-a", name: "App A" }, { id: "app-b", name: "App B" }],
+    covers: [{ platform: "app-a", box: [0, 0, 1080, 180] }, { platform: "app-b", box: [0, 0, 1080, 140] }, { platform: "app-b", box: [900, 800, 180, 1100] }] };
+  const a = areas(1080, 1920, z, { captions: true, labels: true });
+  const [whole] = shots([phonePiece()], { "phone-screen": PHONE }, 1080, 1920, a);
+  const box = whole.layers[0].box;
+  assert.equal(box[1], 24);
+  const list = underHeaders(box, z);
+  assert.deepEqual(list, [{ name: "App A", px: 156 }, { name: "App B", px: 116 }]);
+  assert.equal(headerSentence(0, list, box[3]), `! keep 1: the top of the phone (1236 px high) lies under the apps' header: 156 px under the header of App A, 116 px under the header of App B (its status bar and the screen's top below it); where that top matters for these words, give the keep a "zoom" on the top of the screen, or leave out "circle": false so it stays in the safe box beside the circle.`);
+  // a phone that gave way to a label starts below the label, under no header
+  const [labelled] = shots([phonePiece()], { "phone-screen": PHONE }, 1080, 1920, a, [{ text: "01 · Upload", start: 0, duration: 3 }]);
+  assert.deepEqual(underHeaders(labelled.layers[0].box, z), []);
+  // with the circle, in the safe box: none
+  const [circled] = shots([phonePiece({ pip: undefined })], { "phone-screen": PHONE, webcam: { width: 1280, height: 720, offset: 0 } }, 1080, 1920, a);
+  assert.deepEqual(underHeaders(circled.layers[0].box, z), []);
+  // a frame whose zones lay nothing over its top (made up here; YouTube's 16:9 zones do lay a bar there, and it is said)
+  const [w, h, z16] = ZONES["16:9"], a16 = areas(w, h, { ...z16, covers: [{ platform: "app-a", box: [0, 900, 1920, 180] }] });
+  const [wide] = shots([phonePiece()], { "phone-screen": PHONE }, w, h, a16);
+  assert.deepEqual(underHeaders(wide.layers[0].box, { ...z16, covers: [{ platform: "app-a", box: [0, 900, 1920, 180] }] }), []);
+});

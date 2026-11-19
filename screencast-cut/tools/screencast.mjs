@@ -59,7 +59,7 @@ import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from ".
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
 import { plan, range, timeRange } from "./lib/cut.mjs";
-import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
+import { FRAMES, areas, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { findFace } from "./lib/face.mjs";
@@ -964,7 +964,17 @@ async function cmdBuild(dir, opts) {
     if (a.status === 0) i.audio = audio;
     else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${(a.stderr || "").trim().split("\n").pop() || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
+  const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
+  // a phone's screen (or a tall video shown) whole, under the apps' headers: said per keep, once
+  const headed = new Set();
+  for (const { piece: p, layers } of placed) {
+    const l = layers.find((x) => x.main), src = l && { ...sources, ...shown.sources }[l.source];
+    if (!src || headed.has(p.keep) || src.height <= src.width * 1.25) continue;
+    const list = underHeaders(l.box, layout.zones);
+    if (!list.length) continue;
+    headed.add(p.keep);
+    shown.notes.push(headerSentence(p.keep, list, l.box[3], l.show ? "shown video" : "phone"));
+  }
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,

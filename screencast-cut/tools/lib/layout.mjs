@@ -210,3 +210,25 @@ export function circle(source) {
   const most = source.face ? Math.min(1, Math.max(0.45, Math.min((fy1 - fy0) * 3, (1 - cy) / 0.5))) : 1;
   return around(source, 1, most);
 }
+
+// What of a shot's top lies under the apps' headers (platform-zones' covers that start at the
+// frame's top), per platform: [{ name, px }], where box (x, y, w, h) reaches into one. A phone's
+// screen shown whole takes the frame's height and runs under them (decided 2026-11-19, pair
+// phone-whole: the larger phone stands); the build says how much, so that the agent zooms where
+// the top matters.
+export function underHeaders(box, zones) {
+  const [x, y, w, h] = box;
+  const names = Object.fromEntries((zones.platforms || []).map((p) => [p.id, p.name]));
+  return (zones.covers || []).filter((c) => c.box[1] <= 0 && c.box[0] < x + w && x < c.box[0] + c.box[2])
+    .map((c) => ({ name: names[c.platform] || c.platform, px: Math.round(Math.min(c.box[1] + c.box[3], y + h) - y) }))
+    .filter((u) => u.px > 0);
+}
+
+// The build's sentence for a keep whose phone (or another video shown, "show") is whole under the
+// headers: how many px of its top lie under which app's header, and what to do where it matters.
+export function headerSentence(k, list, height, what = "phone") {
+  const by = new Map();
+  for (const u of list) by.set(u.px, [...(by.get(u.px) || []), u.name]);
+  const parts = [...by.entries()].sort((a, b) => b[0] - a[0]).map(([px, names]) => `${px} px under the header of ${names.join(" and ")}`);
+  return `! keep ${k + 1}: the top of the ${what} (${Math.round(height)} px high) lies under the apps' header: ${parts.join(", ")}${what === "phone" ? " (its status bar and the screen's top below it)" : ""}; where that top matters for these words, give the keep a "zoom" on the top of the screen, or leave out "circle": false so it stays in the safe box beside the circle.`;
+}
