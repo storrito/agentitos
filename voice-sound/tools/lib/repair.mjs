@@ -23,14 +23,21 @@
 //                                took 1 dB of 15 asked, 2026-11-19)
 //                arnndn          RNNoise, only with a model named in VOICE_SOUND_RNNOISE (the
 //                                skill ships none); the default for noise that changes
+//                dpdfnet         a neural denoiser (DPDFNet-2 at 48 kHz, run by sherpa-onnx's
+//                                offline denoiser), where the machine has both (neuralDenoiser
+//                                below): then the default for every kind of noise. Not a filter
+//                                of ffmpeg: the pass becomes two, round the program (see "The
+//                                neural denoiser" further down)
 //              afftdn's floor (nf) is always set from the measured noise: a sampled profile
 //              gives afftdn only the noise's shape, never its level (af_afftdn.c, reduce_mean)
 //
 //   repairPlan(m, opts)                → { steps, left, method, graph, inputs }   nothing run
 //   repair(file, outWav, m, opts)      → { steps, left, method, graph }           one ffmpeg
+//                                        (dpdfnet: two, the denoiser between them)
 //
 // m is what `measure` returned for the file. opts: denoise "auto" | "off" | "gentle" | "strong"
-// (default "auto"); method "afftdn-sample" | "afftdn-profile" | "afftdn-track" | "arnndn" | "off"
+// (default "auto"); method "afftdn-sample" | "afftdn-profile" | "afftdn-track" | "arnndn" |
+// "dpdfnet" | "ffmpeg" (ffmpeg's own choice although the denoiser is there) | "off"
 // (default: chosen; for experiments also VOICE_SOUND_DENOISE); after: a filter string run at the end of the same
 // pass (the tone stage's EQ and de-esser), or ""; progress(seconds) is called as ffmpeg goes.
 // steps: [{id, why, …the numbers used}]; left: [{id, why}], what no filter here removes, each in
@@ -42,12 +49,16 @@
 // filters with a delay (afftdn 1200 samples, arnndn 480: the same in ffmpeg 6.1, 8.0 and 9.0,
 // measured 2026-11-19) get that much silence after the end and lose it at the start, and the
 // output is cut to the length of the input by mixing it with the input at weight 0 (amix,
-// shortest). The rest (pan, adeclip, highpass, equalizer, adeclick) delays nothing.
+// shortest). The rest (pan, adeclip, highpass, equalizer, adeclick) delays nothing. With dpdfnet:
+// a first pass to a float intermediate on disk, the denoiser on it in pieces of a few minutes
+// (its memory under 300 MB however long the file), the pieces in step and cross-faded into a
+// second intermediate exactly as long, a second pass with `after`; the same promises.
 //
 // Never anlmdn: in ffmpeg 9.0.2 it ends with a memory error on every input (2026-11-19).
 
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { Refusal } from "./analyse.mjs";
 import {
@@ -160,7 +171,7 @@ const minus = (s) => String(s).replace(/^-/, "−");
 const dB = (x) => minus(Math.round(x));
 const db1 = (x) => minus(r1(x).toFixed(1));
 const pct = (x) => (x >= 0.01 ? `${+(x * 100).toFixed(1)} %` : `${+(x * 100).toPrecision(2)} %`);
-const METHODS = ["afftdn-sample", "afftdn-profile", "afftdn-track", "arnndn", "off"];
+const METHODS = ["afftdn-sample", "afftdn-profile", "afftdn-track", "arnndn", "dpdfnet", "ffmpeg", "off"];
 const STRENGTHS = ["auto", "off", "gentle", "strong"];
 
 export function repairPlan(m, opts = {}) {
@@ -286,10 +297,38 @@ export function repairPlan(m, opts = {}) {
   const model = process.env.VOICE_SOUND_RNNOISE || null;
   let method = "off", den = null, inputs = [{ input: 0, what: "the file" }];
   const noisy = has("noise") && snr != null;
-  if (noisy && n?.kind === "changing")
-    left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB)${model && (asked ?? "arnndn") === "arnndn" ? ": RNNoise follows some of it, not all" : ": a filter that learns one noise cannot follow it, so some of it stays"}.` });
-  if (noisy && strength !== "off" && asked !== "off") {
-    method = asked ?? (n?.kind === "changing" && model ? "arnndn" : pause ? "afftdn-sample" : "afftdn-profile");
+  // ("ffmpeg": ffmpeg's own choice below, as if the neural denoiser were not on the machine)
+  const wants = asked === "ffmpeg" ? null : asked;
+  // the neural denoiser: asked for, or the default where the machine has it
+  const dn = noisy && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
+  if (wants === "dpdfnet" && noisy && strength !== "off" && !dn) refuse(`dpdfnet needs sherpa-onnx's offline denoiser and the DPDFNet-2 model (${DPDFNET_MODEL}): name them in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET (the skill ships neither).`);
+  let neural = null;
+  if (noisy && n?.kind === "changing" && !dn)
+    left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB)${model && (wants ?? "arnndn") === "arnndn" ? ": RNNoise follows some of it, not all" : ": a filter that learns one noise cannot follow it, so some of it stays"}.` });
+  if (dn) {
+    // its attenuation limit: what the aim needs, never more than --denoise allows (DPDFNET_LIMITS)
+    const cap = DPDFNET_LIMITS[strength];
+    const needed = DENOISE_AIM_DB - snr;
+    const limit = r1(Math.max(0, Math.min(needed, cap)));
+    if (limit >= DENOISE_MIN_DB) {
+      method = "dpdfnet";
+      const t = { ...NEURAL, ...opts.tune };
+      const pauses = m.speech?.longest || [];
+      const cut = piecesOf(Math.round((m.analysed?.seconds ?? m.duration ?? 0) * RATE), pauses, t);
+      neural = { ...dn, limit, tune: t, pauses };
+      const tail = needed > cap ? `, the most --denoise ${strength} allows (the aim needed ${dB(needed)})` : "";
+      const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${Math.ceil(Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE / 60)} minutes` : "";
+      steps.push({
+        id: "denoise", why: `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off${tail}${many}.`,
+        method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: limit, limitDb: limit, model: path.basename(dn.model),
+        pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })), seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
+      });
+      if (n?.kind === "changing")
+        left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB): the neural denoiser took up to ${dB(limit)} dB off it, and what is left of it stays.` });
+      if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${dB(snr)} dB under the speech; ${dB(limit)} dB less is as far as --denoise ${strength} lets the neural denoiser go, so it ends about ${dB(snr + limit)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
+    }
+  } else if (noisy && strength !== "off" && wants !== "off") {
+    method = wants ?? (n?.kind === "changing" && model ? "arnndn" : pause ? "afftdn-sample" : "afftdn-profile");
     if (method === "afftdn-sample" && !pause) refuse(`afftdn-sample needs a pause of at least ${PAUSE_MIN_S} s without speech to take the noise from, and this recording has none: use afftdn-profile.`);
     if (method === "arnndn" && !model) refuse("arnndn needs an RNNoise model: name its file in VOICE_SOUND_RNNOISE (the skill ships none).");
     if (method === "arnndn" && !fs.existsSync(model)) refuse(`VOICE_SOUND_RNNOISE names ${model}, which is not there.`);
@@ -331,6 +370,7 @@ export function repairPlan(m, opts = {}) {
   if (has("roomy")) left.push({ id: "roomy", why: `The room's reverberation (about ${m.room?.rt60?.toFixed(1) ?? "half a"} s) stays: none of ffmpeg's filters removes it; a closer microphone or a softer room next time.` });
 
   const after = (opts.after || "").trim();
+  if (neural) return { steps, left, method, ...neuralGraphs(head, chain, after), inputs, neural };
   return { steps, left, method, ...graphOf(head, chain, den, after), inputs };
 }
 
@@ -442,15 +482,25 @@ function graphOf(head, chain, den, after) {
 
 export async function repair(file, outWav, m, opts = {}) {
   if (!fs.existsSync(file)) refuse(`There is no ${file}.`);
-  const plan = repairPlan(m, opts);
+  let plan = repairPlan(m, opts);
+  // the neural denoiser between two passes; where it fails, ffmpeg's method in one, as without it
+  if (plan.neural) {
+    checkFilters(plan.filters);
+    try {
+      return await neuralRepair(file, outWav, plan, opts);
+    } catch (e) {
+      if (!(e instanceof NeuralFailure)) throw e;
+      plan = fallbackPlan(m, opts, e);
+    }
+  }
   // (the filters of opts.after are the tone stage's to check)
   checkFilters(plan.filters);
   fs.mkdirSync(path.dirname(path.resolve(outWav)), { recursive: true });
-  const args = ["-hide_banner", "-nostdin", "-v", "error", "-nostats", ...(opts.progress ? ["-progress", "pipe:2"] : []), "-y", "-i", file];
+  const args = ["-hide_banner", "-nostdin", "-v", "error", "-nostats", ...(opts.progress ? ["-progress", "pipe:2"] : []), "-y", "-i", ffPath(file)];
   const pause = plan.inputs.find((i) => i.input === 1);
-  if (pause) args.push("-ss", String(pause.from), "-t", String(pause.seconds), "-i", file);
+  if (pause) args.push("-ss", String(pause.from), "-t", String(pause.seconds), "-i", ffPath(file));
   args.push("-filter_complex", plan.graph, "-map", "[out]", "-map_metadata", "-1", "-fflags", "+bitexact",
-    "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav", outWav);
+    "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav", ffPath(outWav));
   const code = await new Promise((resolve) => {
     const p = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     let err = "", partial = "";
@@ -507,4 +557,380 @@ export async function invalidSample(wav, bound = 16) {
     carry = buf.subarray(n * 4);
   }
   return found;
+}
+
+// a file's name as ffmpeg's file protocol takes it: one that begins with a dash is no option, one
+// with a colon no other protocol
+const ffPath = (p) => `file:${path.resolve(p)}`;
+
+// ---------------------------------------------------------------- the neural denoiser
+//
+// sherpa-onnx's offline denoiser (k2-fsa/sherpa-onnx 2.0.2) with DPDFNet-2 at 48 kHz
+// (dpdfnet2_48khz_hr.onnx). ffmpeg's filters learn one steady noise; this follows one that
+// changes: on twelve real recordings with a café or a keyboard behind the voice the background's
+// score (DNSMOS BAK) went from 2.72 to 3.56 with it in front, 2.74 with afftdn (agentitos-lab,
+// 2026-11-19). Run on every recording it harmed clean ones (band-limited, quiet, a channel fault:
+// 0.4 to 0.6 PESQ lost), so it runs only where `measure` found noise. The skill ships neither the
+// program nor the model; the tool never fetches or installs them. Where they are:
+//
+//   the program  VOICE_SOUND_DENOISER (a path, or a name on the PATH), else
+//                sherpa-onnx-offline-denoiser on the PATH
+//   the model    VOICE_SOUND_DPDFNET, else models/dpdfnet2_48khz_hr.onnx beside the folder of
+//                the program's real file (a link followed: /opt/sherpa-onnx/bin/… gives
+//                /opt/sherpa-onnx/models/…), else /opt/sherpa-onnx/models/dpdfnet2_48khz_hr.onnx
+//
+// What it does, measured with the real program on this corpus (2026-11-19):
+// - it reads 16-bit and float WAV, writes 16-bit, one channel, 48 kHz; its output is as long as
+//   its input rounded down to a whole number of 480-sample blocks (336123 samples gave 336000), and
+//   an empty input ends it with a segmentation fault: every piece is padded with silence to a
+//   whole number of blocks, half a second more, and cut back after it
+// - its output is not delayed: the cross-correlation of output and input peaked at lag 0 on 21 of
+//   21 real recordings (dns, fleurs, librivox; ±50 ms searched). It is causal: a piece's output
+//   is the whole file's to the sample but for the last 50 ms block. The delay is still measured on
+//   every run (the first piece's loudest second against ±50 ms) and taken out, so that another
+//   build cannot put the voice out of step with the picture
+// - a piece starts without the network's history: its output differs from the whole file's by
+//   −11 to −24 dB in its first 0.2 s, −30 to −45 dB to about 2.5 s, and from about 3 s on no more
+//   than two equally valid runs differ (the same input as 16-bit and as float). So each piece
+//   after the first starts warmS (3 s) before the cross-fade and that part is thrown away; the
+//   cross-fade (fadeS, 1 s, raised cosine, the two weights summing to one) sits on a pause where
+//   `measure` knows one within shiftS of the cut
+// - it holds the whole file in memory: about 55 MB and 78 MB a minute; pieces of pieceS
+//   (150 s), at most 185 s with the overlaps and a cut moved to a pause, keep it under 300 MB
+//   however long the recording; it takes about a seventh to a fifth of the sound's length on one
+//   core, one thread (four were 17 % faster for four times the CPU)
+// - its 16-bit output would cost a quiet recording its resolution and clip a hot one: its input
+//   is brought to a peak of −6 dBFS (float) and that gain taken back after it
+//
+// Where it fails (a non-zero exit, a signal, no output, another length, silence, numbers that are
+// not finite, clipping, an output that does not follow its input, longer than its time), the stage
+// runs ffmpeg's method on the whole recording instead and says so in the denoise step.
+
+export const DPDFNET_MODEL = "dpdfnet2_48khz_hr.onnx";
+const DENOISER_PROGRAM = "sherpa-onnx-offline-denoiser";
+const OPT_MODEL = `/opt/sherpa-onnx/models/${DPDFNET_MODEL}`;
+// its attenuation limit (dB) by --denoise: the aim's need, never more than this. In the lab 18 kept
+// some of the room and scored nearly as well as no limit; gentle takes off what afftdn's strong
+// did, strong 6 dB more than auto (a voice in a café: DNSMOS's background 3.56 at 18)
+export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
+// the pieces (seconds) and the level for it (dBFS); the lab's knobs through opts.tune
+export const NEURAL = { pieceS: 150, shiftS: 15, warmS: 3, fadeS: 1, tailS: 0.5, peakDb: -6 };
+// its delay at 48 kHz in samples (0 measured) and how far either side it is looked for
+const DPDFNET_DELAY = 0;
+const DELAY_SEARCH = 2400;
+const BLOCK = 480;
+const CHUNK = 1 << 16;
+
+const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+const runnable = (p) => { try { fs.accessSync(p, fs.constants.X_OK); return isFile(p); } catch { return false; } };
+function onPath(name, PATH = process.env.PATH || "") {
+  for (const dir of PATH.split(path.delimiter)) if (dir && runnable(path.join(dir, name))) return path.join(dir, name);
+  return null;
+}
+
+// → { program, model } where both are there, else null
+export function neuralDenoiser(env = process.env) {
+  const named = env.VOICE_SOUND_DENOISER;
+  const program = named ? (named.includes("/") ? (runnable(named) ? path.resolve(named) : null) : onPath(named, env.PATH)) : onPath(DENOISER_PROGRAM, env.PATH);
+  if (!program) return null;
+  if (env.VOICE_SOUND_DPDFNET) return isFile(env.VOICE_SOUND_DPDFNET) ? { program, model: path.resolve(env.VOICE_SOUND_DPDFNET) } : null;
+  let real = program;
+  try { real = fs.realpathSync(program); } catch {}
+  const beside = path.join(path.dirname(path.dirname(real)), "models", DPDFNET_MODEL);
+  const model = isFile(beside) ? beside : isFile(OPT_MODEL) ? OPT_MODEL : null;
+  return model ? { program, model } : null;
+}
+
+// The pieces of n samples: as many of at most pieceS + shiftS as it takes, equally long, each cut
+// moved to the middle of the nearest pause `measure` knows within shiftS. Piece k starts warmS
+// before the cross-fade into it and ends tailS after the cross-fade out of it.
+// → { pieces: [{ from, to }] (samples), seams: [{ at, pause }] (the fades' middles), fade (samples) }
+export function piecesOf(n, pauses = [], t = NEURAL) {
+  const L = t.pieceS * RATE, R = t.shiftS * RATE;
+  const half = Math.round((t.fadeS * RATE) / 2), warm = Math.round(t.warmS * RATE), tail = Math.round(t.tailS * RATE);
+  const count = n <= L + R ? 1 : Math.ceil(n / L);
+  const mids = (pauses || []).filter((p) => p && Number.isFinite(p.from) && Number.isFinite(p.to)).map((p) => Math.round(((p.from + p.to) / 2) * RATE));
+  const seams = [];
+  for (let k = 1; k < count; k++) {
+    const aim = Math.round((k * n) / count);
+    const near = mids.filter((x) => Math.abs(x - aim) <= R).sort((a, b) => Math.abs(a - aim) - Math.abs(b - aim))[0];
+    seams.push(near != null ? { at: near, pause: true } : { at: aim, pause: false });
+  }
+  const pieces = [];
+  for (let k = 0; k < count; k++)
+    pieces.push({ from: k ? Math.max(0, seams[k - 1].at - half - warm) : 0, to: k < count - 1 ? Math.min(n, seams[k].at + half + tail) : n });
+  return { pieces, seams, fade: 2 * half };
+}
+
+// the two passes round it: [0:a] the file to the denoiser's input; [0:a] its output to the end
+function neuralGraphs(head, chain, after) {
+  const one = graphOf(head, chain, null, "");
+  const two = `[0:a]${[after, `aformat=sample_fmts=flt:sample_rates=${RATE}:channel_layouts=mono`].filter(Boolean).join(",")}[out]`;
+  return { graph: one.graph, graphs: [one.graph, two], filters: [...new Set([...one.filters, "aformat"])] };
+}
+
+class NeuralFailure extends Error {}
+
+// ffmpeg's method for the whole recording, the denoise step saying why
+function fallbackPlan(m, opts, e) {
+  const plan = repairPlan(m, { ...opts, method: "ffmpeg" });
+  const said = `the neural denoiser failed (${e.message}), so ffmpeg's ${plan.method} did this for the whole recording`;
+  const st = plan.steps.find((s) => s.id === "denoise");
+  if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; ${said}.`, fallback: { from: "dpdfnet", reason: e.message } });
+  else plan.steps.push({ id: "denoise", why: `The ${said.replace(/, so .*/, "")}, and ffmpeg's method has nothing to take off here.`, method: "off", fallback: { from: "dpdfnet", reason: e.message } });
+  return plan;
+}
+
+const WAV_OUT = ["-map_metadata", "-1", "-fflags", "+bitexact", "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav"];
+
+// one ffmpeg; → 0, "missing", or its last line of error
+function ffmpegPass(args, progress) {
+  return new Promise((resolve) => {
+    const p = spawn("ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-nostats", ...(progress ? ["-progress", "pipe:2"] : []), "-y", ...args], { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "", partial = "";
+    p.stderr.setEncoding("utf8");
+    p.stderr.on("data", (d) => {
+      const lines = (partial + d).split("\n");
+      partial = lines.pop();
+      for (const line of lines) {
+        const t = line.match(/^out_time_us=(\d+)/);
+        if (t) progress?.(Number(t[1]) / 1e6);
+        else if (!/^[a-z0-9_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
+      }
+    });
+    p.on("error", (e) => resolve(e.code === "ENOENT" ? "missing" : String(e.message)));
+    p.on("close", (c) => resolve(c === 0 ? 0 : err.trim().split("\n").pop() || `exit ${c}`));
+  });
+}
+
+// the program on one piece; → null, or what went wrong in a few words
+function runDenoiser(nr, inWav, outWav, seconds) {
+  const args = [`--speech-denoiser-dpdfnet-model=${nr.model}`, "--num-threads=1", "--print-args=false",
+    `--speech-denoiser-dpdfnet-attenuation-limit-db=${nr.limit}`, `--input-wav=${inWav}`, `--output-wav=${outWav}`];
+  const limit = Math.round(120 + 4 * seconds);
+  return new Promise((resolve) => {
+    let p;
+    try { p = spawn(nr.program, args, { stdio: ["ignore", "ignore", "ignore"] }); } catch (e) { resolve(`it could not be started (${e.code || e.message})`); return; }
+    let late = false;
+    const timer = setTimeout(() => { late = true; p.kill("SIGKILL"); }, limit * 1000);
+    p.on("error", (e) => { clearTimeout(timer); resolve(`it could not be started (${e.code || e.message})`); });
+    p.on("close", (code, sig) => {
+      clearTimeout(timer);
+      resolve(late ? `it took longer than ${limit} s` : sig ? `it ended on ${sig}` : code ? `it exited with ${code}` : null);
+    });
+  });
+}
+
+// a WAV file's format and where its samples lie (RIFF or RF64, PCM, float or extensible); null
+// for anything else
+function wavInfo(file) {
+  let fd;
+  try { fd = fs.openSync(file, "r"); } catch { return null; }
+  try {
+    const head = Buffer.alloc(65536), got = fs.readSync(fd, head, 0, head.length, 0), size = fs.fstatSync(fd).size;
+    const riff = head.toString("latin1", 0, 4);
+    if (got < 12 || (riff !== "RIFF" && riff !== "RF64") || head.toString("latin1", 8, 12) !== "WAVE") return null;
+    let ds64 = null, fmt = null;
+    for (let off = 12; off + 8 <= got;) {
+      const id = head.toString("latin1", off, off + 4), sz = head.readUInt32LE(off + 4);
+      if (id === "ds64" && off + 24 <= got) ds64 = Number(head.readBigUInt64LE(off + 16));
+      else if (id === "fmt " && off + 24 <= got) {
+        const tag = head.readUInt16LE(off + 8);
+        fmt = { tag: tag === 0xfffe && sz >= 26 && off + 34 <= got ? head.readUInt16LE(off + 32) : tag, channels: head.readUInt16LE(off + 10), rate: head.readUInt32LE(off + 12), bits: head.readUInt16LE(off + 22) };
+      } else if (id === "data") {
+        if (!fmt || !fmt.bits || !fmt.channels) return null;
+        const start = off + 8, bytes = Math.min(sz === 0xffffffff && ds64 != null ? ds64 : sz, size - start);
+        return { ...fmt, start, samples: Math.floor(bytes / (fmt.bits / 8) / fmt.channels) };
+      }
+      off += 8 + sz + (sz & 1);
+    }
+    return null;
+  } finally { fs.closeSync(fd); }
+}
+
+// a float WAV's header for n samples, one channel at 48 kHz (RF64 past 4 GB)
+function floatHeader(n) {
+  const bytes = n * 4, big = bytes + 36 > 0xffffffff;
+  const h = Buffer.alloc(big ? 80 : 44);
+  let o = 0;
+  const id = (s) => { h.write(s, o, "latin1"); o += 4; }, u32 = (v) => { h.writeUInt32LE(v, o); o += 4; };
+  id(big ? "RF64" : "RIFF"); u32(big ? 0xffffffff : 36 + bytes); id("WAVE");
+  if (big) { id("ds64"); u32(28); h.writeBigUInt64LE(BigInt(72 + bytes), o); h.writeBigUInt64LE(BigInt(bytes), o + 8); h.writeBigUInt64LE(BigInt(n), o + 16); o += 28; }
+  id("fmt "); u32(16); h.writeUInt16LE(3, o); h.writeUInt16LE(1, o + 2); h.writeUInt32LE(RATE, o + 4); h.writeUInt32LE(RATE * 4, o + 8); h.writeUInt16LE(4, o + 12); h.writeUInt16LE(32, o + 14); o += 16;
+  id("data"); u32(big ? 0xffffffff : bytes);
+  return h;
+}
+
+// count samples of a WAV from `from` as floats (16-bit as ±1), zeros outside it
+function readRange(fd, info, from, count) {
+  const out = new Float32Array(count), bps = info.bits / 8;
+  const a = Math.max(0, from), b = Math.min(info.samples, from + count);
+  if (b <= a) return out;
+  const buf = Buffer.alloc((b - a) * bps);
+  const got = fs.readSync(fd, buf, 0, buf.length, info.start + a * bps);
+  const k = Math.floor(got / bps), o = a - from;
+  if (info.tag === 3) for (let i = 0; i < k; i++) out[o + i] = buf.readFloatLE(i * 4);
+  else for (let i = 0; i < k; i++) out[o + i] = buf.readInt16LE(i * 2) / 32768;
+  return out;
+}
+
+// the largest absolute sample of a float WAV, streamed
+function peakOf(fd, info) {
+  let peak = 0;
+  for (let p = 0; p < info.samples; p += CHUNK) {
+    const x = readRange(fd, info, p, Math.min(CHUNK, info.samples - p));
+    for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > peak) peak = v; }
+  }
+  return peak;
+}
+
+// The lag (0…DELAY_SEARCH samples) at which the output y follows the input x best, x a window of
+// the input and y the output from the same start, DELAY_SEARCH longer. → { lag, c, c0 }: the
+// normalised correlation there and at lag 0
+function lagOf(x, y) {
+  const n = x.length;
+  let ex = 0;
+  for (let i = 0; i < n; i++) ex += x[i] * x[i];
+  const cum = new Float64Array(y.length + 1);
+  for (let i = 0; i < y.length; i++) cum[i + 1] = cum[i] + y[i] * y[i];
+  let best = { lag: 0, c: -Infinity }, c0 = 0;
+  for (let l = 0; l + n <= y.length && l <= DELAY_SEARCH; l++) {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += x[i] * y[i + l];
+    const c = s / Math.sqrt(ex * (cum[l + n] - cum[l]) + 1e-30);
+    if (l === 0) c0 = c;
+    if (c > best.c) best = { lag: l, c };
+  }
+  return { ...best, c0 };
+}
+
+async function neuralRepair(file, outWav, plan, opts) {
+  const nr = plan.neural, t = nr.tune;
+  fs.mkdirSync(path.dirname(path.resolve(outWav)), { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "voice-sound-neural-"));
+  const fds = [];
+  const open = (f, flags) => { const fd = fs.openSync(f, flags); fds.push(fd); return fd; };
+  const close = (fd) => { const i = fds.indexOf(fd); if (i >= 0) fds.splice(i, 1); fs.closeSync(fd); };
+  try {
+    // 1. everything before the noise, as one pass would do it
+    const pre = path.join(tmp, "pre.wav");
+    const c1 = await ffmpegPass(["-i", ffPath(file), "-filter_complex", plan.graphs[0], "-map", "[out]", ...WAV_OUT, ffPath(pre)]);
+    if (c1 === "missing") refuse("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
+    if (c1 !== 0) refuse(`ffmpeg could not repair ${path.basename(file)} (${c1}): check that it plays (ffprobe ${path.basename(file)}).`);
+    const info = wavInfo(pre);
+    if (!info) refuse(`ffmpeg wrote no sound for ${path.basename(file)}: check that it plays (ffprobe ${path.basename(file)}).`);
+    const bad = await invalidSample(pre);
+    if (bad) refuse(`ffmpeg's filters wrote ${bad.value} at ${clockOf(bad.at)} of the repaired sound (the repair before the denoiser): run it again with --denoise off, and tell the skill's authors.`);
+    const N = info.samples;
+    const den = path.join(tmp, "denoised.wav");
+    const st = { ...plan.steps.find((s) => s.id === "denoise") };
+    let delay = DPDFNET_DELAY, gainDb = 0;
+    const cut = piecesOf(N, nr.pauses, t);
+    try {
+      // 2. the level for its 16-bit output
+      const fdPre = open(pre, "r");
+      const peak = peakOf(fdPre, info);
+      gainDb = r2(peak > 0 ? Math.max(-40, Math.min(60, t.peakDb - 20 * Math.log10(peak))) : 0);
+      const g = 10 ** (gainDb / 20);
+      // 3. piece by piece, each output in step and cross-faded into the one before
+      const fdDen = open(den, "w");
+      fs.writeSync(fdDen, floatHeader(N));
+      const write = (x) => fs.writeSync(fdDen, Buffer.from(x.buffer, x.byteOffset, x.length * 4));
+      const { pieces, seams, fade } = cut, half = fade / 2, K = pieces.length;
+      let pending = null;
+      for (let k = 0; k < K; k++) {
+        const { from, to } = pieces[k], len = to - from;
+        const padded = Math.ceil(len / BLOCK) * BLOCK + Math.ceil((t.tailS * RATE) / BLOCK) * BLOCK + BLOCK;
+        const inW = path.join(tmp, `piece-${k}.wav`), outW = path.join(tmp, `piece-${k}.out.wav`);
+        const say = (what) => new NeuralFailure(K > 1 ? `${what}, on piece ${k + 1} of ${K}` : what);
+        // the piece at the level for it, its blocks' energy (where the delay is looked for)
+        const fdIn = open(inW, "w");
+        fs.writeSync(fdIn, floatHeader(padded));
+        let sumIn = 0;
+        const blocks = new Float64Array(Math.ceil(len / 4800));
+        for (let p = from; p < to; p += CHUNK) {
+          const x = readRange(fdPre, info, p, Math.min(CHUNK, to - p));
+          for (let i = 0; i < x.length; i++) { x[i] *= g; const e = x[i] * x[i]; sumIn += e; blocks[Math.floor((p - from + i) / 4800)] += e; }
+          fs.writeSync(fdIn, Buffer.from(x.buffer, 0, x.length * 4));
+        }
+        fs.writeSync(fdIn, Buffer.alloc((padded - len) * 4));
+        close(fdIn);
+        const failed = await runDenoiser(nr, inW, outW, len / RATE);
+        fs.rmSync(inW, { force: true });
+        if (failed) throw say(failed);
+        const oi = wavInfo(outW);
+        if (!oi) throw say(isFile(outW) ? "its output is no WAV" : "it wrote nothing");
+        if (oi.rate !== RATE || oi.channels !== 1 || !((oi.tag === 1 && oi.bits === 16) || (oi.tag === 3 && oi.bits === 32))) throw say(`its output is ${oi.bits}-bit ${oi.rate} Hz with ${oi.channels} channels, not 16-bit 48 kHz mono`);
+        if (oi.samples !== padded) throw say(`its output is ${oi.samples} samples long for ${padded}`);
+        const fdOut = open(outW, "r");
+        // its output whole: finite, not silent, not clipped
+        let sumOut = 0, clipped = 0;
+        for (let p = 0; p < padded; p += CHUNK) {
+          const y = readRange(fdOut, oi, p, Math.min(CHUNK, padded - p));
+          for (let i = 0; i < y.length; i++) {
+            const v = y[i];
+            if (!Number.isFinite(v)) throw say("its output holds numbers that are not finite");
+            sumOut += v * v;
+            if (v >= 32767 / 32768 || v <= -1) clipped++;
+          }
+        }
+        if (sumOut === 0 || sumOut < sumIn * 10 ** (-(nr.limit + 20) / 10)) throw say("its output is silent");
+        if (clipped > 10) throw say(`its output clipped (${clipped} samples)`);
+        // its delay, on the first piece's loudest second (half a second in at least)
+        if (k === 0) {
+          const per = Math.min(10, Math.floor((len - DELAY_SEARCH) / 4800)), W = per * 4800;
+          if (per >= 3) {
+            let at = 0, top = -1;
+            for (let b = Math.min(5, Math.max(0, blocks.length - 1)); (b + per) * 4800 + DELAY_SEARCH <= len; b++) {
+              let s = 0; for (let j = b; j < b + per && j < blocks.length; j++) s += blocks[j];
+              if (s > top) { top = s; at = b * 4800; }
+            }
+            const x = readRange(fdPre, info, from + at, W).map((v) => v * g);
+            const y = readRange(fdOut, oi, at, W + DELAY_SEARCH);
+            const lag = lagOf(x, y);
+            if (lag.c < 0.2) throw say(`its output does not follow its input (correlation ${lag.c.toFixed(2)})`);
+            if (lag.lag !== DPDFNET_DELAY && lag.c >= 0.5 && lag.c >= lag.c0 + 0.05) delay = lag.lag;
+          }
+        }
+        // its part of the output: the fade into it, then it alone up to the next fade
+        const take = (a, b) => { const y = readRange(fdOut, oi, a - from + delay, b - a); for (let i = 0; i < y.length; i++) y[i] /= g; return y; };
+        if (k > 0) {
+          const a = seams[k - 1].at - half, y = take(a, a + fade);
+          for (let j = 0; j < fade; j++) { const w = Math.sin((Math.PI / 2) * ((j + 0.5) / fade)) ** 2; y[j] = w * y[j] + (1 - w) * pending[j]; }
+          write(y);
+        }
+        const a = k > 0 ? seams[k - 1].at + half : 0, b = k < K - 1 ? seams[k].at - half : N;
+        for (let p = a; p < b; p += CHUNK) write(take(p, Math.min(b, p + CHUNK)));
+        pending = k < K - 1 ? take(b, b + fade) : null;
+        close(fdOut);
+        fs.rmSync(outW, { force: true });
+      }
+      close(fdDen);
+      close(fdPre);
+    } catch (e) {
+      if (e instanceof NeuralFailure || e instanceof Refusal) throw e;
+      throw new NeuralFailure(`the step round it broke: ${String(e?.message || e).split("\n")[0]}`);
+    }
+    fs.rmSync(pre, { force: true });
+    // 4. what comes after the noise (the tone stage's filters), to the intermediate
+    const c2 = await ffmpegPass(["-i", ffPath(den), "-filter_complex", plan.graphs[1], "-map", "[out]", ...WAV_OUT, ffPath(outWav)], opts.progress);
+    if (c2 === "missing") refuse("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
+    if (c2 !== 0) refuse(`ffmpeg could not repair ${path.basename(file)} after the denoiser (${c2}): run it again with --denoise off, and tell the skill's authors.`);
+    const bad2 = await invalidSample(outWav);
+    if (bad2) {
+      fs.rmSync(outWav, { force: true });
+      refuse(`ffmpeg's filters wrote ${bad2.value} at ${clockOf(bad2.at)} of the repaired sound (after dpdfnet): run it again with --denoise off or another method, and tell the skill's authors.`);
+    }
+    Object.assign(st, {
+      gainDb, delaySamples: delay,
+      pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })),
+      seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
+      ...(delay !== DPDFNET_DELAY && { why: `${st.why.replace(/\.$/, "")}; its output came ${delay} samples late, taken out.` }),
+    });
+    const steps = plan.steps.map((s) => (s.id === "denoise" ? st : s));
+    return { steps, left: plan.left, method: plan.method, graph: plan.graph };
+  } finally {
+    for (const fd of fds) try { fs.closeSync(fd); } catch {}
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
