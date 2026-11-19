@@ -13,7 +13,7 @@
 
 import { EPS, X1, Y1, clamp, ratioOf, r2 } from "./boxes.mjs";
 import { evaluate, cmpRank } from "./evaluate.mjs";
-import { captionHeight } from "./text.mjs";
+import { captionHeight, captionTop } from "./text.mjs";
 
 // The placements a fit allows along one axis. `cover`: the picture covers the frame's length;
 // `inside`: it lies inside it. pick(t): the offset nearest to t at which the faces lie in the safe
@@ -60,19 +60,19 @@ function bestVariant(ctx, fit, s, modeX, modeY, extra = {}) {
   // smaller than the frame: ending above the captions, starting below the hook
   const eyes = fb ? fb[1] + D.eyes * (fb[3] - fb[1]) : 0;
   const ys = [fb && extra.aroundFace && modeY === "cover" ? H / 3 - s * eyes : centredY, Infinity, -Infinity];
-  const capH = captionHeight(ctx);
+  const capH = captionHeight(ctx), capY = captionTop(ctx);
   const under = fb ? Math.max(D.free.belowMin, D.free.below * s * (fb[3] - fb[1])) : 0;
-  if (cap && fb) ys.push(Y1(S) - capH - under - s * fb[3]);
+  if (cap && fb) ys.push(capY - under - s * fb[3]);
   // and for a hook as text: the chin just high enough for it below, alone and above the captions;
   // the head just low enough for it above, at its size and at its smallest
   if (hook && tall && hook.kind !== "card" && fb) {
     const ht = D.hookText, hookH = ht.font * ht.heightEm, over = Math.max(D.free.aboveMin, D.free.above * s * (fb[3] - fb[1]));
     ys.push(Y1(S) - hookH - under - s * fb[3]);
-    if (cap) ys.push(Y1(S) - capH - g - hookH - under - s * fb[3]);
+    if (cap) ys.push(capY - g - hookH - under - s * fb[3]);
     ys.push(S[1] + hookH + over - s * fb[1], S[1] + ht.minFont * ht.heightEm + over - s * fb[1]);
   }
   if (modeY === "inside") {
-    if (cap) ys.push(Y1(S) - capH - g - s * sh);
+    if (cap) ys.push(capY - g - s * sh);
     if (hook && tall) { const top = (Z.wide || S)[1]; ys.push(top + D.hookCard.font * D.hookCard.heightEm + g, top + D.hookCard.minFont * D.hookCard.heightEm + g); }
     // the picture starting below a hook text on the ground above it, and below the captions as well
     if (hook && tall && hook.kind !== "card") for (const font of [D.hookText.font, D.hookText.minFont]) { const hookH = font * D.hookText.heightEm; ys.push({ exact: S[1] + hookH + g }); if (cap) ys.push({ exact: S[1] + hookH + g + capH + g }); }

@@ -64,6 +64,8 @@ node <skill>/tools/place.mjs place placement/<name> --frame 9:16 --source 1080x1
 | a face that moves | `--face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …`, or `--face-track file.json` |
 | a screen, with or without a webcam | `--source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--source 1280x720 --face …]` |
 | a screen with the webcam baked in | `--source 1920x1080 --region 500,40,1340,310 --min-text-height 20 --face 130,555,70,85` |
+| captions your skill built already | `--caption-area <captions>/area.json`: they stand there or have no place (`–`), the picture is placed around them |
+| a picture of one speaker, chosen by your tool | `--pick speaker [--cover scale,left,top]`: the candidates in the order an editor takes them (the picture you draw today first where it is at most 2× with eyes, nose and mouth inside the frame at every moment, whatever the face's size and though a nod cuts the hair, and the captions off the eyes and nose and on the mouth for at most two thirds of the clip; then the pictures across the frame's width at 1× or more with the face nearest the usual size, then narrower or shrunk ones; captions on the chin pass), each with `pick.why`; a note where the captions lie on the mouth for part of the clip (the seconds, the narrower picture by name) or only a narrower picture passes (where the head moves across most of the picture, a clip cut where it moves gets larger pictures) |
 
 Every `--face`, `--face-at` and `--region` belongs to the `--source` before it. `--frame` is `9:16`, `4:5`, `1:1`, `16:9` or a size as `720x1280`: type and margins are in proportion to the frame.
 

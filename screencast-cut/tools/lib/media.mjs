@@ -39,7 +39,7 @@ export function prepare(file, out, { fps = 30, frames, progress } = {}) {
   fs.rmSync(out, { force: true });
   const args = ["-v", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", file];
   if (p.video) {
-    args.push("-map", "0:v:0", "-map", "0:a:0?", "-vf", `scale='min(2560,iw)':-2,fps=${fps}`, "-fps_mode", "cfr",
+    args.push("-map", "0:v:0", "-map", "0:a:0?", "-vf", `scale='min(2560,iw)':-2,fps=${fps}`, ...steadyRate(),
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", String(fps), "-keyint_min", String(fps));
   } else {
     args.push("-map", "0:a:0", "-vn");
@@ -69,6 +69,18 @@ export function prepare(file, out, { fps = 30, frames, progress } = {}) {
       resolve(probe(out));
     });
   });
+}
+
+// A steady frame rate is asked for with -fps_mode from ffmpeg 5.1 on; an older ffmpeg (Ubuntu
+// 22.04 has 4.4) refuses it and knows only -vsync, which a newer one still takes but calls
+// deprecated. ffmpeg is asked once, with a tenth of a second of a made-up picture.
+let rate = null;
+export function steadyRate() {
+  if (!rate) {
+    const r = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=s=16x16:d=0.1", "-fps_mode", "cfr", "-f", "null", "-"], { encoding: "utf8" });
+    rate = r.status === 0 ? ["-fps_mode", "cfr"] : ["-vsync", "cfr"];
+  }
+  return rate;
 }
 
 // the sound as mono samples at 16 kHz, from `from` seconds on (silence before 0 when `from` < 0)
