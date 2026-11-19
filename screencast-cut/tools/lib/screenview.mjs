@@ -34,7 +34,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { layoutTool, PLACE_TIMEOUT } from "./placement.mjs";
+import { layoutTool, PLACE_TIMEOUT, softOf } from "./placement.mjs";
 import { spread, largest, labelBox } from "./layout.mjs";
 import { clock } from "./media.mjs";
 
@@ -181,7 +181,8 @@ export const drawable = (c) => !!c && typeof c === "object" && DRAWN.test(c.fit)
 // a candidate of layout's as a picture the composition draws; its own circle is not taken (the
 // circle stays at main's place and size, seat())
 export function pictureOf(c) {
-  return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, region: c.faceInFrame[0], circle: null, mark: markOf(c), hard: c.hard || 0 };
+  const mark = markOf(c);
+  return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, region: c.faceInFrame[0], circle: null, mark, hard: c.hard || 0, ...(mark === "!" && softOf(c) ? { soft: softOf(c) } : {}) };
 }
 
 // a fault in a few words, for the lists
@@ -364,11 +365,11 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, band,
     // the circle stays on the region where nothing fixes it yet: said, with what the agent can do
     if (j.faults.some((f) => f.code === "circle") && !got.named) lines.push(`! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them ("circle": false)`);
   } else {
-    lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""})${circleSaid}, ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
+    lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""}${pic.soft ? `; ${pic.soft}` : ""})${circleSaid}, ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
   }
   if (got.missing) lines.push(`! "layout": "${got.missing}" is not among this screen's pictures in this frame (${width}×${height}), so it takes the rule's; its names here: ${[BEFORE, ...new Set(list.map((x) => x.fit))].map((x) => `"${x}"`).join(", ")}`);
   lines.push(`text: ${textSentence(pic, { text, readable, narrower, size: src, width })}`);
-  const others = [before, ...own, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
+  const others = [before, ...own, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.soft ? `${x.soft}, ` : ""}${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
   if (others.length) lines.push(`also: ${others.join("; ")}`);
   return { pic, facts: facts(pic, j, { readable, named: got.named }), lines };
 }

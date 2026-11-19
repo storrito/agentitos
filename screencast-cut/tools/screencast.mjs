@@ -274,7 +274,7 @@ async function prepareRecording(sdir, folder, s, opts) {
   if (counted.webcam) activity.webcam = samplesOf(counted.webcam, grids.webcam, sources.webcam.offset);
   for (const k of names.filter((x) => sources[x].video)) {
     const mirrored = k === "webcam" ? new Set() : mirrors(counted[k], sources[k].offset, activity.webcam);
-    if (mirrored.size) console.log(`${k}: ${mirrored.size} cells show the webcam's picture (a preview in the page), left out of what moves`);
+    if (mirrored.size) console.log(`${k}: ${mirrored.size} cells change in step with the webcam's picture (as a preview of the camera in the page would), left out of what moves`);
     activity[k] = samplesOf(counted[k], grids[k], sources[k].offset, mirrored);
     const moved = activity[k].filter((x) => x.b).length / Math.max(1, activity[k].length);
     console.log(`${k}: moves in ${Math.round(moved * 100)} % of the time`);
@@ -537,20 +537,26 @@ Word numbers in brackets; "moves": how much each source changes during the sente
     const lv = Object.keys(activity).map((k) => bars(busy(activity[k], s.start, s.end)));
     lines.push(`| ${s.from}–${s.to} | ${clock(s.start)}–${clock(s.end)} | ${lv.join(" | ")} | ${s.text.replace(/\|/g, "/")} |`);
   }
+  // the example cut.json from this recording's sentences: the last as the hook, then the first two
+  const ex = list.length > 2 ? [list.at(-1), list[0], list[1]] : list.length === 2 ? [list[1], list[0]] : list.slice(0, 1);
+  const hookView = meta.sources["phone-screen"]?.video ? "phone-screen" : meta.sources.phone?.video ? "phone" : null;
+  const example = ex.map((x, j) => (j === 0 && ex.length > 1
+    ? `{"words": "${x.from}-${x.to}",${hookView ? ` "view": "${hookView}",` : ""} "hold": 2.5, "label": "The result", "hook": true, "why": "the hook: the result, again in its place later"}`
+    : j === 1 ? `{"words": "${x.from}-${x.to}", "zoom": [0.15, 0.82, 0.5, 0.98], "label": "01 · Ask", "why": "what is typed in, as large as it reads"}`
+      : `{"words": "${x.from}-${x.to}", "zoom": [0.1, 0.15, 0.55, 0.5], "why": "the answer"}`));
+  const exWait = ex.length > 2 ? `\n  "waits": [${ex[1].to}],` : "";
   lines.push(`\n## Every word\n\n${words.map((w) => `${w.i} ${w.kind === "filler" ? `(${w.text})` : w.kind === "event" ? w.text : w.text}${w.confidence != null && w.confidence < 0.6 ? "?" : ""}`).join(" · ")}\n
 ## cut.json
 
 \`\`\`json
 {
   "keep": [
-    {"words": "212-230", "view": "phone-screen", "hold": 2.5, "label": "The result", "hook": true, "why": "the hook: the reel on the phone, again in its place later"},
-    {"words": "12-40", "zoom": [0.15, 0.82, 0.5, 0.98], "label": "01 · Ask", "why": "the question typed into the chat"},
-    {"words": "41-58", "zoom": [0.1, 0.15, 0.55, 0.5], "why": "the answer"}
-  ],
-  "waits": [40],
-  "fixes": {"57": "storrito_com"}
+    ${example.join(",\n    ")}
+  ]${exWait ? `,${exWait.slice(0, -1)}` : ""}
 }
 \`\`\`
+
+The keeps' words above are this recording's own sentences, the views and boxes only an example. A name the speech model misheard: \`"fixes": {"<its word number>": "<the name as it is spelled>"}\` beside \`"keep"\`.
 `);
   return lines.join("\n");
 }
@@ -982,19 +988,20 @@ async function cmdBuild(dir, opts) {
   // a shown video's sound ("sound"): its stretch measured (ebur128, as finish does) and cut out
   // beside the composition at the voice's level before the bus (TAKE_LEVEL), a limiter under
   // 0 dBFS, the file's metadata left behind; it plays through the voice's bus and its ceiling.
-  // Where ffmpeg cannot, the video plays muted and the build says so
-  for (const i of shown.inserts) {
+  // Where ffmpeg cannot, the video plays muted and the build says so. Whether a clip speaks under
+  // the words is heard once (kept), for its line only, every keep's at the same time (a failure is
+  // not kept: a missing tool or key may be there next time, a timeout may pass; so a rebuild waits
+  // at most LISTEN s once, not once per keep); not in the hold form, silent under the words
+  const said = await Promise.all(shown.inserts.map(async (i) => {
     const audio = `${i.key}.m4a`;
     const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
     i.lufs = a.lufs; i.gain = a.gain;
-    if (a.ok) {
-      i.audio = audio;
-      // whether the clip speaks under the words: heard once (kept), for this line only
-      const heard = i.spoken > 0.3 ? await listenShown({ dir, src: i.src, from: i.from, duration: i.duration, audio: path.join(out, "assets", audio) }) : null;
-      shown.notes.push(soundSaid(i, TAKE_LEVEL, clock, heardSaid(i, heard, r.words, clock)));
-    }
-    else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
-  }
+    if (!a.ok) return `! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`;
+    i.audio = audio;
+    const heard = i.spoken > 0.3 && !i.hold ? await listenShown({ dir, src: i.src, from: i.from, duration: i.duration, audio: path.join(out, "assets", audio) }) : null;
+    return soundSaid(i, TAKE_LEVEL, clock, heardSaid(i, heard, r.words, clock));
+  }));
+  shown.notes.push(...said);
   const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
   // a phone's screen (or a tall video shown) whole, under the apps' headers: said per keep, once
   const headed = new Set();
@@ -1006,6 +1013,16 @@ async function cmdBuild(dir, opts) {
     headed.add(p.keep);
     shown.notes.push(headerSentence(p.keep, list, l.box[3], l.show ? "shown video" : "phone"));
   }
+  // a shown video enlarged over its own pixels: said from 1.25× (soft); past 2× it stays at 2×,
+  // centred in its room (decided 2026-11-19, show-whole's addition: as a cover may, close-45)
+  const enlarged = new Set();
+  for (const { piece: p, layers } of placed) {
+    const l = layers.find((x) => x.main && x.show), src = l && shown.sources[l.source];
+    if (!src?.width || enlarged.has(p.keep)) continue;
+    enlarged.add(p.keep);
+    const scale = l.box[2] / src.width, wanted = l.wanted ? l.wanted / src.width : scale;
+    if (scale >= 1.25 - 1e-6) shown.notes.push(`! keep ${p.keep + 1}: the shown video (${src.width}×${src.height}) is enlarged ${+scale.toFixed(2)}×: soft${wanted > scale + 0.005 ? `; its room would take ${+wanted.toFixed(2)}×, past the 2× a picture is enlarged at most, so it stands at 2× (${Math.round(l.box[2])}×${Math.round(l.box[3])}) in the middle of that room` : ""}; a larger file of it (the result as rendered or posted) shows it sharp.`);
+  }
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
@@ -1016,7 +1033,7 @@ async function cmdBuild(dir, opts) {
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
     removed: r.removed, ...(Object.keys(limits).length ? { motion: limits } : {}), ...(layout.areas.line ? { captions: { lines: 1, ...layout.areas.line } } : {}),
-    ...(shown.inserts.length ? { sounds: shown.inserts.map((i) => ({ keep: i.k + 1, file: i.file, sound: i.sound, lufs: i.lufs, gain: i.gain, playing: !!i.audio })) } : {}), warnings: r.warnings, words: r.words,
+    ...(shown.inserts.length ? { sounds: shown.inserts.map((i) => ({ keep: i.k + 1, file: i.file, sound: i.sound, ...(i.hold ? { hold: true } : {}), lufs: i.lufs, gain: i.gain, playing: !!i.audio })) } : {}), warnings: r.warnings, words: r.words,
   });
   const views = {};
   for (const p of r.pieces) { const v = p.show ? "another video (show)" : p.view; views[v] = (views[v] || 0) + p.duration; }
@@ -1253,7 +1270,7 @@ function cmdFrame(dir, when, opts) {
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, at)), "-i", source(dir, src.file), "-frames:v", "1",
     "-vf", `scale='min(1600,iw)':-2,drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.6${box}`, "-q:v", "3", out], { encoding: "utf8" });
   if (r.status) fail(`✗ ${r.stderr.trim()}`);
-  console.log(`${rel(out)}: ${name} at ${clock(rec)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}${auto && auto.join() !== "0,0,1,1" ? `, where the screen changed most during keep ${p.keep + 1} [${auto.join(", ")}] in green (context, not a choice: what the words are about decides)` : ""}. A box holds for the whole keep: its sheet shows the first and last moment too. Set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}, or "off" for the whole screen.`);
+  console.log(`${rel(out)}: ${name} at ${clock(rec)} of the recording, a blue line every tenth${c ? `, the shot's crop [${c.join(", ")}] in red` : ""}${auto && auto.join() !== "0,0,1,1" ? `, where the screen changed most during keep ${p.keep + 1} [${auto.join(", ")}] in green (context, not a choice: what the words are about decides)` : ""}. ${p.show ? `Keep ${p.keep + 1} shows ${p.show} here ("show"), not this picture, and leaves a "zoom" out; to show this moment of the ${name} zoomed, give its words a keep of their own without "show" and set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) there.` : `A box holds for the whole keep: its sheet shows the first and last moment too. Set "zoom": [x0, y0, x1, y1] (0–1, left top right bottom) on keep ${p.keep + 1}, or "off" for the whole screen.`}`);
 }
 
 // ---------------------------------------------------------------------------------- finish

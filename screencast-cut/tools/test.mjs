@@ -597,7 +597,8 @@ test("without a HyperFrames CLI on the PATH, the version this skill was last tri
 // "show" (lib/show.mjs): another video plays instead of the recording over a keep's words, pauses
 // and hold; its long pauses cut; with "sound" its sound rises to its level by the last word. On
 // the made-up words above (a pause of 3.6 s after word 13) and a made-up video's ffprobe answer.
-import { showOf, showProblem, placeShows, soundPoints, RISE, FADE } from "./lib/show.mjs";
+import { soundOf, soundRead } from "./lib/show.mjs";
+import { showOf, showProblem, placeShows, soundPoints, soundSaid as soundLine, heardSaid as heardLine, RISE, FADE, HOLD_HEARD } from "./lib/show.mjs";
 import { writeComposition } from "./lib/composition.mjs";
 import { areas, fit } from "./lib/layout.mjs";
 
@@ -631,7 +632,9 @@ test("show: the video plays over the keep's words, pauses and hold, from \"from\
   const ps = r.pieces.filter((p) => p.keep === 0), start = ps[0].start, end = keepEnd(r, 0);
   assert.ok(ps.some((p) => p.hold), "the hold is a piece of the keep");
   const long = placeShows(twoKeeps({ show: { file: "result.mp4", from: 2 }, hold: 2 }), r.pieces, r.words, () => VIDEO_INFO(60));
-  assert.deepEqual(long.warnings, []);
+  // its hold without the shown video's sound is silence: said, with the two ways out
+  assert.equal(long.warnings.length, 1);
+  assert.match(long.warnings[0], /^keep 1: its "hold" after the last word is [\d.]+ s of silence \(the recording's sound stops with the words there\) while result\.mp4 plays on: let its sound play there, "sound": \{"hold": 0\.8\} \(silent under the words\), or end the keep at its last word, "hold": 0$/);
   assert.deepEqual(long.inserts, [], "no \"sound\": no track of its sound");
   assert.equal(long.sources["show-1"].path, path.resolve("result.mp4"));
   assert.equal(long.sources["show-1"].file, "show-1.mp4");
@@ -720,7 +723,7 @@ test("show: a missing file, a file that is no video, a sound asked of a video wi
     [say("notes.txt", { error: "Invalid data found when processing input" }), /notes\.txt is no video ffprobe can read \(Invalid data found when processing input\); give a video file/],
     [say("song.mp3", { duration: 30, video: false, audio: true }), /song\.mp3 has no picture \(a sound or a still\); give a video file/],
     [say({ file: "a.mp4", from: 12 }, VIDEO_INFO(10)), /"from" is the second of a\.mp4 to start at, 0–10\.0; set it within that or leave it out/],
-    [say({ file: "a.mp4", sound: 2 }, VIDEO_INFO(10)), /"sound" is the level of its sound, 0–1 .*; leave it out for none/],
+    [say({ file: "a.mp4", sound: 2 }, VIDEO_INFO(10)), /"sound" is 2, which is no level: write a number 0–1 .*; leave it out for none/],
     [say({ file: "story.mp4", sound: 0.8 }, VIDEO_INFO(10, false)), /story\.mp4 has no sound; leave "sound" out, or ask the person for the file with the sound/],
   ];
   for (const [said, re] of cases) {
@@ -729,6 +732,133 @@ test("show: a missing file, a file that is no video, a sound asked of a video wi
     assert.equal(said.split(/[.;:]\s+(?=[A-Z])/).length, 1, `one sentence: ${said}`);
   }
   assert.deepEqual(showOf({ show: "x.mp4" }), { file: "x.mp4" });
+});
+
+test("show with \"sound\": {\"hold\": level}: silent under the keep's words, up over 0.25 s from the last word to its level in the hold; no listening needed, no silent hold said; the number form as before", () => {
+  // the points: nothing under the words, up after the last word, held, out at the end
+  assert.deepEqual(soundPoints({ sound: 0.8, duration: 8.4, spoken: 6.9, hold: true }), [{ t: 0, v: 0 }, { t: 6.9, v: 0 }, { t: 7.15, v: 0.8 }, { t: 8.15, v: 0.8 }, { t: 8.4, v: 0 }]);
+  assert.ok(soundPoints({ sound: 0.8, duration: 8.4, spoken: 6.9, hold: true }).filter((p) => p.t <= 6.9).every((p) => p.v === 0), "nothing under the words");
+  // a keep without words: up at once, as the number form
+  assert.deepEqual(soundPoints({ sound: 0.6, duration: 4, spoken: 0, hold: true }), soundPoints({ sound: 0.6, duration: 4, spoken: 0 }));
+  for (const x of [{ sound: 1, duration: 1, spoken: 0.7, hold: true }, { sound: 1, duration: 7.1, spoken: 6.9, hold: true }]) {
+    const pts = soundPoints(x);
+    assert.ok(pts.every((q, j) => j === 0 || q.t > pts[j - 1].t), JSON.stringify(pts));
+  }
+  const cut = twoKeeps({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 2 });
+  const r = plan(words, cut, settings, voices);
+  const shown = placeShows(cut, r.pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(shown.warnings, [], "its hold has the clip's sound: not silent");
+  assert.equal(shown.inserts.length, 1);
+  assert.equal(shown.inserts[0].hold, true);
+  assert.equal(shown.inserts[0].sound, 0.8);
+  const i = { ...shown.inserts[0], lufs: -13.7, gain: -0.3 };
+  const clock = (t) => `0:${t.toFixed(1).padStart(4, "0")}`;
+  assert.equal(soundSaid(i, -14, clock), `keep 1: the sound of result.mp4 is silent under the keep's words and plays at 0.8 in its hold, from ${clock(i.start + i.spoken)} for ${(i.duration - i.spoken).toFixed(1)} s; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
+  // the number form keeps its insert and its points exactly
+  const numCut = twoKeeps({ show: { file: "result.mp4", sound: 0.8 }, hold: 2 });
+  const num = placeShows(numCut, plan(words, numCut, settings, voices).pieces, r.words, () => VIDEO_INFO(60)).inserts[0];
+  assert.equal(num.hold, undefined);
+  assert.deepEqual(Object.keys(num), ["k", "key", "file", "src", "from", "start", "duration", "sound", "spoken", "room"]);
+  // the form checked: a level 0–1 under "hold", nothing else in it
+  const say = (sound) => showProblem({ words: "0-5", show: { file: "a.mp4", sound } }, 0, VIDEO_INFO(10));
+  assert.equal(say({ hold: 0.8 }), null);
+  assert.equal(say(0.8), null); assert.equal(say(0), null); assert.equal(say("0.8"), null, "a number written as text, as main took it");
+  // what main builds builds the same (main read "sound" by Number()): no ✗, the same level, and a line
+  // that says how a value that is no number was read (the review of pull request 110, round two)
+  for (const [value, level] of [[true, 1], ["", 0], [null, 0], [[0.8], 0.8], ["0.8", 0.8], [false, 0]]) {
+    assert.equal(say(value), null, JSON.stringify(value));
+    assert.deepEqual(soundOf({ sound: value }), { level, hold: false }, JSON.stringify(value));
+    assert.equal(soundRead(value, 1), `! keep 2: "sound": ${JSON.stringify(value)} is read as ${level}${level === 1 ? ", the voice's level" : level === 0 ? ", no sound" : ""}: ${level === 0 ? "leave it out for none, " : ""}write a number 0–1 ("sound": ${level || 0.8}), or {"hold": 0.8} for its sound only in the "hold" after the last word.`);
+  }
+  for (const value of [0.8, 0, undefined, { hold: 0.8 }]) assert.equal(soundRead(value, 0), null);
+  const readCut = twoKeeps({ show: { file: "result.mp4", sound: true } }), rr = plan(words, readCut, settings, voices);
+  const read = placeShows(readCut, rr.pieces, rr.words, () => VIDEO_INFO(60));
+  assert.equal(read.inserts[0].sound, 1, "true plays at 1, as on main");
+  assert.match(read.notes[0], /^! keep 1: "sound": true is read as 1, the voice's level: write a number 0–1/);
+  // the hold form's level as text is taken as the plain one is
+  assert.equal(say({ hold: "0.8" }), null);
+  assert.deepEqual(soundOf({ sound: { hold: "0.8" } }), { level: 0.8, hold: true });
+  // ✗ only for what main refuses too, and for misuse of the new form
+  for (const bad of [2, -1, "loud", { hold: 2 }, { hold: -1 }, { hold: true }, { hold: "loud" }, { hold: "" }, { level: 0.8 }, { hold: 0.8, under: 0.2 }, {}]) {
+    const said = say(bad);
+    assert.ok(said?.startsWith(`✗ keep 1: "show" "sound" is ${JSON.stringify(bad)}, which is no level: write a number 0–1`), `${JSON.stringify(bad)}: ${said}`);
+    assert.match(said, /, or \{"hold": 0\.8\} for it only in the "hold" after the last word, silent under the words; leave it out for none\.$/);
+  }
+  assert.match(showProblem({ words: "0-5", show: { file: "a.mp4", sound: { hold: 0.8 } } }, 0, VIDEO_INFO(10, false)), /a\.mp4 has no sound; leave "sound" out/);
+  // a clip without sound in a keep with a hold: only the way out that is left
+  const mute = placeShows(twoKeeps({ show: "result.mp4", hold: 2 }), plan(words, twoKeeps({ show: "result.mp4", hold: 2 }), settings, voices).pieces, r.words, () => VIDEO_INFO(60, false));
+  assert.match(mute.warnings[0], /plays on, which has no sound: end the keep at its last word, "hold": 0$/);
+  // the hold form with no hold to play in: said, with the hold to give
+  const shortCut = twoKeeps({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 0 });
+  const short = placeShows(shortCut, plan(words, shortCut, settings, voices).pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(short.inserts, []);
+  assert.match(short.notes[0], /^! keep 1: "sound": \{"hold": 0\.8\} plays only after the last word and needs 1 s there to be heard, so it stays silent; the keep holds [\d.]+ s after the last word: give it "hold": 1\.5\.$/);
+  // no hold (0): nothing said
+  const none = placeShows(twoKeeps({ show: "result.mp4", hold: 0 }), plan(words, twoKeeps({ show: "result.mp4", hold: 0 }), settings, voices).pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(none.warnings, []);
+});
+
+test("show, the review of pull request 110: the silent-hold line only for a \"hold\" the keep sets, from 1 s of muted hold; the hold form needs 1 s of hold to be heard, and its sentence says what holds it short (the keep's hold, the shown video's end, the recording's end)", () => {
+  const build = (first, info = VIDEO_INFO(60), v = voices) => { const cut = twoKeeps(first), r = plan(words, cut, settings, v); return placeShows(cut, r.pieces, r.words, () => info); };
+  // the default tail (no "hold"): nothing said, with or without the clip's sound (show-mute-45's keep 2)
+  for (const info of [VIDEO_INFO(60), VIDEO_INFO(60, false)]) assert.deepEqual(build({ show: "result.mp4" }, info).warnings, []);
+  // a hold the keep sets, but under 1 s of it muted: nothing said
+  assert.deepEqual(build({ show: "result.mp4", hold: 0.5 }).warnings, []);
+  // 1.5 s: said; without sound only "hold": 0
+  assert.match(build({ show: "result.mp4", hold: 1.5 }).warnings[0], /^keep 1: its "hold" after the last word is 1\.\d s of silence .*: let its sound play there, "sound": \{"hold": 0\.8\} \(silent under the words\), or end the keep at its last word, "hold": 0$/);
+  assert.match(build({ show: "result.mp4", hold: 1.5 }, VIDEO_INFO(60, false)).warnings[0], /plays on, which has no sound: end the keep at its last word, "hold": 0$/);
+  // a clip that ends before 1 s of hold: the hold form is not named
+  const spokenAt = build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 1.5 }).inserts[0].spoken;
+  const ends = build({ show: "result.mp4", hold: 1.5 }, VIDEO_INFO(spokenAt + 0.5));
+  // (its hold under 1 s while it plays: no silent-hold line, only that it ends early; the hold form not named)
+  assert.equal(ends.warnings.length, 1);
+  assert.match(ends.warnings[0], /^keep 1: result\.mp4 ends [\d.]+ s before the keep does/);
+  assert.ok(!/"sound": \{"hold"/.test(ends.warnings[0]));
+  // the hold form: holds of 0, 0.2 and 0.5 s are too short (no sound track, the sentence), 1.5 s plays
+  for (const hold of [0, 0.2, 0.5]) {
+    const got = build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold });
+    assert.deepEqual(got.inserts, [], `hold ${hold}`);
+    assert.deepEqual(got.warnings, [], `hold ${hold}: no silent-hold line beside the hold form's own`);
+    assert.match(got.notes[0], /^! keep 1: "sound": \{"hold": 0\.8\} plays only after the last word and needs 1 s there to be heard, so it stays silent; the keep holds [\d.]+ s after the last word: give it "hold": 1\.5\.$/, `hold ${hold}`);
+  }
+  const played = build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 1.5 });
+  assert.equal(played.inserts.length, 1); assert.deepEqual(played.notes, []); assert.deepEqual(played.warnings, []);
+  assert.ok(played.inserts[0].duration - played.inserts[0].spoken >= HOLD_HEARD);
+  // the shown video ending before the last word
+  assert.match(build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 1.5 }, VIDEO_INFO(10)).notes[0], /; result\.mp4 ends before the last word: an earlier "from" so that it plays 1 s on after it, or drop "sound"\.$/);
+  // the cut's last keep, where the recording ends 0.3 s after the last word: what is true, not "give it 1.5"
+  const lastCut = { keep: [{ words: "0-20" }, { words: "21-25", show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 2.5 }] };
+  const short = { 1: { ...voices[1], duration: 18.2 } };
+  const lastPlan = plan(words, lastCut, settings, short);
+  const last = placeShows(lastCut, lastPlan.pieces, lastPlan.words, () => VIDEO_INFO(60));
+  assert.deepEqual(last.inserts, []);
+  assert.match(last.notes[0], /; the recording ends 0\.\d s after the last word, so the keep holds that, not the 2\.5 s asked: end the cut on an earlier sentence with a pause after it, or drop "sound"\.$/);
+  // the listening line names the hold form only where it can be given room
+  const clock = (t) => `0:${t.toFixed(1).padStart(4, "0")}`;
+  const i = { k: 0, file: "c.mp4", sound: 0.8, start: 0, duration: 7.2, spoken: 7, lufs: -14, gain: 0 };
+  const h = { words: [{ start: 1, end: 6 }], cost: 0, seconds: 1, kept: false }, said = [{ start: 0.5, end: 7 }];
+  assert.match(heardLine({ ...i, room: "keep" }, h, said, clock), /"sound": \{"hold": 0\.8\} \(silent under your words, with "hold": 1\.5 on the keep: its hold is 0\.2 s now\), or drop "sound"/);
+  for (const room of ["end", "clip"]) {
+    assert.match(heardLine({ ...i, room }, h, said, clock), /\): drop "sound", or show it where you do not speak \(/, room);
+    assert.match(soundLine({ ...i, room }, -14, clock), /heard only in the "hold" after the last word \(here the keep's hold after the last word is 0\.2 s, under the 1 s it needs\)/, room);
+  }
+});
+
+test("show: a small shown video is enlarged at most 2× of its own pixels, centred in the room it would have taken; up to 2× it fills the room as before", () => {
+  const zone = { safe: [50, 200, 880, 1300], margins: { top: 200, bottom: 420, left: 50, right: 150 }, wide: [50, 200, 980, 700] };
+  const a = areas(1080, 1920, zone);
+  const piece = { keep: 0, start: 0, duration: 3, in: 0, out: 3, rate: 1, view: "screen", source: "screen", pip: false, show: { source: "show-1", in: 0, until: 3 } };
+  const layer = (w, h) => shots([piece], { screen: { width: 1920, height: 1080, offset: 0 }, "show-1": { width: w, height: h, offset: 0 } }, 1080, 1920, a)[0].layers[0];
+  const room = fit(a.whole, 270 / 480);
+  // 270×480 would take room[2] / 270 (over 2×): 540×960 in the middle of that room
+  const small = layer(270, 480);
+  assert.ok(room[2] / 270 > 2);
+  assert.deepEqual(small.box.map((v) => +v.toFixed(3)), [room[0] + (room[2] - 540) / 2, room[1] + (room[3] - 960) / 2, 540, 960].map((v) => +v.toFixed(3)));
+  assert.equal(small.wanted, room[2]);
+  // 480×854 (the review's 1.53×): the room as before, no "wanted"
+  const mid = layer(480, 854);
+  assert.deepEqual(mid.box, fit(a.whole, 480 / 854));
+  assert.equal(mid.wanted, undefined);
 });
 
 test("show on a keep that names a face view, a zoom or a layout: the shown video wins, those are left out, said in a sentence; the circle stays unless \"circle\": false", () => {
@@ -1512,7 +1642,7 @@ test("a shown video without the circle takes the room a whole picture gets: as l
 test("the build's line for a shown video with sound says it runs under the words and when \"sound\" is right (the run's keep 6)", () => {
   const clock = (s) => `0:${s.toFixed(1).padStart(4, "0")}`;
   const i = { k: 5, file: "uploads/result.mp4", sound: 0.8, start: 25.8, duration: 8.4, spoken: 6.9, lufs: -13.7, gain: -0.3 };
-  assert.equal(soundSaid(i, -14, clock), `keep 6: the sound of uploads/result.mp4 runs under the keep's words (at a quarter of its level under the first, up to 0.8 by the last at 0:32.7), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
+  assert.equal(soundSaid(i, -14, clock), `keep 6: the sound of uploads/result.mp4 runs under the keep's words (at a quarter of its level under the first, up to 0.8 by the last at 0:32.7), so if it speaks, its speech is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point; a clip that speaks gets "sound": {"hold": 0.8}, heard only in the "hold" after the last word; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
   assert.match(soundSaid({ ...i, duration: 4.1 }, -14, clock), /at a quarter of its level, the video ending before the last word/);
   assert.equal(soundSaid({ ...i, spoken: 0 }, -14, clock), `keep 6: the sound of uploads/result.mp4 measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`, "a keep without words: as before");
 });
@@ -1599,7 +1729,9 @@ test("show with sound: the clip is heard once through the transcribe skill, kept
     const h = await ask();
     assert.deepEqual(h.words, [{ start: 4.2, end: 4.5 }, { start: 4.6, end: 6.9 }]);
     assert.equal(h.kept, false);
-    assert.equal(heardSaid(i, h, said, clock).replace(/heard in [\d.]+ s/, "heard in T s"), `two voices at once from 0:30.0 to 0:32.7 (2.7 s: the clip speaks 0:30.0 to 0:32.7, the speaker 0:26.0 to 0:32.7): drop "sound", or show it where you do not speak, or let it speak in the "hold" after your last word (heard in T s, 0.06 cents)`);
+    assert.equal(heardSaid(i, h, said, clock).replace(/heard in [\d.]+ s/, "heard in T s"), `two voices at once from 0:30.0 to 0:32.7 (2.7 s: the clip speaks 0:30.0 to 0:32.7, the speaker 0:26.0 to 0:32.7): let it speak only in the "hold" after your last word, "sound": {"hold": 0.8} (silent under your words), or drop "sound", or show it where you do not speak (heard in T s, 0.06 cents)`);
+    // a hold under a second: the line says to lengthen it too
+    assert.match(heardSaid({ ...i, duration: 7.3, room: "keep" }, h, said, clock), /"sound": \{"hold": 0\.8\} \(silent under your words, with "hold": 1\.5 on the keep: its hold is 0\.4 s now\)/);
     assert.match(soundSaid(i, -14, clock, heardSaid(i, h, said, clock)), /^keep 6: the sound of uploads\/result\.mp4 runs under the keep's words \(at a quarter of its level under the first, up to 0\.8 by the last at 0:32\.7\); two voices at once from 0:30\.0/);
     // kept: a second build does not ask again; another stretch or another clip does
     const again = await ask();
@@ -1617,7 +1749,7 @@ test("show with sound: the clip is heard once through the transcribe skill, kept
     assert.match(heardSaid(i, await ask(), said, clock), /^it has no words \(heard in [\d.]+ s, 0\.06 cents\)$/);
     // missing, failing, nonsense, slow: no sentence of its own (the general one stays), nothing kept
     const general = soundSaid(i, -14, clock);
-    assert.match(general, /so speech in it is heard under the speaker's, two voices at once/);
+    assert.match(general, /so if it speaks, its speech is heard under the speaker's, two voices at once/);
     for (const [name, got] of [
       ["missing", (fs.writeFileSync(src, "clip missing"), await ask({ tool: null }))],
       ["failing", (process.env.TRANSCRIBE = standIn("fails", `console.log("no key"); process.exit(1);`), fs.writeFileSync(src, "clip five"), await ask())],
@@ -1634,4 +1766,17 @@ test("show with sound: the clip is heard once through the transcribe skill, kept
     if (before === undefined) delete process.env.TRANSCRIBE; else process.env.TRANSCRIBE = before;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ------------------------------------------------- the screen's "!" says why (the run of 2026-11-19b)
+import { pictureOf as screenPictureOf } from "./lib/screenview.mjs";
+test("a screen picture of the layout skill's marked ! carries its reason (\"enlarged 2×: soft\"), which the build's line prints; a ✓ carries none", () => {
+  const c = { fit: "screen-zoom", scale: 2, left: -100, top: 200, window: [0, 200, 1080, 1100], faceInFrame: [[79, 300, 922, 600]], hard: 0, unmet: [], soft: 1,
+    problems: [{ level: "soft", code: "enlarged", what: "the source's pixels are enlarged 2× (over 1.5×: soft)" }] };
+  const pic = screenPictureOf(c);
+  assert.equal(pic.mark, "!");
+  assert.equal(pic.soft, "enlarged 2×: soft");
+  const ok = screenPictureOf({ ...c, soft: 0, problems: [] });
+  assert.equal(ok.mark, "✓");
+  assert.equal("soft" in ok, false);
 });
