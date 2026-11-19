@@ -1231,9 +1231,9 @@ const SPEAK = {
 const speak = (frame, extra = {}) => solve({ zones: askZones(frame), source: [1280, 720], faces: [CAM], needs: [], captionArea: SPEAK[frame].band, pick: "speaker", cover: SPEAK[frame].cover, ...extra });
 const pname = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.onGround ? ", text on the ground" : ""}`;
 
-t("for a speaker: the picture the caller draws today stays where it passes (16:9 and 4:5: the captions clear of the mouth, at most 2×), also where layout's own margin below the chin refuses the band", () => {
+t("for a speaker: the picture the caller draws today stays where it passes and is the one picture across the frame's width at 1× or more (16:9: the captions clear of the mouth), also where layout's own margin below the chin refuses the band", () => {
   const out = [];
-  for (const frame of ["16:9", "4:5"]) {
+  for (const frame of ["16:9"]) {
     const res = speak(frame), first = res.candidates[0];
     ok(first.fit === "cover" && first.pick.cover && first.pick.passes && first.pick.place === 1 && first.pick.layout === 0, `${frame}: ${JSON.stringify(first.pick)}`);
     ok(first.scale === SPEAK[frame].cover.scale && first.left === SPEAK[frame].cover.left && first.top === 0, `${frame}: the cover moved: ${first.scale}, ${first.left}, ${first.top}`);
@@ -1244,6 +1244,29 @@ t("for a speaker: the picture the caller draws today stays where it passes (16:9
   const full = speak("16:9").candidates.find((c) => c.fit === "full");
   ok(full.unmet.includes("caption") && full.pick.passes && /clear of the mouth/.test(full.pick.why), JSON.stringify(full.pick));
   return out.join(", ");
+});
+
+// An independent review of the order (2026-11-19): in 4:5 the cover of the close webcam passed at
+// 1.875×, a soft enlargement, the face 53 % of the frame's height (by a vision model on the render;
+// 49 % by the webcam's box), the captions on the chin; the square at 1.5× holds it at 39 %. The review's loose webcam (the face 37 % of its height) keeps
+// its cover in 4:5, 37 % against the square's 30 %, and in 9:16 takes the 4:5 crop, 26 %.
+const LOOSE = [{ t: 15.01, box: [546.6, 92.2, 204.8, 267.8] }, { t: 37.53, box: [545.3, 92.2, 204.8, 264.2] }, { t: 60.05, box: [547.8, 93.6, 203.5, 258.5] }];
+t("for a speaker: the caller's cover is kept outright only up to 1.5× with the face at most 45 % of the height, else it is ranked among the pictures across the width (the review's close webcam in 4:5: the square at 1.5×, 39 %, before the cover at 1.875×, 49 % by its box; its loose one: the cover, 37 %, before the square, 30 %)", () => {
+  const close = speak("4:5"), c = close.candidates;
+  ok(pname(c[0]) === "crop 1:1" && c[0].scale === 1.5 && c[0].pick.tier === 1 && Math.abs(c[0].pick.face - 0.39) < 0.01, `${pname(c[0])} at ${c[0].scale}×: ${JSON.stringify(c[0].pick)}`);
+  const cov = c.find((x) => x.pick.cover);
+  ok(cov.pick.passes && cov.pick.tier === 1 && cov.scale === 1.875 && cov.pick.face > 0.45 && /stays outright only up to 1\.5× and a face of 45 %/.test(cov.pick.why), cov.pick.why);
+  const loose = (frame, cover) => solve({ zones: askZones(frame), source: [1280, 720], faces: [LOOSE], needs: [], captionArea: SPEAK[frame].band, pick: "speaker", cover });
+  const l45 = loose("4:5", SPEAK["4:5"].cover).candidates;
+  ok(l45[0].pick.cover && l45[0].pick.tier === 1 && Math.abs(l45[0].pick.face - 0.37) < 0.01, `${pname(l45[0])}: ${JSON.stringify(l45[0].pick)}`);
+  const sq = l45.find((x) => pname(x) === "crop 1:1");
+  ok(sq && sq.pick.place > l45[0].pick.place && Math.abs(sq.pick.face - 0.30) < 0.01, JSON.stringify(sq?.pick));
+  const l916 = loose("9:16", SPEAK["9:16"].cover).candidates;
+  ok(pname(l916[0]) === "crop 4:5" && Math.abs(l916[0].pick.face - 0.26) < 0.01, `${pname(l916[0])}: ${JSON.stringify(l916[0].pick)}`);
+  // a crisp cover with a usual face is kept outright, before a picture whose face is nearer the usual size
+  const crisp = solve({ zones: askZones("16:9"), source: [1280, 720], faces: [LOOSE], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: SPEAK["16:9"].cover });
+  ok(crisp.candidates[0].pick.cover && crisp.candidates[0].pick.tier === 0 && /: it stays$/.test(crisp.candidates[0].pick.why), JSON.stringify(crisp.candidates[0].pick));
+  return `close 4:5: ${pname(c[0])} ${c[0].scale}× before the cover ${cov.scale}× (place ${cov.pick.place}); loose 4:5: the cover, the square at ${sq.pick.place}; loose 9:16: ${pname(l916[0])}`;
 });
 
 t("for a speaker: where the cover fails (9:16 at 2.67×), the pictures across the frame's width come first, the face nearest the usual size; the inset after them, the failing cover last", () => {

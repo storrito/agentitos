@@ -247,10 +247,13 @@ const placed = (dir, size, moments = faceMoments(CAM)) => {
   return r.res;
 };
 
-test("the face view is in the layout skill's order for a speaker: the frame covered as before where it passes (16:9 and 4:5, the build as main's), else the picture across the frame's width with the face nearest the usual size (9:16: the 4:5 crop at 1.875×, the chin above the captions), the old 2.67× cover last", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+test("the face view is in the layout skill's order for a speaker: the frame covered as before where it is the one picture across the width at 1× or more (16:9, the build as main's), else the picture across the frame's width with the face nearest the usual size (4:5: the square at 1.5× before the cover at 1.875×; 9:16: the 4:5 crop at 1.875×, the chin above the captions), the old 2.67× cover last", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-view-"));
   try {
-    for (const size of ["1920x1080", "1080x1350"]) {
+    const sq = placed(dir, "1080x1350").candidates;
+    assert.deepEqual([nameOf(sq[0]), sq[0].scale], ["crop 1:1", 1.5]);
+    assert.ok(sq.findIndex((x) => nameOf(x) === "cover") > 0 && sq.find((x) => nameOf(x) === "cover").pick.passes);
+    for (const size of ["1920x1080"]) {
       const res = placed(dir, size), first = res.candidates[0], old = coverOf(CAM, ...size.split("x").map(Number));
       assert.equal(nameOf(first), "cover", size);
       assert.deepEqual([first.scale, first.left, first.top], [old.scale, old.left, old.top], size);

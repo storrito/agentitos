@@ -204,23 +204,35 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
 // The order for a picture of one speaker (pick: "speaker"), the rule best-takes and screencast-cut
 // share: an editor fills the frame's width before anything else and keeps the captions off the
 // eyes, nose and mouth.
-//   1. the picture the caller draws today (cover: the frame covered), where it passes: what
-//      worked stays as it was;
-//   2. the pictures across the frame's full width (the frame covered, a crop over a ground), the
-//      face nearest the usual size (weights.subject.to of the frame's height: the upper end of
-//      published talking heads), larger or smaller alike, layout's order among equals;
-//   3. a picture narrower than the frame, or the whole picture shrunk over a ground (an inset), in
-//      the same order: only where nothing of 2 passes, and the result says so in a note;
+//   1. the picture the caller draws today (cover: the frame covered), kept outright where it
+//      passes, is enlarged no more than layout's crisp limit (weights.enlarge.softFrom, 1.5×) and
+//      holds the face at most SPEAKER.coverFace of the frame's height: what worked stays as it was;
+//   2. the pictures across the frame's full width (the frame covered, a crop over a ground) at 1×
+//      or more (SPEAKER.wideFrom; at the covering scale where a source larger than the frame
+//      covers it below 1×), the caller's cover among them up to 2×, the face nearest the usual
+//      size (weights.subject.to of the frame's height: the upper end of published talking heads),
+//      larger or smaller alike; among equals the caller's cover, then layout's order;
+//   3. a picture narrower than the frame, or the source shrunk below 1× over a ground (an inset,
+//      a band of the whole picture), in the same order: only where nothing of 1 and 2 passes, and
+//      the result says so in a note;
 //   4. what does not pass, in layout's order (a cover that fails last).
 // Passing: no hard problem (so never enlarged past enlarge.forbiddenFrom; for the caller's cover the
 // apps' bars over the face do not count) and every need met; with
 // a fixed caption band, captions that lie on the chin or in the margin layout keeps below a face
 // pass too, as long as the band stays below every moment's mouth line (placed.mjs' MOUTH: the
 // lower lip, from the head's proportions).
+// coverFace: a face over 45 % of the frame's height is larger than a speaker's picture needs; it is
+// a judgement (published Shorts keep it at 34 % or less in three of four: the upper quartile, the
+// weights' subject.to), set on screencast-cut's close webcam in 4:5, whose cover at 1.875× held
+// the face at 53 % with the captions on the chin, where the square at 1.5× holds it at 39 %.
+export const SPEAKER = { coverFace: 0.45, wideFrom: 0.99 };
+
 function pickSpeaker(ctx, res, cover) {
   const { W, H, D } = ctx, main = ctx.sources[0], CA = ctx.captionArea;
   if (main.screen || ctx.sources.length > 1) throw new Error("--pick speaker orders the pictures of one recording with a speaker in it: leave it out for a screen or for two files.");
-  const usual = D.weights.subject.to / 100;
+  const usual = D.weights.subject.to / 100, keepScale = D.weights.enlarge.softFrom;
+  // across the width at 1× or more; a source larger than the frame covers it below 1×
+  const wideFrom = SPEAKER.wideFrom * Math.min(1, ctx.s0), wideSaid = ctx.s0 < 1 ? `${r2(ctx.s0)}×, the scale that covers the frame,` : "1×";
   const list = res.candidates.map((c, i) => ({ c, n: i + 1 }));
   if (cover) {
     const { scale: s, left, top } = cover;
@@ -257,24 +269,31 @@ function pickSpeaker(ctx, res, cover) {
     x.face = face;
     const capSaid = c.unmet.includes("caption") ? (capOk ? `; the captions ${low.chin > CA.top ? "on the chin" : "in the margin kept below the face"}, clear of the mouth` : low && low.mouth > CA.top ? "; the captions on the mouth, the nose or the eyes" : "") : "";
     const fails = () => `does not pass (${[...hard.map((q) => `${q.of} ${q.what}`), ...other.map((u) => `no place for the ${u}`), ...(capOk ? [] : [low && low.mouth > CA.top ? `the captions' band lies on the mouth, the nose or the eyes (the mouth line at y ${Math.round(low.mouth)}, the band from ${CA.top})` : "no place for the captions"])].join("; ")})`;
-    x.tier = !x.passes ? 3 : x.cover ? 0 : x.wide ? 1 : 2;
+    // the cover outright: crisp and the face not larger than a speaker needs
+    const outright = x.cover && c.scale <= keepScale + 1e-6 && face <= SPEAKER.coverFace + 1e-9;
+    x.big = x.wide && c.scale >= wideFrom;
+    x.tier = !x.passes ? 3 : outright ? 0 : x.big ? 1 : 2;
+    const bars = hard.length < c.hard ? "; the apps' bars lie over the face" : "";
     x.why = x.cover
-      ? (x.passes ? `the frame covered as the caller draws it, enlarged ${c.scale}×, passes${capSaid}${hard.length < c.hard ? "; the apps' bars lie over the face" : ""}: it stays` : `the frame covered as the caller draws it ${fails()}`)
+      ? (!x.passes ? `the frame covered as the caller draws it ${fails()}`
+        : outright ? `the frame covered as the caller draws it, enlarged ${c.scale}×, the face ${pct0(face)} of the height, passes${capSaid}${bars}: it stays`
+        : `the frame covered as the caller draws it passes, enlarged ${c.scale}×, the face ${pct0(face)} of the height${capSaid}${bars}; it stays outright only up to ${keepScale}× and a face of ${pct0(SPEAKER.coverFace)}, so it is ranked among the pictures across the frame's width (the usual face ${pct0(usual)})`)
       : !x.passes ? fails()
-      : x.wide ? `spans the frame's width, the face ${pct0(face)} of the height (the usual ${pct0(usual)})${capSaid}`
-      : `${c.fit === "inset" ? `the whole picture shrunk to ${c.scale}× over a ground` : "narrower than the frame"}, the face ${pct0(face)} of the height${capSaid}: only where nothing across the frame's width passes`;
+      : x.big ? `spans the frame's width, the face ${pct0(face)} of the height (the usual ${pct0(usual)})${capSaid}`
+      : `${c.fit === "inset" ? `the whole picture ${c.scale < 1 ? "shrunk to" : "at"} ${c.scale}× over a ground` : x.wide ? `spans the frame's width shrunk to ${c.scale}× over a ground` : "narrower than the frame"}, the face ${pct0(face)} of the height${capSaid}: only where nothing across the frame's width at ${wideSaid} or more passes`;
   }
-  const by = (a, b) => a.tier - b.tier || (a.tier === 1 || a.tier === 2 ? a.off - b.off : 0) || (a.cover ? 1 : 0) - (b.cover ? 1 : 0) || a.n - b.n;
+  // among equals the caller's cover first where it passes (what worked stays), last where it fails
+  const by = (a, b) => a.tier - b.tier || (a.tier === 1 || a.tier === 2 ? a.off - b.off : 0) || ((a.cover ? 1 : 0) - (b.cover ? 1 : 0)) * (a.tier === 3 ? 1 : -1) || a.n - b.n;
   const order = list.sort(by);
   const out = order.map((x, i) => {
     const c = x.c;
     delete c.behind;
-    c.pick = { place: i + 1, layout: x.n, passes: x.passes, ...(x.cover ? { cover: true } : {}), across: x.wide, face: +x.face.toFixed(3), why: x.why };
+    c.pick = { place: i + 1, layout: x.n, passes: x.passes, ...(x.cover ? { cover: true } : {}), across: x.wide, tier: x.tier, face: +x.face.toFixed(3), why: x.why };
     return c;
   });
   const first = order[0], nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}`;
   const note = !first.passes ? `for a speaker: nothing passes, so the first is ${nameOf(first.c)} at ${first.c.scale}× (${first.why.replace(/^does not pass \((.*)\)$/, "$1")}): look at its page and give the captions another place, or name a candidate`
-    : first.tier === 2 ? `for a speaker: no picture across the frame's full width passes, so the first is ${first.c.fit === "inset" ? `the whole picture shrunk to ${first.c.scale}× over a ground` : `${nameOf(first.c)}, narrower than the frame`} (the face ${pct0(first.face)} of the height): look at its page, and where the face is too small there, name a wider candidate below with its problem in mind or give the captions another place`
+    : first.tier === 2 ? `for a speaker: no picture across the frame's full width passes at ${wideSaid} or more, so the first is ${first.c.fit === "inset" ? `the whole picture ${first.c.scale < 1 ? "shrunk to" : "at"} ${first.c.scale}× over a ground` : first.wide ? `${nameOf(first.c)} shrunk to ${first.c.scale}× over a ground` : `${nameOf(first.c)}, narrower than the frame`} (the face ${pct0(first.face)} of the height): look at its page, and where the face is too small there, name a wider candidate below with its problem in mind or give the captions another place`
     : null;
   return { ...res, pick: { for: "speaker", usual, ...(cover ? { cover: { scale: cover.scale, left: cover.left, top: cover.top } } : {}), first: nameOf(first.c), ...(note ? { note } : {}) }, candidates: out };
 }
