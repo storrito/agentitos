@@ -25,7 +25,9 @@
 //   node tools/screencast.mjs check <dir>     the cut as it plays, and what to fix
 //   node tools/screencast.mjs at <dir> <m:ss> what plays at that moment of the cut, and its keep
 //   node tools/screencast.mjs frame <dir> <m:ss>   its source's picture there, whole, with a grid
-//                                     and the shot's crop: to choose a "zoom" box by
+//                                     and the shot's crop: to choose a "zoom" box by; a moment
+//                                     of the cut, before the first build (or with --recording)
+//                                     of the recording
 //   node tools/screencast.mjs captions <dir> --style hormozi   captions in the picture (agentitos'
 //                                     captions skill); --off takes them out
 //   node tools/screencast.mjs finish <dir> <video.mp4>   the rendered video at the platforms'
@@ -58,7 +60,7 @@ import { probe, prepare, samples, hyperframes, clock, seconds } from "./lib/medi
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from "./lib/voice.mjs";
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
-import { plan, range, timeRange } from "./lib/cut.mjs";
+import { plan, range, timeRange, pieceEndSaid, endSaid } from "./lib/cut.mjs";
 import { FRAMES, areas, linesOf, captionLine, captionsFor, captionArea, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
@@ -67,11 +69,11 @@ import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
-import { screenView, isScreenPiece } from "./lib/screenview.mjs";
-import { showOf, showProblem, placeShows, cutShownSound, shownVideo } from "./lib/show.mjs";
+import { screenView, isScreenPiece, beyondZoom, MOST as ZOOM_MOST } from "./lib/screenview.mjs";
+import { showOf, showProblem, placeShows, cutShownSound, shownVideo, circleOn, soundSaid, listenShown, heardSaid } from "./lib/show.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
-const FLAGS = ["off", "proposal"];
+const FLAGS = ["off", "proposal", "recording"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const VIDEO = ["screen", "phone-screen", "phone", "webcam"];
@@ -890,7 +892,7 @@ async function cmdBuild(dir, opts) {
     } else {
       Object.assign(p, kv);
     }
-    if (keep.circle === false) p.pip = false;
+    if (!circleOn(keep)) p.pip = false;
   }
 
   // the zoom per scene: where a screen changes almost whole within a keep (another tab, a page, a
@@ -985,7 +987,12 @@ async function cmdBuild(dir, opts) {
     const audio = `${i.key}.m4a`;
     const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
     i.lufs = a.lufs; i.gain = a.gain;
-    if (a.ok) { i.audio = audio; shown.notes.push(`keep ${i.k + 1}: the sound of ${i.file} measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${TAKE_LEVEL} LUFS ("sound": 1 is the voice's level), through the voice's bus.`); }
+    if (a.ok) {
+      i.audio = audio;
+      // whether the clip speaks under the words: heard once (kept), for this line only
+      const heard = i.spoken > 0.3 ? await listenShown({ dir, src: i.src, from: i.from, duration: i.duration, audio: path.join(out, "assets", audio) }) : null;
+      shown.notes.push(soundSaid(i, TAKE_LEVEL, clock, heardSaid(i, heard, r.words, clock)));
+    }
     else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
   }
   const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
@@ -993,7 +1000,7 @@ async function cmdBuild(dir, opts) {
   const headed = new Set();
   for (const { piece: p, layers } of placed) {
     const l = layers.find((x) => x.main), src = l && { ...sources, ...shown.sources }[l.source];
-    if (!src || headed.has(p.keep) || src.height <= src.width * 1.25) continue;
+    if (!src || headed.has(p.keep) || (src.height <= src.width * 1.25 && !l.show)) continue;
     const list = underHeaders(l.box, layout.zones);
     if (!list.length) continue;
     headed.add(p.keep);
@@ -1080,13 +1087,14 @@ function cmdCheck(dir) {
     if (p.in > first.start + 0.02) errors.push(`piece ${k + 1} starts ${(p.in - first.start).toFixed(2)} s into "${first.text}": start the keep at the word before`);
     const next = e.pieces[k + 1];
     const goesOn = next && next.keep === p.keep && (!next.shows || next.hold);
-    if (!goesOn && p.out < last.end + 0.12) warnings.push(`piece ${k + 1} ends ${(p.out - last.end).toFixed(2)} s after "${last.text}" (the next words follow right after it in the recording): it may sound cut off; end the keep a word later, or where the speaker pauses`);
+    if (!goesOn && p.out < last.end + 0.12) warnings.push(pieceEndSaid({ k, out: p.out, first: p.words[0], last: p.words[1], words, recorded: e.recorded }));
     if (p.duration < 0.6 && p.words[1] - p.words[0] < 2) warnings.push(`piece ${k + 1} ("${text(p.words[0], p.words[1])}") is ${p.duration.toFixed(2)} s long: that sounds chopped; keep the whole phrase`);
   });
 
   // the end holds
   const lastWord = e.words.at(-1);
-  if (lastWord && e.duration - lastWord.end < 1) warnings.push(`the cut ends ${(e.duration - lastWord.end).toFixed(1)} s after its last word: give the end a moment ("hold": 1.5 on the last keep)`);
+  const ending = lastWord && endSaid({ gap: e.duration - lastWord.end, lastOut: e.pieces.at(-1).out, recorded: e.recorded });
+  if (ending) warnings.push(ending);
 
   // the face view: a picture that fails the layout skill's checks (named by the keep, or nothing passed)
   for (const k of [...new Set(e.pieces.filter((p) => p.picture && ["✗", "–"].includes(p.picture.mark)).map((p) => p.keep))]) {
@@ -1104,9 +1112,11 @@ function cmdCheck(dir) {
   if (screenKeeps.length) console.log("\nThe screen:");
   for (const k of screenKeeps) {
     const sc = e.pieces.find((p) => p.keep === k && p.screen).screen;
-    const bad = sc.faults.includes("text") || sc.faults.includes("bars");
-    console.log(`  ${bad ? "✗" : sc.faults.length ? "!" : "✓"} keep ${k + 1}: ${sc.fit} at ${sc.scale}×, ${Math.round(sc.ground * 100)} % ground${sc.text ? `, its text ${sc.text} px → ${sc.textHeight ?? "?"} px${sc.readable ? ` (reads from ${sc.readable})` : ", whether it reads not judged (the layout skill gave no height from which text reads)"}` : ", its text's height not given (\"text\")"}${sc.under.length ? `, the region under the bars of ${sc.under.join(", ")}` : ""}${sc.faults.filter((f) => f !== "text" && f !== "bars").length ? `; ${sc.faults.filter((f) => f !== "text" && f !== "bars").map((f) => (f === "across" ? "the region past the safe box's margins" : `the ${f} on the region`)).join(", ")}` : ""}`);
-    if (sc.faults.includes("text")) warnings.push(`keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall, under the ${sc.readable} px from which text begins to read: for it to read surely, a narrower "zoom" on what is talked about (the build's list says how wide one reads)`);
+    // text no zoom can make read (beyondZoom): ! and what is true, not a ✗ that nothing fixes
+    const beyond = sc.faults.includes("text") ? beyondZoom({ text: sc.text, readable: sc.readable, width: e.width }) : null;
+    const bad = (sc.faults.includes("text") && !beyond) || sc.faults.includes("bars");
+    console.log(`  ${bad ? "✗" : sc.faults.length ? "!" : "✓"} keep ${k + 1}: ${sc.fit} at ${sc.scale}×, ${Math.round(sc.ground * 100)} % ground${sc.text ? `, its text ${sc.text} px → ${sc.textHeight ?? "?"} px${sc.readable ? ` (reads from ${sc.readable}${beyond ? `; at most ${ZOOM_MOST}×: it cannot be larger here` : ""})` : ", whether it reads not judged (the layout skill gave no height from which text reads)"}` : ", its text's height not given (\"text\")"}${sc.under.length ? `, the region under the bars of ${sc.under.join(", ")}` : ""}${sc.faults.filter((f) => f !== "text" && f !== "bars").length ? `; ${sc.faults.filter((f) => f !== "text" && f !== "bars").map((f) => (f === "across" ? "the region past the safe box's margins" : `the ${f} on the region`)).join(", ")}` : ""}`);
+    if (sc.faults.includes("text")) warnings.push(beyond ? `keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall; ${beyond}` : `keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall, under the ${sc.readable} px from which text begins to read: for it to read surely, a narrower "zoom" on what is talked about (the build's list says how wide one reads)`);
     if (sc.faults.includes("bars")) warnings.push(`keep ${k + 1}'s zoom box lies under the bars of ${sc.under.join(", ")}: name another picture with "layout" from the build's list`);
   }
 
@@ -1204,12 +1214,25 @@ function cmdAt(dir, when) {
 // in 0–1) and the shot's crop in red: to look at before setting "zoom" on a keep.
 function cmdFrame(dir, when, opts) {
   const file = path.join(dir, "edit.json");
-  if (!fs.existsSync(file)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
   const t = seconds(when);
-  const e = read(file);
   const meta = read(source(dir, "sources.json"));
+  // before a build, or with --recording: a moment of the recording (the brief's times, a keep's
+  // "at"), its screen (or --source) with the grid and nothing else
+  if (opts.recording || !fs.existsSync(file)) {
+    const name = opts.source || (meta.sources.screen?.video ? "screen" : Object.keys(meta.sources).find((k) => k !== "webcam" && meta.sources[k].video));
+    const src = meta.sources[name];
+    if (!src?.video) fail(`No source ${name}.`);
+    if (!Number.isFinite(t) || t < 0 || t > meta.duration) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen] [--recording]: before a build (or with --recording) a moment of the recording, which is ${clock(meta.duration)} long`);
+    const out = path.join(dir, "frames", `rec-${String(t.toFixed(1)).replace(".", "_")}-${name}.jpg`);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, t - src.offset)), "-i", source(dir, src.file), "-frames:v", "1",
+      "-vf", "scale='min(1600,iw)':-2,drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.6", "-q:v", "3", out], { encoding: "utf8" });
+    if (r.status) fail(`✗ ${r.stderr.trim()}`);
+    return console.log(`${rel(out)}: ${name} at ${clock(t)} of the recording, a blue line every tenth. For a keep by its time: {"at": "${clock(t)}-…", "zoom": [x0, y0, x1, y1]} (0–1, left top right bottom). After a build, frame takes a moment of the cut (--recording: of the recording).`);
+  }
+  const e = read(file);
   const p = e.pieces.find((x) => t >= x.start && t < x.start + x.duration);
-  if (!p) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen]: a moment of the cut, which is ${clock(e.duration)} long`);
+  if (!p) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen]: a moment of the cut, which is ${clock(e.duration)} long (--recording for a moment of the recording)`);
   const name = opts.source || (p.source === "webcam" ? Object.keys(meta.sources).find((k) => k !== "webcam" && meta.sources[k].video) : p.source);
   const src = meta.sources[name];
   if (!src?.video) fail(`No source ${name}.`);

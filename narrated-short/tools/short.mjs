@@ -868,9 +868,11 @@ function build(args) {
       musicSaid = ` ${fit.under.toFixed(1)} LU under the voice (at ${volume}; the voice at ${lufs(v)} LUFS, the music at ${lufs(m)})`;
       if (fit.bound) warn.push(`the music would need ${fit.need.toFixed(3)} to lie ${musicUnder} LU under the voice; at ${volume}, the ${fit.bound} volume here, it lies ${fit.under.toFixed(1)} LU under it; for ${musicUnder} LU, ${fit.bound === "highest" ? "louder" : "quieter"} music of its own (launch-video's \`music\` again)`);
     }
-    // under the voice all the way, down to nothing from the last word to the end
+    // under the voice all the way, down to nothing from the last word to the end. HyperFrames
+    // multiplies the track's volume by its lane: the volume carries the level, the lane's values
+    // are shares of it (1 while it holds, 0 at the end), never the volume a second time
     const hold = r2(Math.min(voiceEnd + 0.1, total - 0.3));
-    const lanes = JSON.stringify({ version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: volume }, { t: hold, v: volume }, { t: total, v: 0 }] }] }).replace(/"/g, "&quot;");
+    const lanes = JSON.stringify({ version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: 1 }, { t: hold, v: 1 }, { t: total, v: 0 }] }] }).replace(/"/g, "&quot;");
     audio += `      <audio id="music" src="assets/music.mp3" data-start="0" data-duration="${Math.min(total, down2(audioSeconds(music) || total))}" data-track-index="7" data-volume="${volume}" data-under-voice="${musicUnder}" data-automation="${lanes}"></audio>\n`;
   }
 

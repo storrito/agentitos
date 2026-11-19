@@ -1459,3 +1459,179 @@ test("review of screencast-clear, 3: \"captions\": { \"lines\": 2 } alone keeps 
   assert.equal(captionArea(two, null, "a.json"), "a.json", "two lines: as main");
   assert.equal(captionArea(null, null, "a.json"), null);
 });
+
+// ------------------------------------------------- the whole run of 2026-11-19 (e2e-2026-11-19)
+// A keep with "show" showed the speaker's circle beside the shown video, the video in the slot a
+// phone gets beside it (9:16: about 55 % of the width, right of the middle; 16:9: 350×610 left of
+// the middle); its sound ran under the words; check and build said things that could not be done.
+import { circleOn, soundSaid } from "./lib/show.mjs";
+import { pieceEndSaid, endSaid } from "./lib/cut.mjs";
+import { beyondZoom } from "./lib/screenview.mjs";
+import { softOf } from "./lib/placement.mjs";
+
+test("show draws no circle unless the keep says \"circle\": true; every other keep keeps its circle unless \"circle\": false", () => {
+  assert.equal(circleOn({ show: "a.mp4" }), false);
+  assert.equal(circleOn({ show: { file: "a.mp4", sound: 0.8 }, circle: false }), false);
+  assert.equal(circleOn({ show: "a.mp4", circle: true }), true);
+  assert.equal(circleOn({}), true);
+  assert.equal(circleOn({ zoom: [0, 0, 1, 1] }), true);
+  assert.equal(circleOn({ view: "phone-screen", circle: false }), false);
+});
+
+test("a shown video without the circle takes the room a whole picture gets: as large as it fits above the caption line, centred across, in 9:16, 4:5, 1:1 and 16:9, upright (720×1280, the run's) and wide (1280×720); with \"circle\": true beside the circle as before", () => {
+  const UP = { width: 720, height: 1280, offset: 0 }, WIDE = { width: 1280, height: 720, offset: 0 };
+  const cam = { width: 1280, height: 720, offset: 0, face: [0.388, 0.202, 0.614, 0.685] };
+  const got = {};
+  for (const [w, h] of [[1080, 1920], [1080, 1350], [1080, 1080], [1920, 1080]]) {
+    const a = areas(w, h, realZones(w, h, []), { captions: true, line: LINE[`${w}x${h}`] });
+    for (const [name, shown] of [["upright", UP], ["wide", WIDE]]) {
+      const keep = { words: "0-5", show: "x.mp4" };
+      const p = { view: "screen", source: "screen", start: 0, duration: 3, in: 0, out: 3, rate: 1, show: { source: "show-1", in: 0, until: 3 }, ...(circleOn(keep) ? {} : { pip: false }) };
+      const sources = { "show-1": shown, screen: { width: 1920, height: 1080, offset: 0 }, webcam: cam };
+      const [s] = shots([p], sources, w, h, a);
+      assert.ok(!s.layers.some((l) => l.pip), `${w}x${h} ${name}: no circle`);
+      const box = s.layers[0].box, whole = fit(a.whole, shown.width / shown.height);
+      assert.ok(Math.abs(box[2] - whole[2]) < 0.5 && Math.abs(box[3] - whole[3]) < 0.5, `${w}x${h} ${name}: as large as the whole room (${round1(box)} against ${round1(whole)})`);
+      assert.ok(Math.abs(box[0] + box[2] / 2 - w / 2) <= 1, `${w}x${h} ${name}: centred across`);
+      assert.ok(box[1] + box[3] <= a.line.above + 0.5, `${w}x${h} ${name}: above the caption line`);
+      // with the circle, as before: beside it, smaller
+      const [c] = shots([{ ...p, pip: undefined }], sources, w, h, a);
+      assert.ok(c.layers.some((l) => l.pip), "the circle when the keep asks for it");
+      assert.ok(c.layers[0].box[2] * c.layers[0].box[3] <= box[2] * box[3] + 0.5, `${w}x${h} ${name}: never larger beside the circle`);
+      got[`${w}x${h} ${name}`] = [round1(box), round1(c.layers[0].box)];
+    }
+  }
+  // the numbers (real zones of the frame's usual platforms, the captions' one line as built):
+  // without the circle, and as before beside it
+  assert.deepEqual(Object.fromEntries(Object.entries(got).map(([k, v]) => [k, v[0]])), {
+    "1080x1920 upright": [174, 24, 732, 1302], "1080x1920 wide": [0, 371, 1080, 608], "1080x1350 upright": [233, 24, 614, 1092], "1080x1350 wide": [0, 281, 1080, 608],
+    "1080x1080 upright": [309, 24, 462, 822], "1080x1080 wide": [0, 146, 1080, 608], "1920x1080 upright": [737, 24, 446, 792], "1920x1080 wide": [256, 24, 1408, 792] });
+  assert.deepEqual(got["1080x1920 upright"][1], [322, 285, 566, 1006], "9:16 beside the circle, as the run had it (off the middle)");
+});
+
+test("the build's line for a shown video with sound says it runs under the words and when \"sound\" is right (the run's keep 6)", () => {
+  const clock = (s) => `0:${s.toFixed(1).padStart(4, "0")}`;
+  const i = { k: 5, file: "uploads/result.mp4", sound: 0.8, start: 25.8, duration: 8.4, spoken: 6.9, lufs: -13.7, gain: -0.3 };
+  assert.equal(soundSaid(i, -14, clock), `keep 6: the sound of uploads/result.mp4 runs under the keep's words (at a quarter of its level under the first, up to 0.8 by the last at 0:32.7), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
+  assert.match(soundSaid({ ...i, duration: 4.1 }, -14, clock), /at a quarter of its level, the video ending before the last word/);
+  assert.equal(soundSaid({ ...i, spoken: 0 }, -14, clock), `keep 6: the sound of uploads/result.mp4 measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`, "a keep without words: as before");
+});
+
+// the run's last words (words.json, 117–132) and its 45.0 s recording
+const RUN_WORDS = [[117,"in",39.29,39.37],[118,"a",39.37,39.43],[119,"high-threat",39.43,40.31],[120,"environment",40.31,40.92],[121,"as",41.01,41.2],[122,"a",41.2,41.32],[123,"group,",41.34,41.56],[124,"as",41.67,41.83],[125,"a",41.84,41.94],[126,"team,",42,42.38],[127,"to",42.82,42.96],[128,"explore",42.96,43.44],[129,"the",43.44,43.54],[130,"Moon",43.54,44.01],[131,"and",44.49,44.88],[132,"to",44.88,44.99]];
+const runWords = () => { const w = []; for (const [i, text, start, end] of RUN_WORDS) w[i] = { i, kind: "word", text, start, end }; return w; };
+
+test("check on the recording's last word: no \"end a word later\" where there is none; it names the last place to stop (the run's keep 103–132)", () => {
+  const words = runWords();
+  assert.equal(pieceEndSaid({ k: 9, out: 44.94, first: 117, last: 132, words, recorded: 45 }),
+    `piece 10 ends -0.05 s after "to", where the recording ends: there is no word later, and it may sound cut off; end the keep at word 130 ("Moon"), where the speaker pauses 0.5 s, or leave it`);
+  // a piece inside the recording: as before
+  assert.equal(pieceEndSaid({ k: 2, out: 42.4, first: 117, last: 126, words, recorded: 45 }),
+    `piece 3 ends 0.02 s after "team," (the next words follow right after it in the recording): it may sound cut off; end the keep a word later, or where the speaker pauses`);
+});
+
+test("check's end: no \"hold\": 1.5 asked of a keep whose hold the recording's end cuts (the run's cut: 1.0 s after \"Moon\", the recording over)", () => {
+  assert.equal(endSaid({ gap: 0.99, lastOut: 45, recorded: 45 }), `the cut ends 1.0 s after its last word, where the recording ends: a "hold" cannot play past it; for a moment after the last word, end the cut on an earlier sentence that has a pause after it, or leave it`);
+  assert.equal(endSaid({ gap: 0.6, lastOut: 30.2, recorded: 45 }), `the cut ends 0.6 s after its last word: give the end a moment ("hold": 1.5 on the last keep)`);
+  assert.equal(endSaid({ gap: 1.5, lastOut: 45, recorded: 45 }), null);
+  // the cut that ended on the recording's last word ("to", 103–132): its piece ends 0.06 s before the recording
+  assert.match(endSaid({ gap: 0, lastOut: 44.94, recorded: 45 }), /^the cut ends 0\.0 s after its last word, where the recording ends/);
+});
+
+test("small text that no zoom makes read (the run's keep 3 in 16:9: 12 px, read from 42.7 px): the sentence says 2× is the most, what it gives and what can be done, never a narrower zoom", () => {
+  const said = beyondZoom({ text: 12, readable: 42.7, width: 1920 });
+  assert.equal(said, `a zoom enlarges at most 2×, where this text (12 px on the screen) is 24 px, under the 42.7 px from which text begins to read in this frame: it cannot be shown larger here, and a narrower "zoom" does not help. Accept it (the words say what it shows), or show it in a frame where it reads: in one 1080 px wide (9:16, 4:5, 1:1) a capital reads from 24 px, which this text reaches at 2× (a zoom box small enough to be shown at 2× there)`);
+  const line = textSentence({ scale: 1.93 }, { text: 12, readable: 42.7, narrower: "at most 461×199 px of the screen", size: { width: 1920, height: 1080 }, width: 1920 });
+  assert.doesNotMatch(line, /narrower "zoom" on/);
+  assert.match(line, /^the screen \(1920×1080\) at 1\.93×: its text \(12 px on the screen, "text"\) is 23\.2 px tall here; a zoom enlarges at most 2×/);
+  // where a zoom can make it read (9:16: from 24 px; 16:9 with 24 px text): the narrower zoom, as before
+  assert.equal(beyondZoom({ text: 12, readable: 24, width: 1080 }), null);
+  assert.equal(beyondZoom({ text: 24, readable: 42.7, width: 1920 }), null);
+  assert.match(textSentence({ scale: 1.78 }, { text: 12, readable: 24, narrower: "at most 480×395 px of the screen", width: 1080 }), /give a narrower "zoom" on what is talked about \(at most 480×395 px of the screen reads\)/);
+  // text too small for 2× in any frame: accept it, no other frame offered
+  assert.doesNotMatch(beyondZoom({ text: 8, readable: 42.7, width: 1920 }), /1080 px wide/);
+});
+
+test("the face view's ! says why: layout's soft problem in a few words (the run's crop 4:5 at 1.875×)", () => {
+  const c = { fit: "crop", crop: "4:5", scale: 1.875, soft: 1, hard: 0, problems: [{ level: "soft", code: "enlarged", kind: "picture", of: "picture", what: "the source's pixels are enlarged 1.88× (over 1.5×: soft)" }], pick: { passes: true } };
+  assert.equal(markOf(c), "!");
+  assert.equal(softOf(c), "enlarged 1.88×: soft");
+  assert.equal(softOf({ ...c, problems: [{ level: "soft", code: "other", what: "the face near the edge" }, { level: "hard", code: "x", what: "no" }] }), "the face near the edge");
+  assert.equal(softOf({ ...c, problems: [] }), "");
+});
+
+test("frame before the first build: a moment of the recording, the screen with its grid; after a build the cut's, --recording the recording's", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-frame-"));
+  try {
+    fs.mkdirSync(path.join(dir, "source"));
+    const made = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=10:duration=3", "-pix_fmt", "yuv420p", path.join(dir, "source", "screen.mp4")]);
+    assert.equal(made.status, 0);
+    fs.writeFileSync(path.join(dir, "source", "sources.json"), JSON.stringify({ duration: 3, sources: { screen: { file: "screen.mp4", video: true, width: 320, height: 180, offset: 0 } } }));
+    const r = spawnSync(process.execPath, [path.join(HERE, "screencast.mjs"), "frame", dir, "1.5"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /screen at 0:01\.5 of the recording, a blue line every tenth/);
+    assert.ok(fs.existsSync(path.join(dir, "frames", "rec-1_5-screen.jpg")));
+    const late = spawnSync(process.execPath, [path.join(HERE, "screencast.mjs"), "frame", dir, "9"], { encoding: "utf8" });
+    assert.notEqual(late.status, 0);
+    assert.match(late.stdout + late.stderr, /a moment of the recording, which is 0:03\.0 long/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// whether a shown video speaks under the words: the transcribe skill as a stand-in (TRANSCRIBE)
+import { listenShown, heardSaid } from "./lib/show.mjs";
+test("show with sound: the clip is heard once through the transcribe skill, kept by its content and stretch; speech under the words, only in the hold or none is said; a missing, failing, slow or nonsense tool leaves the general sentence", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sc-listen-"));
+  const before = process.env.TRANSCRIBE;
+  try {
+    const src = path.join(dir, "clip.mp4"), audio = path.join(dir, "show-6.m4a");
+    fs.writeFileSync(src, "clip one"); fs.writeFileSync(audio, "sound");
+    const calls = path.join(dir, "calls");
+    const standIn = (name, body) => { const f = path.join(dir, `${name}.mjs`); fs.writeFileSync(f, `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(calls)}, "x"); const out = process.argv[process.argv.indexOf("--out") + 1];\n${body}\n`); return f; };
+    const words = (list) => `fs.writeFileSync(out, JSON.stringify({ cost: 0.0006, words: ${JSON.stringify(list)} }));`;
+    const n = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8").length : 0);
+    const clock = (t) => `0:${t.toFixed(1).padStart(4, "0")}`;
+    // the run's keep 6: from 25.8 s of the cut, 8.4 s, the speaker's last word at 32.7 s; the clip speaks from 6.0 to 8.3 s of its stretch
+    const i = { k: 5, file: "uploads/result.mp4", sound: 0.8, start: 25.8, duration: 8.4, spoken: 6.9, lufs: -13.7, gain: -0.3 };
+    const said = [{ start: 26, end: 29.3 }, { start: 29.9, end: 32.7 }];
+    const ask = (extra = {}) => listenShown({ dir, src, from: 0, duration: 8.4, audio, ...extra });
+    // speech under the words
+    process.env.TRANSCRIBE = standIn("speaks", words([{ text: "we", start: 4.2, end: 4.5, kind: "word" }, { text: "went", start: 4.6, end: 6.9, kind: "word" }, { text: "(laughs)", start: 7, end: 7.5, kind: "event" }]));
+    const h = await ask();
+    assert.deepEqual(h.words, [{ start: 4.2, end: 4.5 }, { start: 4.6, end: 6.9 }]);
+    assert.equal(h.kept, false);
+    assert.equal(heardSaid(i, h, said, clock).replace(/heard in [\d.]+ s/, "heard in T s"), `two voices at once from 0:30.0 to 0:32.7 (2.7 s: the clip speaks 0:30.0 to 0:32.7, the speaker 0:26.0 to 0:32.7): drop "sound", or show it where you do not speak, or let it speak in the "hold" after your last word (heard in T s, 0.06 cents)`);
+    assert.match(soundSaid(i, -14, clock, heardSaid(i, h, said, clock)), /^keep 6: the sound of uploads\/result\.mp4 runs under the keep's words \(at a quarter of its level under the first, up to 0\.8 by the last at 0:32\.7\); two voices at once from 0:30\.0/);
+    // kept: a second build does not ask again; another stretch or another clip does
+    const again = await ask();
+    assert.equal(again.kept, true); assert.equal(n(), 1);
+    assert.match(heardSaid(i, again, said, clock), /\(heard before, kept\)$/);
+    await ask({ from: 1 }); assert.equal(n(), 2, "another stretch is heard anew");
+    fs.writeFileSync(src, "clip two"); await ask(); assert.equal(n(), 3, "another clip is heard anew");
+    // speech only in the hold, after the last word
+    process.env.TRANSCRIBE = standIn("hold", words([{ text: "yes", start: 7.1, end: 7.9, kind: "word" }]));
+    fs.writeFileSync(src, "clip three");
+    assert.match(heardSaid(i, await ask(), said, clock), /^it speaks 0:32\.9 to 0:33\.7, where the speaker does not: no two voices at once \(heard in [\d.]+ s, 0\.06 cents\)$/);
+    // no speech: nothing more than that
+    process.env.TRANSCRIBE = standIn("none", words([{ text: "(music)", start: 0, end: 8, kind: "event" }]));
+    fs.writeFileSync(src, "clip four");
+    assert.match(heardSaid(i, await ask(), said, clock), /^it has no words \(heard in [\d.]+ s, 0\.06 cents\)$/);
+    // missing, failing, nonsense, slow: no sentence of its own (the general one stays), nothing kept
+    const general = soundSaid(i, -14, clock);
+    assert.match(general, /so speech in it is heard under the speaker's, two voices at once/);
+    for (const [name, got] of [
+      ["missing", (fs.writeFileSync(src, "clip missing"), await ask({ tool: null }))],
+      ["failing", (process.env.TRANSCRIBE = standIn("fails", `console.log("no key"); process.exit(1);`), fs.writeFileSync(src, "clip five"), await ask())],
+      ["nonsense", (process.env.TRANSCRIBE = standIn("nonsense", `fs.writeFileSync(out, JSON.stringify({ words: "none" }));`), await ask())],
+      ["outside", (process.env.TRANSCRIBE = standIn("outside", words([{ text: "x", start: 50, end: 51, kind: "word" }])), await ask())],
+      ["slow", (process.env.TRANSCRIBE = standIn("slow", `await new Promise((r) => setTimeout(r, 30000));`), await ask({ timeout: 1 }))],
+    ]) {
+      assert.ok(got.why, `${name}: a reason`);
+      assert.equal(heardSaid(i, got, said, clock), null, name);
+      assert.equal(soundSaid(i, -14, clock, heardSaid(i, got, said, clock)), general, `${name}: the general sentence`);
+    }
+    assert.equal(fs.readdirSync(path.join(dir, "source", "shown")).length, 5, "one kept file per clip and stretch heard, none for a failure");
+  } finally {
+    if (before === undefined) delete process.env.TRANSCRIBE; else process.env.TRANSCRIBE = before;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

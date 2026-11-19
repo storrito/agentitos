@@ -217,14 +217,31 @@ export function choose(before, list, { asked = null, zoomed = false, own = [], k
   return { pic: before, missing, why: `no other picture removes a fault without adding one (${usable.slice(0, 2).map((x) => `${x.fit} at ${r2(x.scale)}×: ${x.j.faults.map((f) => shortFault(x, f)).join(", ")}`).join("; ")})` };
 }
 
+// The most a zoom enlarges the screen's pixels (composition.shots, layout's screen-zoom)
+export const MOST = 2;
+
+// Text too small to read even at the most a zoom enlarges (text × MOST under readable): no narrower
+// "zoom" helps (the run of 2026-11-19 in 16:9: 12 px at 2× is 24 px, under the 42.7 px that read in
+// a 1920 px wide frame; the build's "narrower zoom" sent the agent round in a circle). What is true
+// and what can be done: accept it, or a frame where it reads (layout's height that reads goes with
+// the frame's width: 24 px in 1080). null where a zoom can make it read.
+export function beyondZoom({ text, readable, width = 0 }) {
+  if (!text || !readable || text * MOST >= readable - 0.05) return null;
+  const narrow = width > 1080 ? r1((readable * 1080) / width) : null;
+  const there = narrow && text * MOST >= narrow - 0.05 ? `, or show it in a frame where it reads: in one 1080 px wide (9:16, 4:5, 1:1) a capital reads from ${narrow} px, which this text reaches at ${MOST}× (a zoom box small enough to be shown at ${MOST}× there)` : "";
+  return `a zoom enlarges at most ${MOST}×, where this text (${text} px on the screen) is ${r1(text * MOST)} px, under the ${readable} px from which text begins to read in this frame: it cannot be shown larger here, and a narrower "zoom" does not help. Accept it (the words say what it shows)${there}`;
+}
+
 // What a line of the screen becomes in the frame: the keep's text where it says how tall (and
 // whether it reads), else a line of LINE px, and from what height a capital reads here
-export function textSentence(pic, { text = 0, readable = 0, narrower = null, size = null }) {
+export function textSentence(pic, { text = 0, readable = 0, narrower = null, size = null, width = 0 }) {
   const at = `the screen${size ? ` (${size.width}×${size.height})` : ""} at ${r2(pic.scale)}×`;
   if (text) {
     const h = r1(text * pic.scale);
     if (!readable) return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here`;
     if (h >= readable - 0.05) return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here, it reads (from ${readable} px)`;
+    const beyond = beyondZoom({ text, readable, width });
+    if (beyond) return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here; ${beyond}`;
     return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here, under the ${readable} px from which text begins to read: for it to read surely, give a narrower "zoom" on what is talked about${narrower ? ` (${narrower} reads)` : ""}, or split the keep where the words move on`;
   }
   // without "text" nothing is claimed about reading: the plain fact, and what to do with it
@@ -350,7 +367,7 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, band,
     lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""})${circleSaid}, ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
   }
   if (got.missing) lines.push(`! "layout": "${got.missing}" is not among this screen's pictures in this frame (${width}×${height}), so it takes the rule's; its names here: ${[BEFORE, ...new Set(list.map((x) => x.fit))].map((x) => `"${x}"`).join(", ")}`);
-  lines.push(`text: ${textSentence(pic, { text, readable, narrower, size: src })}`);
+  lines.push(`text: ${textSentence(pic, { text, readable, narrower, size: src, width })}`);
   const others = [before, ...own, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
   if (others.length) lines.push(`also: ${others.join("; ")}`);
   return { pic, facts: facts(pic, j, { readable, named: got.named }), lines };
