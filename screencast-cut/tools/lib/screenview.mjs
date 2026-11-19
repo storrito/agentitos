@@ -9,12 +9,16 @@
 //      passes: the region inside the safe box across (or inside the zones' wide stretch), the
 //      circle and a label that is on off the region, nothing of it under an app's bar, and, where
 //      the keep says how tall its text is, that text at the height layout says reads in this frame;
-//   3. else the first other picture that removes a fault the one as before has and adds none (the
-//      fewest left): the picture as before with the circle in a free corner, then layout's
-//      candidates the composition draws (screen-zoom, screen-fit; screen-whole only for the whole
-//      screen) without a hard fault, and the list says what was wrong with the picture as before.
-//      Where none does (layout's has the label on the region too, or is smaller and its text no
-//      better), the picture as before stays and the list says what remains wrong.
+//   3. else the first other picture that removes a fault the one as before has and adds none (of
+//      those, the one with the fewest left): the picture as before with the circle in a free
+//      corner (moved across inside the margins where its region reaches into them), then layout's candidates the
+//      composition draws (screen-zoom, screen-fit; screen-whole only for the whole screen) without
+//      a hard fault; the list says what was wrong with the picture as before. Where none does
+//      (layout's has the label on the region too, or is smaller and its text no better), the
+//      picture as before stays and the list says what remains wrong.
+// The circle keeps main's place and size in every picture where that place is off the region and
+// off the label, and moves to a corner off them only where it is not (decided 2026-11-19,
+// circle-still); layout's own circle is not taken.
 // Whatever goes wrong (no layout skill, place stops, runs over its time, refuses the box, gives no
 // candidate to draw) the keep is drawn as before, with one sentence: the build never stops for it.
 // screen-stacked (the screen above, the speaker in a panel below) is not drawn: with the captions
@@ -87,6 +91,19 @@ export function shiftedInside(pic, src, zones, areas, width) {
   return { ...pic, fit: `${BEFORE}, inside the margins`, left: r1(left), window: [x0, y0, x1 - x0, y1 - y0].map(r1), region: [R[0] + dx, R[1], R[2], R[3]].map(r1) };
 }
 
+// The circle at main's place and main's size (decided 2026-11-19, circle-still: it stands still
+// between keeps); only where that place lies on the picture's region or on a label, in the first
+// free corner (freeCorner). main: areas().pip ([x, y, d]) or null without the circle.
+export function seat(pic, main, { zones, areas, labels = [], width, height }) {
+  const at = { ...pic, circle: main ? [main[0], main[1], main[2]] : null };
+  delete at.corner;
+  if (!main) return at;
+  const sq = [main[0], main[1], main[2], main[2]];
+  if (!meets(sq, at.region) && !labels.some((l) => meets(l, sq))) return at;
+  const free = freeCorner(at, { zones, areas, labels, width, height });
+  return free ? { ...at, circle: free.circle, corner: free.corner } : at;
+}
+
 // What a picture shows of the screen and what lies on it: the region past the safe box's margins
 // across, the circle or a label on the region, the region under an app's bar (platform-zones'
 // covers), the keep's text under the height that reads (layout's, for this frame). ground: the
@@ -96,7 +113,9 @@ export function judge(pic, { zones, labels = [], text = 0, readable = 0, width, 
   const inX = (b) => R[0] >= b[0] - 0.5 && R[0] + R[2] <= b[0] + b[2] + 0.5;
   if (!(inX(S) || (Wd && inX(Wd) && R[1] + R[3] <= Wd[1] + Wd[3] + 0.5)))
     faults.push({ code: "across", said: `its region runs ${span(R)}, past the safe box's margins (${span(S)}${Wd ? `, above the buttons ${span(Wd)}` : ""})` });
-  if (pic.circle && meets([pic.circle[0], pic.circle[1], pic.circle[2], pic.circle[2]], R)) faults.push({ code: "circle", said: "the webcam's circle lies on its region" });
+  const sq = pic.circle && [pic.circle[0], pic.circle[1], pic.circle[2], pic.circle[2]];
+  if (sq && meets(sq, R)) faults.push({ code: "circle", said: "the webcam's circle lies on its region" });
+  else if (sq && labels.some((l) => meets(l, sq))) faults.push({ code: "circle", said: "the webcam's circle lies on the label" });
   if (labels.some((l) => meets(l, R))) faults.push({ code: "label", said: "the label lies on its region" });
   const names = Object.fromEntries((zones.platforms || []).map((p) => [p.id, p.name]));
   const under = [...new Set((zones.covers || []).filter((c) => meets(c.box, R)).map((c) => names[c.platform] || c.platform))];
@@ -142,14 +161,13 @@ export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, wid
 const markOf = (c) => (c.hard ? "✗" : c.unmet?.length ? "–" : c.soft ? "!" : "✓");
 const box4 = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite);
 // a candidate of layout's the composition can draw: a drawn fit, a positive scale, its place, a
-// window that is not empty, the region in the frame and its circle where it has one; anything
-// else is left out
+// window that is not empty and the region in the frame; anything else is left out
 export const drawable = (c) => !!c && typeof c === "object" && DRAWN.test(c.fit) && Number.isFinite(c.scale) && c.scale > 0 && Number.isFinite(c.left) && Number.isFinite(c.top)
-  && box4(c.window) && c.window[2] > 0 && c.window[3] > 0 && box4(c.faceInFrame?.[0]) && (!c.circle || (Array.isArray(c.circle.box) && c.circle.box.slice(0, 2).every(Number.isFinite) && Number.isFinite(c.circle.d) && c.circle.d > 0));
-// a candidate of layout's as a picture the composition draws
+  && box4(c.window) && c.window[2] > 0 && c.window[3] > 0 && box4(c.faceInFrame?.[0]);
+// a candidate of layout's as a picture the composition draws; its own circle is not taken (the
+// circle stays at main's place and size, seat())
 export function pictureOf(c) {
-  return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, region: c.faceInFrame[0],
-    circle: c.circle ? [c.circle.box[0], c.circle.box[1], c.circle.d] : null, mark: markOf(c), hard: c.hard || 0 };
+  return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, region: c.faceInFrame[0], circle: null, mark: markOf(c), hard: c.hard || 0 };
 }
 
 // a fault in a few words, for the lists
@@ -157,9 +175,8 @@ export const shortFault = (x, f) => (f.code === "text" ? `text ${x.j.textHeight}
 
 // Which picture: the one the keep names; else the picture as before where it passes; else the
 // first of the others that removes a fault the picture as before has and adds none (of those, the
-// first with the fewest faults left): the picture as before with the circle moved, the same shifted
-// inside the margins (own, in that order: the circle moves before the picture does, a shift comes
-// before a shrink), then layout's in its order (not ✗; for a zoom box not the whole screen, unless
+// first with the fewest faults left): the picture as before with the circle moved (own: the circle
+// moves before the picture does), then layout's in its order (not ✗; for a zoom box not the whole screen, unless
 // named). The text of a picture held inside the margins at no less than nine tenths of the scale
 // as before may come out under the height that reads (decided 2026-11-19, screen-text: what must
 // be read stays inside the safe box across, even at a tenth less size). Where none does, the
@@ -208,7 +225,7 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
   const ps = pieces.filter((p) => isScreenPiece(p, sources));
   if (!ps.length) return [];
   const cam = sources.webcam?.video ? sources.webcam : null;
-  const said = [`Screen (${tool ? `the layout skill, ${area ? "around the captions as built" : "no captions"}` : "as before: agentitos' layout skill is not beside this one, or LAYOUT_TOOL naming its tools/place.mjs"}): the picture as before where it passes (its region inside the safe box across, the circle and the label off it, its text read where the keep's "text" says how tall), else the layout skill's first, unless a keep names another with "layout":`];
+  const said = [`Screen (${tool ? `the layout skill, ${area ? "around the captions as built" : "no captions"}` : "as before: agentitos' layout skill is not beside this one, or LAYOUT_TOOL naming its tools/place.mjs"}): the picture as before where it passes (its region inside the safe box across, the circle and the label off it, its text read where the keep's "text" says how tall); else, where the circle lies on the region, the circle in a corner off it; where the region runs past the margins, the same picture moved inside them; else the layout skill's first that removes a fault and adds none, unless a keep names another with "layout"; the circle stays at its place and size wherever it is off the region:`];
   const done = new Map(), folders = [];
   const keepSpan = (k) => { const own = pieces.filter((p) => p.keep === k); return `${clock(own[0].start)}–${clock(own.at(-1).start + own.at(-1).duration)}`; };
   for (const p of ps) {
@@ -259,46 +276,47 @@ function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, 
 function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones, areas, facts }) {
   const readable = Number.isFinite(res.screen?.readable) && res.screen.readable > 0 ? res.screen.readable : 0;
   const opts = { zones, labels: on, text, readable, width, height };
+  const env = { zones, areas, labels: on, width, height };
+  const main = pip ? areas.pip : null;
   before.j = judge(before, opts);
-  const list = (Array.isArray(res.candidates) ? res.candidates : []).filter(drawable).map((x) => { const pic = pictureOf(x); pic.j = judge(pic, opts); return pic; });
+  const asJudged = (pic) => Object.assign(pic, { j: judge(pic, opts) });
+  // layout's pictures, each with the circle at main's place and size (moved where that lies on its region)
+  const list = (Array.isArray(res.candidates) ? res.candidates : []).filter(drawable).map((x) => asJudged(seat(pictureOf(x), main, env)));
   if (!list.length) return null;
   const asked = typeof keep.layout === "string" ? keep.layout.trim() : null;
-  // where only the circle lies on the region: the picture as before with the circle in a free corner
-  // (decided 2026-11-19, pair screen-circle-169: the circle moves before the picture does). Where
-  // the region also reaches into the side margins, the same picture is first drawn with its room
-  // held inside the safe box across (the rest of the screen still to the frame's edges)
-  let moved = null;
+  // the picture as before with the circle moved off the region, and the same moved inside the
+  // margins at its scale (decided 2026-11-19: screen-circle-169, circle-still)
+  // where the circle lies on the region and the region also reaches into the side margins, the
+  // same picture is first held inside the safe box across (the rest of the screen still to the
+  // frame's edges)
+  const own = [];
   const codes = before.j.faults.map((f) => f.code);
   if (codes.includes("circle")) {
-    let base = before;
-    if (codes.includes("across")) base = shiftedInside(before, src, zones, areas, width);
-    base.j = judge(base, opts);
-    const free = base.j.faults.some((f) => f.code === "circle") ? freeCorner(base, { zones, areas, labels: on, width, height }) : null;
-    if (free) {
-      moved = { ...base, fit: `${base.fit}, the circle ${free.corner}`, corner: free.corner, circle: free.circle, circleOnly: base === before, mark: "✓" };
-      moved.j = judge(moved, opts);
-      // what else is wrong (its text too small) stays said; choose takes it where it adds nothing
-      if (moved.j.faults.length) moved.mark = "!";
-    }
+    const base = codes.includes("across") ? shiftedInside(before, src, zones, areas, width) : before;
+    const m = seat(base, main, env);
+    if (m.corner) own.push(asJudged({ ...m, fit: `${base.fit}, the circle ${m.corner}`, circleOnly: base === before, mark: "✓" }));
   }
-  const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own: moved ? [moved] : [] });
+  for (const x of own) if (x.j.faults.length) x.mark = "!";
+  const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own });
   const pic = got.pic, j = pic.j;
   const narrower = (Array.isArray(res.notes) ? res.notes : []).find((x) => /A narrower region reads/.test(x))?.match(/at most \d+×\d+ px of the source/)?.[0]?.replace(" of the source", " of the screen") || null;
   const lines = [];
-  const where = `the region ${span(pic.region)}, ${pct(j.ground)} ground${pic.circle ? `, the circle ${pic.circle[2]} px at x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}` : ""}`;
+  const where = `the region ${span(pic.region)}, ${pct(j.ground)} ground`;
+  // the list names the circle only where it moved
+  const circleSaid = pic.corner ? `, the circle moved to the ${pic.corner} (x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}): where it stands as before (x ${r0(main[0])}, y ${r0(main[1])}) it would lie on the region${on.some((l) => meets(l, [main[0], main[1], main[2], main[2]])) ? " or the label" : ""}` : "";
   const faultsSaid = (x) => x.j.faults.map((f) => f.said).join("; ");
-  if (pic === moved) {
-    lines.push(`${pic.circleOnly ? "as before" : "as before, held inside the safe box's margins"} at ${r2(pic.scale)}×, the circle moved to the ${pic.corner} (x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}): where it stood (x ${r0(before.circle[0])}, y ${r0(before.circle[1])}) it lay on the region; ${where}`);
+  if (own.includes(pic)) {
+    lines.push(`${pic.circleOnly ? "as before" : "as before, held inside the safe box's margins"} at ${r2(pic.scale)}×${circleSaid}; ${where}${j.faults.length ? `; ${faultsSaid(pic)}` : ""}; as before ${faultsSaid(before)}`);
   } else if (pic === before) {
     lines.push(`${got.named ? "as before, as the keep names it" : "as before"} at ${r2(pic.scale)}×, ${where}${j.faults.length ? `: ${faultsSaid(pic)}${got.why ? ` (it stays: ${got.why})` : ""}` : ""}`);
     // the circle stays on the region where nothing fixes it yet: said, with what the agent can do
     if (j.faults.some((f) => f.code === "circle") && !got.named) lines.push(`! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them ("circle": false)`);
   } else {
-    lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""}), ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
+    lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""})${circleSaid}, ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
   }
   if (got.missing) lines.push(`! "layout": "${got.missing}" is not among this screen's pictures in this frame (${width}×${height}), so it takes the rule's; its names here: ${[BEFORE, ...new Set(list.map((x) => x.fit))].map((x) => `"${x}"`).join(", ")}`);
   lines.push(`text: ${textSentence(pic, { text, readable, narrower, size: src })}`);
-  const others = [before, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
+  const others = [before, ...own, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
   if (others.length) lines.push(`also: ${others.join("; ")}`);
   return { pic, facts: facts(pic, j, { readable, named: got.named }), lines };
 }

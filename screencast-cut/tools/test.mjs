@@ -1162,7 +1162,7 @@ test("review 1: a keep split at a scene change draws each part's circle where it
 });
 
 test("review 2: a picture of the layout skill's that removes no fault, or adds one, is not taken: 16:9, zoom [0.3,0.3,0.7,0.7] with a label, the screen 1920×1080 (1.55× against 1.48×) and 3440×1440 (1.16× against 1.11×) stay as before, said", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
-  for (const [screen, scale] of [[[1920, 1080], 1.55]]) {
+  for (const [screen, scale] of [[[1920, 1080], 1.55], [[3440, 1440], 1.16]]) {
     const r = oneKeep({ width: 1920, height: 1080, screen, crop: [0.3, 0.3, 0.7, 0.7], label: "Settings page" });
     assert.equal(r.p.screenPic, undefined, r.said);
     assert.equal(r.p.screen.fit, BEFORE); assert.equal(r.p.screen.scale, scale);
@@ -1193,6 +1193,35 @@ test("review 3: nonsense from the layout skill (null, a candidate with circle {}
       shots(ps, sources, 1080, 1920, a);
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+import { seat } from "./lib/screenview.mjs";
+test("review 4 (circle-still): the circle keeps main's place and size in every keep where that place is off the region; layout's picture is drawn with it there (9:16: y 962, not layout's 1020); it moves only off the region, at main's size, and the list names only a move", () => {
+  const z = SZ, a = areas(1080, 1920, z, { captions: true });
+  const env = { zones: z, areas: a, width: 1080, height: 1920 };
+  // layout's screen-fit for the wide strip, its own circle 58 px lower: drawn with main's circle
+  const fit = { fit: "screen-fit", scale: 0.55, left: -6, top: 334, window: [0, 334, 1080, 600], region: [60, 363, 960, 35], circle: [60, 1020, 238] };
+  assert.deepEqual(seat(fit, a.pip, env).circle, [60, 962, 238]);
+  assert.equal(seat(fit, a.pip, env).corner, undefined);
+  // 16:9: layout's smaller circle (172 px) is not taken; where main's lies on the region it moves at 216 px
+  const z16 = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] }, a16 = areas(1920, 1080, z16, { captions: true });
+  const on = seat({ region: [1100, 150, 700, 400], circle: [1652, 108, 172] }, a16.pip, { ...env, zones: z16, areas: a16, width: 1920, height: 1080 });
+  assert.deepEqual([on.circle, on.corner], [[96, 108, 216], "top left"]);
+  // the circle on a label moves too; without the circle there is none
+  const lab = seat({ region: [100, 500, 600, 200] }, a16.pip, { ...env, zones: z16, areas: a16, width: 1920, height: 1080, labels: [[96, 108, 1600, 70]] });
+  assert.equal(lab.corner, "bottom right");
+  assert.equal(seat(fit, null, env).circle, null);
+});
+
+test("review 4, with the layout skill: 9:16, 16:9, 4:5 and 1:1 keeps drawn with layout's picture keep main's circle (place where it is off the region, size always), the list names the circle only where it moved", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [width, height, screen, crop] of [[1080, 1920, [1920, 1080], [0.046, 0.052, 0.954, 0.111]], [1080, 1920, [3440, 1440], [0.395, 0.395, 0.541, 0.579]], [1920, 1080, [2560, 1440], [0.046, 0.038, 0.954, 0.085]], [1080, 1350, [2560, 1440], [0, 0, 1, 1]], [1080, 1080, [2560, 1440], [0.046, 0.038, 0.954, 0.085]]]) {
+    const r = oneKeep({ width, height, screen, crop, text: crop[0] === 0.395 ? 12 : 0 });
+    const c = r.circles[0].box, pic = r.p.screenPic;
+    assert.ok(pic && /^screen-/.test(pic.fit), `${width}×${height} ${crop}: ${r.said}`);
+    assert.equal(c[2], r.a.pip[2], "main's size");
+    if (pic.corner) assert.match(r.said, new RegExp(`the circle moved to the ${pic.corner} \\(x ${Math.round(c[0])}, y ${Math.round(c[1])}\\)`));
+    else { assert.deepEqual(c.slice(0, 2), r.a.pip.slice(0, 2), "main's place"); assert.doesNotMatch(r.said.split("\n")[1], /circle/); }
+  }
 });
 
 test("review 6: a \"text\" fault does not keep the circle on the region (16:9, zoom [0.75,0.05,0.98,0.3], text 12: the circle top left, as without text); without the layout skill the text's height is given, not null; the placement's folder is named by the keep", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
