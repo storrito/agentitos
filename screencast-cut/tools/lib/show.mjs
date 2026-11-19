@@ -53,6 +53,13 @@ export async function shownVideo(dir, file, fps = 30) {
 
 export const showOf = (keep) => (typeof keep.show === "string" ? { file: keep.show } : keep.show && typeof keep.show === "object" ? keep.show : {});
 
+// Whether a keep draws the webcam's circle: every keep unless it says "circle": false; a keep that
+// shows another video only where it says "circle": true (decided 2026-11-19 after the whole run of
+// the day: the shown video is the keep's picture, not the speaker, and two faces side by side, the
+// circle's silent beside the shown one's, read as a mistake). Without the circle the shown video
+// takes the room a whole picture gets: as large as it fits above the caption line, in the middle.
+export const circleOn = (keep) => (keep.show !== undefined ? keep.circle === true : keep.circle !== false);
+
 const USAGE = `"show": "uploads/result.mp4", or {"file": "uploads/result.mp4", "from": 2, "sound": 0.8}`;
 
 // what is wrong with a keep's "show", in one sentence that says what to do; null where it is fine
@@ -122,6 +129,17 @@ export function soundPoints({ sound, duration, spoken }) {
   return (s > 0.3 ? [{ t: 0, v: low }, { t: n(Math.max(0, s - RISE)), v: low }, { t: n(s), v: top }] : [{ t: 0, v: 0 }, { t: n(Math.min(0.2, out)), v: top }])
     .concat([{ t: n(out), v: top }, { t: n(d), v: 0 }])
     .filter((x, j, all) => j === 0 || x.t > all.slice(0, j).reduce((m, y) => Math.max(m, y.t), -1));
+}
+
+// The build's line for a shown video whose sound plays (i: an insert of placeShows, measured by
+// cutShownSound): where it runs under the keep's words, that it does, and so when "sound" is right.
+// The tool cannot know whether a clip speaks; the run of 2026-11-19 had a clip's speech under the
+// speaker's for 2.7 s, two voices at once.
+export function soundSaid(i, target, clock) {
+  const under = i.spoken > 0.3
+    ? `runs under the keep's words (${i.spoken > i.duration - FADE ? "at a quarter of its level, the video ending before the last word" : `at a quarter of its level under the first, up to ${i.sound} by the last at ${clock(i.start + i.spoken)}`}), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; `
+    : "";
+  return `keep ${i.k + 1}: the sound of ${i.file} ${under}measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${target} LUFS ("sound": 1 is the voice's level), through the voice's bus.`;
 }
 
 // The gain in dB that brings a shown video's sound (its stretch's integrated loudness, ebur128 as
