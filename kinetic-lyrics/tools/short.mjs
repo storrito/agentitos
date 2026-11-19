@@ -335,7 +335,7 @@ function place(dir, opts) {
   const at = Math.round(a.top + chip);
   console.log(`\nThe type: one place for the short, from y ${at} to ${Math.round(a.bottom)} (${Math.round(((a.bottom - at) / H) * 100)} % of the height${chip ? `, the name tag in the ${chip} px above it` : ""})${a.lower > 0 ? `, ${Math.round(a.lower)} px lower than the footage alone sets it (y ${usual}): the type is up to ${Math.round((a.lower / (a.bottom - usual + chip)) * 100)} % smaller, so that it keeps off the mouths` : ", where the footage alone sets it"}.`);
   for (const x of text.shots) {
-    const on = x.touches.map((t) => `${t.who}: ${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")} (${t.from}–${t.to} s)`).join("; ");
+    const on = x.touches.map((t) => `${t.who}: ${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.hair ? `the hair or forehead ${t.hair} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")} (${t.from}–${t.to} s)`).join("; ");
     console.log(`  ${x.fault ? "✗" : "·"} shot ${x.shot + 1}  ${x.start.toFixed(1)}–${x.end.toFixed(1)} s  ${x.lift ? `raised ${x.lift} px${x.eyes != null ? ` (${eyesSaid(x)} at their highest)` : ""}` : framed ? "as framed" : "as it is"}: the type on ${on || "no face"}`);
   }
   // what is left on a mouth, nose or eyes, and what would avoid it; the notes of layout but its own

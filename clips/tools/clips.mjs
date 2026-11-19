@@ -462,7 +462,7 @@ function place(dir, opts, { build = true } = {}) {
   // the mouth may open lower there, onto the captions)
   const stillsOf = (pairs) => { const two = pairs.filter(([a, b]) => a !== b), one = pairs.filter(([a, b]) => a === b); return [two.length ? `between the stills at ${two.map(([a, b]) => `${sec(a)} and ${sec(b)} s`).join(", ")}` : "", one.length ? `from the still at ${one.map(([a]) => `${sec(a)} s`).join(", ")} alone` : ""].filter(Boolean).join(" and "); };
   const estOf = (x) => { const w = x.touches.filter((t) => t.lipEst); return w.length ? ` (${sec(w.reduce((n, t) => n + t.lipEst, 0))} s of it ${stillsOf(w.flatMap((t) => t.stills))}: there the mouth's place is an estimate, look whether it opens onto the captions)` : ""; };
-  const partsOf = (on, x) => [on.nose ? `the nose or eyes ${sec(on.nose)} s` : "", on.mouth ? `the mouth ${sec(on.mouth)} s` : "", on.lip ? `the lower lip ${sec(on.lip)} s${x ? estOf(x) : ""}` : "", on.chin ? `the chin ${sec(on.chin)} s` : ""].filter(Boolean).join(", ");
+  const partsOf = (on, x) => [on.nose ? `the nose or eyes ${sec(on.nose)} s` : "", on.hair ? `the hair or forehead ${sec(on.hair)} s${on.maybe ? ` (${sec(on.maybe)} s of it where the eyes may begin: not known)` : ""}` : "", on.mouth ? `the mouth ${sec(on.mouth)} s` : "", on.lip ? `the lower lip ${sec(on.lip)} s${x ? estOf(x) : ""}` : "", on.chin ? `the chin ${sec(on.chin)} s` : ""].filter(Boolean).join(", ");
   const rows = text.shots.map((x, i) => {
     // (the framing again found its shots anew: the one at this shot's middle)
     const k = index[i], mid = (x.start + x.end) / 2, sh = lifted.find((q) => mid >= q.start && mid < q.end) || lifted[k] || { faces: [] };
@@ -473,12 +473,12 @@ function place(dir, opts, { build = true } = {}) {
       : x.fault === "nose" ? `✗ on the nose or eyes of ${who}: ${partsOf(on, x)}`
       : x.fault === "mouth" ? `✗ on the mouth of ${who}: ${partsOf(on, x)}`
       : x.fault ? `✗ on the face of ${who} ${sec(x.touches.reduce((n, t) => n + t.seconds, 0))} s (a picture shown whole: reframe --follow)`
-      : x.hair ? `above the head of ${who}, on the hair ${sec(x.touches.reduce((n, t) => n + t.seconds, 0))} s`
+      : x.hair ? (on.hair ? `above the eyes of ${who}, on the hair or forehead: ${partsOf(on, x)}` : `above the head of ${who}, on the hair ${sec(x.touches.reduce((n, t) => n + t.seconds, 0))} s`)
       : x.lip ? `on ${who}: ${partsOf(on, x)}, not on the mouth: not avoidable at a readable size`
       : `on the chin or neck of ${who} ${sec(on.chin ?? x.touches.reduce((n, t) => n + t.seconds, 0))} s, below the mouth`;
     console.log(`  ${String(k + 1).padStart(2)}. ${sec(x.start)}–${sec(x.end)} s  ${raised}; captions ${where}`);
     const facesAt = (t) => { const out = []; for (const f of sh.faces) { let best = null; for (const m of f.track) if (!best || Math.abs(m.t - t) < Math.abs(best.t - t)) best = m; if (best && Math.abs(best.t - t) < 0.3) out.push(best.box); } return out; };
-    const label = !x.touches.length ? "" : x.fault === "nose" ? `ON THE NOSE ${who}` : x.fault === "mouth" ? `ON THE MOUTH ${who}` : x.fault ? `ON A FACE ${who}` : x.hair ? `on the hair ${who}` : x.lip ? `on lip and chin ${who}` : `on the chin ${who}`;
+    const label = !x.touches.length ? "" : x.fault === "nose" ? `ON THE NOSE ${who}` : x.fault === "mouth" ? `ON THE MOUTH ${who}` : x.fault ? `ON A FACE ${who}` : x.hair ? `${on.hair ? "on hair or forehead" : "on the hair"} ${who}` : x.lip ? `on lip and chin ${who}` : `on the chin ${who}`;
     return { n: k + 1, start: x.start, end: x.end, lift: x.lift, touch: label, facesAt };
   });
   for (const c of text.conflicts) console.log(`✗ ${c}`);
