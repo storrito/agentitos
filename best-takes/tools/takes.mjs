@@ -65,10 +65,15 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
+import { pieceSpan, clockOf, covering, inFrame, faceTrack, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
-const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform"];
-const FLAGS = ["off"];
+const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
+  // faces and place (kept in place.json, not in the settings)
+  "eye", "grid-at", "picture", "raise", "caption-y", "font-size", "lines", "lift", "hook-kind"];
+const FLAGS = ["off", "grid", "again"];
+// given more than once: each value kept
+const MANY = ["eye", "grid-at", "picture", "lift"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const TIGHT = 0.4; // --pauses tight: every pause over this goes
@@ -87,6 +92,7 @@ function parse(args) {
     if (FLAGS.includes(k)) { opts[k] = true; continue; }
     if (!VALUED.includes(k)) fail(`Unknown option ${a}. Options: ${[...VALUED, ...FLAGS].map((o) => "--" + o).join(" ")}`);
     if (i + 1 >= args.length) fail(`${a} needs a value.`);
+    if (MANY.includes(k)) { const v = String(args[++i]); (opts[k] ||= []).push(...(v === "" ? [""] : v.split(/\s+/).filter(Boolean))); continue; }
     opts[k] = NUMBERS.includes(k) ? Number(args[++i]) : String(args[++i]);
     if (NUMBERS.includes(k) && !Number.isFinite(opts[k])) fail(`${a} needs a number.`);
   }
@@ -351,14 +357,34 @@ function cmdBuild(dir, opts) {
   // the eyes of a face grown closer stay below the apps' top bar
   let safeTop = 0;
   if (faces) { try { safeTop = zones(width, height, platformList(s.platform)).safe[1]; } catch {} }
+  // each video's picture where this skill's place laid it out (place.json "picture": its scale and
+  // corner in the frame, raised by its lift), else covering the frame, centred
+  const pictures = placed?.picture || null;
+  const picOf = (p) => {
+    const q = pictures?.[clips[p.clip].file];
+    if (!q) return null;
+    const c = clips[p.clip];
+    return { left: q.left, top: q.top - (q.lift || 0), width: c.width * q.scale, height: c.height * q.scale };
+  };
+  if (placed?.by === "takes place" && placed.for !== placedFor(cut, s)) console.log(`  ⚠ The cut, the captions' style, the hook or the frame changed since ${rel(placeFile)} was written: node ${self()} place ${rel(dir)} again, so that the text keeps clear of the faces.`);
   const pieces = r.pieces.map((p, k) => {
-    if (!(scales[k] > 1)) return { ...p, scale: scales[k] };
+    const pic = picOf(p);
+    if (!(scales[k] > 1)) return { ...p, scale: scales[k], ...(pic ? { pic } : {}) };
     const list = faces?.[clips[p.clip].file], seen = [];
     if (list) for (let t = p.in; t <= p.out; t += 0.1) for (const f of facesAt(list, t)) seen.push({ box: toFrame(f.box, list.size, [width, height]), ...(f.feat ? { feat: toFrame(f.feat, list.size, [width, height]) } : {}) });
     const plan = punchPlan({ faces: seen, scale: scales[k], frame: [width, height], cap: capArea, safeTop, raise: placed?.raise || "full" });
-    return { ...p, scale: plan.scale, ...(plan.scale > 1 ? { origin: +Math.min(height, plan.origin).toFixed(1) } : {}), ...(plan.why ? { held: `${plan.why}` } : {}) };
+    return { ...p, scale: plan.scale, ...(pic ? { pic } : {}), ...(plan.scale > 1 ? { origin: +Math.min(height, plan.origin).toFixed(1) } : {}), ...(plan.why ? { held: `${plan.why}` } : {}) };
   });
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook });
+  // the ground behind a picture that leaves part of the frame bare: its still, while its pieces play
+  const grounds = [];
+  if (pictures) for (const p of pieces) {
+    const g = pictures[clips[p.clip].file]?.ground;
+    if (!g || !fs.existsSync(source(dir, g))) continue;
+    const last = grounds.at(-1);
+    if (last && last.file === g && Math.abs(last.start + last.duration - p.start) < 1e-3) last.duration = p.start + p.duration - last.start;
+    else grounds.push({ file: g, start: p.start, duration: p.duration });
+  }
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook, grounds });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
   // are timed in it. The preview does not need it, so a failure is said and the build goes on
   let voice = null;
@@ -425,6 +451,259 @@ function cmdBroll(dir, file, opts) {
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
   cmdBuild(dir, {});
+}
+
+// ------------------------------------------------------------------------------------ faces
+// Every face of every video over time, in the video's own pixels (source/NN.faces.json), by
+// agentitos' clips: its frame.mjs --faces (a model's stills with the eyes, nose and mouth, its
+// tracker between them), or, with --eye, the agent's own boxes read off grid pictures (--grid),
+// followed by the same tracker, no model. place reads them.
+const kOf = (c) => String(c.n).padStart(2, "0");
+function eyeBoxes(list, clips) {
+  const by = {};
+  const names = Object.values(clips).map((c) => c.file);
+  for (const v of list || []) {
+    const m = String(v).match(/^(?:([\w.-]+\.mp4)@)?(\d+(?:\.\d+)?):(-?[\d.]+,-?[\d.]+,[\d.]+,[\d.]+)$/);
+    if (!m) fail(`--eye is [<video>@]<second>:x,y,w,h, the face's box at that second in px of the video, read off its grid picture, as 01.mp4@2.5:300,570,600,900, not "${v}".`);
+    const file = m[1] || (names.length === 1 ? names[0] : null);
+    if (!file) fail(`--eye ${v}: name the video, as ${names[0]}@${m[2]}:${m[3]} (there are ${names.length}: ${names.join(", ")}).`);
+    if (!names.includes(file)) fail(`--eye ${v}: there is no ${file}; the videos are ${names.join(", ")}.`);
+    (by[file] ||= []).push(`${m[2]}:${m[3]}`);
+  }
+  return by;
+}
+
+function cmdFaces(dir, opts) {
+  if (!fs.existsSync(source(dir, "words.json"))) fail(`Run first: takes.mjs new ${rel(dir)} <video>`);
+  const { clips, words } = read(source(dir, "words.json"));
+  const list = Object.values(clips).sort((a, b) => a.n - b.n);
+  // the grid pictures, for the agent's own eyes: five moments spread over what the cut keeps of
+  // each video (over all of it before there is a cut), and the seconds asked for
+  if (opts.grid || opts["grid-at"]) {
+    const tool = layoutTool();
+    if (!tool) fail("The grid pictures need agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
+    const edit = fs.existsSync(path.join(dir, "edit.json")) ? read(path.join(dir, "edit.json")) : null;
+    const cut = fs.existsSync(path.join(dir, "cut.json")) ? read(path.join(dir, "cut.json")) : null;
+    const pieces = pieceSpan(edit, { cut, words });
+    const asked = (opts["grid-at"] || []).flatMap((v) => String(v).split(",")).filter(Boolean).map((v) => {
+      const m = v.match(/^(?:([\w.-]+\.mp4)@)?(\d+(?:\.\d+)?)$/);
+      if (!m) fail(`--grid-at is [<video>@]<second>, as 01.mp4@12.5, not "${v}".`);
+      return { file: m[1] || list[0].file, t: Number(m[2]) };
+    });
+    const made = [];
+    for (const c of list) {
+      const kept = pieces.filter((p) => p.clip === c.n), spans = kept.length ? kept.map((p) => [p.in, p.out]) : [[0, c.duration]];
+      const total = spans.reduce((t, [a, b]) => t + b - a, 0);
+      const at = (x) => { let r = x * total; for (const [a, b] of spans) { if (r <= b - a) return a + r; r -= b - a; } return spans.at(-1)[1]; };
+      const ts = [...(opts.grid ? [0.05, 0.27, 0.5, 0.73, 0.95].map(at) : []), ...asked.filter((a) => a.file === c.file).map((a) => a.t)];
+      for (const t of ts) {
+        const out = source(dir, `${kOf(c)}.grid-${t.toFixed(1)}.jpg`);
+        const r = spawnSync(process.execPath, [tool, "grid", source(dir, c.file), out, "--at", t.toFixed(2)], { encoding: "utf8" });
+        if (r.status) fail(`✗ layout grid: ${(r.stderr || r.stdout).trim()}`);
+        made.push(`${rel(out)} (${c.file} at ${t.toFixed(1)} s)`);
+      }
+    }
+    console.log(`Grid pictures, a line every 10 % labelled in px of the video:\n  ${made.join("\n  ")}`);
+    console.log(`Open each, read the face's box off it (hairline to chin, cheek to cheek, in px of the video; layout's SKILL.md step 2 says how), then\n  node ${self()} faces ${rel(dir)} --eye ${list.length > 1 ? `${list[0].file}@` : ""}<second>:x,y,w,h --eye …   (every picture's box; a second where the head is clearly higher or lower: --grid-at <second> first)`);
+    return;
+  }
+  const tool = framingTool();
+  if (!tool) fail("Finding the faces needs agentitos' clips skill beside this one (or FRAME_TOOL naming its tools/frame.mjs).");
+  const eye = eyeBoxes(opts.eye, clips);
+  let cost = 0;
+  const started = Date.now();
+  for (const c of list) {
+    const out = source(dir, `${kOf(c)}.faces.json`);
+    const boxes = eye[c.file];
+    if (!boxes && fs.existsSync(out) && !opts.again) { console.log(`${c.file}: faces kept from before (${rel(out)}; --again finds them anew)`); continue; }
+    // the video's words with who speaks, for the model (one voice where the words name none)
+    const wf = source(dir, `${kOf(c)}.framing-words.json`);
+    fs.writeFileSync(wf, JSON.stringify(words.filter((w) => w.clip === c.n && w.kind === "word").map((w) => ({ text: w.text, start: w.start, end: w.end, speaker: w.speaker ?? "A" }))));
+    const r = spawnSync(process.execPath, [tool, source(dir, c.file), wf, "--aspect", "9:16", "--faces", out, ...(boxes || []).flatMap((b) => ["--face-at", b])], { encoding: "utf8" });
+    if (r.status || !fs.existsSync(out)) fail(`✗ ${c.file}: ${(r.stdout || r.stderr).trim().split("\n").pop()}`);
+    console.log(`${c.file}: ${r.stdout.trim().split("\n").map((l) => l.replace(/^[^:]*faces\.json: /, "")).join("\n  ")}`);
+    cost += read(out).cost || 0;
+  }
+  console.log(`${cost ? `$${cost.toFixed(4)} in all, ` : ""}${((Date.now() - started) / 1000).toFixed(0)} s.`);
+  console.log(`Next: node ${self()} place ${rel(dir)}   (where the picture and the text go; it builds again)`);
+}
+
+// ------------------------------------------------------------------------------------ place
+// The cut's frame laid out against the faces, as clips' place lays out a framed clip, by
+// agentitos' layout: each video placed (place), the captions and the hook over the whole cut and
+// how far each video's picture is raised (text); writes place.json and source/faces.json (the faces
+// in the frame as placed), which the build, the punch-ins and the check read, and placed.sheet.jpg.
+const pick = (list, clips, what) => {
+  const names = Object.values(clips).map((c) => c.file), out = {};
+  for (const v of list || []) {
+    const m = String(v).match(/^(?:([\w.-]+\.mp4):)?(.*)$/);
+    const file = m[1] || (names.length === 1 ? names[0] : null);
+    if (!file || !names.includes(file)) fail(`--${what} ${v}: name the video, as ${names[0]}:${m[2] || "…"} (the videos: ${names.join(", ")}).`);
+    out[file] = m[2];
+  }
+  return out;
+};
+// the cut and what the text's place depends on, to tell a place.json of an older cut
+const placedFor = (cut, s) => JSON.stringify([cut.keep, cut.captions?.style || null, s.hook || null, s.aspect, s.platform || null]);
+
+function cmdPlace(dir, opts) {
+  if (!fs.existsSync(source(dir, "words.json"))) fail(`Run first: takes.mjs new ${rel(dir)} <video>`);
+  const cutFile = path.join(dir, "cut.json");
+  if (!fs.existsSync(cutFile)) fail(`Write ${rel(cutFile)} first, as ${rel(source(dir, "brief.md"))} says.`);
+  const tool = layoutTool();
+  if (!tool) fail("Placing the picture and the text needs agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
+  const s = settings(dir, {});
+  const { clips, words } = read(source(dir, "words.json"));
+  const cut = read(cutFile);
+  const placeFile = path.join(dir, "place.json");
+  const prev = fs.existsSync(placeFile) ? read(placeFile) : {};
+  if (prev.by && prev.by !== "takes place") fail(`${rel(placeFile)} is ${prev.by}'s: that skill places this cut's text (clips: clips.mjs place), never this command.`);
+  // what the agent fixed, kept for the next run: given now, or given before; "" gives one back
+  const fixed = { ...(prev.fixed || {}) };
+  const BAD = { raise: "--raise is head (never a head cut by the frame: smaller type first, the captions on the chin or the lower lip), mouth (the default: past the head's top only where the captions would lie on a mouth) or full (until the chin is clear, the head cut by the frame's top); \"\" gives back the default.",
+    y: "--caption-y is the y in px at which the captions' lowest line ends, as 1440; \"\" gives it back to layout.", font: "--font-size is the captions' type in px, as 77; \"\" gives it back to layout.",
+    lines: "--lines is 1 (one line of about three words, as most published Shorts) or 2 (a style of whole phrases, or a long word that breaks at its soft hyphen); \"\" gives it back to the style.", hook: "--hook-kind is text (a short text below the chin or above the head) or card (a card at the top); \"\" lets layout choose." };
+  const one = (k, v, ok) => { if (v === undefined) return; if (v === "") { delete fixed[k]; return; } if (!ok(v)) fail(BAD[k]); fixed[k] = isNaN(Number(v)) ? v : Number(v); };
+  one("raise", opts.raise, (v) => ["head", "mouth", "full"].includes(v));
+  one("y", opts["caption-y"], (v) => Number(v) > 0);
+  one("font", opts["font-size"], (v) => Number(v) > 0);
+  one("lines", opts.lines, (v) => ["1", "2"].includes(String(v)));
+  one("hook", opts["hook-kind"], (v) => ["text", "card"].includes(v));
+  for (const [file, v] of Object.entries(pick(opts.picture, clips, "picture"))) {
+    if (v === "") { delete fixed.picture?.[file]; continue; }
+    if (!(v === "cover" || /^\d+$/.test(v))) fail(`--picture is [<video>:]<candidate>, a number of the list place printed for that video, or [<video>:]cover (the picture covering the frame, centred); "" gives it back to layout.`);
+    fixed.picture = { ...(fixed.picture || {}), [file]: v === "cover" ? "cover" : Number(v) };
+  }
+  for (const [file, v] of Object.entries(pick(opts.lift, clips, "lift"))) {
+    if (v === "") { delete fixed.lifts?.[file]; continue; }
+    if (!/^\d+$/.test(v)) fail(`--lift is [<video>:]<px>, how far that video's picture is raised (0: not at all), as 01.mp4:120; "" gives it back to layout.`);
+    fixed.lifts = { ...(fixed.lifts || {}), [file]: Number(v) };
+  }
+
+  const edit = fs.existsSync(path.join(dir, "edit.json")) ? read(path.join(dir, "edit.json")) : null;
+  const built = !!edit && edit.out && fs.existsSync(path.join(path.resolve(edit.out), "index.html"));
+  const pieces = pieceSpan(edit, { cut, words });
+  if (!pieces.length) fail(`${rel(cutFile)} keeps no words: write its keeps first.`);
+  const [W, H] = size(s, clips[pieces[0].clip]);
+  const shown = Object.values(clips).filter((c) => pieces.some((p) => p.clip === c.n)).sort((a, b) => a.n - b.n);
+  const faces = {};
+  for (const c of shown) { const f = source(dir, `${kOf(c)}.faces.json`); if (fs.existsSync(f)) faces[c.file] = read(f); }
+  if (!Object.keys(faces).length) fail(`No faces known yet: node ${self()} faces ${rel(dir)} first (or --grid and --eye, where no model may see the videos).`);
+  const folder = path.join(dir, "placement");
+  fs.mkdirSync(folder, { recursive: true });
+  const lines = fixed.lines || (() => { const t = captionsTool(); if (!t || !cut.captions?.style) return 1; const r = spawnSync(process.execPath, [t, "styles", "--json"], { encoding: "utf8" }); try { const x = JSON.parse(r.stdout).find((y) => y.name === cut.captions.style); return x && x.words > 4 ? 2 : 1; } catch { return 1; } })();
+  const needs = ["--text", lines > 1 ? "caption:2" : "caption", ...(s.hook ? ["--text", fixed.hook ? `hook:${fixed.hook}` : "hook"] : [])];
+  const platform = s.platform ? ["--platform", platformList(s.platform).join(",")] : [];
+
+  // each video in the frame: covering it where it has the frame's shape (within 15 %, as clips
+  // frames only wider footage), else layout's first candidate that passes; the agent's number wins
+  const pictures = {}, said = [];
+  for (const c of shown) {
+    const cover = { ...covering([c.width, c.height], [W, H]), fit: "cover" };
+    const track = faceTrack(faces[c.file], pieces, c.n);
+    const want = fixed.picture?.[c.file];
+    const sameShape = Math.abs(c.width / c.height - W / H) / (W / H) <= 0.15;
+    if (!track.length) { pictures[c.file] = cover; said.push(`${c.file}: no face in what the cut keeps of it: the picture covers the frame, centred`); continue; }
+    const pf = path.join(folder, `${kOf(c)}.track.json`);
+    fs.writeFileSync(pf, JSON.stringify(track));
+    const r = spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+    if (r.status) fail(`✗ layout place for ${c.file}: ${(r.stderr || r.stdout).trim()}`);
+    const res = JSON.parse(r.stdout), list = res.candidates.map((x, i) => ({ ...x, n: i + 1 })).filter((x) => !x.parts && Number.isFinite(x.scale));
+    const passes = (x) => !x.hard && !x.unmet.length;
+    const name = (x) => `${x.fit}${x.crop ? ` ${x.crop}` : ""}${x.closer ? " closer" : ""}${x.onGround ? ", text on the ground" : ""}`;
+    let chosen;
+    if (want === "cover") chosen = cover;
+    else if (Number.isInteger(want)) {
+      const x = list.find((y) => y.n === want);
+      if (!x) fail(`--picture ${c.file}:${want}: layout gives ${c.file} ${list.length} candidate(s) of one picture (${list.map((y) => y.n).join(", ")}); name one of them, or cover.`);
+      chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n };
+    } else if (sameShape) chosen = cover;
+    else { const x = list.find(passes) || list[0]; chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n }; }
+    pictures[c.file] = chosen;
+    const mark = (x) => (x.hard ? "✗" : x.unmet.length ? "–" : x.soft ? "!" : "✓");
+    said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}` : `${chosen.fit} at ${chosen.scale}×, left ${chosen.left}, top ${chosen.top}${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates: ${list.slice(0, 5).map((x) => `${x.n}. ${mark(x)} ${name(x)} ${x.scale}×${x.problems.filter((q) => q.level === "hard").length ? ` (${x.problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ").slice(0, 90)})` : ""}`).join("; ")}`);
+  }
+
+  // the captions and the hook over the whole cut, each video one shot of layout's text
+  const { off } = clockOf(clips);
+  const until = s.hook ? (built ? hookUntil(edit.words, edit.duration) : 3) : null;
+  const hook = s.hook ? hookSpan(pieces, until, off) : null;
+  const { input, files } = shotsInput({ clips, pieces, faces, pictures, frame: [W, H], off, hook });
+  const shotsFile = path.join(folder, "shots.json");
+  fs.writeFileSync(shotsFile, JSON.stringify(input));
+  const lifts = Object.entries(fixed.lifts || {}).filter(([f]) => files.includes(f)).flatMap(([f, px]) => ["--lift", `${files.indexOf(f) + 1}:${px}`]);
+  // the captions' style as built: its lines, and the ink the area must hold
+  const look = (() => { try { return JSON.parse(fs.readFileSync(path.join(path.resolve(edit.out), "captions", "index.html"), "utf8").match(/var DATA = (\{[\s\S]*?\});\n/)[1]).look; } catch { return null; } })();
+  const ink = cut.captions ? inkOf(look) : null;
+  const r = spawnSync(process.execPath, [tool, "text", folder, "--frame", `${W}x${H}`, "--shots", shotsFile, ...needs, ...platform, "--raise", fixed.raise || "mouth",
+    ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : []),
+    ...(fixed.y ? ["--caption-y", String(fixed.y)] : []), ...(fixed.font ? ["--font-size", String(fixed.font)] : []), ...lifts], { encoding: "utf8" });
+  if (r.status) fail(`✗ layout text: ${(r.stderr || r.stdout).trim()}`);
+  const text = read(path.join(folder, "text.json"));
+  text.shots.forEach((x, i) => { pictures[files[i]].lift = x.lift || 0; });
+  // the ground: one still of the video, where the picture leaves part of the frame bare
+  for (const c of shown) {
+    const pic = pictures[c.file];
+    const bare = pic.left > 0.5 || pic.top - (pic.lift || 0) > 0.5 || pic.left + c.width * pic.scale < W - 0.5 || pic.top - (pic.lift || 0) + c.height * pic.scale < H - 0.5;
+    if (!bare) continue;
+    const kept = pieces.filter((p) => p.clip === c.n), mid = kept[Math.floor(kept.length / 2)];
+    const g = source(dir, `${kOf(c)}.ground.jpg`);
+    if (groundStill(source(dir, c.file), (mid.in + mid.out) / 2, g, [W, H])) pic.ground = path.basename(g);
+  }
+
+  // for the build, the punch-ins and the check: the captions' options, the hook's place, each
+  // video's picture, and the faces in the frame as placed
+  const capOpts = text.caption ? { ...text.caption.options } : null;
+  if (capOpts && ink) {
+    capOpts.y = Math.round(capOpts.y - ink.below * capOpts["font-size"]);
+    capOpts["max-width"] = Math.floor(capOpts["max-width"] - 2 * Math.ceil(ink.side * capOpts["font-size"] + 1));
+  }
+  const hookOut = text.hook ? { kind: text.hook.kind, box: text.hook.box, font: text.hook.font, lines: text.hook.lines, ...(text.hook.why && built ? { until: +toCut(text.hook.until, pieces, off).toFixed(3) } : {}) } : null;
+  const picOut = Object.fromEntries(Object.entries(pictures).map(([f, p]) => [f, { scale: p.scale, left: p.left, top: p.top, lift: p.lift || 0, fit: p.fit, ...(p.n ? { candidate: p.n } : {}), ...(p.ground ? { ground: p.ground } : {}) }]));
+  if (!Object.keys(fixed.picture || {}).length) delete fixed.picture;
+  if (!Object.keys(fixed.lifts || {}).length) delete fixed.lifts;
+  fs.writeFileSync(placeFile, JSON.stringify({ by: "takes place", raise: fixed.raise || "mouth", ...(capOpts ? { caption: capOpts } : {}), ...(hookOut ? { hook: hookOut } : {}), picture: picOut, fixed, for: placedFor(cut, s) }, null, 1) + "\n");
+  const inside = {};
+  for (const c of shown) {
+    const list = faces[c.file], pic = pictures[c.file];
+    if (!list) continue;
+    inside[c.file] = { size: [W, H], step: list.step, by: list.by, faces: list.faces.map((f) => ({ t: f.t, boxes: f.boxes.map((b) => ({ who: b.who, box: inFrame(b.box, pic).map(Math.round), ...(b.feat ? { feat: inFrame(b.feat, pic).map(Math.round) } : {}) })) })) };
+  }
+  fs.writeFileSync(source(dir, "faces.json"), JSON.stringify(inside) + "\n");
+
+  // the list: the picture, the captions, each video raised, what lies on a face
+  console.log(`The picture:\n  ${said.join("\n  ")}`);
+  const c = text.caption;
+  if (c) console.log(`The captions: one place for the cut, ${c.lines > 1 ? "up to two lines" : "one line"} of ${c.font} px, the lowest line at y ${capOpts.y} (their middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the cut: where published Shorts set them" : c.where === "above-head" ? "above the head" : "below the chin"})${!cut.captions ? "; no captions in the cut yet: placed for the tallest style, place again after the captions command" : ""}.`);
+  const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : ""].filter(Boolean).join(", ");
+  text.shots.forEach((x, i) => {
+    const on = x.touches.filter((t) => t.seconds > 0.05);
+    const where = !on.length ? "on no face" : x.fault === "nose" ? `✗ on the nose or eyes: ${on.map(parts).join("; ")}` : x.fault === "mouth" ? `✗ on the mouth: ${on.map(parts).join("; ")}` : x.hair ? "above the head, on the hair" : x.lip ? `on the lower lip and chin (${on.map(parts).join("; ")}), not on the mouth: not avoidable at a readable size` : `on the chin ${on.reduce((n, t) => n + t.seconds, 0).toFixed(1)} s, below the mouth`;
+    console.log(`  ${files[i]}: ${x.lift ? `raised ${x.lift} px${x.ground ? `, a blurred band of ${x.ground} px at the bottom` : ""}${x.fixed ? " as you fixed it" : x.past ? ", past the head's top so that the captions keep off the mouth" : ""}` : "not raised"}${x.headCut?.seconds ? `; the head cut at the top ${x.headCut.px} px for ${x.headCut.seconds} s` : ""}; captions ${where}`);
+  });
+  if (text.hook) console.log(`The hook: ${text.hook.kind === "card" ? "a card" : "a short text"} ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle of the frame (no face)" })[text.hook.where] || `(${text.hook.where})`}, ${text.hook.font} px${text.hook.why ? `; ${text.hook.why}` : ""}${text.hook.onFace?.seconds ? `; ✗ on a face for ${text.hook.onFace.seconds} s` : ""}.`);
+  for (const x of text.conflicts) console.log(`✗ ${x}`);
+  for (const n of text.notes.filter((n) => !/chin or neck|on the hair/.test(n))) console.log(`note: ${n}`);
+
+  // the sheet: per video the frame as placed at its first and last kept second and where its face is lowest and highest
+  const rows = shown.map((cl) => {
+    const kept = pieces.filter((p) => p.clip === cl.n), list = inside[cl.file]?.faces || [];
+    const inKept = list.filter((f) => kept.some((p) => f.t >= p.in && f.t <= p.out));
+    const bottom = (f) => Math.max(...f.boxes.map((b) => b.box[1] + b.box[3])), topOf = (f) => Math.min(...f.boxes.map((b) => b.box[1]));
+    const lowest = inKept.length ? inKept.reduce((a, b) => (bottom(b) > bottom(a) ? b : a)) : null, highest = inKept.length ? inKept.reduce((a, b) => (topOf(b) < topOf(a) ? b : a)) : null;
+    const first = kept[0].in + 0.05, last = kept.at(-1).out - 0.05;
+    const hookAt = (t) => !!hook && (hook.spans || [[hook.start, hook.end]]).some(([a, b]) => off[cl.n] + t >= a && off[cl.n] + t <= b);
+    const near = (t) => list.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), list[0] || { boxes: [] });
+    const moments = [{ t: first, what: "first" }, ...(lowest ? [{ t: lowest.t, what: "lowest face" }] : []), ...(highest ? [{ t: highest.t, what: "highest face" }] : []), { t: last, what: "last" }]
+      .map((m) => ({ ...m, faces: (near(m.t)?.boxes || []).map((b) => b.box), hook: hookAt(m.t) }));
+    const pic = pictures[cl.file];
+    return { video: source(dir, cl.file), label: `${cl.file}${pic.lift ? ` raised ${pic.lift}` : ""}`, pic: { ...pic, w: cl.width, h: cl.height }, ground: pic.ground ? source(dir, pic.ground) : null, moments };
+  });
+  const sheet = placedSheet(rows, { caption: c?.box, hook: text.hook?.box }, path.join(dir, "placed.sheet.jpg"), [W, H]);
+  if (sheet) console.log(`Look at ${rel(sheet)}: a row per video, the frame as placed at the first and last second the cut keeps of it and where its face is lowest and highest, the captions' box yellow, the hook's cyan, the faces red.`);
+  console.log(`To change it: --picture [<video>:]<candidate>|cover (another of layout's candidates for that video), --raise head|mouth|full, --caption-y <px> and --font-size <px> for the captions, --lift [<video>:]<px>, --lines 1|2, --hook-kind text|card; each is kept for the next run, "" gives it back to layout.`);
+  if (built) cmdBuild(dir, {});
+  else console.log(`Next: node ${self()} build ${rel(dir)}, then place again (the hook's seconds are the cut's, the area the captions' style).`);
 }
 
 // ----------------------------------------------------------------------------------- check
@@ -596,4 +875,6 @@ else if (command === "check") cmdCheck(pos[0]);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "captions") cmdCaptions(pos[0], opts);
 else if (command === "broll") cmdBroll(pos[0], pos[1], opts);
-else fail("Usage: takes.mjs new <dir> <video> [<video> …] | propose <dir> | build <dir> | check <dir> | finish <dir> <video.mp4> | captions <dir> --style … | broll <dir> <broll.json>   (options: see the head of this file)");
+else if (command === "faces") cmdFaces(pos[0], opts);
+else if (command === "place") cmdPlace(pos[0], opts);
+else fail("Usage: takes.mjs new <dir> <video> [<video> …] | propose <dir> | build <dir> | check <dir> | finish <dir> <video.mp4> | captions <dir> --style … | broll <dir> <broll.json> | faces <dir> [--grid | --eye …] | place <dir> [--picture …]   (options: see the head of this file)");
