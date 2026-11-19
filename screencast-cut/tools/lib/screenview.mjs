@@ -306,10 +306,18 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
   // review, beside circle-still); a keep that is then not offered keeps main's picture, said
   const stacked = (j) => j.got.pic.fit === STACK;
   const room = Math.max(-Infinity, ...jobs.filter((j) => stacked(j) && Number.isFinite(j.args.labelBottom)).map((j) => j.args.labelBottom));
+  // only where it does not cost the keep its stack: refused with the room (not offered, a screen
+  // smaller than main's, a fault main lacks), the keep is the stack it gets on its own, its screen
+  // standing higher than the labelled ones, said (decided 2026-11-19 on pull request 113)
   if (Number.isFinite(room)) for (const j of jobs) {
     if (!stacked(j) || (Number.isFinite(j.args.labelBottom) && j.args.labelBottom >= room - 0.5)) continue;
-    j.args = { ...j.args, labelBottom: room, labelRoom: true };
-    j.got = placeOne(j.args);
+    const own = j.args, withRoom = placeOne({ ...own, labelBottom: room, labelRoom: true });
+    if (withRoom.pic.fit === STACK) { j.args = { ...own, labelBottom: room, labelRoom: true }; j.got = withRoom; continue; }
+    // (asked again on its own, so that its folder holds what is drawn)
+    const got = placeOne(own), why = withRoom.facts.notStacked || "the stack is not drawn there";
+    got.lines = [`${got.lines[0]}; its screen stands higher than the cut's labelled stacks: under their label's room (from y ${Math.round(room)}) ${why}`, ...got.lines.slice(1)];
+    got.facts = { ...got.facts, stack: { ...got.facts.stack, labelRoomRefused: Math.round(room) } };
+    j.got = got;
   }
   for (const j of jobs) {
     const { got, p, c } = j;

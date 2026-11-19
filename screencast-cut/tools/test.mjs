@@ -2013,3 +2013,31 @@ test("the stacked keeps of one cut stand still: where one has a label, every sta
     } finally { n.done(); }
   }
 });
+
+test("the label's room only where it does not cost the stack: an unlabelled stacked keep refused under the room is the stack it gets on its own, its screen higher, said; refused on its own too, it keeps the circle", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stack-room-"));
+  try {
+    // a layout skill that refuses the stack of the zoom [0.24, 0, 1, 0.76] (region 460,0,1460,821) under a label's room, or always
+    const fake = (name, always) => { const f = path.join(dir, `${name}.mjs`); fs.writeFileSync(f, `import { spawnSync } from "node:child_process";\nconst a = process.argv, region = a[a.indexOf("--region") + 1];\nif (a.includes("--screen-panel") && region.startsWith("460,") && (${always} || a.includes("--label-bottom"))) console.log(JSON.stringify({ screenPanel: { offered: false, code: "small", why: "the panel is too small here (stand-in)" }, candidates: [] }));\nelse { const r = spawnSync(process.execPath, [${JSON.stringify(LAYOUT)}, ...a.slice(2)], { stdio: "inherit" }); process.exit(r.status ?? 1); }\n`); return f; };
+    const keeps = [{ zoom: "off", label: LABEL_TEXT }, { zoom: [0.24, 0, 1, 0.76] }];
+    // with the room: both stand alike (the real layout skill)
+    const a = stackRun({ width: 1080, height: 1920, keeps });
+    try { assert.equal(a.ps[2].screenPic.fit, STACK); assert.ok(Number.isFinite(a.ps[2].screen.stack.labelRoom)); assert.equal(a.ps[1].screenPic.window[1], a.ps[2].screenPic.window[1]); } finally { a.done(); }
+    // refused under the room: its own stack, higher, said
+    const b = stackRun({ width: 1080, height: 1920, keeps, tool: fake("room", false) });
+    try {
+      assert.equal(b.ps[2].screenPic?.fit, STACK, b.said);
+      assert.ok(b.ps[2].screenPic.window[1] < b.ps[1].screenPic.window[1] - 50, "its screen stands higher");
+      assert.match(b.said, /keep 3 [^\n]*; its screen stands higher than the cut's labelled stacks: under their label's room \(from y \d+\) the panel is too small here \(stand-in\)/);
+      assert.equal(b.ps[2].screen.stack.labelRoom, undefined);
+      assert.equal(b.ps[1].screenPic.fit, STACK);
+    } finally { b.done(); }
+    // refused on its own too: the circle
+    const c = stackRun({ width: 1080, height: 1920, keeps, tool: fake("always", true) });
+    try {
+      assert.notEqual(c.ps[2].screenPic?.fit, STACK);
+      assert.ok(camLayers(c.placed[2])[0].pip);
+      assert.match(c.said, /keep 3 [^\n]*; not the stack \([^)]*\): the panel is too small here \(stand-in\)/);
+    } finally { c.done(); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
