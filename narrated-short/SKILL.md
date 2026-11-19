@@ -52,7 +52,7 @@ Show it for a yes before a word is spoken:
 
 ```bash
 node <launch> zones short/<name> tiktok --frame 9:16                       # the platforms it goes to, once
-node <launch> voice short/<name> short/<name>/script.json artifacts/<name>/composition
+node <launch> voice short/<name> short/<name>/script.json artifacts/<name>/composition --plain
 node <skill>/tools/short.mjs clock short/<name>
 ```
 
@@ -72,7 +72,7 @@ node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --p
 ### 5. The music
 
 ```bash
-node <launch> music short/<name> artifacts/<name>/composition --prompt "<instrumental; the story's mood, tempo, instruments, in neutral words>" --seconds <the film's length>
+node <launch> music short/<name> artifacts/<name>/composition --prompt "<instrumental; the story's mood, tempo, instruments, in neutral words>" --seconds <the film's length> --plain
 node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --platform tiktok
 ```
 
