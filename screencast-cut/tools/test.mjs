@@ -223,7 +223,7 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 // the model's three boxes by clips' tracker, the element's geometry, and the old cover where no
 // face is known. The layout skill and clips run as programs, beside this one.
 import { readFaces } from "./lib/face.mjs";
-import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, followKey, mouthSplit, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
+import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, followKey, mouthSplit, faceView, FACE_MIN, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
 
@@ -460,4 +460,62 @@ test("a face keep whose picture across the width has the captions on the mouth f
   // over half: the smaller picture stands, and the split for the picture across the width is said
   const over = mouthSplit({ seconds: 5.2, of: 8.8, from: 25, to: 30 }, ps, words, 0.5, { wide: { fit: "cover", scale: 1.5 }, chosen: smaller });
   assert.match(over.said, /^cover at 1\.5× across the width has the captions on the mouth for 5\.2 s .*more than half, so inset stands for all of it; to keep a picture across the width for the rest, split the keep at word 75 \("w75"\) \("words": "64-74", "75-85"\)/);
+});
+
+// The review's smaller findings, on its own inputs: its drifting webcam (the head at the top edge,
+// its tracked boxes kept as the tracker wrote them) with its cut's keeps, in a made-up project
+// folder whose webcam file is a stand-in (the kept track matches it, so the tracker is not run).
+const project = (moments) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-view-"));
+  fs.mkdirSync(path.join(dir, "source"));
+  const file = path.join(dir, "source", "webcam.mp4");
+  fs.writeFileSync(file, "a stand-in");
+  const cam = { file: "webcam.mp4", video: true, width: 1280, height: 720, offset: 0, duration: 75, face: [0.241, 0.014, 0.474, 0.495], faceAt: [{ t: 15.01, box: [0.184, 0.025, 0.412, 0.509] }, { t: 37.53, box: [0.241, 0.014, 0.474, 0.495] }, { t: 60.05, box: [0.391, 0.014, 0.623, 0.489] }] };
+  if (CLIPS) { const from = faceMoments(cam); fs.writeFileSync(path.join(dir, "source", "webcam.followed.json"), JSON.stringify({ key: followKey({ tool: CLIPS, file, from }), from, moments })); }
+  return { dir, sources: { webcam: cam, screen: { video: true, width: 1920, height: 1080, offset: 0 } } };
+};
+// the tracker's boxes over the review's keep 5 (57.7–62.5 s of the webcam): the head sweeps from
+// the right to the left at the top edge
+const KEEP5 = [[57.7, 761, 8], [57.8, 756, 8], [58, 746, 8], [58.2, 731, 8], [58.4, 712, 8], [58.6, 692, 8], [58.8, 672, 8], [59, 647, 9], [59.2, 628, 9], [59.4, 598, 9], [59.6, 573, 9], [59.8, 544, 9], [60, 514, 9], [60.2, 484, 9], [60.4, 454, 9], [60.6, 424, 4], [60.8, 394, -6], [61, 364, -11], [61.2, 344, -11], [61.4, 324, -1], [61.6, 309, -1], [61.8, 289, -1], [62, 269, -1], [62.2, 259, -1], [62.4, 249, -1]].map(([t, x, y]) => ({ t, box: [x, y, 297, 342] }));
+const piece = (keep, view, a, b) => ({ keep, view, source: view === "face" ? "webcam" : "screen", in: a, out: b, start: a, duration: b - a, words: [] });
+
+test("a \"layout\" on a keep without the face view is said to hold only for a face keep; a name this frame does not have falls back to the first with a ! that lists the names; a named picture that fails says on what, and which pass", { skip: (!LAYOUT || !CLIPS) && "no layout or clips skill beside this one" }, () => {
+  const { dir, sources } = project([...TOP_EDGE, ...KEEP5]);
+  try {
+    // the review's cut-bad: "crop 1:1" on the screen keep 4, and the review's cutA: "crop 1:1" on the face keep 5
+    const cut = { keep: [{ view: "face" }, {}, {}, { layout: "crop 1:1" }, { view: "face", layout: "crop 1:1" }] };
+    const pieces = [piece(0, "face", 43.8, 44.2), piece(3, "screen", 50, 52), piece(4, "face", 57.69, 62.49)];
+    const tall = faceView(dir, cut, pieces, sources, { width: 1080, height: 1920 }).join("\n");
+    assert.match(tall, /! keep 4: "layout" holds only for a face keep \("view": "face" with a webcam\); this keep shows screen, so "crop 1:1" is left out\./);
+    const named = pieces[2].picture;
+    assert.ok(named.named && named.fit === "crop 1:1" && named.mark === "✗", JSON.stringify(named));
+    assert.match(tall, /keep 5 \([^)]*\): ✗ crop 1:1 at 1\.5×.*\(as the keep names it\).*: it does not pass \(face 11 % outside the frame; face under .*\); these pass: "crop band", "inset"/);
+    assert.doesNotMatch(tall, /nothing passes/);
+    // 16:9 has no square crop: the keep takes the first, and says so with the names
+    const wide = faceView(dir, cut, pieces, sources, { width: 1920, height: 1080 }).join("\n");
+    assert.match(wide, /! keep 5: "layout": "crop 1:1" is not among the face view's pictures in this frame \(1920×1080\), so it takes the first; its names here: "cover"/);
+    assert.ok(!pieces[2].picture.named && pieces[2].picture.fit === pieces[0].picture.fit, JSON.stringify(pieces[2].picture));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the tracker and place run under a limit, after which the keeps are covered as before and said", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-slow-"));
+  try {
+    const slow = path.join(dir, "slow.mjs"), file = path.join(dir, "webcam.mp4");
+    fs.writeFileSync(slow, "setTimeout(() => {}, 60000);\n");
+    fs.writeFileSync(file, "a stand-in");
+    const cam = { width: 1280, height: 720, duration: 75, face: [0.4, 0.2, 0.6, 0.7], faceAt: [{ t: 9, box: [0.4, 0.2, 0.6, 0.7] }] };
+    const f = followFace({ tool: slow, file, cam, out: path.join(dir, "followed.json"), timeout: 1 });
+    assert.ok(f.timeout && /clips' tracker ran over 1 s and was stopped/.test(f.why), JSON.stringify(f));
+    const p = placeFace({ tool: slow, folder: path.join(dir, "face-1"), moments: TOP_EDGE, cam: SIDE_CAM, width: 1080, height: 1920, timeout: 1 });
+    assert.match(p.why, /layout's place ran over 1 s for this keep and was stopped/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a face too small to be the webcam's speaker (the review's slide video: a person on a stage, 8 % of the webcam's height) is not followed; the keeps are covered as before and said", () => {
+  const stage = { width: 1280, height: 720, face: [0.095, 0.52, 0.131, 0.596], faceAt: [{ t: 15, box: [0.053, 0.5, 0.091, 0.586] }, { t: 37.5, box: [0.095, 0.52, 0.131, 0.596] }, { t: 60.01, box: [0.112, 0.518, 0.147, 0.59] }] };
+  assert.match(speakerMoments(stage).why, /the face the model found is 8 % of the webcam's height, under the 12 % of a speaker at the camera/);
+  assert.equal(FACE_MIN, 0.12);
+  // the review's loose webcam, the smallest real speaker measured (37 %), is followed
+  assert.ok(speakerMoments({ width: 1280, height: 720, face: [0.427, 0.128, 0.587, 0.5], faceAt: [{ t: 15, box: [0.427, 0.128, 0.587, 0.5] }] }).moments);
 });
