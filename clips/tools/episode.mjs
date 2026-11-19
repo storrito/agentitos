@@ -1,16 +1,25 @@
 #!/usr/bin/env node
 // A long video (a YouTube episode, a talk) as the source of several shorts.
 //
-//   node tools/episode.mjs fetch <url|file> <dir>
+//   node tools/episode.mjs fetch <url|file> <dir> [--no-names]
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
-//        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
+//        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from; then the
+//        names (below), unless --no-names: the words keep the speech model's spellings then
 //   node tools/episode.mjs moments <dir> [--count N] [--max-seconds N]
 //        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (five to
 //        nine cents an hour), in the order of the episode, each a whole passage: <dir>/moments.json and a short list
 //        to read. --max-seconds is how long a short may be (59: it fits every post type; higher is a trade:
 //        long passages whole more often, short ones with more around them); a passage
 //        that is longer is returned whole, with the sentences that can go marked (`drop`)
+//   node tools/episode.mjs names <dir> [--take N,…] [--leave N,…] [--also "Name, Name"]
+//        the names in the words spelled as the video's page spells them (page.json: title,
+//        description, chapters, tags, channel, its own uploaded captions): one model call over the
+//        page and the sentences (a cent or two an hour), a correction applied where the page
+//        writes the name and only the spelling differs, proposed where it is less sure, refused
+//        where it would change what was said; <dir>/names.json lists each with its places, the
+//        words as written stay in <dir>/words.raw.json. --take / --leave apply or take back
+//        corrections by number without a model; --also adds names the person gave. fetch runs it
 //   node tools/episode.mjs cut <dir> <first>-<last> <clip.mp4>
 //   node tools/episode.mjs cut <dir> <from> <to> <clip.mp4>
 //        the stretch as a video file, up to 4K: the sentences first..last (a little air around them),
@@ -36,6 +45,7 @@ import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcri
 import { duration } from "./lib/media.mjs";
 import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing } from "./lib/moments.mjs";
+import { NAMES_MODEL, NAMES_SCHEMA, LOOK_SCHEMA, pageOf, pageSources, ownTokens, entriesOf, applyNames, namesPrompt, namesListing, lookItems, lookPrompt, applyLook } from "./lib/names.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -131,6 +141,28 @@ function captionTrack(info) {
     || auto.find((k) => lang && k === lang) || auto.find((k) => k === "en") || null;
 }
 
+// The video's own uploaded captions in the language spoken (typed or checked by the channel, never
+// YouTube's automatic ones): their names are spelled as the channel spells them
+function ownTrack(info, lang) {
+  const own = Object.keys(info.subtitles || {}).filter((k) => k !== "live_chat");
+  return own.find((k) => lang && k.split("-")[0] === lang) || null;
+}
+function ownCaptions(info, url, lang) {
+  const track = ownTrack(info, lang);
+  if (!track) return null;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-own-"));
+  try {
+    download(["--skip-download", "--write-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "own"), url]);
+    const file = fs.readdirSync(tmp).find((f) => f.endsWith(".json3"));
+    return file ? captionWords(path.join(tmp, file)) : null;
+  } catch (e) {
+    log(`episode: the video's own captions did not come (${String(e.stderr || e.message).trim().split("\n").pop()}); the names go by the page without them …`);
+    return null;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 // ---------------------------------------------------------------- fetch
 // what fetch says when the words are YouTube's captions although OpenRouter is there
 const CAPTIONS_INSTEAD = (why) => `These are YouTube's captions, without voices, because ${/^YouTube/.test(why) ? why : `the transcription failed (${String(why).slice(0, 200)})`}: `
@@ -139,24 +171,32 @@ const CAPTIONS_INSTEAD = (why) => `These are YouTube's captions, without voices,
 // a path that exists, not a link
 const isFile = (source) => !/^https?:\/\//i.test(source) && fs.existsSync(source);
 
-function writeEpisode(dir, facts, heard, note = "") {
-  // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
-  const words = heard.filter((w) => w.kind !== "event");
-  if (!words.length) fail("No words found: is there speech in it?");
+// the words, their sentences and the numbered list moments reads
+function writeWords(dir, words) {
   const sentences = sentencesOf(words);
-  const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };
-  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify(episode, null, 1));
   fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(words));
   fs.writeFileSync(path.join(dir, "sentences.json"), JSON.stringify(sentences));
   fs.writeFileSync(path.join(dir, "sentences.txt"), sentences.map((s, k) =>
     `${k} [${mmss(s.start)}–${mmss(s.end)}]${s.speaker ? " " + s.speaker + ":" : ""} ${s.text}`).join("\n") + "\n");
-  console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
+  return sentences;
+}
+
+function writeEpisode(dir, facts, heard, note = "", cost = null) {
+  // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
+  const words = heard.filter((w) => w.kind !== "event");
+  if (!words.length) fail("No words found: is there speech in it?");
+  const episode = { ...facts, words: words.length, speakers: [...new Set(words.map((w) => w.speaker).filter(Boolean))] };
+  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify(episode, null, 1));
+  // words written anew: the names corrected in the old ones are not this transcription's
+  for (const f of ["words.raw.json", "names.json"]) fs.rmSync(path.join(dir, f), { force: true });
+  const sentences = writeWords(dir, words);
+  console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences${cost != null ? ` ($${cost.toFixed(4)} for the words)` : ""}`
     + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. ${note}episode.mjs moments ${dir} picks the moments; `
     + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
 }
 
 // the person's own file: no captions to fall back on, so the words need the key
-async function fetchFile(file, dir) {
+async function fetchFile(file, dir, names = true) {
   if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
   const or = await openrouter();
   if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
@@ -165,20 +205,31 @@ async function fetchFile(file, dir) {
   const title = path.basename(file).replace(/\.[^.]+$/, "");
   const length = duration(file);
   log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
-  let words;
-  try { ({ words } = await transcribeFile(file, { speakers: true, log })); } catch (e) { fail(e.message); }
-  writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words);
+  let words, cost;
+  try { ({ words, cost } = await transcribeFile(file, { speakers: true, log })); } catch (e) { fail(e.message); }
+  writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words, "", cost);
+  // no page: the names come from the model's knowledge and what the person gives (names --also)
+  fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf({ title }), null, 1));
+  if (names) await namesAfterFetch(dir);
 }
 
-async function fetchEpisode(url, dir) {
-  if (!url || !dir) fail("episode.mjs fetch <url|file> <dir>");
+async function fetchEpisode(url, dir, ...rest) {
+  if (!url || !dir || rest.some((r) => r !== "--no-names")) fail("episode.mjs fetch <url|file> <dir> [--no-names]");
+  const names = !rest.includes("--no-names");
   fs.mkdirSync(dir, { recursive: true });
-  if (isFile(url)) return fetchFile(path.resolve(url), dir);
+  if (isFile(url)) return fetchFile(path.resolve(url), dir, names);
   log("episode: reading the video's facts …");
-  const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
+  // the page's facts: without them (YouTube refused them three times) the sound may still come;
+  // then there is no title, no description and no page for the names
+  let info;
+  try { info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url])); } catch (e) {
+    log(`episode: YouTube gave no facts of the video (${String(e.stderr || e.message).trim().split("\n").pop()}); the sound without them …`);
+    const id = (String(url).match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/) || [])[1] || null;
+    info = { webpage_url: url, id, title: id ? `YouTube ${id}` : url, unread: true };
+  }
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
-  let words, source, note = "";
+  let words, source, cost = null, note = info.unread ? "YouTube gave no facts of the video (title, description, chapters): the names had no page to go by. " : "";
   // the sound and words of an episode fetched into this folder before are not this one's
   for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
   const or = await openrouter();
@@ -204,7 +255,7 @@ async function fetchEpisode(url, dir) {
     if (audio) {
       log("episode: writing down every word and who speaks it, a few minutes …");
       try {
-        ({ words } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
+        ({ words, cost } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
         source = "openrouter";
       } catch (e) {
         if (rejectedIn(e.message)) fail(REJECTED(rejectedIn(e.message)));
@@ -229,10 +280,130 @@ async function fetchEpisode(url, dir) {
     source = "captions";
   }
   // the description as the channel's audience sees it: moments counts the names in it as introduced
+  const sound = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
   writeEpisode(dir, {
     url: info.webpage_url || url, id: info.id, title: info.title, channel: info.channel || info.uploader,
-    duration: info.duration, lang, source, description: String(info.description || "").slice(0, 1500),
-  }, words, note);
+    duration: info.duration ?? (sound ? duration(path.join(dir, sound)) : null), lang, source, description: String(info.description || "").slice(0, 1500),
+  }, words, note, cost);
+  // the page as a whole, for the names: the description in full, the chapters, the tags, and what
+  // the video's own captions write that the transcription does not
+  const own = info.unread ? null : ownCaptions(info, url, lang);
+  const kept = JSON.parse(fs.readFileSync(path.join(dir, "words.json"), "utf8"));
+  fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf(info.unread ? {} : info, own ? ownTokens(own, kept) : null), null, 1));
+  if (!or) return;
+  if (names) await namesAfterFetch(dir);
+  else console.log(`The names were not checked (--no-names): the words keep the speech model's spellings; episode.mjs names ${dir} checks them later (a cent or two).`);
+}
+
+// ---------------------------------------------------------------- names
+// The names model thinks little before it answers: on both test episodes (2026-11-19) it found as
+// many names or more that way, for a quarter of the cost (1.4 and 1.9 cents instead of 6.7 and 6.6)
+const NAMES_REASONING = { effort: "low" };
+const NAMES_USAGE = 'episode.mjs names <dir> [--take N,…] [--leave N,…] [--also "Name, Name"]';
+const isNames = (j) => (j && typeof j === "object" && Array.isArray(j.names) && Array.isArray(j.fixes) ? j : null);
+const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+
+function namesOptions(rest) {
+  const opts = {};
+  for (let i = 0; i < rest.length; i++) {
+    const k = { "--take": "take", "--leave": "leave", "--also": "also" }[rest[i]];
+    if (!k) fail(`Unknown option ${rest[i]}: ${NAMES_USAGE}`);
+    if (i + 1 >= rest.length) fail(`${rest[i]} needs a value: ${NAMES_USAGE}`);
+    opts[k] = rest[++i];
+  }
+  for (const k of ["take", "leave"]) if (opts[k] != null) {
+    const list = String(opts[k]).split(",").map((v) => Number(v.trim()));
+    if (list.some((n) => !Number.isInteger(n) || n < 1)) fail(`--${k} takes the numbers of the list, as --${k} 3,5.`);
+    opts[k] = list;
+  }
+  return opts;
+}
+
+// The names corrected in the episode's words; → the list (names.json), or a throw that says why
+async function correctNames(dir, opts = {}) {
+  const wordsFile = path.join(dir, "words.json"), rawFile = path.join(dir, "words.raw.json"), listFile = path.join(dir, "names.json"), pageFile = path.join(dir, "page.json");
+  if (!fs.existsSync(wordsFile)) throw new Error(`There are no words in ${dir}: episode.mjs fetch <url|file> ${dir} first.`);
+  const raw = readJson(fs.existsSync(rawFile) ? rawFile : wordsFile);
+  const sentences = sentencesOf(raw);
+  const episode = fs.existsSync(path.join(dir, "episode.json")) ? readJson(path.join(dir, "episode.json")) : {};
+  // an episode fetched before the page was kept: what episode.json holds of it
+  const page = fs.existsSync(pageFile) ? readJson(pageFile) : pageOf({ title: episode.title, channel: episode.channel, description: episode.description });
+  if (opts.also) {
+    page.also = [...new Set([...(page.also || []), ...String(opts.also).split(",").map((t) => t.trim()).filter(Boolean)])];
+    fs.writeFileSync(pageFile, JSON.stringify(page, null, 1));
+  }
+  const before = fs.existsSync(listFile) ? readJson(listFile) : null;
+  // --take and --leave mean the numbers of the list on disk, the one the agent read; with --also
+  // they are decided there first and carried into the new list
+  const both = (opts.take || []).filter((n) => (opts.leave || []).includes(n));
+  if (both.length) throw new Error(`Correction ${both.join(", ")} is in both --take and --leave: name each in one of them.`);
+  if ((opts.take || opts.leave) && !before) throw new Error(`There is no list of names in ${dir} to take from: episode.mjs names ${dir} first.`);
+  for (const [list, status, taken] of [[opts.take, "applied", "taken"], [opts.leave, "proposed", "left out"]]) for (const n of list || []) {
+    const e = before.entries.find((x) => x.n === n);
+    if (!e) throw new Error(`There is no correction ${n} in the list (1–${before.entries.length}).`);
+    if (e.status === "refused") throw new Error(`Correction ${n} is refused (${e.refused}): it is never applied; a name the tool cannot reach is fixed in the clip's cut.json "fixes".`);
+    Object.assign(e, { status, taken });
+  }
+  let j, lost = [];
+  if ((opts.take || opts.leave) && !opts.also) {
+    j = before;
+  } else {
+    const or = await openrouter();
+    if (!or) throw new Error("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): the names are read by a model; the words stay as the transcription wrote them.");
+    log(`episode: the names in the words, against the video's page (${NAMES_MODEL}) …`);
+    const { answer, cost, usage } = await ask(or, namesPrompt(page, sentences), "names", NAMES_SCHEMA, { model: NAMES_MODEL, isAnswer: isNames, what: "list of names", reasoning: NAMES_REASONING });
+    const sources = pageSources(page);
+    const entries = entriesOf(answer, raw, sentences, sources, { lang: episode.lang });
+    // the second look: is the one spoken of at each place the page's? Only a clear yes stays applied
+    const items = lookItems(entries, raw, sentences);
+    let looked = 0;
+    if (items.length) {
+      log(`episode: a second look at the ${items.length} place${items.length === 1 ? "" : "s"} to apply …`);
+      let seen = null;
+      try { const r = await ask(or, lookPrompt(page, items), "look", LOOK_SCHEMA, { model: NAMES_MODEL, isAnswer: (x) => (x && Array.isArray(x.places) ? x : null), what: "look at the places", reasoning: NAMES_REASONING }); seen = r.answer; looked = r.cost; } catch (e) {
+        log(`episode: the second look failed (${e.message}); its places stay proposals …`);
+      }
+      applyLook(entries, seen);
+    }
+    // what the agent decided on the list before stays decided where the same correction of the
+    // same place comes again; a decision the new list has no place for is said
+    const same = (x, e) => x.from === e.from && x.to === e.to && x.places?.[0]?.first === e.places?.[0]?.first;
+    for (const x of before?.entries?.filter((x) => x.taken) || []) {
+      const e = entries.find((y) => same(x, y));
+      if (e && e.status !== "refused") Object.assign(e, { status: x.status, taken: x.taken });
+      else lost.push(x);
+    }
+    // the model's own answer stays beside the list: what it found, before the rules decided
+    j = { model: NAMES_MODEL, cost: +(cost + looked).toFixed(4), usage, names: answer.names, entries, found: answer.fixes };
+  }
+  if (!fs.existsSync(rawFile)) fs.writeFileSync(rawFile, JSON.stringify(raw));
+  writeWords(dir, applyNames(raw, j.entries));
+  fs.writeFileSync(listFile, JSON.stringify(j, null, 1));
+  return { j, raw, lost, moments: fs.existsSync(path.join(dir, "moments.json")), changed: Boolean(opts.take || opts.leave || before) };
+}
+
+function namesReport(dir, { j, raw, lost = [], moments: picked, changed }) {
+  console.log(namesListing(j, raw));
+  if (lost.length) console.log(`Not in the new list, so not carried over: ${lost.map((x) => `"${x.from}" → "${x.to}" (${x.taken})`).join(", ")}; take it again from the list above if it is there under another number.`);
+  const proposed = j.entries.filter((e) => e.status === "proposed").length;
+  console.log(`${path.join(dir, "names.json")} lists them with every place ($${(j.cost || 0).toFixed(4)}); the words as written are in ${path.join(dir, "words.raw.json")}. `
+    + (proposed ? `Each entry is one place. The proposed ones are not applied and never will be by themselves: take one only where its sentence shows that name was said there (episode.mjs names ${dir} --take <n>,…), leave the rest; ` : "")
+    + `--leave <n> takes an applied one back; --also "Name, …" adds names the person gives (asks the model again). `
+    + (picked ? `moments.json was picked from the words before: run moments again so that its titles, hooks and reasons carry the names. ` : `Next: episode.mjs moments ${dir}. `)
+    + (changed ? `A clip prepared before keeps the old spelling until clips.mjs names <clip> puts the list on its words again (then build it again).` : ""));
+}
+
+async function names(dir, ...rest) {
+  if (!dir) fail(NAMES_USAGE);
+  const opts = namesOptions(rest);
+  try { namesReport(dir, await correctNames(dir, opts)); } catch (e) { fail(e.message); }
+}
+
+// fetch ends with the names; when they fail, the words stay as written and fetch says so
+async function namesAfterFetch(dir) {
+  try { namesReport(dir, await correctNames(dir)); } catch (e) {
+    console.log(`The names were not checked (${e.message.replace(/\.$/, "")}): the words stay as the transcription wrote them; episode.mjs names ${dir} tries again.`);
+  }
 }
 
 // ---------------------------------------------------------------- cut
@@ -339,35 +510,37 @@ function momentsOptions(rest) {
 // yourself), so try again later and tell the person when it still fails
 const AGAIN = "run moments again in a few minutes; when it fails again, tell the person the moments cannot be picked right now";
 
+// a model's JSON answer, without a fence around it; null when it is none
+const parsed = (content) => { try { return JSON.parse(String(content ?? "").replace(/^```(json)?\s*|\s*```$/g, "")); } catch { return null; } };
+
 // The model's answer when it is one: an object with a list of moments; else null
 export function answerOf(content) {
-  let j;
-  try { j = JSON.parse(String(content ?? "").replace(/^```(json)?\s*|\s*```$/g, "")); } catch { return null; }
+  const j = parsed(content);
   return j && typeof j === "object" && !Array.isArray(j) && Array.isArray(j.moments) ? j : null;
 }
 
 // one call to the model with a JSON schema: an error of the request tried three times, an answer
 // that is no answer (text, JSON cut off, null, a bare list) once more at once; → { answer, cost }
 // or a throw. `cost` counts every attempt.
-async function ask(or, prompt, name, schema, timeout = 300e3) {
+async function ask(or, prompt, name, schema, { timeout = 300e3, model = MOMENTS_MODEL, isAnswer = answerOf, what = "list of moments", reasoning = null } = {}) {
   let j, cost = 0;
   for (let attempt = 1, empty = 0; ; attempt++) {
     try {
       const res = await fetch(`${or.base}/chat/completions`, {
         method: "POST",
         headers: { ...or.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: MOMENTS_MODEL, messages: [{ role: "user", content: prompt }],
+        body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], ...(reasoning ? { reasoning } : {}),
           response_format: { type: "json_schema", json_schema: { name, strict: true, schema } } }),
         signal: AbortSignal.timeout(timeout),
       });
       j = await res.json();
       if (res.ok && j.choices) {
         cost += j.usage?.cost ?? 0;
-        const answer = answerOf(j.choices[0]?.message?.content);
-        if (answer) return { answer, cost };
+        const answer = isAnswer === answerOf ? answerOf(j.choices[0]?.message?.content) : isAnswer(parsed(j.choices[0]?.message?.content));
+        if (answer) return { answer, cost, usage: { prompt: j.usage?.prompt_tokens, completion: j.usage?.completion_tokens, reasoning: j.usage?.completion_tokens_details?.reasoning_tokens } };
         const cut = j.choices[0]?.finish_reason === "length";
-        if (++empty >= 2) throw Object.assign(new Error(`the model gave no list of moments twice (${cut ? "its answer was cut off" : "an answer that is not one"}, $${cost.toFixed(4)})`), { final: true });
-        log(`episode: the model's answer was no list of moments${cut ? " (cut off)" : ""}, once more …`);
+        if (++empty >= 2) throw Object.assign(new Error(`the model gave no ${what} twice (${cut ? "its answer was cut off" : "an answer that is not one"}, $${cost.toFixed(4)})`), { final: true });
+        log(`episode: the model's answer was no ${what}${cut ? " (cut off)" : ""}, once more …`);
         attempt--;
         continue;
       }
@@ -426,4 +599,5 @@ const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
 else if (command === "moments") await moments(...args);
-else fail("episode.mjs fetch <url|file> <dir> | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>");
+else if (command === "names") await names(...args);
+else fail(`episode.mjs fetch <url|file> <dir> [--no-names] | ${NAMES_USAGE.replace("episode.mjs ", "")} | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>`);
