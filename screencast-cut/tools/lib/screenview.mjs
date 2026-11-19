@@ -11,7 +11,7 @@
 //      the keep says how tall its text is, that text at the height layout says reads in this frame;
 //   3. else the first other picture that removes a fault the one as before has and adds none (of
 //      those, the one with the fewest left): the picture as before with the circle in a free
-//      corner (moved across inside the margins where its region reaches into them), then layout's candidates the
+//      corner, the same moved across inside the margins at its scale, then layout's candidates the
 //      composition draws (screen-zoom, screen-fit; screen-whole only for the whole screen) without
 //      a hard fault; the list says what was wrong with the picture as before. Where none does
 //      (layout's has the label on the region too, or is smaller and its text no better), the
@@ -80,15 +80,20 @@ export function freeCorner(pic, { zones, areas, labels = [], width, height }) {
 }
 
 // The picture as before moved across, at its scale, by as little as brings its region inside the
-// safe box (the rest of the screen still to the frame's edges); null where the region is wider
+// safe box (or inside the zones' wide stretch above the buttons, where it lies above them), the
+// rest of the screen still to the frame's edges; null where the region is wider than both, or
+// where it needs no move (decided 2026-11-19, circle-still: a shift comes before a shrink)
 export function shiftedInside(pic, src, zones, areas, width) {
-  const [sx, , sw] = zones.safe, R = pic.region;
-  if (R[2] > sw + 0.5) return pic;
+  const R = pic.region, Wd = zones.wide;
+  const into = [zones.safe, ...(Wd && R[1] + R[3] <= Wd[1] + Wd[3] + 0.5 ? [Wd] : [])].find((b) => R[2] <= b[2] + 0.5);
+  if (!into) return null;
+  const [sx, , sw] = into;
   const dx = Math.max(sx - R[0], Math.min(0, sx + sw - (R[0] + R[2])));
+  if (Math.abs(dx) < 0.5) return null;
   const left = pic.left + dx, w = src.width * pic.scale, h = src.height * pic.scale;
   const [bx, by, bw, bh] = areas.bleed || [0, 0, width, pic.window[1] + pic.window[3]];
   const x0 = Math.max(left, bx), y0 = Math.max(pic.top, by), x1 = Math.min(left + w, bx + bw), y1 = Math.min(pic.top + h, by + bh);
-  return { ...pic, fit: `${BEFORE}, inside the margins`, left: r1(left), window: [x0, y0, x1 - x0, y1 - y0].map(r1), region: [R[0] + dx, R[1], R[2], R[3]].map(r1) };
+  return { ...pic, fit: `${BEFORE}, inside the margins`, shift: r0(dx), left: r1(left), window: [x0, y0, x1 - x0, y1 - y0].map(r1), region: [R[0] + dx, R[1], R[2], R[3]].map(r1) };
 }
 
 // The circle at main's place and main's size (decided 2026-11-19, circle-still: it stands still
@@ -175,8 +180,9 @@ export const shortFault = (x, f) => (f.code === "text" ? `text ${x.j.textHeight}
 
 // Which picture: the one the keep names; else the picture as before where it passes; else the
 // first of the others that removes a fault the picture as before has and adds none (of those, the
-// first with the fewest faults left): the picture as before with the circle moved (own: the circle
-// moves before the picture does), then layout's in its order (not ✗; for a zoom box not the whole screen, unless
+// first with the fewest faults left): the picture as before with the circle moved, the same shifted
+// inside the margins (own, in that order: the circle moves before the picture does, a shift comes
+// before a shrink), then layout's in its order (not ✗; for a zoom box not the whole screen, unless
 // named). The text of a picture held inside the margins at no less than nine tenths of the scale
 // as before may come out under the height that reads (decided 2026-11-19, screen-text: what must
 // be read stays inside the safe box across, even at a tenth less size). Where none does, the
@@ -286,16 +292,11 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones
   const asked = typeof keep.layout === "string" ? keep.layout.trim() : null;
   // the picture as before with the circle moved off the region, and the same moved inside the
   // margins at its scale (decided 2026-11-19: screen-circle-169, circle-still)
-  // where the circle lies on the region and the region also reaches into the side margins, the
-  // same picture is first held inside the safe box across (the rest of the screen still to the
-  // frame's edges)
   const own = [];
-  const codes = before.j.faults.map((f) => f.code);
-  if (codes.includes("circle")) {
-    const base = codes.includes("across") ? shiftedInside(before, src, zones, areas, width) : before;
-    const m = seat(base, main, env);
-    if (m.corner) own.push(asJudged({ ...m, fit: `${base.fit}, the circle ${m.corner}`, circleOnly: base === before, mark: "✓" }));
-  }
+  const moved = seat(before, main, env);
+  if (moved.corner) own.push(asJudged({ ...moved, fit: `${BEFORE}, the circle ${moved.corner}`, circleOnly: true, mark: "✓" }));
+  const shifted = before.j.faults.some((f) => f.code === "across") ? shiftedInside(before, src, zones, areas, width) : null;
+  if (shifted) { const s = seat(shifted, main, env); own.push(asJudged({ ...s, fit: `${s.fit}${s.corner ? `, the circle ${s.corner}` : ""}`, mark: "✓" })); }
   for (const x of own) if (x.j.faults.length) x.mark = "!";
   const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own });
   const pic = got.pic, j = pic.j;
@@ -306,7 +307,7 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones
   const circleSaid = pic.corner ? `, the circle moved to the ${pic.corner} (x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}): where it stands as before (x ${r0(main[0])}, y ${r0(main[1])}) it would lie on the region${on.some((l) => meets(l, [main[0], main[1], main[2], main[2]])) ? " or the label" : ""}` : "";
   const faultsSaid = (x) => x.j.faults.map((f) => f.said).join("; ");
   if (own.includes(pic)) {
-    lines.push(`${pic.circleOnly ? "as before" : "as before, held inside the safe box's margins"} at ${r2(pic.scale)}×${circleSaid}; ${where}${j.faults.length ? `; ${faultsSaid(pic)}` : ""}; as before ${faultsSaid(before)}`);
+    lines.push(`${pic.circleOnly ? "as before" : `as before, moved ${Math.abs(pic.shift)} px ${pic.shift < 0 ? "left" : "right"} to hold the region inside the safe box's margins,`} at ${r2(pic.scale)}×${circleSaid}; ${where}${j.faults.length ? `; ${faultsSaid(pic)}` : ""}; as before ${faultsSaid(before)}`);
   } else if (pic === before) {
     lines.push(`${got.named ? "as before, as the keep names it" : "as before"} at ${r2(pic.scale)}×, ${where}${j.faults.length ? `: ${faultsSaid(pic)}${got.why ? ` (it stays: ${got.why})` : ""}` : ""}`);
     // the circle stays on the region where nothing fixes it yet: said, with what the agent can do

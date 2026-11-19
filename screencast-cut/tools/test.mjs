@@ -1161,6 +1161,19 @@ test("review 1: a keep split at a scene change draws each part's circle where it
   assert.deepEqual(s.layers.filter((l) => l.pip).map((l) => [l.box, l.start]), [[[1608, 108, 216, 216], undefined]]);
 });
 
+test("review 1, with the layout skill: the split keep's list and its drawing agree on each part's circle", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const A = [0.75, 0.05, 0.98, 0.3], B = [0.02, 0.05, 0.25, 0.3];
+  for (const [one, two] of [[A, B], [B, A]]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen: [1920, 1080], crop: one, segments: [{ in: 0, out: 2, crop: one }, { in: 2, out: 4, crop: two }] });
+    const want = r.p.segments.map((g) => (g.screenPic?.circle || r.a.pip)[0]);
+    assert.deepEqual(r.circles.map((l) => l.box[0]), want, r.said);
+    assert.deepEqual(want, one === A ? [96, 1608] : [1608, 96]);
+    // no circle lies on its part's region
+    r.p.segments.forEach((g, i) => { const reg = (g.screenPic || beforePicture(g.crop, { width: 1920, height: 1080 }, r.a, true)).region, c = r.circles[i].box;
+      assert.ok(!(c[0] < reg[0] + reg[2] && reg[0] < c[0] + c[2] && c[1] < reg[1] + reg[3] && reg[1] < c[1] + c[3]), `part ${i + 1}: ${JSON.stringify([c, reg])}`); });
+  }
+});
+
 test("review 2: a picture of the layout skill's that removes no fault, or adds one, is not taken: 16:9, zoom [0.3,0.3,0.7,0.7] with a label, the screen 1920×1080 (1.55× against 1.48×) and 3440×1440 (1.16× against 1.11×) stay as before, said", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
   for (const [screen, scale] of [[[1920, 1080], 1.55], [[3440, 1440], 1.16]]) {
     const r = oneKeep({ width: 1920, height: 1080, screen, crop: [0.3, 0.3, 0.7, 0.7], label: "Settings page" });
@@ -1222,6 +1235,21 @@ test("review 4, with the layout skill: 9:16, 16:9, 4:5 and 1:1 keeps drawn with 
     if (pic.corner) assert.match(r.said, new RegExp(`the circle moved to the ${pic.corner} \\(x ${Math.round(c[0])}, y ${Math.round(c[1])}\\)`));
     else { assert.deepEqual(c.slice(0, 2), r.a.pip.slice(0, 2), "main's place"); assert.doesNotMatch(r.said.split("\n")[1], /circle/); }
   }
+});
+
+test("review 5: a shift before a shrink: 1280×720 corner zooms in 16:9, past the margins at 2×, are drawn as before at 2× moved inside them (the circle off the region); a region wider than the safe box is not shifted", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [zn, crop, dx] of [["tl", [0, 0, 0.3, 0.3], 96], ["tr", [0.7, 0, 1, 0.3], -96], ["bl", [0, 0.7, 0.3, 1], 96], ["br", [0.7, 0.7, 1, 1], -96]]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen: [1280, 720], crop });
+    const pic = r.p.screenPic;
+    assert.ok(pic && pic.fit.startsWith("as before, inside the margins"), `${zn}: ${r.said}`);
+    assert.equal(pic.scale, 2); assert.equal(pic.shift, dx);
+    assert.ok(pic.region[0] >= 95.5 && pic.region[0] + pic.region[2] <= 1824.5, JSON.stringify(pic.region));
+    assert.match(r.said, new RegExp(`as before, moved 96 px ${dx < 0 ? "left" : "right"} to hold the region inside the safe box's margins, at 2×`));
+    assert.deepEqual(r.main[0].at, { ...geometry(pic, { width: 1280, height: 720 }), box: pic.window });
+  }
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] }, a = areas(1920, 1080, z, { captions: true });
+  assert.equal(shiftedInside({ region: [0, 100, 1800, 100], left: 0, top: 0, scale: 1, window: [0, 0, 1920, 776] }, { width: 1920, height: 1080 }, z, a, 1920), null);
+  assert.equal(shiftedInside({ region: [200, 100, 800, 100], left: 0, top: 0, scale: 1, window: [0, 0, 1920, 776] }, { width: 1920, height: 1080 }, z, a, 1920), null);
 });
 
 test("review 6: a \"text\" fault does not keep the circle on the region (16:9, zoom [0.75,0.05,0.98,0.3], text 12: the circle top left, as without text); without the layout skill the text's height is given, not null; the placement's folder is named by the keep", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
