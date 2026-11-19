@@ -1843,10 +1843,10 @@ const labelBoxHeight = (w, h) => Math.round(Math.min(w, h) * 0.036) * 1.25 + 24;
 
 test("the stack: a tight zoom keeps the circle at main's place and size, the line says why in the layout skill's sentence; the keeps around a stacked keep keep their circle (circle-still)", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
   for (const [w, h] of [[1080, 1920], [1080, 1350]]) {
-    const r = stackRun({ width: w, height: h, keeps: [{ zoom: [0.36, 0.22, 0.6, 0.56], text: 12 }, { zoom: "off" }, { zoom: [0.36, 0.22, 0.6, 0.56], text: 12, layout: CIRCLE }] });
+    const r = stackRun({ width: w, height: h, keeps: [{ zoom: [0.36, 0.22, 0.6, 0.56], text: 12 }, { zoom: "off" }, { zoom: [0.36, 0.22, 0.6, 0.56], text: 12, layout: CIRCLE }, { zoom: [0.046, 0.038, 0.954, 0.085] }] });
     try {
       assert.notEqual(r.ps[1].screenPic?.fit, STACK, r.said);
-      assert.match(r.said, /keep 2 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): the region at 2× is 736 px tall, over the 600 px a screen above the speaker may take/);
+      assert.match(r.said, /keep 2 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): the region at 2× is 736 px tall, over the 640 px a screen above the speaker may take/);
       assert.equal(r.ps[2].screenPic.fit, STACK);
       // the tight zoom drawn with the circle exactly as the keep that names main's form
       assert.deepEqual(r.placed[1].layers, r.placed[3].layers.map((l) => l));
@@ -1854,6 +1854,9 @@ test("the stack: a tight zoom keeps the circle at main's place and size, the lin
       assert.match(r.said, /keep 4 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): the keep names "screen-circle"/);
       assert.ok(!fs.existsSync(path.join(r.dir, "placement", "screen-4", "stack")), "a keep that names main's form asks nothing more");
       assert.equal(r.ps[1].screen.notStacked.startsWith("the region at 2×"), true);
+      // a flat strip (a tab bar) gets no stack either (decided: stack-strip; layout answers "strip")
+      assert.notEqual(r.ps[4].screenPic?.fit, STACK, r.said); assert.ok(camLayers(r.placed[4])[0].pip);
+      assert.match(r.said, /keep 5 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): [^\n]*under the 400 px/);
     } finally { r.done(); }
   }
 });
