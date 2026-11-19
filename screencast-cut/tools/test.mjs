@@ -1303,3 +1303,93 @@ test("second review 2: a circle moved to a bottom corner ends the skill's gap ab
   // seat passes the band on (top left has the label, bottom right meets the region: bottom left)
   assert.deepEqual(seat({ region: [1100, 150, 700, 400] }, a.pip, { zones: z, areas: a, width: 1920, height: 1080, band: 772, labels: [[96, 108, 300, 70]] }).circle, [96, 772 - gap - 216, 216]);
 });
+
+// ------------------------------------------------- one caption line (decided 2026-11-19, captions-clear)
+// What must be read ends a gap above the captions' one line as captions built it (area.json); the
+// rest of a screen runs on under them to the frame's edges; the circle stands as on main;
+// "captions": { "lines": 2 } builds as before.
+import { linesOf, captionLine, spread } from "./lib/layout.mjs";
+const LINE = { "1080x1920": { left: 192, width: 696, top: 1350, bottom: 1440, size: 52, lines: 1 }, "1080x1350": { left: 54, width: 972, top: 1140, bottom: 1230, size: 52, lines: 1 },
+  "1080x1080": { left: 54, width: 972, top: 870, bottom: 960, size: 52, lines: 1 }, "1920x1080": { left: 96, width: 1728, top: 840, bottom: 930, size: 52, lines: 1 } };
+const oneLine = (w, h, opts = {}) => {
+  const z = realZones(w, h, []), L = LINE[`${w}x${h}`];
+  return { z, L, two: areas(w, h, z, { captions: true, ...opts }), one: areas(w, h, z, { captions: true, line: L, ...opts }) };
+};
+const bottomOf = (b) => b[1] + b[3];
+
+test("one caption line: the room comes from what captions built (area.json); two lines, or a line that cannot be read, keep main's band", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "caption-line-"));
+  try {
+    const f = path.join(dir, "area.json");
+    fs.writeFileSync(f, JSON.stringify(LINE["1080x1920"]));
+    assert.deepEqual(captionLine(f), { top: 1350, bottom: 1440 });
+    fs.writeFileSync(f, "{");
+    assert.equal(captionLine(f), null);
+    assert.equal(captionLine(path.join(dir, "none.json")), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.equal(linesOf({ style: "clean" }), 1);
+  assert.equal(linesOf({ style: "clean", lines: 2 }), 2);
+  for (const [w, h] of [[1080, 1920], [1080, 1350], [1080, 1080], [1920, 1080]]) {
+    const z = realZones(w, h, []);
+    // without a line (two lines, or none read): main's numbers exactly
+    assert.deepEqual(areas(w, h, z, { captions: true, line: null }), areas(w, h, z, { captions: true }), `${w}x${h}`);
+    // a line outside the safe box is not taken
+    assert.deepEqual(areas(w, h, z, { captions: true, line: { top: -5, bottom: 10 } }), areas(w, h, z, { captions: true }), `${w}x${h}`);
+    // no captions: the line changes nothing
+    assert.deepEqual(areas(w, h, z, { captions: false, line: LINE[`${w}x${h}`] }), areas(w, h, z, { captions: false }), `${w}x${h}`);
+  }
+});
+
+test("one caption line: every room for what must be read ends a gap above it, the screen's bleed is the whole frame, the circle stands at main's place and size", () => {
+  for (const [w, h] of [[1080, 1920], [1080, 1350], [1080, 1080], [1920, 1080]]) {
+    const { one, two, L } = oneLine(w, h), gap = Math.round(Math.min(w, h) * 0.022), key = `${w}x${h}`;
+    assert.deepEqual(one.pip, two.pip, `${key}: the circle as on main`);
+    assert.deepEqual(one.bleed, [0, 0, w, h], key);
+    assert.equal(one.floor, bottomOf(two.bleed), `${key}: a moved circle's bottom corners as on main`);
+    assert.deepEqual(one.line, { top: L.top, bottom: L.bottom, above: L.top - gap }, key);
+    // (9:16's solo room above the buttons' column ends where the column begins, as on main)
+    for (const room of [one.tall, one.whole, one.solo.reduce((a, b) => (bottomOf(b) > bottomOf(a) ? b : a)), ...(h >= w * 1.5 ? [] : one.content)]) assert.equal(bottomOf(room), L.top - gap, `${key}: ${room}`);
+    // each room at least as large as main's
+    for (const k of ["tall", "whole"]) assert.ok(one[k][3] > two[k][3], `${key} ${k}`);
+    for (const [i, room] of one.content.entries()) assert.ok(room[3] >= two.content[i][3], `${key} content`);
+  }
+});
+
+test("one caption line: a zoom's region ends above the line while the screen runs on under it; a phone whole and a video shown end above it with the ground below", () => {
+  // 16:9, a zoom limited by the height (as the slide of the public test): larger than main, its region above the line, the screen to the frame's bottom
+  const { one, two, L } = oneLine(1920, 1080), src = { width: 1920, height: 1080 }, c = [0.35, 0.15, 0.6, 0.58];
+  const a1 = spread(one.content, one.bleed, c, src, { maxScale: 2 }), a2 = spread(two.content, two.bleed, c, src, { maxScale: 2 });
+  assert.ok(a1.width > a2.width, `${a1.width / 1920}× against main's ${a2.width / 1920}×`);
+  const regionBottom = a1.top + c[3] * a1.height;
+  assert.ok(regionBottom <= L.top - 24 + 0.5, `the region ends at ${regionBottom}`);
+  assert.equal(bottomOf(a1.box), 1080, "the rest of the screen under the captions down to the frame's edge");
+  assert.equal(bottomOf(a2.box), bottomOf(two.bleed), "main: above the band");
+  // 9:16, the phone whole (no circle) and a tall video shown: above the line, larger than main's, ground below
+  const n = oneLine(1080, 1920), phone = { width: 1080, height: 2340 };
+  const sources = { screen: { width: 1920, height: 1080, offset: 0 }, phone: { ...phone, offset: 0 }, "show-1": { width: 1080, height: 1920, offset: 0 } };
+  const piece = { view: "phone-screen", source: "phone", start: 0, duration: 3, in: 0, out: 3, crop: [0, 0, 1, 1], rate: 1, pip: false };
+  const [p1] = shots([piece], sources, 1080, 1920, n.one), [p2] = shots([piece], sources, 1080, 1920, n.two);
+  assert.ok(bottomOf(p1.layers[0].box) <= n.L.top - 24 + 0.5 && p1.layers[0].box[3] > p2.layers[0].box[3], JSON.stringify([p1.layers[0].box, p2.layers[0].box]));
+  const show = { view: "screen", source: "screen", start: 0, duration: 3, in: 0, out: 3, rate: 1, pip: false, show: { source: "show-1", in: 0, until: 3 } };
+  const [s1] = shots([show], sources, 1080, 1920, n.one), [s2] = shots([show], sources, 1080, 1920, n.two);
+  assert.ok(bottomOf(s1.layers[0].box) <= n.L.top - 24 + 0.5 && s1.layers[0].box[3] > s2.layers[0].box[3], JSON.stringify([s1.layers[0].box, s2.layers[0].box]));
+  // with the circle: the phone beside it, above the line; the circle where main has it
+  const [c1] = shots([{ ...piece, pip: true }], { ...sources, webcam: { width: 1280, height: 720, offset: 0, face: [0.388, 0.202, 0.614, 0.685] } }, 1080, 1920, n.one);
+  assert.ok(bottomOf(c1.layers[0].box) <= n.L.top - 24 + 0.5);
+  assert.deepEqual(c1.layers.find((l) => l.pip).box.slice(0, 3), n.two.pip);
+});
+
+test("one caption line: the face view is placed by the layout skill around the one line as captions built it", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-line-"));
+  try {
+    for (const size of ["1080x1920", "1080x1350", "1920x1080"]) {
+      const [width, height] = size.split("x").map(Number), area = path.join(dir, `line-${size}.json`);
+      fs.writeFileSync(area, JSON.stringify(LINE[size]));
+      const r = placeFace({ tool: LAYOUT, folder: path.join(dir, size), moments: faceMoments(CAM), cam: CAM, width, height, area });
+      assert.ok(r.res, r.why);
+      const first = r.res.candidates[0];
+      assert.ok(first.pick.passes, `${size}: ${first.pick.why}`);
+      assert.ok(first.faceInFrame[0][1] + first.faceInFrame[0][3] < LINE[size].top, `${size}: the chin at ${first.faceInFrame[0][1] + first.faceInFrame[0][3]}`);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

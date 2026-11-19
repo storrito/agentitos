@@ -13,6 +13,7 @@
 // padded, never smaller than MIN_CROP of the source's width, in the box's shape. The crop
 // decides the box's shape too: a box is the area's largest rectangle of the crop's aspect.
 
+import fs from "node:fs";
 import { hottest } from "./activity.mjs";
 
 export const FRAMES = { "9:16": [1080, 1920], "16:9": [1920, 1080], "1:1": [1080, 1080], "4:5": [1080, 1350] };
@@ -29,19 +30,29 @@ const PAD = 0.1; // around the region, of its size
 // webcam's circle (pip: x, y, diameter), the label's corner. zones: platform-zones' answer for
 // this frame and the platforms the video goes to; captions, labels: whether the cut has them
 // (their room is kept only then).
-export function areas(width, height, zones, { captions = true, labels = false } = {}) {
+// line: the captions' one line as the captions skill built it (its area.json: { top, bottom }),
+// the default since 2026-11-19 (decision captions-clear): what must be read (a screen's region, a
+// phone's screen, a video shown) ends a gap above that line, the rest of a screen runs on under and
+// beside the captions to the frame's edges (bleed: the whole frame; the captions' box behind their
+// words keeps them readable), and the circle stays where the band for two lines put it (main's
+// place, decision circle-still); floor is where a moved circle's bottom corners end. Without line:
+// the band for two lines, as before (a cut's "captions": { "lines": 2 }).
+export function areas(width, height, zones, { captions = true, labels = false, line = null } = {}) {
   const [sx, sy, sw, sh] = zones.safe;
   const short = Math.min(width, height), gap = Math.round(short * 0.022);
   // the captions' band: their lowest line at the safe box's bottom, room for two lines above it
   // (a wide frame's captions are smaller and mostly one line)
-  const capTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
+  const twoTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
+  const one = !!(captions && line && Number.isFinite(line.top) && line.top > sy && line.top <= sy + sh);
+  const capTop = one ? line.top : twoTop;
   const label = [sx, sy];
   const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
   // where a screen's shot may lie around what matters: the whole frame above the captions (the
   // apps' buttons and bars over it are fine there, what matters stays in content). Not under
   // the captions: a screen's text shows through their box and makes them hard to read, and in
   // a Reel the app's own caption covers what is below them anyway
-  const bleed = [0, 0, width, capTop - gap];
+  const bleed = one ? [0, 0, width, height] : [0, 0, width, capTop - gap];
+  const extra = one ? { floor: twoTop - gap, line: { top: line.top, bottom: Number.isFinite(line.bottom) ? line.bottom : sy + sh, above: capTop - gap } } : {};
   const whole = [0, gap, width, capTop - 2 * gap];
   const wholeLabelled = labels ? [0, top, width, capTop - gap - top] : whole;
   if (height >= width * 1.5) {
@@ -50,14 +61,14 @@ export function areas(width, height, zones, { captions = true, labels = false } 
     // the whole width above the buttons' column (the zones' wide stretch) or inside the safe box,
     // whichever shows it larger; without the circle (solo) down to the captions
     const d = Math.round(width * 0.22);
-    const pip = [sx, capTop - gap - d, d];
+    const pip = [sx, twoTop - gap - d, d];
     const column = zones.margins.right > zones.margins.left + 40;
     const contentTo = (bottom) => (!column ? [[0, top, width, bottom - top]]
       : [[sx, top, sw, bottom - top], ...(zones.wide && Math.min(bottom, zones.wide[1] + zones.wide[3]) > top
         ? [[0, top, width, Math.min(bottom, zones.wide[1] + zones.wide[3]) - top]] : [])]);
     const tall = [sx + d + gap, top, sw - d - gap, capTop - gap - top];
     // a shot with room around it may also take the safe box beside the circle, down to the captions
-    return { content: contentTo(pip[1] - gap), beside: [tall], solo: contentTo(capTop - gap), bleed, whole, wholeLabelled, tall, pip, label };
+    return { content: contentTo(pip[1] - gap), beside: [tall], solo: contentTo(capTop - gap), bleed, whole, wholeLabelled, tall, pip, label, ...extra };
   }
   if (height > width * 0.9) {
     // 4:5 and 1:1: the circle in the safe box's top right corner, beside the label, the shot
@@ -66,7 +77,7 @@ export function areas(width, height, zones, { captions = true, labels = false } 
     const pip = [sx + sw - d, sy, d];
     const below = sy + Math.max(top - sy, d + gap);
     const content = [[0, below, width, capTop - gap - below]];
-    return { content, solo: [[0, top, width, capTop - gap - top]], bleed, whole, wholeLabelled, tall: [sx, below, sw, capTop - gap - below], pip, label };
+    return { content, solo: [[0, top, width, capTop - gap - top]], bleed, whole, wholeLabelled, tall: [sx, below, sw, capTop - gap - below], pip, label, ...extra };
   }
   // wide: the shot across the width between the apps' bar at the top and the captions (the safe
   // box's bottom without them), the circle in the safe box's top right corner and the label in
@@ -74,7 +85,20 @@ export function areas(width, height, zones, { captions = true, labels = false } 
   const d = Math.round(short * 0.2);
   const pip = [sx + sw - d, sy, d];
   const content = [[0, sy, width, (captions ? capTop - gap : sy + sh) - sy]];
-  return { content, solo: content, bleed, whole, wholeLabelled, tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
+  return { content, solo: content, bleed, whole, wholeLabelled, tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label, ...extra };
+}
+
+// How many lines a cut's captions have (caps: captionsOf's answer): one (decided 2026-11-19,
+// captions-clear), or two with "captions": { "lines": 2 }, which builds as before
+export const linesOf = (caps) => (caps?.lines === 2 ? 2 : 1);
+
+// the captions' line as the captions skill built it (its area.json: top, bottom), or null where it
+// cannot be read (the areas then keep the band for two lines, as before)
+export function captionLine(file) {
+  try {
+    const a = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Number.isFinite(a.top) && Number.isFinite(a.bottom) && a.bottom > a.top ? { top: a.top, bottom: a.bottom } : null;
+  } catch { return null; }
 }
 
 // the largest box of `aspect` (width / height) inside `area`, centred; of several areas, the one

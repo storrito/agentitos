@@ -70,7 +70,7 @@ node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 - **`"show"`:** another video instead of the recording while a keep's words play: the finished result (the posted Story, the rendered video) or a clip the person gives, where the recording shows something else (a wrong tap, another Story, the way back). `"show": {"file": "uploads/….mp4", "from": 0, "sound": 0.8}`: its picture whole over the keep, the keep's long pauses cut, a `"hold"` after the words lets it play on; its sound only with `"sound"` (0–1), quiet under the first words and rising to that level by the keep's last word. It is the keep's whole picture: a `"view"`, `"zoom"` or `"layout"` on the same keep is left out (the build says so); the face or a zoom gets a keep of its own. A Story's music is added by Instagram: only the posted Story (downloaded or recorded on the phone) has it; when that is what they want to hear, ask them for the file.
 - `"label"` where a step title helps ("01 · Upload").
 
-Captions (clean subtitles), the face in a circle, the blurred screen behind the shot and a slow speaker played a little faster come by themselves.
+Captions (clean subtitles, one line at the safe box's bottom: what must be read ends above it and the screen runs on under it; `"captions": {"style": …, "lines": 2}` for two lines over a band of their own, as before), the face in a circle, the blurred screen behind the shot and a slow speaker played a little faster come by themselves.
 
 ### 4. The preview
 
