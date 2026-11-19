@@ -468,9 +468,6 @@ function build(args) {
   if (!opts["no-captions"] && !capTool) fail("The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs); without captions: --no-captions.");
 
   const sources = sourcesOf(cfg, beats, beatsFile);
-  // where the captions stand (captions' area.json, written above): a band's zoom the tool chooses keeps the chins above it
-  let captionTop = null;
-  if (capTool) try { captionTop = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).top; } catch { /* an older captions */ }
   // the faces `faces` found in a beat's stretch, where they are of the stretch the beat takes now
   const faceLists = beats.map((b, i) => {
     const file = path.join(work, "faces", `${b.id}.json`);
@@ -495,7 +492,11 @@ function build(args) {
   const brand = fs.existsSync(path.resolve("brand", "DESIGN.md")) ? ["--brand", path.resolve("brand", "DESIGN.md")] : [];
   const capArgs = [capTool, "build", wordsFile, path.join(comp, "captions"), "--style", String(opts.style || cfg.captions || "hormozi"),
     ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...brand, "--duration", String(total)];
+  // where the captions stand, as this build sets them (captions' area.json, written by the build
+  // below; one of an earlier build is removed first, so that a first build and a rebuild are the same)
+  let area = null;
   if (capTool) {
+    fs.rmSync(path.join(comp, "captions", "area.json"), { force: true });
     const write = () => fs.writeFileSync(wordsFile, JSON.stringify({ width: SIZE[0], height: SIZE[1], duration: total, words: shown }, null, 1));
     write();
     // an older captions knows no boxes and would show the phrases as plain captions without a word
@@ -508,7 +509,10 @@ function build(args) {
     const cr = spawnSync(process.execPath, capArgs, { encoding: "utf8" });
     mount = String(cr.stdout || "").split("\n").find((l) => /<div[^>]+data-composition-src=/.test(l))?.trim() || "";
     if (cr.status !== 0 || !mount) fail(`The captions could not be built: ${reason(cr)}`);
+    try { area = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")); } catch { /* an older captions: no area to check */ }
   } else fs.rmSync(wordsFile, { force: true });   // no captions: no words of an earlier build for the sheet to go by
+  // a band's zoom the tool chooses keeps the chins above the captions' top
+  const captionTop = area ? area.top : null;
 
   // ---- the clips, one ffmpeg each
   const clipsDir = path.join(comp, "assets", "clips");
@@ -615,8 +619,6 @@ function build(args) {
   let hookAt = null, hookUntil = HOOK_SECONDS;   // layout's place for the hook, where it took one
   const moments = seen.flatMap((s) => s.moments);
   if (moments.length) {
-    let area = null;
-    if (capTool) try { area = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")); } catch { /* an older captions: no area to check */ }
     const capBox = area ? [area.left, area.top, area.width, area.bottom - area.top] : null;
     const hookBox = [top[0], top[1] + 66, top[2], Math.round(hookLines(hook.text.trim(), hookPx, room) * hookPx * 1.02)];
     const capOn = capBox ? textOn(capBox, moments) : null, hookOn = textOn(hookBox, moments, 0, HOOK_SECONDS);

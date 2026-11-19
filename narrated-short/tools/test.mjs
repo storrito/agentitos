@@ -8,6 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -87,8 +88,16 @@ function short(dir) {
   const end = JSON.parse(fs.readFileSync(path.join(work, "clock.json"), "utf8")).end;
   fs.writeFileSync(path.join(work, "beats.json"), JSON.stringify({ credit: "Test footage", handle: "@test", hook: { text: "TWO TONES", key: "TONES" },
     beats: [{ id: "a", from: 0, to: 2.5, source: src, at: 0.5 }, { id: "b", from: 2.5, to: +(end + 0.7).toFixed(2), source: src, at: 3 }] }));
-  return { work, comp, build: (...more) => node(["build", work, comp, "--no-captions", "--platform", "tiktok", ...more]) };
+  return { work, comp, src, build: (...more) => node(["build", work, comp, "--no-captions", "--platform", "tiktok", ...more]),
+    // with agentitos' captions beside, into a composition of its own (the voice's files copied there)
+    withCaptions: (into, ...more) => {
+      if (into !== comp) fs.cpSync(path.join(comp, "assets", "voice"), path.join(into, "assets", "voice"), { recursive: true });
+      return node(["build", work, into, "--platform", "tiktok", ...more]);
+    } };
 }
+// every file of a composition, by its path, for a comparison byte for byte
+const filesOf = (dir) => Object.fromEntries(fs.readdirSync(dir, { recursive: true }).filter((f) => fs.statSync(path.join(dir, f)).isFile()).sort().map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(dir, f))).digest("hex")]));
+const captionsHere = fs.existsSync(path.join(here, "..", "..", "captions", "tools", "captions.mjs"));
 const musicTag = (comp) => fs.readFileSync(path.join(comp, "index.html"), "utf8").match(/<audio id="music"[^>]*>/)?.[0];
 
 test("build: the music's volume and its lane lay it 17 LU under the voice, --under another distance, the summary says it", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") }, () => {
@@ -301,5 +310,37 @@ fs.writeFileSync(out, JSON.stringify({ size: [w, h], step: 0.1, by: "model", cos
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.doesNotMatch(r.stdout, /another stretch/);
     assert.match(r.stdout, /b: the crop moved to the faces \(A\): from the middle it cut it/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The review's beat b7 (a video call, 1280×720): two faces far apart, one high, one low; built as a
+// fill they need a band, whose zoom the captions' top limits.
+test("build with faces: a first build and a rebuild are the same byte for byte, also where an earlier build without faces left its captions' area (the review's b7)", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    // a build without faces first, in a composition of its own: its captions' area stays there
+    const old = path.join(dir, "old");
+    let r = withCaptions(old);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const st = fs.statSync(src), taken = 2.5;
+    const key = JSON.stringify({ file: src, stamp: `${st.size}:${Math.round(st.mtimeMs)}`, at: 0.5, taken });
+    fs.mkdirSync(path.join(work, "faces"), { recursive: true });
+    fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify({ key, source: [1280, 720], step: 0.1, taken,
+      faces: listOf(["Man with beard and glasses", person("M", [1009, 70, 139, 171], 25)], ["CM S Ingram", person("I", [564, 420, 135, 165], 25)]).faces }));
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const first = filesOf(comp), said = r.stdout.split("\n").filter((l) => /^ {2}(a|the captions|the hook)\b/.test(l));
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(filesOf(comp), first, "a rebuild with nothing changed writes what the first build wrote");
+    assert.deepEqual(r.stdout.split("\n").filter((l) => /^ {2}(a|the captions|the hook)\b/.test(l)), said);
+    r = withCaptions(old);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const a = filesOf(old);
+    for (const f of Object.keys(first)) if (!f.startsWith("assets/voice")) assert.equal(a[f], first[f], `${f}: as the first build wrote it`);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
