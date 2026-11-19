@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Ubuntu's packages the tests need ($DEBS: ffmpeg, and Noto Sans for the layout skill's pages),
+# Ubuntu's packages the tests need ($DEBS: Noto Sans for the layout skill's pages, and fontconfig;
+# ffmpeg is not Ubuntu's but the machines' build, which .github/ffmpeg.sh put on the PATH before),
 # from ~/debs when GitHub's cache brought them, else from Ubuntu's mirrors, which then fill
 # ~/debs for the cache to keep. The cache holds for the Ubuntu release, not for the runner
 # image's build: every build of ubuntu-24.04 installs the same release's packages. A set that no
