@@ -20,7 +20,7 @@ import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { alike, solve as solveAny } from "./lib/solve.mjs";
-import { textOverTime, MOUTH } from "./lib/placed.mjs";
+import { textOverTime, MOUTH, momentsOf } from "./lib/placed.mjs";
 import { areaOverTime } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 import { besideSolve } from "./lib/beside.mjs";
@@ -1471,17 +1471,17 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 3, [a]), shot(3, 6, [still([390, 250, 300, 380], [450, 390, 180, 180], 3, 6, "B")]), shot(6, 9, [b])], area: { top: usual }, raise: "full" });
     ok(r.shots[0].lift === r.shots[2].lift && r.shots[0].lift > 0, JSON.stringify(r.shots.map((s) => s.lift)));
   });
-  t("a face counts for the time it is there: tracked at a single moment of a 6 s shot it is under the type for half a second, not six (the review's made-up case); one that leaves the picture halfway counts until then; a track ten times a second counts as before", () => {
+  t("a face known at one moment is not a face there for one moment: a shot with a single sample and a track evenly sparse (one sample in two seconds, as the review thinned talk-show tracks) count as before, half the gap to their neighbours; only a lone sample in a track dense elsewhere counts briefly; a dense track that stops early counts to the shot's end as before", () => {
     const box = [200, 300, 680, 1000], feat = [330, 620, 420, 420];
-    const one = areaOverTime({ zones: Z9, shots: [shot(0, 6, [{ who: "A", track: [{ t: 3, box, feat }] }])], area: { top: usual }, raise: "full" });
-    const at = one.shots[0].on;
-    ok(at.chin + at.lip + at.mouth + at.nose > 0.4 && at.chin + at.lip + at.mouth + at.nose <= 0.6, JSON.stringify(one.shots[0]));
-    ok(!one.notes.some((n) => /for 6 s/.test(n)), one.notes.join(" | "));
-    const half = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still(box, feat, 0, 2)])], area: { top: usual }, raise: "full" });
-    near(half.shots[0].touches[0].seconds, 2.3, 0.15, "a face until 2 s, counted to 2.26 s");
+    const span = (sh) => momentsOf(sh).reduce((n, m) => n + (m.faces.length ? m.dt : 0), 0);
+    near(span(shot(0, 6, [{ who: "A", track: [{ t: 3, box, feat }] }])), 6, 1e-6, "one sample: the shot");
+    near(span(shot(0, 9, [{ who: "A", track: [1, 3, 5, 7, 8.9].map((t) => ({ t, box, feat })) }])), 9, 1e-6, "evenly sparse: the shot, as before");
+    const lone = { who: "A", track: [...still(box, feat, 0, 2).track, { t: 4.5, box, feat }] };
+    near(span(shot(0, 6, [lone])), 3.25 + 0.52, 0.02, "dense to 2 s, a lone sample at 4.5 s: the dense run to halfway (3.25 s), the lone one 0.52 s");
+    near(span(shot(0, 4, [still(box, feat, 0, 2)])), 4, 1e-6, "a dense track that stops at 2 s: to the shot's end, as before");
     const dense = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still(box, feat, 0, 4)])], area: { top: usual }, raise: "full" });
     near(dense.shots[0].touches[0].seconds, 4, 0.01, "ten times a second, the whole shot");
-    return `one moment: ${Math.round((at.chin + at.lip + at.mouth + at.nose) * 100) / 100} s`;
+    return "one sample 6 s, evenly sparse 9 s, a lone sample 0.52 s";
   });
   t("a picture that grows after it is raised (a push-in, each moment's zoom): the lift is in px of the picture before it grows, enough for the mouth at the zoom, and the eyes and the head's cut said as the picture shows them (the review: the list said 8.7 % less head cut than the short had)", () => {
     const feat = (dy) => [380, 560 + dy, 320, 600], box = (dy) => [250, 300 + dy, 580, 1000];

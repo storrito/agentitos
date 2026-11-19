@@ -101,24 +101,36 @@ const r0 = (v) => Math.round(v);
 const r1 = (v) => Math.round(v * 10) / 10;
 
 // the moments of a shot: every face's boxes, with how long each stands: half the gap to its
-// neighbours, within the shot, and only while a face is there (a face counts up to REACH before
-// and after a moment of its track, half the gap to the next where that is nearer: one tracked at a
-// single moment of a 6 s shot counted for all 6 s and made the type 31 % smaller, the review of
-// 2026-11-19)
+// neighbours, within the shot. A face known at one moment is not a face there for one moment: a
+// sample is cut short only where its own track shows the face was there briefly, that is where the
+// track is dense elsewhere in the shot (its usual gap, the median) and this sample stands alone,
+// further than the larger of REACH and that usual gap from the samples (or the shot's edge) on
+// both sides; it then reaches that far either way. A dense track that stops early stands to the
+// shot's end as before. A shot with a single sample, or a track evenly sparse (one sample in two
+// seconds), counts as before (the model saw the face on the shot's still: it is most likely there).
+// (A reach fixed at REACH, the review of 2026-11-19, undercounted sparse tracks and changed
+// captions: a mouth under them for 0.4 s that a raise had cleared.)
 const REACH = 0.26;
+function usualGap(track) {
+  const gaps = track.slice(1).map((m, k) => m.t - track[k].t).filter((g) => g > 1e-6).sort((x, y) => x - y);
+  return gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+}
 export function momentsOf(shot) {
   const ts = [...new Set(shot.faces.flatMap((f) => f.track.map((m) => m.t)))].sort((a, b) => a - b);
   if (!ts.length) return [];
   const sorted = shot.faces.map((f) => [...f.track].sort((p, q) => p.t - q.t));
+  const reach = sorted.map((tr) => { const g = usualGap(tr); return g == null ? Infinity : Math.max(REACH, g); });
   return ts.map((t, i) => {
     const a = i ? (ts[i - 1] + t) / 2 : shot.start, b = i < ts.length - 1 ? (t + ts[i + 1]) / 2 : shot.end;
     let from = Infinity, to = -Infinity;
     const faces = shot.faces.map((f, k) => {
       const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t);
       if (!m?.box) return null;
-      const tr = sorted[k], j = tr.indexOf(m), prev = tr[j - 1], next = tr[j + 1];
-      from = Math.min(from, m.t - (prev ? Math.min(REACH, (m.t - prev.t) / 2) : REACH));
-      to = Math.max(to, m.t + (next ? Math.min(REACH, (next.t - m.t) / 2) : REACH));
+      const tr = sorted[k], j = tr.indexOf(m), prev = tr[j - 1], next = tr[j + 1], r = reach[k];
+      const back = prev ? (m.t - prev.t) / 2 : m.t - shot.start, ahead = next ? (next.t - m.t) / 2 : shot.end - m.t;
+      const alone = back > r && ahead > r;
+      from = Math.min(from, alone ? m.t - r : -Infinity);
+      to = Math.max(to, alone ? m.t + r : Infinity);
       return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}), ...(m.zoom ? { zoom: m.zoom } : {}), ...(m.eye != null ? { eye: m.eye } : {}) };
     }).filter(Boolean);
     return { t, dt: faces.length ? Math.max(0, Math.min(b, to) - Math.max(a, from)) : Math.max(0, b - a), faces };
