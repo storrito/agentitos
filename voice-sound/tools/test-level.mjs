@@ -63,12 +63,12 @@ test("an even voice: no leveller; −14 LUFS within 0.5 LU and the true peak und
     const r = await level(base, out, { encode });
     assert.ok(!r.steps.some((s) => s.id === "leveller"), r.steps.map((s) => s.id).join());
     assert.match(r.skipped.find((s) => s.id === "leveller").why, /no leveller needed/);
-    assert.deepEqual(r.steps.map((s) => s.id), ["compressor", "loudness", "limiter"]);
+    assert.deepEqual(r.steps.map((s) => s.id), ["loudness", "peaks", "limiter"]);
     for (const s of r.steps) assert.ok(s.why.length > 20, s.id);
     const got = loudnessOf(out);
     near(got.lufs, TARGETS.lufs, 0.5, `${ext} loudness`);
     assert.ok(got.truePeak <= TARGETS.peakAccepted, `${ext} true peak ${got.truePeak}`);
-    assert.deepEqual(r.delivered, got);
+    assert.deepEqual({ lufs: r.delivered.lufs, rangeLu: r.delivered.rangeLu, truePeak: r.delivered.truePeak }, got);
     const p = probe(out);
     assert.equal(p.channels, 2);
     assert.equal(Number(p.sample_rate), 48000);
@@ -101,7 +101,7 @@ test("a step of 10 dB between the halves: they come out within 2 LU, and the pau
   near(got.lufs, TARGETS.lufs, 0.5, "loudness");
   assert.ok(got.truePeak <= TARGETS.peakAccepted, `true peak ${got.truePeak}`);
   // per half (away from the change in the middle), how much the pauses rose against the speech. The
-  // compressor turns the speech's peaks down for both halves alike (and the gain brings all of it
+  // slow limiter turns the speech's peaks down for both halves alike (and the gain brings all of it
   // up again), so the noise rises more than the speech in both; the leveller's share is the
   // difference between the half it raised and the half it left
   const x = samples(step), y = samples(out);
@@ -160,41 +160,53 @@ test("the leveller's curve never rises in a pause over the speech on either side
   assert.ok(even.gains.every((v) => v === 0));
 });
 
-test("one channel against two: each at −14 LUFS as ffmpeg measures it, so the mono channel is 3 LU louder", { skip }, async () => {
+test("one channel against two: both at −14 LUFS as played on two speakers, so ffmpeg measures the mono file at −17 and its channel is either channel of the two", { skip }, async () => {
   const quiet = intermediate("quiet.wav", "volume=-18dB");
   const two = file("two.wav"), one = file("one.wav");
   await level(quiet, two, {});
   const r = await level(quiet, one, { mono: true });
   assert.equal(probe(one).channels, 1);
   assert.equal(probe(two).channels, 2);
-  near(loudnessOf(one).lufs, -14, 0.5, "mono");
-  near(loudnessOf(two).lufs, -14, 0.5, "two channels");
+  near(loudnessOf(one).lufs, -17, 0.4, "mono, as ffmpeg measures it");
+  near(loudnessOf(two).lufs, -14, 0.4, "two channels");
   const left = file("left.wav");
   run(["-i", two, "-af", "pan=mono|c0=c0", "-c:a", "pcm_f32le", left]);
-  near(loudnessOf(one).lufs - loudnessOf(left).lufs, 3, 0.5, "one channel against one of two");
-  assert.match(r.steps.find((s) => s.id === "loudness").why, /plays 3 LU louder on two speakers/);
+  near(loudnessOf(one).lufs - loudnessOf(left).lufs, 0, 0.3, "one channel against one of two");
+  const loud = r.steps.find((s) => s.id === "loudness");
+  assert.match(loud.why, /−14\.0 LUFS as played on two speakers \(the one channel −17\.0 LUFS as ffmpeg measures it\)/);
+  assert.equal(loud.measuredLufs, -17.01);
+  near(r.delivered.asPlayedLufs, -14, 0.4, "the JSON's loudness as played");
   assert.ok(loudnessOf(one).truePeak <= -1);
 });
 
-test("in step and as long: the limiter's look-ahead is taken back; --level off keeps the loudness and only makes the peaks safe", { skip }, async () => {
+test("in step and as long: the two limiters' look-ahead is taken back; --level off keeps the loudness and only makes the peaks safe", { skip }, async () => {
   // too loud: peaks over full scale
   const hot = intermediate("hot.wav", "volume=4dB");
   const out = file("hot.out.wav");
   const r = await level(hot, out, { level: "off" });
-  assert.deepEqual(r.steps.map((s) => s.id), ["limiter"]);
+  assert.deepEqual(r.steps.map((s) => s.id), ["loudness", "limiter"]);
   assert.match(r.skipped.find((s) => s.id === "level").why, /own dynamics and loudness are kept/);
   const was = loudnessOf(hot), got = loudnessOf(out);
   assert.ok(was.truePeak > 0, `${was.truePeak}`);
   assert.ok(got.truePeak <= TARGETS.peakAccepted, `true peak ${got.truePeak}`);
-  // as played on two channels it is the one channel's loudness + 3 LU, less what the limiter took
-  assert.ok(got.lufs <= was.lufs + 3.01 + 0.1 && got.lufs >= was.lufs + 3.01 - 2, `${was.lufs} → ${got.lufs}`);
-  assert.ok(r.steps[0].loudnessTakenLu > 0, "the limiter says what it took");
+  // as played on two channels it is the one channel's loudness + 3 LU: kept, though the limiter had to act
+  near(got.lufs, was.lufs + 3.01, 0.5, "the loudness kept");
+  assert.ok(r.steps[1].peaksTakenDb >= 0.5, "the limiter says what it took");
+  assert.match(r.steps[1].why, /at its own loudness its peaks could not be made safe without limiting them/);
   // a quiet one is left as it is (no gain), its peaks untouched
   const soft = intermediate("soft.wav", "volume=-20dB");
   const out2 = file("soft.out.wav");
   await level(soft, out2, { level: "off", mono: true });
   near(loudnessOf(out2).lufs, loudnessOf(soft).lufs, 0.05, "kept");
-  // in step: the output lags the input by no more than a sample (cross-correlation over 2 s)
+  // what repair took for headroom (6 dB, as before it redraws clipped peaks) is given back: the
+  // loudness the recording came in at (keepLufs, as played) is the delivered file's
+  const lowered = intermediate("lowered.wav", "volume=-6dB");
+  const came = loudnessOf(base).lufs + 3.01;
+  const r3 = await level(lowered, file("lowered.out.m4a"), { level: "off", keepLufs: came, encode: ["-c:a", "aac", "-b:a", "192k"] });
+  near(loudnessOf(file("lowered.out.m4a")).lufs, came, 0.5, "the loudness it came in at");
+  assert.match(r3.steps[0].why, /^Its own loudness kept: −\d+\.\d LUFS as played on two speakers, as it came in \(\+6\.\d dB on the mended sound: what repair took off it for headroom given back\)/);
+  // in step: the output lags the input by no more than a sample (cross-correlation over 2 s); the
+  // even voice went through both limiters' look-ahead
   for (const f of [out2, file("even.wav")]) {
     if (!fs.existsSync(f)) continue;
     const x = samples(f === out2 ? soft : base), y = samples(f);
@@ -219,4 +231,93 @@ test("a quiet recording (−40 LUFS) comes to the target as well, the leveller n
   assert.ok(loudnessOf(out).truePeak <= -1);
   assert.ok(!r.steps.some((s) => s.id === "leveller"));
   assert.ok(r.steps.find((s) => s.id === "loudness").gainDb > 20);
+});
+
+test("the peaks are tamed before the limiter: with auto it takes less off the loudest peak than with plain, and at most 3 dB; the step says which way the peaks went", { skip }, async () => {
+  // the made-up voice: its peaks lie about 20 dB over its loudness, 4.5 dB more than −14 LUFS
+  // under a ceiling of −1.5 dBTP leaves them
+  const auto = await level(base, file("aim-auto.wav"), {});
+  const plain = await level(base, file("aim-plain.wav"), { level: "plain" });
+  const lim = (r) => r.steps.find((s) => s.id === "limiter").peaksTakenDb;
+  assert.ok(lim(plain) >= 3, `plain's limiter took ${lim(plain)} dB: the voice should need more than 3`);
+  assert.ok(lim(auto) < lim(plain) - 1, `the limiter took ${lim(auto)} dB with auto, ${lim(plain)} with plain`);
+  assert.ok(lim(auto) <= 3, `the limiter took ${lim(auto)} dB with auto`);
+  const c = auto.steps.find((s) => s.id === "peaks");
+  assert.ok(c.peaksNearerDb > 0, `the peaks came ${c.peaksNearerDb} dB nearer`);
+  assert.match(c.why, /the loudest peak came \d+\.\d dB nearer the loudness \(\d+\.\d → \d+\.\d dB over it\)/);
+  // (its numbers are the sound's: the crest before it less the crest after it)
+  near(c.peaksNearerDb, c.crestBeforeDb - c.crestAfterDb, 0.11, "nearer");
+  assert.match(auto.steps.find((s) => s.id === "limiter").why, /\(about \d+\.\d dB without the slow limiter before it\)/);
+  // an even voice is not compressed for its range: the range as plain leaves it, within 0.3 LU
+  near(loudnessOf(file("aim-auto.wav")).rangeLu, loudnessOf(file("aim-plain.wav")).rangeLu, 0.3, "the range, auto against plain");
+  near(c.rangeAfterLu, c.rangeBeforeLu, 0.5, "the range through the slow limiter");
+});
+
+test("the leveller's ramp lies where the level steps: centred within 0.3 s of 14.4 s, as wide as 3 dB a second makes it", { skip }, async () => {
+  // (no slow limiter and a target the limiter leaves alone: the gain the output has over the
+  // input is the leveller's curve and the gain to the target)
+  const out = file("ramp.wav");
+  await level(step, out, { targets: { lufs: -20 }, peaks: { kind: "none" } });
+  const x = samples(step), y = samples(out);
+  const W = 4800, pts = [];
+  for (let i = 0; i + W <= x.length; i += W) {
+    const t = (i + W / 2) / 48000;
+    if (!inSpeech(t)) continue;
+    let a = 0, b = 0;
+    for (let j = i; j < i + W; j++) { a += x[j] * x[j]; b += y[j] * y[j]; }
+    pts.push([t, 10 * Math.log10(b / a)]);
+  }
+  const med = (v) => [...v].sort((p, q) => p - q)[Math.floor(v.length / 2)];
+  const lo = med(pts.filter(([t]) => t < 9.4).map((p) => p[1])), hi = med(pts.filter(([t]) => t > 19.4).map((p) => p[1]));
+  near(hi - lo, 7.5, 1.5, "the quiet half raised against the loud one");
+  // a ramp at 3 dB a second from one plateau to the other, its centre fitted to the speech's gain
+  const w = (hi - lo) / 3;
+  let best = null;
+  for (let c = 9.4; c <= 19.4; c += 0.02) {
+    let e = 0;
+    for (const [t, g] of pts) if (t > 9.4 && t < 19.4) e += (g - (lo + (hi - lo) * Math.min(1, Math.max(0, (t - c) / w + 0.5)))) ** 2;
+    if (!best || e < best.e) best = { c, e };
+  }
+  near(best.c, 14.4, 0.3, "the ramp's centre");
+});
+
+test("no measurement, no voice, too much gain: −70 LUFS is none; a silent or 0.3 s sound is refused; over 40 dB of gain is refused, 36 dB is given", { skip }, async () => {
+  // ebur128 prints −70.0 for a sound in which no 400 ms block passes its gate
+  const short = intermediate("short.wav", "atrim=start=0.5:duration=0.3");
+  const silent = file("silent.wav");
+  run(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "3", "-c:a", "pcm_f32le", silent]);
+  for (const f of [short, silent]) {
+    assert.equal(loudnessOf(f).lufs, null, path.basename(f));
+    assert.equal(loudnessOf(f).rangeLu, null, path.basename(f));
+    await assert.rejects(level(f, file("none.wav"), {}), /no voice to bring to a loudness/);
+    await assert.rejects(level(f, file("none.wav"), { level: "plain" }), /no voice to bring to a loudness/);
+  }
+  assert.ok(!fs.existsSync(file("none.wav")));
+  // a voice at −61 LUFS as played would need 47 dB: refused, nothing written
+  const far = intermediate("far.wav", "volume=-41dB");
+  await assert.rejects(level(far, file("far.out.wav"), {}), /would take 4\d dB of gain, more than the 40 dB this tool gives/);
+  await assert.rejects(level(far, file("far.out.wav"), { level: "plain" }), /more than the 40 dB this tool gives/);
+  assert.ok(!fs.existsSync(file("far.out.wav")));
+  // one at −50 as played needs 36 dB: given, and no pass ever more than the bound
+  const quiet = intermediate("q50.wav", "volume=-30dB");
+  const r = await level(quiet, file("q50.out.wav"), {});
+  near(loudnessOf(file("q50.out.wav")).lufs, -14, 0.5, "−50 brought to −14");
+  assert.ok(r.passes.every((p) => p.gainDb <= 40), JSON.stringify(r.passes));
+  // nothing left beside the outputs
+  assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".")), []);
+});
+
+test("a file whose name begins with a dash is a file to ffmpeg, in and out", { skip }, async () => {
+  const dash = file("-voice.wav");
+  fs.copyFileSync(base, dash);
+  const out = file("-out.m4a");
+  // (relative names as an agent passes them, from the folder they lie in)
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    assert.ok(loudnessOf("-voice.wav").lufs < -10);
+    const r = await level("-voice.wav", "-out.m4a", { encode: ["-c:a", "aac", "-b:a", "192k"] });
+    assert.equal(r.delivered.lufs, loudnessOf("-out.m4a").lufs);
+  } finally { process.chdir(cwd); }
+  near(loudnessOf(out).lufs, -14, 0.5, "loudness");
 });

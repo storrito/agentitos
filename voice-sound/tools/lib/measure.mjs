@@ -55,6 +55,8 @@ export function lines(m) {
       (sp.confidence === "low" ? " Few pauses: the floor is uncertain." : ""));
   } else if (sp.silentShare > 0.03) out.push("The pauses are digital silence: no noise to measure.");
   if (m.hum?.hz) out.push(`Hum at ${m.hum.hz} Hz, ${m.hum.harmonics} harmonic${m.hum.harmonics === 1 ? "" : "s"}, ${i0(m.hum.overDb)} dB over the noise beside it${m.hum.underSpeechDb != null ? `, ${i0(m.hum.underSpeechDb)} dB under the speech` : ""}.`);
+  // (said, so that "no hum" is never read out of a recording that could not show one)
+  else if (m.hum?.judged === false && m.hum.why) out.push(`Hum not judged: ${m.hum.why}`);
   if (m.tone) {
     const d = (lo) => m.tone.bands.find((b) => b.lo === lo)?.diff;
     const parts = [[100, "100–250 Hz"], [250, "250–500 Hz"], [2000, "2–4 kHz"], [4000, "4–8 kHz"]].filter(([b]) => d(b) != null).map(([b, name]) => `${name} ${sign(d(b))} dB`);

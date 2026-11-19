@@ -6,30 +6,51 @@
 //      computed here from ebur128's momentary loudness of the intermediate (measured again: the
 //      raw file's numbers no longer hold after repair), held through the pauses, bounded, applied
 //      by ffmpeg as a gain curve multiplied in. Only as much as needed: an even voice gets none
-//   2. a gentle compressor for the syllables, its threshold set from the speech's own level, so
-//      that it works the same on a quiet and a loud recording
-//   3. gain to the target and a limiter (oversampled), the file encoded as it will be delivered,
+//   2. gain to the target, then a slow limiter 2 dB over the fast one's ceiling (look-ahead 10 ms,
+//      release 200 ms), which takes the loudest peaks (plosives, a laugh, a struck consonant) down
+//      smoothly before the fast one has to, and leaves the body of the voice, and with it the
+//      loudness range, as plain leaves it (PEAKS: what was tried, and how it measured)
+//   3. a limiter (oversampled) at the ceiling, the file encoded as it will be delivered,
 //      its loudness and true peak measured on that file and corrected (not loudnorm: its linear
 //      mode silently falls back to a dynamic one that pumps on speech)
 //
 // `level: "plain"` does only the third (for a voice that pumps, breathes or sounds flat after
-// `auto`), `"off"` only the limiter (its own loudness kept, for a skill that levels itself).
+// `auto`); `"off"` the third with the recording's own loudness as its target (opts.keepLufs, as
+// played: what came in goes out, whatever repair took off it for headroom, its peaks made safe).
 //
 //   level(inWav, out, opts)   writes `out` (the container its ending names, the codec `opts.encode`
 //                             gives) → { steps, left, skipped, before, delivered, passes, settings }
 //   levellerOf(frames)        the leveller's curve from ebur128's frames (pure: the tests read it)
 //   framesOf(file)            ebur128's momentary loudness every 100 ms, and its summary (streamed)
-//   loudnessOf(file)          { lufs, rangeLu, truePeak } of a file's first sound, as ffmpeg measures it
+//   loudnessOf(file)          { lufs, rangeLu, truePeak } of a file's first sound, as ffmpeg measures
+//                             it (synchronous, for tests and scripts); loudness(file) the same, awaited
+//   ffmpegRun(args)           ffmpeg (or ffprobe) as a child this module can stop; stopChildren()
+//                             ends every ffmpeg the run has going, at once (a signal)
 //
 // Loudness is as played: a file with one channel plays on both speakers and measures 3 LU louder
-// there than as one channel. By default the output has two channels with the same voice in both and
-// `lufs` is its loudness; `mono: true` writes one channel at `lufs` as ffmpeg measures that channel.
+// there than as one channel. The output has two channels with the same voice in both and measures
+// the target; with `mono: true` it has the one channel at the target as played on two speakers,
+// which ffmpeg measures 3 LU under it (−17 for −14).
+//
+// ebur128 prints −70.0 LUFS where no 400 ms block passes its gate (nothing but silence or a floor,
+// or under half a second of sound): that is no measurement, and taken for none here.
+//
+// Every path given to ffmpeg is made absolute first: a file whose name begins with a dash is
+// never read as an option.
 
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 export const TARGETS = { lufs: -14, truePeak: -1.5, peakAccepted: -1, rangeLu: 5 };
+
+// ebur128's integrated loudness at or under this is its sign that nothing passed the gate
+export const NO_LOUDNESS_LUFS = -70;
+// the most gain the level stage gives (the leveller's lift included): a voice at −50 LUFS (the
+// lab's corpus has one, and it came out well) needs 36 dB to −14; a recording that needs more is a
+// floor, a microphone left off or a voice far away, and raising it raises its noise and its room
+// as much
+export const MAX_GAIN_DB = 40;
 
 // ebur128's frames: one every 100 ms, the momentary loudness over the 400 ms before it
 const FRAME_S = 0.1;
@@ -43,10 +64,24 @@ const FRAME_S = 0.1;
 export const LEVELLER = { phraseS: 3, minSpeechS: 0.8, deadLu: 1.5, fullLu: 4, maxDb: 8, rateDbPerS: 3, smoothS: 1, neededDb: 1, unevenLu: 6, rangeOverLu: 2 };
 // the curve as ffmpeg reads it: raw floats at 100 a second, resampled to the sound's rate
 const CURVE_RATE = 100;
-// the compressor: 2.5:1, attack 10 ms, release 80 ms, RMS detection, ffmpeg's soft knee; its
-// threshold 4 dB over the speech's loudness: the syllables' 10 ms level reaches 6 to 12 dB over it,
-// so the loudest are turned down by about 3 to 5 dB and the body of the voice not at all
-export const COMPRESSOR = { ratio: 2.5, attack: 10, release: 80, overDb: 4 };
+// what tames the peaks before the limiter: a slow limiter (alimiter, its look-ahead and attack
+// 10 ms, release 200 ms) 2 dB over the fast one's ceiling, after the gain to the target, so that the
+// fast one has at most about 2 dB left to take. Chosen on the lab's speech (voice-v1 tune, 2026-11-19,
+// through the whole command, the clean readings their own reference; try-level.mjs --compare):
+//                          limiter dB, mean/max   range before→after   PESQ   DNSMOS SIG
+//   clean (20)  plain            5.8/10.0               3.2→2.7          4.43    3.68
+//               rms (before)     2.2/4.4                3.2→2.0          4.25    3.71
+//               this             1.9/2.1                3.2→2.6          4.42    3.68
+//   real (10)   plain            4.0/7.2                4.3→4.2           –      3.32
+//               this             1.9/2.2                4.3→4.0           –      3.31
+//   uneven (6)  plain            8.2/12.5               8.1→6.5           –      3.65
+//               this             1.9/2.0                8.1→4.7           –      3.64
+// Peak compressors without look-ahead (acompressor, detection=peak, 0.1 to 2 ms) cost PESQ 0.1 to
+// 0.4; with 1 to 5 ms of look-ahead (sidechaincompress) they cost nothing measurable but left the
+// limiter up to 3.2 to 4.7 dB; the RMS compressor before pressed the range and cost 0.18 PESQ
+export const PEAKS = { kind: "prelimit", overCeilingDb: 2, attack: 10, release: 200 };
+// (kept for the lab, which tries the old one against the new: kind "rms", threshold over the loudness)
+export const RMS_COMPRESSOR = { kind: "rms", overDb: 4, ratio: 2.5, attack: 10, release: 80, knee: 2.83 };
 // the limiter: sample peaks at 4 × 48 kHz (ffmpeg's documentation: oversample around alimiter),
 // look-ahead 5 ms, release 60 ms, its delay compensated (latency), its own renormalising off
 export const LIMITER = { rate: 192000, attack: 5, release: 60 };
@@ -57,7 +92,8 @@ const LUFS_TOLERANCE = 0.3, LOUDNESS_FIXES = 3, PEAK_FIXES = 2;
 export const TWO_SPEAKERS_LU = 3.01;
 
 const minus = (s) => s.replace(/^-/, "−");
-const f1 = (x) => minus((Math.round(x * 10) / 10).toFixed(1));
+const f1 = (x) => minus((Math.round(x * 10) / 10 || 0).toFixed(1));
+const signed = (x) => (Math.round(x * 10) / 10 > 0 ? "+" : "") + f1(x);
 const r2 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 100) / 100);
 const r1 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 10) / 10);
 const pow = (db) => 10 ** (db / 10);
@@ -69,55 +105,104 @@ const quantile = (sorted, q) => {
 };
 
 export class LevelError extends Error {}
-const missing = () => new LevelError("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
+const missing = (bin = "ffmpeg") => new LevelError(`${bin} is missing: this tool needs ffmpeg on the PATH.`);
+const lastLine = (s, n = 1) => (s || "").trim().split("\n").slice(-n).join(" ");
 
-function run(args, what) {
-  const r = spawnSync("ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-y", ...args], { encoding: "utf8", maxBuffer: 1 << 24 });
-  if (r.error?.code === "ENOENT") throw missing();
-  if (r.status !== 0) throw new LevelError(`ffmpeg could not make ${what}: ${(r.stderr || "").trim().split("\n").slice(-2).join(" ")}`);
+// ---------------------------------------------------------------- ffmpeg as a child that can be stopped
+
+const live = new Set();
+
+// → { status, signal, stderr (its last 64 kB) }; never throws on ffmpeg's own failure
+export function ffmpegRun(args, { bin = "ffmpeg", onLine = null } = {}) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
+    live.add(p);
+    let err = "", buf = "", done = false;
+    p.stderr.setEncoding("utf8");
+    p.stderr.on("data", (s) => {
+      if (onLine) {
+        buf += s;
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); if (!onLine(line)) err = (err + line + "\n").slice(-65536); }
+      } else err = (err + s).slice(-65536);
+    });
+    p.on("error", (e) => { if (done) return; done = true; live.delete(p); reject(e.code === "ENOENT" ? missing(bin) : e); });
+    p.on("close", (code, signal) => { if (done) return; done = true; live.delete(p); resolve({ status: code, signal, stderr: (err + buf).slice(-65536) }); });
+  });
+}
+
+// every process whose parent is this one (the other stages' ffmpeg too), from /proc; elsewhere ps
+function childPids() {
+  try {
+    return fs.readdirSync("/proc").filter((d) => /^\d+$/.test(d)).filter((d) => {
+      try { const s = fs.readFileSync(`/proc/${d}/stat`, "utf8"); return Number(s.slice(s.lastIndexOf(")") + 2).split(" ")[1]) === process.pid; } catch { return false; }
+    }).map(Number);
+  } catch {
+    const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
+    return (r.stdout || "").split("\n").map((l) => l.trim().split(/\s+/).map(Number)).filter(([, pp]) => pp === process.pid).map(([p]) => p);
+  }
+}
+
+export function stopChildren() {
+  for (const p of live) { try { p.kill("SIGKILL"); } catch { /* gone */ } }
+  for (const pid of childPids()) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+}
+
+async function run(args, what) {
+  const r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", ...args]);
+  if (r.status !== 0) throw new LevelError(`ffmpeg could not make ${what}: ${lastLine(r.stderr, 2)}`);
   return r;
 }
 
-// ebur128's summary in a log
+// ---------------------------------------------------------------- measuring
+
+// ebur128's summary in a log; −70 LUFS and under is no measurement (nothing passed the gate)
 function summary(log) {
   const s = log.slice(log.lastIndexOf("Summary:"));
-  const n = (re) => { const m = s.match(re); const v = m ? Number(m[1]) : NaN; return Number.isFinite(v) && v > -200 ? v : null; };
-  return { lufs: n(/I:\s*(-?[\d.]+|-inf) LUFS/), rangeLu: n(/LRA:\s*(-?[\d.]+) LU/), truePeak: n(/Peak:\s*(-?[\d.]+|-inf) dBFS/) };
+  const n = (re, floor = -200) => { const m = s.match(re); const v = m ? Number(m[1]) : NaN; return Number.isFinite(v) && v > floor ? v : null; };
+  const lufs = n(/I:\s*(-?[\d.]+|-inf) LUFS/, NO_LOUDNESS_LUFS);
+  return { lufs, rangeLu: lufs == null ? null : n(/LRA:\s*(-?[\d.]+) LU/), truePeak: n(/Peak:\s*(-?[\d.]+|-inf) dBFS/) };
+}
+// all of a log's summaries, in the order of the filters in the graph: by the number ffmpeg gives
+// each filter (`[Parsed_ebur128_4 @ 0x…] Summary:`), since it prints them in an order of its own
+// (the last filter's first, with a filter_complex)
+function summaries(log) {
+  const at = [...log.matchAll(/\[Parsed_ebur128_(\d+) @ [^\]]*\]\s*Summary:/g)];
+  if (!at.length) return log.split("Summary:").slice(1).map((s) => summary(`Summary:${s}`));
+  return at.map((m, i) => ({ n: Number(m[1]), s: summary(log.slice(m.index, at[i + 1]?.index ?? log.length)) })).sort((a, b) => a.n - b.n).map((x) => x.s);
 }
 
+const measureArgs = (file, af = "") => ["-hide_banner", "-nostats", "-nostdin", "-i", path.resolve(file), "-map", "0:a:0", "-af", `${af ? `${af},` : ""}ebur128=peak=true`, "-f", "null", "-"];
+
 export function loudnessOf(file) {
-  const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-nostdin", "-i", file, "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"], { encoding: "utf8", maxBuffer: 1 << 24 });
+  const r = spawnSync("ffmpeg", measureArgs(file), { encoding: "utf8", maxBuffer: 1 << 24 });
   if (r.error?.code === "ENOENT") throw missing();
-  if (r.status !== 0) throw new LevelError(`ffmpeg could not measure ${path.basename(file)}: ${(r.stderr || "").trim().split("\n").slice(-1)[0]}`);
+  if (r.status !== 0) throw new LevelError(`ffmpeg could not measure ${path.basename(file)}: ${lastLine(r.stderr)}`);
   return summary(r.stderr || "");
 }
 
+// the same, awaited (a signal can stop it); `af` a chain measured on the way
+export async function loudness(file, af = "") {
+  const r = await ffmpegRun(measureArgs(file, af));
+  if (r.status !== 0) throw new LevelError(`ffmpeg could not measure ${path.basename(file)}: ${lastLine(r.stderr)}`);
+  return summary(r.stderr);
+}
+
 const FRAME_RE = /t:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+|-?inf|nan)/;
-export function framesOf(file) {
-  return new Promise((resolve, reject) => {
-    const p = spawn("ffmpeg", ["-hide_banner", "-nostats", "-nostdin", "-i", file, "-map", "0:a:0", "-af", "ebur128=peak=true:framelog=info", "-f", "null", "-"], { stdio: ["ignore", "ignore", "pipe"] });
-    let M = new Float32Array(1 << 12), n = 0, buf = "", tail = "";
-    p.stderr.setEncoding("utf8");
-    p.stderr.on("data", (s) => {
-      buf += s;
-      let i;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, i);
-        buf = buf.slice(i + 1);
-        const m = FRAME_RE.exec(line);
-        if (!m) { tail = (tail + line + "\n").slice(-4000); continue; }
-        if (n === M.length) { const g = new Float32Array(M.length * 2); g.set(M); M = g; }
-        const v = Number(m[2]);
-        M[n++] = Number.isFinite(v) ? v : -120;
-      }
-    });
-    p.on("error", (e) => reject(e.code === "ENOENT" ? missing() : e));
-    p.on("close", (code) => {
-      tail += buf;
-      if (code !== 0) return reject(new LevelError(`ffmpeg could not measure ${path.basename(file)} again: ${tail.trim().split("\n").slice(-1)[0]}`));
-      resolve({ momentary: M.slice(0, n), ...summary(tail) });
-    });
+export async function framesOf(file) {
+  let M = new Float32Array(1 << 12), n = 0;
+  const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-i", path.resolve(file), "-map", "0:a:0", "-af", "ebur128=peak=true:framelog=info", "-f", "null", "-"], {
+    onLine: (line) => {
+      const m = FRAME_RE.exec(line);
+      if (!m) return false;
+      if (n === M.length) { const g = new Float32Array(M.length * 2); g.set(M); M = g; }
+      const v = Number(m[2]);
+      M[n++] = Number.isFinite(v) && v > NO_LOUDNESS_LUFS ? v : -120;
+      return true;
+    },
   });
+  if (r.status !== 0) throw new LevelError(`ffmpeg could not measure ${path.basename(file)} again: ${lastLine(r.stderr)}`);
+  return { momentary: M.slice(0, n), ...summary(r.stderr) };
 }
 
 // The leveller's curve, one gain (dB) a frame of 100 ms, from the momentary loudness `momentary`
@@ -125,13 +210,13 @@ export function framesOf(file) {
 // percentile) and the loud speech (95th): 35 % of the way up, at least 4 dB over the floor, at most
 // 25 dB under the loud speech. `range`: { lu: the sound's loudness range, aimLu }, or null.
 // → { needed, uneven: why it is uneven (or null), gains, speech, refLufs, speechLufs (levelled),
-// spreadLu, spreadAfterLu, maxDb, minDb }
+// speechLufsBefore, spreadLu, spreadAfterLu, maxDb, minDb }
 export function levellerOf(momentary, range = null, o = LEVELLER) {
   const F = momentary.length;
   const valid = [];
-  for (let i = 0; i < F; i++) if (momentary[i] > -70 && i >= 3) valid.push(momentary[i]);
+  for (let i = 0; i < F; i++) if (momentary[i] > NO_LOUDNESS_LUFS && i >= 3) valid.push(momentary[i]);
   valid.sort((a, b) => a - b);
-  const none = { needed: false, uneven: null, gains: new Float32Array(F), speech: new Uint8Array(F), refLufs: null, speechLufs: null, spreadLu: null, spreadAfterLu: null, maxDb: 0, minDb: 0 };
+  const none = { needed: false, uneven: null, gains: new Float32Array(F), speech: new Uint8Array(F), refLufs: null, speechLufs: null, speechLufsBefore: null, spreadLu: null, spreadAfterLu: null, maxDb: 0, minDb: 0 };
   if (valid.length < 10) return none;
   const floor = quantile(valid, 0.05), top = quantile(valid, 0.95);
   const gate = Math.max(floor + Math.max(4, 0.35 * (top - floor)), top - 25);
@@ -181,13 +266,13 @@ export function levellerOf(momentary, range = null, o = LEVELLER) {
   const uneven = spread >= o.unevenLu ? "phrases" : range?.lu != null && range.lu > range.aimLu + o.rangeOverLu ? "range" : null;
   const needed = !!uneven && Math.max(maxDb, -minDb) >= o.neededDb;
   if (!needed) gains.fill(0);
-  // the speech's loudness once levelled, and the phrases' spread then
-  let ps = 0, pn = 0;
+  // the speech's loudness before and once levelled, and the phrases' spread then
+  let ps = 0, p0 = 0, pn = 0;
   const after = [];
-  for (let i = 0; i < F; i++) if (speech[i]) { ps += pow(momentary[i] + gains[i]); pn++; if (Number.isFinite(P[i])) after.push(P[i] + gains[i]); }
+  for (let i = 0; i < F; i++) if (speech[i]) { ps += pow(momentary[i] + gains[i]); p0 += pow(momentary[i]); pn++; if (Number.isFinite(P[i])) after.push(P[i] + gains[i]); }
   after.sort((a, b) => a - b);
   return {
-    needed, uneven, gains, speech, refLufs: r1(ref), speechLufs: r2(dbOf(ps / pn)),
+    needed, uneven, gains, speech, refLufs: r1(ref), speechLufs: r2(dbOf(ps / pn)), speechLufsBefore: r2(dbOf(p0 / pn)),
     spreadLu: r1(spread), spreadAfterLu: r1(quantile(after, 0.9) - quantile(after, 0.1)),
     maxDb: needed ? r1(maxDb) : 0, minDb: needed ? r1(minDb) : 0,
   };
@@ -209,9 +294,9 @@ function writeCurve(file, gains, seconds) {
 }
 
 function durationOf(file) {
-  const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { encoding: "utf8" });
-  if (r.error?.code === "ENOENT") throw new LevelError("ffprobe is missing: this tool needs ffmpeg on the PATH.");
-  return Number(r.stdout.trim()) || 0;
+  const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path.resolve(file)], { encoding: "utf8" });
+  if (r.error?.code === "ENOENT") throw missing("ffprobe");
+  return Number((r.stdout || "").trim()) || 0;
 }
 
 const ampOf = (db) => +(10 ** (db / 20)).toFixed(6);
@@ -226,42 +311,93 @@ export const PLAIN_PEAKS_DB = 6;
 export const PLAIN_LOUDNESS_LU = 1;
 export const MODES = ["auto", "plain", "off"];
 
-// opts: { targets, mono, level: "auto" | "plain" | "off", encode: [ffmpeg's codec arguments], tmp: a folder }
-//   auto   leveller (where uneven), compressor, gain to the target, limiter
+// the peak compressor as a piece of an -af chain, after the gain (the voice's one channel at
+// `oneChannel` LUFS), under a ceiling of `limit` dBFS; its kinds (the lab tries them all):
+//   lookahead  sidechaincompress listening to peaks, its threshold `underCeilingDb` under the ceiling,
+//              the sound delayed by `lookahead` ms against what it listens to (and the delay taken
+//              back to the sample): the gain is already down when a peak comes, so the attack can be
+//              slow and smooth instead of fast and rough
+//   peak       acompressor listening to peaks (no look-ahead), its threshold as lookahead's
+//   prelimit   alimiter, `overCeilingDb` over the ceiling (shifted under full scale and back)
+//   rms        the compressor before 2026-11-19, its threshold `overDb` over the loudness
+// → { thresholdDb, chain, says, settings }
+function compressorChain(P, oneChannel, limit) {
+  if (P.kind === "prelimit") {
+    const thresholdDb = limit + P.overCeilingDb, shift = 12;
+    return { thresholdDb, settings: { kind: P.kind, overCeilingDb: P.overCeilingDb, attackMs: P.attack, releaseMs: P.release },
+      says: `A slow limiter before the fast one, ${f1(P.overCeilingDb)} dB over its ceiling (look-ahead and attack ${P.attack} ms, release ${P.release} ms)`,
+      chain: `alimiter=level_in=${ampOf(-shift)}:limit=${ampOf(Math.min(0, thresholdDb - shift))}:level_out=${ampOf(shift)}:attack=${P.attack}:release=${P.release}:level=disabled:latency=1` };
+  }
+  const thresholdDb = P.kind === "rms" ? oneChannel + P.overDb : limit - P.underCeilingDb;
+  const opts = `threshold=${ampOf(Math.min(0, thresholdDb))}:ratio=${P.ratio}:attack=${P.attack}:release=${P.release}:knee=${P.knee}:detection=${P.kind === "rms" ? "rms" : "peak"}:makeup=1`;
+  const settings = { kind: P.kind, ratio: P.ratio, attackMs: P.attack, releaseMs: P.release, ...(P.kind === "rms" ? { overLoudnessDb: P.overDb } : { underCeilingDb: P.underCeilingDb }), ...(P.kind === "lookahead" ? { lookaheadMs: P.lookahead } : {}) };
+  if (P.kind === "rms") return { thresholdDb, settings, chain: `acompressor=${opts}`, says: `The syllables turned down (${P.ratio}:1 from ${P.overDb} dB over the speech's loudness, RMS, attack ${P.attack} ms, release ${P.release} ms)` };
+  const says = `A compressor that listens to peaks, before the limiter: ${P.ratio}:1 from ${f1(P.underCeilingDb)} dB under its ceiling, attack ${P.attack} ms${P.kind === "lookahead" ? ` with as much look-ahead` : ""}, release ${P.release} ms`;
+  if (P.kind !== "lookahead") return { thresholdDb, settings, says, chain: `acompressor=${opts}` };
+  const n = Math.round(P.lookahead * 48);
+  return { thresholdDb, settings, says, chain: `asplit[cm][cs];[cm]adelay=delays=${n}S:all=1[cd];[cs]apad=pad_len=${n}[cp];[cd][cp]sidechaincompress=${opts},atrim=start_sample=${n},asetpts=PTS-STARTPTS` };
+}
+
+// opts: { targets, mono, level: "auto" | "plain" | "off", encode: [ffmpeg's codec arguments], tmp: a folder,
+//         keepLufs: with level off, the loudness to keep (as played; by default the intermediate's),
+//         maxGainDb (MAX_GAIN_DB), removeInput: remove inWav as soon as it is read for the last time,
+//         peaks: another peak compressor (the lab's tries), or { kind: "none" } }
+//   auto   leveller (where uneven), gain to the target, the slow limiter, the limiter
 //   plain  gain to the target and the limiter only: the recording's own dynamics kept
-//   off    the limiter only: its own dynamics and loudness kept, its peaks made safe
+//   off    gain to its own loudness and the limiter: its own dynamics and loudness kept, its peaks made safe
 export async function level(inWav, out, opts = {}) {
   const T = { ...TARGETS, ...(opts.targets || {}) };
   const mode = opts.level ?? "auto";
   if (!MODES.includes(mode)) throw new LevelError(`--level is auto, plain or off, not ${mode}.`);
-  const mono = !!opts.mono, auto = mode === "auto", loud = mode !== "off";
+  const mono = !!opts.mono, auto = mode === "auto";
+  const P = { ...PEAKS, ...(opts.peaks || {}) };
+  const maxGain = opts.maxGainDb ?? MAX_GAIN_DB;
+  inWav = path.resolve(inWav);
+  out = path.resolve(out);
   const encode = opts.encode || ["-c:a", "pcm_s24le"];
-  const tmp = opts.tmp || fs.mkdtempSync(path.join(path.dirname(path.resolve(out)), ".level-"));
+  const tmp = opts.tmp ? path.resolve(opts.tmp) : fs.mkdtempSync(path.join(path.dirname(out), ".voice-sound-level-"));
   const ownTmp = !opts.tmp;
-  // the target for the one channel ffmpeg works on
-  const oneChannel = T.lufs - (mono ? 0 : TWO_SPEAKERS_LU);
   const steps = [], left = [], skipped = [];
+  const dropIn = () => { if (opts.removeInput) fs.rmSync(inWav, { force: true }); };
   try {
     const fr = await framesOf(inWav);
     const before = { lufs: fr.lufs, rangeLu: fr.rangeLu, truePeak: fr.truePeak };
     const seconds = durationOf(inWav);
-    let dyn = inWav, gain = 0, preDb = 0, dynLufs = fr.lufs, dynPeak = fr.truePeak, leveller = null;
-    if (loud && fr.lufs == null) throw new LevelError("There is no voice to bring to a loudness: the mended sound is silent.");
-    if (mode === "plain") {
-      gain = oneChannel - fr.lufs;
-      skipped.push({ id: "leveller", why: "Level plain: no leveller and no compressor, the recording's own dynamics kept; only the gain to the target and the limiter." });
-    }
+    if (mode !== "off" && fr.lufs == null)
+      throw new LevelError("There is no voice to bring to a loudness: ebur128 finds no 400 ms of the mended sound over its gate (silence, a floor, or too short).");
+    // the loudness aimed at, as played on two speakers: the target, or with level off the
+    // recording's own as it came in (none when nothing in it can be measured: then no gain)
+    const aim = mode === "off" ? (opts.keepLufs ?? (fr.lufs != null ? fr.lufs + TWO_SPEAKERS_LU : null)) : T.lufs;
+    // the one channel ffmpeg works on (two speakers play it twice: 3 LU under the aim), and what
+    // the delivered file measures (two channels: the aim; one channel: the one channel's)
+    const oneChannel = aim == null ? null : aim - TWO_SPEAKERS_LU;
+    const measuredAim = aim == null ? null : mono ? oneChannel : aim;
+    const tooMuch = (g) => new LevelError(`The voice lies at ${f1(fr.lufs + TWO_SPEAKERS_LU)} LUFS as played: bringing it to ${f1(aim)} would take ${Math.round(g)} dB of gain, more than the ${maxGain} dB this tool gives, and would raise its noise and its room as much; record it closer to the microphone, or aim lower with --loudness.`);
+
+    let dyn = inWav, gain = 0, dynLufs = fr.lufs, dynPeak = fr.truePeak, dynRange = fr.rangeLu, leveller = null, lift = 0;
+    const tamer = auto && P.kind !== "none";
+    if (mode === "plain") skipped.push({ id: "leveller", why: "Level plain: no leveller and no slow limiter before the limiter, the recording's own dynamics kept; only the gain to the target and the limiter." });
     if (auto) {
-      if (fr.lufs == null) throw new LevelError("There is no voice to level: the mended sound is silent.");
       leveller = levellerOf(fr.momentary, { lu: fr.rangeLu, aimLu: T.rangeLu });
-      const graph = [];
-      const ins = ["-i", inWav];
-      const signed = (x) => (x > 0 ? "+" : "") + f1(x);
+      // (the leveller's lift and the gain to the target together never beyond the bound)
+      const levelledBy = leveller.needed && leveller.speechLufs != null ? leveller.speechLufs - leveller.speechLufsBefore : 0;
+      const need = oneChannel - (fr.lufs + levelledBy);
+      if (need > maxGain) throw tooMuch(need);
+      if (leveller.needed && need + leveller.maxDb > maxGain) {
+        for (let i = 0; i < leveller.gains.length; i++) leveller.gains[i] = Math.min(leveller.gains[i], maxGain - need);
+        leveller.maxDb = r1(maxGain - need);
+      }
       if (leveller.needed) {
+        lift = Math.max(0, leveller.maxDb);
         const curve = path.join(tmp, "leveller.f32");
         writeCurve(curve, leveller.gains, seconds);
-        ins.push("-f", "f32le", "-ar", String(CURVE_RATE), "-ac", "1", "-i", curve);
-        graph.push("[1:a]aresample=48000[g]", "[0:a][g]amultiply[l]");
+        dyn = path.join(tmp, "levelled.wav");
+        const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-y", "-i", inWav, "-f", "f32le", "-ar", String(CURVE_RATE), "-ac", "1", "-i", curve,
+          "-filter_complex", "[1:a]aresample=48000[g];[0:a][g]amultiply,ebur128=peak=true[o]", "-map", "[o]", "-map_metadata", "-1", "-c:a", "pcm_f32le", dyn]);
+        if (r.status !== 0) throw new LevelError(`ffmpeg could not level the voice: ${lastLine(r.stderr)}`);
+        dropIn();
+        fs.rmSync(curve, { force: true });
+        ({ lufs: dynLufs, truePeak: dynPeak, rangeLu: dynRange } = summary(r.stderr));
         const because = leveller.uneven === "phrases" ? `Its phrases spread over ${f1(leveller.spreadLu)} LU` : `Its loudness range is ${f1(fr.rangeLu)} LU`;
         steps.push({
           id: "leveller", stage: "level",
@@ -270,100 +406,122 @@ export async function level(inWav, out, opts = {}) {
           maxRateDbPerS: LEVELLER.rateDbPerS,
         });
       } else {
-        graph.push("[0:a]anull[l]");
         skipped.push({ id: "leveller", why: leveller.spreadLu == null ? "Too little speech to tell phrases apart: no leveller."
           : leveller.uneven ? `No phrase lies far enough off the level most of them have for a leveller to move it by ${LEVELLER.neededDb} dB: none.` : `Its phrases lie within ${f1(leveller.spreadLu)} LU of each other${fr.rangeLu != null ? ` and its range is ${f1(fr.rangeLu)} LU` : ""}: no leveller needed.` });
       }
-      // the speech brought near the target first, so that the compressor's threshold sits at the
-      // same place over the speech on a quiet and on a loud recording
-      const pre = oneChannel - (leveller.speechLufs ?? fr.lufs);
-      const thresholdDb = oneChannel + COMPRESSOR.overDb;
-      const C = COMPRESSOR;
-      // (measured before the compressor and after it: what it took off the loudness and the peaks)
-      graph.push(`[l]volume=${pre.toFixed(2)}dB,ebur128=peak=true,acompressor=threshold=${ampOf(thresholdDb)}:ratio=${C.ratio}:attack=${C.attack}:release=${C.release}:detection=rms:makeup=1,ebur128=peak=true[o]`);
-      dyn = path.join(tmp, "levelled.wav");
-      const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-nostdin", "-y", ...ins, "-filter_complex", graph.join(";"), "-map", "[o]", "-map_metadata", "-1", "-c:a", "pcm_f32le", dyn], { encoding: "utf8", maxBuffer: 1 << 24 });
-      if (r.error?.code === "ENOENT") throw missing();
-      if (r.status !== 0) throw new LevelError(`ffmpeg could not level the voice: ${(r.stderr || "").trim().split("\n").slice(-1)[0]}`);
-      const parts = (r.stderr || "").split("Summary:").slice(1).map((s) => summary(`Summary:${s}`));
-      const into = parts.at(-2) ?? {}, got = parts.at(-1) ?? {};
-      const crest = (x) => (x?.truePeak != null && x?.lufs != null ? x.truePeak - x.lufs : null);
-      const takenLu = r1(into.lufs != null && got.lufs != null ? into.lufs - got.lufs : null);
-      const peaksDb = r1(crest(into) != null && crest(got) != null ? crest(into) - crest(got) : null);
-      steps.push({
-        id: "compressor", stage: "level",
-        why: `The syllables' peaks turned down gently (${C.ratio}:1 from ${C.overDb} dB over the speech's loudness, attack ${C.attack} ms, release ${C.release} ms${peaksDb != null ? `; the peaks came ${f1(peaksDb)} dB nearer the loudness` : ""}): the voice stays even from word to word on a phone in a noisy place, without the breathing of a voice compressed hard.`,
-        ratio: C.ratio, thresholdOverSpeechDb: C.overDb, attackMs: C.attack, releaseMs: C.release, loudnessTakenLu: takenLu, peaksNearerDb: peaksDb,
-      });
-      preDb = pre;
-      dynLufs = got.lufs;
-      dynPeak = got.truePeak;
-      gain = oneChannel - (got.lufs ?? oneChannel);
     }
-    // gain and the limiter. The gain is found on the chain's sound measured on the way (no file:
-    // cheap), the secant through the last two tries, since the limiter takes part of every dB;
-    // then the file is encoded as delivered and measured, the ceiling lowered when its true peak
-    // is over what a check accepts (and the gain found again), the gain corrected once more when
-    // the encoding moved the loudness
-    let limit = T.truePeak, peakFixes = 0, retried = false, got;
+    if (dynLufs != null && oneChannel != null) gain = oneChannel - dynLufs;
+    if (gain + lift > maxGain + 0.05) throw tooMuch(gain + lift);
+    // gain, the peak compressor (auto), the limiter. The gain is found on the chain's sound measured
+    // on the way (no file: cheap), the secant through the last two tries, since the compressor and
+    // the limiter take part of every dB; then the file is encoded as delivered and measured, the
+    // ceiling lowered when its true peak is over what a check accepts (and the gain found again),
+    // the gain corrected once more when the encoding moved the loudness. The gain never beyond the
+    // bound. The compressor sits after the gain, so that its threshold lies the same few dB under
+    // the limiter's ceiling on every recording.
+    let limit = T.truePeak, peakFixes = 0, retried = false, capped = false, got, C = null;
     const passes = [];
-    const chain = () => {
-      const af = [`volume=${gain.toFixed(2)}dB`, `aresample=${LIMITER.rate}`,
-        `alimiter=limit=${ampOf(Math.max(-24, limit))}:attack=${LIMITER.attack}:release=${LIMITER.release}:level=disabled:latency=1`, "aresample=48000"];
+    const cap = () => { if (gain + lift > maxGain) { gain = maxGain - lift; capped = true; } };
+    const chain = (meter = false) => {
+      const af = [`volume=${gain.toFixed(2)}dB`];
+      if (tamer) { C = compressorChain(P, oneChannel, limit); af.push(C.chain); }
+      if (meter) af.push("ebur128=peak=true");
+      af.push(`aresample=${LIMITER.rate}`, `alimiter=limit=${ampOf(Math.max(-24, limit))}:attack=${LIMITER.attack}:release=${LIMITER.release}:level=disabled:latency=1`, "aresample=48000");
       if (!mono) af.push("pan=stereo|c0=c0|c1=c0");
       return af.join(",");
     };
-    const tryGain = () => {
-      const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-nostdin", "-i", dyn, "-map", "0:a:0", "-af", `${chain()},ebur128=peak=true`, "-f", "null", "-"], { encoding: "utf8", maxBuffer: 1 << 24 });
-      if (r.status !== 0) throw new LevelError(`ffmpeg could not try the gain: ${(r.stderr || "").trim().split("\n").slice(-1)[0]}`);
-      const g = summary(r.stderr || "");
+    const tryGain = async () => {
+      const g = await loudness(dyn, chain());
       passes.push({ kind: "tried", gainDb: r2(gain), limitDb: r2(limit), lufs: g.lufs, truePeak: g.truePeak });
       return g;
     };
-    const settle = () => {
-      if (!loud) return;
+    const settle = async () => {
+      if (measuredAim == null) return;
       let prev = null;
       for (let i = 0; ; i++) {
-        const g = tryGain();
-        if (g.lufs == null || Math.abs(g.lufs - T.lufs) <= LUFS_TOLERANCE || i === LOUDNESS_FIXES) return;
+        const g = await tryGain();
+        if (g.lufs == null || Math.abs(g.lufs - measuredAim) <= LUFS_TOLERANCE || i === LOUDNESS_FIXES || capped) return;
         const slope = prev && Math.abs(gain - prev.gain) > 0.05 ? Math.min(1, Math.max(0.3, (g.lufs - prev.lufs) / (gain - prev.gain))) : 1;
         prev = { gain, lufs: g.lufs };
-        gain += (T.lufs - g.lufs) / slope;
+        gain += (measuredAim - g.lufs) / slope;
+        cap();
       }
     };
-    settle();
+    await settle();
+    // (the delivered pass measures the sound between the compressor and the limiter on the way)
+    let meter = {};
     for (;;) {
-      run(["-i", dyn, "-map", "0:a:0", "-af", chain(), "-map_metadata", "-1", "-ar", "48000", ...encode, out], "the finished sound");
-      got = loudnessOf(out);
+      const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-y", "-i", dyn, "-map", "0:a:0", "-af", chain(true), "-map_metadata", "-1", "-ar", "48000", ...encode, out]);
+      if (r.status !== 0) throw new LevelError(`ffmpeg could not make the finished sound: ${lastLine(r.stderr, 2)}`);
+      meter = summary(r.stderr);
+      got = await loudness(out);
       passes.push({ kind: "delivered", gainDb: r2(gain), limitDb: r2(limit), lufs: got.lufs, truePeak: got.truePeak });
-      const loudOk = !loud || got.lufs == null || Math.abs(got.lufs - T.lufs) <= LUFS_TOLERANCE;
+      const loudOk = measuredAim == null || got.lufs == null || Math.abs(got.lufs - measuredAim) <= LUFS_TOLERANCE;
       const peakOk = got.truePeak == null || got.truePeak <= T.peakAccepted;
       if (loudOk && peakOk) break;
-      if (!peakOk && peakFixes < PEAK_FIXES) { limit -= got.truePeak - T.truePeak; peakFixes++; settle(); continue; }
-      if (!loudOk && !retried) { gain += T.lufs - got.lufs; retried = true; continue; }
+      if (!peakOk && peakFixes < PEAK_FIXES) { limit -= got.truePeak - T.truePeak; peakFixes++; await settle(); continue; }
+      if (!loudOk && !retried && !capped) { retried = true; gain += measuredAim - got.lufs; cap(); continue; }
       break;
     }
-    const delivered = got;
-    if (loud) {
+    if (dyn === inWav) dropIn(); else fs.rmSync(dyn, { force: true });
+    const delivered = { ...got, asPlayedLufs: got.lufs == null ? null : r2(got.lufs + (mono ? TWO_SPEAKERS_LU : 0)) };
+    const asWhat = mono ? `as played on two speakers (the one channel ${f1(measuredAim ?? 0)} LUFS as ffmpeg measures it)` : "as played on two speakers";
+    // the sound before the compressor (the gain only: its numbers moved by the gain) and after it
+    // (measured on the way): what the compressor did to the peaks, the loudness and the range
+    const into = { lufs: dynLufs != null ? dynLufs + gain : null, truePeak: dynPeak != null ? dynPeak + gain : null, rangeLu: dynRange };
+    const crest = (x) => (x?.truePeak != null && x?.lufs != null ? x.truePeak - x.lufs : null);
+    const peaks = tamer ? {
+      crestBeforeDb: r1(crest(into)), crestAfterDb: r1(crest(meter)), takenLu: r1(into.lufs != null && meter.lufs != null ? into.lufs - meter.lufs : null),
+      peakTakenDb: r1(into.truePeak != null && meter.truePeak != null ? Math.max(0, into.truePeak - meter.truePeak) : null),
+      thresholdDb: r2(C.thresholdDb), rangeBeforeLu: r1(into.rangeLu), rangeAfterLu: r1(meter.rangeLu),
+    } : null;
+    if (peaks) peaks.nearerDb = r1(peaks.crestBeforeDb != null && peaks.crestAfterDb != null ? peaks.crestBeforeDb - peaks.crestAfterDb : null);
+    if (mode !== "off") {
       steps.push({
         id: "loudness", stage: "level",
-        why: `Brought to ${f1(T.lufs)} LUFS ${mono ? "as one channel (it plays 3 LU louder on two speakers)" : "as played on two speakers"}, measured on the delivered file and corrected until within ${LUFS_TOLERANCE} LU: where the platforms play speech.`,
-        gainDb: r2(preDb + gain), targetLufs: T.lufs,
+        why: `Brought to ${f1(T.lufs)} LUFS ${asWhat}, measured on the delivered file and corrected until within ${LUFS_TOLERANCE} LU: where the platforms play speech.`,
+        gainDb: r2(gain), targetLufs: T.lufs, measuredLufs: r2(measuredAim),
+      });
+    } else if (aim != null) {
+      steps.push({
+        id: "loudness", stage: "level",
+        why: `Its own loudness kept: ${f1(aim)} LUFS ${asWhat}, as it came in${Math.abs(gain) >= 0.5 ? ` (${signed(gain)} dB on the mended sound${gain > 0 ? ": what repair took off it for headroom given back" : ""})` : ""}, measured on the delivered file.`,
+        gainDb: r2(gain), keptLufs: r2(aim), measuredLufs: r2(measuredAim),
       });
     }
     // what the limiter took off the loudness (the gain it was given against what came out) and
     // off the loudest peak (where it would have been against where it is)
-    const limTaken = r1(dynLufs != null && delivered.lufs != null ? dynLufs + gain + (mono ? 0 : TWO_SPEAKERS_LU) - delivered.lufs : null);
-    const peaksTaken = r1(dynPeak != null && delivered.truePeak != null ? Math.max(0, dynPeak + gain - delivered.truePeak) : null);
+    if (peaks) {
+      const n = peaks.nearerDb;
+      const did = n == null ? "" : Math.abs(n) < 0.1 ? "no peak reached it, the peaks stayed where they were"
+        : n > 0 ? `the loudest peak came ${f1(n)} dB nearer the loudness (${f1(peaks.crestBeforeDb)} → ${f1(peaks.crestAfterDb)} dB over it)`
+        : `the loudest peak went ${f1(-n)} dB farther from the loudness (${f1(peaks.crestBeforeDb)} → ${f1(peaks.crestAfterDb)} dB over it)`;
+      const range = peaks.rangeBeforeLu != null && peaks.rangeAfterLu != null ? `, the loudness range ${f1(peaks.rangeBeforeLu)} → ${f1(peaks.rangeAfterLu)} LU` : "";
+      steps.push({
+        id: "peaks", stage: "level",
+        why: `${C.says}: ${did}${peaks.takenLu != null && Math.abs(peaks.takenLu) >= 0.1 ? `, ${f1(peaks.takenLu)} LU off the loudness` : ""}${range}.`,
+        ...C.settings, thresholdDb: peaks.thresholdDb, crestBeforeDb: peaks.crestBeforeDb, crestAfterDb: peaks.crestAfterDb, peaksNearerDb: peaks.nearerDb,
+        peakTakenDb: peaks.peakTakenDb, loudnessTakenLu: peaks.takenLu, rangeBeforeLu: peaks.rangeBeforeLu, rangeAfterLu: peaks.rangeAfterLu,
+      });
+    }
+    // (its input measured on the way, against the delivered file)
+    const limTaken = r1(meter.lufs != null && delivered.lufs != null ? meter.lufs + (mono ? 0 : TWO_SPEAKERS_LU) - delivered.lufs : null);
+    const peaksTaken = r1(meter.truePeak != null && delivered.truePeak != null ? Math.max(0, meter.truePeak - delivered.truePeak) : null);
+    // without the peak compressor: its input, less the gain its own loss of loudness asked for
+    const withoutDb = peaks && into.truePeak != null && delivered.truePeak != null ? r1(Math.max(0, into.truePeak - (peaks.takenLu ?? 0) - delivered.truePeak)) : null;
+    const tookPeaks = peaksTaken != null && peaksTaken >= 0.5;
     steps.push({
       id: "limiter", stage: "level",
-      why: `Its peaks held under ${f1(limit)} dB (at four times the sample rate, so that the peaks between the samples count) and the true peak measured after the encoding, which raises it${peakFixes ? `: lowered ${peakFixes === 1 ? "once" : "twice"} because the encoded file came over ${f1(T.peakAccepted)} dBTP` : ""}${peaksTaken != null && peaksTaken >= 0.5 ? `; it took ${f1(peaksTaken)} dB off the loudest peak${limTaken != null && limTaken >= 0.1 ? ` and ${f1(limTaken)} LU off the loudness` : ""}` : ""}.`,
-      limitDb: r2(limit), loweredTimes: peakFixes, peaksTakenDb: peaksTaken, loudnessTakenLu: limTaken,
+      why: `Its peaks held under ${f1(limit)} dB (at four times the sample rate, so that the peaks between the samples count) and the true peak measured after the encoding, which raises it${peakFixes ? `: lowered ${peakFixes === 1 ? "once" : "twice"} because the encoded file came over ${f1(T.peakAccepted)} dBTP` : ""}` +
+        (tookPeaks ? `; it took ${f1(peaksTaken)} dB off the loudest peak${limTaken != null && limTaken >= 0.1 ? ` and ${f1(limTaken)} LU off the loudness` : ""}` : "; it took nothing worth naming off the peaks") +
+        (withoutDb != null ? ` (about ${f1(withoutDb)} dB without the slow limiter before it)` : "") +
+        (mode === "off" && tookPeaks ? ": at its own loudness its peaks could not be made safe without limiting them" : "") + ".",
+      limitDb: r2(limit), loweredTimes: peakFixes, peaksTakenDb: peaksTaken, loudnessTakenLu: limTaken, ...(withoutDb != null ? { withoutCompressorDb: withoutDb } : {}),
     });
     if (mode === "plain" && peaksTaken != null && peaksTaken > PLAIN_PEAKS_DB && (limTaken ?? 0) >= PLAIN_LOUDNESS_LU)
-      left.push({ id: "peaks", stage: "level", why: `To reach ${f1(T.lufs)} LUFS the limiter took ${f1(peaksTaken)} dB off the loudest peaks and ${f1(limTaken)} LU off the loudness: the target is too loud for this recording's own dynamics, and the limiter may be heard on its loudest words; --level auto evens them first, a lower --loudness spares them.` });
-    if (loud && delivered.lufs != null && Math.abs(delivered.lufs - T.lufs) > LUFS_TOLERANCE)
-      left.push({ id: "loudness", stage: "level", why: `The loudness came to ${f1(delivered.lufs)} LUFS, not ${f1(T.lufs)}: ${delivered.truePeak != null && delivered.truePeak > T.truePeak - 0.5 ? "the limiter holds it down." : "the corrections did not converge."}` });
+      left.push({ id: "peaks", stage: "level", why: `To reach ${f1(T.lufs)} LUFS the limiter took ${f1(peaksTaken)} dB off the loudest peaks and ${f1(limTaken)} LU off the loudness: the target is too loud for this recording's own dynamics, and the limiter may be heard on its loudest words; --level auto tames its peaks first, a lower --loudness spares them.` });
+    if (measuredAim != null && delivered.lufs != null && Math.abs(delivered.lufs - measuredAim) > LUFS_TOLERANCE)
+      left.push({ id: "loudness", stage: "level", why: `The loudness came to ${f1(delivered.asPlayedLufs)} LUFS as played, not ${f1(aim)}: ${capped ? `the gain stops at ${maxGain} dB.` : delivered.truePeak != null && delivered.truePeak > limit - 0.5 ? "the limiter holds it down." : "the corrections did not converge."}` });
     if (delivered.truePeak != null && delivered.truePeak > T.peakAccepted)
       left.push({ id: "peak", stage: "level", why: `The true peak after the encoding is ${f1(delivered.truePeak)} dBTP, over the ${f1(T.peakAccepted)} dBTP a check accepts${peakFixes ? `, after the limiter was lowered ${peakFixes === 1 ? "once" : "twice"}` : ""}.` });
     if (auto && delivered.rangeLu != null && delivered.rangeLu > T.rangeLu)
@@ -372,7 +530,8 @@ export async function level(inWav, out, opts = {}) {
     return {
       mode, steps, left, skipped, before, delivered, passes,
       leveller: leveller && { needed: leveller.needed, spreadLu: leveller.spreadLu, spreadAfterLu: leveller.spreadAfterLu, minDb: leveller.minDb, maxDb: leveller.maxDb },
-      settings: { targets: T, mono, level: mode, leveller: LEVELLER, compressor: COMPRESSOR, limiter: { ...LIMITER, limitDb: r2(limit), plainPeaksDb: PLAIN_PEAKS_DB, plainLoudnessLu: PLAIN_LOUDNESS_LU } },
+      settings: { targets: T, mono, level: mode, aimLufs: r2(aim), measuredLufs: r2(measuredAim), maxGainDb: maxGain, leveller: LEVELLER, peaks: auto ? P : null,
+        limiter: { ...LIMITER, limitDb: r2(limit), plainPeaksDb: PLAIN_PEAKS_DB, plainLoudnessLu: PLAIN_LOUDNESS_LU } },
     };
   } finally {
     if (ownTmp) fs.rmSync(tmp, { recursive: true, force: true });

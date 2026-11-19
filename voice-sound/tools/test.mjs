@@ -14,6 +14,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure, lines } from "./voice.mjs";
+import { CLIP_SOME_SHARE, CLIP_MIN_RUNS, CLIP_MIN_RUN_SAMPLES } from "./lib/findings.mjs";
 
 const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), "voice.mjs");
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -86,17 +87,74 @@ test("noise at a known distance: the estimate within 3 dB, named noise", { skip 
   assert.ok(m.noise.fluctuationDb < 3);
 });
 
-test("hum: 50 Hz told from 60 Hz, with their harmonics", { skip }, async () => {
+// mains hum of ten harmonics (as the lab's corpus builds it, the tenth added), `level` its
+// fundamental's amplitude; `when` an expression of t that switches it (1: all through)
+const HUM_AMPS = [1, 0.5, 0.6, 0.25, 0.35, 0.15, 0.2, 0.1, 0.12, 0.08];
+const humOf = (hz, level = 0.006, when = "1", d = D) =>
+  `${HUM_AMPS.map((a, i) => `sine=f=${hz * (i + 1)}:r=48000:d=${d},volume=${(level * a).toPrecision(3)}[h${i}]`).join(";")};` +
+  `${HUM_AMPS.map((_, i) => `[h${i}]`).join("")}amix=inputs=${HUM_AMPS.length}:normalize=0,volume='${when}':eval=frame[hum]`;
+// a voice without a pause: the sawtooth and formants of VOICE, its pitch `phase` (cycles at t),
+// syllables that never fall silent, a faint pink noise under it
+const steady = (phase, d = 8) => `aevalsrc=exprs='st(0,${phase});0.25*(0.7+0.3*sin(12.566*t))*2*(ld(0)-floor(ld(0)+0.5))':s=48000:d=${d},` +
+  `equalizer=f=500:t=o:w=1:g=10,equalizer=f=1500:t=o:w=1:g=6,equalizer=f=2700:t=o:w=0.8:g=4,lowpass=f=5000[v];` +
+  `anoisesrc=color=pink:amplitude=0.0015:r=48000:d=${d}:seed=5[n];[v][n]amix=inputs=2:normalize=0`;
+
+test("hum: 50 Hz told from 60 Hz, ten harmonics each judged in the pauses", { skip }, async () => {
   for (const hz of [50, 60]) {
-    const tones = [1, 2, 3].map((h, i) => `sine=f=${hz * h}:r=48000:d=${D},volume=${[0.006, 0.004, 0.003][i]}[h${h}]`).join(";");
     const f = file(`hum${hz}.wav`);
-    run(["-i", base, "-filter_complex", `${tones};[0:a][h1][h2][h3]amix=inputs=4:normalize=0`, "-c:a", "pcm_s16le", f]);
+    run(["-i", base, "-filter_complex", `${humOf(hz)};[0:a][hum]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", f]);
     const m = await measure(f);
+    assert.equal(m.hum.judged, true);
     assert.equal(m.hum.hz, hz);
-    assert.ok(m.hum.harmonics >= 3, `${m.hum.harmonics} harmonics`);
+    assert.ok(m.hum.steadyChecked && m.hum.parts >= 2, JSON.stringify(m.hum.parts));
+    const counted = (hz === 50 ? m.hum.at50 : m.hum.at60).filter((x) => x.counts);
+    assert.ok(counted.length >= 8, `${counted.length} harmonics counted`);
+    assert.ok(counted.every((x) => x.hz % hz === 0 && x.hz <= hz * 10 && x.spreadDb <= 6), JSON.stringify(counted));
+    // (the other grid: no line of its own counts)
+    const other = (hz === 50 ? m.hum.at60 : m.hum.at50).filter((x) => x.counts && x.hz % 300 !== 0);
+    assert.deepEqual(other, [], JSON.stringify(other));
     assert.ok(ids(m).includes("hum"), ids(m).join());
     assert.ok(!ids(m).includes("rumble"), "hum is no rumble");
   }
+});
+
+test("hum: a voice without a pause is never taken for hum, nor judged for it", { skip }, async () => {
+  // its pitch held at 120 Hz, held at 180 Hz, gliding from 80 to 120 Hz through 100 Hz
+  for (const [name, phase] of [["at120", "120*t"], ["at180", "180*t"], ["glide", "80*t+2.5*t*t"]]) {
+    const f = file(`steady-${name}.wav`);
+    run(["-filter_complex", steady(phase), "-ac", "1", "-c:a", "pcm_s16le", f]);
+    const m = await measure(f);
+    assert.ok(m.speech.share > 0.95, `${name}: speech ${m.speech.share}`);
+    assert.equal(m.hum.judged, false, name);
+    assert.equal(m.hum.hz, null, name);
+    assert.ok(!ids(m).includes("hum"), `${name}: ${ids(m).join()}`);
+  }
+  // and real hum under it is not named either: without a pause there is nothing to judge it by
+  const f = file("steady-hum.wav");
+  run(["-filter_complex", `${steady("120*t")}[v];${humOf(50, 0.006, "1", 8)};[v][hum]amix=inputs=2:normalize=0`, "-ac", "1", "-c:a", "pcm_s16le", f]);
+  const m = await measure(f);
+  assert.equal(m.hum.judged, false);
+  assert.match(m.hum.why, /judged from 0\.7 s on/);
+  assert.ok(!ids(m).includes("hum"), ids(m).join());
+});
+
+test("hum: a voice with pauses and its pitch held at 120 Hz is no hum; a hum in the first half only is named intermittent, not hum", { skip }, async () => {
+  const held = file("held120.wav");
+  run(["-filter_complex", VOICE.replace("st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t)))", "st(0,120*t)"), "-ac", "1", "-c:a", "pcm_s16le", held]);
+  const h = await measure(held);
+  assert.equal(h.hum.judged, true);
+  assert.equal(h.hum.hz, null, JSON.stringify(h.hum.at60.slice(0, 3)));
+  // (a hum that stops: a notch would run where there is none, and a line that is not there in
+  // every part of the pauses is no steady hum)
+  const half = file("hum-half.wav");
+  run(["-i", base, "-filter_complex", `${humOf(50, 0.006, `lt(t,${D / 2})`)};[0:a][hum]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", half]);
+  const m = await measure(half);
+  assert.equal(m.hum.judged, true);
+  assert.ok(m.hum.parts >= 2);
+  assert.equal(m.hum.hz, null, JSON.stringify(m.hum.at50.slice(0, 3)));
+  assert.equal(m.hum.intermittent, true);
+  assert.ok(m.hum.at50.slice(0, 3).every((x) => x.inParts > 0 && x.inParts < m.hum.parts), JSON.stringify(m.hum.at50.slice(0, 3)));
+  assert.ok(!ids(m).includes("hum"), ids(m).join());
 });
 
 test("clipping at a known share, also turned down afterwards and through AAC", { skip }, async () => {
@@ -115,6 +173,26 @@ test("clipping at a known share, also turned down afterwards and through AAC", {
   const aac = file("clipped.m4a");
   run(["-i", clipped, "-c:a", "aac", "-b:a", "128k", aac]);
   assert.ok(ids(await measure(aac)).includes("clipped"), "clipped through AAC");
+});
+
+test("clipping in a short cut: one loud crest is not clipped, a cut held at a ceiling is", { skip }, async () => {
+  // 0.8 s of the voice, 6 dB down, and one loud cycle at 100 Hz (a plosive) peaking at −1 dBFS:
+  // its two crests hold dozens of samples within 0.2 dB of the peak, a share and a pile-up as
+  // clipping has them, in two runs
+  const crest = file("crest.wav");
+  run(["-i", base, "-filter_complex", "[0:a]atrim=start=0.6:duration=0.8,asetpts=PTS-STARTPTS,volume=-6dB[v];" +
+    "aevalsrc=exprs='0.89*sin(2*PI*100*t)*between(t,0.4,0.41)':s=48000:d=0.8[b];[v][b]amix=inputs=2:normalize=0", "-c:a", "pcm_s16le", crest]);
+  const m = await measure(crest);
+  assert.ok(m.clipping.share >= CLIP_SOME_SHARE && m.clipping.pileUp >= 3, JSON.stringify(m.clipping));
+  assert.ok(m.clipping.runs < CLIP_MIN_RUNS, JSON.stringify(m.clipping));
+  assert.ok(!ids(m).includes("clipped"), ids(m).join());
+  // the same 0.8 s turned up and cut off at a ceiling 6 dB under its peak
+  const held = file("held.wav");
+  run(["-i", base, "-af", "atrim=start=0.6:duration=0.8,asetpts=PTS-STARTPTS,volume=3dB,aeval='max(-0.5,min(0.5,val(0)))'", "-c:a", "pcm_s16le", held]);
+  const c = await measure(held);
+  assert.ok(c.clipping.exactRuns >= CLIP_MIN_RUNS && c.clipping.exactRunSamples >= CLIP_MIN_RUN_SAMPLES, JSON.stringify(c.clipping));
+  near(c.clipping.ceilingDb, 20 * Math.log10(0.5), 0.3, "ceiling");
+  assert.ok(ids(c).includes("clipped"), ids(c).join());
 });
 
 test("a DC offset of 0.05", { skip }, async () => {
@@ -193,6 +271,17 @@ test("a video with sound is measured; one without, an empty file, silence and no
     assert.match(r.stdout.trim(), re);
     assert.equal(r.stdout.trim().split("\n").length, 1);
     assert.ok(JSON.parse(cli("measure", f, "--json").stdout).error);
+  }
+});
+
+test("a file whose name begins with a dash or holds a colon is measured, not read as an option or a protocol", { skip }, () => {
+  for (const name of ["-take.wav", "take:1.wav", "-i"]) {
+    fs.copyFileSync(base, file(name));
+    const r = spawnSync(process.execPath, [TOOL, "measure", name, "--json"], { encoding: "utf8", cwd: dir });
+    assert.equal(r.status, 0, `${name}: ${r.stdout}`);
+    const j = JSON.parse(r.stdout);
+    assert.equal(j.file, name);
+    near(j.levels.speechLufs, clean.levels.speechLufs, 0.1, name);
   }
 });
 

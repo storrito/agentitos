@@ -106,19 +106,17 @@ const HIGHPASS_MAX_HZ = 90;
 const SPEECH_BELOW_80_DB = -28;
 const BUTTERWORTH = { 2: [0.7071], 4: [0.5412, 1.3066], 6: [0.5176, 0.7071, 1.9319] };
 
-// dehum: a notch per harmonic as deep as it stands over its surroundings and 6 dB more (so that
-// the line ends under the noise beside it, not level with it), at most 40 dB. ffmpeg's equalizer
-// takes its width between the half-depth points (the core); a cut of g dB takes 3 dB off over
-// the core divided by 10^(g/40) (a 30 dB cut with a core of 2.5 Hz: 14 Hz). The core cannot be
-// narrower: a notch rings for about 1/(π·core) seconds, and with a core of 0.6 Hz a voice's
-// fundamental passing through 100 Hz left a 100 Hz tone 28 dB over the noise in every pause
-// after it (the synthetic voice, 2026-11-19); from 2.5 Hz none. It widens with the harmonic,
-// since the mains frequency wanders (49.9–50.1 Hz is ±0.45 Hz at the 9th).
-export const HUM_EXTRA_DB = 6;
-const HUM_MAX_DB = 40;
-const humCore = (n) => r2(2.5 + 0.2 * n);
-const width3dB = (core, depth) => r1(core / 10 ** (-depth / 40));
-const HUM_COUNTS_DB = 6;    // a harmonic `measure` counts
+// dehum: one notch on each harmonic `measure` counted (steady in the pauses, narrow, at a
+// multiple of the mains frequency), the same width on every one: ffmpeg's bandreject, its width
+// in Hz (Q = f / width), in double precision. Measured through ffmpeg 9.0.2 with sines
+// (2026-11-19), at 50, 100, 450 and 720 Hz alike: −3.0 dB at ±1.0 Hz, −12 dB at ±0.25 Hz, −20 dB
+// at ±0.1 Hz, −0.5 dB at ±3 Hz, full depth at the line; in single precision (bandreject's own
+// choice for float samples) its zeros miss 50 Hz and it takes only 35 dB there. The width is what
+// a voice loses: a notch takes π/2 × 2 = 3.1 Hz of a smooth spectrum, which in the narrowest third
+// octave with a mains harmonic in it (100 Hz: 89–112 Hz) is 0.6 dB (3 Hz wide: 1.0 dB). A mains
+// line wanders by a few hundredths of a Hz, times the harmonic's number; 0.1 Hz off it still
+// takes 20 dB.
+export const HUM_NOTCH_HZ = 2;
 
 // declick: adeclick's threshold (the AR model's residual against its spread). ffmpeg's default 2
 // takes plosive releases and the onsets of "t" and "k" for clicks; the lab's clean speech is left
@@ -264,19 +262,15 @@ export function repairPlan(m, opts = {}) {
 
   // 4. hum
   const h = m.hum;
-  if (has("hum") && h?.hz) {
-    const list = (h.hz === 50 ? h.at50 : h.at60) || [];
-    let lines = list.filter((x) => x.overDb >= HUM_COUNTS_DB);
-    if (!lines.length) lines = [{ n: 1, hz: h.hz, overDb: h.overDb }];
-    const notches = lines.map((x) => {
-      const depthDb = r1(Math.min(HUM_MAX_DB, x.overDb + HUM_EXTRA_DB)), coreHz = humCore(x.n);
-      return { hz: x.hz, depthDb, coreHz, widthHz: width3dB(coreHz, depthDb) };
-    });
-    for (const x of notches) chain.push(`equalizer=f=${x.hz}:t=h:w=${x.coreHz}:g=${-x.depthDb}`);
-    const harm = notches.length - 1;
+  // (only the harmonics that count, each on its own: none is notched because another was found)
+  const humLines = has("hum") && h?.hz ? ((h.hz === 50 ? h.at50 : h.at60) || []).filter((x) => x.counts) : [];
+  if (humLines.length) {
+    const notches = humLines.map((x) => ({ hz: x.hz, n: x.n, overDb: x.overDb, widthHz: HUM_NOTCH_HZ }));
+    for (const x of notches) chain.push(`bandreject=f=${x.hz}:t=h:w=${HUM_NOTCH_HZ}:r=f64`);
+    const n = notches.length;
     steps.push({
-      id: "dehum", why: `Hum at ${h.hz} Hz${harm ? ` with ${harm} harmonic${harm === 1 ? "" : "s"}` : ""}, up to ${dB(h.overDb)} dB over its surroundings: ${notches.length} narrow notch${notches.length === 1 ? "" : "es"}, ${dB(Math.min(...notches.map((x) => x.depthDb)))} to ${dB(Math.max(...notches.map((x) => x.depthDb)))} dB deep.`,
-      hz: h.hz, overDb: h.overDb, notches,
+      id: "dehum", why: `Hum at ${h.hz} Hz, steady in the pauses at ${notches.map((x) => x.hz).join(", ")} Hz (up to ${dB(h.overDb)} dB over the noise beside it): ${n === 1 ? "that line" : `each of the ${n} lines`} taken out by a notch ${HUM_NOTCH_HZ} Hz wide at its −3 dB points.`,
+      hz: h.hz, overDb: h.overDb, filter: "bandreject", widthHz: HUM_NOTCH_HZ, notches,
     });
   }
 
