@@ -269,6 +269,20 @@ test("faces: a passer-by counts by the time he is there (crew4 b5: a man seen in
   assert.doesNotMatch(q.said, /passer-by/);
 });
 
+test("faces: a face cut beside the ones that count is said as such, \"in the background\" only one small against the main face (the review's b9: four walking side by side, the fourth called a face in the background)", () => {
+  const size = [3840, 2160];
+  const b9 = counted(listOf(["woman with curly hair", person("A", [1482, 800, 270, 288], 17)], ["woman with short hair", person("B", [1858, 780, 300, 330], 17)],
+    ["tall man", person("C", [2380, 820, 260, 234], 17)], ["man on the right", person("D", [3090, 830, 230, 220], 17)]), size, 1.69);
+  assert.deepEqual(b9.small.map((p) => [p.who, p.why]), [["man on the right", "side"]]);
+  const p = planWindow({ frame: "fill", size, people: b9 });
+  assert.equal(p.frame, "fill");
+  assert.match(p.said, /the crop moved to the faces \(woman with curly hair, woman with short hair, tall man\).*; the 3 faces that count held, the one at the side cut \(man on the right: 67 % as tall as the largest, too small to count\)/);
+  assert.doesNotMatch(p.said, /background/);
+  // the same man half as tall as the largest, behind them: in the background
+  const far = counted(listOf(["woman with short hair", person("B", [1858, 780, 300, 330], 17)], ["man on the right", person("D", [3090, 830, 150, 160], 17)]), size, 1.69);
+  assert.match(planWindow({ frame: "fill", size, people: far }).said, /a face in the background cut \(man on the right\)/);
+});
+
 test("faces: a fill whose eyes would lie under the captions is raised over the ground, at the same size (the review's b7, CM S Ingram alone)", () => {
   const low = counted(listOf(["CM S Ingram", person("I", [564, 420, 135, 165], 17)]), [1280, 720], 1.73);
   const p = planWindow({ frame: "fill", size: [1280, 720], people: low, captions: CAPTIONS });

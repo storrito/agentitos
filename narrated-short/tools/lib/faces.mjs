@@ -34,6 +34,11 @@ export const SIZE = [1080, 1920];
 // second person really there in the people beats of crew4, epps2 and the review's short is seen in
 // 94 % of the moments or more (the review's b2, b4, b7, b9; crew4 b5's two women).
 export const SEEN = 0.25, MAIN_SEEN = 0.5, HELD_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04;
+// A face that does not count is said by why: "in the background" only where it is smaller than
+// BEHIND of the main face's height (the review's b3: the woman at the laptop, 53 %, the panel far
+// behind, 25 to 32 %); one larger than that is beside the others (the review's b9: a fourth man
+// walking at the side of three, 67 %), one seen too briefly a passer-by.
+export const BEHIND = 0.6;
 // room kept beside a face in a band's window: a share of its width each side (an ear, hair)
 export const SIDE = 0.12;
 // the frame's faces a text is checked against: at least this share of the frame's height
@@ -84,8 +89,8 @@ export function counted(list, [, h], seconds) {
   const tallest = (ps) => ps.reduce((a, p) => (!a || p.h > a.h ? p : a), null);
   const main = tallest(all.filter((p) => p.n >= MAIN_SEEN * moments)) || tallest(all.filter((p) => p.n >= SEEN * moments));
   const held = main ? all.filter((p) => p === main || (p.n >= HELD_SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
-  // why a face does not count: passing (of the size to count, seen too briefly), else behind (smaller, or a speck)
-  const why = (p) => (main && p.n < HELD_SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h ? "passing" : "behind");
+  // why a face does not count: behind (small against the main face, or a speck), passing (seen too briefly), side (a little smaller than to count)
+  const why = (p) => (!main || p.h < BEHIND * main.h || p.h < MIN_FACE * h ? "behind" : p.n < HELD_SEEN * moments ? "passing" : "side");
   return { main: held.length ? main : null, held, small: all.filter((p) => !held.includes(p)).map((p) => ({ ...p, why: why(p) })) };
 }
 
@@ -161,7 +166,14 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   const cutOf = (win, why) => (people.small || []).filter((p) => (p.why || "behind") === why && p.n >= 0.25 * Math.max(...held.map((q) => q.n)) && !within(win, featHull([p])));
   const few = (ps) => (ps.length > 2 ? `${names(ps.slice(0, 2))} and ${ps.length - 2} more` : names(ps));
   const passing = (win) => { const ps = cutOf(win, "passing"); return ps.length ? [`${ps.length > 1 ? "passers-by" : "a passer-by"} not held (${few(ps)})`] : []; };
-  const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", cutOf(win, "behind").length ? `${cutOf(win, "behind").length > 1 ? "faces" : "a face"} in the background cut (${few(cutOf(win, "behind"))})` : "", ...passing(win)].filter(Boolean);
+  // a face a little smaller than to count, beside the held ones: how many count and are held, and that it is cut
+  const beside = (win) => {
+    const ps = cutOf(win, "side");
+    if (!ps.length) return [];
+    const tall = ps.length > 1 ? `${ps.map((p) => Math.round((p.h / main.h) * 100)).join(" and ")} %` : `${Math.round((ps[0].h / main.h) * 100)} %`;
+    return [`${held.length > 1 ? `the ${held.length} faces that count` : "the face that counts"} held, ${ps.length > 1 ? `the ${ps.length} at the side` : "the one at the side"} cut (${few(ps)}: ${tall} as tall as the largest, too small to count)`];
+  };
+  const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", cutOf(win, "behind").length ? `${cutOf(win, "behind").length > 1 ? "faces" : "a face"} in the background cut (${few(cutOf(win, "behind"))})` : "", ...beside(win), ...passing(win)].filter(Boolean);
   const now = shown({ frame, zoom, pan, size: [cw, ch] });
   if (panSet || (frame === "whole" && zoomSet)) {
     const cut = featsCut(now, held);
