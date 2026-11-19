@@ -767,6 +767,11 @@ test("show with \"sound\": {\"hold\": level}: silent under the keep's words, up 
   // a clip without sound in a keep with a hold: only the way out that is left
   const mute = placeShows(twoKeeps({ show: "result.mp4", hold: 2 }), plan(words, twoKeeps({ show: "result.mp4", hold: 2 }), settings, voices).pieces, r.words, () => VIDEO_INFO(60, false));
   assert.match(mute.warnings[0], /plays on, which has no sound: end the keep at its last word, "hold": 0$/);
+  // the hold form with no hold to play in: said, with the hold to give
+  const shortCut = twoKeeps({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 0 });
+  const short = placeShows(shortCut, plan(words, shortCut, settings, voices).pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(short.inserts, []);
+  assert.match(short.notes[0], /^! keep 1: "sound": \{"hold": 0\.8\} plays only after the last word, and result\.mp4 plays [\d.]+ s there: too short to be heard, so it stays silent; give the keep "hold": 1\.5\.$/);
   // no hold (0): nothing said
   const none = placeShows(twoKeeps({ show: "result.mp4", hold: 0 }), plan(words, twoKeeps({ show: "result.mp4", hold: 0 }), settings, voices).pieces, r.words, () => VIDEO_INFO(60));
   assert.deepEqual(none.warnings, []);

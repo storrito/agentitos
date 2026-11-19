@@ -127,6 +127,8 @@ export function placeShows(cut, pieces, words, infoOf) {
     if (skipped.length) notes.push(`! keep ${k + 1}: "show" plays ${show.file} over the whole keep, so its ${skipped.join(" and ")} ${skipped.length > 1 ? "are" : "is"} left out (the shown video is the keep's picture); to see ${keep.view === "face" ? "the face" : keep.zoom !== undefined && keep.zoom !== "off" ? "the zoom" : "that picture"} too, give it a keep of its own without "show".`);
     if (sound > 0 && duration > 0.1 && !(holdOnly && spoken > 0.3 && duration - spoken <= FADE + 0.1)) {
       inserts.push({ k, key, file: show.file, src: info.path || show.file, from, start, duration, sound, spoken, ...(holdOnly ? { hold: true } : {}) });
+    } else if (sound > 0 && holdOnly && duration > spoken) {
+      notes.push(`! keep ${k + 1}: "sound": {"hold": ${sound}} plays only after the last word, and ${show.file} plays ${(duration - spoken).toFixed(1)} s there: too short to be heard, so it stays silent; give the keep "hold": 1.5.`);
     }
   }
   return { sources, inserts, warnings, notes };
