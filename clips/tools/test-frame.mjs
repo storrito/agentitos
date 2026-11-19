@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA } from "./frame.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA, answerOf, facesOver } from "./frame.mjs";
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -598,4 +598,27 @@ test("the features between two stills are an estimate: faceAt names the two stil
   assert.equal(faceAt(p, 2.4).feat.between, undefined);
   // after the last still, as there: an estimate from it alone once it is far
   assert.deepEqual(faceAt(p, 3).feat.between, [2.5, 2.5]);
+});
+
+test("the faces alone, from the agent's own boxes: each box a still of its shot, no request, the face between two of them on the line, none in a shot without a box", () => {
+  const meta = { width: 1080, height: 1920 };
+  const shots = [{ start: 0, end: 10 }, { start: 10, end: 14 }];
+  const answer = answerOf([[{ t: 1, box: [300, 570, 600, 900] }, { t: 9, box: [340, 610, 600, 900] }]], shots, meta);
+  assert.equal(answer.by, "eye");
+  assert.equal(answer.cost, 0);
+  assert.deepEqual(answer.shots[0].stills.map((s) => s.t), [1, 9]);
+  assert.deepEqual(answer.shots[1].stills, []);
+  // thousandths, [ymin, xmin, ymax, xmax], as the model answers
+  assert.deepEqual(answer.shots[0].stills[0].faces[0].box_2d, [296.9, 277.8, 765.6, 833.3]);
+  const seen = shotsOf(answer, shots, meta);
+  const r = facesOver(seen, meta);
+  assert.deepEqual(r.size, [1080, 1920]);
+  const at = (t) => r.faces.find((f) => Math.abs(f.t - t) < 1e-6)?.boxes[0];
+  near(at(1).box[0], 300, 1); near(at(1).box[1], 570, 1); near(at(1).box[3], 900, 1);
+  // halfway between the two boxes
+  near(at(5).box[0], 320, 1); near(at(5).box[1], 590, 1);
+  // no eyes, nose and mouth from the agent: the head's proportions stand in where a box is used
+  assert.equal(at(5).feat, undefined);
+  // the second shot has no box of the agent: no face there
+  assert.equal(r.faces.some((f) => f.t >= 10), false);
 });
