@@ -1194,3 +1194,22 @@ test("review 3: nonsense from the layout skill (null, a candidate with circle {}
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("review 6: a \"text\" fault does not keep the circle on the region (16:9, zoom [0.75,0.05,0.98,0.3], text 12: the circle top left, as without text); without the layout skill the text's height is given, not null; the placement's folder is named by the keep", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const text of [0, 12]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen: [1920, 1080], crop: [0.75, 0.05, 0.98, 0.3], text });
+    assert.deepEqual(r.circles[0].box, [96, 108, 216, 216], `text ${text}: ${r.said}`);
+    assert.ok(!r.p.screen.faults.includes("circle"));
+  }
+  const none = oneKeep({ width: 1920, height: 1080, screen: [1920, 1080], crop: [0.75, 0.05, 0.98, 0.3], text: 12, tool: null });
+  assert.equal(none.p.screen.textHeight, 24); assert.equal(none.p.screen.readable, undefined);
+  // keep 2 (the only screen keep) asks layout in placement/screen-2, its second picture in screen-2-2
+  const { dir, sources, piece } = screenProject();
+  try {
+    const a = areas(1080, 1920, SZ, { captions: true });
+    const ps = [{ ...piece(1, "screen", [0.05, 0.04, 0.95, 0.08]), segments: [{ in: 3, out: 4, crop: [0.05, 0.04, 0.95, 0.08] }, { in: 4, out: 6, crop: [0.536, 0.398, 0.722, 0.575] }] }];
+    const said = screenView(dir, { keep: [{ view: "face" }, {}] }, ps, sources, { width: 1080, height: 1920, zones: SZ, areas: a }).join("\n");
+    assert.ok(fs.existsSync(path.join(dir, "placement", "screen-2", "placement.json")) && fs.existsSync(path.join(dir, "placement", "screen-2-2", "placement.json")), said);
+    assert.match(said, /screen-<keep>\/placement\.json/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

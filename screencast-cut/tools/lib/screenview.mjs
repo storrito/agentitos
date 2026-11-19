@@ -209,7 +209,7 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
   if (!ps.length) return [];
   const cam = sources.webcam?.video ? sources.webcam : null;
   const said = [`Screen (${tool ? `the layout skill, ${area ? "around the captions as built" : "no captions"}` : "as before: agentitos' layout skill is not beside this one, or LAYOUT_TOOL naming its tools/place.mjs"}): the picture as before where it passes (its region inside the safe box across, the circle and the label off it, its text read where the keep's "text" says how tall), else the layout skill's first, unless a keep names another with "layout":`];
-  const done = new Map();
+  const done = new Map(), folders = [];
   const keepSpan = (k) => { const own = pieces.filter((p) => p.keep === k); return `${clock(own[0].start)}–${clock(own.at(-1).start + own.at(-1).duration)}`; };
   for (const p of ps) {
     const keep = cut.keep?.[p.keep] || {};
@@ -222,7 +222,10 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
       const key = JSON.stringify([p.keep, p.source, c, pip, on]);
       let got = done.get(key);
       if (!got) {
-        got = placeOne({ dir, k: p.keep, n: done.size + 1, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, zones, areas });
+        // the folder is named by the keep (screen-3 for keep 3; screen-3-2 for its second picture)
+        const m = folders.filter((k) => k === p.keep).length;
+        folders.push(p.keep);
+        got = placeOne({ dir, name: `screen-${p.keep + 1}${m ? `-${m + 1}` : ""}`, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, zones, areas });
         done.set(key, got);
         said.push(...got.lines.map((l, j) => (j ? `    ${l}` : `  keep ${p.keep + 1} (${keepSpan(p.keep)}${c.join() === "0,0,1,1" ? ", the whole screen" : `, zoom [${c.join(", ")}]`}): ${l}`)));
       }
@@ -230,20 +233,20 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
       if (i === 0) p.screen = got.facts;
     }
   }
-  if (tool) said.push(`  (every candidate with its reasons: ${path.relative(process.cwd(), path.join(dir, "placement"))}/screen-<n>/placement.json)`);
+  if (tool) said.push(`  (every candidate with its reasons: ${path.relative(process.cwd(), path.join(dir, "placement"))}/screen-<keep>/placement.json)`);
   return said;
 }
 
-function placeOne({ dir, k, n, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, zones, areas }) {
+function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, zones, areas }) {
   const before = beforePicture(c, src, areas, pip);
   const facts = (pic, j, extra = {}) => ({ fit: pic.fit, scale: r2(pic.scale), ground: j.ground, region: pic.region.map(r0), ...(text ? { text, textHeight: j.textHeight } : {}),
     ...(extra.readable ? { readable: extra.readable } : {}), under: j.under, faults: j.faults.map((f) => f.code), ...(pic.mark ? { mark: pic.mark } : {}), ...(extra.named ? { named: true } : {}) });
   const asBefore = (why) => {
-    const j = judge(before, { zones, labels: on, width, height });
+    const j = judge(before, { zones, labels: on, text, width, height });
     return { pic: before, facts: facts(before, j), lines: [`as before, because ${why}; ${textSentence(before, { text, size: src })}`] };
   };
   if (!tool) return asBefore("the layout skill is missing");
-  const placed = placeScreen({ tool, folder: path.join(dir, "placement", `screen-${n}`), src, crop: c, text, cam: pip ? cam : null, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout });
+  const placed = placeScreen({ tool, folder: path.join(dir, "placement", name), src, crop: c, text, cam: pip ? cam : null, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout });
   if (placed.why) return asBefore(placed.why);
   if (!placed.res || typeof placed.res !== "object" || Array.isArray(placed.res)) return asBefore("layout's place answered no placement for it");
   try {
@@ -266,15 +269,16 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones
   // held inside the safe box across (the rest of the screen still to the frame's edges)
   let moved = null;
   const codes = before.j.faults.map((f) => f.code);
-  if (codes.includes("circle") && codes.every((x) => x === "circle" || x === "across")) {
+  if (codes.includes("circle")) {
     let base = before;
     if (codes.includes("across")) base = shiftedInside(before, src, zones, areas, width);
     base.j = judge(base, opts);
-    const free = base.j.faults.length && base.j.faults.every((f) => f.code === "circle") ? freeCorner(base, { zones, areas, labels: on, width, height }) : null;
+    const free = base.j.faults.some((f) => f.code === "circle") ? freeCorner(base, { zones, areas, labels: on, width, height }) : null;
     if (free) {
       moved = { ...base, fit: `${base.fit}, the circle ${free.corner}`, corner: free.corner, circle: free.circle, circleOnly: base === before, mark: "✓" };
       moved.j = judge(moved, opts);
-      if (moved.j.faults.length) moved = null;
+      // what else is wrong (its text too small) stays said; choose takes it where it adds nothing
+      if (moved.j.faults.length) moved.mark = "!";
     }
   }
   const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own: moved ? [moved] : [] });
