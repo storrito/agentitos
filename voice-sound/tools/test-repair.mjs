@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import { measure } from "./voice.mjs";
 import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample } from "./lib/repair.mjs";
 import { Refusal } from "./lib/analyse.mjs";
+import { fftOf } from "./lib/fft.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const skip = !ffmpeg && "no ffmpeg";
@@ -100,7 +101,7 @@ function made(over = {}) {
     speech: { share: 0.7, longest: [{ from: 12.3, to: 13.5, seconds: 1.2, db: -70, lufs: -72, silent: false }], confidence: "high" },
     levels: { speechLufs: -20, noiseLufs: -75, snrDb: 55, snrADb: 55 },
     noise: { lufs: -75, kind: "broadband", fluctuationDb: 0.5, spreadDb: 1, bands: NOISE_BANDS },
-    hum: { hz: null, harmonics: 0, overDb: 2, at50: [], at60: [] },
+    hum: { judged: true, hz: null, harmonics: 0, overDb: null, at50: [], at60: [] },
     clipping: { peakDb: -3, ceilingDb: -3, pileUp: 0.2, share: 0, exactShare: 0 },
     dc: { values: [0], db: -120 },
     low: { below80Db: -30, pauses80Db: -35, thumps: { count: 0, perMinute: 0, at: [] } },
@@ -125,14 +126,24 @@ test("plan: a clean recording gets the high-pass at 80 Hz and nothing else", () 
 test("plan: each finding alone gives its step and no other", () => {
   const cases = [
     ["clipped", { clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 } }, "declip"],
-    ["hum", { hum: { hz: 50, harmonics: 3, overDb: 18, at50: [{ n: 1, hz: 50, overDb: 18 }, { n: 2, hz: 100, overDb: 12 }, { n: 3, hz: 150, overDb: 8 }, { n: 4, hz: 200, overDb: 3 }], at60: [] } }, "dehum"],
+    ["hum", { hum: { judged: true, hz: 50, harmonics: 2, overDb: 18, at50: [{ n: 1, hz: 50, overDb: 18, counts: true }, { n: 2, hz: 100, overDb: 12, counts: true }, { n: 3, hz: 150, overDb: 12, counts: false }, { n: 4, hz: 200, overDb: 3, counts: false }], at60: [] } }, "dehum"],
     ["clicks", { clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] } }, "declick"],
     ["noise", { levels: { speechLufs: -20, noiseLufs: -45, snrDb: 25, snrADb: 25 }, noise: { lufs: -45, kind: "broadband", bands: NOISE_BANDS.map((b) => ({ ...b, db: b.db + 25 })) } }, "denoise"],
   ];
   for (const [id, over, step] of cases) {
     const p = repairPlan(made({ ...over, findings: [finding(id)] }));
     assert.deepEqual(ids(p.steps), step === "highpass" ? ["highpass"] : (step === "declip" ? ["declip", "highpass"] : ["highpass", step]), id);
+    if (id !== "hum") continue;
+    // each harmonic on its own: the two that count get a notch, 150 Hz (12 dB over, not steady) none
+    const st = p.steps.find((s) => s.id === "dehum");
+    assert.deepEqual(st.notches.map((x) => x.hz), [50, 100]);
+    assert.deepEqual(p.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50:t=h:w=2:r=f64", "bandreject=f=100:t=h:w=2:r=f64"]);
+    assert.equal(st.widthHz, 2);
+    assert.match(st.why, /^Hum at 50 Hz, steady in the pauses at 50, 100 Hz \(up to 18 dB over the noise beside it\): each of the 2 lines taken out by a notch 2 Hz wide at its −3 dB points\.$/);
   }
+  // hum that was not judged (too little pause) or counts nowhere: no notch
+  for (const hum of [{ judged: false, hz: null, harmonics: 0, overDb: null, at50: [], at60: [] }, { judged: true, hz: 50, harmonics: 0, overDb: 12, at50: [{ n: 1, hz: 50, overDb: 12, counts: false }], at60: [] }])
+    assert.deepEqual(ids(repairPlan(made({ hum, findings: [finding("hum")] })).steps), ["highpass"]);
   // the low end and DC change the high-pass, never add a step
   const rumble = repairPlan(made({ low: { below80Db: -10, pauses80Db: -10, thumps: { count: 0, perMinute: 0, at: [] } }, findings: [finding("rumble")] }));
   assert.deepEqual(ids(rumble.steps), ["highpass"]);
@@ -238,34 +249,83 @@ test("a clean voice comes out nearly as it went in, as long and in step", { skip
     near(b.diff, m.tone.bands.find((c) => c.lo === b.lo).diff, 0.5, `${b.lo} Hz band`);
 });
 
-test("hum at 50 Hz: down by at least the notches' depth, the voice's band not", { skip }, async () => {
-  const tones = [1, 2, 3].map((h, i) => `sine=f=${50 * h}:r=48000:d=${D},volume=${[0.01, 0.006, 0.004][i]}[h${h}]`).join(";");
-  fault("hum.wav", `${tones};[0:a][h1][h2][h3]amix=inputs=4:normalize=0[o]`);
-  const m = await measure(file("hum.wav"));
-  const { r, out, x, y } = await mended("hum.wav", m);
-  const dehum = r.steps.find((s) => s.id === "dehum");
-  assert.ok(dehum, ids(r.steps).join());
-  assert.equal(dehum.hz, 50);
-  assert.ok(dehum.notches.length >= 3, JSON.stringify(dehum.notches));
-  // (the hum alone through the same graph: at 150 Hz the voice's own fundamental passes by)
-  run(["-filter_complex", `${tones};[h1][h2][h3]amix=inputs=3:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("humonly.wav")]);
-  run(["-i", file("humonly.wav"), "-filter_complex", r.graph, "-map", "[out]", "-c:a", "pcm_f32le", file("humonly.out.wav")]);
-  // (the second half: a notch this narrow takes a few tenths of a second to settle)
-  const half = (z) => z.subarray(z.length >> 1);
-  const hx = half(samples(file("humonly.wav"))), hy = half(samples(file("humonly.out.wav")));
-  for (const n of dehum.notches.filter((n) => n.hz <= 150)) {
-    const down = lineDb(hx, n.hz) - lineDb(hy, n.hz);
-    assert.ok(down >= n.depthDb, `${n.hz} Hz down by ${down.toFixed(1)} dB, promised ${n.depthDb}`);
+// the power of x in bands lo–hi (one FFT over all of it, zero-padded)
+function bandPower(x) {
+  let n = 1; while (n < x.length) n <<= 1;
+  const re = new Float64Array(n), im = new Float64Array(n);
+  re.set(x);
+  fftOf(n)(re, im);
+  const df = 48000 / n;
+  return (lo, hi) => { let s = 0; for (let k = Math.ceil(lo / df); k * df < hi; k++) s += re[k] * re[k] + im[k] * im[k]; return s; };
+}
+// mains hum of ten harmonics, as the lab's corpus builds it (the tenth added)
+const HUM_AMPS = [1, 0.5, 0.6, 0.25, 0.35, 0.15, 0.2, 0.1, 0.12, 0.08];
+const humTones = (hz, level) => `${HUM_AMPS.map((a, i) => `sine=f=${hz * (i + 1)}:r=48000:d=${D},volume=${(level * a).toPrecision(3)}[h${i}]`).join(";")};` +
+  `${HUM_AMPS.map((_, i) => `[h${i}]`).join("")}amix=inputs=${HUM_AMPS.length}:normalize=0`;
+// a graph without its notches: the same steps but the dehum
+const unnotched = (graph) => graph.replace(/,bandreject=[^,;[]+/g, "");
+
+test("hum of ten harmonics: every harmonic found down by 20 dB and more, the voice in 90–500 Hz by under 1 dB", { skip }, async (t) => {
+  // (the voice's pitch here moves over a speaker's range, 65 to 185 Hz, where VOICE's wanders by
+  // ±25 Hz: a narrow pitch puts a band's whole power next to one notch, VOICE's 2nd harmonic at
+  // 190–202 Hz beside the notch at 200 Hz loses 1.3 dB of the third octave 160–202 Hz)
+  const wide = file("voice-wide.wav");
+  run(["-filter_complex", VOICE.replace("st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t)))", "st(0,125*t+34.6*(1-cos(1.3*t))+4.84*(1-cos(3.1*t)))"), "-ac", "1", "-c:a", "pcm_f32le", wide]);
+  for (const hz of [50, 60]) {
+    const name = `hum${hz}.wav`;
+    run(["-i", wide, "-filter_complex", `${humTones(hz, 0.01)}[hum];[0:a][hum]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file(name)]);
+    const m = await measure(file(name));
+    const { r, out, x, y } = await mended(name, m);
+    assert.equal(y.length, x.length);
+    const dehum = r.steps.find((s) => s.id === "dehum");
+    assert.ok(dehum, ids(r.steps).join());
+    assert.equal(dehum.hz, hz);
+    assert.ok(dehum.notches.length >= 8 && dehum.notches.every((n) => n.hz % hz === 0 && n.widthHz === 2), JSON.stringify(dehum.notches));
+    assert.match(dehum.why, new RegExp(`^Hum at ${hz} Hz, steady in the pauses at [\\d, ]+ Hz .*: each of the ${dehum.notches.length} lines taken out by a notch 2 Hz wide at its −3 dB points\\.$`));
+    // the hum alone, through the graph with its notches and without them (after the first
+    // second: a notch 2 Hz wide settles in about half of one)
+    run(["-filter_complex", `${humTones(hz, 0.01)}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("humonly.wav")]);
+    const through = (graph, z) => { run(["-i", file("humonly.wav"), "-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_f32le", file(z)]); return samples(file(z)).subarray(48000); };
+    const hy = through(r.graph, "humonly.out.wav"), hx = through(unnotched(r.graph), "humonly.ref.wav");
+    let least = Infinity, worst = 0;
+    for (const n of dehum.notches) {
+      const down = lineDb(hx, n.hz) - lineDb(hy, n.hz);
+      least = Math.min(least, down);
+      assert.ok(down >= 20, `${n.hz} Hz down by ${down.toFixed(1)} dB`);
+    }
+    // the voice alone through the same two graphs, in third octaves a sixth of an octave apart
+    // from 90 to 500 Hz: those across a harmonic and those between them
+    const vy = file("voice.notched.wav"), vx = file("voice.unnotched.wav");
+    run(["-i", wide, "-filter_complex", r.graph, "-map", "[out]", "-c:a", "pcm_f32le", vy]);
+    run(["-i", wide, "-filter_complex", unnotched(r.graph), "-map", "[out]", "-c:a", "pcm_f32le", vx]);
+    const py = bandPower(samples(vy)), px = bandPower(samples(vx));
+    for (let lo = 90; lo * 2 ** (1 / 3) <= 500; lo *= 2 ** (1 / 6)) {
+      const hi = lo * 2 ** (1 / 3), change = 10 * Math.log10(py(lo, hi) / px(lo, hi));
+      if (Math.abs(change) > Math.abs(worst)) worst = change;
+      assert.ok(Math.abs(change) < 1, `${hz} Hz hum: the voice in ${lo.toFixed(0)}–${hi.toFixed(0)} Hz changed by ${change.toFixed(2)} dB`);
+    }
+    t.diagnostic(`${hz} Hz: ${dehum.notches.length} harmonics notched, each down by ${least.toFixed(1)} dB or more; the voice's third octaves in 90–500 Hz changed by ${worst.toFixed(2)} dB at most`);
+    // and no tone rings on at a notch into the pauses
+    const a = await measure(out);
+    assert.ok(!a.findings.some((f) => f.id === "hum"), JSON.stringify(a.hum.at50.slice(0, 4)));
   }
-  assert.equal(y.length, x.length);
-  // the voice's band (300–3000 Hz) as it was; the whole voice within a dB (this one's fundamental
-  // sweeps through 100 and 150 Hz and carries much of its power)
-  const voiceBand = (f, name) => { run(["-i", f, "-af", "highpass=f=300,highpass=f=300,lowpass=f=3000,lowpass=f=3000", "-c:a", "pcm_f32le", file(name)]); return rms(samples(file(name))); };
-  near(20 * Math.log10(voiceBand(out, "hum.vb.out.wav") / voiceBand(file("hum.wav"), "hum.vb.wav")), 0, 0.2, "the voice's band");
-  const a = await measure(out);
-  near(a.levels.speechLufs, m.levels.speechLufs, 1, "the voice");
-  // and no tone rings on at a notch into the pauses
-  assert.ok(!a.findings.some((f) => f.id === "hum"), JSON.stringify(a.hum.at50.slice(0, 4)));
+});
+
+test("the notch, measured through ffmpeg: 2 Hz wide at its −3 dB points on every harmonic, deep at its line", { skip }, async () => {
+  const p = repairPlan(made({ hum: { judged: true, hz: 50, harmonics: 2, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }, { n: 9, hz: 450, overDb: 12, counts: true }], at60: [] }, findings: [finding("hum")] }));
+  const notches = p.graph.match(/bandreject=[^,;[]+/g);
+  assert.equal(notches.length, 2);
+  for (const [f0, notch] of [[50, notches[0]], [450, notches[1]]]) {
+    // (lavfi's sine has an amplitude of 1/8: its line is (1/16)² in lineDb's terms; the first
+    // second left out, the notch settling)
+    const gain = (f) => {
+      run(["-f", "lavfi", "-i", `sine=f=${f}:r=48000:d=3`, "-af", `aformat=sample_fmts=flt,${notch}`, "-c:a", "pcm_f32le", file("sine.wav")]);
+      return lineDb(samples(file("sine.wav")).subarray(48000), f) - db((0.125 / 2) ** 2);
+    };
+    for (const d of [-1, 1]) near(gain(f0 + d), -3, 0.2, `${f0} Hz notch at ${d > 0 ? "+" : ""}${d} Hz`);
+    for (const d of [-3, 3]) assert.ok(gain(f0 + d) > -0.7, `${f0 + d} Hz`);
+    assert.ok(gain(f0) < -60, `${f0} Hz itself: ${gain(f0).toFixed(1)} dB`);
+  }
 });
 
 test("steady noise: lower in the pauses, the voice within a dB or two, in step (sample and profile)", { skip }, async () => {

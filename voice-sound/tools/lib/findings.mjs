@@ -32,6 +32,26 @@ export const NOISE_HISS_DB = -3;
 export const HUM_SOME_DB = 10;
 export const HUM_STRONG_DB = 20;
 export const HUM_STRONG_UNDER_DB = 35;
+// How lib/analyse.mjs tells a hum (its humOf), leaning towards none: a missed weak hum costs
+// little, a notch in a voice's fundamental costs the voice. It reads the pauses alone, and with
+// under 0.7 s of them (two windows of 341 ms that do not overlap, the fewest between which a
+// line's level can be compared) there is no hum to name, whatever the voiced frames hold: a
+// voice's pitch stands as a line in them as well as a hum does (a 6-second cut of clean speech
+// without a pause showed "60 Hz" at its speaker's fundamental, 2026-11-19). On the lab's corpus
+// that day: with 1 s the built-in hum was found on 29 of 168 short files, with 0.7 s on 51,
+// with 0.5 s on 87 but from one window, where a voice's tail ringing on in a room has nothing
+// to be told from; none of the three named a hum falsely on 85 real and clean recordings. The
+// pauses are cut into parts of at least 0.5 s, up to four, in time order, so that a hum is seen
+// in different parts of the recording where it has pauses there.
+export const HUM_MIN_PAUSE_S = 0.7;
+export const HUM_PART_S = 0.5;
+export const HUM_PARTS_MAX = 4;
+// A harmonic counts when it stands 6 dB over the bins 9 to 15 Hz beside it in every part, and
+// its level spreads by at most 6 dB over the pause windows (10th to 90th percentile): mains hum
+// is steady, a voice's pitch moves by 20 to 50 dB, and the noise under a steady line 6 dB over
+// it spreads it by 3 dB (pink noise alone: no line over 0 dB; 2026-11-19).
+export const HUM_LINE_DB = 6;
+export const HUM_STEADY_DB = 6;
 
 // clipped: a pile-up at the ceiling 3 times the density 1–3 dB under it (a voice's levels thin
 // out towards its peak: about 0.1 to 0.5 there), on 1 in 10 000 samples; strong from 1 in 1000
@@ -39,6 +59,17 @@ export const HUM_STRONG_UNDER_DB = 35;
 export const CLIP_PILEUP = 3;
 export const CLIP_SOME_SHARE = 1e-4;
 export const CLIP_STRONG_SHARE = 1e-3;
+// …and a share alone is no clipping: in a short cut the voice's one loudest crest is a share (a
+// 0.8-s cut of clean speech had 11 samples within 0.2 dB of its peak: 0.029 %). Clipping is a
+// signal held at its ceiling again and again: at least CLIP_MIN_RUNS separate runs there, of
+// CLIP_MIN_RUN_SAMPLES samples or more on average (48 kHz). Of 1522 cuts of 0.5 to 1.5 s of the
+// lab's clean speech (2026-11-19), 17 had a pile-up over the share, in 1 to 9 runs (a loud held
+// vowel: 9 runs of 9 samples), 2 samples a run at the least; 12 leaves a third over that. It
+// costs short cuts of mild clipping: of 0.8-s cuts of speech clipped 6 dB under its peak, half
+// of those a pile-up shows have fewer runs (12 dB and more: 3 of 114, 0 of 126). Whole
+// recordings keep theirs: every clipped file of the corpus has 41 runs and more.
+export const CLIP_MIN_RUNS = 12;
+export const CLIP_MIN_RUN_SAMPLES = 3;
 
 // uneven: the 3-s phrase levels of read speech spread by 4 to 6 LU; a step of 4 LU between two
 // parts of a recording is heard (a speaker turned away, two takes)
@@ -132,12 +163,14 @@ export function findingsOf(m) {
   if (snr != null && snr < NOISE_SOME_DB)
     add("noise", snr < NOISE_STRONG_DB, `Noise ${i0(snr)} dB under the speech (A-weighted)${m.noise?.kind ? `, ${m.noise.kind}` : ""}.`);
   const h = m.hum;
-  if (h?.hz && h.overDb >= HUM_SOME_DB)
+  if (h?.judged !== false && h?.hz && h.overDb >= HUM_SOME_DB)
     add("hum", h.overDb >= HUM_STRONG_DB || (h.underSpeechDb != null && h.underSpeechDb <= HUM_STRONG_UNDER_DB),
       `Hum at ${h.hz} Hz, ${h.harmonics} harmonic${h.harmonics === 1 ? "" : "s"}, ${i0(h.overDb)} dB over the noise beside it${h.underSpeechDb != null ? `, ${i0(h.underSpeechDb)} dB under the speech` : ""}.`);
   const c = m.clipping;
   if (c) {
-    const share = Math.max(c.pileUp >= CLIP_PILEUP ? c.share : 0, c.exactShare);
+    const repeated = (runs, samples) => runs >= CLIP_MIN_RUNS && samples >= CLIP_MIN_RUN_SAMPLES;
+    const share = Math.max(c.pileUp >= CLIP_PILEUP && repeated(c.runs, c.runSamples) ? c.share : 0,
+      repeated(c.exactRuns, c.exactRunSamples) ? c.exactShare : 0);
     if (share >= CLIP_SOME_SHARE)
       add("clipped", share >= CLIP_STRONG_SHARE, `Clipped: ${pct(share)} of the samples sit at a ceiling of ${f1(c.ceilingDb)} dBFS${c.ceilingDb < -0.5 ? " (turned down after it clipped)" : ""}.`);
   }
