@@ -6,6 +6,8 @@
 //                                         they were recorded: their words ("äh" included), their
 //                                         level; writes source/brief.md. Recordings of sound alone
 //                                         (MP3, M4A, WAV, a video file without a picture) the same
+//   node tools/takes.mjs new <dir> --like <other dir>   another cut of the recordings another
+//                                         folder took in (a short beside the film): no new words
 //   node tools/takes.mjs propose <dir>    a model watches the videos (listens to the sound) and
 //                                         proposes the keeps: <dir>/proposal.json, as cut.json
 //   node tools/takes.mjs build <dir>      cut.json → the cut as a HyperFrames project (a preview,
@@ -71,7 +73,7 @@ import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces
 import { pieceSpan, clockOf, covering, whole, takeKind, pictureRule, inFrame, faceTrack, facesFault, speakerPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
-const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
+const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform", "like",
   // faces and place (kept in place.json, not in the settings)
   "eye", "grid-at", "picture", "raise", "caption-y", "font-size", "lines", "lift", "hook-kind"];
 const FLAGS = ["off", "grid", "again"];
@@ -141,7 +143,31 @@ function punches(pieces, { highlight = [], still = {}, clips }) {
 }
 
 // ------------------------------------------------------------------------------------- new
+// another cut of recordings another cut took in already (a short beside the film): their copies,
+// words and levels, nothing transcribed again, nothing spent. The settings that name that cut's
+// result (its file, title, length, hook) are not taken over.
+const OWN = ["out", "title", "target", "hook"];
+function newLike(dir, like, files, opts) {
+  if (!dir || files.length) fail("Usage: takes.mjs new <dir> --like <another takes folder> (no recordings: they are that folder's)");
+  if (fs.existsSync(source(dir, "words.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
+  if (path.resolve(dir) === path.resolve(like)) fail("--like names another takes folder than this one.");
+  if (!fs.existsSync(source(like, "words.json"))) fail(`${rel(like)} has no recordings taken in (no ${rel(source(like, "words.json"))}): take them in there with \`new\` first, or here with their files.`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.cpSync(source(like), source(dir), { recursive: true });
+  const kept = fs.existsSync(source(dir, "settings.json")) ? read(source(dir, "settings.json")) : {};
+  for (const k of OWN) delete kept[k];
+  fs.writeFileSync(source(dir, "settings.json"), JSON.stringify(kept, null, 2) + "\n");
+  const { like: _, ...own } = opts;
+  const s = settings(dir, own);
+  const { clips, words } = read(source(dir, "words.json"));
+  fs.writeFileSync(source(dir, "brief.md"), brief(clips, words, s));
+  const n = Object.keys(clips).length, said = words.filter((w) => w.kind === "word").length;
+  console.log(`${n} recording${n > 1 ? "s" : ""} of ${rel(like)} with their ${said} words and levels, the word numbers the same: nothing transcribed again, nothing spent.`);
+  console.log(`\nNext: read ${rel(source(dir, "brief.md"))} (all of it) and write ${rel(path.join(dir, "cut.json"))} for this cut (\`propose\` asks the model afresh, when you want its view), then: node ${self()} build ${rel(dir)}${own.out ? "" : " --out <its own file or folder>"}`);
+}
+
 async function cmdNew(dir, files, opts) {
+  if (opts.like) return newLike(dir, String(opts.like), files, opts);
   if (!dir || !files.length) fail("Usage: takes.mjs new <dir> <video> [<video> …]");
   if (fs.existsSync(source(dir, "words.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
   for (const f of files) if (!fs.existsSync(f)) fail(`There is no ${f}.`);

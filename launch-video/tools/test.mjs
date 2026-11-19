@@ -1,5 +1,6 @@
 // The music's volume under the voice, on made-up sounds (tones and noise at different levels), and
-// the board on made-up stills (flat colours named as `hyperframes snapshot` names its stills). No
+// the board on made-up stills (flat colours named as `hyperframes snapshot` names its stills); a
+// recorded voice taken in, the music's volume lane along the voice and the captions' pauses. No
 // request, no key.
 //
 //   node --test tools/test.mjs
@@ -11,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loudness, musicVolume, distance, inFilm, LOWEST, HIGHEST } from "./lib/level.mjs";
-import { soundLine, musicElement, boardLayout, storyboardFrames } from "./launch.mjs";
+import { soundLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords, gapSpecs, splitVoice, duckLane, filled, fillVerdict } from "./launch.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
@@ -285,4 +286,178 @@ test("storyboardFrames: both of HyperFrames' headings, times from a range or the
     { number: 4, name: "The end card", range: null },
   ]);
   assert.deepEqual(storyboardFrames("# A title\nno frames here"), []);
+});
+
+// ------------------------------------------------------------------------------- a recorded voice
+
+test("recordedWords: best-takes' edit.json and transcribe's words.json, without noises and fillers", () => {
+  assert.deepEqual(recordedWords({ words: [{ i: 0, text: "Last", start: 0.1, end: 0.42 }, { i: 1, text: "time", start: 0.46, end: 0.84 }] }),
+    [{ text: "Last", start: 0.1, end: 0.42 }, { text: "time", start: 0.46, end: 0.84 }]);
+  assert.deepEqual(recordedWords({ words: [{ text: "So", start: 1, end: 1.2, kind: "word" }, { text: "äh", start: 1.3, end: 1.5, kind: "filler" }, { text: "[laughs]", start: 2, end: 2.5, kind: "event" }, { text: " ", start: 3, end: 3.1 }] }),
+    [{ text: "So", start: 1, end: 1.2 }]);
+  assert.equal(recordedWords({ lines: [] }), null);
+});
+
+test("narration: the recorded voice becomes a line of voice.json, its file copied without tags", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const voice = path.join(dir, "voice.cut.m4a");
+    run(["-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=3", "-af", "volume=-14dB", "-c:a", "aac", "-metadata", "location=+12.3456-012.3456/", voice]);
+    fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({ words: [{ i: 0, text: "One", start: 0.2, end: 0.6 }, { i: 1, text: "line.", start: 0.7, end: 1.4 }] }));
+    fs.mkdirSync(path.join(dir, "work"));
+    fs.writeFileSync(path.join(dir, "work", "voice.json"), JSON.stringify({ model: "x", lines: [{ id: "hook", file: "assets/voice/hook.mp3", words: [] }] }));
+    const r = launch(dir, "narration", "work", "voice.cut.m4a", "edit.json", "comp");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /<audio id="vo-narration" src="assets\/voice\/narration.m4a" data-start="0"/);
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, "work", "voice.json"), "utf8"));
+    assert.deepEqual(meta.lines.map((l) => l.id), ["hook", "narration"]);
+    const line = meta.lines[1];
+    assert.equal(line.recorded, true);
+    assert.equal(line.text, "One line.");
+    assert.deepEqual(line.words, [{ text: "One", start: 0.2, end: 0.6 }, { text: "line.", start: 0.7, end: 1.4 }]);
+    near(line.duration, 3, 0.1);
+    assert.deepEqual(tagsOf(path.join(dir, "comp", "assets", "voice", "narration.m4a")).filter((k) => /location/i.test(k)), []);
+    // the words of another, longer cut: refused in one sentence
+    fs.writeFileSync(path.join(dir, "long.json"), JSON.stringify({ words: [{ text: "Late.", start: 9, end: 9.5 }] }));
+    const bad = launch(dir, "narration", "work", "voice.cut.m4a", "long.json", "comp");
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /run to 9.50 s, the voice is 3.0\d s long/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ------------------------------------------------------------------------------- the music's level
+
+test("musicLane: level under the voice and through short pauses, up only in pauses of a second or more and after the last word", () => {
+  const w = (start, end) => ({ text: "w", start, end });
+  // a breath of 0.4 s, a pause of 1.5 s, a pause of 0.9 s, the end at 6 s of 9
+  const words = [w(0.2, 1), w(1.4, 2), w(3.5, 4.2), w(5.1, 6)];
+  const pts = musicLane(words, { duration: 9, low: 0.4 });
+  // the lane's value at t, straight between its points as HyperFrames plays it
+  const at = (t) => {
+    if (t <= pts[0].t) return pts[0].v;
+    for (let k = 1; k < pts.length; k++) if (t <= pts[k].t) { const a = pts[k - 1], b = pts[k]; return a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t || 1); }
+    return pts.at(-1).v;
+  };
+  // level wherever the voice speaks, in the breath and in the pause of 0.9 s
+  for (const t of [0.2, 0.6, 1.2, 1.9, 3.5, 4.0, 4.6, 5.1, 5.9]) assert.equal(at(t), 0.4, `at ${t}`);
+  // up in the pause of 1.5 s, on its way down before the next word
+  assert.equal(at(2.8), 1);
+  assert.ok(at(3.1) > 0.4 && at(3.1) < 1);
+  assert.equal(at(3.32), 0.4);
+  // up after the last word, to the end
+  assert.equal(at(7.2), 1);
+  assert.equal(at(9), 1);
+  assert.equal(pts.filter((p, k) => p.v === 1 && (k === 0 || pts[k - 1].v !== 1)).length, 2);
+  // a voice that begins late: up before it; the times on the music clip's clock
+  const late = musicLane([w(12, 13)], { start: 10, duration: 5, low: 0.5 });
+  assert.deepEqual(late.slice(0, 3), [{ t: 0, v: 1 }, { t: 1.5, v: 1 }, { t: 1.85, v: 0.5 }]);
+  assert.ok(late.every((p, k) => k === 0 || p.t >= late[k - 1].t));
+});
+
+// ------------------------------------------------------------------------------- footage with its own sound
+
+test("narration --gap: the voice cut in the pause after a word, the footage in the gap, the voice again after it", () => {
+  assert.deepEqual(gapSpecs("101+15, 45.7+9.4"), [{ at: 45.7, length: 9.4 }, { at: 101, length: 15 }]);
+  assert.deepEqual(gapSpecs(undefined), []);
+  assert.throws(() => gapSpecs("45.7"), /--gap takes "<seconds of the voice>\+<seconds of footage>"/);
+  const w = (text, start, end) => ({ text, start, end });
+  // "line." ends at 4.2, the next word at 5.2; "again." ends at 8, the next at 8.3
+  const words = [w("The", 3, 3.4), w("line.", 3.5, 4.2), w("Here", 5.2, 5.6), w("again.", 7.6, 8), w("With", 8.3, 8.6)];
+  const { pieces, footage } = splitVoice(words, 10, [{ at: 5, length: 9.4 }, { at: 8.1, length: 15 }]);
+  // cut a quarter second after "line.", and half of the short pause after "again."
+  assert.deepEqual(pieces.map((p) => [p.start, p.mediaStart, p.duration, p.first, p.last]), [[0, 0, 4.45, "The", "line."], [14.35, 4.45, 3.7, "Here", "again."], [33.55, 8.15, 1.85, "With", "With"]]);
+  assert.deepEqual(footage.map((f) => [f.start, f.duration, f.after]), [[4.7, 9.4, "line."], [18.3, 15, "again."]]);
+  // every word on the film's clock lies in a piece, never in a gap
+  for (const x of words) {
+    const p = pieces.find((q) => x.start >= q.mediaStart && x.end <= q.mediaStart + q.duration);
+    assert.ok(p, x.text);
+    const t = p.start + x.start - p.mediaStart;
+    assert.ok(!footage.some((f) => t < f.start + f.duration && t + (x.end - x.start) > f.start), `${x.text} at ${t}`);
+  }
+  assert.throws(() => splitVoice(words, 10, [{ at: 9.5, length: 3 }]), /after the last word/);
+  assert.throws(() => splitVoice(words, 10, [{ at: 1, length: 3 }]), /no word ends by 1 s/);
+});
+
+test("level with footage: the music out while the footage plays, no swell beside it, level and up elsewhere as before", () => {
+  const w = (start, end) => ({ text: "w", start, end });
+  // the voice, footage 5-10 s (1.2 s after the last word before it, 1.3 s before the next), the voice again
+  const words = [w(0.2, 1), w(1.4, 3.8), w(11.3, 12), w(13.5, 14)];
+  const pts = duckLane(musicLane([...words, { start: 5, end: 10, footage: true }], { duration: 18, low: 0.4 }), [[5, 10]]);
+  const at = (t) => {
+    if (t <= pts[0].t) return pts[0].v;
+    for (let k = 1; k < pts.length; k++) if (t <= pts[k].t) { const a = pts[k - 1], b = pts[k]; return a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t || 1); }
+    return pts.at(-1).v;
+  };
+  // out under the footage, reached when it starts and held to its end
+  for (const t of [5, 6, 9.9, 10]) assert.equal(at(t), 0, `at ${t}`);
+  // level (never up) in the pauses beside it, though they are over a second
+  for (const t of [4.2, 4.6, 10.4, 11]) assert.ok(at(t) <= 0.4 + 1e-9, `at ${t}: ${at(t)}`);
+  assert.ok(at(4.85) < 0.4 && at(4.85) > 0);
+  // a pause of 1.5 s away from the footage still brings it up, and the end too
+  assert.equal(at(12.8), 1);
+  assert.equal(at(16), 1);
+  assert.ok(pts.every((p, k) => k === 0 || p.t > pts[k - 1].t));
+});
+
+// ------------------------------------------------------------------------------- how a still is filled
+
+test("fill: an empty frame, a sparse one high in the frame, and a full one in the middle, the captions' band left out", () => {
+  const cols = 96, rows = 54;
+  const frame = (paint) => { const c = new Uint8Array(cols * rows).fill(248); paint((x0, y0, x1, y1, v = 30) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) c[y * cols + x] = v; }); return c; };
+  const safe = [96 / 1920, 108 / 1080, 1728 / 1920, 822 / 1080], skip = [0.7, 0.87];
+  // captions alone: empty
+  const caps = frame((r) => r(30, 40, 66, 45));
+  assert.equal(fillVerdict(filled(caps, cols, rows, { skip }), safe).mark, "✗");
+  // a thin line of small type near the top: sparse and high
+  const high = fillVerdict(filled(frame((r) => r(30, 8, 66, 10)), cols, rows, { skip }), safe);
+  assert.equal(high.mark, "!");
+  assert.match(high.why, /sparse: picture on \d+ % .*high: its middle at 1\d % of the frame's height/);
+  // a figure across the middle band
+  const full = fillVerdict(filled(frame((r) => { r(8, 16, 88, 34); r(20, 6, 76, 10); }), cols, rows, { skip }), safe);
+  assert.equal(full.mark, "✓", full.why);
+  // the ground is the border's commonest level, a dark ground as well as a light one
+  const dark = new Uint8Array(cols * rows).fill(20);
+  for (let y = 20; y < 30; y++) for (let x = 10; x < 80; x++) dark[y * cols + x] = 220;
+  assert.deepEqual(filled(dark, cols, rows).box.map((v) => +v.toFixed(3)), [+(10 / 96).toFixed(3), +(20 / 54).toFixed(3), +(70 / 96).toFixed(3), +(10 / 54).toFixed(3)]);
+});
+
+test("level: a music that fades out right after the last word is said, with the film's end to move", () => {
+  assert.equal(endWarning(167.9, 172, 172), null);
+  assert.match(endWarning(58.9, 60, 59.9), /^! The music is cut off by the film's end 1.0 s after the last word/);
+  assert.match(endWarning(167.9, 167.5, 170), /^! The music ends -0.4 s after the last word: .*End the film about 3 s after the last word/);
+});
+
+test("check: with a volume lane the music's distance is measured where the voice speaks, and the lane read back", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const { comp } = composition(dir, { volume: 0.14 });
+    const html = fs.readFileSync(path.join(comp, "index.html"), "utf8");
+    const fit = Number(soundLine(comp).match(/data-volume="([\d.]+)"/)[1]);
+    // the track 8 dB over the volume under the voice, and the lane that takes it down while the voice speaks
+    const high = +(fit * 10 ** (8 / 20)).toFixed(3), low = +(fit / high).toFixed(4);
+    const lane = JSON.stringify({ version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: low }, { t: 5, v: low }, { t: 5.8, v: 1 }] }] }).replace(/"/g, "&quot;");
+    fs.writeFileSync(path.join(comp, "index.html"), html.replace('data-volume="0.14"', `data-volume="${high}" data-under-voice="17" data-automation="${lane}"`));
+    assert.deepEqual(musicTag(fs.readFileSync(path.join(comp, "index.html"), "utf8")).lane.map((p) => p.v), [low, low, 1]);
+    const right = soundLine(comp);
+    assert.match(right, /^Sound: the music sits [\d.]+ LU under the voice .*× [\d.]+ while the voice speaks \(its volume lane\)/);
+    near(Number(right.match(/sits ([\d.]+) LU/)[1]), 17, 0.6);
+    // the same lane on a track three times as loud: said, with the step that lays it again
+    fs.writeFileSync(path.join(comp, "index.html"), html.replace('data-volume="0.14"', `data-volume="${(high * 3).toFixed(3)}" data-under-voice="17" data-automation="${lane}"`));
+    assert.match(soundLine(comp), /^! Sound: .*while it speaks, not 17.*Run `level` again/);
+    assert.equal(musicTag('<audio id="vo-x" src="a.mp3">'), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ------------------------------------------------------------------------------- the captions' pauses
+
+test("captions: the stretches the picture carries are read, and the words said in them left out", () => {
+  assert.deepEqual(pauseSpans("160-168, 0-10.2"), [[0, 10.2], [160, 168]]);
+  assert.deepEqual(pauseSpans("none"), []);
+  assert.equal(pauseSpans(undefined), null);
+  assert.throws(() => pauseSpans("10"), /--pause takes stretches/);
+  assert.throws(() => pauseSpans("12-11"), /"12-11" is not one/);
+  const w = (text, start, end) => ({ text, start, end });
+  const words = [w("Last", 0.1, 0.4), w("time", 0.46, 0.8), w("Scribe", 11.82, 12.1), w("is", 12.2, 12.3), w("best", 20, 20.4)];
+  assert.deepEqual(captionWords(words, [[0, 10.2], [11.8, 12.15]]).map((x) => x.text), ["is", "best"]);
+  assert.equal(captionWords(words, []).length, 5);
 });

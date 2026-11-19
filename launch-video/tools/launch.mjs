@@ -13,6 +13,8 @@
 //                                                         when and where (HyperFrames' check, per band),
 //                                                         and how far under the voice the music sits
 //   node tools/launch.mjs draw <work> <stills-folder>     the zones drawn over every still → <folder>/zones/
+//   node tools/launch.mjs fill <work> <stills-folder>       how much of every still the picture fills and where
+//                                                         its middle lies (captions left out): empty, sparse, small, high
 //   node tools/launch.mjs board <work> <stills-folder> [--out <file>]   the posed stills as one sheet
 //                                                         for the chat, in film order, each with its
 //                                                         number, name and time from <work>/STORYBOARD.md
@@ -22,15 +24,26 @@
 //                                                         one line in a few voices, to choose by ear
 //   node tools/launch.mjs voice <work> <script.json> <composition>   every line spoken → <composition>/
 //                                                         assets/voice/<id>.mp3, its words timed → <work>/voice.json
+//   node tools/launch.mjs narration <work> <voice> <words.json> <composition> [--id narration]
+//                                                         a voice the person recorded (best-takes' voice.cut.m4a
+//                                                         and edit.json) as a line of <work>/voice.json
+//        [--gap <s>+<len>,…]                              the voice stopped after the word that ends by <s> for
+//                                                         <len> s of footage with its own sound: the pieces to place
 //   node tools/launch.mjs words <work> <composition>      the voice's words at their times in the film,
 //                                                         as the film's <audio> places the lines → <work>/words.json
 //   node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
-//                                                         the captions (agentitos' captions skill) in
-//                                                         <composition>/captions, and the line that mounts them
+//        [--pause <from>-<to>,…] [--follow]               the captions (agentitos' captions skill) in
+//                                                         <composition>/captions, and the line that mounts them;
+//                                                         none in the stretches the picture carries the words
 //   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--under 17]   music
 //                                                         (Lyria 3) → <composition>/assets/music.mp3, faded
 //                                                         at its end, and its <audio> with the volume that
 //                                                         lays it 17 LU under the voice, both measured
+//   node tools/launch.mjs level <work> <composition> [--rise 8] [--pause 1]   the music's volume lane
+//                                                         along the placed voice: level while it speaks and
+//                                                         through short pauses, up in pauses of 1 s or more
+//                                                         and after the last word (no compressor: no pumping),
+//                                                         out while footage plays its own sound
 //   node tools/launch.mjs image <out.png> --prompt "…" [--ratio 9:16] [--ref <image>…]   a picture
 //   node tools/launch.mjs finish <video.mp4>              the rendered video at −14 LUFS, the loudness
 //                                                         the platforms play at (in place)
@@ -69,7 +82,7 @@ const IMAGE_MODEL = "google/gemini-3.1-flash-image";
 const UNDER = 17;
 
 // options that take no value
-const FLAGS = ["mark", "vocals", "json"];
+const FLAGS = ["mark", "vocals", "json", "follow"];
 
 function parse(args) {
   const pos = [], opts = {};
@@ -352,10 +365,14 @@ function soundOf(composition, work) {
   const v = loudness(placed);
   if (v == null) return `! Sound: the voice (${placed.length} line${placed.length > 1 ? "s" : ""}) is silent.`;
   if (!(music.volume > 0)) return `! Sound: the music is placed at data-volume ${music.volume}: it is not heard.`;
-  const d = distance(v, m, music.volume), want = music.under || UNDER, fit = musicVolume(v, m, want);
-  const numbers = `the voice at ${lufs(v)} LUFS as placed (${placed.length} line${placed.length > 1 ? "s" : ""}), the music at ${lufs(m)} as made, at data-volume ${music.volume}`;
+  // with a volume lane (`level`), the music plays under the voice at data-volume × the lane's low point
+  const lane = musicTag(fs.readFileSync(path.join(composition, "index.html"), "utf8"))?.lane;
+  const share = speaking(lane), under = music.volume * share;
+  const d = distance(v, m, under), want = music.under || UNDER, fit = musicVolume(v, m, want);
+  const numbers = `the voice at ${lufs(v)} LUFS as placed (${placed.length} line${placed.length > 1 ? "s" : ""}), the music at ${lufs(m)} as made, at data-volume ${music.volume}${lane ? ` × ${share} while the voice speaks (its volume lane)` : ""}`;
   if (Math.abs(d - want) <= 1) return `Sound: the music sits ${lu(d)} LU under the voice (${numbers}). Measured, not heard: say so.`;
-  if (fit.bound && Math.abs(music.volume - fit.volume) < 0.0005) return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): ${fit.volume} is the ${fit.bound} volume here; for ${want} LU, music ${fit.bound === "highest" ? "louder" : "quieter"} of its own (\`music\` again).`;
+  if (!lane && fit.bound && Math.abs(music.volume - fit.volume) < 0.0005) return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): ${fit.volume} is the ${fit.bound} volume here; for ${want} LU, music ${fit.bound === "highest" ? "louder" : "quieter"} of its own (\`music\` again).`;
+  if (lane) return `! Sound: the music sits ${lu(d)} LU under the voice while it speaks, not ${want} (${numbers}): the voice or the music changed since its lane was laid. Run \`level\` again, then check again.`;
   return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): its volume was set before the voice, or the voice or the music changed since. Set data-volume="${fit.volume}" on <audio id="music">${fit.bound ? ` (the ${fit.bound} volume here: it then sits ${lu(fit.under)} LU under)` : ""} and run check again. Another distance on purpose: data-under-voice="<LU>" on it.`;
 }
 
@@ -378,6 +395,73 @@ function cmdDraw(work, folder) {
     if (r.status) fail(`✗ ${(r.stderr || r.stdout).trim()}`);
   }
   console.log(`${rel(out)}/: ${stills.length} still${stills.length > 1 ? "s" : ""} with the zones of ${z.platforms.map((p) => p.name).join(", ")} drawn (red: covered, green: safe, yellow: where a feed crops). Look at each: a word in a picture, a face, the product's button under red is to move.`);
+}
+
+// ------------------------------------------------------------------------------- how a still is filled
+
+// What a still shows apart from its ground, measured on a small grey copy (`cols` × `rows` cells,
+// each 0-255): the ground is the commonest level of the frame's border, a cell is picture where it
+// differs from the ground by more than `by`; the band where captions stand (`skip`: [top, bottom]
+// as shares of the height) is left out, so that captions do not count as picture. Returns the
+// picture's box as shares of the frame (null when there is none) and the share of cells it covers.
+export function filled(cells, cols, rows, { skip = null, by = 24 } = {}) {
+  const at = (x, y) => cells[y * cols + x];
+  const border = [];
+  for (let x = 0; x < cols; x++) border.push(at(x, 0), at(x, rows - 1));
+  for (let y = 0; y < rows; y++) border.push(at(0, y), at(cols - 1, y));
+  const counts = new Map();
+  for (const v of border) { const k = Math.round(v / 8); counts.set(k, (counts.get(k) || 0) + 1); }
+  const ground = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0] * 8;
+  let x0 = cols, y0 = rows, x1 = -1, y1 = -1, n = 0, all = 0;
+  for (let y = 0; y < rows; y++) {
+    if (skip && y / rows >= skip[0] && (y + 1) / rows <= skip[1]) continue;
+    for (let x = 0; x < cols; x++) {
+      all++;
+      if (Math.abs(at(x, y) - ground) <= by) continue;
+      n++; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+  }
+  if (x1 < 0) return { box: null, share: 0 };
+  return { box: [x0 / cols, y0 / rows, (x1 + 1 - x0) / cols, (y1 + 1 - y0) / rows], share: n / all };
+}
+
+// a verdict on one still: empty (nothing but ground and captions), sparse (picture on less than
+// `cover` of the frame's cells), small (the picture spans less than `least` of the safe box's height
+// and of its width), high (its middle in the top third of the safe box), as shares of the frame.
+// `cover`: the stills of the hand-built 16:9 explainer and of the film built from this skill after
+// this check had picture on a median 25 % of their cells, the one before it (small type, figures
+// high in an empty frame) on 8 % (2026-11-19)
+export function fillVerdict(f, safe, { least = 0.4, cover = 0.06 } = {}) {
+  if (!f.box || f.share < 0.004) return { mark: "✗", why: "empty: nothing but the ground (and captions)" };
+  const [x, y, w, h] = f.box, [sx, sy, sw, sh] = safe;
+  const why = [];
+  if (f.share < cover) why.push(`sparse: picture on ${Math.round(f.share * 100)} % of the frame`);
+  if (h < least * sh && w < least * sw) why.push(`small: ${Math.round((h / sh) * 100)} % of the safe box's height, ${Math.round((w / sw) * 100)} % of its width`);
+  const mid = y + h / 2;
+  if (mid < sy + sh / 3) why.push(`high: its middle at ${Math.round(mid * 100)} % of the frame's height, in the safe box's top third`);
+  return why.length ? { mark: "!", why: why.join("; ") } : { mark: "✓", why: `${Math.round((w / sw) * 100)} % × ${Math.round((h / sh) * 100)} % of the safe box, its middle at ${Math.round(mid * 100)} % of the height` };
+}
+
+function cmdFill(work, folder) {
+  if (!work || !folder) fail(`Usage: ${cmd("fill <work> <stills-folder>")}`);
+  const z = zonesOf(work);
+  const [W, H] = z.size;
+  const stills = fs.existsSync(folder) ? fs.readdirSync(folder).filter((f) => /\.(png|jpe?g)$/i.test(f) && !/^contact-sheet/.test(f)).sort() : [];
+  if (!stills.length) fail(`✗ No stills in ${rel(folder)}: snapshot every beat and every scene's first frame (\`${cliCommand()} snapshot <composition> --at … --no-end -o ${rel(folder)}\`).`);
+  const cols = 96, rows = Math.round((96 * H) / W);
+  const safe = [z.safe[0] / W, z.safe[1] / H, z.safe[2] / W, z.safe[3] / H];
+  // the captions' band: two lines of the styles' type (about a twentieth of the short side, 1.4 high) above the safe box's bottom
+  const band = (2 * 0.054 * 1.45 * Math.min(W, H) + 24) / H, bottom = (z.safe[1] + z.safe[3]) / H;
+  const skip = [bottom - band, bottom + 0.001];
+  let flagged = 0;
+  for (const s of stills) {
+    const r = spawnSync("ffmpeg", ["-v", "error", "-i", path.join(folder, s), "-vf", `scale=${cols}:${rows}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 24 });
+    if (r.status !== 0 || r.stdout.length < cols * rows) fail(`✗ ${s} is no picture ffmpeg can read.`);
+    const v = fillVerdict(filled(r.stdout, cols, rows, { skip }), safe);
+    if (v.mark !== "✓") flagged++;
+    console.log(`  ${v.mark} ${s}: ${v.why}`);
+  }
+  console.log(`${stills.length} still${stills.length > 1 ? "s" : ""}, ${flagged} flagged. Measured without the captions' band, against the safe box of ${z.platforms.map((p) => p.name).join(", ")}. ✗ empty: a scene that opens on its ground until its first word (carry the last picture over, or bring the scene's figure in from its first frame). ! sparse, small or high: the beat's main thing belongs in the middle of the frame and large (read on a phone at arm's length); a label stays above it. It judges size and place only: look at the stills.`);
 }
 
 // ------------------------------------------------------------------------------- the board
@@ -608,9 +692,11 @@ async function cmdVoice(work, scriptFile, composition, opts) {
   }));
   const failed = settled.map((r, k) => (r.status === "rejected" ? `${lines[k].id}: ${r.reason?.message || r.reason}` : null)).filter(Boolean);
   const done = settled.map((r, k) => (r.status === "fulfilled" ? r.value : before[lines[k].id] && { ...before[lines[k].id], kept: true, failed: true })).filter(Boolean);
+  // a recorded voice (`narration`) is no line of the script: it stays
+  const recorded = Object.values(before).filter((l) => l.recorded && !ids.has(l.id));
   // a line taken out of the script: its file goes too
-  for (const f of fs.readdirSync(dir)) if (f.endsWith(".mp3") && !ids.has(f.slice(0, -4))) fs.rmSync(path.join(dir, f));
-  writeJson(metaFile, { model, voice, ...(speed ? { speed } : {}), lines: done.map(({ kept, failed, ...l }) => l) });
+  for (const f of fs.readdirSync(dir)) if (f.endsWith(".mp3") && !ids.has(f.slice(0, -4)) && !recorded.some((l) => l.file === `assets/voice/${f}`)) fs.rmSync(path.join(dir, f));
+  writeJson(metaFile, { model, voice, ...(speed ? { speed } : {}), lines: [...recorded, ...done.map(({ kept, failed, ...l }) => l)] });
   let price = 0;
   try { price = perThousand((await speechModels()).find((m) => m.id === model)) * chars / 1000; } catch {}
   console.log(`${model}, voice ${voice || "(the provider's)"}:`);
@@ -631,6 +717,11 @@ Place each line in the root as <audio id="vo-<id>" src="assets/voice/<id>.mp3" d
 // every <audio> of the film with its start on the film's clock, as HyperFrames itself resolves it
 // (a start relative to another clip, "intro + 0.5", a clip inside a scene)
 function audioClips(composition) {
+  return mediaClips(composition).filter((c) => c.kind === "audio");
+}
+
+// every <audio> and <video> of the film, the same way
+function mediaClips(composition) {
   const cli = hyperframesCli();
   if (!cli) fail("✗ No HyperFrames CLI on this machine: the operator installs it.");
   const r = spawnSync(...run(cli, ["timeline", path.resolve(composition), "--json"]), { encoding: "utf8", env: hfEnv(), maxBuffer: 64 << 20, timeout: 300e3 });
@@ -640,11 +731,251 @@ function audioClips(composition) {
   const walk = (x) => {
     if (Array.isArray(x)) return x.forEach(walk);
     if (!x || typeof x !== "object") return;
-    if (x.kind === "audio" && x.src && Number.isFinite(x.absStart)) clips.push(x);
+    if ((x.kind === "audio" || x.kind === "video") && x.src && Number.isFinite(x.absStart)) clips.push(x);
     Object.values(x).forEach(walk);
   };
   walk(j.timeline);
-  return clips;
+  // a clip the timeline lists in its track's rows and again on its own is one clip
+  const seen = new Set();
+  return clips.filter((c) => { const k = `${c.kind}|${c.elementId || c.id}|${c.src}|${c.absStart}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// ------------------------------------------------------------------------------- a recorded voice
+
+// the words of a recorded voice with their times: best-takes' edit.json, transcribe's words.json or
+// any {"words": [{text, start, end}]}; noises and fillers are no words of the line
+export function recordedWords(j) {
+  const list = Array.isArray(j?.words) ? j.words : null;
+  if (!list) return null;
+  return list
+    .filter((w) => w && (w.kind == null || w.kind === "word") && String(w.text || "").trim() && Number.isFinite(Number(w.start)) && Number.isFinite(Number(w.end)))
+    .map((w) => ({ text: String(w.text).trim(), start: +Number(w.start).toFixed(3), end: +Number(w.end).toFixed(3) }));
+}
+
+// a voice the person recorded (cut by best-takes, or any file with its words timed) as a line of the
+// film's voice, so that words, captions, music and check take it as they take a spoken line
+function cmdNarration(work, file, wordsFile, composition, opts) {
+  if (!work || !file || !wordsFile || !composition) fail(`Usage: ${cmd("narration <work> <voice file> <its words.json> <composition> [--id narration]")}`);
+  if (!fs.existsSync(file)) fail(`✗ There is no ${rel(file)}.`);
+  const words = recordedWords(readJson(wordsFile, null));
+  if (!words) fail(`✗ ${rel(wordsFile)} has no "words": [{text, start, end}] (best-takes' edit.json, transcribe's words.json).`);
+  if (!words.length) fail(`✗ ${rel(wordsFile)} has no words with their times.`);
+  const id = String(opts.id || "narration");
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) fail(`✗ --id is lowercase letters, digits and dashes ("narration"); "${id}" is not one.`);
+  const p = probe(file);
+  if (!p.streams.some((s) => s.codec_type === "audio")) fail(`✗ ${rel(file)} has no sound.`);
+  const duration = +p.duration.toFixed(3);
+  if (words.at(-1).end > duration + 0.25) fail(`✗ The words of ${rel(wordsFile)} run to ${words.at(-1).end.toFixed(2)} s, the voice is ${duration.toFixed(2)} s long: they are not this voice's (the words of the cut, timed in the cut).`);
+  const ext = (path.extname(file).slice(1) || "m4a").toLowerCase();
+  const dir = path.join(composition, "assets", "voice");
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, `${id}.${ext}`);
+  // without the file's tags: what is published names no place
+  ffmpeg(["-i", file, "-map", "0:a", "-map_metadata", "-1", "-c", "copy", dest]);
+  const metaFile = path.join(work, "voice.json");
+  const before = readJson(metaFile, {});
+  const line = { id, recorded: true, text: words.map((w) => w.text).join(" "), file: `assets/voice/${id}.${ext}`, duration, words };
+  const lines = [...(before.lines || []).filter((l) => l.id !== id), line];
+  writeJson(metaFile, { ...before, lines });
+  const v = loudness([dest]);
+  console.log(`${rel(dest)}: the recorded voice, ${duration.toFixed(2)} s, ${words.length} words with their times${v == null ? "" : `, ${lufs(v)} LUFS`} → ${rel(metaFile)} (line "${id}").`);
+  let gaps;
+  try { gaps = gapSpecs(opts.gap); } catch (e) { fail(`✗ ${e.message}.`); }
+  if (!gaps.length) {
+    console.log(`Place it in the root as <audio id="vo-${id}" src="${line.file}" data-start="0" data-duration="${duration}" data-track-index="<n>">: the voice is the film's clock, each beat starts on the word that says it (voice.json has every word's time in the voice; ${cmd(`words ${rel(work)} ${rel(composition)}`)} puts them on the film's clock once it is placed). Then music, ${cmd(`level ${rel(work)} ${rel(composition)}`)} and captions as for a spoken voice.`);
+    return;
+  }
+  const { pieces, footage } = splitVoice(words, duration, gaps);
+  console.log(`The voice stops for ${footage.length} piece${footage.length > 1 ? "s" : ""} of footage with its own sound: place it in the root as ${pieces.length} <audio> of the same file, one after the other, each footage in the gap it leaves:`);
+  pieces.forEach((p, k) => {
+    console.log(`  <audio id="vo-${id}-${k + 1}" src="${line.file}" data-start="${p.start}" data-media-start="${p.mediaStart}" data-duration="${p.duration}" data-track-index="<n>">   "${p.first} … ${p.last}"`);
+    const f = footage[k];
+    if (f) console.log(`    footage ${k + 1}: data-start="${f.start}" data-duration="${f.duration}" (after "${f.after}", ${f.lead} s after the voice stops, the voice again ${f.lead} s after it ends): a <video> with data-has-audio="true", or an <audio> beside a muted <video>`);
+  });
+  console.log(`The film is then ${pieces.at(-1).start + pieces.at(-1).duration} s of voice and footage. ${cmd(`words ${rel(work)} ${rel(composition)}`)} puts every word on the film's clock as the root places the pieces; the captions show nothing while the footage plays (the voice says nothing there), and ${cmd(`level ${rel(work)} ${rel(composition)}`)} takes the music out under footage that plays its own sound. Then music, level and captions as for a spoken voice.`);
+}
+
+// "45.7+9.4, 101+9.4": where the voice stops (seconds of the voice: after the last word that ends
+// by then) and how long the footage plays in the gap
+export function gapSpecs(text) {
+  if (text == null || text === true || /^\s*$/.test(String(text))) return [];
+  return String(text).split(",").map((s) => s.trim()).filter(Boolean).map((s) => {
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*\+\s*(\d+(?:\.\d+)?)$/);
+    if (!m || !(Number(m[2]) > 0)) throw new Error(`--gap takes "<seconds of the voice>+<seconds of footage>" separated by commas ("45.7+9.4,101+15"); "${s}" is not one`);
+    return { at: Number(m[1]), length: Number(m[2]) };
+  }).sort((a, b) => a.at - b.at);
+}
+
+// the voice cut into pieces around the gaps, each cut in the pause after the last word that ends
+// by the gap's time (a quarter second after that word, or half the pause when it is shorter), the
+// footage `lead` s after the voice stops and the voice again `lead` s after the footage ends
+export function splitVoice(words, duration, gaps, { lead = 0.25 } = {}) {
+  const r = (x) => +x.toFixed(3);
+  const pieces = [], footage = [];
+  let from = 0, start = 0;
+  for (const g of gaps) {
+    const k = words.findLastIndex((w) => w.end <= g.at + 0.05);
+    if (k < 0) throw new Error(`no word ends by ${g.at} s of the voice: a gap goes after a word`);
+    const next = words[k + 1];
+    if (!next) throw new Error(`the gap at ${g.at} s comes after the last word: end the film with the footage instead`);
+    const cut = r(words[k].end + Math.min(0.25, (next.start - words[k].end) / 2));
+    if (cut <= from) throw new Error(`two gaps after the same word ("${words[k].text}", ${words[k].end} s)`);
+    const piece = words.filter((w) => w.start >= from && w.end <= cut);
+    pieces.push({ start: r(start), mediaStart: r(from), duration: r(cut - from), first: piece[0]?.text, last: piece.at(-1)?.text });
+    start = r(start + (cut - from));
+    footage.push({ start: r(start + lead), duration: g.length, after: words[k].text, lead });
+    start = r(start + lead + g.length + lead);
+    from = cut;
+  }
+  const rest = words.filter((w) => w.start >= from);
+  pieces.push({ start, mediaStart: from, duration: r(duration - from), first: rest[0]?.text, last: rest.at(-1)?.text });
+  return { pieces, footage };
+}
+
+// ------------------------------------------------------------------------------- the music's level
+
+const dbToGain = (db) => 10 ** (db / 20);
+const RISE = 8, LONG_PAUSE = 1;
+
+// the music's volume lane along the voice: `low` (a share of the track's volume) while the voice
+// speaks and through pauses shorter than `pause`; 1 in a pause of `pause` s or more, before the first
+// word when it comes that late, and after the last word. Times on the music clip's clock.
+export function musicLane(words, { start = 0, duration, low, pause = LONG_PAUSE }) {
+  const pts = [];
+  const add = (t, v) => {
+    const x = +Math.max(0, Math.min(duration, t - start)).toFixed(3);
+    if (pts.length && x < pts.at(-1).t) return;
+    if (pts.length && x === pts.at(-1).t) pts.at(-1).v = v; else pts.push({ t: x, v });
+  };
+  const sorted = [...words].sort((a, b) => a.start - b.start);
+  if (!sorted.length) return [{ t: 0, v: 1 }];
+  // up after a word has died away, down before the next one begins
+  const up = (from, to) => { const room = to - from; return [Math.min(0.5, room * 0.4), Math.min(0.4, room * 0.4)]; };
+  const first = sorted[0].start;
+  if (first - start >= pause) {
+    add(start, 1);
+    add(first - 0.5, 1);
+    add(first - 0.15, low);
+  } else add(start, low);
+  // a pause next to footage (`footage: true`, where `level` takes the music out) never brings it up:
+  // it would swell for a moment between the voice and the footage's own sound
+  let end = sorted[0].end, beside = !!sorted[0].footage;
+  for (const w of sorted.slice(1)) {
+    if (w.start - end >= pause && !beside && !w.footage) {
+      const a = end + 0.15, b = w.start - 0.2, [r, f] = up(a, b);
+      add(a, low); add(a + r, 1); add(b - f, 1); add(b, low);
+    }
+    if (w.end >= end) beside = !!w.footage;
+    end = Math.max(end, w.end);
+  }
+  add(end + 0.15, low);
+  add(end + 1, 1);
+  return pts;
+}
+
+// the lane's value at a time on its clock (straight between its points)
+const laneAt = (pts, t) => {
+  if (t <= pts[0].t) return pts[0].v;
+  for (let k = 1; k < pts.length; k++) if (t <= pts[k].t) {
+    const a = pts[k - 1], b = pts[k];
+    return b.t === a.t ? b.v : +(a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t)).toFixed(4);
+  }
+  return pts.at(-1).v;
+};
+
+// the music out while footage plays its own sound: down to 0 over `ramp` s before each stretch
+// (on the music's clock), 0 through it, back over `ramp` s after it to where the lane would be
+export function duckLane(pts, spans, { ramp = 0.3 } = {}) {
+  let out = pts.map((p) => ({ ...p }));
+  for (const [s, e] of [...spans].sort((a, b) => a[0] - b[0])) {
+    const a = Math.max(0, s - ramp), b = e + ramp;
+    const before = laneAt(out, a), after = laneAt(out, b);
+    out = [...out.filter((p) => p.t < a), { t: +a.toFixed(3), v: before }, { t: +s.toFixed(3), v: 0 }, { t: +e.toFixed(3), v: 0 }, { t: +b.toFixed(3), v: after }, ...out.filter((p) => p.t > b)];
+  }
+  // a point at the same time as the one before: the later wins
+  return out.filter((p, k) => k + 1 === out.length || out[k + 1].t !== p.t);
+}
+
+// the film's footage that plays its own sound: every <video> HyperFrames places that is not muted,
+// not at volume 0 and whose file has sound, and every <audio> that is neither the music nor a line
+// of the voice nor marked data-sfx (a sound effect rides on the music, it does not stop it)
+function footageWithSound(composition, html, clips) {
+  const tagOf = (id) => (id ? (html.match(new RegExp(`<(?:video|audio)\\b[^>]*\\bid\\s*=\\s*["']${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'][^>]*>`, "i")) || [])[0] || "" : "");
+  return clips.filter((c) => {
+    if (!Number.isFinite(c.absStart) || !(Number(c.duration) > 0) || !c.src) return false;
+    const tag = tagOf(c.elementId || c.id);
+    if (/\smuted\b/i.test(tag) || /\sdata-sfx\b/i.test(tag) || Number(c.volume) === 0) return false;
+    if (c.kind === "audio" && (c.id === "music" || /(^|\/)music\.\w+$/.test(String(c.src)) || /^(\.\/)?assets\/voice\//.test(String(c.src)) || String(c.id).startsWith("vo-"))) return false;
+    const file = path.join(composition, String(c.src).replace(/^\.?\//, ""));
+    return fs.existsSync(file) && probe(file).streams.some((s) => s.codec_type === "audio");
+  }).map((c) => ({ id: c.elementId || c.id, src: c.src, start: Number(c.absStart), end: Number(c.absStart) + Number(c.duration) }));
+}
+
+// the music's end against the voice's last word: a fade-out right after it (the one `music` bakes
+// into the file, or the film ending there) leaves the lane no room to come up at the end
+export function endWarning(lastWord, musicEnd, filmEnd) {
+  const end = Math.min(musicEnd, filmEnd), room = end - lastWord;
+  if (room >= 2.5) return null;
+  return `! The music ${musicEnd <= filmEnd ? "ends" : "is cut off by the film's end"} ${room.toFixed(1)} s after the last word: its fade swallows the rise there. End the film about 3 s after the last word (the root's data-duration, the music's data-duration and data-fade-out with it; music made with --seconds of that length), then level again.`;
+}
+
+// the <audio id="music"> tag of a root, and its volume lane when it has one
+export function musicTag(html) {
+  const tag = (html.match(/<audio\b[^>]*>/gi) || []).find((t) => /\bid\s*=\s*["']music["']/i.test(t));
+  if (!tag) return null;
+  const raw = tag.match(/\sdata-automation\s*=\s*(["'])(.*?)\1/is)?.[2];
+  let lane = null;
+  if (raw) {
+    try { lane = JSON.parse(raw.replace(/&quot;/g, '"')).lanes?.find((l) => l.target === "volume")?.points || null; } catch { lane = null; }
+  }
+  return { tag, lane };
+}
+
+// the share of the music's volume while the voice speaks: the lowest point of its lane
+// (0 is footage playing its own sound, where the music is out: no level under the voice)
+const speaking = (lane) => {
+  const v = (lane || []).map((p) => Number(p.v)).filter((x) => x > 0);
+  return v.length ? Math.min(...v) : 1;
+};
+
+function cmdLevel(work, composition, opts) {
+  if (!work || !composition) fail(`Usage: ${cmd("level <work> <composition> [--rise 8] [--pause 1] [--under 17]")}`);
+  const rise = opts.rise == null ? RISE : Number(opts.rise), pause = opts.pause == null ? LONG_PAUSE : Number(opts.pause);
+  if (!(rise >= 0 && rise <= 20)) fail("✗ --rise is how many dB the music comes up in a long pause, 0 to 20.");
+  if (!(pause >= 0.5 && pause <= 10)) fail("✗ --pause is the shortest pause in seconds the music comes up in, 0.5 to 10.");
+  const root = rootOf(composition);
+  const found = musicTag(root.html);
+  if (!found) fail(`✗ ${rel(root.file)} has no <audio id="music">: ${cmd(`music ${rel(work)} ${rel(composition)} --prompt "…" --seconds <s>`)} first, and place it.`);
+  const media = mediaClips(composition);
+  const clip = media.find((c) => c.kind === "audio" && (c.id === "music" || /(^|\/)music\.\w+$/.test(String(c.src))));
+  const { words } = filmWords(work, composition);
+  const footage = footageWithSound(composition, root.html, media);
+  if (!words.length) fail(`✗ No line of the voice is placed in ${rel(root.file)}: nothing to lay the music under.`);
+  const { music, voice } = inFilm(composition);
+  const m = loudness([music.file]), v = loudness(voice.filter((x) => fs.existsSync(x.file)));
+  if (m == null || v == null) fail(`✗ The ${m == null ? "music" : "voice"} is silent: nothing to level by.`);
+  const under = Number(opts.under) || music.under || UNDER;
+  const fit = musicVolume(v, m, under);
+  // the track's volume is its level in a pause; the lane takes it down while the voice speaks
+  const volume = Math.min(3.98, +(fit.volume * dbToGain(rise)).toFixed(3));
+  const low = +(fit.volume / volume).toFixed(4);
+  const start = Number(clip?.absStart) || 0;
+  const duration = Number(clip?.duration) || root.duration;
+  // footage with its own sound counts as speech for the pauses (no rise into it or out of it) and
+  // takes the music out while it plays
+  const spans = footage.map((f) => [f.start, f.end]);
+  const points = duckLane(musicLane([...words, ...footage.map((f) => ({ ...f, footage: true }))], { start, duration, low, pause }), spans.map(([a, b]) => [a - start, b - start]));
+  if (points.length > 512) fail(`✗ ${points.length} points: more than a lane holds (512). A longer --pause gives fewer.`);
+  const lane = JSON.stringify({ version: 1, lanes: [{ target: "volume", points }] }).replace(/"/g, "&quot;");
+  let tag = found.tag.replace(/\sdata-automation\s*=\s*(["']).*?\1/is, "").replace(/\sdata-volume\s*=\s*(["']).*?\1/i, "").replace(/\sdata-under-voice\s*=\s*(["']).*?\1/i, "");
+  tag = tag.replace(/^<audio\b/i, `<audio data-volume="${volume}" data-under-voice="${under}" data-automation="${lane}"`);
+  fs.writeFileSync(root.file, root.html.replace(found.tag, tag));
+  if (footage.length) console.log(`The music is out while ${footage.length} piece${footage.length > 1 ? "s" : ""} of footage play${footage.length > 1 ? "" : "s"} ${footage.length > 1 ? "their" : "its"} own sound (${footage.map((f) => `${f.id || f.src} ${f.start.toFixed(2)}–${f.end.toFixed(2)} s`).join(", ")}): down over 0.3 s before, back over 0.3 s after. A <video> or <audio> that should play under the music instead is muted, or a sound effect marked data-sfx.`);
+  const rises = points.filter((p, k) => p.v === 1 && (k === 0 || points[k - 1].v !== 1)).length;
+  console.log(`<audio id="music"> in ${rel(root.file)}: ${lu(fit.under)} LU under the voice while it speaks and through pauses under ${pause} s (data-volume ${volume} × ${low}), ${rise} dB up in ${rises} stretch${rises === 1 ? "" : "es"} without voice (pauses of ${pause} s or more${points[0].v === 1 ? ", before the first word" : ""}, after the last word): a volume lane of ${points.length} points, not a compressor, so the music never moves while the voice speaks.
+Measured, not heard: say so. Run it again after the voice or the music moved; ${cmd(`check ${rel(work)} ${rel(composition)}`)} measures the distance as placed.`);
+  const late = endWarning(Math.max(...words.map((w) => w.end)), start + duration, root.duration);
+  if (late) console.log(late);
 }
 
 // the voice's words at their times in the film: each line where the film's <audio> plays it
@@ -687,10 +1018,30 @@ function captionsTool() {
   return candidates.find((p) => p && fs.existsSync(p)) || null;
 }
 
+// "12.4-15.8, 160-168" → [[12.4, 15.8], [160, 168]]: the stretches of the film the captions pause in
+export function pauseSpans(text) {
+  if (text == null || text === true) return null;
+  if (/^\s*none\s*$/i.test(String(text))) return [];
+  const spans = String(text).split(",").map((s) => s.trim()).filter(Boolean).map((s) => {
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)$/);
+    if (!m || !(Number(m[2]) > Number(m[1]))) throw new Error(`--pause takes stretches of the film in seconds, "<from>-<to>" separated by commas ("12.4-15.8,160-168"), or "none"; "${s}" is not one`);
+    return [Number(m[1]), Number(m[2])];
+  });
+  return spans.sort((a, b) => a[0] - b[0]);
+}
+
+// the words the captions show: none said inside a stretch where the picture carries the same words
+export function captionWords(words, spans = []) {
+  const inside = (w) => spans.some(([a, b]) => w.start >= a - 0.05 && w.start < b);
+  return words.filter((w) => !inside(w));
+}
+
 function cmdCaptions(work, composition, opts) {
-  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md]")}`);
+  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md] [--pause <from>-<to>,…] [--follow]")}`);
   const tool = captionsTool();
   if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
+  let spans;
+  try { spans = pauseSpans(opts.pause); } catch (e) { fail(`✗ ${e.message}.`); }
   const file = cmdWords(work, composition);
   const run = (args) => {
     const r = spawnSync(process.execPath, [tool, ...args], { encoding: "utf8" });
@@ -698,9 +1049,21 @@ function cmdCaptions(work, composition, opts) {
     if (r.status) fail(`✗ ${(r.stderr || "").trim()}`);
   };
   if (opts.mark) run(["mark", file, ...(opts.product ? ["--product", String(opts.product)] : [])]);
-  const ids = readJson(path.join(work, "launch.json"), {}).platforms || [];
+  const launchFile = path.join(work, "launch.json"), saved = readJson(launchFile, {});
+  // the pauses stay for the next build until --pause names others (or "none")
+  if (spans) writeJson(launchFile, { ...saved, captionPauses: spans });
+  const pauses = spans || saved.captionPauses || [];
+  const ids = saved.platforms || [];
   const brand = opts.brand || (fs.existsSync("brand/DESIGN.md") ? "brand/DESIGN.md" : null);
-  run(["build", file, path.join(composition, "captions"), "--style", String(opts.style || "hormozi"), ...(ids.length ? ["--platform", ids.join(",")] : []), ...(brand ? ["--brand", brand] : [])]);
+  let shown = file;
+  if (pauses.length) {
+    const all = readJson(file);
+    const kept = captionWords(all.words, pauses);
+    shown = path.join(work, "captions.words.json");
+    writeJson(shown, { ...all, words: kept });
+    console.log(`The captions pause in ${pauses.map(([a, b]) => `${a}–${b} s`).join(", ")}: ${all.words.length - kept.length} word${all.words.length - kept.length === 1 ? "" : "s"} the picture carries are left out (${rel(shown)}).`);
+  }
+  run(["build", shown, path.join(composition, "captions"), "--style", String(opts.style || "hormozi"), ...(ids.length ? ["--platform", ids.join(",")] : []), ...(brand ? ["--brand", brand] : []), ...(opts.follow ? ["--follow"] : [])]);
   console.log(`Mount it once, as the root's last child; build captions again after moving a line of the voice (it reads where the root places them).`);
 }
 
@@ -825,15 +1188,18 @@ if (isMain) try {
   else if (command === "check") cmdCheck(pos[0], pos[1]);
   else if (command === "draw") cmdDraw(pos[0], pos[1]);
   else if (command === "board") cmdBoard(pos[0], pos[1], opts);
+  else if (command === "fill") cmdFill(pos[0], pos[1]);
   else if (command === "voices") await cmdVoices(opts);
   else if (command === "sample") await cmdSample(pos[0], opts);
   else if (command === "voice") await cmdVoice(pos[0], pos[1], pos[2], opts);
+  else if (command === "narration") cmdNarration(pos[0], pos[1], pos[2], pos[3], opts);
+  else if (command === "level") cmdLevel(pos[0], pos[1], opts);
   else if (command === "words") cmdWords(pos[0], pos[1]);
   else if (command === "captions") cmdCaptions(pos[0], pos[1], opts);
   else if (command === "music") await cmdMusic(pos[0], pos[1], opts);
   else if (command === "image") await cmdImage(pos[0], opts);
   else if (command === "finish") cmdFinish(pos[0]);
-  else fail(`${cmd("guides | zones <work> [platform…] | check <work> <composition> | draw <work> <stills> | board <work> <stills> | voices | sample <work> | voice <work> <script.json> <composition> | words <work> <composition> | captions <work> <composition> | music <work> <composition> | image <out.png> | finish <video.mp4>")}   (options: the head of ${self()})`);
+  else fail(`${cmd("guides | zones <work> [platform…] | check <work> <composition> | draw <work> <stills> | board <work> <stills> | fill <work> <stills> | voices | sample <work> | voice <work> <script.json> <composition> | narration <work> <voice> <words.json> <composition> | words <work> <composition> | captions <work> <composition> | music <work> <composition> | level <work> <composition> | image <out.png> | finish <video.mp4>")}   (options: the head of ${self()})`);
 } catch (e) {
   fail(`✗ ${e.message}`);
 }

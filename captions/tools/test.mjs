@@ -463,11 +463,11 @@ test("impact: a caption that holds a key word stands whole in the key colour, wi
 });
 
 // a build with a brand kit of one colour and a font Google serves: the look in the built file, what the tool said
-function branded(t, style, primary, family = "Brand Sans", words = WORDS) {
+function branded(t, style, primary, family = "Brand Sans", words = WORDS, extra = []) {
   const dir = folder(t);
   fs.mkdirSync(path.join(dir, "brand"), { recursive: true });
   fs.writeFileSync(path.join(dir, "brand", "DESIGN.md"), `---\nname: Test Brand\ncolors:\n  primary: "${primary}"\ntypography:\n  headline-display:\n    fontFamily: "${family}"\n    fontWeight: 800\nfonts:\n  ${family}: google\n---\n# Test Brand\n`);
-  const r = run(TOOL, dir, ["build", "words.json", "out/captions", "--style", style, "--size", "1080x1920", "--brand", "brand/DESIGN.md"], words);
+  const r = run(TOOL, dir, ["build", "words.json", "out/captions", "--style", style, "--size", "1080x1920", "--brand", "brand/DESIGN.md", ...extra], words);
   assert.equal(r.status, 0, r.stderr);
   const html = fs.readFileSync(path.join(dir, "out", "captions", "index.html"), "utf8"), data = JSON.parse(html.match(/var DATA = (.*);\n/)[1]);
   return { look: data.look, said: r.stdout, html, data };
@@ -504,6 +504,27 @@ test("a brand's colour goes where the style shows one: the word being said, the 
   assert.match(branded(t, "bold", "1E3A8A").said, /\(the brand's 1E3A8A is no hex or rgb\(\) colour to weigh: the key words keep the style's #FFE500\)/);
   // where only the word being said takes it, nothing is weighed: as in the styles before
   assert.equal(branded(t, "hormozi", "#1E3A8A").look.accent, "#1E3A8A");
+});
+
+test("--follow: the word being said lights up where no style lit it, in the brand's colour where it reads; styles that light it already stay as they are", { skip: noZones }, (t) => {
+  // label: grey words turn red as they are said and black once said; key words keep the brand's colour
+  const label = branded(t, "label", "#FF404C", "Brand Sans", WORDS, ["--follow"]);
+  assert.deepEqual([label.data.motion.active, label.look.wait, label.look.accent, label.look.color], ["fill", STYLES.label.look.wait, "#FF404C", STYLES.label.look.color]);
+  assert.match(label.said, /\(--follow: the word being said lights up in #FF404C, the words wait dimmer and stand in the text's colour once said\)/);
+  // clean: on its box, white words wait at half their strength, the word being said in the brand's colour
+  const clean = branded(t, "clean", "#FF404C", "Brand Sans", WORDS, ["--follow"]);
+  assert.deepEqual([clean.data.motion.active, clean.look.wait, clean.look.accent], ["fill", "rgba(255,255,255,0.5)", "#FF404C"]);
+  // bold, whose key words take the brand: the light is the key colour, the brand's where it reads, else the style's
+  assert.equal(branded(t, "bold", "#FF404C", "Brand Sans", WORDS, ["--follow"]).look.accent, "#FF404C");
+  assert.equal(branded(t, "bold", "#1E3A8A", "Brand Sans", WORDS, ["--follow"]).look.accent, STYLES.bold.look.highlight);
+  // hormozi lights the word already, single shows one at a time: nothing changes, and the tool says so
+  for (const name of ["hormozi", "single"]) {
+    const b = branded(t, name, "#FF404C", "Brand Sans", WORDS, ["--follow"]), plain = branded(t, name, "#FF404C");
+    assert.deepEqual(b.data, plain.data, name);
+    assert.match(b.said, /--follow: .* lights the word being said already, or shows one word at a time: nothing changed/);
+  }
+  // without --follow nothing is lit that was not before
+  assert.equal(branded(t, "clean", "#FF404C").data.motion.active, "none");
 });
 
 test("single: one word a caption, each on screen until the next is said; a word too short to be read shares its caption", { skip: noZones }, (t) => {

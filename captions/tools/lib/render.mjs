@@ -90,10 +90,34 @@ function areaOf(place, style, width, height, [sx, sy, sw, sh]) {
     grow: place.size != null ? place.size / style.look.size : scale, lines, align: place.align ?? "center", own: maxWidth !== sw || lines !== style.group.lines || place.size != null };
 }
 
+// A colour at half its strength, for the words that wait to be said; null for one not to weigh
+function dimmed(c) {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!hex) return null;
+  const d = hex[1].length === 3 ? [...hex[1]].map((x) => x + x).join("") : hex[1];
+  return `rgba(${[0, 2, 4].map((i) => parseInt(d.slice(i, i + 2), 16)).join(",")},0.5)`;
+}
+
+// --follow: the word being said lights up in a style whose words stay as they are (clean, bold,
+// subtitle, editorial, outline, impact) or only turn the text's colour (label): the words wait at
+// half their colour (label: its grey), the one being said takes the light colour, said words stand
+// in the text's colour. The light colour is the brand's primary where the style gives it the word
+// being said or the key words and it reads there, else the style's key colour. Styles that light
+// the word already (hormozi, karaoke, wipe, fill) and one word at a time (single) stay as they are.
+export function follows(style, look, brandPrimary) {
+  const m = style.motion.active;
+  if (style.group.words === 1 || ["color-scale", "pill", "dim-after"].includes(m) || (m === "fill" && look.accent !== look.color)) return null;
+  const takes = look.brand || "accent";
+  const light = takes === "accent" && brandPrimary ? brandPrimary : look.highlight;
+  const wait = look.wait || dimmed(look.color);
+  if (!wait) return null;
+  return { active: "fill", accent: light, wait };
+}
+
 // zones: platform-zones' answer for the frame (tools/lib/zones.mjs); place: where the caller wants
 // the captions instead of where it says (areaOf above). Without place the file is what it was
-// before there was one.
-export function writeCaptions(out, { words: said, style, width, height, duration, brand, zones, place }) {
+// before there was one; without follow, as before there was that.
+export function writeCaptions(out, { words: said, style, width, height, duration, brand, zones, place, follow = false }) {
   const words = fold(said);   // a mark alone ("…") is no caption: group.mjs
   const look = { ...style.look }, area = areaOf(place, style, width, height, zones.centred);
   fs.mkdirSync(out, { recursive: true });
@@ -114,6 +138,13 @@ export function writeCaptions(out, { words: said, style, width, height, duration
     if (ratio != null && ratio >= (look.lineBox ? 3 : 4.5)) { look.highlight = brand.primary; if (takes === "both") look.accent = brand.primary; }
     else kept = { primary: brand.primary, why: ratio == null ? "is no hex or rgb() colour to weigh" : `would not be read on ${look.lineBox ? "the box of its line" : "a picture"}`,
       what: takes === "both" ? "the word being said and the key words" : "the key words", highlight: look.highlight };
+  }
+  // the word being said lit where the caller asks for it (after the brand: its primary may be the light)
+  let followed = null;
+  if (follow) {
+    const f = follows(style, look, brand?.primary && !kept ? brand.primary : null);
+    if (f) { style = { ...style, motion: { ...style.motion, active: f.active } }; look.accent = f.accent; look.wait = f.wait; followed = { accent: f.accent }; }
+    else followed = { already: true };
   }
   if (brand?.family && !look.ownFont && (brand.served || brand.files.length)) {
     look.font = brand.family;
@@ -400,7 +431,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
   // are never cut to an area.
   const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
   const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : look.lineBox ? 2 * look.linePad[0] * area.type : 0;
-  return { groups: gs.length, cards, wide, joined, small, smaller, kept, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
+  return { groups: gs.length, cards, wide, joined, small, smaller, kept, followed, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.

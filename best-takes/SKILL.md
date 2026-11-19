@@ -41,6 +41,8 @@ orders the videos by recording time (`--order given` keeps yours), transcribes e
 
 A voice recorded alone (`audio: uploads/<file>`: MP3, M4A, WAV, or a video file without a picture) goes the same way: all recordings of one cut are videos, or all are sound alone. It has no picture, so a pause over a second inside a keep is cut and the tool lays the room's own quiet between the stretches instead (0.42 s after a sentence, 0.2 s inside one).
 
+A second cut of the same recordings (a short beside the long cut, another length): `node <skill>/tools/takes.mjs new takes/<name2> --like takes/<name> [--target 59]` takes over their copies, words and levels with the same word numbers, transcribes nothing and spends nothing; then its own `cut.json` and `build` with its own `--out`.
+
 `(speech not written down, 1.7 s)` in the words is voice the speech model wrote no words for, even when heard again: nearly always an attempt it skipped. It is never a pause; the brief's rule 2 says what to do with it.
 
 ### 2. The cut

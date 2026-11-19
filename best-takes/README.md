@@ -19,6 +19,8 @@ node --test tools/test.mjs                                                     #
 
 A voice alone: `takes.mjs new takes/talk uploads/voice.mp3`, `propose`, `cut.json`, then `build takes/talk --out artifacts/talk.m4a` and `check`; nothing to render.
 
+A second cut of the same recordings (the short beside the film): `takes.mjs new takes/talk-short --like takes/talk [--target 59]` copies `takes/talk/source/` (the copies of the recordings, their words with the same numbers, their levels, the settings but for `out`, `title`, `target` and `hook`), writes its brief and transcribes nothing; then its own `cut.json` and `build --out artifacts/talk-short.m4a`.
+
 Outside rragent the same works with any HyperFrames project folder: `--out <project>/composition`, then `hyperframes render` in that folder.
 
 Requirements: Node 20+, ffmpeg, the HyperFrames CLI (`hyperframes` on the PATH, else `npx hyperframes@0.9.70`, the version last tried, in `tools/lib/media.mjs`; 0.8.221 works too), agentitos' [transcribe](../transcribe/) beside it (or `TRANSCRIBE` naming its `tools/transcribe.mjs`) for the transcription by ElevenLabs Scribe, for b-roll agentitos' [b-roll](../b-roll/) (or `BROLL_TOOL`), OpenRouter for it and for `propose`: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it transcribe sends the sound in 5-minute pieces of MP3, which the gateway takes, instead of 10-minute FLAC). No npm dependencies.
