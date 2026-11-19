@@ -415,7 +415,7 @@ test("a face that fills the frame already (its box half the frame's height or mo
 });
 
 // ------------------------------------------------------------------- on its own: faces, picture, text
-import { covering, inFrame, faceTrack, facesFault, rankPictures, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { covering, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
 import { pieceStyle } from "./lib/composition.mjs";
 
 test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
@@ -518,4 +518,12 @@ test("on its own: a wide 720p take is placed so that its face comes nearest the 
   assert.ok(Math.abs(r[0].face - 0.302) < 0.001);
   // a face that would come out larger than the usual band is not pushed past it
   assert.equal(rankPictures([c("crop", "4:5", 1.875), c("crop", "1:1", 1.5)], 400, 1920)[0].crop, "1:1");
+});
+
+test("on its own: faces that miss most of the cut are counted, so that place and check say so", () => {
+  const clips = { 1: { file: "01.mp4" } };
+  const pieces = [{ clip: 1, in: 0, out: 10, start: 0, duration: 10 }];
+  const half = { "01.mp4": { faces: Array.from({ length: 30 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) } };
+  assert.ok(Math.abs(knownSeconds(pieces, clips, half) - 3) < 0.25);
+  assert.equal(knownSeconds(pieces, clips, { "01.mp4": { faces: [] } }), 0);
 });

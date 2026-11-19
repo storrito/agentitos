@@ -264,7 +264,8 @@ const ask = async (or, content, log, schema = SCHEMA, name = "people") => {
 //   (version 3: one features_2d for all three; version 2: the faces without features and looks)
 export async function locate(video, words, shots, meta, { log = () => {} } = {}) {
   const cache = video.replace(/\.[^.]+$/, "") + ".people.json";
-  if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return JSON.parse(fs.readFileSync(cache, "utf8"));
+  // (the answer of before, kept beside the video: no request, nothing spent now; ask afresh without it)
+  if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return { ...JSON.parse(fs.readFileSync(cache, "utf8")), cached: true };
   const or = await openrouter();
   if (!or) return null;
   const lines = turnsOf(words).map((t) => `[${t.start.toFixed(1)}–${t.end.toFixed(1)} s] ${t.speaker}: ${t.text}`).join("\n");
@@ -361,9 +362,13 @@ function pixels(b, { width, height }, { order = "yx" } = {}) {
     [t, l, bo, r] = order === "yx" ? b : [b[1], b[0], b[3], b[2]];
   } else if (b && ["left", "top", "right", "bottom"].every((e) => Number.isFinite(b[e]))) ({ left: l, top: t, right: r, bottom: bo } = b);
   else return null;
+  // a box whose end comes before its start, or that lies mostly outside the picture, is no box (the
+  // review's answer [950, 980, 20, 10], taken in order, was the whole picture)
+  if (!(r > l && bo > t)) return null;
   const c = (v) => Math.min(1000, Math.max(0, v)) / 1000;
-  [l, r] = [c(l), c(r)].sort((p, q) => p - q);
-  [t, bo] = [c(t), c(bo)].sort((p, q) => p - q);
+  if ((c(r) - c(l)) * (c(bo) - c(t)) < 0.5 * ((r - l) / 1000) * ((bo - t) / 1000)) return null;
+  [l, r] = [c(l), c(r)];
+  [t, bo] = [c(t), c(bo)];
   if (r - l <= 0 || bo - t <= 0) return null;
   return { x: ((l + r) / 2) * width, y: ((t + bo) / 2) * height, w: (r - l) * width, h: (bo - t) * height };
 }
@@ -1282,7 +1287,8 @@ export function facesOver(seen, meta, { step = 0.1 } = {}) {
 export async function faces(video, words, { aspect = [9, 16], tracks = null, log = () => {} } = {}) {
   const r = await facesOf(video, words, { aspect, tracks, log });
   if (!r) return null;
-  return { footage: path.basename(video), by: r.people.by || "model", model: r.people.model, cost: +((r.people.cost || 0)).toFixed(4), ...facesOver(r.seen, r.meta) };
+  // what was spent now: nothing where the answer of before was read again
+  return { footage: path.basename(video), by: r.people.by || "model", model: r.people.model, cost: r.people.cached ? 0 : +((r.people.cost || 0)).toFixed(4), ...(r.people.cached ? { cached: true } : {}), ...facesOver(r.seen, r.meta) };
 }
 
 export async function frame(video, words, { aspect = [9, 16], out, kinds = [], lifts = [], log = () => {} }) {
@@ -1323,7 +1329,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (all("face-at").length) tracks = [all("face-at").map((v) => {
       const m = String(v).match(/^(\d+(?:\.\d+)?):(-?[\d.]+),(-?[\d.]+),([\d.]+),([\d.]+)$/);
       if (!m) { console.log(`--face-at is <second>:x,y,w,h in px of the footage, as 2.5:300,570,600,900 (read off a grid picture), not "${v}".`); process.exit(1); }
-      return { t: Number(m[1]), box: m.slice(2).map(Number) };
+      const box = m.slice(2).map(Number);
+      if (!(box[2] >= 4 && box[3] >= 4)) { console.log(`--face-at ${v}: a box is x,y,w,h, its corner, then its width and height (4 px at least), not two corners.`); process.exit(1); }
+      return { t: Number(m[1]), box };
     })];
     else if (opt("face-track")) {
       try { const j = JSON.parse(fs.readFileSync(opt("face-track"), "utf8")); tracks = Array.isArray(j[0]) ? j : [j]; } catch (e) { console.log(`--face-track ${opt("face-track")} cannot be read (${e.message}): it is a list of {"t": seconds, "box": [x, y, w, h]}, or one such list per person.`); process.exit(1); }
@@ -1334,7 +1342,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (!r) { console.log("No faces: there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above). Read the faces off a grid picture yourself and give them with --face-at."); process.exit(1); }
     fs.writeFileSync(opt("faces"), JSON.stringify(r) + "\n");
     const seconds = r.faces.length * r.step;
-    console.log(`${opt("faces")}: ${r.shots.length} shot(s), a face at ${r.faces.length} moments (${seconds.toFixed(1)} s), ${r.by === "eye" ? "from your boxes, followed between them in the frames (no model)" : `by ${r.model}, $${r.cost.toFixed(4)}`}${r.faces.some((f) => f.boxes.some((b) => b.feat)) ? ", with the eyes, nose and mouth" : ", the eyes, nose and mouth from the head's proportions"}.`);
+    console.log(`${opt("faces")}: ${r.shots.length} shot(s), a face at ${r.faces.length} moments (${seconds.toFixed(1)} s), ${r.by === "eye" ? "from your boxes, followed between them in the frames (no model)" : `by ${r.model}, ${r.cached ? `its answer of before (the .people.json beside the video), nothing spent now` : `$${r.cost.toFixed(4)}`}`}${r.faces.some((f) => f.boxes.some((b) => b.feat)) ? ", with the eyes, nose and mouth" : ", the eyes, nose and mouth from the head's proportions"}.`);
     for (const s of r.shots) for (const d of s.doubtful || []) console.log(`  ⚠ ${d.who ?? "a face"} at ${d.t.toFixed(1)} s: ${d.features || `${d.off} px from where the frames before and after lead`}; that still is left out`);
     process.exit(0);
   }

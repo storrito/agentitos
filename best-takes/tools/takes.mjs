@@ -65,7 +65,7 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
-import { pieceSpan, clockOf, covering, inFrame, faceTrack, facesFault, rankPictures, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
+import { pieceSpan, clockOf, covering, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
@@ -468,6 +468,10 @@ function eyeBoxes(list, clips) {
     const file = m[1] || (names.length === 1 ? names[0] : null);
     if (!file) fail(`--eye ${v}: name the video, as ${names[0]}@${m[2]}:${m[3]} (there are ${names.length}: ${names.join(", ")}).`);
     if (!names.includes(file)) fail(`--eye ${v}: there is no ${file}; the videos are ${names.join(", ")}.`);
+    // a face's box: inside the picture, not a speck, about as tall as wide or taller
+    const c = Object.values(clips).find((x) => x.file === file), [x, y, w, h] = m[3].split(",").map(Number);
+    const inside = Math.max(0, Math.min(c.width, x + w) - Math.max(0, x)) * Math.max(0, Math.min(c.height, y + h) - Math.max(0, y));
+    if (!(w >= 0.02 * c.height && h >= 0.02 * c.height) || inside < 0.8 * w * h || h / w < 0.6 || h / w > 3) fail(`--eye ${v}: that is no face's box in ${file} (${c.width}×${c.height}): x,y is its top left corner, then its width and height, from the hairline to the chin and cheek to cheek, read off the grid picture again.`);
     (by[file] ||= []).push(`${m[2]}:${m[3]}`);
   }
   return by;
@@ -519,6 +523,8 @@ function cmdFaces(dir, opts) {
     const out = source(dir, `${kOf(c)}.faces.json`);
     const boxes = eye[c.file];
     if (!boxes && fs.existsSync(out) && !opts.again) { console.log(`${c.file}: faces kept from before (${rel(out)}; --again finds them anew)`); continue; }
+    // --again asks the model afresh: its answer of before, kept beside the video, goes
+    if (opts.again && !boxes) fs.rmSync(source(dir, `${kOf(c)}.people.json`), { force: true });
     // the video's words with who speaks, for the model (one voice where the words name none)
     const wf = source(dir, `${kOf(c)}.framing-words.json`);
     fs.writeFileSync(wf, JSON.stringify(words.filter((w) => w.clip === c.n && w.kind === "word").map((w) => ({ text: w.text, start: w.start, end: w.end, speaker: w.speaker ?? "A" }))));
@@ -527,7 +533,11 @@ function cmdFaces(dir, opts) {
     const r = spawnSync(process.execPath, [tool, source(dir, c.file), wf, "--aspect", `${fw}:${fh}`, "--faces", out, ...(boxes || []).flatMap((b) => ["--face-at", b])], { encoding: "utf8" });
     if (r.status || !fs.existsSync(out)) fail(`✗ ${c.file}: ${(r.stdout || r.stderr).trim().split("\n").pop()}`);
     console.log(`${c.file}: ${r.stdout.trim().split("\n").map((l) => l.replace(/^[^:]*faces\.json: /, "")).join("\n  ")}`);
-    cost += read(out).cost || 0;
+    const got = read(out);
+    cost += got.cost || 0;
+    // a person's take in which a face shows less than half the time: the model missed it, or there is none
+    const seen = got.faces.length * (got.step || 0.1);
+    if (seen < 0.5 * c.duration) console.log(`✗ ${c.file}: a face at ${seen.toFixed(1)} of its ${c.duration.toFixed(1)} s only. Where a person speaks to the camera in it, the faces were missed: read them yourself (faces ${rel(dir)} --grid, then --eye); place puts the text by the faces it knows, and none where it knows none.`);
   }
   console.log(`${cost ? `$${cost.toFixed(4)} in all, ` : ""}${((Date.now() - started) / 1000).toFixed(0)} s.`);
   console.log(`Next: node ${self()} place ${rel(dir)}   (where the picture and the text go; it builds again)`);
@@ -694,6 +704,8 @@ function cmdPlace(dir, opts) {
 
   // the list: the picture, the captions, each video raised, what lies on a face
   console.log(`The picture:\n  ${said.join("\n  ")}`);
+  const cutLength = pieces.reduce((t, p) => t + p.duration, 0), known = knownSeconds(pieces, clips, inside);
+  if (known < 0.5 * cutLength) console.log(`✗ A face is known for ${known.toFixed(1)} of the cut's ${cutLength.toFixed(1)} s only. Where a person speaks to the camera, the faces were missed: the text is placed against none there. Read them yourself (faces ${rel(dir)} --grid, then --eye), then place again.`);
   const c = text.caption;
   if (c) console.log(`The captions: one place for the cut, ${c.lines > 1 ? "up to two lines" : "one line"} of ${c.font} px, the lowest line at y ${capOpts.y} (their middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the cut: where published Shorts set them" : c.where === "above-head" ? "above the head" : "below the chin"})${!cut.captions ? "; no captions in the cut yet: placed for the tallest style, place again after the captions command" : ""}.`);
   const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : ""].filter(Boolean).join(", ");
@@ -826,6 +838,12 @@ function cmdCheck(dir) {
     }
     if (said.length) console.log(`\nText and faces: the captions lie on ${said.join("; ")}${on.some((q) => q.role !== "hook" && (q.nose || q.mouth)) ? "" : "; never on the nose, the eyes or the mouth"} (the skill that framed the video says where that is not avoidable at a readable size).`);
     else if (!on.some((q) => q.seconds >= 0.3)) console.log(`\nText and faces: the captions${e.text.hook ? " and the hook" : ""} lie on no face (the faces as source/faces.json has them).`);
+    // this skill's own faces that miss most of the cut: what is not known is not counted
+    const placed = fs.existsSync(path.join(dir, "place.json")) ? read(path.join(dir, "place.json")) : null;
+    if (placed?.by === "takes place") {
+      const known = knownSeconds(e.pieces, clips, faces);
+      if (known < 0.5 * e.duration) errors.push(`a face is known for ${known.toFixed(1)} of the cut's ${e.duration.toFixed(1)} s only: where the person is in the picture, the faces were missed and nothing here is checked against them; read them yourself (faces ${rel(dir)} --grid, then --eye), then place again`);
+    }
   }
   const over = overTarget(e.duration, s.target);
   if (over) warnings.push(over);

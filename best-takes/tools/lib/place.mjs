@@ -160,6 +160,22 @@ export function toCut(t, pieces, clock) {
   return best >= 0 ? pieces[best].start + pieces[best].duration : pieces[0].start;
 }
 
+// the seconds of the cut in which a face is known (faces: { file: { faces: [{ t }] } }, a moment within
+// 0.15 s), counted every tenth of a second
+export function knownSeconds(pieces, clips, faces) {
+  let n = 0;
+  for (const p of pieces) {
+    const list = faces[clips[p.clip]?.file]?.faces || [];
+    for (let t = 0; t < p.duration; t += 0.1) {
+      const at = p.in + t * (p.rate || 1);
+      let lo = 0, hi = list.length - 1;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].t < at) lo = m + 1; else hi = m; }
+      if (list.length && [list[lo], list[lo - 1]].some((f) => f && Math.abs(f.t - at) <= 0.15 && f.boxes.length)) n += 0.1;
+    }
+  }
+  return n;
+}
+
 // layout place's candidates of one picture, best-takes' order: those that pass (no hard problem: the
 // enlargement under layout's hard limit; every text placed) by the face nearest the usual size of a
 // person's own take, as large as it comes up to FACE_UP of the frame's height (the box as given; the

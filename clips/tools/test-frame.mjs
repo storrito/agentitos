@@ -648,3 +648,21 @@ test("a phone's upright take stored on its side (rotation 90, −90) or upside d
     assert.deepEqual(JSON.parse(fs.readFileSync(out, "utf8")).size, shown, `rotation ${deg}: faces.json's size`);
   }
 });
+
+test("the model's nonsense is no face: a box whose end comes before its start (the review's [950, 980, 20, 10], taken as the whole picture before) is left out; an answer read again from its file costs nothing now and says so", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const meta = { width: 1280, height: 720 };
+  const shots = [{ start: 0, end: 2 }];
+  const answer = { version: 4, shots: [{ start: 0, end: 2, kind: "people", people: [{ who: "A", speaker: "A" }], stills: [{ t: 1, faces: [{ person: 0, box_2d: [950, 980, 20, 10], eyes_2d: [0, 0, 1000, 1000], nose_2d: null, mouth_2d: null, looks: "camera" }] }] }], missed: [] };
+  assert.equal(shotsOf(answer, shots, meta)[0].people.length, 0);
+  // the answer of before, beside the video: read again, nothing spent
+  const dir = tmp(), v = path.join(dir, "take.mp4");
+  const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10,format=yuv420p", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", v], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const good = { ...answer, cost: 0.0432, extra: { stills: 0, cost: 0 }, shots: [{ ...answer.shots[0], stills: [{ t: 1, faces: [{ person: 0, box_2d: [200, 400, 700, 600], eyes_2d: null, nose_2d: null, mouth_2d: null, looks: "camera" }] }] }] };
+  fs.writeFileSync(path.join(dir, "take.people.json"), JSON.stringify(good));
+  const { faces } = await import("./frame.mjs");
+  const out = await faces(v, [{ text: "a", start: 0.1, end: 0.4, speaker: "A" }]);
+  assert.equal(out.cost, 0);
+  assert.equal(out.cached, true);
+  assert.ok(out.faces.length > 0);
+});
