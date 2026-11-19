@@ -71,14 +71,21 @@ const USAGE = `"show": "uploads/result.mp4", or {"file": "uploads/result.mp4", "
 // (silent under the words, at its level in the hold after them)
 export const soundOf = (show) => (show.sound && typeof show.sound === "object" && !Array.isArray(show.sound)
   ? { level: Number(show.sound.hold) || 0, hold: true } : { level: Number(show.sound) || 0, hold: false });
-const level01 = (x) => typeof x === "number" && x >= 0 && x <= 1;
-// the shapes "sound" takes: a level 0–1 (a number, or a number written as text, as main took it),
-// or {"hold": level}; anything else ("", null, true, [0.8], {"hold": true}) is said
-const soundShape = (sound) => (sound && typeof sound === "object" && !Array.isArray(sound)
-  ? Object.keys(sound).length === 1 && level01(sound.hold)
-  : level01(sound) || (typeof sound === "string" && sound.trim() !== "" && level01(Number(sound))));
-// The least hold in which the hold form is heard: up over FADE, half a second at its level, out
-// over FADE (1 s). A shorter one gets no sound track and a sentence.
+const level01 = (x) => x >= 0 && x <= 1;
+const isForm = (sound) => !!sound && typeof sound === "object" && !Array.isArray(sound);
+// The shapes "sound" takes. The plain one is read as main reads it, Number(): every value main
+// builds (true as 1, "" and null as 0, [0.8] and "0.8" as 0.8) builds the same, and soundRead says
+// how it was read where it is no number. The hold form, which no older cut holds, is checked:
+// {"hold": level}, its level a number or a number written as text, nothing else in it.
+const soundShape = (sound) => (isForm(sound)
+  ? Object.keys(sound).length === 1 && (typeof sound.hold === "number" || (typeof sound.hold === "string" && sound.hold.trim() !== "")) && level01(Number(sound.hold))
+  : level01(Number(sound)));
+// how a "sound" that is no number was read, and what to write: null for a number or the hold form
+export function soundRead(sound, k) {
+  if (sound === undefined || typeof sound === "number" || isForm(sound)) return null;
+  const level = Number(sound);
+  return `! keep ${k + 1}: "sound": ${JSON.stringify(sound)} is read as ${level}${level === 1 ? ", the voice's level" : level === 0 ? ", no sound" : ""}: ${level === 0 ? `leave it out for none, ` : ""}write a number 0–1 ("sound": ${level || 0.8}), or {"hold": 0.8} for its sound only in the "hold" after the last word.`;
+}
 export const HOLD_HEARD = 1;
 
 // what is wrong with a keep's "show", in one sentence that says what to do; null where it is fine
@@ -122,6 +129,8 @@ export function placeShows(cut, pieces, words, infoOf) {
     const said = words.filter((w) => w.start >= start - 0.01 && w.end <= end + 0.01);
     const spoken = said.length ? said.at(-1).end - start : 0;
     const { level: sound, hold: holdOnly } = soundOf(show);
+    const read = soundRead(show.sound, k);
+    if (read) notes.push(read);
     if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground${sound > 0 && spoken > duration - FADE ? `, and its sound ${holdOnly ? "is never heard, the video ending before the last word" : "stays low under the words and fades out where it ends, before the last word"}` : ""}: an earlier "from", a shorter "hold", or end the keep a word earlier`);
     // the keep's hold whose voice is muted (the recording's sound there is the next words, or a cut
     // filler): with no sound of the shown video in it, digital silence while the video plays on

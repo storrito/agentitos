@@ -597,6 +597,7 @@ test("without a HyperFrames CLI on the PATH, the version this skill was last tri
 // "show" (lib/show.mjs): another video plays instead of the recording over a keep's words, pauses
 // and hold; its long pauses cut; with "sound" its sound rises to its level by the last word. On
 // the made-up words above (a pause of 3.6 s after word 13) and a made-up video's ffprobe answer.
+import { soundOf, soundRead } from "./lib/show.mjs";
 import { showOf, showProblem, placeShows, soundPoints, soundSaid as soundLine, heardSaid as heardLine, RISE, FADE, HOLD_HEARD } from "./lib/show.mjs";
 import { writeComposition } from "./lib/composition.mjs";
 import { areas, fit } from "./lib/layout.mjs";
@@ -762,8 +763,23 @@ test("show with \"sound\": {\"hold\": level}: silent under the keep's words, up 
   const say = (sound) => showProblem({ words: "0-5", show: { file: "a.mp4", sound } }, 0, VIDEO_INFO(10));
   assert.equal(say({ hold: 0.8 }), null);
   assert.equal(say(0.8), null); assert.equal(say(0), null); assert.equal(say("0.8"), null, "a number written as text, as main took it");
-  // wrong shapes: each one sentence that says what to write (the review of pull request 110)
-  for (const bad of [{ hold: 2 }, { level: 0.8 }, { hold: 0.8, words: 0.2 }, [0.8], { hold: true }, { hold: "0.8" }, "", null, true, "loud"]) {
+  // what main builds builds the same (main read "sound" by Number()): no ✗, the same level, and a line
+  // that says how a value that is no number was read (the review of pull request 110, round two)
+  for (const [value, level] of [[true, 1], ["", 0], [null, 0], [[0.8], 0.8], ["0.8", 0.8], [false, 0]]) {
+    assert.equal(say(value), null, JSON.stringify(value));
+    assert.deepEqual(soundOf({ sound: value }), { level, hold: false }, JSON.stringify(value));
+    assert.equal(soundRead(value, 1), `! keep 2: "sound": ${JSON.stringify(value)} is read as ${level}${level === 1 ? ", the voice's level" : level === 0 ? ", no sound" : ""}: ${level === 0 ? "leave it out for none, " : ""}write a number 0–1 ("sound": ${level || 0.8}), or {"hold": 0.8} for its sound only in the "hold" after the last word.`);
+  }
+  for (const value of [0.8, 0, undefined, { hold: 0.8 }]) assert.equal(soundRead(value, 0), null);
+  const readCut = twoKeeps({ show: { file: "result.mp4", sound: true } }), rr = plan(words, readCut, settings, voices);
+  const read = placeShows(readCut, rr.pieces, rr.words, () => VIDEO_INFO(60));
+  assert.equal(read.inserts[0].sound, 1, "true plays at 1, as on main");
+  assert.match(read.notes[0], /^! keep 1: "sound": true is read as 1, the voice's level: write a number 0–1/);
+  // the hold form's level as text is taken as the plain one is
+  assert.equal(say({ hold: "0.8" }), null);
+  assert.deepEqual(soundOf({ sound: { hold: "0.8" } }), { level: 0.8, hold: true });
+  // ✗ only for what main refuses too, and for misuse of the new form
+  for (const bad of [2, -1, "loud", { hold: 2 }, { hold: -1 }, { hold: true }, { hold: "loud" }, { hold: "" }, { level: 0.8 }, { hold: 0.8, under: 0.2 }, {}]) {
     const said = say(bad);
     assert.ok(said?.startsWith(`✗ keep 1: "show" "sound" is ${JSON.stringify(bad)}, which is no level: write a number 0–1`), `${JSON.stringify(bad)}: ${said}`);
     assert.match(said, /, or \{"hold": 0\.8\} for it only in the "hold" after the last word, silent under the words; leave it out for none\.$/);
