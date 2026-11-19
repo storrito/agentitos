@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A long video (a YouTube episode, a talk) as the source of several shorts.
 //
-//   node tools/episode.mjs fetch <url|file> <dir>
+//   node tools/episode.mjs fetch <url|file> <dir> [--no-names]
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
 //        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
@@ -180,7 +180,7 @@ function writeWords(dir, words) {
   return sentences;
 }
 
-function writeEpisode(dir, facts, heard, note = "") {
+function writeEpisode(dir, facts, heard, note = "", cost = null) {
   // what was said: the transcription writes the noises it hears among the words ("[laughs]", kind: "event")
   const words = heard.filter((w) => w.kind !== "event");
   if (!words.length) fail("No words found: is there speech in it?");
@@ -189,13 +189,13 @@ function writeEpisode(dir, facts, heard, note = "") {
   // words written anew: the names corrected in the old ones are not this transcription's
   for (const f of ["words.raw.json", "names.json"]) fs.rmSync(path.join(dir, f), { force: true });
   const sentences = writeWords(dir, words);
-  console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences`
+  console.log(`${episode.title} (${mmss(episode.duration || 0)}): ${words.length} words, ${sentences.length} sentences${cost != null ? ` ($${cost.toFixed(4)} for the words)` : ""}`
     + (episode.speakers.length ? `, voices ${episode.speakers.join(" ")}` : "") + `. ${note}episode.mjs moments ${dir} picks the moments; `
     + `episode.mjs cut ${dir} <first>-<last> <clip.mp4> cuts one.`);
 }
 
 // the person's own file: no captions to fall back on, so the words need the key
-async function fetchFile(file, dir) {
+async function fetchFile(file, dir, names = true) {
   if (!transcribeTool()) fail(NEEDS_TRANSCRIBE);
   const or = await openrouter();
   if (!or) fail("No OpenRouter (OPENROUTER_API_KEY, or on a Sprite the gateway's OpenRouter connection): a file has no captions to take the words from.");
@@ -204,23 +204,31 @@ async function fetchFile(file, dir) {
   const title = path.basename(file).replace(/\.[^.]+$/, "");
   const length = duration(file);
   log(`episode: writing down every word of “${title}” (${mmss(length)}) and who speaks it, a few minutes …`);
-  let words;
-  try { ({ words } = await transcribeFile(file, { speakers: true, log })); } catch (e) { fail(e.message); }
-  writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words);
+  let words, cost;
+  try { ({ words, cost } = await transcribeFile(file, { speakers: true, log })); } catch (e) { fail(e.message); }
+  writeEpisode(dir, { file, url: null, id: null, title, channel: null, duration: length, lang: null, source: "openrouter" }, words, "", cost);
   // no page: the names come from the model's knowledge and what the person gives (names --also)
   fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf({ title }), null, 1));
-  await namesAfterFetch(dir);
+  if (names) await namesAfterFetch(dir);
 }
 
-async function fetchEpisode(url, dir) {
-  if (!url || !dir) fail("episode.mjs fetch <url|file> <dir>");
+async function fetchEpisode(url, dir, ...rest) {
+  if (!url || !dir || rest.some((r) => r !== "--no-names")) fail("episode.mjs fetch <url|file> <dir> [--no-names]");
+  const names = !rest.includes("--no-names");
   fs.mkdirSync(dir, { recursive: true });
-  if (isFile(url)) return fetchFile(path.resolve(url), dir);
+  if (isFile(url)) return fetchFile(path.resolve(url), dir, names);
   log("episode: reading the video's facts …");
-  const info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url]));
+  // the page's facts: without them (YouTube refused them three times) the sound may still come;
+  // then there is no title, no description and no page for the names
+  let info;
+  try { info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url])); } catch (e) {
+    log(`episode: YouTube gave no facts of the video (${String(e.stderr || e.message).trim().split("\n").pop()}); the sound without them …`);
+    const id = (String(url).match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/) || [])[1] || null;
+    info = { webpage_url: url, id, title: id ? `YouTube ${id}` : url, unread: true };
+  }
   const track = captionTrack(info);
   const lang = (info.language || track || "").split("-")[0] || null;
-  let words, source, note = "";
+  let words, source, cost = null, note = info.unread ? "YouTube gave no facts of the video (title, description, chapters): the names had no page to go by. " : "";
   // the sound and words of an episode fetched into this folder before are not this one's
   for (const f of fs.readdirSync(dir)) if (/^audio\./.test(f)) fs.rmSync(path.join(dir, f), { force: true });
   const or = await openrouter();
@@ -246,7 +254,7 @@ async function fetchEpisode(url, dir) {
     if (audio) {
       log("episode: writing down every word and who speaks it, a few minutes …");
       try {
-        ({ words } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
+        ({ words, cost } = await transcribeFile(path.join(dir, audio), { lang: lang || "auto", speakers: true, log }));
         source = "openrouter";
       } catch (e) {
         if (rejectedIn(e.message)) fail(REJECTED(rejectedIn(e.message)));
@@ -271,16 +279,19 @@ async function fetchEpisode(url, dir) {
     source = "captions";
   }
   // the description as the channel's audience sees it: moments counts the names in it as introduced
+  const sound = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
   writeEpisode(dir, {
     url: info.webpage_url || url, id: info.id, title: info.title, channel: info.channel || info.uploader,
-    duration: info.duration, lang, source, description: String(info.description || "").slice(0, 1500),
-  }, words, note);
+    duration: info.duration ?? (sound ? duration(path.join(dir, sound)) : null), lang, source, description: String(info.description || "").slice(0, 1500),
+  }, words, note, cost);
   // the page as a whole, for the names: the description in full, the chapters, the tags, and what
   // the video's own captions write that the transcription does not
-  const own = ownCaptions(info, url, lang);
+  const own = info.unread ? null : ownCaptions(info, url, lang);
   const kept = JSON.parse(fs.readFileSync(path.join(dir, "words.json"), "utf8"));
-  fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf(info, own ? ownTokens(own, kept) : null), null, 1));
-  if (or) await namesAfterFetch(dir);
+  fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf(info.unread ? {} : info, own ? ownTokens(own, kept) : null), null, 1));
+  if (!or) return;
+  if (names) await namesAfterFetch(dir);
+  else console.log(`The names were not checked (--no-names): the words keep the speech model's spellings; episode.mjs names ${dir} checks them later (a cent or two).`);
 }
 
 // ---------------------------------------------------------------- names
@@ -349,16 +360,17 @@ async function correctNames(dir, opts = {}) {
   if (!fs.existsSync(rawFile)) fs.writeFileSync(rawFile, JSON.stringify(raw));
   writeWords(dir, applyNames(raw, j.entries));
   fs.writeFileSync(listFile, JSON.stringify(j, null, 1));
-  return { j, raw, moments: fs.existsSync(path.join(dir, "moments.json")) };
+  return { j, raw, moments: fs.existsSync(path.join(dir, "moments.json")), changed: Boolean(opts.take || opts.leave || before) };
 }
 
-function namesReport(dir, { j, raw, moments: picked }) {
+function namesReport(dir, { j, raw, moments: picked, changed }) {
   console.log(namesListing(j, raw));
   const proposed = j.entries.filter((e) => e.status === "proposed").length;
   console.log(`${path.join(dir, "names.json")} lists them with every place ($${(j.cost || 0).toFixed(4)}); the words as written are in ${path.join(dir, "words.raw.json")}. `
     + (proposed ? `Take a proposed one only where the sentence shows the name was said: episode.mjs names ${dir} --take <n>,…; ` : "")
     + `--leave <n> takes an applied one back; --also "Name, …" adds names the person gives (asks the model again). `
-    + (picked ? `moments.json was picked from the words before: run moments again so that its titles, hooks and reasons carry the names.` : `Next: episode.mjs moments ${dir}.`));
+    + (picked ? `moments.json was picked from the words before: run moments again so that its titles, hooks and reasons carry the names. ` : `Next: episode.mjs moments ${dir}. `)
+    + (changed ? `A clip prepared before keeps the old spelling until clips.mjs names <clip> puts the list on its words again (then build it again).` : ""));
 }
 
 async function names(dir, ...rest) {
@@ -568,4 +580,4 @@ if (command === "fetch") await fetchEpisode(...args);
 else if (command === "cut") cut(...args);
 else if (command === "moments") await moments(...args);
 else if (command === "names") await names(...args);
-else fail(`episode.mjs fetch <url|file> <dir> | ${NAMES_USAGE.replace("episode.mjs ", "")} | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>`);
+else fail(`episode.mjs fetch <url|file> <dir> [--no-names] | ${NAMES_USAGE.replace("episode.mjs ", "")} | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>`);

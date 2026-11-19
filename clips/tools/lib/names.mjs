@@ -168,6 +168,18 @@ function repeats(words, first, last) {
   return out;
 }
 
+// Whether the page writes `to` with the same two words before it or after it as the words at
+// first..last have in the transcript (words of a letter or two do not count)
+function samePhrase(words, first, last, to, sources) {
+  const near = (from, step) => {
+    const out = [];
+    for (let i = from; out.length < 2 && i >= 0 && i < words.length; i += step) out.push(core(words[i]).toLowerCase());
+    return out.length === 2 && out.every((t) => t.length >= 3) ? (step < 0 ? out.reverse() : out) : null;
+  };
+  const want = to.map((t) => t.toLowerCase()), before = near(first - 1, -1), after = near(last + 1, 1);
+  return !!((before && writes([...before, ...want], sources)) || (after && writes([...want, ...after], sources)));
+}
+
 // how often the words write these tokens in a row, spelled so
 function written(words, want) {
   let n = 0;
@@ -272,13 +284,20 @@ export function entriesOf(answer, words, sentences, sources) {
     if (words.slice(a, b + 1).some((w) => w.speaker !== words[a].speaker)) { refuse(e, "two voices say these words"); continue; }
     if (capital(out.from) && onPage(out.from, sources) && !onPage(out.to, sources)) { refuse(e, "the page writes it so already"); continue; }
     // every place of the same words, spelled the same
-    const places = [...e.at];
+    let places = [...e.at];
     for (const r of repeats(words, a, b)) if (!places.some(([x]) => x === r[0])) places.push(r);
     places.sort((x, y) => x[0] - y[0]);
     const source = onPage(out.to, sources);
     // the transcript itself writes the right spelling elsewhere: said, not proof
     const elsewhere = written(words, e.to);
-    const plain = ordinary(words, a, b, lower);
+    let plain = ordinary(words, a, b, lower);
+    // an ordinary word where the page writes the name with the same words around it ("Robert
+    // Eggers' werewolf" against the description's "Robert Eggers' Werwulf"): the name, at the
+    // places with those words only
+    if (plain && source && capital(out.to)) {
+      const said = places.filter(([x, y]) => samePhrase(words, x, y, e.to, sources));
+      if (said.some(([x]) => e.at.some(([y]) => y === x))) { plain = false; places = said; }
+    }
     const why = [];
     if (!source) why.push(`the page does not write it (${e.where === "knowledge" ? "the model's knowledge" : "the model's reading"}${elsewhere ? `; the transcript writes "${out.to}" ${elsewhere === 1 ? "once" : `${elsewhere} times`} elsewhere` : ""})`);
     if (out.sound < APPLY_SOUND) why.push(`sounds less alike (${out.sound})`);
