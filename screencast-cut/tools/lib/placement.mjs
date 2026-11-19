@@ -13,7 +13,10 @@
 //   followFace({ tool, file, cam, out }) → { moments: [{ t, box }] } every tenth of a second, followed
 //                                          from the model's boxes, or { why } where it was not
 //   keepMoments(followed, from, to, fallback) → the moments of one keep (webcam seconds), else fallback
-//   placeFace({ tool, folder, moments, cam, width, height, area, platforms }) → layout's placement.json
+//   insidePicture(moments, cam)          → { moments, clamped, outside }: each box taken to its part
+//                                          inside the picture, a box wholly outside left out
+//   placeFace({ tool, folder, moments, cam, width, height, area, platforms }) → { res: layout's
+//                                          placement.json } or { why } (it never throws)
 //   nameOf(candidate), markOf(candidate) → "crop 4:5", "cover", …; ✓ ! – ✗ in the order for a speaker
 //   coverOf(cam, width, height)          → the old full-frame crop (layout.cover) as scale, left, top
 //   geometry(pic, cam)                   → the webcam element's left, top, width, height and inset
@@ -77,16 +80,45 @@ export function keepMoments(followed, from, to, fallback) {
   return every.length ? { moments: every, followed: true } : { moments: fallback, followed: false };
 }
 
+// A box from the tracker can reach past the picture: a head at the top edge (the tracker moves its
+// box with the head, and part of it lies above the frame) or at a side. layout's place refuses any
+// box past the source's edge, so each is taken to its part inside the picture, as layout's beside
+// takes a face's box; a box wholly outside the picture (less than a pixel of it inside) is left out.
+export function insidePicture(moments, cam) {
+  let clamped = 0, outside = 0;
+  const out = [];
+  for (const m of moments) {
+    const [x, y, w, h] = m.box;
+    const x0 = Math.max(0, x), y0 = Math.max(0, y), x1 = Math.min(cam.width, x + w), y1 = Math.min(cam.height, y + h);
+    if (x1 - x0 < 1 || y1 - y0 < 1) { outside++; continue; }
+    if (x0 !== x || y0 !== y || x1 !== x + w || y1 !== y + h) clamped++;
+    out.push({ t: m.t, box: [x0, y0, x1 - x0, y1 - y0].map((v) => +v.toFixed(1)) });
+  }
+  return { moments: out, clamped, outside };
+}
+
+// layout's candidates for one keep's moments, or the reason there are none: whatever place says
+// when it stops is kept in the folder's place.log, not passed on (its words are for a caller who
+// read the boxes off a grid, which the agent here never did).
 export function placeFace({ tool, folder, moments, cam, width, height, area, platforms = [] }) {
-  fs.mkdirSync(folder, { recursive: true });
-  const track = path.join(folder, "face.json");
-  fs.writeFileSync(track, JSON.stringify(moments));
-  const c = coverOf(cam, width, height);
-  const r = spawnSync(process.execPath, [tool, "place", folder, "--frame", `${width}x${height}`, "--source", `${cam.width}x${cam.height}`, "--face-track", track,
-    ...(area ? ["--caption-area", area] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : []),
-    "--pick", "speaker", "--cover", `${c.scale},${c.left},${c.top}`, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
-  if (r.status) throw new Error(`layout place: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
-  return JSON.parse(r.stdout);
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    const inside = insidePicture(moments, cam);
+    if (!inside.moments.length) return { why: "the face's boxes lie outside the webcam's picture" };
+    const track = path.join(folder, "face.json");
+    fs.writeFileSync(track, JSON.stringify(inside.moments));
+    const c = coverOf(cam, width, height);
+    const r = spawnSync(process.execPath, [tool, "place", folder, "--frame", `${width}x${height}`, "--source", `${cam.width}x${cam.height}`, "--face-track", track,
+      ...(area ? ["--caption-area", area] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : []),
+      "--pick", "speaker", "--cover", `${c.scale},${c.left},${c.top}`, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+    if (r.status !== 0 || r.error) {
+      fs.writeFileSync(path.join(folder, "place.log"), `${r.error ? `${r.error.message}\n` : ""}${r.stdout || ""}${r.stderr || ""}`);
+      return { why: `layout's place gave no candidates for this keep's face (its words in ${path.join(folder, "place.log")})` };
+    }
+    return { res: JSON.parse(r.stdout), clamped: inside.clamped, outside: inside.outside };
+  } catch (e) {
+    return { why: `the placement stopped (${e.message.split("\n")[0]})` };
+  }
 }
 
 export const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}`;

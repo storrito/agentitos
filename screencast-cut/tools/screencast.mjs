@@ -970,8 +970,9 @@ async function cmdBuild(dir, opts) {
 // for a picture of a speaker: the frame covered as before (cover) where it passes (the captions
 // clear of the eyes, nose and mouth, at most 2×), else the pictures across the frame's width, the
 // face nearest the usual size, then narrower ones. A keep takes the candidate it names ("layout"),
-// else the first. Without a known face the frame is covered as before, and said. Sets each face
-// piece's picture; returns the lines to print.
+// else the first. Without a known face the frame is covered as before, and said; so is a keep whose
+// placement goes wrong (the tracker, layout, a refusal): the build never stops for it. Sets each
+// face piece's picture; returns the lines to print.
 function faceView(dir, cut, pieces, sources, { width, height, platforms, area }) {
   const cam = sources.webcam;
   const faced = [...new Set(pieces.filter((p) => p.view === "face").map((p) => p.keep))];
@@ -983,8 +984,12 @@ function faceView(dir, cut, pieces, sources, { width, height, platforms, area })
     return [`Face view: the webcam's face is not known (no OpenRouter when new ran), so it covers the frame from the middle as before; ${faced.length === 1 ? "its keep" : `its ${faced.length} keeps`} at ${faced.map(span).join(", ")}.`];
   }
   const tool = layoutTool();
-  if (!tool) fail("✗ The face view needs agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
-  const followed = followFace({ tool: framingTool(), file: source(dir, cam.file), cam, out: source(dir, "webcam.followed.json") });
+  if (!tool) {
+    for (const p of pieces) if (p.view === "face") p.picture = { ...coverOf(cam, width, height), mark: "?", why: "no layout skill" };
+    return [`Face view: agentitos' layout skill is not beside this one (or LAYOUT_TOOL naming its tools/place.mjs), so it covers the frame from the face as before; ${faced.length === 1 ? "its keep" : `its ${faced.length} keeps`} at ${faced.map(span).join(", ")}.`];
+  }
+  let followed;
+  try { followed = followFace({ tool: framingTool(), file: source(dir, cam.file), cam, out: source(dir, "webcam.followed.json") }); } catch (e) { followed = { why: `clips' tracker stopped (${e.message.split("\n")[0]})` }; }
   const pct = (v) => `${Math.round(v * 100)} %`;
   const ground = (x) => (x.ground ? `, ${pct(x.ground)} ground` : "");
   const said = [`Face view (the layout skill, ${area ? "around the captions as built" : "no captions"}; ${followed.moments ? "the face followed through the webcam from the model's three frames by clips' tracker, no model" : `the face held where the model's ${three.length} frame${three.length > 1 ? "s" : ""} saw it: ${followed.why}`}): the frame covered as before where it passes, else the picture across the frame's width with the face nearest the usual size, unless a keep names another with "layout":`];
@@ -992,28 +997,38 @@ function faceView(dir, cut, pieces, sources, { width, height, platforms, area })
   for (const k of faced) {
     const ps = pieces.filter((p) => p.keep === k && p.view === "face");
     const from = Math.min(...ps.map((p) => p.in)) - (cam.offset || 0), to = Math.max(...ps.map((p) => p.out)) - (cam.offset || 0);
-    const { moments, followed: held } = keepMoments(followed, from, to, three);
-    let res;
-    try { res = placeFace({ tool, folder: path.join(dir, "placement", `face-${k + 1}`), moments, cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms }); } catch (e) { fail(`✗ ${e.message}`); }
-    const list = res.candidates.filter((x) => !x.parts && Number.isFinite(x.scale));
-    const want = cut.keep[k].layout?.trim();
-    let chosen = list[0];
-    if (want) {
-      chosen = list.find((x) => nameOf(x) === want);
-      if (!chosen) fail(`✗ keep ${k + 1}: "layout": "${want}" is not among the face view's candidates in this frame: ${list.map(nameOf).map((n) => `"${n}"`).join(", ")}.`);
-    }
-    const pic = { fit: nameOf(chosen), scale: chosen.scale, left: chosen.left, top: chosen.top, window: chosen.window || [0, 0, width, height], mark: markOf(chosen), face: chosen.pick.face, ...(want ? { named: true } : {}) };
-    for (const p of ps) p.picture = pic;
-    const track = res.tracks?.[0];
-    const moved = held && track ? `; the face followed over ${moments.length} moments, its hull ${track.growth.height}× as tall as its usual box` : "";
-    said.push(`  keep ${k + 1} (${span(k)}): ${markOf(chosen)} ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.pick.face)} of the height${ground(chosen)}${want ? " (as the keep names it)" : ""}${moved}${chosen.pick.passes ? "" : ": nothing passes"}`);
-    if (res.pick?.note) said.push(`    note: ${res.pick.note.replace(/^for a speaker: /, "")}`);
-    // the others in short, a failing one with what fails; said once where a keep has the list of the keep before
-    const short = (x) => [...(x.hard ? x.problems.filter((q) => q.level === "hard").map((q) => (q.code === "enlarged" ? `enlarged ${x.scale}×` : q.kind === "face" ? "the face under the apps' buttons" : q.what)) : []),
-      ...(!x.pick.passes && /mouth, the nose or the eyes/.test(x.pick.why) ? ["the captions on the mouth"] : [])].filter((v, i, a) => a.indexOf(v) === i).join(", ");
-    const also = list.filter((y) => y !== chosen).slice(0, 4).map((x) => `${markOf(x)} ${nameOf(x)} at ${x.scale}× (${x.pick.passes ? `the face ${pct(x.pick.face)}${ground(x)}` : short(x) || "fails"})`).join("; ");
-    said.push(`    also: ${also === lastAlso ? `as keep ${lastKeep + 1}` : also}`);
-    if (also !== lastAlso) { lastAlso = also; lastKeep = k; }
+    // whatever goes wrong in this keep's placement, it is covered as before and the line says why
+    const covered = (why) => {
+      for (const p of ps) p.picture = { ...coverOf(cam, width, height), mark: "?", why };
+      said.push(`  keep ${k + 1} (${span(k)}): covered from the face as before, because ${why}`);
+    };
+    try {
+      const { moments, followed: held } = keepMoments(followed, from, to, three);
+      const placed = placeFace({ tool, folder: path.join(dir, "placement", `face-${k + 1}`), moments, cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms });
+      if (placed.why) { covered(placed.why); continue; }
+      const res = placed.res;
+      const list = res.candidates.filter((x) => !x.parts && Number.isFinite(x.scale));
+      if (!list.length) { covered("layout's place gave no single picture for it"); continue; }
+      const want = cut.keep[k].layout?.trim();
+      let chosen = list[0];
+      if (want) {
+        chosen = list.find((x) => nameOf(x) === want);
+        if (!chosen) fail(`✗ keep ${k + 1}: "layout": "${want}" is not among the face view's candidates in this frame: ${list.map(nameOf).map((n) => `"${n}"`).join(", ")}.`);
+      }
+      const pic = { fit: nameOf(chosen), scale: chosen.scale, left: chosen.left, top: chosen.top, window: chosen.window || [0, 0, width, height], mark: markOf(chosen), face: chosen.pick.face, ...(want ? { named: true } : {}) };
+      for (const p of ps) p.picture = pic;
+      const track = res.tracks?.[0];
+      const moved = (held && track ? `; the face followed over ${moments.length} moments, its hull ${track.growth.height}× as tall as its usual box` : "")
+        + (placed.clamped || placed.outside ? `; ${[placed.clamped ? `${placed.clamped} of its boxes ${placed.clamped === 1 ? "reaches" : "reach"} past the webcam's picture, taken to the part inside it` : "", placed.outside ? `${placed.outside} ${placed.outside === 1 ? "lies" : "lie"} wholly outside it, left out` : ""].filter(Boolean).join(", ")}` : "");
+      said.push(`  keep ${k + 1} (${span(k)}): ${markOf(chosen)} ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.pick.face)} of the height${ground(chosen)}${want ? " (as the keep names it)" : ""}${moved}${chosen.pick.passes ? "" : ": nothing passes"}`);
+      if (res.pick?.note) said.push(`    note: ${res.pick.note.replace(/^for a speaker: /, "")}`);
+      // the others in short, a failing one with what fails; said once where a keep has the list of the keep before
+      const short = (x) => [...(x.hard ? x.problems.filter((q) => q.level === "hard").map((q) => (q.code === "enlarged" ? `enlarged ${x.scale}×` : q.kind === "face" ? "the face under the apps' buttons" : q.what)) : []),
+        ...(!x.pick.passes && /mouth, the nose or the eyes/.test(x.pick.why) ? ["the captions on the mouth"] : [])].filter((v, i, a) => a.indexOf(v) === i).join(", ");
+      const also = list.filter((y) => y !== chosen).slice(0, 4).map((x) => `${markOf(x)} ${nameOf(x)} at ${x.scale}× (${x.pick.passes ? `the face ${pct(x.pick.face)}${ground(x)}` : short(x) || "fails"})`).join("; ");
+      said.push(`    also: ${also === lastAlso ? `as keep ${lastKeep + 1}` : also}`);
+      if (also !== lastAlso) { lastAlso = also; lastKeep = k; }
+    } catch (e) { covered(`its placement stopped (${e.message.split("\n")[0]})`); }
   }
   said.push(`  (every candidate with its reasons: ${path.relative(process.cwd(), path.join(dir, "placement"))}/face-<keep>/placement.json)`);
   return said;

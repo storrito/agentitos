@@ -222,7 +222,7 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 // speaker (place --pick speaker, the old cover among the candidates), the face followed between
 // the model's three boxes by clips' tracker, the element's geometry, and the old cover where no
 // face is known. The layout skill and clips run as programs, beside this one.
-import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
+import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
 
@@ -241,7 +241,9 @@ const placed = (dir, size, moments = faceMoments(CAM)) => {
   const [width, height] = size.split("x").map(Number), area = path.join(dir, `area-${size}.json`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(area, JSON.stringify(BANDS[size]));
-  return placeFace({ tool: LAYOUT, folder: path.join(dir, size), moments, cam: CAM, width, height, area });
+  const r = placeFace({ tool: LAYOUT, folder: path.join(dir, size), moments, cam: CAM, width, height, area });
+  assert.ok(r.res, r.why);
+  return r.res;
 };
 
 test("the face view is in the layout skill's order for a speaker: the frame covered as before where it passes (16:9 and 4:5, the build as main's), else the picture across the frame's width with the face nearest the usual size (9:16: the 4:5 crop at 1.875×, the chin above the captions), the old 2.67× cover last", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
@@ -318,4 +320,54 @@ test("a face piece is drawn as the layout skill placed it, clipped to its window
     assert.deepEqual(s.layers, [{ source: "webcam", box: [0, 0, 1080, 1920], crop: cover(sources.webcam, 1080, 1920), main: true }]);
     assert.equal(place(s.layers[0].box, s.layers[0].crop, sources.webcam).width, 3413.4);
   }
+});
+
+// The review's drifting and nodding webcams (1280×720): clips' tracker follows the head up to the
+// picture's top edge, and its box there starts above it (37 and 29 of 751 moments); layout's place
+// refuses a box past the source, and every build of the review's cut stopped. The boxes below are
+// the tracker's own from those webcams; the side and the outside ones are made from them.
+const TOP_EDGE = [{ t: 43.8, box: [725, -5, 298, 345] }, { t: 43.9, box: [735, -5, 298, 345] }, { t: 44, box: [745, -5, 298, 345] }, { t: 44.2, box: [745, 2, 298, 345] }];
+const NOD_TOP = [{ t: 56.3, box: [536, -6, 233, 279] }, { t: 56.4, box: [536, -16, 233, 279] }, { t: 56.5, box: [536, -11, 233, 279] }];
+const SIDE_CAM = { width: 1280, height: 720 };
+
+test("a box from the tracker that reaches past the webcam's picture is taken to its part inside it, as layout's beside does; one wholly outside is left out", () => {
+  const top = insidePicture(TOP_EDGE, SIDE_CAM);
+  assert.deepEqual(top.moments.map((m) => m.box), [[725, 0, 298, 340], [735, 0, 298, 340], [745, 0, 298, 340], [745, 2, 298, 345]]);
+  assert.deepEqual([top.clamped, top.outside], [3, 0]);
+  const side = insidePicture([{ t: 1, box: [-40, 100, 298, 345] }, { t: 2, box: [1100, 100, 298, 345] }], SIDE_CAM);
+  assert.deepEqual(side.moments.map((m) => m.box), [[0, 100, 258, 345], [1100, 100, 180, 345]]);
+  const out = insidePicture([{ t: 1, box: [1290, 100, 298, 345] }, { t: 2, box: [100, -400, 298, 345] }, { t: 3, box: [500, 100, 298, 345] }], SIDE_CAM);
+  assert.deepEqual([out.moments.length, out.clamped, out.outside], [1, 0, 2]);
+});
+
+test("the review's head at the top edge and at a side edge is placed by layout (its place no longer refuses the keep), a keep whose boxes all lie outside the picture is not placed and says why", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-edge-"));
+  try {
+    const cam = { ...SIDE_CAM, face: [0.241, 0.014, 0.474, 0.495] };
+    for (const [name, moments] of [["top", TOP_EDGE], ["nod", NOD_TOP], ["side", [{ t: 1, box: [-40, 100, 298, 345] }, { t: 1.2, box: [1100, 90, 298, 345] }]]]) {
+      const r = placeFace({ tool: LAYOUT, folder: path.join(dir, name), moments, cam, width: 1080, height: 1920 });
+      assert.ok(r.res && r.res.candidates.length && !r.why, `${name}: ${r.why}`);
+      assert.ok(r.clamped > 0, name);
+      for (const m of JSON.parse(fs.readFileSync(path.join(dir, name, "face.json"), "utf8"))) assert.ok(m.box[0] >= 0 && m.box[1] >= 0 && m.box[0] + m.box[2] <= 1280 && m.box[1] + m.box[3] <= 720, JSON.stringify(m));
+    }
+    const none = placeFace({ tool: LAYOUT, folder: path.join(dir, "none"), moments: [{ t: 1, box: [1290, 100, 298, 345] }], cam, width: 1080, height: 1920 });
+    assert.match(none.why, /outside the webcam's picture/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("where layout's place stops on a keep, placeFace gives the reason instead of throwing, keeps place's words in place.log and never tells the agent to read a grid it never gave", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-fails-"));
+  try {
+    const tool = path.join(dir, "place.mjs");
+    fs.writeFileSync(tool, `console.log("The box 725,-5,298,345 reaches past the source of 1280×720: a face or region the picture's edge cuts ends at that edge, read it again off the grid."); process.exit(1);\n`);
+    const r = placeFace({ tool, folder: path.join(dir, "face-2"), moments: TOP_EDGE, cam: SIDE_CAM, width: 1080, height: 1920 });
+    assert.ok(!r.res && r.why, JSON.stringify(r));
+    assert.doesNotMatch(r.why, /grid/);
+    assert.match(r.why, /place\.log/);
+    assert.match(fs.readFileSync(path.join(dir, "face-2", "place.log"), "utf8"), /reaches past the source/);
+    // a place that answers with something that is not JSON, or a tool that is not there
+    fs.writeFileSync(tool, `console.log("not json");\n`);
+    assert.match(placeFace({ tool, folder: path.join(dir, "face-3"), moments: TOP_EDGE, cam: SIDE_CAM, width: 1080, height: 1920 }).why, /stopped/);
+    assert.ok(placeFace({ tool: path.join(dir, "missing.mjs"), folder: path.join(dir, "face-4"), moments: TOP_EDGE, cam: SIDE_CAM, width: 1080, height: 1920 }).why);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
