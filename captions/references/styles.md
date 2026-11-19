@@ -45,6 +45,7 @@ So, when you say which styles fit (never as a recommendation of one):
 - **Narrated, nobody in the picture (maps, stock footage, slides):** `bold`, `clean`, `subtitle`, `outline`.
 - Seven in ten of the 198 have no emphasis at all, one in ten a word that follows the voice (`hormozi`, `karaoke`, `fill`, `label`, `wipe`), one in twelve coloured key words: a style that lights up every word is a choice for energy, not the rule.
 - `--follow` lights the word being said in the styles that do not (`clean`, `label`, `bold`, `subtitle`, `editorial`, `outline`, `impact`): the words wait at half their colour (`label`: its grey), the one being said takes the key colour (the brand's where it reads), said words stand in the text's colour. Made for narrated explainers (2026-11-19): `label --follow` on a light ground, `clean --follow` on a dark or busy one.
+- `--edge` gives a style's box an edge of the other lightness: on a near-white ground `label`'s white boxes vanish (the words read, the box does not), with `--edge` each line's box has a dark ring and a soft shadow; `clean`'s dark box gets a light ring for a dark ground. For a narrated explainer on a light ground: `label --follow --edge`.
 - 122 are in sentence case, 45 in capitals, 23 all lowercase: only `hormozi`, `impact` and `wipe` set capitals.
 
 ## Near each other

@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loudness, musicVolume, distance, inFilm, LOWEST, HIGHEST } from "./lib/level.mjs";
-import { soundLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords, gapSpecs, splitVoice, duckLane, filled, fillVerdict } from "./launch.mjs";
+import { soundLine, skippedLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords, gapSpecs, splitVoice, duckLane, filled, fillVerdict } from "./launch.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
@@ -115,13 +115,28 @@ test("music: with a voice, the element carries the measured volume and the sente
     assert.match(said, /The voice is at −[\d.]+ LUFS, the music at −[\d.]+: at [\d.]+ it sits 17 LU under it/);
     const voice = loudness([path.join(comp, "assets", "voice", "hook.mp3"), path.join(comp, "assets", "voice", "proof.mp3")]);
     near(distance(voice, loudness([path.join(comp, "assets", "music.mp3")]), volume), 17, 0.5);
+    // --plain, for another skill's tool: the numbers, no element and no "In the root"
+    const plain = musicElement(work, comp, path.join(comp, "assets", "music.mp3"), 6, 17, true);
+    assert.match(plain, /^The voice is at −[\d.]+ LUFS, the music at −[\d.]+: at volume [\d.]+ it sits 17 LU under it\.$/);
+    assert.equal(Number(plain.match(/at volume ([\d.]+)/)[1]), volume);
+    assert.doesNotMatch(plain, /In the root|<audio/);
     // a voice that is not there yet
     fs.rmSync(path.join(work, "voice.json"));
     const alone = musicElement(work, comp, path.join(comp, "assets", "music.mp3"), 6, 17);
     assert.match(alone, /data-volume="0.6"/);
     assert.match(alone, /without a voice/);
     assert.doesNotMatch(alone, /data-under-voice/);
+    assert.equal(musicElement(work, comp, path.join(comp, "assets", "music.mp3"), 6, 17, true), "No voice to measure its volume by: about 0.6 without one.");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("check: a browser phase that never ran is a lint error only when lint found one", () => {
+  const lint = skippedLine({ browserSkipped: true, lint: { errorCount: 2 } }, "hyperframes lint film", "hyperframes doctor");
+  assert.match(lint, /found 2 errors in the composition .* run `hyperframes lint film` and fix them/);
+  const none = skippedLine({ browserSkipped: true, lint: { errorCount: 0 } }, "hyperframes lint film", "hyperframes doctor");
+  assert.match(none, /did not open the film in its browser, though its lint finds no error/);
+  assert.match(none, /run check again; if it stays, `hyperframes doctor`/);
+  assert.doesNotMatch(none, /hyperframes lint film/);
 });
 
 test("check: how far under the voice the music sits, from the composition's own elements", { skip: !ffmpeg && "no ffmpeg" }, () => {
@@ -443,7 +458,7 @@ test("check: with a volume lane the music's distance is measured where the voice
     near(Number(right.match(/sits ([\d.]+) LU/)[1]), 17, 0.6);
     // the same lane on a track three times as loud: said, with the step that lays it again
     fs.writeFileSync(path.join(comp, "index.html"), html.replace('data-volume="0.14"', `data-volume="${(high * 3).toFixed(3)}" data-under-voice="17" data-automation="${lane}"`));
-    assert.match(soundLine(comp), /^! Sound: .*while it speaks, not 17.*Run `level` again/);
+    assert.match(soundLine(comp), /^! Sound: .*while it speaks, not 17.*Lay it again \(launch-video's `level`, or the build of the skill that wrote this film\)/);
     assert.equal(musicTag('<audio id="vo-x" src="a.mp3">'), null);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
