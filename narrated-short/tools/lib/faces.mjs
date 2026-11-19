@@ -442,19 +442,23 @@ export const WEIGHT = { nose: 100, mouth: 2, lip: 1, hair: 0.5, chin: 0.2, talk:
 // talks[shot], is "talk"), their weighed sum, and `hard`: the seconds on what must stay clear (the
 // eyes or nose, a talking mouth)
 export function onOf(measured, { from = 0, to = Infinity, shots = null, talks = {} } = {}) {
-  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0, talk: 0 };
+  // (maybe: of the hair, the seconds where a head known by its box alone may have its eyes; unknown:
+  // of the eyes or nose, the seconds on such a head, whose eyes layout takes to begin 15 % down it)
+  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0, talk: 0, maybe: 0, unknown: 0 };
   for (const m of measured?.moments || []) {
     if (m.t < from || m.t >= to || (shots && !shots.includes(m.shot))) continue;
-    let worst = null;
+    let worst = null, by = null;
     for (const f of m.on) {
       // beside the eyes, nose and mouth (an ear, the side of the head) is the hair's kind, mild
       const seen = f.beside && (f.part === "nose" || f.part === "mouth" || f.part === "lip") ? "hair" : f.part;
       const part = talks[m.shot] != null && f.who === talks[m.shot] && (seen === "mouth" || seen === "lip") ? "talk" : seen;
       if (WEIGHT[part] == null) continue;
-      if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
+      if (!worst || WEIGHT[part] > WEIGHT[worst]) { worst = part; by = f; }
     }
     if (!worst) continue;
     r.seconds += m.dt; r[worst] += m.dt;
+    if (worst === "hair" && by.maybe) r.maybe += m.dt;
+    if (worst === "nose" && by.boxOnly) r.unknown += m.dt;
   }
   for (const k of Object.keys(r)) r[k] = r2(r[k]);
   r.cost = r2(Object.keys(WEIGHT).reduce((n, k) => n + WEIGHT[k] * r[k], 0));

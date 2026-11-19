@@ -383,6 +383,15 @@ test("faces: layout's measure as build reads it: the eyes, the mouth, the lower 
   assert.equal(onOf(measured([100, 60, 900, 130], feat)).nose, 0.1);
 });
 
+test("faces: a head known by its box alone: its eyes begin 15 % down it and may begin from 6 % (layout's border, decided: measure-box-only), not at 38 % as narrated-short's own copy had it; captions whose top is at a quarter of it lie on the eyes, and the seconds say that its eyes are not known", { skip: !layoutHere && "no layout beside" }, () => {
+  const head = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [300, 400, 400, 500] }] }];
+  const quarter = onOf(measured([200, 525, 600, 100], head));
+  assert.deepEqual([quarter.nose, quarter.hair, quarter.unknown, quarter.hard], [0.5, 0, 0.5, 0.5]);
+  // above 15 % the forehead, from 6 % on where the eyes may begin
+  const brow = onOf(measured([200, 440, 600, 30], head));
+  assert.deepEqual([brow.hair, brow.maybe, brow.nose], [0.5, 0.5, 0]);
+});
+
 test("faces: text beside the eyes, nose and mouth (an ear, the side of the head) is the hair's kind, not the eyes, as before the measure was layout's (the review: a head x 800–1100, its features 860–1040, captions ending at x 840 at eye height were 'nose')", { skip: !layoutHere && "no layout beside" }, () => {
   const head = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [800, 400, 300, 400], feat: [860, 520, 180, 220] }] }];
   const side = measured([0, 560, 840, 80], head);
