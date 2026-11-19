@@ -37,7 +37,12 @@ export const DEFAULTS = {
   //              (`clean`'s type) and the 1 em `clean`'s box takes at its sides. A narrower
   //              area is handed over with a note: captions sets a word that is wider than a
   //              line smaller for its moment.
-  caption: { font: { tall: 77, wide: 50 }, line: 1.3, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24, longWord: 9 },
+  //   least      the smallest type the captions may be set in to clear a face, in upright frames:
+  //              the low end of what published captions use. layout-data/report/findings.md, 188
+  //              Shorts with captions: "Zeilenhöhe im Median 4,0 % der Bildhöhe (mittlere Hälfte
+  //              3,2–4,9 %)", a line 3.2 % of the frame's height, 61 px in 1920. Below it a clip's
+  //              every caption pays for a few tight shots.
+  caption: { font: { tall: 77, wide: 50, least: 61 }, line: 1.3, padEm: 0.44, minWidth: { tall: 540, wide: 600 }, maxEm: 24, longWord: 9 },
   // A hook in an upright frame has two kinds; without one named (--text hook) the first is tried
   // first and the second where the first finds no room.
   // hookText: a short text in the middle of the frame, on the chest, where the captions stand
@@ -76,6 +81,29 @@ export const DEFAULTS = {
   facePad: 20,
   // where the eyes sit in a face's box (from its top), for fits that choose the height freely
   eyes: 0.42,
+  // the highest the eyes may stand when a shot is raised at the default level (text: --raise mouth),
+  // a share of the frame's height from its top: the upper end of where published Shorts have them.
+  // layout-data/report/findings.md (240 Shorts, the eye line estimated at 38 % down the face's box):
+  // "Augenlinie … Median 32 % bei p1, 33 % bei g1, mittlere Hälfte 27–38 %". Above it the frame
+  // starts at the brows (deaths, 2026-11-18: the eyes at 12–20 % for 37 s of 71 s).
+  eyeLine: 0.27,
+  // large type set in one area (text --text area, kinetic-lyrics' phrases): the area runs from the
+  // safe box's bottom up. `least` is the smallest it may be, a share of the frame's height:
+  // kinetic-lyrics' engine sets a block of four lines at its smallest words (5.2 % of the frame's
+  // width) in about 14 % of the height, and lets a lockup grow by 4 % while it shows. `chin` is
+  // what a second of the area on a chin or a neck costs (a face's keep-out below its mouth line):
+  // little, so that the area goes a little lower to clear a chin, never far. `smaller` is what the
+  // type costs for every per cent of the height it starts lower than the usual top and every ten
+  // seconds of the clip: 0.9 of what a shot raised over a ground costs for the same per cent and
+  // seconds (liftGround's 4), so that the type goes lower first where the shot that needs it holds
+  // nine tenths of the short or more, and a shorter shot is raised first. Set on an independent
+  // review's case (2026-11-19, a reporter's close-up of 14 s after a wide shot, 22 s in all: with
+  // 1, as smaller captions have it, the type went 120 px lower, a quarter smaller, for the whole
+  // short rather than raise that shot 38 px; with 3.6 it starts 20 px lower and the two shots go up
+  // 47 and 98 px, the mouths clear) and on kinetic-lyrics' three shorts (the close-ups are held by
+  // their eyes at the apps' top bar either way and stay as they were; the medium shot keeps its
+  // usual top with 3 s of a chin under the type instead of going 10 px lower for 0.2 s of it).
+  area: { least: 0.15, chin: 1, smaller: 3.6 },
   // (from where enlarging the source's pixels is soft and from where forbidden: weights.json)
   // zoom and inset are searched on a grid of 1 % of the covering scale
   zoomStep: 0.01, zoomMax: 1.6, insetStep: 0.01, insetMin: 0.5, panelMin: 0.6,
@@ -149,7 +177,7 @@ DEFAULTS.weights = readWeights();
 // The sizes in px for a frame of another size than 1080 on its shorter side: a video of 720×1280
 // is shown as large as one of 1080×1920, so its type and margins are two thirds as many px.
 // Without this, text set for 1080 ran out of a smaller frame. Type is whole px.
-const PX = ["caption.font.tall", "caption.font.wide", "caption.minWidth.tall", "caption.minWidth.wide", "hookText.font", "hookText.minFont", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
+const PX = ["caption.font.tall", "caption.font.wide", "caption.font.least", "caption.minWidth.tall", "caption.minWidth.wide", "hookText.font", "hookText.minFont", "hookCard.font", "hookCard.minFont", "hookBig.font", "hookBig.minFont", "gap", "edgePad", "free.aboveMin", "free.belowMin", "free.besideMin", "facePad"];
 export function scaled(D, [W, H]) {
   const k = Math.min(W, H) / 1080;
   if (Math.abs(k - 1) < 1e-9) return D;

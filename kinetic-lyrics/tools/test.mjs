@@ -1,0 +1,290 @@
+// Where the type goes over footage with people (short.mjs place), on made-up footage and made-up
+// faces: the band's geometry, the footage's push-in drawn through a face, the build with a top for
+// the type, and the place step with agentitos' layout as a program and a stand-in for clips (its
+// shots and its framing given, not computed). No model, no network.
+//
+//   node --test tools/test.mjs
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import crypto from "node:crypto";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { topOfShade, usualTop, chipRoom, scaleAt, pushed, liftsFor, placeArgs, layoutTool, PUSH, PUNCH } from "./lib/place.mjs";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const near = (x, y, by, what = "") => assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`);
+const W = 1080, H = 1920;
+const planOf = (o = {}) => ({ width: W, height: H, portrait: true, preset: "podcast", duration: 10, phrases: [], turns: [{ t: 0, speaker: "A" }], video: { shade: [0.468, 0.588] }, ...o });
+
+test("the band: the type's top stands 0.55 of the way down its ramp, as engine/type.js sets it; a build placed by the faces keeps the band of the footage alone as the usual top", () => {
+  near(topOfShade([0.468, 0.588]), 0.534, 1e-9, "top");
+  assert.equal(usualTop(planOf()), Math.round(0.534 * H));
+  assert.equal(usualTop(planOf({ video: { shade: [0.55, 0.67], shadeFound: [0.468, 0.588] } })), Math.round(0.534 * H), "shadeFound is the usual");
+});
+
+test("the name tag: room above the type only where it shows (named speakers, footage, an upright frame, a dark world)", () => {
+  assert.equal(chipRoom(planOf()), Math.ceil(0.006 * H + 1.5 * Math.round(W * 0.034)));
+  assert.equal(chipRoom(planOf({ turns: [] })), 0, "no names, no tag");
+  assert.equal(chipRoom(planOf({ video: { shade: [0.4, 0.5], frame: [0.07, 0.12, 0.93, 0.48] } })), 0, "a light world's frame");
+  assert.equal(chipRoom(planOf({ preset: "social" })), 0, "the social preset has no tag");
+});
+
+test("the push-in: a face is drawn as the short shows it, larger and away from the point at 50 % across and 28 % down, by 6 % at the end and 2.5 % more under a hero phrase; each moment says how much the picture has grown there (a lift before the push-in grows with it)", () => {
+  const plan = planOf({ phrases: [{ layout: "hero", tIn: 4 }] });
+  near(scaleAt(0, plan), 1, 1e-9, "start");
+  near(scaleAt(10, plan), 1 + PUSH, 1e-9, "end");
+  near(scaleAt(4.5, plan), (1 + PUSH * 0.45) * PUNCH, 1e-9, "under a hero");
+  near(scaleAt(6, plan), 1 + PUSH * 0.6, 1e-9, "after the punch");
+  const box = [340, 300, 400, 600], feat = [400, 500, 280, 300];
+  const out = pushed({ shots: [{ start: 0, end: 10, faces: [{ who: "A", track: [{ t: 0, box, feat, eye: 560 }, { t: 10, box, feat, eye: 560 }] }] }] }, plan).shots[0].faces[0].track;
+  assert.deepEqual(out[0].box, box, "unchanged at 0 s");
+  const k = 1 + PUSH, oy = 0.28 * H;
+  near(out[1].box[1], oy + (box[1] - oy) * k, 0.1, "top");
+  near(out[1].box[3], box[3] * k, 0.1, "height");
+  near(out[1].feat[1] + out[1].feat[3], oy + (feat[1] + feat[3] - oy) * k, 0.1, "the mouth's bottom moves down");
+  near(out[1].eye, oy + (560 - oy) * k, 0.1, "the eyes' own line with it");
+  // the framing raises the picture before it grows: layout is told how a lift shows at each moment
+  assert.deepEqual([out[0].zoom, out[1].zoom], [1, +k.toFixed(4)], "each moment's zoom");
+});
+
+test("what layout is asked: one area for the type and the name tag above it, never higher than the build sets it, layout's least for the type alone; a fixed top is the type's, given as the area's", () => {
+  const plan = planOf(), chip = chipRoom(plan);
+  const a = placeArgs(plan, { folder: "f", shots: "s.json", raise: "full", top: 1200, lifts: [{ shot: 1, px: 90 }], platforms: ["reels"] });
+  const at = (k) => a[a.indexOf(k) + 1];
+  assert.equal(at("--text"), "area");
+  assert.equal(Number(at("--area-top")), usualTop(plan) - chip);
+  assert.equal(at("--set"), `area.least=${+(0.15 + chip / H).toFixed(4)}`);
+  assert.equal(Number(at("--top")), 1200 - chip);
+  assert.equal(at("--lift"), "2:90");
+  assert.equal(at("--raise"), "full");
+  assert.equal(at("--platform"), "reels");
+  assert.ok(!placeArgs(planOf({ turns: [] }), { folder: "f", shots: "s", raise: "mouth" }).includes("--set"), "no tag: layout's own least");
+  const text = { shots: [{ shot: 0, lift: 0 }, { shot: 1, lift: 120 }] };
+  assert.deepEqual(liftsFor(text, [{ start: 0, end: 4 }, { start: 4, end: 10 }]), [{ t: 7, px: 120 }], "a lift at the middle of its shot");
+});
+
+// ------------------------------------------------------------------------------ the build and place
+// A short folder made by hand: a grey upright video of 4 s with a tone (no face for anyone to find,
+// no text burned in), its words, and a framing that clips' frame.mjs would have written beside it.
+const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
+const built = fs.existsSync(path.join(HERE, "..", "node_modules", "esbuild"));
+const layout = layoutTool();
+const skip = !ffmpeg ? "needs ffmpeg" : !built ? "needs npm install in the skill" : !layout ? "needs agentitos' layout beside this skill" : false;
+
+function shortDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-place-"));
+  const src = path.join(dir, "source");
+  fs.mkdirSync(src, { recursive: true });
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=1080x1920:d=4:r=25", "-f", "lavfi", "-i", "sine=frequency=220:duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", path.join(src, "video.mp4")]);
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-i", path.join(src, "video.mp4"), "-vn", "-ac", "1", "-ar", "48000", path.join(src, "audio.wav")]);
+  const words = ["kinetic", "type", "keeps", "off", "the", "mouth", "of", "a", "close", "up"].map((text, i) => ({ text, start: 0.2 + i * 0.35, end: 0.5 + i * 0.35, speaker: "A" }));
+  fs.writeFileSync(path.join(src, "transcript.json"), JSON.stringify({ edges: "sound", words }));
+  fs.writeFileSync(path.join(src, "settings.json"), JSON.stringify({ aspect: "9:16", names: "A=Anna", world: "slate" }));
+  return dir;
+}
+
+// clips as it stands beside the skill, but its shots given (CLIPS_SHOTS) and its framing a copy
+// that writes the lifts asked for into the framing's json
+function fakeClips(shots, faces = null) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-clips-"));
+  fs.writeFileSync(path.join(dir, "episode.mjs"), "");
+  fs.writeFileSync(path.join(dir, "clips.mjs"), `import fs from "node:fs";
+const [cmd, , out] = process.argv.slice(2);
+if (cmd !== "shots") process.exit(1);
+fs.writeFileSync(out, JSON.stringify(${JSON.stringify({ size: [W, H], shots })}));`);
+  // frame.mjs --faces: the faces given (Gemini's, at a cost; the agent's boxes at none), the arguments kept
+  fs.writeFileSync(path.join(dir, "frame.mjs"), `import fs from "node:fs";
+const a = process.argv.slice(2);
+if (a.includes("--faces")) {
+  fs.writeFileSync(${JSON.stringify(path.join(dir, "faces-args.json"))}, JSON.stringify(a));
+  const eye = a.includes("--face-at");
+  fs.writeFileSync(a[a.indexOf("--faces") + 1], JSON.stringify({ ...${JSON.stringify(faces || {})}, by: eye ? "eye" : "model", cost: eye ? 0 : 0.0312 }));
+  console.log("faces.json: 1 shot(s), a face at 40 moments (4.0 s), by the model, $0.0312.");
+  process.exit(0);
+}
+// (no shots: footage of the frame's shape, which frame.mjs leaves unframed)
+if (${shots.length === 0}) process.exit(0);
+const out = a[a.indexOf("--out") + 1], lifts = a.includes("--lift") ? a[a.indexOf("--lift") + 1].split(",").map((v) => v.split(":").map(Number)) : [];
+fs.copyFileSync(a[0], out);
+fs.writeFileSync(out.replace(/\\.mp4$/, ".json"), JSON.stringify({ aspect: [9, 16], size: [1080, 1920], windows: ${JSON.stringify(shots.map((s, k) => ({ shot: k, start: s.start, end: s.end })))}.map((w) => { const l = lifts.find(([t]) => t >= w.start && t < w.end); return l ? { ...w, lift: { px: l[1] } } : w; }) }));`);
+  return dir;
+}
+const run = (env, ...args) => spawnSync(process.execPath, [path.join(HERE, "short.mjs"), ...args], { encoding: "utf8", env: { ...process.env, ...env } });
+const still = (box, feat, a, b) => ({ who: "Anna", track: Array.from({ length: Math.round((b - a) * 10) + 1 }, (_, i) => ({ t: +(a + i / 10).toFixed(2), box, feat })) });
+const files = (dir) => fs.readdirSync(dir, { recursive: true }).filter((f) => fs.statSync(path.join(dir, f)).isFile()).sort();
+const sameTree = (a, b) => files(a).length === files(b).length && files(a).every((f, i) => f === files(b)[i] && fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))));
+
+test("a close-up whose mouth lies where the build sets the type: place lowers the type and raises the shot, says what is left, and the build's band follows; place again keeps the framing", { skip }, () => {
+  const dir = shortDir();
+  // the face from 14 % to 75 % of the height, its mouth (with an open mouth's room) down to 62 %: below the smallest area's top
+  const clips = fakeClips([{ n: 1, start: 0, end: 4, weight: 4, kind: "people", picture: [0, 0, W, H], faces: [still([200, 260, 680, 1190], [330, 700, 420, 420], 0, 4)], room: { free: 0 } }]);
+  fs.copyFileSync(path.join(dir, "source", "video.mp4"), path.join(dir, "source", "framed-9x16.mp4"));
+  fs.writeFileSync(path.join(dir, "source", "framed-9x16.json"), JSON.stringify({ aspect: [9, 16], size: [W, H], windows: [{ shot: 0, start: 0, end: 4 }] }));
+  const env = { CLIPS_TOOLS: clips };
+  let r = run(env, "build", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const before = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  assert.ok(!before.video.shadeFound && !before.video.typeTop, "a build without place has the band of the footage alone");
+  r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const p = JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8"));
+  const plan = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  assert.ok(p.top > topOfShade(before.video.shade), `the type lower than the build set it: ${p.top}`);
+  near(topOfShade(plan.video.shade), p.top, 1e-3, "the build's band: the type's top");
+  assert.deepEqual(plan.video.shadeFound, before.video.shade, "the footage's own band kept");
+  assert.equal(p.raise, "full");
+  assert.ok(p.lifts.length === 1 && p.lifts[0].px > 0, JSON.stringify(p.lifts));
+  const framed = JSON.parse(fs.readFileSync(path.join(dir, "source", "framed-9x16.json"), "utf8"));
+  assert.equal(framed.windows[0].lift?.px, p.lifts[0].px, "the framing was asked for the lift");
+  assert.match(r.stdout, /The type: one place for the short, from y \d+ to 1440/);
+  assert.match(r.stdout, /shot 1 .* raised \d+ px/);
+  assert.match(r.stdout, /Other tops it weighed \(cost [\d.]+ for the one taken\): y \d+, the type \d+ % of its usual size, (shot 1 raised \d+ px|nothing raised)/);
+  const mtime = fs.statSync(path.join(dir, "source", "framed-9x16.json")).mtimeMs;
+  r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(fs.statSync(path.join(dir, "source", "framed-9x16.json")).mtimeMs, mtime, "the same lift: no framing again");
+  // a placement made for another cut is not applied: the names changed (the name tag), the build
+  // says to place again and stands as without place, the framing without the lift
+  r = run(env, "build", dir, "--names", "A=Ben");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /source\/place\.json was made for another cut .*: short\.mjs place .* places it by the faces again\./);
+  const stale = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  assert.ok(!stale.video.typeTop && !stale.video.shadeFound, "the old top is not applied");
+  assert.ok(!JSON.parse(fs.readFileSync(path.join(dir, "source", "framed-9x16.json"), "utf8")).windows[0].lift, "nor the old lift");
+  r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8")).video.typeTop > 0, "placed again");
+  assert.doesNotMatch(run(env, "build", dir).stdout, /made for another cut/);
+  // the agent's own choice, kept, and given back with ""
+  assert.match(run(env, "place", dir, "--type-top", "1300").stdout, /--type-top 1300 leaves the type no room: give a y from \d+ to 1152/);
+  // a lift past what the picture allows (its ground under the apps' bottom, 480 px here) is refused
+  r = run(env, "place", dir, "--lift", "2:9999");
+  assert.ok(r.status === 1 && /--lift 2:9999 raises shot 1 further than its picture allows: give 0 to 480 px\./.test(r.stdout), r.stdout);
+  assert.ok(run(env, "place", dir, "--lift", "2:-5").status === 1, "a negative lift");
+  r = run(env, "place", dir, "--type-top", "1140", "--raise", "head");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const q = JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8"));
+  near(q.top * H, 1140, 1, "the type from the top given");
+  assert.deepEqual([q.fixed.top, q.raise], [1140, "head"]);
+  r = run(env, "place", dir, "--type-top", "", "--raise", "");
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8")).fixed, {});
+  assert.equal(run(env, "build", dir, "--raise", "full").status, 1, "--raise belongs to place");
+});
+
+test("footage without a face, and a face far above the type: place changes nothing, the build is the one without place, byte for byte", { skip }, () => {
+  for (const faces of [[], [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 4)]]) {
+    const dir = shortDir();
+    const clips = fakeClips([{ n: 1, start: 0, end: 4, weight: 4, kind: "people", picture: [0, 0, W, H], faces, room: { free: 0 } }]);
+    fs.copyFileSync(path.join(dir, "source", "video.mp4"), path.join(dir, "source", "framed-9x16.mp4"));
+    fs.writeFileSync(path.join(dir, "source", "framed-9x16.json"), JSON.stringify({ aspect: [9, 16], size: [W, H], windows: [{ shot: 0, start: 0, end: 4 }] }));
+    const env = { CLIPS_TOOLS: clips };
+    assert.equal(run(env, "build", dir).status, 0);
+    const copy = path.join(dir, "before");
+    fs.cpSync(path.join(dir, "composition"), copy, { recursive: true });
+    const r = run(env, "place", dir);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8")).top, null);
+    assert.match(r.stdout, /where the footage alone sets it/);
+    assert.equal(run(env, "build", dir).status, 0);
+    assert.ok(sameTree(copy, path.join(dir, "composition")), `${faces.length ? "a face above the type" : "no face"}: the build differs from the one without place`);
+  }
+});
+
+// The build of shortDir() as main's short.mjs made it (origin/main f2cad32, 2026-11-19: shortDir()'s
+// folder written by hand as below, with and without the framing's two files, then
+// `node tools/short.mjs build <dir>` of that checkout; sha256 of each file, its first 16 hex digits;
+// the media in assets/ are left out, they are this machine's ffmpeg's, and the engine's copies with
+// them). Skipping place, and place where no face reaches the type, must build these bytes. Made
+// anew only where main's build changes on purpose.
+const MAIN = {
+  "index.html": "5f5231b30619843d", "plan.json": "675233fe3ef07b01", "compositions/lyrics.html": "b9a1190465fccbbb",
+  "compositions/overlay.html": "97b75939cb7780cb", "compositions/world.html": "d9be6ac7ca8e5cb3", "meta.json": "d6106e864582c2bb",
+  "hyperframes.json": "ad5dadeef78a5208", "package.json": "61002b2faf9a7446",
+};
+const asMain = (comp) => Object.fromEntries(Object.keys(MAIN).map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(comp, f))).digest("hex").slice(0, 16)]));
+
+test("skipping place, and place where no face reaches the type: the build is main's, byte for byte (a stored expectation of main's build), framed or not", { skip }, () => {
+  for (const framed of [true, false]) {
+    const dir = shortDir();
+    if (framed) {
+      fs.copyFileSync(path.join(dir, "source", "video.mp4"), path.join(dir, "source", "framed-9x16.mp4"));
+      fs.writeFileSync(path.join(dir, "source", "framed-9x16.json"), JSON.stringify({ aspect: [9, 16], size: [W, H], windows: [{ shot: 0, start: 0, end: 4 }] }));
+    }
+    const env = { CLIPS_TOOLS: fakeClips([{ n: 1, start: 0, end: 4, weight: 4, kind: "people", picture: [0, 0, W, H], faces: [], room: { free: 0 } }]) };
+    let r = run(env, "build", dir);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(asMain(path.join(dir, "composition")), MAIN, `${framed ? "framed" : "not framed"}: the build without place is not main's`);
+    r = run(env, "place", dir);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(asMain(path.join(dir, "composition")), MAIN, `${framed ? "framed" : "not framed"}: place without a face changed the build`);
+  }
+});
+
+// the faces frame.mjs --faces finds in an upright take of 4 s: one close-up, its mouth line at 1129
+// in the footage (as the frame shows it, the frame's own shape), below where the type starts
+const UPRIGHT = { size: [W, H], step: 0.1, shots: [{ start: 0, end: 4, kind: "people" }],
+  faces: Array.from({ length: 40 }, (_, i) => ({ t: +(i / 10).toFixed(1), boxes: [{ who: "the speaker", box: [250, 320, 580, 900], feat: [380, 560, 320, 495], eye: 600 }] })) };
+
+test("footage of the frame's shape (no framing): place says how to get its faces and changes nothing without them; an override is honoured whatever the footage, a value that is no number is an error sentence; a short without footage says why there is nothing to place", { skip }, () => {
+  const dir = shortDir();
+  const env = { CLIPS_TOOLS: fakeClips([], UPRIGHT) };
+  assert.equal(run(env, "build", dir).status, 0);
+  let r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /No framing: the short shows the footage as it is, and its faces are not known yet.* --faces model has Gemini find them \(one request, a few cents.*--faces grid .*--eye <second>:x,y,w,h/);
+  assert.ok(!fs.existsSync(path.join(dir, "source", "place.json")) && !fs.existsSync(path.join(dir, "source", "faces.json")), "nothing asked, nothing changed");
+  r = run(env, "place", dir, "--type-top", "abc");
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /--type-top is the y in px of the frame where the type starts, a number as 1150, not "abc"/);
+  r = run(env, "place", dir, "--type-top", "1100");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /from y 1100, as --type-top gave it\. No faces are known, so what it lies on is not checked/);
+  near(JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8")).video.typeTop * H, 1100, 1, "the type where it was given");
+  // no footage: an option has nothing to move, said
+  const bare = shortDir();
+  fs.rmSync(path.join(bare, "source", "video.mp4"));
+  assert.equal(run(env, "build", bare).status, 0);
+  r = run(env, "place", bare, "--type-top", "1100");
+  assert.ok(r.status === 1 && /--type-top has nothing to move here: this short has no footage/.test(r.stdout), r.stdout);
+  assert.match(run(env, "place", bare).stdout, /This short has no footage/);
+});
+
+test("footage of the frame's shape with its faces: --faces model finds them once (the cost said), place lowers the type or raises the picture as for framed footage, the build raises it itself, the sheet is drawn; --eye gives the agent's own boxes instead (no model), and a box that is none is an error", { skip }, () => {
+  const dir = shortDir();
+  const clips = fakeClips([], UPRIGHT), env = { CLIPS_TOOLS: clips };
+  assert.equal(run(env, "build", dir).status, 0);
+  let r = run(env, "place", dir, "--faces", "model");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /The faces: Gemini, \$0\.0312; kept in source\/faces\.json/);
+  const p = JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8"));
+  assert.ok(p.framed === false && p.top * H > 1025 + 1, JSON.stringify(p));
+  const plan = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  near(plan.video.typeTop, p.top, 1e-4, "the type's top built");
+  if (p.lifts.length) {
+    assert.deepEqual(plan.video.lifts, p.lifts.map((l) => ({ start: l.start, end: l.end, px: l.px })), "the build raises the picture itself");
+    const world = fs.readFileSync(path.join(dir, "composition", "compositions", "world.html"), "utf8");
+    assert.match(world, /id="bg-lift"/);
+    // the band fully dark above where the raised picture ends, so that its edge does not show
+    const end = 1 - (Math.max(...p.lifts.map((l) => l.px)) * 1.06 * 1.025) / H;
+    assert.ok(world.includes(`#000 ${(end * 100).toFixed(1)}%, #000 100%`), "the band dark below the raised picture");
+  }
+  assert.match(r.stdout, /shot 1 .* (raised \d+ px \(the eyes at \d+ % of the height at their highest\)|as it is): the type on/);
+  assert.ok(fs.existsSync(path.join(dir, "source", "place.sheet.jpg")), "the sheet");
+  // again: the faces kept, no request
+  fs.rmSync(path.join(clips, "faces-args.json"));
+  r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(clips, "faces-args.json")), "no second request");
+  // the agent's own boxes
+  r = run(env, "place", dir, "--eye", "0.5:250,320,580,900", "--eye", "3.5:250,330,580,900");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(clips, "faces-args.json"), "utf8")).filter((x, i, all) => all[i - 1] === "--face-at"), ["0.5:250,320,580,900", "3.5:250,330,580,900"]);
+  assert.match(r.stdout, /The faces: nothing spent/);
+  r = run(env, "place", dir, "--eye", "1:10,10,4000,20");
+  assert.ok(r.status === 1 && /--eye 1:10,10,4000,20: that is no face's box in the footage \(1080×1920\)/.test(r.stdout), r.stdout);
+  assert.equal(run(env, "build", dir, "--faces", "model").status, 1, "--faces belongs to place");
+});

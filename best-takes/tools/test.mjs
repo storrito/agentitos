@@ -96,6 +96,25 @@ test("tight: every pause goes, whatever the picture shows", () => {
   assert.equal(pauseOf(r).why, "cut (tight)");
 });
 
+test("a line played twice: a keep with \"again\" opens with words a later keep plays where they were said; without it, one sentence", () => {
+  const tight = { ...settings, pauses: "tight" };
+  const twice = plan(words, { keep: [{ words: "17-19", again: true }, { words: "0-25" }] }, tight, voices, null);
+  assert.deepEqual(twice.errors, []);
+  assert.deepEqual(twice.pieces[0].words, [17, 18, 19]);
+  assert.equal(twice.pieces[0].start, 0);
+  // the words of the line twice in the text, first at the top, then where they were said
+  const at = twice.words.filter((w) => w.i === 18).map((w) => w.start);
+  assert.equal(at.length, 2);
+  assert.ok(at[0] < 1.5 && at[1] > at[0] + 5, `${at}`);
+  // nothing counted as left out
+  assert.ok(!twice.removed.some((x) => x.kind === "dropped"));
+  const once = plan(words, { keep: [{ words: "17-19" }, { words: "0-25" }] }, tight, voices, null);
+  assert.match(once.errors.join("\n"), /word 17 .* is in keep 1 already .*"again": true/);
+  // a line in an "again" keep that no other keep plays is still played, not "left out"
+  const alone = plan(words, { keep: [{ words: "17-19", again: true }, { words: "0-10" }] }, tight, voices, null);
+  assert.ok(!alone.removed.some((x) => x.kind === "dropped" && x.words[0] <= 19 && x.words[1] >= 17));
+});
+
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
 
@@ -255,6 +274,374 @@ test("capitalised: Unicode's first letter, by the language; names and digits as 
   assert.equal(capitalised("¿qué"), "¿qué");
   assert.equal(capitalised("東京"), "東京");
   assert.ok(endsSentence("Pixel.") && endsSentence("so?“") && endsSentence("»Ende.«") && !endsSentence("3.") && !endsSentence("z.B.") && !endsSentence("und,"));
+});
+
+// ------------------------------------------------------------------- text and faces (faces.json)
+// (the tests of the lines below pass fills: Infinity: their faces are tall to make the lines plain, and a face that fills the frame gets no punch-in at all)
+import { punchOrigin, punchPlan, textOnFaces, toFrame, noseOf, lipOf, mouthOf, OPEN } from "./lib/faces.mjs";
+import { hookCard } from "./lib/hook.mjs";
+
+const FRAME = [1080, 1920], CAP = [192, 1306, 696, 134];
+test("a punch-in grows from a third from the top while every chin clears the captions with room to spare", () => {
+  assert.equal(punchOrigin({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP }), 0.32 * 1920);
+});
+test("a punch-in on a face whose chin stands just above the captions grows from lower down, so that the chin and the margin below it stay above them", () => {
+  const face = [300, 600, 480, 640], chin = 600 + 640 + 0.08 * 640;
+  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP });
+  assert.ok(y > 0.32 * 1920, `origin ${y}`);
+  // the chin after the punch-in, grown from y
+  assert.ok(y + (chin - y) * 1.12 <= CAP[1] + 1e-6, `chin after ${y + (chin - y) * 1.12}`);
+});
+test("a punch-in on a face that lies on the captions already grows from the frame's bottom at most: the chin goes up, not down; but never so far that the eyes go under the apps' top bar", () => {
+  const y = punchOrigin({ faces: [[100, 0, 880, 1700]], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP });
+  assert.equal(y, 1920);
+  const f = [100, -414, 880, 1700], eyes = -414 + 0.42 * 1700;
+  const kept = punchOrigin({ faces: [f], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250 });
+  assert.ok(kept < 1920 && Math.abs(kept + (eyes - kept) * 1.12 - 250) < 0.01, `origin ${kept}`);
+});
+test("without captions, or on a face below them (captions above a head), the punch-in grows from a third from the top", () => {
+  assert.equal(punchOrigin({ faces: [[300, 600, 480, 640]], scale: 1.12, frame: FRAME, fills: Infinity, cap: null }), 0.32 * 1920);
+  assert.equal(punchOrigin({ faces: [[355, 1000, 370, 400]], scale: 1.12, frame: FRAME, fills: Infinity, cap: [192, 700, 696, 134] }), 0.32 * 1920);
+});
+test("the check finds the seconds a text lies on a face, through the piece's punch-in, and how deep into the face from its chin", () => {
+  const clips = { 1: { file: "01.mp4" } };
+  const faces = { "01.mp4": { size: [1080, 1920], faces: Array.from({ length: 101 }, (_, i) => ({ t: i / 10, boxes: [{ who: "A", box: i < 50 ? [355, 300, 370, 500] : [300, 900, 480, 640] }] })) } };
+  const pieces = [{ clip: 1, in: 0, out: 10, start: 0, duration: 10 }];
+  const on = textOnFaces({ pieces, clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 10 }], frame: FRAME });
+  assert.equal(on.length, 1);
+  assert.ok(Math.abs(on[0].seconds - 5) < 0.21 && on[0].from >= 4.9, JSON.stringify(on));
+  assert.ok(Math.abs(on[0].share - (1540 - 1306) / 640) < 0.01, JSON.stringify(on));
+  // the same face punched in from a third from the top lies deeper on them; grown from below its chin, less
+  const punched = textOnFaces({ pieces: [{ ...pieces[0], scale: 1.12, origin: 614.4 }], clips, faces, texts: [{ role: "captions", box: CAP, from: 0, to: 10 }], frame: FRAME });
+  assert.ok(punched[0].share > on[0].share, JSON.stringify(punched));
+  assert.deepEqual(toFrame([0, 0, 540, 960], [540, 960], FRAME), [0, 0, 1080, 1920]);
+});
+test("the hook stands where it is placed: a text without a card in the middle of its box, or a card at its top; without a place, the card at the top of the centred box as before", () => {
+  const zones = { centred: [192, 250, 696, 1190] };
+  const text = hookCard({ text: "He wears the *robe*", until: 3, zones, out: os.tmpdir(), place: { kind: "text", box: [192, 900, 696, 238], font: 96 } });
+  assert.match(text.style, /top: 915\.3px/);
+  assert.doesNotMatch(text.style, /background: #FFFFFF/);
+  assert.match(text.style, /font-size: 96px/);
+  const card = hookCard({ text: "He wears the *robe*", until: 3, zones, out: os.tmpdir(), place: { kind: "card", box: [60, 250, 960, 236], font: 76 } });
+  assert.match(card.style, /left: 540px; top: 250px/);
+  assert.match(card.style, /background: #FFFFFF/);
+  const old = hookCard({ text: "He wears the *robe*", until: 3, zones, out: os.tmpdir() });
+  assert.match(old.style, /left: 540px; top: 258px/);
+  assert.match(old.style, /font-size: 72px/);
+});
+
+test("raise moderate: a punch-in keeps a whole head inside the frame and the mouth line above the captions", () => {
+  // a face whose chin is near the captions, its head's top 0.35 of it above its box, inside the frame
+  const face = [300, 450, 480, 900];
+  const full = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250 });
+  const mod = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250, raise: "moderate" });
+  const head = 450 - 0.35 * 900;
+  assert.ok(mod <= full, `${mod} ${full}`);
+  assert.ok(mod + (head - mod) * 1.12 >= -1e-6, `the head's top after: ${mod + (head - mod) * 1.12}`);
+  // a mouth line just above the captions stays above them grown closer, whatever the head
+  const tight = [100, 160, 880, 1700], line = 160 + 0.65 * 1700;
+  const y = punchOrigin({ faces: [tight], scale: 1.12, frame: FRAME, fills: Infinity, cap: [192, 1306, 696, 134].map((v, i) => (i === 1 ? line + 10 : v)), safeTop: 250, raise: "moderate" });
+  assert.ok(y + (line - y) * 1.12 <= line + 10 + 1e-6, `mouth line after ${y + (line - y) * 1.12}`);
+});
+
+test("raise moderate: a head the frame cuts already is not pushed further up to free a chin; only its lines keep it from sinking into the captions", () => {
+  // no features: the head's proportions put its nose line at 1134, its lip line at 1264, its mouth line below the captions' top (1306)
+  const face = [100, 60, 880, 1500];
+  const cap = [192, 1306, 696, 134];
+  const y = punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
+  near(y, 60 + (0.38 + (1 + OPEN) * 0.48) * 1500, 0.5);
+  // full: as far as the eyes allow, for the chin
+  assert.equal(punchOrigin({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap: CAP, safeTop: 250 }), Math.min(1920, (1.12 * (60 + 0.42 * 1500) - 250) / 0.12));
+});
+
+const at = (o, s, y) => o + (y - o) * s;
+test("the review's zoom-ins: a close-up whose head the frame cuts keeps its mouth line, its lip line and its nose line where the placement put them (above the captions, or no lower than they stood)", () => {
+  const cap = [192, 1375, 696, 65];
+  // robe at 20.9 s: the features' bottom at 1276, the mouth line (with room for an open mouth) at 1372, just above the captions
+  const robe = { box: [190, -60, 700, 1560], feat: [300, 640, 480, 636] };
+  const p = punchPlan({ faces: [robe], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
+  assert.equal(p.scale, 1.12);
+  for (const line of [noseOf(robe.box, robe.feat), lipOf(robe.box, robe.feat), mouthOf(robe.box, robe.feat)]) assert.ok(at(p.origin, p.scale, line) <= cap[1] + 1e-6, `a line from ${line} to ${at(p.origin, p.scale, line)}`);
+  // the lower lip just inside the area, the nose line at 1190: the nose line went to 1424 before
+  const lip = { box: [240, -60, 600, 1560], feat: [330, 700, 420, 700] };
+  const q = punchPlan({ faces: [lip], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
+  assert.ok(at(q.origin, q.scale, noseOf(lip.box, lip.feat)) <= cap[1] && at(q.origin, q.scale, lipOf(lip.box, lip.feat)) <= cap[1], JSON.stringify(q));
+  assert.ok(at(q.origin, q.scale, mouthOf(lip.box, lip.feat)) <= mouthOf(lip.box, lip.feat) + 1e-6, "the mouth line goes no lower than it stood");
+});
+test("a zoom-in that would push a mouth into the captions or the eyes under the apps' top bar is made smaller, else left out, and says why", () => {
+  const cap = [192, 1375, 696, 65];
+  // the eyes 5 px below the top bar, the mouth line below the captions' top: growing from below the mouth lifts the eyes under the bar
+  const tight = { box: [190, -200, 700, 1700], feat: [300, 255, 480, 1150] };
+  const p = punchPlan({ faces: [tight], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "moderate" });
+  assert.equal(p.scale, 1);
+  assert.match(p.why, /^none: the mouth or the nose would go into the captions, or the eyes under/);
+  // a face clear of the captions keeps its punch-in as asked
+  assert.equal(punchPlan({ faces: [[355, 300, 370, 500]], scale: 1.12, frame: FRAME, fills: Infinity, cap }).scale, 1.12);
+});
+
+test("the check names the part a text lies on: the nose or the eyes, the mouth (both lips), the lower lip, the chin, or above a head on the hair", () => {
+  const clips = { 1: { file: "01.mp4" } };
+  const piece = { clip: 1, in: 0, out: 3, start: 0, duration: 3 };
+  const run = (face, box) => textOnFaces({ pieces: [piece], clips, faces: { "01.mp4": { size: [1080, 1920], faces: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, boxes: [face] })) } }, texts: [{ role: "captions", box, from: 0, to: 3 }], frame: FRAME })[0];
+  // the features from 700 to 1280: the nose line at 1106, the lip line at 1210, the mouth line at 1367
+  const face = { who: "A", box: [140, 300, 800, 1300], feat: [340, 700, 400, 580] };
+  assert.ok(run(face, [192, 1380, 696, 100]).chin >= 2.9);
+  assert.ok(run(face, [192, 1306, 696, 134]).lip >= 2.9);
+  // the review's tight close-up: the whole area between the nose line and the lower lip is on the mouth, never "the lower lip"
+  const m = run(face, [192, 1150, 696, 134]);
+  assert.ok(m.mouth >= 2.9 && m.lip === 0 && m.nose === 0, JSON.stringify(m));
+  assert.ok(run(face, [192, 1000, 696, 134]).nose >= 2.9);
+  // captions above a low head, on its hair
+  const low = { who: "A", box: [340, 1000, 400, 500], feat: [420, 1200, 240, 240] };
+  const h = run(low, [192, 940, 696, 100]);
+  assert.ok(h.hair >= 2.9 && h.nose === 0, JSON.stringify(h));
+});
+
+test("raise head: a punch-in never cuts a head further, it goes less close or not at all", () => {
+  const cap = [192, 1375, 696, 65];
+  // the mouth line below the captions' top: the lines want the origin below it, which lifts the head the frame cuts already
+  const face = { box: [190, -60, 700, 1560], feat: [300, 640, 480, 700] };
+  const mouth = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "mouth" });
+  const head = punchPlan({ faces: [face], scale: 1.12, frame: FRAME, fills: Infinity, cap, safeTop: 250, raise: "head" });
+  assert.equal(mouth.scale, 1.12);
+  assert.equal(head.scale, 1);
+  assert.match(head.why, /the head over the frame's top/);
+});
+
+test("a face that fills the frame already (its box half the frame's height or more) gets no punch-in, and build says why", () => {
+  const tight = { box: [190, 300, 700, 1000], feat: [300, 700, 480, 450] };
+  const p = punchPlan({ faces: [tight], scale: 1.12, frame: FRAME, cap: [192, 1375, 696, 65] });
+  assert.equal(p.scale, 1);
+  assert.match(p.why, /^none: the face fills 52 % of the frame's height already/);
+  assert.equal(punchPlan({ faces: [{ box: [300, 300, 480, 800] }], scale: 1.12, frame: FRAME, cap: [192, 1375, 696, 65] }).scale, 1.12);
+});
+
+// ------------------------------------------------------------------- on its own: faces, picture, text
+import { covering, whole, takeKind, pictureRule, shotChange, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { pieceStyle } from "./lib/composition.mjs";
+
+test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
+  assert.deepEqual(covering([1080, 1920], [1080, 1920]), { scale: 1, left: 0, top: 0 });
+  assert.deepEqual(covering([720, 1280], [1080, 1920]), { scale: 1.5, left: 0, top: 0 });
+  const wide = covering([1280, 720], [1080, 1920]);
+  assert.ok(Math.abs(wide.scale - 1920 / 720) < 1e-4 && Math.abs(wide.left - (1080 - 1280 * wide.scale) / 2) < 0.1 && wide.top === 0, JSON.stringify(wide));
+  // layout's 1:1 crop of a 720p interview at 1.5×, raised 100 px
+  const pic = { scale: 1.5, left: -439.5, top: 420, lift: 100 };
+  assert.deepEqual(inFrame([555, 150, 185, 185], pic), [393, 545, 277.5, 277.5]);
+  // what lies below the frame's bottom: room to raise it without a ground
+  assert.equal(roomBelow({ scale: 1.5, left: -439.5, top: 420 }, [1280, 720], 1920), 0);
+  assert.equal(roomBelow({ scale: 1.2, left: 0, top: -50 }, [1080, 1920], 1920), 334);
+});
+
+test("on its own: the face layout places a video by is the face over the seconds the cut keeps of it, one moment every half second", () => {
+  const list = { faces: Array.from({ length: 101 }, (_, i) => ({ t: i / 10, boxes: [{ who: "A", box: [300, i < 50 ? 500 : 900, 480, 640] }, { who: "B", box: [10, 10, 20, 20] }] })) };
+  const track = faceTrack(list, [{ clip: 1, in: 1, out: 3 }, { clip: 2, in: 6, out: 8 }], 1);
+  assert.deepEqual(track.map((m) => m.t), [1, 1.5, 2, 2.5, 3]);
+  // the largest face: a take is one person
+  assert.ok(track.every((m) => m.box[2] === 480 && m.box[1] === 500));
+});
+
+test("on its own: layout's text gets one shot per video on one clock, the stretches the cut keeps end to end with the faces as placed; the hook's seconds on that clock, and back in the cut's", () => {
+  const clips = { 1: { n: 1, file: "01.mp4", duration: 20, width: 1080, height: 1920 }, 2: { n: 2, file: "02.mp4", duration: 30, width: 1280, height: 720 } };
+  const at = (t, box) => ({ t, boxes: [{ who: "A", box, feat: [box[0] + 50, box[1] + 100, box[2] - 100, box[3] / 2] }] });
+  const faces = { "01.mp4": { faces: Array.from({ length: 200 }, (_, i) => at(i / 10, [300, 570, 600, 900])) }, "02.mp4": { faces: Array.from({ length: 300 }, (_, i) => at(i / 10, [555, 150, 185, 185])) } };
+  const pictures = { "01.mp4": { scale: 1, left: 0, top: 0 }, "02.mp4": { scale: 1.5, left: -439.5, top: 420 } };
+  // the cut: 2–6 s of the first video, then 10–12 s of the second, then 8–9 s of the first
+  const pieces = [{ clip: 1, in: 2, out: 6, start: 0, duration: 4 }, { clip: 2, in: 10, out: 12, start: 4, duration: 2 }, { clip: 1, in: 8, out: 9, start: 6, duration: 1 }];
+  const clock = clockOf(clips, pieces);
+  // the first video's two stretches end to end (0–4, 4–5), the second's a second after (6–8)
+  assert.deepEqual(clock, { off: { 1: 0, 2: 6 }, at: [0, 6, 4] });
+  const hook = hookSpan(pieces, 5, clock);
+  assert.deepEqual(hook, { start: 0, end: 7, spans: [[0, 4], [6, 7]] });
+  const { input, files } = shotsInput({ clips, pieces, faces, pictures, frame: [1080, 1920], clock, hook });
+  assert.deepEqual(files, ["01.mp4", "02.mp4"]);
+  assert.deepEqual(input.shots.map((s) => [s.start, s.end, s.weight]), [[0, 5, 5], [6, 8, 2]]);
+  // no gap between the first video's stretches: 2 s left out lie between none of its moments
+  const ts = input.shots[0].faces[0].track.map((m) => m.t);
+  assert.ok(ts.every((t, i) => !i || t - ts[i - 1] <= 0.11 + 1e-9), JSON.stringify(ts.filter((t, i) => i && t - ts[i - 1] > 0.11)));
+  // placed: the second video's face at 1.5× in its band
+  assert.deepEqual(input.shots[1].faces[0].track[0].box, [393, 645, 277.5, 277.5]);
+  assert.ok(input.shots[1].faces[0].track[0].feat, "the eyes, nose and mouth go along");
+  // the close-up under the hook is calm, the wide one is not
+  assert.equal(input.hook.calm, false);
+  // back in the cut's time: 6.5 on the clock is 0.5 s into the second piece; 4.5 into the third
+  assert.equal(toCut(6.5, pieces, clock), 4.5);
+  assert.equal(toCut(4.5, pieces, clock), 6.5);
+  // between the two sections: where the stretch before ends in the cut
+  assert.equal(toCut(5.5, pieces, clock), 7);
+});
+
+test("on its own: before the cut is built, what it plays comes from cut.json's keeps", () => {
+  const words = [0, 1, 2, 3, 4, 5].map((i) => ({ i, clip: 1, kind: "word", start: i, end: i + 0.5 }));
+  assert.deepEqual(pieceSpan(null, { cut: { keep: [{ words: "1-2" }, { words: "4" }] }, words }).map((p) => [p.in, p.out, p.start]), [[1, 2.5, 0], [4, 4.5, 1.5]]);
+});
+
+test("on its own: a piece is drawn where its picture stands, and a punch-in grows about the same point of the frame as without one", () => {
+  // covering, as before
+  assert.equal(pieceStyle({ scale: 1 }, 1080, 1920), "");
+  assert.equal(pieceStyle({ scale: 1.12, origin: 700 }, 1080, 1920), "transform: scale(1.12); transform-origin: 50% 700px");
+  // placed and raised: its box, and the frame's point (540, 700) in its own box
+  const pic = { left: -439.5, top: 320, width: 1920, height: 1080 };
+  assert.equal(pieceStyle({ scale: 1, pic }, 1080, 1920), "left: -439.5px; top: 320px; width: 1920px; height: 1080px; object-fit: fill");
+  assert.match(pieceStyle({ scale: 1.12, origin: 700, pic }, 1080, 1920), /transform-origin: 979\.5px 380px; clip-path: inset\(/);
+  // a band over a ground goes closer inside its own edges: the part of the frame it filled (y 320–1400), cut out before it grows
+  const clip = pieceStyle({ scale: 1.12, origin: 700, pic }, 1080, 1920).match(/inset\(([\d.]+)px ([\d.]+)px ([\d.]+)px ([\d.]+)px\)/).slice(1).map(Number);
+  const grown = (v, o) => o + (v - o) * 1.12;
+  assert.ok(Math.abs(grown(320 + clip[0], 700) - 320) < 0.2 && Math.abs(grown(320 + 1080 - clip[2], 700) - 1400) < 0.2, JSON.stringify(clip));
+  assert.ok(Math.abs(grown(-439.5 + clip[3], 540) - 0) < 0.2 && Math.abs(grown(-439.5 + 1920 - clip[1], 540) - 1080) < 0.2, JSON.stringify(clip));
+  // a crop's window narrower than the picture (layout's crop 4:5 of a wide take): only the window shows, also without a punch-in
+  const crop = { left: -684.4, top: 285, width: 2400, height: 1350, window: [0, 285, 1080, 1350] };
+  assert.equal(pieceStyle({ scale: 1, pic: crop }, 1080, 1920), "left: -684.4px; top: 285px; width: 2400px; height: 1350px; object-fit: fill");
+  const wide = { left: -684.4, top: 285, width: 2400, height: 1350, window: [100, 285, 880, 1350] };
+  assert.match(pieceStyle({ scale: 1, pic: wide }, 1080, 1920), /clip-path: inset\(0px 735\.6px 0px 784\.4px\)$/);
+  // covering the frame: nothing to cut out
+  assert.doesNotMatch(pieceStyle({ scale: 1.12, origin: 700, pic: { left: 0, top: -100, width: 1080, height: 2100 } }, 1080, 1920), /clip-path/);
+});
+
+test("on its own: faces of a phone's take stored on its side, found before the framing knew the rotation, are refused with whose they are; a box the tracker carried past the edge is taken to it", () => {
+  // the review's take: an upright 1080×1920 picture stored as 1920×1080 with a rotation of −90
+  const model = { by: "model", size: [1920, 1080], faces: [{ t: 1, boxes: [{ who: "A", box: [473, 82, 1048, 459] }] }] };
+  assert.match(facesFault(model, [1080, 1920]), /^the faces the tool found \(not boxes of yours\) are of a picture of 1920×1080, the video shows 1080×1920/);
+  const eye = { by: "eye", size: [1080, 1920], faces: Array.from({ length: 10 }, (_, i) => ({ t: i, boxes: [{ who: "A", box: [900, 1700, 600, 900] }] })) };
+  assert.match(facesFault(eye, [1080, 1920]), /^your boxes \(--eye\) lie mostly outside the 1080×1920 picture at 10 of 10 moments/);
+  const fine = { by: "model", size: [1080, 1920], faces: [{ t: 0, boxes: [{ who: "A", box: [300, 570, 600, 900] }] }] };
+  assert.equal(facesFault(fine, [1080, 1920]), null);
+  // a box a little past the bottom edge: taken to the edge for layout, which refuses faces not there
+  const list = { size: [1080, 1920], faces: [{ t: 0, boxes: [{ who: "A", box: [300, 1200, 600, 800] }] }] };
+  assert.deepEqual(faceTrack(list, [{ clip: 1, in: 0, out: 1 }], 1)[0].box, [300, 1200, 600, 720]);
+});
+
+test("on its own: a wide 720p take is placed so that its face comes nearest the usual size under the hard limit of enlargement, not smallest for sharpness (the review: the square band at 1.5×, the face 14 %, before the 4:5 crop at 1.875×)", () => {
+  // layout's candidates for the Epps interview, in layout's order, the model's face 309 px tall
+  const c = (fit, crop, scale, extra = {}) => ({ fit, crop, scale, left: 0, top: 0, hard: 0, unmet: [], soft: 0, problems: [], text: [], ...extra });
+  const list = [c("crop", "1:1", 1.5), c("crop", "1:1", 1.5, { onGround: true }), c("crop", "4:5", 1.875, { soft: 1 }), c("inset", null, 0.8438), c("full", null, 2.6667, { hard: 1 })];
+  const r = rankPictures(list, 309, 1920);
+  assert.deepEqual(r.map((x) => x.n), [3, 1, 2, 4, 5]);
+  assert.ok(Math.abs(r[0].face - 0.302) < 0.001);
+  // a face that would come out larger than the usual band is not pushed past it
+  assert.equal(rankPictures([c("crop", "4:5", 1.875), c("crop", "1:1", 1.5)], 400, 1920)[0].crop, "1:1");
+});
+
+test("on its own: faces that miss most of the cut are counted, so that place and check say so", () => {
+  const clips = { 1: { file: "01.mp4" } };
+  const pieces = [{ clip: 1, in: 0, out: 10, start: 0, duration: 10 }];
+  const half = { "01.mp4": { faces: Array.from({ length: 30 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) } };
+  assert.ok(Math.abs(knownSeconds(pieces, clips, half) - 3) < 0.25);
+  assert.equal(knownSeconds(pieces, clips, { "01.mp4": { faces: [] } }), 0);
+});
+
+test("on its own: footage with cuts in it, two people, or slides is told apart from one person's take over the seconds the cut keeps (the review: talk-show cuts became a strip at a third of its size, a talk's slides were cropped from the middle)", () => {
+  const pieces = [{ clip: 1, in: 0, out: 10 }];
+  const one = { shots: [{ start: 0, end: 20, kind: "people" }], faces: Array.from({ length: 100 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) };
+  assert.deepEqual(takeKind(one, pieces, 1), { kept: 10, shots: 1, cuts: [], people: 1, material: 0 });
+  const cuts = { ...one, shots: [{ start: 0, end: 4, kind: "people" }, { start: 4, end: 8, kind: "people" }, { start: 8, end: 20, kind: "people" }] };
+  assert.equal(takeKind(cuts, pieces, 1).shots, 3);
+  // a flash of 0.7 s of the shot before at the take's start (the review's conference take) is no cut in it
+  assert.equal(takeKind({ ...one, shots: [{ start: 0, end: 0.76, kind: "people" }, { start: 0.76, end: 20, kind: "people" }] }, pieces, 1).shots, 1);
+  // a cut in a stretch the cut leaves out does not count
+  assert.equal(takeKind(cuts, [{ clip: 1, in: 9, out: 12 }], 1).shots, 1);
+  const two = { ...one, faces: one.faces.map((f, i) => (i % 3 ? f : { ...f, boxes: [...f.boxes, { box: [50, 0, 10, 10] }] })) };
+  assert.equal(takeKind(two, pieces, 1).people, 2);
+  const slides = { ...one, shots: [{ start: 0, end: 6, kind: "broll" }, { start: 6, end: 20, kind: "people" }] };
+  assert.equal(takeKind(slides, pieces, 1).material, 6);
+  // the whole picture, centred
+  assert.deepEqual(whole([1920, 1080], [1080, 1920]), { scale: 0.5625, left: 0, top: 656.3 });
+});
+
+// ---------------------------------------------------------------- a change of shot, by the faces
+// One person's take of 40 s, her face every tenth of a second at the same place; the cut detector's
+// shots and the faces around each of its cuts made up for each case.
+const her = (t) => ({ t: +t.toFixed(2), boxes: [{ who: "Jeanette Epps", box: [540, 50, 212, 301] }] });
+const take = (shots, face = her, from = 0, to = 40) => ({ shots, faces: Array.from({ length: Math.round((to - from) * 10) }, (_, i) => face(from + i / 10)).filter(Boolean) });
+const all40 = [{ clip: 1, in: 0, out: 40 }];
+const ruleOf = (list) => { const k = takeKind(list, all40, 1); return { ...pictureRule(k, faceTrack(list, all40, 1).length > 0), kind: k }; };
+const people = (a, b) => [{ start: a, end: b, kind: "people" }];
+
+test("a change of shot by the faces: the light dropping and coming back is the same shot, the take placed as one (the review's events take: three such cuts made a cover at 2.67× from the middle)", () => {
+  const r = ruleOf(take([...people(0, 21.98), ...people(21.98, 29.99), ...people(29.99, 40)]));
+  assert.equal(r.kind.shots, 3);
+  assert.deepEqual(r.kind.cuts.map((x) => x.is), ["same", "same"]);
+  assert.equal(r.use, "place");
+  // a phone's exposure that settles over ten frames: the tracker's box wobbles a little, the cut lands mid-way
+  const wobble = (t) => ({ t: +t.toFixed(2), boxes: [{ who: "Jeanette Epps", box: [540 + (t > 22 && t < 22.4 ? 9 : 0), 50 + (t > 22 && t < 22.4 ? 6 : 0), 212, t > 22 && t < 22.4 ? 290 : 301] }] });
+  assert.equal(ruleOf(take([...people(0, 22.17), ...people(22.17, 40)], wobble)).use, "place");
+});
+
+test("a change of shot by the faces: a person who leaves for a moment and comes back to her place is the same shot; back only after a long gap, or never, it is not known, said and placed as one all the same", () => {
+  const away = (a, b) => (t) => (t >= a && t < b ? null : her(t));
+  const left = ruleOf(take([...people(0, 19.98), ...people(19.98, 40)], away(20, 24.1)));
+  assert.deepEqual(left.kind.cuts.map((x) => x.is), ["same"]);
+  assert.equal(left.use, "place");
+  const long = ruleOf(take([...people(0, 10), ...people(10, 40)], away(10, 25)));
+  assert.deepEqual(long.kind.cuts.map((x) => x.is), ["unknown"]);
+  assert.equal(long.use, "place", "a doubt never makes the picture worse");
+  const gone = ruleOf(take([...people(0, 20), ...people(20, 40)], away(20, 40)));
+  assert.deepEqual([gone.kind.cuts[0].is, gone.use], ["unknown", "place"]);
+});
+
+test("a change of shot by the faces: a real cut to another framing, to another person, or the face far from where it was, covers the frame from the middle with the ✗; two people at once too", () => {
+  const closer = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "Jeanette Epps", box: [430, 0, 430, 610] }] });
+  assert.deepEqual([ruleOf(take([...people(0, 20), ...people(20, 40)], closer)).use, shotChange(take([], closer), 20, 20)], ["fallback", "other"]);
+  // the review's reporter: Gina Sunseri, then Nick at 22.21 s, the same size 200 px to the left
+  const nick = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "Nick", box: [488, 114, 224, 284] }] });
+  assert.equal(ruleOf(take([...people(0, 20), ...people(20, 40)], nick)).use, "fallback");
+  // another person at the very same place: the names tell
+  const other = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "a man in a grey suit", box: [540, 50, 212, 301] }] });
+  assert.equal(shotChange(take([], other), 20, 20), "other");
+  const moved = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "Jeanette Epps", box: [140, 50, 212, 301] }] });
+  assert.equal(shotChange(take([], moved), 20, 20), "other");
+  const two = (t) => ({ t, boxes: [...her(t).boxes, { who: "Nick", box: [100, 80, 200, 280] }] });
+  const r = ruleOf(take(people(0, 40), two));
+  assert.deepEqual([r.kind.people, r.use], [2, "fallback"]);
+});
+
+test("slides stay whole with a face beside them or with none found, before the branch for no face; no face and no material covers the frame from the middle", () => {
+  const slides = [{ start: 0, end: 40, kind: "split", note: "material with the speaker small in it" }];
+  assert.equal(ruleOf(take(slides)).use, "whole");
+  const none = { shots: slides, faces: [] };
+  assert.equal(pictureRule(takeKind(none, all40, 1), false).use, "whole");
+  assert.equal(pictureRule(takeKind({ shots: people(0, 40), faces: [] }, all40, 1), false).use, "none");
+  // a talk with a slide for 12 s and the speaker after
+  assert.equal(ruleOf(take([{ start: 0, end: 12, kind: "broll" }, ...people(12, 40)])).use, "whole");
+});
+
+test("faces kept from before with no face in them get the ✗ that place and check give (they were reused in silence); slides in them are named as what place keeps whole", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "takes-kept-"));
+  try {
+    fs.mkdirSync(path.join(dir, "source"));
+    fs.writeFileSync(path.join(dir, "source", "words.json"), JSON.stringify({ clips: { 1: { n: 1, file: "01.mp4", duration: 10, width: 1280, height: 720 } }, words: [] }));
+    const run = (shots) => {
+      fs.writeFileSync(path.join(dir, "source", "01.faces.json"), JSON.stringify({ by: "model", size: [1280, 720], step: 0.1, shots, faces: [] }));
+      return spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs"), "faces", dir], { encoding: "utf8" }).stdout;
+    };
+    const plain = run([{ start: 0, end: 10, kind: "people" }]);
+    assert.match(plain, /faces kept from before/);
+    assert.match(plain, /✗ 01\.mp4: a face at 0\.0 of its 10\.0 s only\. Where a person speaks/);
+    assert.match(run([{ start: 0, end: 10, kind: "split" }]), /material for 10\.0 s: where that is a quarter or more of what the cut keeps, place keeps the picture whole/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("material shows the take whole only where it is a quarter or more of what the cut keeps: a few seconds called material are said and the take placed by its faces, the other checks run (the review's swap: 2.4 s of an empty stage between two women kept the 22 s cut whole and small)", () => {
+  const nobody = (a, b, face) => (t) => (t >= a && t < b ? null : face(t));
+  // swap: her 0–15 s, the empty stage 15–19 s called b-roll, another woman at her place 19–34 s
+  const another = (t) => (t < 15 ? her(t) : { t, boxes: [{ who: "woman in a green dress", box: [540, 50, 212, 301] }] });
+  const swap = { ...take([...people(0, 15), { start: 15, end: 19, kind: "broll" }, ...people(19, 34)], nobody(15, 19, another), 0, 34) };
+  const cut = [{ clip: 1, in: 4, out: 26 }];
+  const k = takeKind(swap, cut, 1), r = pictureRule(k, faceTrack(swap, cut, 1).length > 0);
+  assert.deepEqual([k.kept, k.material], [22, 4]);
+  // (both cuts, into the empty stage and out of it, have her before and the other woman after)
+  assert.deepEqual([r.use, r.material, r.other.length], ["fallback", 4, 2]);
+  // a product held to the lens for 3 s of a 40 s take, the same person before and after
+  const product = ruleOf(take([...people(0, 20), { start: 20, end: 23, kind: "broll" }, ...people(23, 40)], nobody(20, 23, her)));
+  assert.deepEqual([product.use, product.material], ["place", 3]);
+  // material for 60 % of the cut, and the slides take (all of it): whole
+  assert.equal(ruleOf(take([...people(0, 16), { start: 16, end: 40, kind: "split" }])).use, "whole");
+  assert.equal(pictureRule(takeKind({ shots: [{ start: 0, end: 40, kind: "split" }], faces: [] }, all40, 1), false).use, "whole");
+  // dafoe's interview: film clips for 31 % of the cut stay whole; 20 % does not
+  assert.equal(ruleOf(take([...people(0, 27.6), { start: 27.6, end: 40, kind: "broll" }])).use, "whole");
+  assert.equal(ruleOf(take([...people(0, 32), { start: 32, end: 40, kind: "broll" }])).use, "place");
 });
 
 // ------------------------------------------------------------- speech not written down

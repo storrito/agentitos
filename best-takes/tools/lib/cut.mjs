@@ -79,7 +79,7 @@ export function plan(words, cut, settings, voices, motion = null) {
   const errors = [], warnings = [], removed = [];
   const audio = !!settings.audio;
   const fps = settings.fps, maxPause = settings.pause, target = settings.loudness;
-  const used = new Map();
+  const used = new Map(), played = new Set();
   const waits = new Set((cut.waits || []).map(Number));
   const samples = motion || (() => []);
 
@@ -145,8 +145,13 @@ export function plan(words, cut, settings, voices, motion = null) {
     const items = words.slice(a, b + 1);
     const other = items.find((w) => w.clip !== items[0].clip);
     if (other) return errors.push(`${name} runs from video ${items[0].clip} into video ${other.clip}: end it at ${other.i - 1}, start the next keep at ${other.i}`);
-    for (const w of items) {
-      if (used.has(w.i)) return errors.push(`${name}: word ${w.i} "${w.text}" is in keep ${used.get(w.i) + 1} already`);
+    // a word plays once, unless a keep says it plays it again ("again": true, a line said
+    // later that opens the video as its hook); the other keeps never share a word
+    if (!keep.again) {
+      for (const w of items) {
+        if (used.has(w.i)) return errors.push(`${name}: word ${w.i} "${w.text}" is in keep ${used.get(w.i) + 1} already (a line that should play twice, as a hook: "again": true on the keep that repeats it)`);
+      }
+      for (const w of items) used.set(w.i, k);
     }
     // voice without words inside the keep: the words around it may be of two attempts
     const unheard = items.filter((w) => w.kind === "unwritten");
@@ -154,7 +159,7 @@ export function plan(words, cut, settings, voices, motion = null) {
       return errors.push(`${name} runs across speech not written down (${unheard.map((u) => `[${u.i}] at ${u.start.toFixed(1)} s, ${(u.end - u.start).toFixed(1)} s long`).join("; ")}): voice the speech model wrote no words for, nearly always an attempt it skipped, so the words on either side may be of different attempts, a sentence spliced. End the keep before it, or start it after it at the first word of the attempt that follows; where the words after it begin in the middle of a sentence it holds that attempt's start: "unwritten": "keep" on the keep plays it as recorded ("unwritten": "cut" cuts it out)`);
     }
     if (keep.breath != null && !(Number.isFinite(Number(keep.breath)) && Number(keep.breath) >= 0)) return errors.push(`${name}: "breath" is the seconds of quiet before it, e.g. 1`);
-    for (const w of items) used.set(w.i, k);
+    for (const w of items) played.add(w.i);
 
     // the kept words in groups that play without a cut: a cut where a filler ("äh") is left
     // out, and where a pause is longer than maxPause (unless the keep says "sounds": "keep" or
@@ -240,9 +245,9 @@ export function plan(words, cut, settings, voices, motion = null) {
   // words in no keep: what the cut leaves out, in runs
   let run = null;
   for (const w of words) {
-    if (!used.has(w.i) && run && run.clip === w.clip && run.words[1] === w.i - 1) { run.words[1] = w.i; run.to = w.end; run.text.push(w.text); continue; }
+    if (!played.has(w.i) && run && run.clip === w.clip && run.words[1] === w.i - 1) { run.words[1] = w.i; run.to = w.end; run.text.push(w.text); continue; }
     if (run) removed.push({ ...run, text: run.text.join(" ") });
-    run = used.has(w.i) ? null : { kind: "dropped", clip: w.clip, from: w.start, to: w.end, words: [w.i, w.i], text: [w.text] };
+    run = played.has(w.i) ? null : { kind: "dropped", clip: w.clip, from: w.start, to: w.end, words: [w.i, w.i], text: [w.text] };
   }
   if (run) removed.push({ ...run, text: run.text.join(" ") });
   removed.sort((x, y) => x.clip - y.clip || x.from - y.from);

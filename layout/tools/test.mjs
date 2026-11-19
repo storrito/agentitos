@@ -20,7 +20,13 @@ import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { alike, solve as solveAny } from "./lib/solve.mjs";
+import { textOverTime, MOUTH, momentsOf } from "./lib/placed.mjs";
+import { areaOverTime } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
+import { besideSolve } from "./lib/beside.mjs";
+import { renderBeside } from "./lib/beside-page.mjs";
+import { inter } from "./lib/boxes.mjs";
+import { keepOut } from "./lib/text.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2), QUICK = args.includes("--quick"), given = args.find((a) => !a.startsWith("--"));
@@ -1154,6 +1160,870 @@ if (!QUICK) t("the picture of a candidate is the frame down to its last row with
     seen.push(chrome ? path.basename(path.dirname(path.dirname(chrome))) : "the Chrome found");
   }
   return seen.join(", ");
+});
+
+console.log("\nText over a placed picture, for a whole clip (text): faces over time");
+{
+  const Z9 = askZones("9:16");
+  const still = (box, a, b) => ({ who: "A", track: Array.from({ length: Math.round((b - a) * 10) + 1 }, (_, i) => ({ t: +(a + i / 10).toFixed(2), box })) });
+  const shot = (a, b, faces, room = { free: 0 }) => ({ start: a, end: b, faces, room });
+  const cap = [{ role: "caption", lines: 1 }];
+  const safeBottom = Z9.safe[1] + Z9.safe[3];
+  t("a face that sits high: the captions stand on the safe box's bottom, below the chin, and nothing is raised", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: cap });
+    ok(r.caption.options.y === safeBottom, `captions end at ${r.caption.options.y}, not on the safe box's bottom ${safeBottom}`);
+    ok(r.caption.font === DEFAULTS.caption.font.tall && r.caption.lines === 1, `type ${r.caption.font}, ${r.caption.lines} lines`);
+    ok(r.shots[0].lift === 0 && !r.conflicts.length, JSON.stringify(r.shots[0]));
+    return `middle at ${r.caption.middle} %`;
+  });
+  t("a face that sits low: its shot is raised just enough that the captions clear the chin and the margin below it, over a ground that stays under the apps' bottom", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 850, 370, 500], 0, 5)])], needs: cap });
+    const keepBottom = 850 + 500 + Math.max(DEFAULTS.free.belowMin, DEFAULTS.free.below * 500);
+    near(r.shots[0].lift, keepBottom - r.caption.box[1], 1, "lift");
+    ok(r.shots[0].ground === r.shots[0].lift && r.shots[0].lift <= 1920 - safeBottom, JSON.stringify(r.shots[0]));
+    ok(r.caption.seconds === 0 && !r.conflicts.length, r.conflicts.join(" "));
+    return `raised ${r.shots[0].lift} px`;
+  });
+  t("a tight close-up whose chin no lift can clear (the eyes would go under the apps' top): raised as far as allowed, the seconds and the share on the face named, and one sentence that says what would avoid it", () => {
+    const f = [100, 0, 880, 1700];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [still(f, 0, 4)])], needs: cap, raise: "full" });
+    near(r.shots[0].lift, Math.floor(f[1] + DEFAULTS.eyes * f[3] - Z9.safe[1]), 1, "lift: as far as the eyes allow");
+    ok(r.caption.seconds >= 3.9 && r.shots[0].touches.length === 1, JSON.stringify(r.shots[0]));
+    ok(!r.conflicts.length && r.notes.some((n) => /Shot 1 .*lie on A's chin or neck for 4 s, below the mouth: not avoidable without the eyes going under/.test(n)), JSON.stringify([r.conflicts, r.notes]));
+    return r.notes[0].slice(0, 90) + " …";
+  });
+  t("moderate, the default: a close-up is raised only while the whole head stays in the picture (its box and the margin above it for the hair under the frame's top); a smaller type comes first, never below the low end of published captions (caption.font.least); where even that would cover the mouth or the lower lip, the shot goes up past the head's top (as far as the eyes allow, where that costs less than it saves) until the captions clear the mouth, said, never a fault", () => {
+    // the face from y 330, 1500 px tall: the head's top 0.35 of it above the frame's top; its lips (the head's proportions: the lip line at 80 % of the box) at 1533–1573, below the safe box: no type clears them unraised
+    const f = [140, 330, 800, 1500], moving = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [f[0], f[1] + (i % 10 < 5 ? 0 : 40), f[2], f[3]] })) };
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap });
+    ok(r.shots[0].lift > 0 && r.shots[0].limit === "mouth" && r.shots[0].past && r.shots[0].on.mouth === 0 && r.shots[0].on.nose === 0, JSON.stringify(r.shots[0]));
+    ok(r.caption.font >= DEFAULTS.caption.font.least, `type ${r.caption.font} under the floor ${DEFAULTS.caption.font.least}`);
+    ok(!r.conflicts.length && r.notes.some((n) => /(lower lip for [\d.]+ s and on the chin for [\d.]+ s, not on the mouth; raised \d+ px past the head's top .*Nothing to fix|chin or neck for [\d.]+ s, below the mouth; raised \d+ px past the head's top so that they keep off the mouth)/.test(n)), JSON.stringify([r.conflicts, r.notes]));
+    // a size given by hand goes below the floor
+    const hand = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap, fixed: { font: 50 } });
+    ok(hand.caption.font === 50, `--font-size 50 gave ${hand.caption.font}`);
+    const full = textOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], needs: cap, raise: "full" });
+    ok(full.shots[0].lift > 0 && full.caption.font === DEFAULTS.caption.font.tall, JSON.stringify(full.shots[0]));
+    // a face whose mouth reaches the safe box's bottom whatever the type: a conflict that says what would avoid it
+    const low = textOverTime({ zones: Z9, shots: [shot(0, 4, [still([140, 500, 800, 1500], 0, 4)])], needs: cap });
+    // (or above it, on the hair, where the face leaves room there)
+    ok(low.notes.some((n) => /lower lip .* not avoidable at a readable size/.test(n)) || low.caption.box[1] + low.caption.box[3] <= 500, JSON.stringify([low.caption, low.notes]));
+    ok(!low.conflicts.some((c) => /below the mouth/.test(c)), JSON.stringify(low.conflicts));
+    // the eyes and the nose: a hard limit at every size, said as a conflict
+    const nose = textOverTime({ zones: Z9, shots: [shot(0, 4, [still([140, 650, 800, 1300], 0, 4)])], needs: cap });
+    ok(nose.conflicts.some((c) => /nose or eyes/.test(c)) || nose.caption.box[1] + nose.caption.box[3] <= 650, JSON.stringify([nose.caption, nose.conflicts]));
+  });
+  t("where the caller knows the eyes, nose and mouth (feat), the mouth line is their bottom, not a share of the box: a mouth low in its box keeps the captions lower or smaller, one high in it lets them stand on the chin", () => {
+    const box = [140, 330, 800, 1500], track = (feat) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) });
+    // the features ending at 1250 (the mouth high in its box, 61 %): the usual type clears it
+    const high = textOverTime({ zones: Z9, shots: [shot(0, 4, [track([300, 700, 480, 550])])], needs: cap });
+    ok(high.caption.font === DEFAULTS.caption.font.tall && !high.conflicts.length, JSON.stringify([high.caption, high.conflicts]));
+    // the features ending at 1400 (the mouth low, 71 %): no readable type clears it on the safe box's bottom: the lower lip, said
+    const low = textOverTime({ zones: Z9, shots: [shot(0, 4, [track([300, 760, 480, 640])])], needs: cap });
+    ok(low.notes.some((n) => /lower lip .* not avoidable at a readable size|past the head's top so that they keep off the mouth/.test(n)) || low.caption.box[1] + low.caption.box[3] <= 330, JSON.stringify([low.caption, low.notes, low.conflicts]));
+    ok(!low.conflicts.length && low.shots[0].on.mouth === 0 && low.shots[0].on.nose === 0, JSON.stringify(low.shots[0]));
+  });
+  t("a tight close-up whose eyes stand at the apps' top bar already: no raise can free its mouth, and captions over the whole mouth are a fault (✗) with what would avoid it, never 'the lower lip, nothing to fix' (the review's case: the whole caption area between the nose line and the lower lip)", () => {
+    // the features from 260 to 1500: the nose line at 1128, the lip line at 1351, the eyes at 260, 10 px below the safe box's top; the smallest readable area reaches from 1334
+    const box = [140, 100, 800, 1500], feat = [300, 260, 480, 1240];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
+    ok(r.shots[0].on.mouth > 3.9 && r.shots[0].fault === "mouth", JSON.stringify(r.shots[0]));
+    ok(r.conflicts.some((c) => /cover A's mouth for 4 s .* What would avoid it: a cut to another shot here, or a smaller type by hand/.test(c)), JSON.stringify(r.conflicts));
+    ok(!r.notes.some((n) => /Nothing to fix/.test(n)), JSON.stringify(r.notes));
+  });
+  t("a smaller type comes before a raise past the head's top: where the floor's type keeps off the mouth, the head stays whole", () => {
+    // the lip line at 1320: the usual type's area (from 1306) would cover the mouth, 69 px (from 1320) does not
+    const box = [140, 100, 800, 1500], feat = [300, 400, 480, 1045];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
+    ok(r.caption.font < DEFAULTS.caption.font.tall && !r.shots[0].past && r.shots[0].lift === 0 && r.shots[0].on.mouth === 0, JSON.stringify([r.caption.font, r.shots[0]]));
+  });
+  t("the three levels on one tight close-up: head keeps the whole head (type to its floor, the lower lip said), mouth goes past the head's top until the mouth is clear (the default), full until the chin is clear; each shot says how far the frame cuts the head", () => {
+    // the lip line at 1328, the mouth line at 1490, the eyes at 800; the head's top over the frame's top already
+    const box = [140, 300, 800, 1500], feat = [300, 800, 480, 600];
+    const run = (raise) => textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap, ...(raise ? { raise } : {}) });
+    const head = run("head"), mouth = run(), full = run("full");
+    ok(head.shots[0].lift === 0 && head.caption.font < DEFAULTS.caption.font.tall && head.shots[0].on.mouth === 0 && head.shots[0].headCut.byLift === 0 && !head.conflicts.length, JSON.stringify([head.caption.font, head.shots[0]]));
+    ok(head.notes.some((n) => /lower lip .*with the whole head kept\. Nothing to fix; --raise mouth/.test(n)), JSON.stringify(head.notes));
+    ok(mouth.raise === "mouth" && mouth.shots[0].past && mouth.shots[0].on.mouth === 0 && mouth.shots[0].on.lip === 0 && mouth.shots[0].headCut.byLift === mouth.shots[0].lift, JSON.stringify(mouth.shots[0]));
+    ok(full.shots[0].lift >= mouth.shots[0].lift && full.shots[0].headCut.px >= mouth.shots[0].headCut.px, JSON.stringify([full.shots[0], mouth.shots[0].lift]));
+    ok(run("moderate").raise === "mouth", "moderate is mouth");
+    // a mouth the floor's type still covers: under head a fault that names --raise mouth
+    const low = textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat: [300, 800, 480, 650] })) }])], needs: cap });
+    ok(low.shots[0].lift === 0 && low.conflicts.some((c) => /cover A's mouth .*--raise mouth/.test(c)), JSON.stringify([low.shots[0], low.conflicts]));
+    return `head ${head.caption.font} px unraised, mouth ${mouth.caption.font} px raised ${mouth.shots[0].lift} px, full raised ${full.shots[0].lift} px`;
+  });
+  t("mouth, the default, raises a close-up no further than the eyes at 27 % of the height (the upper end of where published Shorts have them): where the mouth clears only above that line, the shot stays below it, a smaller type where that helps, and the captions lie on the lower lip, said; full goes on to the apps' top bar", () => {
+    // the eyes at 600: 82 px above them to the line at 518; the mouth line at 1520 would need some 200
+    const box = [140, 200, 800, 1500], feat = [300, 600, 480, 800];
+    const run = (raise) => textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap, ...(raise ? { raise } : {}) });
+    const m = run(), f = run("full");
+    ok(m.shots[0].eyes >= DEFAULTS.eyeLine - 1e-3 && m.shots[0].on.mouth === 0 && m.shots[0].on.lip > 0 && m.caption.font >= DEFAULTS.caption.font.least && !m.conflicts.length, JSON.stringify([m.caption.font, m.shots[0], m.conflicts]));
+    ok(m.notes.some((n) => /lower lip for [\d.]+ s .*not avoidable at a readable size/.test(n)), JSON.stringify(m.notes));
+    ok(f.shots[0].eyes < DEFAULTS.eyeLine && f.shots[0].lift > m.shots[0].lift, JSON.stringify(f.shots[0]));
+    return `mouth: eyes at ${Math.round(m.shots[0].eyes * 100)} %, ${m.caption.font} px, the lower lip ${m.shots[0].on.lip} s; full: eyes at ${Math.round(f.shots[0].eyes * 100)} %`;
+  });
+  t("the note for captions on the lower lip says a smaller type would clear it only where one does, at the size computed for that shot: a close-up whose lip reaches below the captions' bottom gets no such promise (the review's case: 62 px still touched the lip)", () => {
+    const one = (box, feat, raise) => textOverTime({ zones: Z9, ...(raise ? { raise } : {}), shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat })) }])], needs: cap });
+    const lipNote = (r) => r.notes.find((n) => /lower lip for/.test(n)) || "";
+    // the eyes at 600, the mouth line at 1520 (as the test before): the lower lip down to 1520, past
+    // the captions' bottom at 1440, and the shot cannot go higher: no type clears it
+    const none = one([140, 200, 800, 1500], [300, 600, 480, 800]);
+    ok(none.shots[0].on.lip > 0 && none.shots[0].clearsAt === 0, JSON.stringify(none.shots[0]));
+    ok(/no smaller type would: the lower lip reaches down to y \d+ and the captions end at y \d+/.test(lipNote(none)) && !/--font-size/.test(lipNote(none)), lipNote(none));
+    // the whole head kept, the mouth line at 1475 (35 px below the captions' bottom): none either,
+    // and --raise mouth (which clears it, past the head's top) is named
+    const head = one([140, 300, 800, 1500], [300, 800, 480, 587], "head");
+    ok(head.shots[0].on.lip > 0 && head.shots[0].clearsAt === 0 && /--raise mouth/.test(lipNote(head)) && /no smaller type would/.test(lipNote(head)), JSON.stringify([head.shots[0], lipNote(head)]));
+    // where a size is named, it is true: that size at the same place and lift clears the lip, one px more does not
+    const some = textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520] })) }])], needs: cap });
+    const s = some.shots[0], n = s.clearsAt;
+    ok(s.on.lip > 0 && n > 0 && n < some.caption.font && new RegExp(`${n} px or less \\(--font-size ${n}\\)`).test(lipNote(some)), JSON.stringify([s, lipNote(some)]));
+    const at = (font) => textOverTime({ zones: Z9, raise: "head", fixed: { y: some.caption.options.y, font, lifts: { 0: s.lift } }, shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520] })) }])], needs: cap }).shots[0];
+    ok(at(n).on.lip === 0 && at(n + 1).on.lip > 0, JSON.stringify([n, at(n).on, at(n + 1).on]));
+    return `none: lip ${none.shots[0].on.lip} s; head: lip ${head.shots[0].on.lip} s; a lip that clears at ${n} px (of ${some.caption.font})`;
+  });
+  t("a clip without a face (a screen shown whole, b-roll): the captions stand on the safe box's bottom at the usual type and say why (no-face), the hook in the middle, a card where the picture is not calm", () => {
+    const r = textOverTime({ zones: Z9, shots: [{ start: 0, end: 30, picture: [0, 392, 1080, 676], faces: [], room: null }], needs: [...cap, { role: "hook", start: 0.4, end: 3.4, calm: false }] });
+    ok(r.caption.where === "no-face" && r.caption.options.y === safeBottom && r.caption.font === DEFAULTS.caption.font.tall && !r.conflicts.length && !r.notes.length, JSON.stringify([r.caption, r.notes, r.conflicts]));
+    ok(r.hook && r.hook.kind === "card" && r.hook.box[1] + r.hook.box[3] <= r.caption.box[1] && /not calm/.test(r.hook.kindWhy), JSON.stringify(r.hook));
+    const face = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: cap });
+    ok(face.caption.where === "below-chin", face.caption.where);
+    return `captions y ${r.caption.box[1]}–${r.caption.options.y}, hook ${r.hook.kind} y ${r.hook.box[1]}–${r.hook.box[1] + r.hook.box[3]}`;
+  });
+  t("a lower lip from features that are an estimate between two stills (the caller's between) is said as one, with the stills: a mouth that opens there is not seen", () => {
+    const run = (between) => textOverTime({ zones: Z9, raise: "head", shots: [shot(0, 4, [{ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [140, 300, 800, 1500], feat: [300, 800, 480, 520], ...(between && i > 5 && i < 35 ? { between: [0.5, 3.5] } : {}) })) }])], needs: cap });
+    const est = run(true), plain = run(false), note = (r) => r.notes.find((x) => /lower lip for/.test(x)) || "";
+    ok(est.shots[0].on.lipEst > 0 && est.shots[0].on.lipEst < est.shots[0].on.lip && JSON.stringify(est.shots[0].touches[0].stills) === "[[0.5,3.5]]", JSON.stringify(est.shots[0]));
+    ok(/s of it between the stills at 0\.5 and 3\.5 s, where the mouth's place is an estimate/.test(note(est)) && !/between the stills/.test(note(plain)) && plain.shots[0].on.lipEst === undefined, `${note(est)} | ${note(plain)}`);
+    // the place is the same: the estimate is said, not weighed
+    ok(est.caption.options.y === plain.caption.options.y && est.caption.font === plain.caption.font, JSON.stringify([est.caption, plain.caption]));
+    return `${est.shots[0].on.lipEst} s of ${est.shots[0].on.lip} s on the lower lip from an estimate`;
+  });
+  t("the returns of one framing (the camera cuts back to the same close-up) stand at one height: the one that needs most sets it for all", () => {
+    const close = (a, b, y) => shot(a, b, [still([355, y, 370, 500], a, b)]);
+    const r = textOverTime({ zones: Z9, shots: [close(0, 3, 840), close(3, 6, 300), close(6, 9, 870), close(9, 12, 300), close(12, 15, 850)], needs: cap });
+    const lifts = r.shots.map((s) => s.lift);
+    ok(lifts[0] > 0 && lifts[0] === lifts[2] && lifts[2] === lifts[4] && lifts[1] === 0, lifts.join(", "));
+    ok(r.caption.seconds === 0, `${r.caption.seconds} s on a face`);
+  });
+  t("a hook that finds no place clear of the faces keeps the calm rule (a card over a picture that is not calm) and says why", () => {
+    const big = [still([60, 250, 960, 1250], 0, 4)];
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, big, null)], needs: [...cap, { role: "hook", start: 0, end: 3, calm: false }] });
+    ok(r.hook && (r.hook.kind === "card" || r.hook.where !== "middle") && r.hook.kindWhy && r.hook.kindWhy.length > 10, JSON.stringify(r.hook));
+  });
+  t("a hook over a picture that is not calm (the caller says hook.calm false: a wide shot with hands, a photo) is a card in the text's place, and says why", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: [...cap, { role: "hook", start: 0, end: 3, calm: false }] });
+    ok(r.hook.kind === "card" && r.hook.where === "below-chin" && /not calm/.test(r.hook.kindWhy), JSON.stringify(r.hook));
+    ok(2 * DEFAULTS.hookCard.line * r.hook.font <= r.hook.box[3], `card type ${r.hook.font} in ${r.hook.box[3]} px`);
+  });
+  t("two shots that disagree (a face high, a face low): one place for the clip, each shot raised for itself, no change of place proposed", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 9, [still([355, 850, 370, 500], 4, 9)])], needs: cap });
+    ok(r.shots[0].lift === 0 && r.shots[1].lift > 0, r.shots.map((s) => s.lift).join(", "));
+    ok(r.caption.seconds === 0 && !r.changes.length, JSON.stringify(r.changes));
+  });
+  t("a shot that cannot be raised (shown whole) with a low face, beside one that can: the place stays one, and the shot shown whole keeps its seconds on the face; with a long one, a place of its own is proposed, not taken", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 10, [still([300, 300, 480, 900], 0, 10)]), shot(10, 20, [still([355, 950, 370, 400], 10, 20)], { none: true })], needs: cap });
+    ok(r.shots[1].lift === 0 && r.shots[1].touches.length, JSON.stringify(r.shots[1]));
+    ok(r.changes.length === 1 && r.changes[0].shot === 1 && r.notes.some((n) => /proposed, not taken/.test(n)), JSON.stringify(r.changes));
+  });
+  t("a face that moves under the captions inside a shot: the shot is raised for its lowest moment, once for the whole shot", () => {
+    const track = Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [355, 300 + (i / 40) * 550, 370, 500] }));
+    // (head: a raise that keeps the whole head; mouth would also hold the eyes below 27 % of the height, which this face, high at first, reaches)
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track }])], needs: cap, raise: "head" });
+    const keepBottom = 850 + 500 + Math.max(DEFAULTS.free.belowMin, DEFAULTS.free.below * 500);
+    near(r.shots[0].lift, keepBottom - r.caption.box[1], 1, "lift for the lowest moment");
+    ok(r.caption.seconds === 0, `${r.caption.seconds} s on the face`);
+    const fixed = textOverTime({ zones: Z9, shots: [shot(0, 4, [{ who: "A", track }])], needs: cap, fixed: { lifts: { 0: 0 } } });
+    ok(fixed.shots[0].lift === 0 && fixed.caption.seconds >= 0.2 && fixed.caption.seconds < 3, `a lift fixed at 0: ${fixed.caption.seconds} s on the face, only where it is low`);
+  });
+  t("faces low in every shot and nothing that can be raised: the captions go above the heads", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 6, [still([355, 1000, 370, 400], 0, 6)], null)], needs: cap });
+    ok(r.caption.box[1] + r.caption.box[3] <= 1000 - DEFAULTS.free.above * 400 + 1 && r.caption.seconds === 0, JSON.stringify(r.caption));
+    ok(r.caption.where === "above-head", r.caption.where);
+  });
+  t("the hook on the first shot: a short text below the chin, above the captions, while the face is high", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [still([355, 300, 370, 500], 0, 5)])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.hook && r.hook.kind === "text" && r.hook.where === "below-chin" && r.hook.until === 3, JSON.stringify(r.hook));
+    ok(r.hook.box[1] >= 300 + 500 && r.hook.box[1] + r.hook.box[3] <= r.caption.box[1], `hook ${r.hook.box} between chin 800 and captions ${r.caption.box[1]}`);
+  });
+  t("a hook over two stretches of the shots' clock (a line heard twice opens the short): placed against the faces of both, not of what lies between", () => {
+    // 0–4 s and 10–14 s: a face high (room below its chin); 4–10 s: a face that fills the middle, shown between the two stretches only
+    const shots = [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 10, [still([60, 700, 960, 900], 4, 10)], null), shot(10, 14, [still([355, 300, 370, 500], 10, 14)])];
+    const r = textOverTime({ zones: Z9, shots, needs: [...cap, { role: "hook", start: 1, end: 12, spans: [[10, 12], [1, 2.5]] }] });
+    ok(r.hook && r.hook.kind === "text" && r.hook.where === "below-chin" && !r.hook.onFace, JSON.stringify(r.hook));
+  });
+  t("the first shot changes within the hook's time to one that leaves it no place: the hook ends at the cut", () => {
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 2, [still([355, 300, 370, 500], 0, 2)]), shot(2, 6, [still([60, 250, 960, 1000], 2, 6)], null)], needs: [{ role: "hook", start: 0, end: 3.5 }] });
+    ok(r.hook && r.hook.until === 2 && /ends at the cut/.test(r.hook.why), JSON.stringify(r.hook));
+  });
+  t("a take filmed too close leaves the hook no place: it goes where it lies on no eyes, nose or mouth (a card on the forehead before a text on the mouth, though that covers less of the face), said; hook:text is a wish: it does not put the text on the mouth while the card clears it, and says it took the card (the review: hook:text and hook:card put hooks on eyes, nose or mouth for 3.1 s where main had none)", () => {
+    // best-takes' tight stand-in, raised: the head from y 200, 1100 px tall, the eyes, nose and mouth 620–1150
+    const f = { who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [130, 200, 820, 1100], feat: [270, 620, 540, 530] })) };
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.hook && r.hook.kind === "card" && r.hook.where === "top" && r.hook.onFace.features === 0 && r.hook.onFace.seconds > 0, JSON.stringify(r.hook));
+    ok(r.conflicts.some((c) => /on the forehead or the hair, never on the eyes, nose or mouth/.test(c)), r.conflicts.join(" "));
+    const t2 = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", kind: "text", start: 0, end: 3 }] });
+    ok(t2.hook.kind === "card" && t2.hook.onFace.features === 0 && t2.hook.asked === "text" && t2.notes.some((n) => /The hook is a card, not the text asked for/.test(n)), JSON.stringify([t2.hook, t2.notes]));
+    // the review's synthetic s4 with hook:card (a face high, room below the chin): the text there clears the face, the card does not
+    const high = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [390 + (i % 7) * 3, 300 + (i % 5) * 4, 300, 400] })) };
+    const c4 = textOverTime({ zones: Z9, shots: [shot(0, 4, [high])], needs: [...cap, { role: "hook", kind: "card", start: 0, end: 3 }] });
+    ok(!(c4.hook.onFace?.seconds > 0), JSON.stringify(c4.hook));
+  });
+  t("captions above a head that fills the frame leave the hook only their own place: they give way to the next place that leaves it better off and lies on the faces no longer (best-takes' own phone take: the captions above the head, the hook's card over them), said; a --caption-y the caller fixed stays", () => {
+    // the phone take as read off its grid: the face from y 690 to the chin at 1470, the head's top at 570
+    const f = { who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [330, 690, 540, 780] })) };
+    const alone = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: cap });
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(alone.caption.where === "above-head", `without a hook the captions stand ${alone.caption.where}`);
+    ok(r.caption.where === "below-chin" && r.shots[0].lift > 0 && r.caption.seconds === 0, JSON.stringify(r.caption));
+    ok(r.hook && !(inter(r.hook.box, r.caption.box) > 0) && !(r.hook.onFace?.seconds > 0), JSON.stringify(r.hook));
+    ok(r.notes.some((n) => /The captions stand with their middle at [\d.]+ % of the height, not at [\d.]+ %/.test(n)), r.notes.join(" "));
+    const kept = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }], fixed: { y: alone.caption.options.y } });
+    ok(kept.caption.options.y === alone.caption.options.y, JSON.stringify(kept.caption.options));
+  });
+  t("the captions never pay for the hook: a hook already on no face is not given its margin by a smaller type for the whole video (the review's s5: 77 px became 69 px for it), and they give way only to a place that keeps their type", () => {
+    const f = { who: "A", track: Array.from({ length: 41 }, (_, j) => ({ t: +(j / 10).toFixed(2), box: [200 + (j % 7) * 3, 900 + (j % 5) * 4, 680, 900], feat: [200 + 0.18 * 680, 900 + 0.38 * 900, 0.64 * 680, 0.48 * 900] })) };
+    const alone = textOverTime({ zones: Z9, shots: [shot(0, 4, [f])], needs: cap });
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.caption.font === alone.caption.font && r.caption.font === DEFAULTS.caption.font.tall, `type ${r.caption.font} with the hook, ${alone.caption.font} without`);
+    ok(!(r.hook.onFace?.seconds > 0), JSON.stringify(r.hook));
+  });
+  t("text on the hair or the forehead, above the eyes with their brows, is a part of its own, never 'the nose or eyes' (the review of 2026-11-19: a head from y 900 to 1420, its eyes from 1098, captions fixed at 976–1080 were '✗ on the nose or eyes … 3 s'); text that reaches the eyes' top lies on the eyes; with the head's box alone the eyes begin at 15 % of it, not lower than brows go", () => {
+    const box = [300, 900, 480, 520], feat = [386, 1098, 307, 250];
+    const at = (y, f = feat) => textOverTime({ zones: Z9, shots: [shot(0, 3, [{ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box, ...(f ? { feat: f } : {}) })) }])], needs: cap, fixed: { y, font: 60 } });
+    const r = at(1080), s = r.shots[0];
+    ok(s.on.hair === 3 && s.on.nose === 0 && !s.fault && s.hair && !r.conflicts.length, JSON.stringify([s, r.conflicts]));
+    ok(r.notes.some((n) => /Shot 1 .*the captions lie on A's hair or forehead for 3 s, above the eyes, at the height fixed \(--caption-y\)/.test(n)), r.notes.join(" | "));
+    ok(s.touches[0].hair === 3, JSON.stringify(s.touches));
+    // ending a px above the brows' top: the forehead; two px into the eyes: the eyes
+    ok(at(1097).shots[0].on.hair === 3, JSON.stringify(at(1097).shots[0].on));
+    const into = at(1100);
+    ok(into.shots[0].on.nose === 3 && into.shots[0].fault === "nose" && into.conflicts.some((c) => /nose or eyes for 3 s/.test(c)), JSON.stringify([into.shots[0], into.conflicts]));
+    // the box alone: the eyes from 900 + 0.15 × 520 = 978, so 976–1080 reaches them
+    const bare = at(1080, null);
+    ok(bare.shots[0].on.nose === 3 && bare.shots[0].fault === "nose", JSON.stringify(bare.shots[0]));
+    ok(at(976, null).shots[0].on.hair === 3, JSON.stringify(at(976, null).shots[0]));
+    // the command's list names the part
+    const dir = fs.mkdtempSync(path.join(OUT, "hair-")), file = path.join(dir, "shots.json");
+    fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 3, [{ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box, feat })) }])] }));
+    const c = cli("text", dir, "--frame", "9:16", "--shots", file, "--caption-y", "1080", "--font-size", "60");
+    ok(c.status === 0 && /above the eyes, on the hair or forehead of A's face 0–3 s \(3 s, of them the hair or forehead 3 s/.test(c.stdout) && !/✗/.test(c.stdout), c.stdout + c.stderr);
+  });
+  t("a head known by its box alone: captions in the band where its eyes may begin (from 6 % of it down: the brows of a head tipped back) are not said plainly as the hair or forehead: the note says its eyes are not known; above that band they are the hair or forehead; with the eyes known there, the eyes (the coordinator's case: a head from 300 to 1600, captions at 372–480)", () => {
+    const head = (feat) => ({ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box: [240, 300, 600, 1300], ...(feat ? { feat } : {}) })) });
+    const at = (y, feat) => textOverTime({ zones: Z9, shots: [shot(0, 3, [head(feat)])], needs: cap, fixed: { y, font: 62 } });
+    const r = at(480), s = r.shots[0];
+    ok(s.on.hair === 3 && s.on.maybe === 3 && s.touches[0].maybe === 3 && !s.fault && !r.conflicts.length, JSON.stringify([s, r.conflicts]));
+    ok(r.notes.some((n) => /hair or forehead for 3 s, above the eyes of most heads; for 3 s of it where the eyes may begin .*this head is known by its box alone, its eyes are not known; look at those seconds on the sheet, or find the faces with their eyes, nose and mouth/.test(n)), r.notes.join(" | "));
+    // ending above 300 + 0.06 × 1300 = 378: the hair or forehead, plainly
+    const above = at(376);
+    ok(above.shots[0].on.hair === 3 && !above.shots[0].on.maybe && above.notes.some((n) => /hair or forehead for 3 s, above the eyes, at the height/.test(n)), JSON.stringify([above.shots[0].on, above.notes]));
+    // its brows 8 % down, known: the eyes
+    const known = at(480, [380, 404, 320, 500]);
+    ok(known.shots[0].fault === "nose" && known.conflicts.some((c) => /nose or eyes for 3 s/.test(c)), JSON.stringify(known.shots[0]));
+  });
+  t("captions belong below the chin: where a place on the chin or lower lip is had, they never go up onto a forehead, and they do not leave a mouth for a forehead for as long either (a forehead weighs half the eyes, two and a half times a mouth)", () => {
+    // a face shown whole (not raised) that fills the safe box's height: no room above the head; its
+    // forehead from 330 to the eyes at 900, its mouth line at 1245: the captions on its chin
+    const face = (feat) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [300, 330, 480, 1230], feat })) });
+    const chin = textOverTime({ zones: Z9, shots: [shot(0, 4, [face([386, 900, 307, 300])], null)], needs: cap });
+    ok(chin.caption.options.y === safeBottom && chin.shots[0].on.hair === 0 && chin.shots[0].on.mouth === 0 && chin.shots[0].on.nose === 0, JSON.stringify([chin.caption, chin.shots[0].on]));
+    // its mouth lower (the lip line at 1334): every place below the eyes lies on the mouth, at the smallest type too; the forehead is free, and not taken
+    const mouth = textOverTime({ zones: Z9, shots: [shot(0, 4, [face([386, 1000, 307, 380])], null)], needs: cap });
+    ok(mouth.caption.options.y === safeBottom && mouth.shots[0].on.hair === 0 && mouth.shots[0].fault === "mouth", JSON.stringify([mouth.caption, mouth.shots[0]]));
+    // with its mouth that low for a second only, the chin the rest: below, as well
+    const brief = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [300, 330, 480, 1230], feat: i < 10 ? [386, 1000, 307, 380] : [386, 900, 307, 300] })) };
+    const b = textOverTime({ zones: Z9, shots: [shot(0, 4, [brief], null)], needs: cap });
+    ok(b.caption.box[1] > 1000 && b.shots[0].on.hair === 0, JSON.stringify([b.caption, b.shots[0].on]));
+  });
+  t("a hook on the hair or the forehead is mild: a card over the hair of a head that fills the frame lies on no eyes (they begin at the brows' top); with the head's box alone, where the eyes may begin from 15 % of it, the card is said to perhaps reach the brows, and it still comes before a text on the mouth (counted as the eyes it tied with the text, which won)", () => {
+    // best-takes' tight stand-in, not raised: the head from y 200, 1100 px tall; the card at the top ends at y 448
+    const f = (feat) => ({ who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [130, 200, 820, 1100], ...(feat ? { feat } : {}) })) });
+    const run = (feat) => textOverTime({ zones: Z9, shots: [shot(0, 5, [f(feat)])], needs: [...cap, { role: "hook", kind: "card", start: 0, end: 3 }], fixed: { lifts: { 0: 0 } } });
+    const known = run([270, 620, 540, 530]);
+    ok(known.hook.kind === "card" && known.hook.onFace.seconds > 0 && known.hook.onFace.features === 0 && known.conflicts.some((c) => /on the forehead or the hair, never on the eyes, nose or mouth/.test(c)), JSON.stringify([known.hook, known.conflicts]));
+    // the brows' top a px or two below the card's bottom: on no eyes; two px above it: on them
+    const y1 = known.hook.box[1] + known.hook.box[3];
+    ok(run([270, Math.ceil(y1) + 1, 540, 1150 - Math.ceil(y1) - 1]).hook.onFace.features === 0, "a card that ends above the brows");
+    ok(run([270, Math.floor(y1) - 2, 540, 1150 - Math.floor(y1) + 2]).hook.onFace.features > 0, "a card that reaches 2 px into the brows");
+    // the box alone: the eyes perhaps from 200 + 0.15 × 1100 = 365, by the proportions from 618
+    for (const kind of [undefined, "card", "text"]) {
+      const bare = textOverTime({ zones: Z9, shots: [shot(0, 5, [f(null)])], needs: [...cap, { role: "hook", ...(kind ? { kind } : {}), start: 0, end: 3 }], fixed: { lifts: { 0: 0 } } });
+      ok(bare.hook.kind === "card" && bare.hook.where === "top" && bare.hook.onFace.features === 0 && bare.hook.onFace.maybe > 3, `${kind}: ${JSON.stringify(bare.hook)}`);
+      ok(bare.conflicts.some((c) => /never on the nose or mouth; for 3.1 s it reaches more than 6 % down a head known by its box alone, where the eyes of some heads begin .*this head's eyes are not known/.test(c)), bare.conflicts.join(" | "));
+    }
+  });
+  t("the command: text writes text.json and lists every shot; a --lift fixes one shot; a wrong --lift and a shots file without tracks are refused in one sentence", () => {
+    const dir = fs.mkdtempSync(path.join(OUT, "text-")), file = path.join(dir, "shots.json");
+    fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 8, [still([355, 850, 370, 500], 4, 8)])], hook: { start: 0, end: 2.5 } }));
+    let r = cli("text", dir, "--frame", "9:16", "--shots", file, "--text", "caption", "--text", "hook");
+    ok(r.status === 0 && /shot 2 .*raised \d+ px/.test(r.stdout) && /hook: a text/.test(r.stdout), r.stdout + r.stderr);
+    const j = JSON.parse(fs.readFileSync(path.join(dir, "text.json"), "utf8"));
+    ok(j.caption.options.y === safeBottom && j.shots.length === 2, JSON.stringify(j.caption));
+    r = cli("text", dir, "--frame", "9:16", "--shots", file, "--lift", "2:0");
+    ok(r.status === 0 && /shot 2 .*as it stands {2}on the chin/.test(r.stdout) && /not avoidable without a larger lift than the one fixed/.test(r.stdout), r.stdout);
+    r = cli("text", dir, "--frame", "9:16", "--shots", file, "--lift", "5:10");
+    ok(r.status === 1 && r.stderr.trim().split("\n").length === 1 && /--lift is <shot>:<px>/.test(r.stderr), r.stderr);
+    // captions below the safe box, where the apps lay their own text: refused in one sentence
+    r = cli("text", dir, "--frame", "9:16", "--shots", file, "--caption-y", "1750");
+    ok(r.status === 1 && r.stderr.trim().split("\n").length === 1 && /below the safe box's bottom \(y \d+ .*give \d+ or less/.test(r.stderr), r.stderr);
+    fs.writeFileSync(file, JSON.stringify({ shots: [{ start: 0, end: 2, faces: [{ who: "A" }] }] }));
+    r = cli("text", dir, "--frame", "9:16", "--shots", file);
+    ok(r.status === 1 && /"track"/.test(r.stderr), r.stderr);
+  });
+}
+
+console.log("\nLarge type in one area over a placed picture (text --text area): faces over time");
+{
+  const Z9 = askZones("9:16"), C = Z9.centred, bottom = C[1] + C[3], H = 1920, least = bottom - DEFAULTS.area.least * H;
+  // a face held still for a shot: its box and its eyes, nose and mouth (feat)
+  const still = (box, feat, a, b, who = "A") => ({ who, track: Array.from({ length: Math.round((b - a) * 10) + 1 }, (_, i) => ({ t: +(a + i / 10).toFixed(2), box, feat })) });
+  const shot = (a, b, faces, room = { free: 0 }) => ({ start: a, end: b, faces, room });
+  const mouthLine = (feat) => feat[1] + feat[3] * 1.15;
+  const usual = 1025;
+  t("a face high above it: the area stands at the caller's usual top, nothing raised, on no face", () => {
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 5)])], area: { top: usual } });
+    ok(r.area.top === usual && r.area.lower === 0 && r.area.bottom === bottom, JSON.stringify(r.area));
+    ok(r.shots[0].lift === 0 && !r.shots[0].touches.length && !r.conflicts.length, JSON.stringify(r.shots[0]));
+    return `y ${r.area.top}–${r.area.bottom}`;
+  });
+  t("a face whose eyes stand below the area: the type lies on its hair or forehead, said as that, not a fault on the nose or eyes", () => {
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([250, 1300, 580, 600], [350, 1460, 380, 250], 0, 4)], null)], area: { top: usual } });
+    ok(r.shots[0].on.hair >= 3.9 && r.shots[0].on.nose === 0 && !r.shots[0].fault && !r.conflicts.length && r.area.seconds.hair >= 3.9, JSON.stringify([r.shots[0], r.conflicts]));
+    ok(r.notes.some((n) => /the type lies on A's hair or forehead for 4 s, above the eyes/.test(n)), r.notes.join(" | "));
+  });
+  t("a close-up whose mouth reaches into the usual area: the area goes lower, just below the mouth line (an open mouth's room included), before any shot is raised; the chin under it is said, not a fault", () => {
+    const feat = [380, 560, 320, 420];
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [still([250, 250, 580, 900], feat, 0, 5)])], area: { top: usual } });
+    ok(r.area.top >= mouthLine(feat) && r.area.top < mouthLine(feat) + 0.006 * H, `top ${r.area.top}, the mouth line ${mouthLine(feat)}`);
+    ok(r.shots[0].lift === 0 && !r.conflicts.length && r.shots[0].on.chin > 4.9, JSON.stringify(r.shots[0]));
+    ok(r.notes.some((n) => /chin or neck for 5 s, below the mouth/.test(n)) && r.notes.some((n) => /px below its usual top/.test(n)), r.notes.join(" | "));
+    return `lowered ${r.area.lower} px`;
+  });
+  t("a mouth below the smallest area's top: the area at its least (area.least of the height), the shot raised once by its lowest moment as far as the mouth needs (raise full); with raise mouth the eyes stop it at the eye line and what is left is a ✗ that names --raise full", () => {
+    // the eyes at 29 % of the height, the mouth line (an open mouth's room in it) at 65 % and 68 %
+    const feat = (dy) => [380, 560 + dy, 320, 600], box = (dy) => [250, 300 + dy, 580, 1000];
+    const moving = { who: "A", track: Array.from({ length: 41 }, (_, i) => { const dy = i % 10 < 5 ? 0 : 60; return { t: i / 10, box: box(dy), feat: feat(dy) }; }) };
+    const full = areaOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], area: { top: usual }, raise: "full" });
+    near(full.area.top, least, 0.5, "the area's top");
+    near(full.shots[0].lift, Math.ceil(mouthLine(feat(60)) - full.area.top), 1, "lift by the lowest moment");
+    ok(!full.conflicts.length && full.shots[0].on.mouth === 0 && full.shots[0].on.lip === 0, JSON.stringify(full));
+    const mouth = areaOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], area: { top: usual } });
+    near(mouth.shots[0].lift, Math.floor(560 - DEFAULTS.eyeLine * H), 1, "lift as far as the eye line");
+    ok(mouth.shots[0].fault && mouth.conflicts.some((c) => /Shot 1 .*lies on A's (mouth|lower lip).* --raise full/.test(c)), mouth.conflicts.join(" | "));
+    return `raised ${full.shots[0].lift} px (full), ${mouth.shots[0].lift} px (mouth)`;
+  });
+  t("raise mouth names the limit it applied: a head cut by the frame's top already stops no raise for the mouth, the eye line at 27 % does (the review's 4 px said as \"the head kept whole\")", () => {
+    // the head's top above the frame, the eyes' top 3 px below the eye line, the mouth line at 1212 (below the smallest area's top)
+    const feat = [380, 522, 320, 600];
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([250, 100, 580, 1100], feat, 0, 4)])], area: { top: usual } });
+    const s = r.shots[0];
+    ok(s.lift === Math.floor(feat[1] - DEFAULTS.eyeLine * H) && s.limit === "eyeLine", JSON.stringify(s));
+    ok(r.conflicts.some((c) => /as far as the eyes at 27 % of the height allow/.test(c)) && !r.conflicts.some((c) => /head kept whole/.test(c)), r.conflicts.join(" | "));
+    const head = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([250, 100, 580, 1100], feat, 0, 4)])], area: { top: usual }, raise: "head" });
+    ok(head.shots[0].lift === 0 && head.shots[0].limit === "head", JSON.stringify(head.shots[0]));
+    return `raised ${s.lift} px, limit ${s.limit}`;
+  });
+  t("two shots that disagree: one area for both, only the close-up raised; a wide shot shown whole is never raised and its face under the area is a ✗ that offers no \"shown whole\" (room null, as clips writes it), a shot that can be shown whole is offered it", () => {
+    const close = still([250, 380, 580, 960], [380, 700, 320, 420], 4, 9, "B");
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 4)]), shot(4, 9, [close])], area: { top: usual }, raise: "full" });
+    ok(r.shots[0].lift === 0 && r.shots[1].lift > 0 && !r.conflicts.length, JSON.stringify(r.shots.map((s) => [s.lift, s.on])));
+    const whole = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual }, raise: "full" });
+    ok(whole.shots[0].lift === 0 && whole.conflicts.length === 1 && !/--raise/.test(whole.conflicts[0]), whole.conflicts.join(" | "));
+    // (room null, as clips' shots writes a shot shown whole: never "the shot shown whole" as a fix)
+    ok(!/shown whole/.test(whole.conflicts[0]) && /shown whole/.test(areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], { free: 0, ground: 0 })], area: { top: usual }, raise: "full" }).conflicts[0] || ""), whole.conflicts.join(" | "));
+    const asMouth = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual } });
+    ok(asMouth.conflicts.length === 1 && !/--raise/.test(asMouth.conflicts[0]), `a shot that cannot be raised names no raise: ${asMouth.conflicts.join(" | ")}`);
+    return `top ${r.area.top}, raised ${r.shots[1].lift} px`;
+  });
+  t("returns of one close-up stand at one height, that of the one that needs most", () => {
+    const a = still([250, 380, 580, 960], [380, 700, 320, 420], 0, 3), b = still([250, 400, 580, 960], [380, 720, 320, 420], 6, 9);
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 3, [a]), shot(3, 6, [still([390, 250, 300, 380], [450, 390, 180, 180], 3, 6, "B")]), shot(6, 9, [b])], area: { top: usual }, raise: "full" });
+    ok(r.shots[0].lift === r.shots[2].lift && r.shots[0].lift > 0, JSON.stringify(r.shots.map((s) => s.lift)));
+  });
+  t("a face known at one moment is not a face there for one moment: a shot with a single sample and a track evenly sparse (one sample in two seconds, as the review thinned talk-show tracks) count as before, half the gap to their neighbours; only a lone sample in a track dense elsewhere counts briefly; a dense track that stops early counts to the shot's end as before", () => {
+    const box = [200, 300, 680, 1000], feat = [330, 620, 420, 420];
+    const span = (sh) => momentsOf(sh).reduce((n, m) => n + (m.faces.length ? m.dt : 0), 0);
+    near(span(shot(0, 6, [{ who: "A", track: [{ t: 3, box, feat }] }])), 6, 1e-6, "one sample: the shot");
+    near(span(shot(0, 9, [{ who: "A", track: [1, 3, 5, 7, 8.9].map((t) => ({ t, box, feat })) }])), 9, 1e-6, "evenly sparse: the shot, as before");
+    const lone = { who: "A", track: [...still(box, feat, 0, 2).track, { t: 4.5, box, feat }] };
+    near(span(shot(0, 6, [lone])), 3.25 + 0.52, 0.02, "dense to 2 s, a lone sample at 4.5 s: the dense run to halfway (3.25 s), the lone one 0.52 s");
+    near(span(shot(0, 4, [still(box, feat, 0, 2)])), 4, 1e-6, "a dense track that stops at 2 s: to the shot's end, as before");
+    const dense = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still(box, feat, 0, 4)])], area: { top: usual }, raise: "full" });
+    near(dense.shots[0].touches[0].seconds, 4, 0.01, "ten times a second, the whole shot");
+    return "one sample 6 s, evenly sparse 9 s, a lone sample 0.52 s";
+  });
+  t("a picture that grows after it is raised (a push-in, each moment's zoom): the lift is in px of the picture before it grows, enough for the mouth at the zoom, and the eyes and the head's cut said as the picture shows them (the review: the list said 8.7 % less head cut than the short had)", () => {
+    const feat = (dy) => [380, 560 + dy, 320, 600], box = (dy) => [250, 300 + dy, 580, 1000];
+    const track = (zoom) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: box(0), feat: feat(0), ...(zoom ? { zoom } : {}) })) });
+    // (at one top for both: a raise that grows costs fewer px of the picture, and may move the top)
+    const flat = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(0)])], area: { top: usual }, raise: "full", fixed: { top: least } });
+    const grown = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(1.087)])], area: { top: usual }, raise: "full", fixed: { top: least } });
+    near(flat.area.top, grown.area.top, 0.5, "the same area");
+    near(grown.shots[0].lift, Math.ceil(flat.shots[0].lift / 1.087), 1, "the lift before the push-in");
+    ok(!grown.conflicts.length && grown.shots[0].on.mouth === 0 && grown.shots[0].on.lip === 0, JSON.stringify(grown.shots[0]));
+    near(grown.shots[0].eyes * H, 560 - grown.shots[0].lift * 1.087, 2, "the eyes as the picture shows them");
+    near(grown.shots[0].headCut.byLift, flat.shots[0].headCut.byLift, 3, "the head cut as without the zoom, for the same picture on screen");
+    return `raised ${grown.shots[0].lift} px (${flat.shots[0].lift} px without the zoom), the eyes at ${Math.round(grown.shots[0].eyes * 1000) / 10} %`;
+  });
+  t("the eyes at their highest are the eyes' own (the middle of their box, a moment's eye) where the faces have it, else said as the brows' top, the top of the box of eyes, nose and mouth (the review: \"the eyes at 13 %\" where the eye centres stood at 19–25 %); the raise's limits keep that top", () => {
+    const feat = [380, 560, 320, 600], box = [250, 300, 580, 1000];
+    const track = (eye) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat, ...(eye ? { eye } : {}) })) });
+    const own = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(640)])], area: { top: usual }, raise: "full" });
+    const brows = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(0)])], area: { top: usual }, raise: "full" });
+    ok(own.shots[0].lift === brows.shots[0].lift && own.shots[0].lift > 0, "the same raise");
+    ok(own.shots[0].eyesAre === "eyes" && Math.abs(own.shots[0].eyes * H - (640 - own.shots[0].lift)) < 2, JSON.stringify(own.shots[0]));
+    ok(brows.shots[0].eyesAre === "brows" && Math.abs(brows.shots[0].eyes * H - (560 - brows.shots[0].lift)) < 2, JSON.stringify(brows.shots[0]));
+    const r = cli("text", path.join(OUT, "area-eyes"), "--frame", "9:16", "--shots", (fs.writeFileSync(path.join(OUT, "area-eyes.json"), JSON.stringify({ shots: [shot(0, 4, [track(0)])] })), path.join(OUT, "area-eyes.json")), "--text", "area", "--area-top", String(usual), "--raise", "full");
+    ok(/the brows' top from \d+ % of the height \(the eyes a little lower\)/.test(r.stdout), r.stdout);
+    return `the eyes at ${Math.round(own.shots[0].eyes * 100)} %, the brows' top at ${Math.round(brows.shots[0].eyes * 100)} %`;
+  });
+  t("a small raise of one shot wins over smaller type for the whole short (the review's reporter: the type went 120 px lower, a quarter smaller, rather than raise one shot 38 px), and the other tops weighed say the type's size and which shot goes up how far", () => {
+    // 8 s without a face, then 14 s of a close-up whose mouth line stands 60 px below the usual top
+    const feat = [380, usual + 60 - 1.15 * 420, 320, 420], box = [250, feat[1] - 150, 580, 800];
+    const shots = [shot(0, 8, []), shot(8, 22, [still(box, feat, 8, 22)])];
+    const r = areaOverTime({ zones: Z9, shots, area: { top: usual }, raise: "full" });
+    ok(r.area.lower < 15 && r.shots[1].lift > 40 && r.shots[1].lift < 75 && !r.conflicts.length, JSON.stringify([r.area, r.shots[1].lift]));
+    const before = areaOverTime({ zones: Z9, shots, area: { top: usual }, raise: "full", set: { "area.smaller": 1 } });
+    ok(before.area.lower >= 55 && before.shots[1].lift === 0, `the weight of before lowers the type: ${JSON.stringify(before.area)}`);
+    const other = r.candidates.find((c) => c.top > r.area.top + 40);
+    ok(other && other.size < 0.95 && Array.isArray(other.lifts) && r.candidates[0].lifts.some((x) => x.shot === 1 && x.px === r.shots[1].lift), JSON.stringify(r.candidates));
+    return `${r.area.lower} px lower, shot 2 raised ${r.shots[1].lift} px (before: ${before.area.lower} px lower)`;
+  });
+  t("a clip without a face: the usual top, said as no-face", () => {
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [])], area: { top: usual } });
+    ok(r.area.top === usual && r.area.where === "no-face" && !r.notes.length, JSON.stringify(r.area));
+  });
+  t("the command: --text area writes text.json and a list; it stands alone, its top inside what the area may be, its bottom above the apps' text", () => {
+    const dir = path.join(OUT, "area"), shots = path.join(OUT, "area-shots.json");
+    fs.writeFileSync(shots, JSON.stringify({ shots: [shot(0, 4, [still([250, 380, 580, 960], [380, 700, 320, 420], 0, 4)])] }));
+    const r = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--area-top", "1025", "--raise", "full");
+    ok(r.status === 0 && /the type: one area for the clip, x \d+–\d+, y \d+–1440/.test(r.stdout) && /shot 1 .*raised \d+ px/.test(r.stdout) && fs.existsSync(path.join(dir, "text.json")), r.stdout + r.stderr);
+    const both = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--text", "caption");
+    ok(both.status !== 0 && /--text area stands alone/.test(both.stdout + both.stderr), both.stdout + both.stderr);
+    const top = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--top", "1300");
+    ok(top.status !== 0 && /a top of 1300 is outside what the area may be/.test(top.stdout + top.stderr), top.stdout + top.stderr);
+    const low = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--area-bottom", "1600");
+    ok(low.status !== 0 && /--area-bottom 1600 is below the safe box's bottom/.test(low.stdout + low.stderr), low.stdout + low.stderr);
+    const capt = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "caption", "--top", "1100");
+    ok(capt.status !== 0 && /--top belongs to --text area/.test(capt.stdout + capt.stderr), capt.stdout + capt.stderr);
+  });
+}
+
+console.log("\nMaterial beside the speaker (beside): a field for a card, the speaker in a field of its own");
+// =============================================================================================
+// The wide interview of the first use on real footage (1280×720, the face 555,150,180,195) and a
+// card that needs at least 600×340 px, one caption line.
+const WIDE = { source: [1280, 720], face: [555, 150, 180, 195] }, CARD = { min: [600, 340] };
+const beside = (Z, o = {}) => besideSolve({ zones: Z, source: o.source || WIDE.source, face: o.face || WIDE.face, material: o.material || CARD, needs: o.needs || [cap(1)], before: o.before || null, set: o.set || {} });
+const inBox = (o, i, slack = 2.5) => i[0] >= o[0] - slack && i[1] >= o[1] - slack && i[0] + i[2] <= o[0] + o[2] + slack && i[1] + i[3] <= o[1] + o[3] + slack;
+const inSafe = (Z, b) => inBox(Z.safe, b) || (Z.wide && inBox(Z.wide, b));
+const meetsMin = (c, min) => c.material.field[2] >= min[0] - 0.5 && c.material.field[3] >= min[1] - 0.5;
+// what holds for every candidate that passes: the material's field has its size and lies in the
+// safe box, the face lies in the safe box and in the speaker's field, the captions touch neither
+function sane(Z, c, min = CARD.min) {
+  const [W, H] = Z.size, out = [];
+  if (!meetsMin(c, min)) out.push(`the field ${c.material.field} is under ${min}`);
+  if (!inSafe(Z, c.material.field)) out.push(`the field ${c.material.field} leaves the safe box`);
+  if (!inSafe(Z, c.speaker.face)) out.push(`the face ${c.speaker.face} leaves the safe box`);
+  if (!inBox(c.speaker.field, c.faceInFrame[1], 0.5)) out.push(`the face ${c.faceInFrame[1]} leaves its field ${c.speaker.field}`);
+  for (const t of c.text) for (const b of c.faceInFrame) if (inter(t.box, b) > 0) out.push(`the caption ${t.box} lies on ${b}`);
+  if (inter(c.material.field, c.speaker.field) > 0 && c.arrangement !== "pip") out.push("the material's field lies on the speaker's");
+  if (c.speaker.scale > 1.5 + 1e-9) out.push(`the speaker enlarged ${c.speaker.scale}×`);
+  if (!(c.material.field[0] >= 0 && c.material.field[1] >= 0 && c.material.field[0] + c.material.field[2] <= W && c.material.field[1] + c.material.field[3] <= H)) out.push("the field leaves the frame");
+  return out;
+}
+const fitsOf = (r) => r.candidates.map((c) => `${c.fit}${c.side ? ` ${c.side}` : ""} ${c.hard ? "✗" : c.unmet.length ? "–" : "✓"}`).join(", ");
+
+t("each frame gives the arrangement it should first, and every candidate passes with the card's field at its size: 9:16, 4:5 and 1:1 the material above and the speaker as a panel below, the captions on the seam, the circle second; 16:9 the speaker as a column at one side first, the panel below only where the field keeps its size, the circle last. In 9:16 the face is held at 15 % by the 720p source's soft limit (18 % is the usual below a screen), in 4:5 and 1:1 it reaches 18 %", () => {
+  const out = [];
+  for (const [Z, first, n] of [[Z916, "beside-above", 2], [Z45, "beside-above", 2], [Z11, "beside-above", 2], [Z169, "beside-column", 3]]) {
+    const r = beside(Z), c = r.candidates[0];
+    ok(c.fit === first && r.candidates.length === n, `${Z.frame}: ${fitsOf(r)}`);
+    ok(r.candidates.at(-1).fit === "beside-pip", `${Z.frame}: the circle is not last: ${fitsOf(r)}`);
+    for (const k of r.candidates) { ok(!k.hard && !k.unmet.length, `${Z.frame} ${k.fit}: ${JSON.stringify(k.problems)}`); const bad = sane(Z, k); ok(!bad.length, `${Z.frame} ${k.fit}: ${bad.join("; ")}`); }
+    if (c.arrangement === "above") ok(c.captions.where === "seam" && Math.abs(c.captions.box[1] + c.captions.box[3] / 2 - c.seam) < 0.6, `${Z.frame}: the caption is not on the seam: ${JSON.stringify(c.captions)} seam ${c.seam}`);
+    out.push(`${Z.frame} field ${Math.round(c.material.field[2])}×${Math.round(c.material.field[3])}, face ${c.speaker.facePct} %`);
+  }
+  near(beside(Z916).candidates[0].speaker.facePct, 15.3, 0.2, "9:16's face");
+  for (const Z of [Z45, Z11]) near(beside(Z).candidates[0].speaker.facePct, 18, 0.2, `${Z.frame}'s face`);
+  return out.join("; ");
+});
+
+t("a face high in the source (its hairline at 10 px) and one low (its chin at 695 of 720): in every frame the panel or column holds it whole in its field and in the safe box, the captions stay out of the margin above the head, and the arrangement does not change", () => {
+  for (const face of [[555, 10, 180, 195], [555, 500, 180, 195]]) for (const Z of [Z916, Z45, Z11, Z169]) {
+    const r = beside(Z, { face }), c = r.candidates[0];
+    ok(!c.hard && !c.unmet.length, `${Z.frame} face ${face}: ${fitsOf(r)} ${JSON.stringify(c.problems)}`);
+    const bad = sane(Z, c); ok(!bad.length, `${Z.frame} face ${face}: ${bad.join("; ")}`);
+    for (const tx of c.text) ok(!(inter(tx.box, keepOut(c.faceInFrame[1], DEFAULTS)) > 0), `${Z.frame} face ${face}: the caption lies in the head's margin`);
+    ok(c.fit === beside(Z).candidates[0].fit, `${Z.frame} face ${face}: ${c.fit}`);
+  }
+});
+
+t("a face at the source's edge (the upright take's, x 80 of 1080, and a wide take's at x 5): the picture cannot cover its field with the face in the safe box, so it stands smaller or moved with ground beside it, says so, and passes; the face is never cut", () => {
+  const out = [];
+  for (const [source, face] of [[[1080, 1920], [80, 250, 445, 580]], [[1280, 720], [5, 150, 180, 195]]]) for (const Z of [Z916, Z169]) {
+    const r = beside(Z, { source, face }), c = r.candidates[0];
+    ok(!c.hard && !c.unmet.length, `${Z.frame} ${source}: ${JSON.stringify(c.problems)}`);
+    const bad = sane(Z, c); ok(!bad.length, `${Z.frame} ${source}: ${bad.join("; ")}`);
+    ok(!c.problems.some((q) => q.code === "cut"), `${Z.frame} ${source}: the face is cut`);
+    out.push(`${Z.frame} ${source.join("×")}: ${c.fit}, ground ${c.speaker.ground}`);
+    if (c.speaker.ground) ok(c.why.some((w) => /ground beside the speaker/.test(w)), `${Z.frame}: the ground is not said`);
+  }
+  return out.join("; ");
+});
+
+t("a material field that cannot be given is said in one sentence with what can be, and the best candidates come back with their problems (an independent review: a calling skill needs an answer every time; it exited before): 1000×900 in 9:16, 800×700 in 1:1, a panel (shape rect) among them; a card too tall for the panel but not for the circle (600 px of height in 1:1, where the panel keeps the face at 12 % up to 549) gets the circle first, and the note says up to which height the panel keeps the face at 12 %", () => {
+  for (const [frame, min] of [["9:16", "1000x900"], ["1:1", "800x700"]]) {
+    const e = cli("beside", path.join(OUT, "beside-none"), "--frame", frame, "--source", "1280x720", "--face", "555,150,180,195", "--material-min", min, "--text", "caption");
+    const line = e.stdout.split("\n").find((l) => /^note: No arrangement/.test(l)) || "";
+    ok(e.status === 0 && /^note: No arrangement gives the material a field of \d+×\d+ px in .*: the most is \d+×\d+ px .*; ask for a smaller field, or show the material alone for its seconds\.$/.test(line), e.stdout + e.stderr);
+    const res = JSON.parse(fs.readFileSync(path.join(OUT, "beside-none", "placement.json"), "utf8"));
+    ok(res.noField && res.candidates.length && res.candidates.every((c) => c.unmet.includes("material")) && res.candidates.some((c) => c.speaker.shape === "rect"), fitsOf(res));
+  }
+  const r = beside(Z11, { material: { min: [600, 600] } });
+  ok(r.candidates[0].fit === "beside-pip", fitsOf(r));
+  ok(r.notes.some((n) => /holds the face at 12 % .* at most \d+×\d+ px/.test(n)), r.notes.join(" | "));
+  return `1:1, 600×500: ${fitsOf(r)}; ${r.limits.above?.says || "no panel"}`;
+});
+
+t("a picture of fixed size (a 1920×1080 screenshot) gets the largest box of its shape: in 9:16 960×540 above the panel (screen-stacked gave it 828 wide), its scale given; a small one stays at 1.5× of its pixels", () => {
+  const c = beside(Z916, { material: { fixed: [1920, 1080], min: [828, 466] } }).candidates[0];
+  near(c.material.field[2], 960, 0.5, "the width"); near(c.material.field[3], 540, 0.5, "the height"); near(c.material.scale, 0.5, 0.001, "the scale");
+  const small = beside(Z916, { material: { fixed: [320, 180] } }).candidates[0];
+  ok(!small.hard && small.material.scale === 1.5, JSON.stringify(small.material));
+});
+
+t("the change from full-frame: in 16:9 the column keeps the scale the speaker had full-frame (1.5×: the picture is only cut to the column and moved, the face moves across, not up or down); in 9:16 the panel keeps the face where it was across (no sideways jump) and gives the numbers to animate (before and after: scale, left, top, window, face)", () => {
+  const col = beside(Z169, { before: { scale: 1.5, left: 0, top: 0 } }).candidates[0];
+  ok(col.change.face.zoom === 1 && Math.abs(col.change.face.dy) < 1 && /same scale/.test(col.change.says), JSON.stringify(col.change));
+  const up = beside(Z916, { before: { scale: 1.875, left: -650, top: 0, window: [0, 285, 1080, 1350] } }).candidates[0];
+  ok(Math.abs(up.change.face.dx) < 1, JSON.stringify(up.change));
+  for (const k of ["scale", "left", "top", "window", "face"]) ok(up.change.before[k] !== undefined && up.change.after[k] !== undefined, `the change lacks ${k}`);
+  ok(JSON.stringify(up.change.before.window) === "[0,285,1080,1350]" && JSON.stringify(up.change.after.window) === JSON.stringify(up.speaker.field), JSON.stringify(up.change));
+  return `16:9: ${col.change.says}; 9:16: ${up.change.says}`;
+});
+
+t("the column never enlarges the footage past the soft limit to cover itself (an independent review: 1280×570, the face at its top, gave the column at 1.89× first): at 1.5× it stands with ground beside it, and no candidate goes past 1.5×", () => {
+  const r = beside(Z169, { source: [1280, 570], face: [555, 0, 180, 195] });
+  for (const c of r.candidates) ok(c.speaker.scale <= 1.5 + 1e-9, `${c.fit} at ${c.speaker.scale}×`);
+  const col = r.candidates.find((c) => c.arrangement === "column");
+  ok(col.speaker.ground > 0 && !col.hard, JSON.stringify(col.speaker));
+  return fitsOf(r);
+});
+
+t("the circle is judged as a disc, with the margin above a head (an independent review: 724×720 with the face at the footage's left edge had 26 % of the face's box outside the disc and passed; 40 random circles had the head's top outside): its crop stays on the face, ground where the footage ends, and over faces at every edge no circle that passes leaves a face corner or the head's top outside its disc", () => {
+  const inDisc = (c) => { const f = c.faceInFrame[1], b = c.speaker.field, r = b[2] / 2, cx = b[0] + r, cy = b[1] + r, top = f[1] - Math.max(DEFAULTS.free.aboveMin, DEFAULTS.free.above * f[3]); return [[f[0], f[1]], [f[0] + f[2], f[1]], [f[0], f[1] + f[3]], [f[0] + f[2], f[1] + f[3]], [f[0] + f[2] / 2, top]].every(([x, y]) => Math.hypot(x - cx, y - cy) <= r + 1); };
+  const pip = beside(Z916, { source: [724, 720], face: [0, 150, 180, 195] }).candidates.find((c) => c.arrangement === "pip");
+  ok(inDisc(pip) && !pip.hard && pip.speaker.ground > 0, JSON.stringify(pip.speaker));
+  let n = 0;
+  for (const Z of [Z916, Z45, Z169]) for (const face of [[0, 0, 180, 195], [1100, 0, 180, 195], [0, 525, 180, 195], [1100, 525, 180, 195], [555, 0, 180, 195], [400, 300, 300, 420]]) {
+    const c = beside(Z, { face }).candidates.find((k) => k.arrangement === "pip");
+    if (!c.hard) { ok(inDisc(c), `${Z.frame} ${face}: the face leaves the disc: ${JSON.stringify(c.faceInFrame[1])} in ${c.speaker.field}`); n++; }
+    else ok(c.problems.some((q) => q.code === "cut" && /circle/.test(q.what)), `${Z.frame} ${face}: ${JSON.stringify(c.problems)}`);
+  }
+  return `${n} circles pass, all inside their disc`;
+});
+
+t("a panel's picture that cannot cover its field fills it from the middle, not from where the face was full-frame (an independent review: the upright take's picture stood at x 122–765 in the 9:16 panel, 315 px of ground on the right): in 9:16, 4:5 and 1:1 the ground beside it is the same on both sides", () => {
+  const out = [];
+  for (const Z of [Z916, Z45, Z11]) {
+    const c = beside(Z, { source: [1080, 1920], face: [80, 250, 445, 580] }).candidates.find((k) => k.arrangement === "above"), w = c.speaker.window, f = c.speaker.field;
+    const left = w[0] - f[0], right = f[0] + f[2] - (w[0] + w[2]);
+    ok(!c.hard && Math.abs(left - right) <= 1, `${Z.frame}: ground ${Math.round(left)} px left, ${Math.round(right)} px right`);
+    out.push(`${Z.frame} ${Math.round(left)}|${Math.round(right)}`);
+  }
+  return out.join(", ");
+});
+
+t("a picture of fixed size is shown at most at the soft limit of its pixels, and the arrangement that shows it largest comes first (an independent review: --material 400x225 in 9:16 was blown up 2.3–2.4×, every candidate ✗, no word what to do; 1080x1920 put the panel first with a 295×525 field where the circle gives 561×997)", () => {
+  const small = beside(Z916, { material: { fixed: [400, 225] } });
+  for (const c of small.candidates) { ok(!c.hard && c.material.scale <= 1.5 + 1e-9, `${c.fit}: ${c.material.scale}× ${JSON.stringify(c.problems)}`); }
+  const need = beside(Z916, { material: { fixed: [400, 225], min: [800, 400] } });
+  ok(need.notes.some((n) => /^the picture of 400×225 stays sharp up to 600×337 px .*give a larger picture of it, or a smaller --material-min$/.test(n)), need.notes.join(" | "));
+  const tall = beside(Z916, { material: { fixed: [1080, 1920] } }), [a, b] = tall.candidates;
+  ok(a.arrangement === "pip" && a.material.field[2] * a.material.field[3] > 1.5 * b.material.field[2] * b.material.field[3] && /under two thirds as large/.test(b.behind), `${fitsOf(tall)}: ${b.behind}`);
+  return `1080×1920: ${Math.round(a.material.field[2])}×${Math.round(a.material.field[3])} with the circle first`;
+});
+
+t("sharpness in two steps, as b-roll's owner settled it on built videos (beside.faceUpTo=2, beside.wish=0.22, weights.enlarge.softFrom=1.25): the wish holds where the footage stays under 1.25× (4K: 22 %), gives way to as much as stays under it (1080p: 19 % at 1.25×), and the base 18 % holds up to 2×, reported as soft (720p: 18 % at 1.77×, soft); nothing past 2× (a face 60 px tall in 720p: under the base, said). A caller that passes nothing gets what it got before (720p: 15 % at 1.5×)", () => {
+  const BR = { "beside.faceUpTo": 2, "beside.wish": 0.22, "weights.enlarge.softFrom": 1.25 };
+  const at = (source, face) => beside(Z916, { source, face, set: BR }).candidates.find((c) => c.arrangement === "above");
+  const k4 = at([3840, 2160], [1660, 440, 360, 390]), hd = at([1920, 1080], [830, 220, 270, 295]), sd = at([1280, 720], [555, 150, 180, 195]), tiny = at([1280, 720], [600, 150, 55, 60]);
+  near(k4.speaker.facePct, 22, 0.2, "4K"); ok(k4.speaker.scale <= 1.25, `4K at ${k4.speaker.scale}`);
+  near(hd.speaker.scale, 1.25, 0.001, "1080p's scale"); ok(hd.speaker.facePct > 18 && hd.speaker.facePct < 22 && /the wish of 22 % needs the footage at 1\.43×/.test(hd.notes.join(" ")), JSON.stringify(hd.speaker.target));
+  near(sd.speaker.facePct, 18, 0.2, "720p"); ok(sd.problems.some((q) => q.code === "enlarged" && q.level === "soft") && !sd.hard, JSON.stringify(sd.problems));
+  ok(tiny.speaker.scale <= 2 + 1e-9 && tiny.speaker.facePct < 18 && /past 2×/.test(tiny.notes.join(" ")), JSON.stringify([tiny.speaker.scale, tiny.notes]));
+  ok(sd.speaker.target.asked.wish === 22 && sd.speaker.target.given === sd.speaker.facePct && sd.speaker.target.enlargement === 1.77, JSON.stringify(sd.speaker.target));
+  const plain = beside(Z916).candidates[0];
+  near(plain.speaker.facePct, 15.3, 0.2, "nothing passed"); near(plain.speaker.scale, 1.5, 1e-4, "nothing passed, the scale");
+  return `4K ${k4.speaker.facePct} %, 1080p ${hd.speaker.facePct} %, 720p ${sd.speaker.facePct} % at ${sd.speaker.scale}×`;
+});
+
+t("the captions' band comes from captions itself: its area.json (or the six values), or a style it measures by its build; the candidate says which (b-roll's two lines of hormozi are 202 px, the layout skill's own band 234 px)", () => {
+  const dir = path.join(OUT, "beside-band"), area = path.join(OUT, "area.json");
+  fs.writeFileSync(area, JSON.stringify({ left: 192, width: 696, top: 1238, bottom: 1440, size: 96, lines: 2 }));
+  const base = ["--frame", "9:16", "--source", "1080x1920", "--face", "300,500,480,655", "--material-min", "700x330"];
+  const read = () => JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8")).candidates;
+  let r = cli("beside", dir, ...base, "--caption-area", area);
+  ok(r.status === 0, r.stderr); let c = read();
+  ok(c[0].captions.box[3] === 202 && c[0].captions.font === 96 && /area\.json/.test(c[0].captions.band) && c.find((k) => k.arrangement === "pip").captions.box[1] === 1238, JSON.stringify(c[0].captions));
+  r = cli("beside", dir, ...base, "--caption-area", "192,696,1238,1440,96,2");
+  ok(r.status === 0 && read()[0].captions.box[3] === 202 && /six values/.test(read()[0].captions.band), r.stderr);
+  r = cli("beside", dir, ...base, "--text", "caption:2", "--caption-style", "hormozi");
+  ok(r.status === 0 && read()[0].captions.box[3] === 202 && /style hormozi, 2 lines/.test(read()[0].captions.band), r.stderr || JSON.stringify(read()[0].captions));
+  r = cli("beside", dir, ...base, "--text", "caption:2");
+  ok(r.status === 0 && Math.round(read()[0].captions.box[3]) === 234 && /layout skill's own/.test(read()[0].captions.band), JSON.stringify(read()[0].captions));
+  for (const [opt, v, says] of [["--caption-area", "1,2,3", /no caption area|cannot be read/], ["--caption-style", "nosuch", /could not measure the style "nosuch"/]]) { const e = cli("beside", dir, ...base, opt, v); sentence(e, `${opt} ${v}`); ok(says.test(e.stderr), e.stderr); }
+});
+
+t("in 16:9 the column goes to the side from which the speaker looks at the material: a face left of the source's middle looks right, the column stands left; one right of it stands right; one in the middle left, and the reason says it could not tell", () => {
+  const l = beside(Z169, { face: [200, 150, 180, 195] }).candidates[0], r = beside(Z169, { face: [900, 150, 180, 195] }).candidates[0], m = beside(Z169).candidates[0];
+  ok(l.side === "left" && l.looks === "right" && r.side === "right" && r.looks === "left" && m.side === "left" && m.looks === null, `${l.side}/${l.looks} ${r.side}/${r.looks} ${m.side}/${m.looks}`);
+  ok(r.material.field[0] + r.material.field[2] <= r.speaker.field[0] && m.why.some((w) => /tells no look/.test(w)), JSON.stringify([r.material.field, r.speaker.field]));
+});
+
+t("in 16:9 the column's side can be fixed (beside.side) and the captions left where they stand (beside.captions=stay: across the frame's foot, over the column too), as b-roll does it; the material then ends above them; a wrong value is one sentence", () => {
+  const c = beside(Z169, { set: { "beside.side": "right", "beside.captions": "stay" } }).candidates[0];
+  ok(c.fit === "beside-column" && c.side === "right" && c.captions.where === "stay" && Math.abs(c.captions.box[0] + c.captions.box[2] / 2 - 960) < 1 && c.material.field[1] + c.material.field[3] <= c.captions.box[1] - 23 && !c.hard, JSON.stringify([c.side, c.captions, c.material.field, c.problems]));
+  ok(c.why.some((w) => /as asked \(beside\.side\)/.test(w)), c.why.join(" | "));
+  const e = cli("beside", path.join(OUT, "beside-side"), "--frame", "16:9", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--set", "beside.side=up");
+  sentence(e, "beside.side=up"); ok(/look, left or right/.test(e.stderr), e.stderr);
+});
+
+t("speaker.scale, left and top place the footage itself (frame px per footage px, its top left corner in frame px); speaker.host gives the same placement as a transform of the footage filling the frame (as b-roll moves its host): both put the face on the same px", () => {
+  for (const [Z, source, face] of [[Z916, [1280, 720], [555, 150, 180, 195]], [Z169, [1080, 1920], [80, 250, 445, 580]], [Z45, [1920, 1080], [830, 220, 270, 295]]]) for (const c of beside(Z, { source, face }).candidates) {
+    const [W, H] = Z.size, k = Math.max(W / source[0], H / source[1]), ox = (W - k * source[0]) / 2, oy = (H - k * source[1]) / 2, h = c.speaker.host;
+    const viaHost = [h.left + h.scale * (ox + k * face[0]), h.top + h.scale * (oy + k * face[1])], own = [c.speaker.left + c.speaker.scale * face[0], c.speaker.top + c.speaker.scale * face[1]];
+    ok(Math.abs(viaHost[0] - own[0]) < 1 && Math.abs(viaHost[1] - own[1]) < 1 && Math.abs(own[0] - c.speaker.face[0]) < 0.6, `${Z.frame} ${c.fit}: ${viaHost} against ${own}`);
+  }
+});
+
+t("a caller without a face's box passes --face assumed: the usual framing of a talking head (a fifth of the frame tall, in the middle, a third down, as the footage covers the frame), and every candidate says that the box was assumed", () => {
+  const dir = path.join(OUT, "beside-assumed");
+  const r = cli("beside", dir, "--frame", "9:16", "--source", "1080x1920", "--face", "assumed", "--material-min", "600x340", "--text", "caption");
+  ok(r.status === 0 && /^note: the face's box was assumed/m.test(r.stdout), r.stderr || r.stdout);
+  const res = JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8"));
+  ok(JSON.stringify(res.speaker.face) === "[396,448,288,384]" && res.speaker.assumed && res.candidates.every((c) => c.speaker.assumed) && res.candidates[0].why.some((w) => /assumed/.test(w)), JSON.stringify(res.speaker));
+});
+
+t("named platforms give beside their own boxes, as they give every other skill (b-roll builds for reels, or reels and tiktok): reels, tiktok, shorts, reels+tiktok in 9:16 and youtube in 16:9, each with the wide interview and b-roll's close-up; every candidate passes and is sane in those zones; with reels alone the face ends lower and the panel's field is wider than with the usual apps; as pages, the checker for those platforms agrees with the solver on every one", () => {
+  let n = 0;
+  const lower = (Z) => beside(Z, { source: [1080, 1920], face: [300, 500, 480, 655], material: { min: [700, 330] }, needs: [cap(2)] }).candidates[0];
+  ok(lower(askZones("9:16", ["reels"])).speaker.face[1] + lower(askZones("9:16", ["reels"])).speaker.face[3] > lower(Z916).speaker.face[1] + lower(Z916).speaker.face[3] + 30, "reels alone does not let the face end lower");
+  for (const [frame, platforms] of [["9:16", ["reels"]], ["9:16", ["tiktok"]], ["9:16", ["shorts"]], ["9:16", ["reels", "tiktok"]], ["16:9", ["youtube"]]]) {
+    const Z = askZones(frame, platforms);
+    for (const take of [{}, { source: [1080, 1920], face: [300, 500, 480, 655], material: { min: [700, 330] }, needs: [cap(2)] }]) {
+      const r = beside(Z, take);
+      for (const c of r.candidates) {
+        ok(!c.hard && !c.unmet.length, `${platforms} ${c.fit}: ${JSON.stringify(c.problems)}`);
+        const bad = sane(Z, c, take.material?.min || CARD.min); ok(!bad.length, `${platforms} ${c.fit}: ${bad.join("; ")}`);
+        if (!QUICK) {
+          const file = path.join(OUT, `beside-${platforms.join("-")}-${n}.html`);
+          fs.writeFileSync(file, renderBeside(c, r, { page: file }));
+          const cmp = compare(c, checkPage(file, platforms));
+          ok(cmp.verdictAgrees && cmp.agree, `${file}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`);
+        }
+        n++;
+      }
+    }
+  }
+  return `${n} candidates${QUICK ? "" : ", each checked as a page"}`;
+});
+
+if (!QUICK) t("a band from captions is drawn on the page as tall as it is (an independent review: two lines at 96 px were drawn 250 px tall into a 202 px band, ran onto the card, and the checker failed what the solver passed; 78 of 81 disagreements had a caption area): the caller's case and five other caption areas, every candidate's page gets the solver's verdict and findings", () => {
+  const BR = { "beside.faceUpTo": 2, "beside.wish": 0.22, "weights.enlarge.softFrom": 1.25 }, Zrt = askZones("9:16", ["reels", "tiktok"]);
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const areas = [{ left: 180, width: 720, top: 1238, bottom: 1440, size: 96, lines: 2 }];
+  for (let i = 0; i < 5; i++) { const lines = rnd() < 0.5 ? 1 : 2, size = Math.round(60 + 40 * rnd()), bottom = Math.round(1380 + 60 * rnd()), left = Math.round(180 + 40 * rnd()); areas.push({ left, width: 900 - left, top: Math.round(bottom - lines * size * (1.05 + 0.2 * rnd())), bottom, size, lines }); }
+  let n = 0;
+  for (const [k, a] of areas.entries()) {
+    const r = besideSolve({ zones: Zrt, source: [1080, 1920], face: [300, 500, 480, 655], material: { min: [700, 330] }, needs: [cap(2)], set: BR, captionArea: { ...a, from: "test" } });
+    for (const [i, c] of r.candidates.entries()) {
+      const file = path.join(OUT, `beside-area-${k}-${i + 1}.html`);
+      fs.writeFileSync(file, renderBeside(c, r, { page: file }));
+      const cmp = compare(c, checkPage(file, ["reels", "tiktok"]));
+      ok(cmp.verdictAgrees && cmp.agree, `${JSON.stringify(a)} ${c.fit}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`);
+      n++;
+    }
+  }
+  return `${n} pages`;
+});
+
+t("captions that stay in 16:9 (beside.captions=stay) keep the column's face above them, so that solver and checker agree and the caller who asked for it gets a column that passes (an independent review: 720×1280, the face 48,312,636,719, column right: the solver failed text on the face, the checker passed)", () => {
+  let n = 0;
+  for (const [source, face] of [[[720, 1280], [48, 312, 636, 719]], [[1080, 1920], [80, 250, 445, 580]], [[1280, 720], [555, 330, 180, 195]]]) for (const side of ["left", "right"]) {
+    const r = beside(Z169, { source, face, set: { "beside.side": side, "beside.captions": "stay" } }), c = r.candidates.find((k) => k.arrangement === "column");
+    ok(!c.hard && !c.unmet.length && c.faceInFrame[1][1] + c.faceInFrame[1][3] <= c.captions.box[1] - 23, `${source} ${side}: ${JSON.stringify([c.faceInFrame[1], c.captions.box, c.problems])}`);
+    if (!QUICK) { const file = path.join(OUT, `beside-stay-${n}.html`); fs.writeFileSync(file, renderBeside(c, r, { page: file })); const cmp = compare(c, checkPage(file)); ok(cmp.verdictAgrees && cmp.agree, `${source} ${side}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`); }
+    n++;
+  }
+  return `${n} columns`;
+});
+
+t("filling the column counts as the face's base size does: with b-roll's settings (faceUpTo 2, the soft limit 1.25×) a 720p speaker fills the 16:9 column at 1.5×, reported as soft, where it stood at 1.25× with 90 px of ground above and below (an independent review); without them it fills it at 1.5× as before", () => {
+  const BR = { "beside.faceUpTo": 2, "beside.wish": 0.22, "weights.enlarge.softFrom": 1.25 };
+  const c = beside(Z169, { set: BR }).candidates.find((k) => k.arrangement === "column"), d = beside(Z169).candidates.find((k) => k.arrangement === "column");
+  ok(c.speaker.scale === 1.5 && c.speaker.ground === 0 && c.problems.some((q) => q.code === "enlarged" && q.level === "soft") && !c.hard, JSON.stringify([c.speaker.scale, c.speaker.window, c.problems]));
+  ok(d.speaker.scale === 1.5 && d.speaker.ground === 0, JSON.stringify(d.speaker.window));
+});
+
+t("a picture of fixed size keeps its own shape in every field, and no field is a sliver: an independent review's input (16:9 for YouTube, 1080×1080, a face 41 % asked for, a 1920×1080 picture, a two-line caption area across the frame's foot) gave the panel's material a field of 1.8×1 px, of shape 1.800", () => {
+  const r = besideSolve({ zones: askZones("16:9", ["youtube"]), source: [1080, 1080], face: [401, 179, 503, 584], material: { fixed: [1920, 1080] }, needs: [cap(2)], set: { "beside.face": 0.41 }, captionArea: { left: 96, width: 1728, bottom: 930, top: 728, size: 96, lines: 2, from: "test" } });
+  for (const c of r.candidates) { const [, , w, h] = c.material.field; ok(Math.abs(w / h / (16 / 9) - 1) < 0.002 && h >= 108 - 0.5, `${c.fit}: ${c.material.field}`); }
+  return r.candidates.map((c) => `${c.fit} ${Math.round(c.material.field[2])}×${Math.round(c.material.field[3])}`).join(", ");
+});
+
+t("a face that moves is held by its hull: the panel holds every moment's box, its size is the usual box's", () => {
+  const moving = [{ t: 0, box: [555, 150, 180, 195] }, { t: 2, box: [610, 190, 180, 195] }, { t: 4, box: [520, 140, 180, 195] }];
+  for (const Z of [Z916, Z169]) {
+    const r = beside(Z, { face: moving }), c = r.candidates[0];
+    ok(!c.hard && !c.unmet.length && r.tracks?.length === 1, `${Z.frame}: ${JSON.stringify(c.problems)}`);
+    for (const m of moving) { const b = [c.left + c.scale * m.box[0], c.top + c.scale * m.box[1], c.scale * m.box[2], c.scale * m.box[3]]; ok(inBox(c.speaker.field, b, 0.5) && inSafe(Z, b), `${Z.frame} at ${m.t} s: ${b}`); }
+  }
+});
+
+t("the face's target is one number (--set beside.face): the b-roll session's upright close-up with a card of 700×330 has its face at 18 % in the panel; at 0.22 it is 22 % and the reason names the target asked for; in 16:9 the column takes it too, and says where the footage gives no more without enlarging past 1.5×; under the 12 % floor it says so in one sentence; over what the panel holds (0.45 in 9:16) or what stays sharp (an independent review: 0.22 from 720p with two caption lines was refused as at most 21 %, 0.21 then gave 15 %) the face gets the most it can and a note says what was asked and what was given", () => {
+  const close = { source: [1080, 1920], face: [80, 250, 445, 580], material: { min: [700, 330] } };
+  near(beside(Z916, close).candidates[0].speaker.facePct, 18, 0.2, "the usual target");
+  const big = beside(Z916, { ...close, set: { "beside.face": 0.22 } }).candidates[0];
+  ok(big.fit === "beside-above" && !big.hard && !big.unmet.length, JSON.stringify(big.problems)); near(big.speaker.facePct, 22, 0.2, "the target asked for");
+  ok(big.why.some((w) => /22 % is the target asked for \(beside\.face; the usual is 18 % below a screen\)/.test(w)), big.why.join(" | "));
+  const col = beside(Z169, { set: { "beside.face": 0.3 } }).candidates[0];
+  ok(col.fit === "beside-column" && col.why.some((w) => /30 % is the target asked for .*no more without enlarging past 1\.5×/.test(w)), col.why.join(" | "));
+  const base = ["--frame", "9:16", "--source", "1080x1920", "--face", "80,250,445,580", "--material-min", "700x330", "--text", "caption", "--set"];
+  const e = cli("beside", path.join(OUT, "beside-face"), ...base, "beside.face=0.1");
+  sentence(e, "beside.face=0.1"); ok(/from 0\.12 .* to 0\.5; 0\.1 is outside that\./.test(e.stderr.trim()) && e.stderr.trim().split("\n").length === 1, e.stderr);
+  const most = beside(Z916, { ...close, set: { "beside.face": 0.45 } }).candidates.find((c) => c.arrangement === "above");
+  ok(most && !most.hard && !most.unmet.length && /a face of 45 % .* was asked for; it is \d+ %: the panel holds no more beside the material's field/.test((most.notes || []).join(" ")) && most.speaker.target.asked.face === 45, JSON.stringify(most?.speaker.target));
+  const sharp = beside(Z916, { needs: [cap(2)], set: { "beside.face": 0.22 } }).candidates[0];
+  ok(sharp.fit === "beside-above" && /it is 15 %: the footage gives no more without enlarging past 1\.5×/.test((sharp.notes || []).join(" ")), JSON.stringify(sharp.notes));
+  return `22 %: face ${big.speaker.faceHeight} px, field ${Math.round(big.material.field[2])}×${Math.round(big.material.field[3])}`;
+});
+
+t("beside's input it cannot use it says in one sentence: no material need, a hook, two faces, a bad --before, an unknown beside.* key (it pointed to defaults.mjs, where beside's own are not)", () => {
+  const dir = path.join(OUT, "beside-bad"), base = ["--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195"];
+  for (const [extra, says] of [[[], /needs what the material needs/], [["--material-min", "600x340", "--text", "hook"], /captions only/], [["--material-min", "600x340", "--face", "100,100,50,50"], /one speaker/], [["--material-min", "600x340", "--before", "1,2"], /--before is scale,left,top/], [["--material-min", "600x340", "--material-ratio", "wide"], /--material-ratio is/], [["--material-min", "600x340", "--set", "beside.facemin=0.1"], /beside's own are beside\.faceMin, .*\(tools\/lib\/beside\.mjs/]]) {
+    const e = cli("beside", dir, ...base, ...extra);
+    sentence(e, extra.join(" ")); ok(says.test(e.stderr), e.stderr);
+  }
+});
+
+t("place.mjs beside writes placement.json, and captions reads it: on the seam centred (9:16), under the material in the column (16:9: --x and --align)", () => {
+  const a = path.join(OUT, "beside-916"), b = path.join(OUT, "beside-169");
+  let r = cli("beside", a, "--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  ok(r.status === 0 && /1\. ✓ beside-above/.test(r.stdout) && fs.existsSync(path.join(a, "placement.json")), r.stderr || r.stdout);
+  r = cli("captions", a, "--candidate", "1");
+  ok(r.status === 0 && /seam/.test(r.stdout) && !/--x/.test(r.stdout), r.stderr || r.stdout);
+  cli("beside", b, "--frame", "16:9", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  r = cli("captions", b, "--candidate", "1");
+  ok(r.status === 0 && /--x 664 /.test(r.stdout) && /--align centre/.test(r.stdout), r.stderr || r.stdout);
+});
+
+t("what page and captions print of a beside candidate names it, never \"[object Object]\" (an independent review: nameOf read the speaker object as a face's number)", () => {
+  const dir = path.join(OUT, "beside-names");
+  cli("beside", dir, "--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  const r = cli("captions", dir, "--candidate", "2");
+  ok(r.status === 0 && /Candidate 2 \(beside-pip/.test(r.stdout) && !/object Object/.test(r.stdout), r.stdout.split("\n")[0]);
+});
+
+// b-roll's settings, as its first builds with beside passed them (branch b-roll-uses-layout)
+const BROLL = ["--set", "beside.wish=0.22", "--set", "beside.faceUpTo=2", "--set", "weights.enlarge.softFrom=1.25"];
+const besideRun = (dir, ...a) => { const r = cli("beside", path.join(OUT, dir), ...a); ok(r.status === 0, r.stderr || r.stdout); return { out: r.stdout, res: JSON.parse(fs.readFileSync(path.join(OUT, dir, "placement.json"), "utf8")) }; };
+
+t("the 16:9 column follows the panel's three figures (b-roll's first builds: a medium shot with beside.wish and beside.faceUpTo but no beside.face gave the column at 1.53×, soft, as the column aimed at 23 % by itself; with beside.face=0.18 1.25× and 18.8 %): without beside.face it is now 1.25× and 18.8 % too, nothing soft, the wish said as given way; with nothing set the column's reason names 18 %, the panel's target", () => {
+  const base = ["--frame", "1280x720", "--platform", "youtube", "--source", "1280x720", "--face", "582.8,216,86.4,108", "--material-min", "221x130", "--before", "1,0,0", ...BROLL, "--set", "beside.side=left", "--set", "beside.captions=stay"];
+  const a = besideRun("beside-col-wish", ...base).res.candidates[0], b = besideRun("beside-col-face", ...base, "--set", "beside.face=0.18").res.candidates[0];
+  for (const [what, c] of [["without beside.face", a], ["with beside.face=0.18", b]]) {
+    ok(c.fit === "beside-column" && c.speaker.scale === 1.25 && Math.abs(c.speaker.facePct - 18.8) < 0.1 && !c.soft && !c.hard, `${what}: ${c.fit} ${c.speaker.scale}× ${c.speaker.facePct} % ${JSON.stringify(c.problems)}`);
+    ok(/the wish of 22 % needs the footage at 1\.47×/.test((c.notes || []).join(" ")), `${what}: ${JSON.stringify(c.notes)}`);
+  }
+  const plain = beside(Z169, { source: [1080, 1920], face: [80, 250, 445, 580] }).candidates.find((c) => c.arrangement === "column");
+  ok(plain.why.some((w) => /18 % is the usual below a screen, the panel's target, taken by the column too/.test(w)), plain.why.join(" | "));
+  return `${a.speaker.scale}× ${a.speaker.facePct} %`;
+});
+
+t("captions on the seam stand on the panel's ground: speaker.card is speaker.window cut at the top to the captions' bottom, the face and the margin above the head below it (b-roll's first builds: the window began at the seam, y 795, and the lower caption line lay over the video down to y 896, so b-roll cut its card there itself); speaker.window keeps its meaning; card equals window for the circle, without captions and where they stay; the page shows the picture in the card and the checker agrees", () => {
+  const { res, out } = besideRun("beside-card", "--frame", "1080x1920", "--platform", "reels", "--source", "1080x1920", "--face", "280,700,560,760", "--material-min", "588x346", "--caption-area", "120,840,1298,1500,96,2", "--text", "caption:2", "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18");
+  const c = res.candidates[0], q = c.speaker, capBottom = c.captions.box[1] + c.captions.box[3];
+  ok(c.captions.where === "seam" && q.window[1] === 795 && capBottom === 896, `window ${q.window}, captions ${c.captions.box}`);
+  ok([q.window[0], 896, q.window[2], q.window[1] + q.window[3] - 896].every((v, k) => Math.abs(v - q.card[k]) < 0.11), `card ${q.card} against window ${q.window}`);
+  ok(q.card[1] <= c.faceInFrame[1][1] - Math.max(DEFAULTS.free.aboveMin, DEFAULTS.free.above * c.faceInFrame[1][3]) + 0.5, `the card ${q.card} begins below the head's margin of ${c.faceInFrame[1]}`);
+  ok(/card {6}x 240–840, y 896–1722/.test(out), out);
+  const pip = res.candidates.find((k) => k.arrangement === "pip");
+  ok(JSON.stringify(pip.speaker.card) === JSON.stringify(pip.speaker.window), `the circle's card ${pip.speaker.card}`);
+  for (const [Z, o] of [[Z916, { needs: [] }], [Z169, { set: { "beside.captions": "stay" } }]]) for (const k of beside(Z, o).candidates.filter((x) => x.captions?.where !== "seam")) ok(JSON.stringify(k.speaker.card) === JSON.stringify(k.speaker.window), `${Z.frame} ${k.fit}: card ${k.speaker.card}, window ${k.speaker.window}`);
+  const file = path.join(OUT, "beside-card", "card.html");
+  fs.writeFileSync(file, renderBeside(c, res, { page: file }));
+  ok(fs.readFileSync(file, "utf8").includes(`<div class="clip" style="left:${q.card[0]}px;top:${Math.round((q.card[1] - q.field[1]) * 10) / 10}px;width:${q.card[2]}px;height:${q.card[3]}px">`), "the page does not cut the picture to the card");
+  if (!QUICK) { const cmp = compare(c, checkPage(file, ["reels"])); ok(cmp.verdictAgrees && cmp.agree, `solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`); }
+  return `card ${q.card.join(",")}, window ${q.window.join(",")}`;
+});
+
+t("covering the panel's width holds a face up to 34 % of the frame's height (beside.coverUpTo: the third quartile of published talking heads), over its aim or not; a larger one comes to its aim (b-roll's first builds: 4:5 and 1:1, a close-up without captions, kept the face at 40 % at 1×, twice the 22 % asked for): the picture stands narrower with ground beside it, and the reason says why; with nothing set 18 %. The review of the first fix: ordinary takes keep the full-width panel as on main (9:16 a face at 19.8 %, 16:9 a 1080p wide shot at 20.4 %, both at 1×); a face of 33.5 % covers, one of 35 % comes down", () => {
+  const out = [];
+  for (const [frame, face, min] of [["1080x1350", "337.5,486,405,540", "413x243"], ["1080x1080", "378,388.8,324,432", "330x194"]]) {
+    const c = besideRun("beside-close", "--frame", frame, "--source", frame, "--face", face, "--material-min", min, "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18").res.candidates[0];
+    ok(c.fit === "beside-above" && Math.abs(c.speaker.facePct - 22) < 0.2 && c.speaker.ground > 0 && !c.hard && !c.soft, `${frame}: ${c.speaker.facePct} % ${JSON.stringify(c.problems)}`);
+    ok(c.why.some((w) => /narrower than the panel: covering its width would make the face 40 %/.test(w)), c.why.join(" | "));
+    const w = c.speaker.window, f = c.speaker.field;
+    ok(Math.abs(w[0] - f[0] - (f[0] + f[2] - w[0] - w[2])) <= 1, `${frame}: the picture off the middle: ${w}`);
+    const plain = besideRun("beside-close", "--frame", frame, "--source", frame, "--face", face, "--material-min", min).res.candidates[0];
+    ok(Math.abs(plain.speaker.facePct - 18) < 0.2, `${frame} with nothing set: ${plain.speaker.facePct} %`);
+    out.push(`${frame} ${c.speaker.facePct} %`);
+  }
+  const just = beside(Z45, { source: [1080, 1350], face: [415, 500, 250, 250], needs: [] }).candidates[0];
+  ok(just.speaker.scale === 1 && just.speaker.ground === 0, `a face 1 % over its aim: ${just.speaker.scale}× ground ${just.speaker.ground}`);
+  const r1 = besideRun("beside-ordinary", "--frame", "9:16", "--source", "1080x1920", "--face", "390,500,300,380", "--material-min", "700x330", "--text", "caption:2", "--caption-area", "180,720,1238,1440,96,2").res.candidates.find((k) => k.arrangement === "above");
+  ok(r1.speaker.scale === 1 && r1.speaker.window[2] === 1080 && r1.speaker.facePct === 19.8 && !r1.speaker.ground, `9:16 at 19.8 %: ${r1.speaker.scale}× ${r1.speaker.window} ${r1.speaker.facePct} %`);
+  const r2 = besideRun("beside-ordinary", "--frame", "16:9", "--source", "1920x1080", "--face", "830,220,170,220", "--material-min", "600x340").res.candidates.find((k) => k.arrangement === "above");
+  ok(r2.speaker.scale === 1 && r2.speaker.window[2] === 1920 && r2.speaker.facePct === 20.4, `16:9 above at 20.4 %: ${r2.speaker.scale}× ${r2.speaker.window} ${r2.speaker.facePct} %`);
+  for (const [h, pctAt, covers] of [[452, 33.5, true], [473, 35, false]]) {
+    const c = besideRun("beside-edge34", "--frame", "1080x1350", "--source", "1080x1350", "--face", `400,450,300,${h}`, "--material-min", "413x243").res.candidates[0];
+    ok(covers ? c.speaker.scale === 1 && c.speaker.facePct === pctAt && !c.speaker.ground : Math.abs(c.speaker.facePct - 18) < 0.2 && c.speaker.ground > 0 && c.why.some((w) => /over the 34 % up to which a panel covers the width \(beside\.coverUpTo\)/.test(w)), `a face of ${pctAt} % at cover: ${c.speaker.scale}× ${c.speaker.facePct} % ground ${c.speaker.ground}`);
+  }
+  return out.join(", ");
+});
+
+t("a feed's or grid's crop is a note, not a problem (b-roll's first builds showed them as ⚠ a caller cannot act on: the Instagram feed's 4:5 at the material in 9:16, the profile grid's 3:4 at the captions in 1:1, no platform named): in `crops` and the candidate's notes, the mark ✓; and a --face past the source's edge is taken to the edge with a note (it ended the command), one wholly outside is an error", () => {
+  const feed = besideRun("beside-crops", "--frame", "1080x1920", "--source", "1080x1920", "--face", "252,691.2,576,768", "--material-min", "588x346", "--caption-area", "192,696,1238,1440,96,2", "--text", "caption:2", "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18");
+  const c = feed.res.candidates[0];
+  ok(!c.problems.some((q) => q.code === "crop") && c.crops.some((q) => q.of === "material" && /Instagram feed shows 4:5/.test(q.what)) && !c.soft, JSON.stringify([c.problems, c.crops]));
+  ok(/1\. ✓ beside-above/.test(feed.out) && /note: not a problem, a note: the material is 9 % cut where the Instagram feed shows 4:5/.test(feed.out), feed.out);
+  const grid = besideRun("beside-crops", "--frame", "1080x1080", "--source", "1080x1080", "--face", "475.2,324,129.6,162", "--material-min", "330x194", "--caption-area", "54,972,758,960,96,2", "--text", "caption:2", "--before", "1,0,0", ...BROLL, "--set", "beside.face=0.18").res;
+  for (const k of grid.candidates) ok(k.crops.some((q) => q.of === "caption" && /profile grid shows 3:4/.test(q.what)) && !k.problems.some((q) => q.code === "crop") && (k.notes || []).some((n) => /captions are 16 % cut/.test(n)), `${k.fit}: ${JSON.stringify(k.crops)}`);
+  const edge = besideRun("beside-edge", "--frame", "9:16", "--source", "1280x720", "--face", "1200,150,180,195", "--material-min", "600x340", "--text", "caption");
+  ok(/^note: the face's box 1200,150,180,195 reaches past the source of 1280×720: taken as 1200,150,80,195/m.test(edge.out) && JSON.stringify(edge.res.speaker.face) === "[1200,150,80,195]", edge.out.split("\n").slice(0, 4).join(" | "));
+  // (a box cut at a corner keeps the face's size as given: the circle shows two given faces, not two of the cut part)
+  const corner = besideRun("beside-corner", "--frame", "9:16", "--source", "1920x1080", "--face", "1830,1000,180,220", "--material-min", "600x340", "--text", "caption").res;
+  const pip = corner.candidates.find((k) => k.arrangement === "pip"), panel = corner.candidates.find((k) => k.arrangement === "above");
+  ok(JSON.stringify(corner.speaker.face) === "[1830,1000,90,80]" && pip.speaker.scale < 0.6 && Math.abs(pip.speaker.crop[2] - 440) < 1 && panel.speaker.faceHeight === Math.round(220 * panel.speaker.scale), `corner: face ${corner.speaker.face}, circle ${pip.speaker.scale}× crop ${pip.speaker.crop}, panel face ${panel.speaker.faceHeight} at ${panel.speaker.scale}×`);
+  const e = cli("beside", path.join(OUT, "beside-edge"), "--frame", "9:16", "--source", "1280x720", "--face", "1300,150,180,195", "--material-min", "600x340");
+  sentence(e, "a face wholly outside"); ok(/lies outside the source of 1280×720/.test(e.stderr), e.stderr);
+  ok(cli("place", path.join(OUT, "place-edge"), "--frame", "9:16", "--source", "1280x720", "--face", "1200,150,180,195").status === 1, "place takes a box past the edge");
+});
+
+if (!QUICK) t("every candidate of beside in every frame, as a page, gets the same verdict and findings from the checker as from the solver (the material's field is marked as something to be seen, the face, the circle and the caption measured by their letters); page takes the speaker's still and the material's picture", () => {
+  let n = 0;
+  for (const Z of [Z916, Z45, Z11, Z169]) for (const face of [WIDE.face, [555, 500, 180, 195]]) {
+    const r = beside(Z, { face });
+    r.candidates.forEach((c, i) => {
+      const file = path.join(OUT, `beside-${Z.frame.replace(":", "-")}-${face[1]}-${i + 1}.html`);
+      fs.writeFileSync(file, renderBeside(c, r, { page: file }));
+      const ch = checkPage(file), faces = ch.boxes.filter((x) => x.kind === "face").length, texts = ch.boxes.filter((x) => x.kind === "text").length;
+      ok(faces === c.faceInFrame.length + (c.circle ? 1 : 0) && texts === c.text.length, `${file}: the checker saw ${faces} faces, ${texts} texts`);
+      const cmp = compare(c, ch);
+      ok(cmp.verdictAgrees && cmp.agree, `${file}: solver only ${cmp.onlySolver}; checker only ${cmp.onlyChecker}`);
+      n++;
+    });
+  }
+  const dir = path.join(OUT, "beside-page"), still = path.join(OUT, "beside-speaker.jpg"), card = path.join(OUT, "beside-card.png");
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720", "-frames:v", "1", still]);
+  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=navy:s=800x450", "-frames:v", "1", card]);
+  cli("beside", dir, "--frame", "9:16", "--source", "1280x720", "--face", "555,150,180,195", "--material-min", "600x340", "--text", "caption");
+  const p = cli("page", dir, "--still", still, "--still", card, "--candidate", "1,2");
+  ok(p.status === 0 && ["candidate-1.png", "candidate-2.png", "still.jpg", "still-2.jpg"].every((f) => fs.existsSync(path.join(dir, f))) && !/They differ/.test(p.stdout), p.stderr || p.stdout);
+  return `${n} pages`;
 });
 
 if (table.length) {
