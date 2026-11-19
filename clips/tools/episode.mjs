@@ -343,7 +343,7 @@ async function correctNames(dir, opts = {}) {
     log(`episode: the names in the words, against the video's page (${NAMES_MODEL}) …`);
     const { answer, cost, usage } = await ask(or, namesPrompt(page, sentences), "names", NAMES_SCHEMA, { model: NAMES_MODEL, isAnswer: isNames, what: "list of names", reasoning: NAMES_REASONING });
     const sources = pageSources(page);
-    const entries = entriesOf(answer, raw, sentences, sources);
+    const entries = entriesOf(answer, raw, sentences, sources, { lang: episode.lang });
     // what the agent decided on the list before stays decided where the same correction comes again
     for (const e of entries) {
       const was = before?.entries?.find((x) => x.taken && x.from === e.from && x.to === e.to);

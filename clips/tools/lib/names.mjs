@@ -251,7 +251,10 @@ function rewrites(from, to) {
   return null;
 }
 
-// What happens to each correction the model found:
+// languages that write every noun with a capital: there a capital letter does not tell a name
+export const NOUNS_CAPITALISED = /^(de|lb|gsw)$/;
+
+// What happens to each place the model pointed to, one entry a place:
 //   refused   the words are not in the sentence as written, the correction would change what was
 //             said (rewrites), a speaker changes inside the words, or they are a name the page
 //             writes so already
@@ -259,10 +262,13 @@ function rewrites(from, to) {
 //             written words are no ordinary word, the right one is a name, more than case or
 //             spacing changes, and the model is sure of it
 //   proposed  everything else: the agent reads the sentence and takes it or not
-// Each correction holds every place the same words are written the same way.
-export function entriesOf(answer, words, sentences, sources) {
+// The same spelling elsewhere, where the model did not point, is never applied: it may be another
+// person or an ordinary word ("Lou Reed" beside "Walker Reed", the noun "Flair" beside the rapper
+// Fler). Each such place is proposed on its own. In a language that capitalises its nouns, a place
+// the model pointed to is only proposed while the same spelling stands elsewhere unpointed.
+export function entriesOf(answer, words, sentences, sources, { lang = null } = {}) {
   const lower = new Set(words.map(core).filter((c) => /^\p{Ll}/u.test(c)).map((c) => c.toLowerCase()));
-  const byKey = new Map(), entries = [];
+  const byKey = new Map(), entries = [], pointed = new Set();
   const refuse = (f, why) => entries.push({ from: f.written, to: f.right, kind: f.kind || "name", why: f.why || "", status: "refused", sure: "refused", refused: why, places: [] });
   for (const f of answer.fixes || []) {
     const s = sentences[f.sentence];
@@ -272,10 +278,21 @@ export function entriesOf(answer, words, sentences, sources) {
       const from = words.slice(at[0], at[1] + 1).map(core);
       const why = rewrites(from, to);
       if (why) { refuse(f, why); continue; }
-      const key = `${from.join(" ")}→${to.join(" ")}`;
+      pointed.add(at[0]);
+      const key = `${at[0]}:${to.join(" ")}`;
       const e = byKey.get(key);
-      if (e) { if (!e.at.some(([x]) => x === at[0])) e.at.push(at); if (f.sure === "high") e.sure = "high"; continue; }
+      if (e) { if (f.sure === "high") e.sure = "high"; continue; }
       byKey.set(key, { ...f, from, to, at: [at] });
+    }
+  }
+  // the same spelling where the model did not point: proposed, a place each
+  const nouns = NOUNS_CAPITALISED.test(String(lang || "").split("-")[0]);
+  for (const e of [...byKey.values()]) {
+    const [a, b] = e.at[0];
+    for (const r of repeats(words, a, b)) {
+      if (pointed.has(r[0]) || byKey.has(`${r[0]}:${e.to.join(" ")}`)) continue;
+      byKey.set(`${r[0]}:${e.to.join(" ")}`, { ...e, at: [r], unpointed: true, sentence: sentenceAt(sentences, r[0]) });
+      if (nouns) e.shared = sentenceAt(sentences, r[0]);
     }
   }
   for (const e of byKey.values()) {
@@ -283,10 +300,7 @@ export function entriesOf(answer, words, sentences, sources) {
     const out = { from: e.from.join(" "), to: e.to.join(" "), kind: e.kind || "name", why: e.why || "", sound: sounds(e.from.join(" "), e.to.join(" ")) };
     if (words.slice(a, b + 1).some((w) => w.speaker !== words[a].speaker)) { refuse(e, "two voices say these words"); continue; }
     if (capital(out.from) && onPage(out.from, sources) && !onPage(out.to, sources)) { refuse(e, "the page writes it so already"); continue; }
-    // every place of the same words, spelled the same
     let places = [...e.at];
-    for (const r of repeats(words, a, b)) if (!places.some(([x]) => x === r[0])) places.push(r);
-    places.sort((x, y) => x[0] - y[0]);
     const source = onPage(out.to, sources);
     // the transcript itself writes the right spelling elsewhere: said, not proof
     const elsewhere = written(words, e.to);
@@ -305,6 +319,8 @@ export function entriesOf(answer, words, sentences, sources) {
     if (plain) why.push(`"${out.from}" is an ordinary word in this transcript`);
     if (!capital(out.to)) why.push(`"${out.to}" is an ordinary word, not a name`);
     if (e.sure !== "high") why.push(`the model is ${e.sure === "low" ? "unsure" : "not quite sure"}`);
+    if (e.unpointed) why.push("the same spelling as a place the model pointed to, but not pointed to here: maybe another name or an ordinary word");
+    if (e.shared != null && !e.unpointed) why.push(`a capitalised word in this language may be a noun, and the same spelling stands unpointed in sentence ${e.shared}`);
     const applied = !why.length || (why.length === 1 && fold(out.from) === fold(out.to) && /[^\x00-\x7f]/.test(out.to) && source);
     entries.push({ ...out, where: source || (e.where === "knowledge" ? "the model's knowledge" : "nowhere on the page"),
       status: applied ? "applied" : "proposed", sure: applied ? "sure" : e.sure === "low" || plain || !capital(out.to) ? "doubtful" : "likely",

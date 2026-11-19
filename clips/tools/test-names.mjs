@@ -78,11 +78,13 @@ test("locate: the written words in their sentence, without case or punctuation",
   assert.equal(locate(TALK.words, TALK.sentences[1], "Reed"), null);
 });
 
-test("applied: the page writes the name, only the spelling differs, every place of the same misspelling", () => {
-  const e = one([fix(0, "Reed", "Reade")]);
+test("applied: the page writes the name, only the spelling differs, at the place the model pointed to; the same spelling elsewhere only proposed", () => {
+  const [e, other] = judged([fix(0, "Reed", "Reade")]);
   assert.equal(e.status, "applied");
   assert.equal(e.where, "its own captions");
-  assert.deepEqual(e.places.map((p) => p.sentence), [0, 4], "the same misspelling in sentence 4 too");
+  assert.deepEqual(e.places.map((p) => p.sentence), [0], "one place an entry");
+  assert.deepEqual([other.status, other.places.map((p) => p.sentence)], ["proposed", [4]]);
+  assert.match(other.because, /not pointed to here/);
   // one word for two: J Lo → JLaw
   assert.equal(one([fix(5, "J Lo", "JLaw")]).status, "applied");
   // the transcript writes "werewolf" in lower case elsewhere (the creature), but the page writes
@@ -93,11 +95,12 @@ test("applied: the page writes the name, only the spelling differs, every place 
   // in lower case, as a live transcription wrote it: applied at the page's phrase only
   const live = episodeOf([["B", "And Robert Eggers' werewolf on December 25th."], ["A", "A werewolf howls."]]);
   const l = entriesOf({ names: [], fixes: [fix(0, "werewolf", "Werwulf")] }, live.words, live.sentences, SOURCES);
-  assert.deepEqual(l.map((x) => [x.status, x.places.map((p) => p.sentence)]), [["applied", [0]]]);
+  assert.deepEqual(l.map((x) => [x.status, x.places.map((p) => p.sentence)]), [["applied", [0]], ["proposed", [1]]]);
   // without the page's words around it, an ordinary word stays proposed
   const bare = entriesOf({ names: [], fixes: [fix(1, "werewolf", "Werwulf")] }, live.words, live.sentences, SOURCES);
-  assert.equal(bare[0].status, "proposed");
-  assert.match(bare[0].because, /"werewolf" is an ordinary word in this transcript/);
+  const own = bare.find((x) => x.places[0].sentence === 1);
+  assert.equal(own.status, "proposed");
+  assert.match(own.because, /"werewolf" is an ordinary word in this transcript/);
 });
 
 test("never an ordinary word made a name, and a name for an ordinary word only proposed", () => {
@@ -112,6 +115,35 @@ test("never an ordinary word made a name, and a name for an ordinary word only p
   assert.equal(word.status, "proposed");
   assert.equal(word.sure, "doubtful");
   assert.match(word.because, /ordinary word, not a name/);
+});
+
+// The reviewer's inputs (clips-names review, 2026-11-19), the sentences and the model's answers as
+// they were: one place pointed to, the same spelling elsewhere meaning another name or a noun
+test("the same spelling where the model did not point is never applied: Lou Reed, An American Werewolf, the noun Flair", () => {
+  const dafoe = episodeOf([
+    ["B", "So in Gonzo Girl you play Walker Reed, a slightly fictionalized Hunter S."],
+    ["B", "This year alone, you can catch him in Robert Eggers' Werewolf on December 25th."],
+    ["A", "I grew up on Lou Reed records."],
+    ["A", "Lou Reed was my hero, and An American Werewolf in London scared me."],
+  ]);
+  const page = pageSources(pageOf({ title: "Willem Dafoe | Hot Ones", description: "Robert Eggers' Werwulf on December 25th." }, ["Reade", "Werwulf"]));
+  const d = entriesOf({ names: [], fixes: [fix(0, "Reed", "Reade"), fix(1, "Werewolf", "Werwulf")] }, dafoe.words, dafoe.sentences, page, { lang: "en" });
+  const applied = applyNames(dafoe.words, d).map((w) => w.text).join(" ");
+  assert.match(applied, /Walker Reade, /);
+  assert.match(applied, /Eggers' Werwulf on/);
+  assert.match(applied, /Lou Reed records\. Lou Reed was/);
+  assert.match(applied, /An American Werewolf in London/);
+  assert.equal(d.filter((e) => e.status === "applied").length, 2);
+  // German: the noun said ("den Flair so ein bisschen") beside the rapper ("mit Flair, Ghetto Sport")
+  const rap = episodeOf([
+    ["A", "dann habe ich halt viel Klamotten gemacht mit Flair äh haben wir damals Ghetto Sport gemacht."],
+    ["D", "Also natürlich auch noch so den Flair so ein bisschen."],
+  ]);
+  const tags = pageSources(pageOf({ title: "Prinz Pi | Hiphop.de Talks", tags: ["Fler", "Kollegah"] }));
+  const g = entriesOf({ names: [], fixes: [fix(0, "mit Flair", "mit Fler")] }, rap.words, rap.sentences, tags, { lang: "de" });
+  assert.equal(g.filter((e) => e.status === "applied").length, 0, "in German the pointed place stays a proposal while the noun's spelling stands unpointed");
+  assert.match(g.find((e) => e.places[0].sentence === 0).because, /may be a noun, and the same spelling stands unpointed in sentence 1/);
+  assert.match(applyNames(rap.words, g).map((w) => w.text).join(" "), /den Flair so/);
 });
 
 test("refused: what would change what was said, and a name already right", () => {
@@ -137,11 +169,11 @@ test("proposed: the model's knowledge, a case alone, a model not sure; the words
   const cased = one([fix(8, "hot ones", "Hot Ones")]);
   assert.equal(cased.status, "proposed");
   assert.match(cased.because, /only the case/);
-  assert.equal(one([fix(0, "Reed", "Reade", "medium")]).status, "proposed");
+  assert.equal(judged([fix(0, "Reed", "Reade", "medium")])[0].status, "proposed");
   // the list counts and names them
   const text = namesListing({ names: NAMES, entries: judged([fix(0, "Reed", "Reade"), fix(2, "Miller", "mother", "low", { kind: "word" }), fix(6, "First We Feast I'm", "First We Feast")]) }, TALK.words);
-  assert.match(text, /1 correction applied, 1 proposed, 1 refused/);
-  assert.match(text, /"Reed" → "Reade" \(its own captions; sure\), 2 places: 0:02 “So in Gonzo Girl you play Walker \[Reed, → Reade\] a fictionalized/);
+  assert.match(text, /1 correction applied, 2 proposed, 1 refused/);
+  assert.match(text, /"Reed" → "Reade" \(its own captions; sure\), 1 place: 0:02 “So in Gonzo Girl you play Walker \[Reed, → Reade\] a fictionalized/);
 });
 
 test("applying keeps the times and the punctuation, merges two words into one, and is undone from the words as written", () => {
@@ -176,7 +208,7 @@ test("a cut clip: its own words where a correction lies get best-takes' fixes, a
   ];
   const r = clipFixes(clip, entries, from);
   assert.deepEqual(r.fixes, { 1: "Reade,", 4: "JLaw", 5: "" });
-  assert.equal(r.missed.length, 1, "the second Reed lies outside these words");
+  assert.equal(r.missed.length, 0, "the second Reed is not applied, so nothing to map");
   // heard as something else entirely: not fixed, named
   const other = clipFixes([{ i: 0, text: "Banana", kind: "word", ...at(reed) }], entries.filter((e) => e.to === "Reade"), from, 2);
   assert.deepEqual(other.fixes, {});
@@ -220,7 +252,7 @@ test("names: applies what is sure, writes the list and the words as written, tak
   const answer = { names: NAMES, fixes: [fix(0, "Reed", "Reade"), fix(2, "Miller", "mother", "low", { kind: "word" }), fix(0, "Reed", "Platin")] };
   const r = await namesWith(dir, answer);
   assert.equal(r.status, 0, r.out + r.err);
-  assert.match(r.out, /1 correction applied, 1 proposed, 1 refused/);
+  assert.match(r.out, /1 correction applied, 2 proposed, 1 refused/);
   assert.match(r.out, /Next: episode\.mjs moments/);
   const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
   assert.deepEqual(read("words.raw.json"), TALK.words);
