@@ -3,7 +3,9 @@
 // screen around it out to the frame's edges above the captions (layout.spread), clipped there
 // (clip-path); a phone's screen and the face fill their box (left, top, width, height),
 // played from the source's own time (data-media-start: the recording's time less the source's
-// offset), muted; in the screen and phone views the webcam beside it in a circle, the same
+// offset), muted; the face view as the layout skill placed it for the keep (placement.mjs: the
+// webcam's picture at its scale, clipped to its window, the blurred screen around it), else
+// covering the frame (layout.cover); in the screen and phone views the webcam beside it in a circle, the same
 // moment, one element for the whole cut (the webcam's track, tracks.mjs) moved into place at each
 // piece. The sound is the main microphone's, cleaned, one track for the whole cut with every
 // take at the common level and 10 ms fades at the cuts (tracks.mjs), through one bus (rumble out,
@@ -17,6 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fit, largest, place, spread, cover, circle } from "./layout.mjs";
+import { geometry } from "./placement.mjs";
 
 const GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js";
 
@@ -54,15 +57,18 @@ function timing(start, duration) {
 }
 
 // The shots of the cut: per piece its view's main video (and the webcam's circle), where it sits.
-// pieces: plan()'s, each with { view, crop } set; sources: { name: { offset, width, height } };
-// a: the frame's areas (layout.areas)
+// pieces: plan()'s, each with { view, crop } set (a face piece: its picture, placement.mjs, where
+// the layout skill placed it); sources: { name: { offset, width, height } }; a: the frame's areas
+// (layout.areas)
 export function shots(pieces, sources, width, height, a) {
   return pieces.map((p) => {
     const out = [];
     const src = sources[p.source];
     if (p.view === "face" || !src) {
       const cam = sources.webcam || src;
-      if (cam) out.push({ source: cam === src ? p.source : "webcam", box: [0, 0, width, height], crop: cover(cam, width, height), main: true });
+      const pic = p.picture && p.picture.fit !== "cover" && sources.webcam ? p.picture : null;
+      if (pic) out.push({ source: "webcam", box: pic.window, at: geometry(pic, sources.webcam), main: true });
+      else if (cam) out.push({ source: cam === src ? p.source : "webcam", box: [0, 0, width, height], crop: cover(cam, width, height), main: true });
     } else {
       // one main layer, or one per part of a piece that spans a scene change, each with its crop
       // and its stretch of the piece's time (the last one up to the piece's end exactly)

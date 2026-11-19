@@ -23,7 +23,7 @@ Every file you read stays in the conversation and slows each later step. So: don
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones` and `captions` skills beside this one, and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the webcam face and the captions' key words, well under a cent, and for the words (ElevenLabs Scribe through agentitos' `transcribe` skill beside this one, about half a cent a minute). Nothing to `npm install`; when something is missing, say so in one sentence.
+Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones`, `captions` and `layout` skills beside this one (layout for the face view), and OpenRouter (`OPENROUTER_API_KEY`, or on a Sprite the gateway's connection, found by itself) for the webcam face and the captions' key words, well under a cent, and for the words (ElevenLabs Scribe through agentitos' `transcribe` skill beside this one, about half a cent a minute). Nothing to `npm install`; when something is missing, say so in one sentence.
 
 ## From the recording to the video
 
@@ -66,7 +66,7 @@ node <skill>/tools/screencast.mjs sheets screencast/<name> --proposal
 - **`"zoom"`:** the part of the screen the words are about and that must be readable, `[x0, y0, x1, y1]` in 0–1 off the sheet's grid (the field being typed in, the answer, the list being picked from). The tool enlarges it as far as the safe area allows (up to twice its pixels) and shows the rest around it, under the apps' buttons too, so a tight box is right: around the content, never the page's empty margins beside it. When what matters moves within a keep, split the keep at that word. No zoom shows the whole screen, small in 9:16.
 - **A phone's screen:** shown whole, `"zoom": "off"`, the phone's bars and the app's buttons included: they show it is the real app on a real phone. With `"circle": false` it takes the whole room. A zoom on a phone only when the person asks for one.
 - **What happens without words** (a box ticked, a button pressed, a result coming in while the person is quiet): a keep by its time, `{"at": "7:01.5-7:06", "zoom": [...], "why": "…"}`, the picture alone. Find the moment with the brief's "moves" column and `frame`.
-- **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for.
+- **`"view"`** only where it is not the screen: `phone-screen` when the words are about the phone, `face` for a sentence or two at most (an opening line, the last words). The screen is what people came for. The build places the face view by where the face is, around the captions, and lists per face keep what it took and the other candidates (✓ passes, ! soft, – the captions find no place clear of the face, ✗ fails): the face nearest the usual size of what passes. Where the picture it took looks small or loose in `frame`, name another of that list on the keep, `"layout": "crop 1:1"` (`"cover"`: the frame covered as before, never where it is ✗). The face is the one found on three frames of the webcam: a face keep where the person leans in or moves far (the sheet shows it) can bring the captions onto the mouth; look at that keep with `frame`.
 - `"label"` where a step title helps ("01 · Upload").
 
 Captions (clean subtitles), the face in a circle, the blurred screen behind the shot and a slow speaker played a little faster come by themselves.

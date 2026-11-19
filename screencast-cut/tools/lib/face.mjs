@@ -1,7 +1,11 @@
 // Where the face is in the webcam's picture, so that the circle and the face view sit on it and
 // not on the picture's middle (a person off to one side, a camera set high). Three moments of the
 // webcam go to a vision model through OpenRouter; the face box is the middle one of its answers,
-// in 0–1 of the picture. Well under a cent; without OpenRouter, null (the middle stays).
+// in 0–1 of the picture (the circle's); `at` is every answer at its moment, where the model gave
+// one for each frame (the face view holds them all: a head that moves). Well under a cent;
+// without OpenRouter, null (the middle stays).
+//
+//   findFace(file, duration) → { face: [x0, y0, x1, y1], at: [{ t, box }] | null } | null
 
 import fs from "node:fs";
 import os from "node:os";
@@ -14,9 +18,10 @@ export const FACE_MODEL = "google/gemini-3.8-flash";
 export async function findFace(file, duration, { log = () => {} } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "face-"));
   try {
-    const images = [0.2, 0.5, 0.8].map((at, i) => {
+    const moments = [0.2, 0.5, 0.8].map((at) => +(duration * at).toFixed(2));
+    const images = moments.map((at, i) => {
       const out = path.join(tmp, `${i}.jpg`);
-      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(+(duration * at).toFixed(2)), "-i", file, "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", out]);
+      execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(at), "-i", file, "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", out]);
       return { type: "image_url", image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(out).toString("base64")}` } };
     });
     const { text, cost } = await chat(FACE_MODEL, [{ role: "user", content: [
@@ -29,11 +34,13 @@ export async function findFace(file, duration, { log = () => {} } = {}) {
       .map((f) => [f.left, f.top, f.right, f.bottom].map((v) => Math.min(1, Math.max(0, v / 1000))))
       .filter(([l, t, r, b]) => r - l > 0.02 && b - t > 0.02);
     if (!faces.length) return null;
+    // one answer per frame, in their order: each at its moment
+    const at = faces.length === moments.length ? faces.map((b, i) => ({ t: moments[i], box: b.map((v) => +v.toFixed(3)) })) : null;
     // the middle answer by where the face's centre is across
     faces.sort((a, b) => a[0] + a[2] - b[0] - b[2]);
     const face = faces[Math.floor(faces.length / 2)].map((v) => +v.toFixed(3));
     log(`webcam: the face at [${face.join(", ")}] (${FACE_MODEL}, $${cost.toFixed(4)})`);
-    return face;
+    return { face, at };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

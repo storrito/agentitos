@@ -66,6 +66,7 @@ import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
+import { layoutTool, placeFace, faceMoments, rankPictures, nameOf, markOf, coverOf } from "./lib/placement.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
@@ -142,7 +143,11 @@ function layoutOf(s, cut = {}) {
 async function faceOfWebcam(dir, meta) {
   const cam = meta.sources.webcam;
   if (!cam?.video || cam.face !== undefined) return;
-  try { cam.face = await findFace(source(dir, cam.file), cam.duration, { log: console.log }); } catch (e) {
+  try {
+    const found = await findFace(source(dir, cam.file), cam.duration, { log: console.log });
+    cam.face = found?.face ?? null;
+    if (found?.at) cam.faceAt = found.at;
+  } catch (e) {
     console.log(`webcam: the face was not found (${e.message.split("\n")[0]}): the circle shows the picture's middle`);
     cam.face = null;
   }
@@ -310,7 +315,7 @@ function joinRecordings(dir, parts) {
     execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", source(dir, `${k}.list.txt`), "-an", "-c", "copy", "-movflags", "+faststart", source(dir, `${k}.mp4`)], { stdio: ["ignore", "ignore", "inherit"] });
     const p = probe(source(dir, `${k}.mp4`));
     sources[k] = { file: `${k}.mp4`, from: having.map((h) => h.src.from).join(" + "), offset: +begins[0].toFixed(3), duration: p.duration, width: first.width, height: first.height,
-      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), sessions: having.map((h) => h.n) };
+      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), ...(first.faceAt ? { faceAt: first.faceAt } : {}), sessions: having.map((h) => h.n) };
     // a recording scaled into the first one's size sits in bars: its boxes moved into them, its
     // grid cells (on its own frame) left out
     const into = (src) => {
@@ -760,6 +765,7 @@ async function cmdBuild(dir, opts) {
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
     if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
+    if (keep.layout !== undefined && (typeof keep.layout !== "string" || !keep.layout.trim())) fail(`✗ keep ${k + 1}: "layout" names how the face view lays the webcam into the frame, as the build lists it ("crop 4:5", "inset", "cover"), or is left out`);
   }
 
   // the pictures that move in a pause: any source but the webcam; a camera among them (the
@@ -893,6 +899,9 @@ async function cmdBuild(dir, opts) {
       ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
+  // the face view: the webcam's picture placed by where its face is (the layout skill), around the
+  // captions as they were just built; each face keep the candidate it names, else the rule's
+  const faceSaid = faceView(dir, cut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null });
   let music = null;
   if (cut.music?.file) {
     if (!fs.existsSync(cut.music.file)) fail(`✗ cut.json "music": there is no ${cut.music.file}`);
@@ -930,6 +939,7 @@ async function cmdBuild(dir, opts) {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
       view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
+      ...(p.picture ? { picture: p.picture } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
@@ -939,6 +949,7 @@ async function cmdBuild(dir, opts) {
   for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
+  for (const line of faceSaid) console.log(line);
   if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
   else if (cut.captions !== false) console.log("No captions: agentitos' captions skill is not beside this one.");
   if (talk.rate) console.log(`Speech: ${talk.rate} syllables a second where someone speaks${s.speed === "auto" ? (speed > 1 ? ` → played at ${speed}× (--speed auto: towards ${TARGET} a second, at most ${MOST}×; --speed 1 as recorded)` : `: fast enough, played as recorded (--speed auto)`) : `; played at ${speed}× (--speed ${s.speed})`}.`);
@@ -950,6 +961,56 @@ async function cmdBuild(dir, opts) {
     console.log(`Pauses on ${k === "phone" ? "the phone's camera" : `the ${k}`}: while speaking ${(m.base * 100).toFixed(2)} % of its picture changes (${m.seconds} s measured${m.enough ? "" : ", too little speech: all of it"}); a pause shows it from ${(m.limit * 100).toFixed(2)} % on, else it is cut. A silent moment worth seeing that it cuts: "pauses": "keep" on its keep, or a keep by its time ("at").`);
   }
   console.log(`Next: ${cmd(`check ${rel(dir)}`)}`);
+}
+
+// The face view of every keep that shows it: the layout skill's candidates for the webcam's picture
+// in this frame (lib/placement.mjs), around the captions' band as captions built it (they stay at
+// the safe box's bottom), for the face the model found on three frames (all three held: a head
+// that moves). A keep takes the candidate it names ("layout": a name of the list, or "cover" for
+// the frame covered from the face as before), else the rule best-takes uses for a person's take:
+// of those that pass (never enlarged past 2×, the captions clear of the face), the face nearest
+// the usual size, up to 34 % of the frame's height. Without a known face the frame is covered as
+// before, and said. Sets each face piece's picture; returns the lines to print.
+function faceView(dir, cut, pieces, sources, { width, height, platforms, area }) {
+  const cam = sources.webcam;
+  const faced = [...new Set(pieces.filter((p) => p.view === "face").map((p) => p.keep))];
+  if (!faced.length || !cam?.video) return [];
+  const span = (k) => { const ps = pieces.filter((p) => p.keep === k); return `${clock(ps[0].start)}–${clock(ps.at(-1).start + ps.at(-1).duration)}`; };
+  const moments = faceMoments(cam);
+  if (!moments.length) {
+    for (const p of pieces) if (p.view === "face") p.picture = { ...coverOf(cam, width, height), mark: "?", why: "the webcam's face is not known" };
+    return [`Face view: the webcam's face is not known (no OpenRouter when new ran), so it covers the frame from the middle as before; ${faced.length === 1 ? "its keep" : `its ${faced.length} keeps`} at ${faced.map(span).join(", ")}.`];
+  }
+  const tool = layoutTool();
+  if (!tool) fail("✗ The face view needs agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
+  let res;
+  try { res = placeFace({ tool, folder: path.join(dir, "placement", "face"), cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms }); } catch (e) { fail(`✗ ${e.message}`); }
+  const hs = moments.map((m) => m.box[3]).sort((a, b) => a - b), usual = hs[hs.length >> 1];
+  const ranked = rankPictures(res.candidates, usual, height);
+  // the frame covered as before, judged by its enlargement only (layout's limits: soft over 1.5×,
+  // too soft over 2×); where it puts the captions on the face is not judged
+  const old = { ...coverOf(cam, width, height), hard: 0, unmet: [], soft: 0, problems: [] };
+  old.face = (usual * old.scale) / height;
+  if (old.scale > 1.5) Object.assign(old, old.scale > 2 ? { hard: 1 } : { soft: 1 }, { problems: [{ level: old.scale > 2 ? "hard" : "soft", of: "picture", what: `the source's pixels are enlarged ${old.scale.toFixed(2)}× (over ${old.scale > 2 ? "2×: too soft to publish" : "1.5×: soft"})` }] });
+  old.problems.push({ level: "info", of: "captions", what: "on the face or not: not judged" });
+  const pct = (v) => `${Math.round(v * 100)} %`;
+  const reason = (x) => [...(x.problems || []).filter((q) => q.level !== "info" || x === old).map((q) => `${q.of} ${q.what}`), ...(x.unmet || []).filter((u) => !(x.problems || []).some((q) => q.of === u)).map((u) => `no place for the ${u}`)].join("; ");
+  const line = (x, taken) => `${markOf(x)} ${nameOf(x)} at ${x.scale}×, the face ${pct(x.face)} of the height${x.ground ? `, ${pct(x.ground)} ground` : ""}${reason(x) ? `: ${reason(x)}` : ""}${taken ? "  ← taken" : ""}`;
+  const said = [`Face view (the layout skill, ${res.captionArea ? "around the captions as built" : "no captions"}; the face on ${moments.length} frame${moments.length > 1 ? "s" : ""} of the webcam, all held): of what passes, the face nearest the usual size (up to ${pct(0.34)} of the height) unless a keep names another with "layout":`];
+  for (const k of faced) {
+    const want = cut.keep[k].layout?.trim();
+    let chosen = ranked[0];
+    if (want === "cover") chosen = old;
+    else if (want) {
+      chosen = ranked.find((x) => nameOf(x) === want);
+      if (!chosen) fail(`✗ keep ${k + 1}: "layout": "${want}" is not among the face view's candidates in this frame: ${[...ranked.map(nameOf), "cover"].map((n) => `"${n}"`).join(", ")}.`);
+    }
+    const pic = { fit: nameOf(chosen), scale: chosen.scale, left: chosen.left, top: chosen.top, window: chosen.window || [0, 0, width, height], mark: markOf(chosen), face: +chosen.face.toFixed(3), ...(want ? { named: true } : {}) };
+    for (const p of pieces) if (p.keep === k && p.view === "face") p.picture = pic;
+    said.push(`  keep ${k + 1} (${span(k)}): ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.face)} of the height${want ? " (as the keep names it)" : chosen === ranked[0] && markOf(chosen) !== "✗" && markOf(chosen) !== "–" ? "" : ": nothing passes"}`);
+  }
+  said.push(`  the candidates (${path.relative(process.cwd(), path.join(dir, "placement", "face", "placement.json"))}):`, ...[...ranked.slice(0, 5), old].map((x) => `    ${line(x, false)}`));
+  return said;
 }
 
 // --------------------------------------------------------------------------------- captions
@@ -1010,6 +1071,12 @@ function cmdCheck(dir) {
   // the end holds
   const lastWord = e.words.at(-1);
   if (lastWord && e.duration - lastWord.end < 1) warnings.push(`the cut ends ${(e.duration - lastWord.end).toFixed(1)} s after its last word: give the end a moment ("hold": 1.5 on the last keep)`);
+
+  // the face view: a picture that fails the layout skill's checks (named by the keep, or nothing passed)
+  for (const k of [...new Set(e.pieces.filter((p) => p.picture && ["✗", "–"].includes(p.picture.mark)).map((p) => p.keep))]) {
+    const pic = e.pieces.find((p) => p.keep === k && p.picture).picture;
+    warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×) ${pic.mark === "✗" ? "fails the layout skill's checks (enlarged over 2×, or the face under the apps' buttons)" : "leaves the captions no place clear of the face"}${pic.named ? ` and is the one the keep names ("layout")` : ": nothing passes"}; the build's list says what does`);
+  }
 
   // the sources are on one clock
   for (const [k, s] of Object.entries(meta.sources)) {
