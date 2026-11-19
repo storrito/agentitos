@@ -1,0 +1,23 @@
+# best-takes: the faces, the picture and the text
+
+`takes.mjs place takes/<name>` lays the frame out against the faces `takes.mjs faces` found, by agentitos' layout, the way clips lays out its framed clips: what it writes (`place.json`, `source/faces.json`) is what clips hands over, so the build, the punch-ins and `check` read the same thing. Read this before you change what it chose.
+
+## What the tool decides
+
+- **The picture, video by video.** A video of the frame's shape (an upright phone take into 9:16, within 15 %) stays as it is, covering the frame. A wider one (a 16:9 interview into 9:16) is placed by layout's `place` from its face over the seconds the cut keeps: the first candidate that passes, usually a crop around the speaker, so that one who stands on a third of the picture is not cut by a centred crop; footage of 720 lines is not enlarged past 2× for it, so the crop is often a square band with a blurred still of the video above and below. The list prints layout's candidates with their marks (✓ passes, ! a soft problem, – a need unmet, ✗ fails).
+- **The captions: one place for the whole cut**, below the chin where there is room (their middle at 60–75 % of the height, as published Shorts set them), the type smaller first where the chin reaches into them, never under 61 px; never on the mouth or the nose and eyes.
+- **A picture raised.** Where a chin would reach into the captions (a phone held close: the face half the frame tall, the chin at three quarters), the picture goes up as far as needed, over a blurred still of the video at the bottom, under the apps' bars: once for the whole video, by its lowest moment. `--raise` sets how far it may go: `mouth` (the default) only while the whole head stays in the frame, and past the head's top only where the captions would else lie on the mouth, never with the eyes above 27 % of the height; `head` never cuts a head (the captions then lie on the chin or lower lip, said); `full` until the chin is clear.
+- **The hook** goes where it lies on no face: a short text below the chin, else above the head, else a card at the top. Where the captions' best place would leave the hook no such place (above a head that fills the frame there is room for one of the two), the captions take their next place and the list says so in a note. Where no place is free at all, the hook goes where it lies on no eyes, nose or mouth (a card on the forehead before a text on the mouth) and the list says `✗ The hook lies on a face`.
+- **The punch-ins** (`--punch on`) grow from where no chin is pushed into the captions; a band over a ground goes closer inside its own edges.
+
+## What to do with the list
+
+- `✗ The hook lies on a face … on the forehead or the hair`: a take filmed this close has no free place for it. Ask the person once whether the video opens without the hook (`build … --hook ""`, then `place`), or keep it on the forehead if they want it. `… on the eyes, nose or mouth`: never keep that; `--hook-kind card` or no hook.
+- `captions on the chin …, below the mouth` and `on the lower lip …: not avoidable at a readable size` are what a close take leaves: nothing to fix. A `✗` on the mouth or the nose is: a smaller type by hand (`--font-size`), `--raise full`, or a cut there.
+- A crop that leaves something out that matters (a second person, a thing held up), or a band the person does not like: `place takes/<name> --picture <candidate>` with another number of the list (`--picture cover` fills the frame from the middle, as the build did before). Look at `placed.sheet.jpg` again after each change.
+- The person says a raise is too much, or the band shows: `--lift <px>` (0: not raised) or `--raise head`. They want the captions higher or smaller: `--caption-y <px>` (where the lowest line ends; the safe box's bottom at most), `--font-size <px>`.
+- Each choice is kept for the next `place`; `""` gives one back to the tool (`--picture ""`). With several videos, name the video: `--picture 02.mp4:3`, `--lift 01.mp4:120`.
+
+## When no model may see the videos
+
+`faces --grid` writes five grid pictures of each video (spread over what the cut keeps; `--grid-at <second>` for one more where the head is clearly higher or lower). Open each and read the face's box off it, as layout's SKILL.md step 2 says: from the hairline to the chin and from cheek to cheek, in px of the video (a bald head: where the hairline would be, as far above the brows as the bottom of the nose is below them). Then `faces --eye <second>:x,y,w,h --eye …` with every box. The tracker follows the face between them in the frames; the eyes, nose and mouth come from the head's proportions. `propose` sends the videos to a model too: then write `cut.json` from the brief yourself.
