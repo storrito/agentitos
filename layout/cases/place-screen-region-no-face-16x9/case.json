@@ -1,0 +1,19 @@
+{
+ "guards": "a 1080p screen region without a face into 16:9 with a caption line",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "16:9",
+   "--source",
+   "1920x1080",
+   "--region",
+   "300,200,1200,700",
+   "--min-text-height",
+   "16",
+   "--text",
+   "caption"
+  ]
+ ]
+}

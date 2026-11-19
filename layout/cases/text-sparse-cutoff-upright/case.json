@@ -1,0 +1,17 @@
+{
+ "guards": "an upright take whose track stops after 12 of 38 s: captions and hook",
+ "from": "a real take of one person talking to the camera (public-domain footage), its track cut off after 12 s",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook"
+  ]
+ ]
+}

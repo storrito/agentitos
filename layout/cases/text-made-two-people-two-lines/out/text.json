@@ -1,0 +1,219 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "TikTok",
+  "YouTube Shorts"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   274.4,
+   696,
+   175.6
+  ],
+  "font": 77,
+  "lines": 2,
+  "align": "center",
+  "least": 61,
+  "middle": 18.9,
+  "where": "above-head",
+  "options": {
+   "y": 450,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 2
+  },
+  "seconds": 5,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 5,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.325,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": [
+    {
+     "role": "caption",
+     "who": "A",
+     "from": 0,
+     "to": 5,
+     "seconds": 5,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "share": 0
+    }
+   ],
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 5
+   },
+   "hair": true
+  },
+  {
+   "shot": 1,
+   "start": 5,
+   "end": 11,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.533,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": []
+  }
+ ],
+ "hook": {
+  "kind": "text",
+  "box": [
+   192,
+   1098,
+   696,
+   238.1
+  ],
+  "font": 96,
+  "lines": 2,
+  "where": "below-chin",
+  "start": 0,
+  "until": 2.5,
+  "kindWhy": "a text: behind it the picture is calm"
+ },
+ "changes": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 5,
+   "box": [
+    192,
+    1264.4,
+    696,
+    175.6
+   ],
+   "saves": 5,
+   "lift": 0
+  }
+ ],
+ "conflicts": [],
+ "notes": [
+  "Shot 1 (0–5 s): the captions stand above A's face, on the hair, for 5 s.",
+  "Shot 1 (0–5 s) would keep its captions off the face with a place of its own (y 1264–1440), saving 5 s: proposed, not taken; a place that changes at a cut costs the reading the one place gives."
+ ],
+ "candidates": [
+  {
+   "box": [
+    192,
+    274.4,
+    696,
+    175.6
+   ],
+   "font": 77,
+   "cost": 95.2,
+   "seconds": 5,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 18.9
+  },
+  {
+   "box": [
+    192,
+    292.7,
+    696,
+    157.3
+   ],
+   "font": 69,
+   "cost": 103.5,
+   "seconds": 5,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 19.3
+  },
+  {
+   "box": [
+    192,
+    308.6,
+    696,
+    141.4
+   ],
+   "font": 62,
+   "cost": 110.8,
+   "seconds": 5,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 19.8
+  },
+  {
+   "box": [
+    192,
+    1298.6,
+    696,
+    141.4
+   ],
+   "font": 62,
+   "cost": 6115.5,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 71.3
+  },
+  {
+   "box": [
+    192,
+    1264.4,
+    696,
+    175.6
+   ],
+   "font": 77,
+   "cost": 120110,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 70.4
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [
+   "reels",
+   "tiktok",
+   "shorts"
+  ],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

@@ -1,0 +1,19 @@
+{
+ "guards": "beside asked for a hook: one sentence that says what it takes instead, exit 1",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "beside",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face",
+   "555,150,180,195",
+   "--material-min",
+   "600x340",
+   "--text",
+   "hook"
+  ]
+ ]
+}

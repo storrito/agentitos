@@ -1,0 +1,192 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   1355.1,
+   696,
+   84.9
+  ],
+  "font": 69,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 72.8,
+  "where": "below-chin",
+  "options": {
+   "y": 1440,
+   "max-width": 696,
+   "font-size": 69,
+   "lines": 1
+  },
+  "seconds": 38,
+  "lifted": 1
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 38.034,
+   "lift": 181,
+   "headCut": {
+    "seconds": 38,
+    "px": 288,
+    "byLift": 181
+   },
+   "eyes": 0.271,
+   "free": 0,
+   "ground": 181,
+   "band": 181,
+   "most": 0,
+   "limit": "mouth",
+   "past": true,
+   "touches": [
+    {
+     "role": "caption",
+     "who": "A",
+     "from": 0,
+     "to": 38,
+     "seconds": 38,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "share": 0.07
+    }
+   ],
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 38
+   },
+   "chin": true
+  }
+ ],
+ "hook": {
+  "kind": "card",
+  "box": [
+   60,
+   250,
+   960,
+   198.4
+  ],
+  "font": 64,
+  "lines": 2,
+  "where": "top",
+  "start": 0,
+  "until": 5,
+  "onFace": {
+   "seconds": 5,
+   "share": 0.16,
+   "features": 0
+  },
+  "kindWhy": "a card at the top: no place clear of the faces' margins, this one lies least on them"
+ },
+ "changes": [],
+ "conflicts": [
+  "The hook lies on a face for 5 s (up to 16 % of it, on the forehead or the hair, never on the eyes, nose or mouth) wherever it stands on the first shot: no hook (the first line carries the clip), a shorter one that ends before the face reaches it, or a start on another shot would avoid it."
+ ],
+ "notes": [
+  "Shot 1 (0–38 s): the captions lie on A's chin or neck for 38 s, below the mouth; raised 181 px past the head's top so that they keep off the mouth."
+ ],
+ "candidates": [
+  {
+   "box": [
+    192,
+    1355.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 2531.5,
+   "seconds": 38,
+   "lifted": 1,
+   "liftPx": 181,
+   "middle": 72.8
+  },
+  {
+   "box": [
+    192,
+    1363.7,
+    696,
+    76.3
+   ],
+   "font": 62,
+   "cost": 2551.2,
+   "seconds": 38,
+   "lifted": 1,
+   "liftPx": 173,
+   "middle": 73
+  },
+  {
+   "box": [
+    192,
+    1345.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 2809.9,
+   "seconds": 38,
+   "lifted": 1,
+   "liftPx": 182,
+   "middle": 72.5
+  },
+  {
+   "box": [
+    192,
+    253.7,
+    696,
+    76.3
+   ],
+   "font": 62,
+   "cost": 41748.8,
+   "seconds": 38,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 15.2
+  },
+  {
+   "box": [
+    192,
+    255.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 96721,
+   "seconds": 38,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 15.5
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

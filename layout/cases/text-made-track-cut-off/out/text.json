@@ -1,0 +1,163 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "TikTok",
+  "YouTube Shorts"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   575.3,
+   696,
+   94.7
+  ],
+  "font": 77,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 32.4,
+  "where": "above-head",
+  "options": {
+   "y": 670,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 1
+  },
+  "seconds": 0,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 10,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.565,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": []
+  }
+ ],
+ "hook": {
+  "kind": "text",
+  "box": [
+   192,
+   313.2,
+   696,
+   238.1
+  ],
+  "font": 96,
+  "lines": 2,
+  "where": "above-head",
+  "start": 0,
+  "until": 2,
+  "kindWhy": "a text: behind it the picture is calm"
+ },
+ "changes": [],
+ "conflicts": [],
+ "notes": [],
+ "candidates": [
+  {
+   "box": [
+    192,
+    575.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 27.6,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 32.4
+  },
+  {
+   "box": [
+    192,
+    585.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 35.3,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 32.7
+  },
+  {
+   "box": [
+    192,
+    593.7,
+    696,
+    76.3
+   ],
+   "font": 62,
+   "cost": 42.1,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 32.9
+  },
+  {
+   "box": [
+    192,
+    805.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 115.6,
+   "seconds": 10,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 44.4
+  },
+  {
+   "box": [
+    192,
+    815.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 123.3,
+   "seconds": 10,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 44.7
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [
+   "reels",
+   "tiktok",
+   "shorts"
+  ],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

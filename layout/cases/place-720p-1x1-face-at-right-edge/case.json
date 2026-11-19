@@ -1,0 +1,17 @@
+{
+ "guards": "a face whose box touches a 720p source's right edge into 1:1",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "1:1",
+   "--source",
+   "1280x720",
+   "--face",
+   "1110,200,170,210",
+   "--text",
+   "caption"
+  ]
+ ]
+}

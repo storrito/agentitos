@@ -1,0 +1,17 @@
+{
+ "guards": "a frame-filling head whose eyes begin high (features known): captions on hair or forehead said as such",
+ "from": "made-up geometry from a layout review (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--raise",
+   "mouth"
+  ]
+ ]
+}

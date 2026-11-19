@@ -1,0 +1,19 @@
+{
+ "guards": "a still face filling the frame under large type (--text area): the area below the mouth",
+ "from": "made-up geometry from a layout review (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "area",
+   "--area-top",
+   "957",
+   "--raise",
+   "full"
+  ]
+ ]
+}

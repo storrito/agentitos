@@ -1,0 +1,21 @@
+$ place.mjs beside out --frame 9:16 --source 1280x720 --face 555,150,180,195 --material-min 600x340 --material-ratio 16:9 --text caption --before 2.6667,-1160,0
+9:16 1080×1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels (no platform named: the usual ones of this frame)
+speaker 1280×720, face x 555–735, y 150–345; material: laid out into its field, at least 600×340 px, of the shape 1.7778:1; text: 1 caption line
+
+1. ✓ beside-above  score 99.17
+   material  field x 60–1020, y 293–833 (960×540, 25 % of the frame); its ground x 0–1080, y 0–954
+   speaker   field x 0–1080, y 954–1920: the footage at 1.5× (left -407.5, top 898.5), shows x 272–992, y 37–681 of it; face x 425–695, y 1124–1416 (293 px, 15 %)
+   card      x 0–1080, y 1021–1920: the window under the captions (speaker.card), so that they stand on the panel's ground
+   caption   seam, x 192–888, y 887–1021, 1 line at 77 px
+   change    from full-frame (2.6667× at -1160, 0): the face moves not across and 610 px down, and becomes 0.56× as large
+   why: no hard problem; the material above, the speaker as a panel below it (what published Shorts do most where a screen and a face show together: usual, not shown to work); the material's field is 960×540 px (25 % of the frame), at least the 600×340 it needs; the speaker's face is 293 px (15 % of the frame's height; 18 % is the usual below a screen), the footage enlarged 1.5×: the footage gives no more without enlarging past 1.5×; the captions on the seam; cost 0.83 (subject +0.83)
+
+2. ✓ beside-pip  score 100
+   material  field x 60–1020, y 293–833 (960×540, 25 % of the frame); its ground x 0–1080, y 0–1920
+   speaker   circle 238 px bottom-left x 60–298, y 1044–1282: the footage at 0.6103× (left -214.6, top 1002.5), shows x 450–840, y 68–458 of it; face x 124–234, y 1094–1213 (119 px, 6 %)
+   caption   below, x 192–888, y 1306–1440, 1 line at 77 px
+   change    from full-frame (2.6667× at -1160, 0): the face moves 381 px to the left and 494 px down, and becomes 0.23× as large
+   why: no hard problem; the material over the frame, the speaker as a circle in its corner (a small picture in or at the screen: the rarer form in published Shorts); the material's field is 960×540 px (25 % of the frame), at least the 600×340 it needs; the speaker's face is 119 px (6 % of the frame's height); the captions at the safe box's bottom; cost 0 (no term); behind the first by the usual order of this frame (above, then pip)
+
+out/placement.json: 2 candidates, 2 without a hard problem and with every need met.
+The order is a suggestion. Look before you choose: place.mjs page out --still <speaker's video|image> [--still <the material as a picture>] writes the first three as pictures and has platform-zones check them; place.mjs captions out --candidate N gives the captions' options.

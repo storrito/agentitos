@@ -677,7 +677,10 @@ test("a phone's upright take stored on its side (rotation 90, −90) or upside d
   fs.writeFileSync(words, JSON.stringify([{ text: "hallo", start: 0.2, end: 0.6, speaker: "A" }]));
   for (const [deg, shown] of [[90, [180, 320]], [270, [180, 320]], [180, [320, 180]]]) {
     const v = path.join(dir, `rot${deg}.mp4`);
-    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", side, "-c", "copy", "-metadata:s:v:0", `rotate=${deg}`, v], { encoding: "utf8" });
+    // ffmpeg 6 and later write a rotation only as the input's display matrix (counter-clockwise),
+    // and ignore the rotate tag that ffmpeg 4 and 5 turn into one (clockwise)
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-display_rotation:v:0", String(-deg), "-i", side, "-c", "copy", v], { encoding: "utf8" });
+    if (r.status !== 0) r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", side, "-c", "copy", "-metadata:s:v:0", `rotate=${deg}`, v], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const p = probe(v);
     assert.deepEqual([p.width, p.height], shown, `rotation ${deg}: the probe`);

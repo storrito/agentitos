@@ -1,0 +1,82 @@
+$ place.mjs place out --frame 4:5 --source 1920x1080 --face 400,200,220,260 --face 1200,220,230,270 --speaker 1 --text caption
+4:5 1080×1350 for Instagram feed post, Facebook feed post, LinkedIn video (no platform named: the usual ones of this frame)
+source 1920×1080, 2 faces (x 400–620, y 200–460; x 1200–1430, y 220–490); text: 1 caption line
+note: no crop that fills the frame holds the faces in the safe box: filling the frame with the faces inside the box takes the source at 1.25× or more (1× of what covers the frame), and there they span 1288×363 px, more than the safe box's 972×1176; they fit the box only up to 0.94×, where the picture no longer fills the frame
+
+1. ✓ crop 4:5 on face 1  scale 1.25 (1× of covering) at left -97.5, top 0  score 100
+   face    x 403–678, y 250–575 (275×325)
+   caption below-chin, x 54–1026, y 1096–1230, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the speaker's face (face 1) is 325 px tall (24 % of the frame's height); the picture fills the frame; cost 0 (no term)
+
+2. ✓ stacked  score 99.989
+   part 1  x 0–1080, y 0–675: source 1 at scale 1.1938, left -68.8, top -144.1
+   part 2  x 0–1080, y 675–1350: source 1 at scale 1.1938, left -1029.8, top 612.2
+   face    x 409–671, y 95–405 (263×310)
+   face    x 403–677, y 875–1197 (275×322)
+   caption seam, x 54–1026, y 608–742, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line seam; the source's pixels are enlarged 1.19×, not over the 1.5× from where it shows; the speaker's face (face 1) is 310 px tall (23 % of the frame's height); the picture fills the frame; cost 0.011 (subject +0.011); behind the first by 0.011 points (subject +0.011)
+
+3. ✓ crop 1:1 on face 1  scale 1 (0.8× of covering) at left 0, top 270  score 96.878
+   picture x 0–1080, y 270–1350, 20 % ground
+   face    x 400–620, y 470–730 (220×260)
+   caption below-chin, x 54–1026, y 1096–1230, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are not enlarged (1×); the speaker's face (face 1) is 260 px tall (19 % of the frame's height); 20 % of the frame is ground; cost 3.122 (ground +2, subject +1.122); behind the first by 3.122 points (ground +2, subject +1.122)
+
+4. ✓ crop 1:1, text on the ground on face 1  scale 1 (0.8× of covering) at left 0, top 0  score 96.878
+   picture x 0–1080, y 0–1080, 20 % ground
+   face    x 400–620, y 200–460 (220×260)
+   caption band-below, x 54–1026, y 1096–1230, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.46× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (1×); the speaker's face (face 1) is 260 px tall (19 % of the frame's height); 20 % of the frame is ground; cost 3.122 (ground +2, subject +1.122); behind the first by 3.122 points (ground +2, subject +1.122)
+
+5. ✓ crop band  scale 0.9375 (0.75× of covering) at left -317.8, top 59.5  score 96.022
+   picture x 0–1080, y 60–1072, 25 % ground
+   face    x 57–264, y 247–491 (206×244)
+   face    x 807–1023, y 266–519 (216×253)
+   caption band-below, x 54–1026, y 1096–1230, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.46× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.94×); the speaker's face (face 1) is 244 px tall (18 % of the frame's height); 25 % of the frame is ground; cost 3.978 (ground +2.5, subject +1.478); behind the first by 3.978 points (ground +2.5, subject +1.478)
+
+6. ! crop 1:1  scale 1 (0.8× of covering) at left -375, top 270  score 94.878
+   picture x 0–1080, y 270–1350, 20 % ground
+   face    x 25–245, y 470–730 (220×260)
+   face    x 825–1055, y 490–760 (230×270)
+   caption below-chin, x 54–1026, y 1096–1230, 1 line at 77 px
+   ! face 1: in the safe box's margin (27 px past the left)
+   ! face 1: 3 % cut where the profile grid shows 3:4
+   ! face 2: in the safe box's margin (27 px past the right)
+   ! face 2: 3 % cut where the profile grid shows 3:4
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are not enlarged (1×); the speaker's face (face 1) is 260 px tall (19 % of the frame's height); 20 % of the frame is ground; soft: face 1 in the safe box's margin (27 px past the left); face 1 3 % cut where the profile grid shows 3:4; face 2 in the safe box's margin (27 px past the right); face 2 3 % cut where the profile grid shows 3:4; cost 5.122 (ground +2, subject +1.122, soft problems +2); behind the first by 5.122 points (ground +2, soft problems +2, subject +1.122)
+
+7. ! crop 1:1, text on the ground  scale 1 (0.8× of covering) at left -375, top 0  score 94.878
+   picture x 0–1080, y 0–1080, 20 % ground
+   face    x 25–245, y 200–460 (220×260)
+   face    x 825–1055, y 220–490 (230×270)
+   caption band-below, x 54–1026, y 1096–1230, 1 line at 77 px
+   ! face 1: in the safe box's margin (27 px past the left)
+   ! face 1: 3 % cut where the profile grid shows 3:4
+   ! face 2: in the safe box's margin (27 px past the right)
+   ! face 2: 3 % cut where the profile grid shows 3:4
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.46× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (1×); the speaker's face (face 1) is 260 px tall (19 % of the frame's height); 20 % of the frame is ground; soft: face 1 in the safe box's margin (27 px past the left); face 1 3 % cut where the profile grid shows 3:4; face 2 in the safe box's margin (27 px past the right); face 2 3 % cut where the profile grid shows 3:4; cost 5.122 (ground +2, subject +1.122, soft problems +2); behind the first by 5.122 points (ground +2, soft problems +2, subject +1.122)
+
+8. ✓ inset  scale 0.5625 (0.45× of covering) at left 0, top 371.3  score 90.844
+   picture x 0–1080, y 371–979, 55 % ground
+   face    x 225–349, y 484–630 (124×146)
+   face    x 675–804, y 495–647 (129×152)
+   caption band-below, x 54–1026, y 1096–1230, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.46× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.56×); the speaker's face (face 1) is 146 px tall (11 % of the frame's height); 55 % of the frame is ground; cost 9.156 (ground +5.5, subject +3.656); behind the first by 9.156 points (ground +5.5, subject +3.656)
+
+9. ✗ full  scale 1.25 (1× of covering) at left -660, top 0  score 0
+   face    x -160–115, y 250–575 (275×325)
+   face    x 840–1128, y 275–613 (288×338)
+   caption below-chin, x 54–1026, y 1096–1230, 1 line at 77 px
+   ✗ face 1: 58 % outside the frame
+   ! face 1: 30 % cut where the profile grid shows 3:4
+   ✗ face 2: 16 % outside the frame
+   ! face 2: 14 % cut where the profile grid shows 3:4
+   why: fails: face 1 58 % outside the frame; face 2 16 % outside the frame; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the speaker's face (face 1) is 325 px tall (24 % of the frame's height); the picture fills the frame; soft: face 1 30 % cut where the profile grid shows 3:4; face 2 14 % cut where the profile grid shows 3:4; cost 1 (soft problems +1); behind the first because it has a hard problem
+
+out/placement.json: 9 candidates, 8 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

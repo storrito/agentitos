@@ -1,0 +1,19 @@
+{
+ "guards": "a 720p source with a face that moves (three moments) into 9:16 with a caption line and a hook",
+ "from": "made-up geometry (made up): a 1280x720 webcam-like face track",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face-track",
+   "track.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook"
+  ]
+ ]
+}

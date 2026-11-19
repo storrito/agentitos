@@ -1,0 +1,19 @@
+{
+ "guards": "large type (kinetic-lyrics' area, top 957, raise full) over a close-up and a medium shot: one area, only the close-up raised",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "area",
+   "--area-top",
+   "957",
+   "--raise",
+   "full"
+  ]
+ ]
+}
