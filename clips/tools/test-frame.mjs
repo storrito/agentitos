@@ -14,6 +14,9 @@ import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speake
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
+// how frames keep their own times in what the tests make: -fps_mode from ffmpeg 5.1 on, -vsync
+// before it (ffmpeg 9 takes -vsync no longer, 4.4 not yet -fps_mode), as lib/cuts.mjs asks
+const SYNC = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=s=16x16:d=0.1", "-fps_mode", "passthrough", "-f", "null", "-"]).status === 0 ? "-fps_mode" : "-vsync";
 const FPS = 25;
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "clips-frame-test-"));
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
@@ -187,10 +190,13 @@ test("an answer of the first kind (one face per shot, the model's own times) sti
 test("the rendered window keeps a moving box inside the frame, at the footage's own timing", { skip: !ffmpeg && "no ffmpeg" }, () => {
   const dir = tmp();
   try {
-    // a white box crossing a black 640×360 picture in 4 s, the picture starting 0.04 s after the sound
+    // a white box crossing a black 640×360 picture in 4 s, the picture starting 0.04 s after the
+    // sound; from the last still on (3.9 s of the clip) the box rests, as the window does: ffmpeg 9
+    // keeps the source's last frames, where an older one doubled the first frame and dropped the
+    // last, in which a box still moving had run on to the window's edge unseen
     const video = path.join(dir, "box.mp4");
     const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=black:s=640x360:r=${FPS}:d=4`, "-f", "lavfi", "-i", `color=c=white:s=40x40:r=${FPS}:d=4`, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
-      "-filter_complex", "[0:v][1:v]overlay=x='40+t*130':y=150,setpts=PTS+0.04/TB,format=yuv420p[v]", "-map", "[v]", "-map", "2:a", "-t", "4.04", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", video], { encoding: "utf8" });
+      "-filter_complex", "[0:v][1:v]overlay=x='40+min(t,3.86)*130':y=150,setpts=PTS+0.04/TB,format=yuv420p[v]", "-map", "[v]", "-map", "2:a", "-t", "4.04", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", video], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const meta = { width: 640, height: 360, fps: FPS };
     const box = (t) => [150 / 3.6, ((40 + t * 130) / 640) * 1000, 190 / 3.6, ((80 + t * 130) / 640) * 1000];
@@ -203,7 +209,7 @@ test("the rendered window keeps a moving box inside the frame, at the footage's 
     const frames = Number(spawnSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", out], { encoding: "utf8" }).stdout);
     near(frames, 101, 1);
     // every frame: the box is in the picture, and not at its left or right edge
-    const g = spawnSync("ffmpeg", ["-v", "error", "-i", out, "-vsync", "passthrough", "-vf", "format=gray", "-f", "rawvideo", "-"], { maxBuffer: 1 << 28 });
+    const g = spawnSync("ffmpeg", ["-v", "error", "-i", out, SYNC, "passthrough", "-vf", "format=gray", "-f", "rawvideo", "-"], { maxBuffer: 1 << 28 });
     const W = 180, H = 320, n = g.stdout.length / (W * H);
     let seen = 0;
     for (let i = 2; i < n; i++) {
@@ -245,7 +251,7 @@ test("footage of a variable frame rate: the cut sits at the frames' own time, no
     // 4 s at 15 frames a second, then 3 s at 30 (the file says 30): the cut is at 4.0 s, frame 60
     const video = path.join(dir, "vfr.mp4");
     const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=15:d=4", "-f", "lavfi", "-i", "smptehdbars=s=320x180:r=30:d=3",
-      "-filter_complex", "[0:v]settb=1/30[a];[1:v]settb=1/30[b];[a][b]concat=n=2:v=1,format=yuv420p[v]", "-map", "[v]", "-vsync", "vfr", "-c:v", "libx264", "-preset", "ultrafast", video], { encoding: "utf8" });
+      "-filter_complex", "[0:v]settb=1/30[a];[1:v]settb=1/30[b];[a][b]concat=n=2:v=1,format=yuv420p[v]", "-map", "[v]", SYNC, "vfr", "-c:v", "libx264", "-preset", "ultrafast", video], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const frames = smallFrames(video);
     assert.equal(frames.times.length, frames.length);

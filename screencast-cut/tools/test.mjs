@@ -894,13 +894,15 @@ test("show's sound is levelled when it is cut: a loud and a quiet clip both come
 
 test("the shown file is converted as the recordings are at new: an HEVC clip with a varying frame rate and a place in its tags becomes H.264 at a steady rate without tags, kept between builds by its size and time; a file ffmpeg cannot convert gives one sentence", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, async () => {
   const { shownVideo } = await import("./lib/show.mjs");
+  // the option's name as the installed ffmpeg takes it (ffmpeg 9 takes -vsync no longer)
+  const { steadyRate } = await import("./lib/media.mjs");
   const hevc = spawnSync("ffmpeg", ["-hide_banner", "-encoders"], { encoding: "utf8" }).stdout.includes("libx265");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "show-convert-"));
   try {
     const src = path.join(dir, "phone clip.mov");
     // frames 0.03 s apart, then 0.1 s apart: a varying rate, as a phone writes it
     assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x568:d=3:r=30", "-f", "lavfi", "-i", "sine=d=3",
-      "-vf", "setpts='if(lt(N,30),N*0.03,0.9+(N-30)*0.1)/TB'", "-vsync", "vfr", "-metadata", "location=+52.5200+013.4050/",
+      "-vf", "setpts='if(lt(N,30),N*0.03,0.9+(N-30)*0.1)/TB'", steadyRate()[0], "vfr", "-metadata", "location=+52.5200+013.4050/",
       "-c:v", hevc ? "libx265" : "libx264", ...(hevc ? ["-x265-params", "log-level=error", "-tag:v", "hvc1"] : []), "-pix_fmt", "yuv420p", "-c:a", "aac", src]).status, 0);
     const streams = (f) => JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", f], { encoding: "utf8" }).stdout);
     const before = streams(src);
