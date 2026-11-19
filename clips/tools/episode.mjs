@@ -333,9 +333,19 @@ async function correctNames(dir, opts = {}) {
     fs.writeFileSync(pageFile, JSON.stringify(page, null, 1));
   }
   const before = fs.existsSync(listFile) ? readJson(listFile) : null;
-  let j;
+  // --take and --leave mean the numbers of the list on disk, the one the agent read; with --also
+  // they are decided there first and carried into the new list
+  const both = (opts.take || []).filter((n) => (opts.leave || []).includes(n));
+  if (both.length) throw new Error(`Correction ${both.join(", ")} is in both --take and --leave: name each in one of them.`);
+  if ((opts.take || opts.leave) && !before) throw new Error(`There is no list of names in ${dir} to take from: episode.mjs names ${dir} first.`);
+  for (const [list, status, taken] of [[opts.take, "applied", "taken"], [opts.leave, "proposed", "left out"]]) for (const n of list || []) {
+    const e = before.entries.find((x) => x.n === n);
+    if (!e) throw new Error(`There is no correction ${n} in the list (1–${before.entries.length}).`);
+    if (e.status === "refused") throw new Error(`Correction ${n} is refused (${e.refused}): it is never applied; a name the tool cannot reach is fixed in the clip's cut.json "fixes".`);
+    Object.assign(e, { status, taken });
+  }
+  let j, lost = [];
   if ((opts.take || opts.leave) && !opts.also) {
-    if (!before) throw new Error(`There is no list of names in ${dir} to take from: episode.mjs names ${dir} first.`);
     j = before;
   } else {
     const or = await openrouter();
@@ -344,28 +354,26 @@ async function correctNames(dir, opts = {}) {
     const { answer, cost, usage } = await ask(or, namesPrompt(page, sentences), "names", NAMES_SCHEMA, { model: NAMES_MODEL, isAnswer: isNames, what: "list of names", reasoning: NAMES_REASONING });
     const sources = pageSources(page);
     const entries = entriesOf(answer, raw, sentences, sources, { lang: episode.lang });
-    // what the agent decided on the list before stays decided where the same correction comes again
-    for (const e of entries) {
-      const was = before?.entries?.find((x) => x.taken && x.from === e.from && x.to === e.to);
-      if (was && e.status !== "refused") Object.assign(e, { status: was.status, taken: was.taken });
+    // what the agent decided on the list before stays decided where the same correction of the
+    // same place comes again; a decision the new list has no place for is said
+    const same = (x, e) => x.from === e.from && x.to === e.to && x.places?.[0]?.first === e.places?.[0]?.first;
+    for (const x of before?.entries?.filter((x) => x.taken) || []) {
+      const e = entries.find((y) => same(x, y));
+      if (e && e.status !== "refused") Object.assign(e, { status: x.status, taken: x.taken });
+      else lost.push(x);
     }
     // the model's own answer stays beside the list: what it found, before the rules decided
     j = { model: NAMES_MODEL, cost: +cost.toFixed(4), usage, names: answer.names, entries, found: answer.fixes };
   }
-  for (const [list, status, taken] of [[opts.take, "applied", "taken"], [opts.leave, "proposed", "left out"]]) for (const n of list || []) {
-    const e = j.entries.find((x) => x.n === n);
-    if (!e) throw new Error(`There is no correction ${n} in the list (1–${j.entries.length}).`);
-    if (e.status === "refused") throw new Error(`Correction ${n} is refused (${e.refused}): it is never applied; a name the tool cannot reach is fixed in the clip's cut.json "fixes".`);
-    Object.assign(e, { status, taken });
-  }
   if (!fs.existsSync(rawFile)) fs.writeFileSync(rawFile, JSON.stringify(raw));
   writeWords(dir, applyNames(raw, j.entries));
   fs.writeFileSync(listFile, JSON.stringify(j, null, 1));
-  return { j, raw, moments: fs.existsSync(path.join(dir, "moments.json")), changed: Boolean(opts.take || opts.leave || before) };
+  return { j, raw, lost, moments: fs.existsSync(path.join(dir, "moments.json")), changed: Boolean(opts.take || opts.leave || before) };
 }
 
-function namesReport(dir, { j, raw, moments: picked, changed }) {
+function namesReport(dir, { j, raw, lost = [], moments: picked, changed }) {
   console.log(namesListing(j, raw));
+  if (lost.length) console.log(`Not in the new list, so not carried over: ${lost.map((x) => `"${x.from}" → "${x.to}" (${x.taken})`).join(", ")}; take it again from the list above if it is there under another number.`);
   const proposed = j.entries.filter((e) => e.status === "proposed").length;
   console.log(`${path.join(dir, "names.json")} lists them with every place ($${(j.cost || 0).toFixed(4)}); the words as written are in ${path.join(dir, "words.raw.json")}. `
     + (proposed ? `Take a proposed one only where the sentence shows the name was said: episode.mjs names ${dir} --take <n>,…; ` : "")

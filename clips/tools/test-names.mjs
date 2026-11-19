@@ -496,3 +496,26 @@ test("clip mapping on a real clip's timings: no place changes any word but the o
   assert.deepEqual(das.fixes, {});
   assert.equal(das.missed[0].why, "the clip heard something else there");
 });
+
+test("names --take with --also: the numbers mean the list the agent read, and a number in --take and --leave is an error", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-names-"));
+  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify({ title: "t", channel: "c", lang: "en" }));
+  fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(TALK.words));
+  fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(PAGE));
+  const first = { names: NAMES, fixes: [fix(0, "Reed", "Reade"), fix(2, "Miller", "mother", "low", { kind: "word" })] };
+  assert.equal((await namesWith(dir, first)).status, 0);
+  const read = () => JSON.parse(fs.readFileSync(path.join(dir, "names.json"), "utf8"));
+  const miller = read().entries.find((e) => e.from === "Miller").n;
+  // the new answer lists something before it, so the numbers move
+  const second = { names: NAMES, fixes: [fix(1, "Werewolf", "Werwulf", "medium"), ...first.fixes] };
+  const r = await namesWith(dir, second, ["--take", String(miller), "--also", "Roz Chast"]);
+  assert.equal(r.status, 0, r.out);
+  const now = read().entries.find((e) => e.from === "Miller");
+  assert.equal(now.status, "applied", "the entry the agent read was taken, whatever its new number");
+  assert.notEqual(now.n, miller);
+  assert.match(fs.readFileSync(path.join(dir, "sentences.txt"), "utf8"), /Why, mother\?/);
+  const both = await namesWith(dir, second, ["--take", "1", "--leave", "1"]);
+  assert.equal(both.status, 1);
+  assert.match(both.out, /^Correction 1 is in both --take and --leave: name each in one of them\.\n$/);
+  fs.rmSync(dir, { recursive: true });
+});
