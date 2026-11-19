@@ -11,7 +11,7 @@ import path from "node:path";
 import http from "node:http";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { pageOf, pageSources, ownTokens, fold, sounds, onPage, locate, entriesOf, applyNames, clipFixes, namesPrompt, namesListing, APPLY_SOUND, REFUSE_SOUND } from "./lib/names.mjs";
+import { pageOf, pageSources, ownTokens, fold, sounds, onPage, locate, entriesOf, applyNames, clipFixes, namesPrompt, namesListing, parts, APPLY_SOUND, REFUSE_SOUND } from "./lib/names.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -465,4 +465,34 @@ test("clips.mjs names: after --take or --leave the clip's fixes follow the list,
   r = names();
   assert.match(r.stdout, /Nothing changed in cut\.json\./);
   fs.rmSync(tmp, { recursive: true });
+});
+
+// ---------------------------------------------------------------- the clip's words, real timings
+test("clip mapping on a real clip's timings: no place changes any word but the one corrected, none is blanked", () => {
+  // the robe passage of Hot Ones: the episode's words (fetch) and the clip's (best-takes) of the
+  // same 45 s; every episode word is taken as a place whose name is its own word spelled otherwise
+  const { from, to, episode, clip } = JSON.parse(fs.readFileSync(path.join(HERE, "test-data", "names-robe-clip.json"), "utf8"));
+  let changed = 0, left = 0;
+  for (const w of episode) {
+    const c = parts(w.text).core;
+    if (!/\p{L}{2}/u.test(c)) continue;
+    const e = [{ n: 1, status: "applied", from: c, to: `${c}h`, places: [{ start: w.start, end: w.end }] }];
+    const r = clipFixes(clip, e, from, to - from);
+    const keys = Object.keys(r.fixes);
+    assert.ok(keys.length <= 1, `"${w.text}" at ${w.start} changed ${keys.length} words`);
+    assert.ok(!Object.values(r.fixes).includes(""), `"${w.text}" blanked a word`);
+    if (!keys.length) { left++; continue; }
+    const got = clip.find((x) => String(x.i) === keys[0]);
+    assert.equal(fold(parts(got.text).core), fold(c), `"${w.text}" at ${w.start} was put on the clip's "${got.text}"`);
+    changed++;
+  }
+  assert.ok(changed > 0.9 * (changed + left), `${changed} mapped, ${left} left`);
+  // the review's cases: a short neighbour that reaches into the place, a word heard otherwise
+  const W = (arr) => arr.map(([text, start, end], i) => ({ i, text, start, end, kind: "word" }));
+  const one = (words, from, to, s, e) => clipFixes(W(words), [{ n: 1, status: "applied", from, to, places: [{ start: 100 + s, end: 100 + e }] }], 100);
+  assert.deepEqual(one([["play", 9.3, 9.6], ["a", 9.7, 10.05], ["Reed,", 10.05, 10.35], ["yes", 10.4, 10.7]], "Reed", "Reade", 10.0, 10.3).fixes, { 2: "Reade," });
+  assert.deepEqual(one([["für", 10.0, 10.2], ["Killer", 10.25, 10.6], ["Maul", 10.6, 10.95], ["zwei?", 10.95, 11.3]], "Killer Maul", "Kill Em All", 10.3, 11.0).fixes, { 1: "Kill Em All", 2: "" });
+  const das = one([["dass", 9.6, 9.9], ["das", 10.0, 10.3], ["geschrieben", 10.3, 10.9]], "Lars", "Laas", 10.0, 10.3);
+  assert.deepEqual(das.fixes, {});
+  assert.equal(das.missed[0].why, "the clip heard something else there");
 });

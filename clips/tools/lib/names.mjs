@@ -426,27 +426,47 @@ export function applyNames(raw, entries) {
 
 // ---------------------------------------------------------------- a cut clip
 // The applied corrections as best-takes' "fixes" for a clip cut from the episode at `from`
-// seconds: the clip's own words (best-takes writes them anew) where a correction's place lies, its
-// first word spelled right, the others of the run left out of the text (""). Where the clip's words
-// there are spelled right already nothing is fixed; where they do not sound like the name (the
-// clip heard something else) the place is `missed`, for the agent to read in the brief.
+// seconds. The clip's own words (best-takes writes them anew, timed and sometimes spelled
+// otherwise) are matched to a correction's place: only words at least half of whose time lies in
+// the place can be it (a short neighbour that reaches 40 ms into it never is), and of those the run
+// of as many words as were written (one more or fewer where the name has another number of words)
+// that sounds most like what the episode wrote or the name (APPLY_SOUND or closer: "das" where the
+// episode heard a name is left alone). Its first word gets the name, the
+// others of that run are left out of the text (""); no other word is touched. Where the clip's
+// words there are the name already nothing is fixed; where no run sounds like it, or two different
+// runs do equally, the clip's words stay as they are and the place is `missed`, for the agent to read.
 export function clipFixes(clipWords, entries, from, length = Infinity) {
   const fixes = {}, found = [], missed = [];
-  const spoken = clipWords.filter((w) => w.kind === "word" || w.kind == null);
+  const spoken = clipWords.filter((w) => w.kind === "word" || w.kind == null).sort((x, y) => x.start - y.start);
+  // how much of a word lies in the place, against the shorter of the two (a word heard a little
+  // longer or later than the episode heard it still lies in its place)
+  const share = (w, t0, t1) => Math.max(0, Math.min(w.end, t1) - Math.max(w.start, t0)) / Math.max(0.02, Math.min(w.end - w.start, t1 - t0)) + 1e-9;
   for (const e of entries) {
     if (e.status !== "applied") continue;
+    const n = Math.max(1, tokens(e.from).length), m = Math.max(1, tokens(e.to).length);
+    const sizes = [...new Set([n, m])];
     for (const p of e.places) {
-      const t0 = p.start - from, t1 = p.end - from;
+      const t0 = p.start - from, t1 = p.end - from, at = +Math.max(0, t0).toFixed(2);
       if (t1 <= 0 || t0 >= length) continue;
-      const run = spoken.filter((w) => w.end > t0 + 0.02 && w.start < t1 - 0.02);
-      if (!run.length) { missed.push({ n: e.n, to: e.to, at: +t0.toFixed(2), heard: "" }); continue; }
-      const heard = run.map(core).join(" ");
-      if (fold(heard) === fold(e.to) && heard.replace(/\s/g, "") === e.to.replace(/\s/g, "")) continue;
-      if (sounds(heard, e.to) < REFUSE_SOUND) { missed.push({ n: e.n, to: e.to, at: +t0.toFixed(2), heard }); continue; }
-      const { lead } = parts(run[0].text), { trail } = parts(run.at(-1).text);
-      fixes[run[0].i] = lead + e.to + trail;
-      for (const w of run.slice(1)) fixes[w.i] = "";
-      found.push({ n: e.n, words: run.map((w) => w.i), heard, to: e.to });
+      const inside = spoken.filter((w) => share(w, t0, t1) >= 0.5);
+      if (!inside.length) { missed.push({ n: e.n, to: e.to, at, heard: "", why: "no word of the clip lies there" }); continue; }
+      const runs = [];
+      for (const k of sizes) for (let i = 0; i + k <= inside.length; i++) {
+        const run = inside.slice(i, i + k);
+        // the run must be words in a row in the clip, nothing between them
+        if (run.some((w, j) => j && spoken.indexOf(w) !== spoken.indexOf(run[j - 1]) + 1)) continue;
+        const heard = run.map(core).join(" ");
+        runs.push({ run, heard, like: Math.max(sounds(heard, e.from), sounds(heard, e.to)) });
+      }
+      runs.sort((x, y) => y.like - x.like);
+      const best = runs[0];
+      if (!best || best.like < APPLY_SOUND) { missed.push({ n: e.n, to: e.to, at, heard: inside.map(core).join(" "), why: "the clip heard something else there" }); continue; }
+      if (runs[1] && runs[1].like === best.like && runs[1].run[0] !== best.run[0]) { missed.push({ n: e.n, to: e.to, at, heard: inside.map(core).join(" "), why: "two of the clip's words fit as well" }); continue; }
+      if (best.heard.replace(/\s/g, "") === e.to.replace(/\s/g, "")) continue;
+      const { lead } = parts(best.run[0].text), { trail } = parts(best.run.at(-1).text);
+      fixes[best.run[0].i] = lead + e.to + trail;
+      for (const w of best.run.slice(1)) fixes[w.i] = "";
+      found.push({ n: e.n, words: best.run.map((w) => w.i), heard: best.heard, to: e.to });
     }
   }
   return { fixes, found, missed };
