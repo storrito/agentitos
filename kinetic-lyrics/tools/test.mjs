@@ -8,6 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -175,6 +176,36 @@ test("footage without a face, and a face far above the type: place changes nothi
     assert.match(r.stdout, /where the footage alone sets it/);
     assert.equal(run(env, "build", dir).status, 0);
     assert.ok(sameTree(copy, path.join(dir, "composition")), `${faces.length ? "a face above the type" : "no face"}: the build differs from the one without place`);
+  }
+});
+
+// The build of shortDir() as main's short.mjs made it (origin/main f2cad32, 2026-11-19: shortDir()'s
+// folder written by hand as below, with and without the framing's two files, then
+// `node tools/short.mjs build <dir>` of that checkout; sha256 of each file, its first 16 hex digits;
+// the media in assets/ are left out, they are this machine's ffmpeg's, and the engine's copies with
+// them). Skipping place, and place where no face reaches the type, must build these bytes. Made
+// anew only where main's build changes on purpose.
+const MAIN = {
+  "index.html": "5f5231b30619843d", "plan.json": "675233fe3ef07b01", "compositions/lyrics.html": "b9a1190465fccbbb",
+  "compositions/overlay.html": "97b75939cb7780cb", "compositions/world.html": "d9be6ac7ca8e5cb3", "meta.json": "d6106e864582c2bb",
+  "hyperframes.json": "ad5dadeef78a5208", "package.json": "61002b2faf9a7446",
+};
+const asMain = (comp) => Object.fromEntries(Object.keys(MAIN).map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(comp, f))).digest("hex").slice(0, 16)]));
+
+test("skipping place, and place where no face reaches the type: the build is main's, byte for byte (a stored expectation of main's build), framed or not", { skip }, () => {
+  for (const framed of [true, false]) {
+    const dir = shortDir();
+    if (framed) {
+      fs.copyFileSync(path.join(dir, "source", "video.mp4"), path.join(dir, "source", "framed-9x16.mp4"));
+      fs.writeFileSync(path.join(dir, "source", "framed-9x16.json"), JSON.stringify({ aspect: [9, 16], size: [W, H], windows: [{ shot: 0, start: 0, end: 4 }] }));
+    }
+    const env = { CLIPS_TOOLS: fakeClips([{ n: 1, start: 0, end: 4, weight: 4, kind: "people", picture: [0, 0, W, H], faces: [], room: { free: 0 } }]) };
+    let r = run(env, "build", dir);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(asMain(path.join(dir, "composition")), MAIN, `${framed ? "framed" : "not framed"}: the build without place is not main's`);
+    r = run(env, "place", dir);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(asMain(path.join(dir, "composition")), MAIN, `${framed ? "framed" : "not framed"}: place without a face changed the build`);
   }
 });
 

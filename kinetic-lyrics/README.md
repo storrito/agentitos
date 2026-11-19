@@ -402,7 +402,7 @@ Everything is deterministic: the world is a pure function `(plan, t)`, particle 
 - `tools/footage.mjs`: video background (gradient, push-in, world via `screen`), shared by render and QA
 - `tools/qa.mjs`: automatic quality check
 - `tools/lib/place.mjs`: the faces as the short shows them, the type's area asked of agentitos' layout, the sheet of `short.mjs place`
-- `tools/test.mjs`: `node --test tools/test.mjs`, the place step on made-up footage and faces (no model, no network; needs `npm install`, ffmpeg and agentitos' layout beside)
+- `tools/test.mjs`: `node --test tools/test.mjs`, the place step on made-up footage and faces, and the build of a small made-up short against main's build of it, kept as its files' hashes (no model, no network; needs `npm install`, ffmpeg and agentitos' layout beside)
 
 ## Examples
 
