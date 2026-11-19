@@ -130,6 +130,7 @@ test("a close-up whose mouth lies where the build sets the type: place lowers th
   assert.equal(framed.windows[0].lift?.px, p.lifts[0].px, "the framing was asked for the lift");
   assert.match(r.stdout, /The type: one place for the short, from y \d+ to 1440/);
   assert.match(r.stdout, /shot 1 .* raised \d+ px/);
+  assert.match(r.stdout, /Other tops it weighed \(cost [\d.]+ for the one taken\): y \d+, the type \d+ % of its usual size, (shot 1 raised \d+ px|nothing raised)/);
   const mtime = fs.statSync(path.join(dir, "source", "framed-9x16.json")).mtimeMs;
   r = run(env, "place", dir);
   assert.equal(r.status, 0, r.stdout + r.stderr);

@@ -92,8 +92,18 @@ export const DEFAULTS = {
   // kinetic-lyrics' engine sets a block of four lines at its smallest words (5.2 % of the frame's
   // width) in about 14 % of the height, and lets a lockup grow by 4 % while it shows. `chin` is
   // what a second of the area on a chin or a neck costs (a face's keep-out below its mouth line):
-  // little, so that the area goes a little lower to clear a chin, never far.
-  area: { least: 0.15, chin: 1 },
+  // little, so that the area goes a little lower to clear a chin, never far. `smaller` is what the
+  // type costs for every per cent of the height it starts lower than the usual top and every ten
+  // seconds of the clip: 0.9 of what a shot raised over a ground costs for the same per cent and
+  // seconds (liftGround's 4), so that the type goes lower first where the shot that needs it holds
+  // nine tenths of the short or more, and a shorter shot is raised first. Set on an independent
+  // review's case (2026-11-19, a reporter's close-up of 14 s after a wide shot, 22 s in all: with
+  // 1, as smaller captions have it, the type went 120 px lower, a quarter smaller, for the whole
+  // short rather than raise that shot 38 px; with 3.6 it starts 20 px lower and the two shots go up
+  // 47 and 98 px, the mouths clear) and on kinetic-lyrics' three shorts (the close-ups are held by
+  // their eyes at the apps' top bar either way and stay as they were; the medium shot keeps its
+  // usual top with 3 s of a chin under the type instead of going 10 px lower for 0.2 s of it).
+  area: { least: 0.15, chin: 1, smaller: 3.6 },
   // (from where enlarging the source's pixels is soft and from where forbidden: weights.json)
   // zoom and inset are searched on a grid of 1 % of the covering scale
   zoomStep: 0.01, zoomMax: 1.6, insetStep: 0.01, insetMin: 0.5, panelMin: 0.6,

@@ -1486,8 +1486,9 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
   t("a picture that grows after it is raised (a push-in, each moment's zoom): the lift is in px of the picture before it grows, enough for the mouth at the zoom, and the eyes and the head's cut said as the picture shows them (the review: the list said 8.7 % less head cut than the short had)", () => {
     const feat = (dy) => [380, 560 + dy, 320, 600], box = (dy) => [250, 300 + dy, 580, 1000];
     const track = (zoom) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: box(0), feat: feat(0), ...(zoom ? { zoom } : {}) })) });
-    const flat = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(0)])], area: { top: usual }, raise: "full" });
-    const grown = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(1.087)])], area: { top: usual }, raise: "full" });
+    // (at one top for both: a raise that grows costs fewer px of the picture, and may move the top)
+    const flat = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(0)])], area: { top: usual }, raise: "full", fixed: { top: least } });
+    const grown = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(1.087)])], area: { top: usual }, raise: "full", fixed: { top: least } });
     near(flat.area.top, grown.area.top, 0.5, "the same area");
     near(grown.shots[0].lift, Math.ceil(flat.shots[0].lift / 1.087), 1, "the lift before the push-in");
     ok(!grown.conflicts.length && grown.shots[0].on.mouth === 0 && grown.shots[0].on.lip === 0, JSON.stringify(grown.shots[0]));
@@ -1506,6 +1507,18 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     const r = cli("text", path.join(OUT, "area-eyes"), "--frame", "9:16", "--shots", (fs.writeFileSync(path.join(OUT, "area-eyes.json"), JSON.stringify({ shots: [shot(0, 4, [track(0)])] })), path.join(OUT, "area-eyes.json")), "--text", "area", "--area-top", String(usual), "--raise", "full");
     ok(/the brows' top from \d+ % of the height \(the eyes a little lower\)/.test(r.stdout), r.stdout);
     return `the eyes at ${Math.round(own.shots[0].eyes * 100)} %, the brows' top at ${Math.round(brows.shots[0].eyes * 100)} %`;
+  });
+  t("a small raise of one shot wins over smaller type for the whole short (the review's reporter: the type went 120 px lower, a quarter smaller, rather than raise one shot 38 px), and the other tops weighed say the type's size and which shot goes up how far", () => {
+    // 8 s without a face, then 14 s of a close-up whose mouth line stands 60 px below the usual top
+    const feat = [380, usual + 60 - 1.15 * 420, 320, 420], box = [250, feat[1] - 150, 580, 800];
+    const shots = [shot(0, 8, []), shot(8, 22, [still(box, feat, 8, 22)])];
+    const r = areaOverTime({ zones: Z9, shots, area: { top: usual }, raise: "full" });
+    ok(r.area.lower < 15 && r.shots[1].lift > 40 && r.shots[1].lift < 75 && !r.conflicts.length, JSON.stringify([r.area, r.shots[1].lift]));
+    const before = areaOverTime({ zones: Z9, shots, area: { top: usual }, raise: "full", set: { "area.smaller": 1 } });
+    ok(before.area.lower >= 55 && before.shots[1].lift === 0, `the weight of before lowers the type: ${JSON.stringify(before.area)}`);
+    const other = r.candidates.find((c) => c.top > r.area.top + 40);
+    ok(other && other.size < 0.95 && Array.isArray(other.lifts) && r.candidates[0].lifts.some((x) => x.shot === 1 && x.px === r.shots[1].lift), JSON.stringify(r.candidates));
+    return `${r.area.lower} px lower, shot 2 raised ${r.shots[1].lift} px (before: ${before.area.lower} px lower)`;
   });
   t("a clip without a face: the usual top, said as no-face", () => {
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [])], area: { top: usual } });

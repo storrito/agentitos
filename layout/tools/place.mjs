@@ -621,7 +621,8 @@ function textArea(o, folder, shots, needs) {
   }
   for (const x of res.conflicts) console.log(`✗ ${x}`);
   for (const n of res.notes) console.log(`note: ${n}`);
-  console.log(`Other tops it weighed: ${res.candidates.slice(1).map((k) => `y ${Math.round(k.top)} (${Math.round(k.share * 100)} %; on a mouth, nose or eyes ${k.mouth} s, ${k.lifted} raised, cost ${k.cost})`).join("; ") || "none"}.`);
+  const raised = (k) => k.lifts.length ? k.lifts.map((x) => `shot ${x.n ?? x.shot + 1} raised ${x.px} px`).join(", ") : "nothing raised";
+  console.log(`It took y ${Math.round(res.candidates[0].top)} at a cost of ${res.candidates[0].cost}. Other tops it weighed: ${res.candidates.slice(1).map((k) => `y ${Math.round(k.top)} (the type ${Math.round(k.size * 100)} % of its usual size, ${raised(k)}; on a mouth, nose or eyes ${k.mouth} s, on a chin ${k.chin} s; cost ${k.cost})`).join("; ") || "none"}.`);
   console.log(`${file}: the area's top for the type, each shot's lift for the framing. The choice is yours: --top <px> and --lift <shot>:<px> fix one, --raise how far a picture may go up, and the rest is placed around it.`);
 }
 

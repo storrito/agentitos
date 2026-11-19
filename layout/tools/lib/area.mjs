@@ -18,10 +18,11 @@
 //
 // What "clear of a face" is for such type: never on the eyes, the nose or the mouth (the lower lip
 // with it: the mouth line, which holds an open mouth); on the chin, the neck and the body below a
-// face it may lie. Avoided in this order, each before the next: the area goes lower (smaller type,
-// never under area.least of the height), then the shot's picture goes up (by the caller's
-// --raise: head, mouth, full, as for the captions, past the head's top for the mouth where the
-// rule allows it); what is left is said per shot with its seconds.
+// face it may lie. Avoided by the area going lower (smaller type, never under area.least of the
+// height) or the shot's picture going up (by the caller's --raise: head, mouth, full, as for the
+// captions, past the head's top for the mouth where the rule allows it), whichever costs less
+// (area.smaller against liftGround: lower first where the shot that needs it holds nine tenths of
+// the clip); what is left is said per shot with its seconds.
 
 import { X1, Y1, inter } from "./boxes.mjs";
 import { DEFAULTS, merged, scaled } from "./defaults.mjs";
@@ -88,8 +89,15 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
   const step = Math.max(1, Math.round(H * 0.005));
   const tops = fixed.top != null ? [fixed.top] : [];
   if (fixed.top == null) for (let y = usual; y <= lowest + 1e-6; y += step) tops.push(y);
-  // (the smallest area is always weighed, also where the steps pass it)
+  // (the smallest area is always weighed, also where the steps pass it, and the top just below each
+  // shot's lowest mouth line, where that shot needs no raise: a step's mix of lower type and a
+  // raise of a few px is not cheaper than going down that little more)
   if (fixed.top == null && lowest - tops.at(-1) > 0.5) tops.push(lowest);
+  if (fixed.top == null) for (const s of list) {
+    let y = -Infinity;
+    for (const m of s.moments) for (const f of m.faces) if (overlapsX(f.box, [C[0], 0, C[2], H])) y = Math.max(y, Math.ceil(mouthOf(f)));
+    if (y > usual + 0.5 && y < lowest - 0.5 && !tops.some((t) => Math.abs(t - y) < 0.5)) tops.push(y);
+  }
   const candidates = tops.map((y) => {
     const box = [C[0], y, C[2], bottom - y];
     const raw = list.map((s) => shotUnder(box, s.moments, s.most, D, s.forced));
@@ -108,9 +116,10 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
         + s.weight * (free * costs.liftFree + ground * costs.liftGround) / (0.1 * H);
       return { ...q, nose: q.nose * k, mouth: q.mouth * k, lip: q.lip * k, chin: q.chin * k, free, ground };
     });
-    // a smaller area than the usual: per cent of the height and ten seconds of the clip, as smaller captions
+    // a smaller area than the usual: the type smaller for the whole clip, per cent of the height
+    // and ten seconds (area.smaller)
     const lower = ((y - usual) / H) * 100;
-    cost += lower * costs.smaller * total / 10;
+    cost += lower * D.area.smaller * total / 10;
     return { box: box.map(r1), top: r1(y), cost, lower, per };
   });
   candidates.sort((a, b) => a.cost - b.cost || a.top - b.top);
@@ -164,6 +173,8 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
       lifted: best.per.filter((q) => q.lift > 0).length },
     shots: shotsOut, conflicts, notes,
     candidates: candidates.reduce((kept, c) => (kept.some((d) => Math.abs(d.top - c.top) < H * 0.02) ? kept : [...kept, c]), []).slice(0, 5)
-      .map((c) => ({ top: c.top, share: Math.round(((bottom - c.top) / H) * 1000) / 1000, cost: r1(c.cost), mouth: r1(c.per.reduce((n, q) => n + q.nose + q.mouth + q.lip, 0)), chin: r1(c.per.reduce((n, q) => n + q.chin, 0)), lifted: c.per.filter((q) => q.lift > 0).length, liftPx: c.per.reduce((n, q) => n + q.lift, 0) })),
+      .map((c) => ({ top: c.top, share: Math.round(((bottom - c.top) / H) * 1000) / 1000, cost: r1(c.cost), mouth: r1(c.per.reduce((n, q) => n + q.nose + q.mouth + q.lip, 0)), chin: r1(c.per.reduce((n, q) => n + q.chin, 0)), lifted: c.per.filter((q) => q.lift > 0).length, liftPx: c.per.reduce((n, q) => n + q.lift, 0),
+        // the type's size there against at the usual top, and which shot goes up how far
+        size: Math.round(((bottom - c.top) / (bottom - usual)) * 1000) / 1000, lifts: c.per.map((q, i) => ({ shot: i, ...(list[i].n != null ? { n: list[i].n } : {}), px: q.lift })).filter((x) => x.px > 0) })),
   };
 }

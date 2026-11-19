@@ -276,6 +276,10 @@ function place(dir, opts) {
     console.log(`✗ Shot ${x.shot + 1} (${x.start.toFixed(1)}–${x.end.toFixed(1)} s): the type lies on ${who}'s ${parts}${x.lift ? `, raised ${x.lift} px ${why}` : ""}${floor ? ", the type at its smallest" : ""}. What would avoid it: ${[raise !== "full" ? "--raise full" : "", fixed.top != null || !floor ? "a lower --type-top (smaller type)" : "", "a stretch of the episode without this shot"].filter(Boolean).join(", ")}.`);
   }
   for (const n of text.notes.filter((n) => !/^The type's area starts/.test(n))) console.log(`note: ${n}`);
+  // the other tops layout weighed, with what each costs: the type's size, the raises, the seconds on a mouth
+  const sizeOf = (y) => Math.round(((a.bottom - y - chip) / (a.bottom - usual)) * 100);
+  const others = (text.candidates || []).filter((k) => Math.abs(k.top - a.top) > 0.5);
+  if (others.length) console.log(`Other tops it weighed (cost ${text.candidates[0].cost} for the one taken): ${others.map((k) => `y ${Math.round(k.top + chip)}, the type ${sizeOf(k.top)} % of its usual size, ${(k.lifts || []).length ? k.lifts.map((x) => `shot ${x.shot + 1} raised ${x.px} px`).join(", ") : "nothing raised"}${k.mouth ? `, on a mouth, nose or eyes ${k.mouth} s` : ""}, cost ${k.cost}`).join("; ")}. --type-top <y> takes one of them.`);
   const files = sheet(framedOf(dir, s), plan, text, shots, source(dir, "place.sheet.jpg"), { chip });
   console.log(`${files.length ? `Look at ${files.join(", ")}: per shot its first, middle and last frame as the short shows it, the type's area in yellow (the name tag above the thin line), the faces in red, the mouth line in orange. ` : ""}Then short.mjs check ${dir}. To change it: --type-top <px> (where the type starts), --raise mouth|head (less of a head cut), --lift <second>:<px>; each is kept, "" gives it back.`);
 }
