@@ -23,7 +23,7 @@ Your files: `short/<name>/` (`<name>`: one short slug, lowercase letters, digits
 
 ## What it needs
 
-Node 20+, ffmpeg and the HyperFrames CLI. Beside this skill, agentitos' **footage** (the sources), **launch-video** (`<launch>` below is `<skill>/../launch-video/tools/launch.mjs`: voice, music, the zones check, the loudness), **captions**, **platform-zones** and **transcribe**, and for the first beat's freeze **freeze-cutout** (without it the short opens on the plain clip); OpenRouter for the voice, the music and the freeze's mask: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection. A voice and the music cost a few cents each (their tools print it), a freeze 7 to 14. When something is missing, the tool says so in one sentence: pass it on, never install it.
+Node 20+, ffmpeg and the HyperFrames CLI. Beside this skill, agentitos' **footage** (the sources), **launch-video** (`<launch>` below is `<skill>/../launch-video/tools/launch.mjs`: voice, music, the zones check, the loudness), **captions**, **platform-zones** and **transcribe**, for the first beat's freeze **freeze-cutout** (without it the short opens on the plain clip), and for beats with people **clips** (their faces) and **layout** (the captions and the hook off them; without them every beat is built as without faces); OpenRouter for the voice, the music, the freeze's mask and the faces: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection. A voice and the music cost a few cents each (their tools print it), a freeze 7 to 14, the faces up to 2 a beat with people. When something is missing, the tool says so in one sentence: pass it on, never install it.
 
 ## From a story to the video
 
@@ -60,13 +60,14 @@ Make the project first, once, with the `project` tool (create, name `<name>`, ki
 
 ### 4. The beats
 
-Read `<skill>/references/beats.md` before you write them. `short/<name>/beats.json` says which stretch of which source runs under which words, the hook text, the first beat's freeze, the key words, the boxes and the comparison card.
+Read `<skill>/references/beats.md` before you write them. `short/<name>/beats.json` says which stretch of which source runs under which words, the hook text, the first beat's freeze, the key words, the boxes and the comparison card. Mark `"people": true` on every beat whose stretch shows a face you can recognise on its strip.
 
 ```bash
+node <skill>/tools/short.mjs faces short/<name>      # the faces of the beats marked people
 node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --platform tiktok
 ```
 
-It cuts a clip per beat, checks them, builds the captions and writes the composition; the preview beside the chat shows it at once. Fix what it reports (`✗` must go, `?` and `!` are yours to look at) by changing the beats, and build again. Never edit the built `index.html`.
+`faces` costs at most 2 cents and half a minute a marked beat and is kept while the beat's stretch stays; where it finds none or fails, the beat is built as without faces. `build` cuts a clip per beat, checks them, builds the captions and writes the composition; the preview beside the chat shows it at once. A crop that would cut a face goes to it, and captions or a hook that lie on a face move: each beat says what was done. Fix what it reports (`✗` must go, `?` and `!` are yours to look at) by changing the beats, and build again. Never edit the built `index.html`.
 
 ### 5. The music
 

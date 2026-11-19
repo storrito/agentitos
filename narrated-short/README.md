@@ -9,14 +9,15 @@ L=../launch-video/tools/launch.mjs
 node $L zones short/astrobee tiktok --frame 9:16                              # where the apps' buttons are
 node $L voice short/astrobee short/astrobee/script.json artifacts/astrobee/composition
 node tools/short.mjs clock short/astrobee                                     # every sentence and word on the film's clock
+node tools/short.mjs faces short/astrobee                                     # the faces of the beats marked "people" (clips, OpenRouter)
 node tools/short.mjs build short/astrobee artifacts/astrobee/composition --platform tiktok
 node $L music short/astrobee artifacts/astrobee/composition --prompt "…" --seconds 26
 node tools/short.mjs build short/astrobee artifacts/astrobee/composition --platform tiktok   # again: the music under the voice
 node tools/short.mjs sheet short/astrobee artifacts/astrobee/composition      # stills at the moments that matter
-node --test tools/test.mjs                                                    # the music's level under the voice, no request
+node --test tools/test.mjs                                                    # the music's level under the voice, the faces' geometry, no request (10 tests)
 ```
 
-Requirements: Node 20+, ffmpeg (with ffprobe) and the HyperFrames CLI (`RRAGENT_HYPERFRAMES`, `HYPERFRAMES`, else `hyperframes` on the PATH); no npm packages, no model of its own. The other skills beside it, each found through its name in the environment, else beside this folder, else in `/home/sprite/skills/`: platform-zones (`PLATFORM_ZONES`), captions (`CAPTIONS_TOOL`), freeze-cutout (`FREEZE_CUTOUT`, only for a freeze), and launch-video with transcribe for the voice and the music, which need OpenRouter. It makes almost nothing itself that another skill of the collection already does:
+Requirements: Node 20+, ffmpeg (with ffprobe) and the HyperFrames CLI (`RRAGENT_HYPERFRAMES`, `HYPERFRAMES`, else `hyperframes` on the PATH); no npm packages, no model of its own. The other skills beside it, each found through its name in the environment, else beside this folder, else in `/home/sprite/skills/`: platform-zones (`PLATFORM_ZONES`), captions (`CAPTIONS_TOOL`), freeze-cutout (`FREEZE_CUTOUT`, only for a freeze), clips (`FRAME_TOOL`, its `frame.mjs`, only for `faces`) and layout (`LAYOUT_TOOL`, its `place.mjs`, only where a text lies on a face), and launch-video with transcribe for the voice and the music, which need OpenRouter. It makes almost nothing itself that another skill of the collection already does:
 
 | what | from |
 | --- | --- |
@@ -26,23 +27,29 @@ Requirements: Node 20+, ffmpeg (with ffprobe) and the HyperFrames CLI (`RRAGENT_
 | the captions, the key words in colour, phrases as cards of their own (`boxes`) | [captions](../captions/) `build` |
 | the first beat's freeze with the subject cut out (`freeze`) | [freeze-cutout](../freeze-cutout/), when it is there |
 | where text may stand | [platform-zones](../platform-zones/) `zones` |
+| the faces of a beat with people, over time, with their eyes, nose and mouth | [clips](../clips/) `frame.mjs --faces --every-shot` |
+| one place for the captions and the hook's, off every face of every beat | [layout](../layout/) `place.mjs text` |
 | text under the apps' buttons | launch-video `check` |
 | the loudness of the finished video | launch-video `finish` |
 | the texts and the publishing | [video-descriptions](../video-descriptions/), [publish-video](../publish-video/) |
 
 What is its own: the film's clock, the clips under the words, and the composition with the hook text, the card, the credit and the handle.
 
-## The three commands
+## The four commands
 
 **`clock <work> [--gap 0.3]`** reads `<work>/voice.json` (launch-video's) and places the lines: a line's file starts and ends in silence of a different length each time, so a line is placed by its words, its first word `--gap` seconds after the last word of the line before; it is played from just before its first word (`from`, a place in its file) to a quarter second past its last, and ends a hundredth before the next begins. `<work>/clock.json` holds every line (`at`, `from`, `duration`, `start`, `end`) and every word with its time in the film; the command prints them.
 
-**`build <work> <composition> [--platform …] [--style hormozi] [--no-captions] [--under 17]`** reads `<work>/beats.json` (the format: [references/beats.md](references/beats.md)) and
+**`faces <work> [--all] [--again]`** sends each beat marked `"people": true` (every beat with `--all`) to agentitos' clips: the stretch its clip takes, cut at most 1080 lines high, without sound and without the file's tags, into `<work>/faces/<id>.mp4`, and `frame.mjs --faces --every-shot` on it (a model's stills with the eyes, nose and mouth, a tracker between them; `--every-shot` because the model calls footage of a crew at work b-roll, two of six such stretches on 2026-11-19). `<work>/faces/<id>.json` holds every face in px of the source, as shown, with the stretch it is of; a beat whose stretch did not change keeps it (`--again` asks anew), a beat no longer marked loses it. Measured on eleven beats of public footage (2026-11-19): 0.3 to 1.5 cents and 6 to 32 s a beat (8 s on footage with nobody in it). A beat it cannot do (no OpenRouter, the clip too large for the gateway) is said in a line and built as without faces.
+
+**`build <work> <composition> [--platform …] [--style hormozi] [--no-captions] [--under 17] [--no-faces]`** reads `<work>/beats.json` (the format: [references/beats.md](references/beats.md)) and
 
 - reads everything first (the beats, the tools it needs, every source), so nothing is cut for beats that cannot be built.
 - cuts one clip per beat with one ffmpeg each into `<composition>/assets/clips/` (1080×1920, 30 fps, a keyframe a second, since sparse ones froze frames in a render); a clip is kept while its beat, its source (size and time of the file) and the way clips are cut did not change, with what was measured on it; a cut that fails leaves no clip behind; clips of beats that are gone are removed. `whole` lays the wide frame as a band over a blurred, darkened copy of itself, 1.6 times larger on the first beat; black bars burnt into a source are found (`cropdetect`, only a stable, even crop) and cut away.
 - checks every clip for what needs no judgement: near black (the peak of the frames' mean luma under 12 for a band over its darkened copy, under 24 for a full picture, whose black is 16), shorter than its beat, standing still for more than half of it (also when it stands to its end), the first beat starting on a dark frame, and one of the source's own cuts inside the stretch (from the footage skill's `sources.json`).
 - writes `<work>/words.json` from the clock, without the words spoken under the comparison card and with the beats' `keys` marked, and has captions `build` make `<composition>/captions/` from it.
 - writes `<composition>/index.html`: a `<video>` per beat with a slow move, the voice's lines as `<audio id="vo-<id>">` where the clock places them (entered at `data-media-start`, so launch-video's `words` would not place them right: the captions come from this skill's clock), the music 17 LU (`--under`) under the voice, both measured, and down to nothing at the end, the hook text, the card, the credit, the handle, the captions mounted.
+
+Where a beat's faces are known (`faces`, not `--no-faces`, and of the stretch the beat takes now), `build` also places the beat against them (`tools/lib/faces.mjs`). The faces that matter are those seen in a quarter of the beat's moments or more, at least half as tall as the largest and 4 % of the source's height; a face seen on few moments (a passer-by, a slip of the model) moves nothing. A `fill` from the middle that would cut one moves its crop to them; where they stand wider apart than its window (or one face is wider), the whole picture as a band, as large as holds them all and keeps every chin and a twelfth of its face below it above the captions' top (captions' `area.json`, built before the clips for that); the first beat's own 1.6× band moves its window to them, or becomes smaller. `zoom` and `pan` the agent gave stand, with a `!` where they cut a face. Then the faces go into the frame as the clip shows them (the source's second through `speed`, the band and its blurred edges, the slow move of every clip) and the usual places of the captions (captions' area) and of the hook are checked against them over their seconds, by the part they reach (the eyes or nose, the mouth, the lower lip, the chin, from the model's eyes, nose and mouth). Where either lies on a face, agentitos' layout `text` gets every beat as a shot with its faces (never raised) and the hook's 2.5 s, and answers one place for the captions of the whole short and the hook's; each is taken only where it lies on the faces less than before (weighed eyes 100, mouth 20, lower lip 1, chin 0.2 a second), the captions built again with layout's options, the hook in layout's box at its size (no larger than before), ending earlier where layout ends it at a cut. Every step says per beat what it did and why. Without faces, `build` writes the same files byte for byte as before (checked on 2026-11-19: a short without the step, one with `--no-faces`, and one whose faces step found none: 22, 22 and 19 files identical to the build of main).
 
 The text stands where platform-zones says so for the platforms named: the credit at the top of the wide stretch above the apps' buttons, the hook text, the card and the handle under it, the captions (by captions itself) at the bottom of the centred box. The accent is the brand kit's primary colour when the working directory has `brand/DESIGN.md`.
 
