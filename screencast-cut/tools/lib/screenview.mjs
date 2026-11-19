@@ -140,6 +140,12 @@ export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, wid
 }
 
 const markOf = (c) => (c.hard ? "✗" : c.unmet?.length ? "–" : c.soft ? "!" : "✓");
+const box4 = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite);
+// a candidate of layout's the composition can draw: a drawn fit, a positive scale, its place, a
+// window that is not empty, the region in the frame and its circle where it has one; anything
+// else is left out
+export const drawable = (c) => !!c && typeof c === "object" && DRAWN.test(c.fit) && Number.isFinite(c.scale) && c.scale > 0 && Number.isFinite(c.left) && Number.isFinite(c.top)
+  && box4(c.window) && c.window[2] > 0 && c.window[3] > 0 && box4(c.faceInFrame?.[0]) && (!c.circle || (Array.isArray(c.circle.box) && c.circle.box.slice(0, 2).every(Number.isFinite) && Number.isFinite(c.circle.d) && c.circle.d > 0));
 // a candidate of layout's as a picture the composition draws
 export function pictureOf(c) {
   return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, region: c.faceInFrame[0],
@@ -233,11 +239,20 @@ function placeOne({ dir, k, n, c, src, text, pip, cam, on, keep, tool, timeout, 
   if (!tool) return asBefore("the layout skill is missing");
   const placed = placeScreen({ tool, folder: path.join(dir, "placement", `screen-${n}`), src, crop: c, text, cam: pip ? cam : null, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout });
   if (placed.why) return asBefore(placed.why);
-  const res = placed.res, readable = res.screen?.readable || 0;
+  if (!placed.res || typeof placed.res !== "object" || Array.isArray(placed.res)) return asBefore("layout's place answered no placement for it");
+  try {
+    return chosen({ before, res: placed.res, c, src, text, pip, on, keep, width, height, zones, areas, facts }) || asBefore("layout's place gave no picture to draw for it");
+  } catch (e) {
+    return asBefore(`layout's answer for it could not be drawn (${String(e?.message || e).split("\n")[0]})`);
+  }
+}
+
+function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones, areas, facts }) {
+  const readable = Number.isFinite(res.screen?.readable) && res.screen.readable > 0 ? res.screen.readable : 0;
   const opts = { zones, labels: on, text, readable, width, height };
   before.j = judge(before, opts);
-  const list = (res.candidates || []).filter((x) => DRAWN.test(x.fit) && Number.isFinite(x.scale) && x.window && x.faceInFrame?.[0]).map((x) => { const pic = pictureOf(x); pic.j = judge(pic, opts); return pic; });
-  if (!list.length) { const r = asBefore("layout's place gave no picture to draw for it"); return r; }
+  const list = (Array.isArray(res.candidates) ? res.candidates : []).filter(drawable).map((x) => { const pic = pictureOf(x); pic.j = judge(pic, opts); return pic; });
+  if (!list.length) return null;
   const asked = typeof keep.layout === "string" ? keep.layout.trim() : null;
   // where only the circle lies on the region: the picture as before with the circle in a free corner
   // (decided 2026-11-19, pair screen-circle-169: the circle moves before the picture does). Where
@@ -258,7 +273,7 @@ function placeOne({ dir, k, n, c, src, text, pip, cam, on, keep, tool, timeout, 
   }
   const got = choose(before, list, { asked, text, zoomed: c.join() !== "0,0,1,1", moved });
   const pic = got.pic, j = pic.j;
-  const narrower = res.notes?.find((x) => /A narrower region reads/.test(x))?.match(/at most \d+×\d+ px of the source/)?.[0]?.replace(" of the source", " of the screen") || null;
+  const narrower = (Array.isArray(res.notes) ? res.notes : []).find((x) => /A narrower region reads/.test(x))?.match(/at most \d+×\d+ px of the source/)?.[0]?.replace(" of the source", " of the screen") || null;
   const lines = [];
   const where = `the region ${span(pic.region)}, ${pct(j.ground)} ground${pic.circle ? `, the circle ${pic.circle[2]} px at x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}` : ""}`;
   const faultsSaid = (x) => x.j.faults.map((f) => f.said).join("; ");

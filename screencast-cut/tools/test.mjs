@@ -1156,3 +1156,24 @@ test("review 1: a keep split at a scene change draws each part's circle where it
   const [s] = shots([p], sources, 1920, 1080, a);
   assert.deepEqual(s.layers.filter((l) => l.pip).map((l) => [l.box, l.start]), [[[1608, 108, 216, 216], undefined]]);
 });
+
+test("review 3: nonsense from the layout skill (null, a candidate with circle {}, a negative scale, a window of strings) draws the keep as before with one sentence, never stops the build", () => {
+  const { dir, sources, piece } = screenProject();
+  try {
+    const a = areas(1080, 1920, SZ, { captions: true });
+    const tools = { null: "console.log('null');", array: "console.log('[1,2]');",
+      circle: "console.log(JSON.stringify({ candidates: [{ fit: 'screen-fit', scale: 1, left: 0, top: 0, window: [0, 0, 1080, 900], faceInFrame: [[100, 100, 500, 300]], circle: {} }] }));",
+      negative: "console.log(JSON.stringify({ candidates: [{ fit: 'screen-fit', scale: -3, left: 0, top: 0, window: [0, 0, 1080, 900], faceInFrame: [[100, 100, 500, 300]] }] }));",
+      strings: "console.log(JSON.stringify({ screen: { readable: 'x' }, notes: 'x', candidates: [{ fit: 'screen-fit', scale: 1, left: 0, top: 0, window: ['a', 0, 1080, 900], faceInFrame: [[100, 100, 500, 300]] }] }));" };
+    for (const [name, code] of Object.entries(tools)) {
+      const tool = path.join(dir, `${name}.mjs`);
+      fs.writeFileSync(tool, code);
+      const ps = [piece(0, "screen", [0.02, 0.45, 0.98, 0.5])];
+      const said = screenView(dir, { keep: [{ zoom: ps[0].crop }] }, ps, sources, { width: 1080, height: 1920, zones: SZ, areas: a, tool });
+      const line = said[1];
+      assert.match(line, name === "circle" ? /^  keep 1 \([^)]*\): as before( at 0\.44×|, because layout's place gave no picture to draw for it)/ : /^  keep 1 \([^)]*\): as before, because layout's place (answered no placement|gave no picture to draw) for it/, `${name}: ${line}`);
+      assert.equal(ps[0].screenPic, undefined, name);
+      shots(ps, sources, 1080, 1920, a);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
