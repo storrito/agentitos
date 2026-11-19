@@ -71,7 +71,15 @@ const USAGE = `"show": "uploads/result.mp4", or {"file": "uploads/result.mp4", "
 // (silent under the words, at its level in the hold after them)
 export const soundOf = (show) => (show.sound && typeof show.sound === "object" && !Array.isArray(show.sound)
   ? { level: Number(show.sound.hold) || 0, hold: true } : { level: Number(show.sound) || 0, hold: false });
-const holdForm = (sound) => sound && typeof sound === "object" && !Array.isArray(sound) && Object.keys(sound).length === 1 && Number(sound.hold) >= 0 && Number(sound.hold) <= 1;
+const level01 = (x) => typeof x === "number" && x >= 0 && x <= 1;
+// the shapes "sound" takes: a level 0–1 (a number, or a number written as text, as main took it),
+// or {"hold": level}; anything else ("", null, true, [0.8], {"hold": true}) is said
+const soundShape = (sound) => (sound && typeof sound === "object" && !Array.isArray(sound)
+  ? Object.keys(sound).length === 1 && level01(sound.hold)
+  : level01(sound) || (typeof sound === "string" && sound.trim() !== "" && level01(Number(sound))));
+// The least hold in which the hold form is heard: up over FADE, half a second at its level, out
+// over FADE (1 s). A shorter one gets no sound track and a sentence.
+export const HOLD_HEARD = 1;
 
 // what is wrong with a keep's "show", in one sentence that says what to do; null where it is fine
 export function showProblem(keep, k, info) {
@@ -82,7 +90,7 @@ export function showProblem(keep, k, info) {
   if (info?.error || !info) return `${name}: ${show.file} is no video ffprobe can read (${info?.error || "nothing read"}); give a video file (MP4, MOV, WebM), the result as it was posted or rendered.`;
   if (!info.video) return `${name}: ${show.file} has no picture (a sound or a still); give a video file, the result as it was posted or rendered.`;
   if (show.from !== undefined && !(Number(show.from) >= 0 && Number(show.from) < info.duration)) return `${name} "from" is the second of ${show.file} to start at, 0–${info.duration.toFixed(1)}; set it within that or leave it out (0).`;
-  if (show.sound !== undefined && !(show.sound && typeof show.sound === "object" ? holdForm(show.sound) : Number(show.sound) >= 0 && Number(show.sound) <= 1)) return `${name} "sound" is the level of its sound, 0–1 (0.8 plays it well under the voice's words and full by the last), or {"hold": 0.8} for it only in the "hold" after the last word, silent under the words; leave it out for none.`;
+  if (show.sound !== undefined && !soundShape(show.sound)) return `${name} "sound" is ${JSON.stringify(show.sound)}, which is no level: write a number 0–1 (0.8 plays it well under the voice's words and full by the last), or {"hold": 0.8} for it only in the "hold" after the last word, silent under the words; leave it out for none.`;
   if (soundOf(show).level > 0 && !info.audio) return `${name} "sound": ${show.file} has no sound; leave "sound" out, or ask the person for the file with the sound (a Story's music is added by Instagram: only the posted Story, downloaded or recorded on the phone, has it).`;
   return null;
 }
@@ -117,18 +125,36 @@ export function placeShows(cut, pieces, words, infoOf) {
     if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground${sound > 0 && spoken > duration - FADE ? `, and its sound ${holdOnly ? "is never heard, the video ending before the last word" : "stays low under the words and fades out where it ends, before the last word"}` : ""}: an earlier "from", a shorter "hold", or end the keep a word earlier`);
     // the keep's hold whose voice is muted (the recording's sound there is the next words, or a cut
     // filler): with no sound of the shown video in it, digital silence while the video plays on
+    // Only for a "hold" the keep sets (the default tail's muted part is the same short silence as at
+    // every keep's end) and from HOLD_HEARD s on; the hold form named only where it can be heard
     const muted = ps.filter((p) => p.mute && p.hold && p.start < start + duration - 0.05).reduce((t, p) => t + Math.min(p.duration, start + duration - p.start), 0);
-    const heardInHold = sound > 0 && info.audio && duration - Math.max(spoken, 0) > FADE + 0.1;
-    if (muted >= 0.3 && !heardInHold) warnings.push(`keep ${k + 1}: its "hold" after the last word is ${muted.toFixed(1)} s of silence (the recording's sound stops with the words there) while ${show.file} plays on${info.audio ? `: let its sound play there, "sound": {"hold": 0.8} (silent under the words), or end the keep at its last word, "hold": 0` : `, which has no sound: end the keep at its last word, "hold": 0`}`);
+    // (a hold the keep asks is cut short by 0.3 s or more only where the recording ends: cut.mjs
+    // drops a muted hold under 0.3 s, never more)
+    const keepHold = end - start - spoken, clipHold = duration - spoken, asked = keep.hold !== undefined ? Number(keep.hold) || 0 : null;
+    const holdHeard = holdOnly && spoken > 0.3 ? clipHold >= HOLD_HEARD - 1e-6 : clipHold > FADE + 0.1;
+    if (asked !== null && muted >= HOLD_HEARD - 0.05 && !(sound > 0 && info.audio && holdHeard) && !(holdOnly && sound > 0)) {
+      // (muted counts only while the shown video plays, so its 1 s and more is room for the hold form)
+      const way = !info.audio ? `, which has no sound: end the keep at its last word, "hold": 0`
+        : `: let its sound play there, "sound": {"hold": 0.8} (silent under the words), or end the keep at its last word, "hold": 0`;
+      warnings.push(`keep ${k + 1}: its "hold" after the last word is ${muted.toFixed(1)} s of silence (the recording's sound stops with the words there) while ${show.file} plays on${way}`);
+    }
     const key = `show-${k + 1}`;
     sources[key] = { file: `${key}${path.extname(info.path || show.file) || ".mp4"}`, path: info.path || path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };
     for (const p of ps) p.show = { source: key, in: from + (p.start - start), until: start + duration };
     const skipped = leftOut(keep);
     if (skipped.length) notes.push(`! keep ${k + 1}: "show" plays ${show.file} over the whole keep, so its ${skipped.join(" and ")} ${skipped.length > 1 ? "are" : "is"} left out (the shown video is the keep's picture); to see ${keep.view === "face" ? "the face" : keep.zoom !== undefined && keep.zoom !== "off" ? "the zoom" : "that picture"} too, give it a keep of its own without "show".`);
-    if (sound > 0 && duration > 0.1 && !(holdOnly && spoken > 0.3 && duration - spoken <= FADE + 0.1)) {
-      inserts.push({ k, key, file: show.file, src: info.path || show.file, from, start, duration, sound, spoken, ...(holdOnly ? { hold: true } : {}) });
-    } else if (sound > 0 && holdOnly && duration > spoken) {
-      notes.push(`! keep ${k + 1}: "sound": {"hold": ${sound}} plays only after the last word, and ${show.file} plays ${(duration - spoken).toFixed(1)} s there: too short to be heard, so it stays silent; give the keep "hold": 1.5.`);
+    if (sound > 0 && duration > 0.1 && !(holdOnly && spoken > 0.3 && !holdHeard)) {
+      inserts.push({ k, key, file: show.file, src: info.path || show.file, from, start, duration, sound, spoken, ...(holdOnly ? { hold: true } : {}),
+        // what a hold form would have here: room for it, or what holds it short (the keep's own
+        // "hold", the shown video's or the recording's end), for the listening line
+        room: clipHold >= HOLD_HEARD - 1e-6 ? "ok" : clipHold < keepHold - 0.05 ? "clip" : asked !== null && asked > keepHold + 0.3 ? "end" : "keep" });
+    } else if (sound > 0 && holdOnly && spoken > 0.3) {
+      // what holds the hold short: the shown video's end, the recording's end (the cut's last keep),
+      // or the keep's own "hold"; the form needs HOLD_HEARD s
+      const why = clipHold < keepHold - 0.05 ? `${show.file} ends ${clipHold > 0.05 ? `${clipHold.toFixed(1)} s after the last word` : "before the last word"}: an earlier "from" so that it plays ${HOLD_HEARD} s on after it, or drop "sound"`
+        : asked !== null && asked > keepHold + 0.3 ? `the recording ends ${keepHold > 0.05 ? `${keepHold.toFixed(1)} s after the last word, so the keep holds that` : "at the last word, so the keep cannot hold"}, not the ${asked} s asked: end the cut on an earlier sentence with a pause after it, or drop "sound"`
+        : `the keep holds ${Math.max(0, keepHold).toFixed(1)} s after the last word: give it "hold": 1.5`;
+      notes.push(`! keep ${k + 1}: "sound": {"hold": ${sound}} plays only after the last word and needs ${HOLD_HEARD} s there to be heard, so it stays silent; ${why}.`);
     }
   }
   return { sources, inserts, warnings, notes };
@@ -207,7 +233,9 @@ export function heardSaid(i, heard, said, clock) {
   if (both.length) {
     const sum = both.reduce((t, [a, b]) => t + b - a, 0);
     const hold = i.duration - i.spoken;
-    return `two voices at once from ${at(both)} (${sum.toFixed(1)} s: the clip speaks ${at(clip)}, the speaker ${at(mine)}): let it speak only in the "hold" after your last word, "sound": {"hold": ${i.sound}} (silent under your words${hold < 1 ? `, with "hold": 1.5 on the keep: its hold is ${hold.toFixed(1)} s now` : ""}), or drop "sound", or show it where you do not speak (${cost})`;
+    // the hold form named only where the keep's hold can hold it (HOLD_HEARD s), or can be made to
+    const form = i.room === "clip" || i.room === "end" ? "" : `let it speak only in the "hold" after your last word, "sound": {"hold": ${i.sound}} (silent under your words${i.room === "keep" ? `, with "hold": 1.5 on the keep: its hold is ${hold.toFixed(1)} s now` : ""}), or `;
+    return `two voices at once from ${at(both)} (${sum.toFixed(1)} s: the clip speaks ${at(clip)}, the speaker ${at(mine)}): ${form}drop "sound", or show it where you do not speak (${cost})`;
   }
   return `it speaks ${at(clip)}, where the speaker does not: no two voices at once (${cost})`;
 }
@@ -222,7 +250,7 @@ export function soundSaid(i, target, clock, heard = null) {
   if (i.hold && i.spoken > 0.3) return `keep ${i.k + 1}: the sound of ${i.file} is silent under the keep's words and plays at ${i.sound} in its hold, from ${clock(i.start + i.spoken)} for ${(i.duration - i.spoken).toFixed(1)} s; ${tail}`;
   const level = i.spoken > i.duration - FADE ? "at a quarter of its level, the video ending before the last word" : `at a quarter of its level under the first, up to ${i.sound} by the last at ${clock(i.start + i.spoken)}`;
   const under = heard ? `runs under the keep's words (${level}); ${heard}; `
-    : i.spoken > 0.3 ? `runs under the keep's words (${level}), so if it speaks, its speech is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point; a clip that speaks gets "sound": {"hold": ${i.sound}}, heard only in the "hold" after the last word; `
+    : i.spoken > 0.3 ? `runs under the keep's words (${level}), so if it speaks, its speech is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point; a clip that speaks gets "sound": {"hold": ${i.sound}}, heard only in the "hold" after the last word${i.room === "clip" || i.room === "end" ? ` (here the keep's hold after the last word is ${Math.max(0, i.duration - i.spoken).toFixed(1)} s, under the ${HOLD_HEARD} s it needs)` : i.room === "keep" ? ` (with "hold": 1.5 on the keep)` : ""}; `
     : "";
   return `keep ${i.k + 1}: the sound of ${i.file} ${under}${tail}`;
 }
