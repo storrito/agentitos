@@ -335,11 +335,15 @@ export async function clean(file, out, opts = {}, stages = null) {
     // 2. the tone's plan (it needs to know whether repair takes noise out), run at the end of repair's pass
     const rp = st.repairPlan ? st.repairPlan(m, { denoise: o.denoise }) : { steps: [] };
     const den = (rp.steps || []).find((s) => s.id === "denoise");
-    const tp = st.tonePlan(m, { tone: o.tone, denoised: !!den, noiseLeftDb: den && den.snrDb != null && den.reduceDb != null ? den.snrDb + den.reduceDb : null });
+    const toneFor = (d) => st.tonePlan(m, { tone: o.tone, denoised: !!d && d.method !== "off", noiseLeftDb: d && d.method !== "off" && d.snrDb != null && d.reduceDb != null ? d.snrDb + d.reduceDb : null });
+    let tp = toneFor(den);
     const after = st.toneFilters(tp) || "";
-    // 3. repair (with the tone's filters) to the intermediate
+    // (asked again by repair where its noise step turned out otherwise: the denoiser's probe found
+    // noise under the voice, or the denoiser failed and ffmpeg's method took its place)
+    const retone = (d) => { tp = toneFor(d); return st.toneFilters(tp) || ""; };
+    // 3. repair (with the tone's filters) to the intermediate, its working files in ours
     const mended = path.join(work, "mended.wav");
-    const rr = await st.repair(src, mended, m, { denoise: o.denoise, after });
+    const rr = await st.repair(src, mended, m, { denoise: o.denoise, after, retone, tmp: work });
     // (the voice's stream on its own stays for the comparison, compressed as it came)
     if (src !== fileAbs && o.before == null) fs.rmSync(src, { force: true });
     // 4. level, encoded as delivered (the intermediate removed once read); with level off, the
@@ -383,7 +387,7 @@ export async function clean(file, out, opts = {}, stages = null) {
       before,
       // (the run's choices, then each stage's own numbers)
       settings: { for: o.for, loudness: o.loudness ?? null, peak: o.peak ?? null, denoise: o.denoise, tone: o.tone, level: o.level, mono: o.mono, audio: o.audio, before: o.before ?? null,
-        repairStage: { method: rr.method ?? null }, levelStage: lv.settings, passes: lv.passes },
+        repairStage: { method: rr.method ?? null, ...(rr.probe && { probe: rr.probe }) }, levelStage: lv.settings, passes: lv.passes },
       seconds: +((Date.now() - t0) / 1000).toFixed(1),
     };
     fs.writeFileSync(jsonPart, JSON.stringify(report, null, 1) + "\n");

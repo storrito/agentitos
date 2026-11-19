@@ -22,7 +22,7 @@ It is for one voice (or people talking in turn) with nothing laid under it. Musi
 
 ## What it needs
 
-Node 20+ and ffmpeg (6.1 or later). No key, no model, no network: it costs nothing and nothing leaves the machine. When ffmpeg or one of its filters is missing, the tool says which; say so in one sentence instead of installing it.
+Node 20+ and ffmpeg (6.1 or later). No key, no network: it costs nothing and nothing leaves the machine. A machine may have a voice denoiser beside ffmpeg (rragent's machines do: the program `sherpa-onnx-offline-denoiser` with its model): the tool finds it and uses it for a noisy recording by itself, and works with ffmpeg alone where it is not there. When ffmpeg or one of its filters is missing, the tool says which; say so in one sentence instead of installing it, and never install the denoiser.
 
 ## The flow
 
@@ -37,14 +37,16 @@ node <skill>/tools/voice.mjs clean uploads/<file> artifacts/<name>.m4a --before 
 node <skill>/tools/voice.mjs clean uploads/<video> artifacts/<name>.mp4 --before artifacts/<name>-before.m4a [--for <platform…>]   # the picture kept as it is
 ```
 
-The tool measures the recording, mends what the numbers give a reason for and nothing else, and prints each step with its reason, the numbers before and after, and what it could not mend. A recording with nothing wrong only gets its loudness. `--before` writes the untouched sound as loud as the result, so that the two can be compared: louder always sounds better, and a comparison at two levels says nothing.
+The tool measures the recording, mends what the numbers give a reason for and nothing else, and prints each step with its reason, the numbers before and after, and what it could not mend. A recording with nothing wrong gets a high-pass under the voice and its loudness, its peaks held to fit. `--before` writes the sound as it was, brought to the result's loudness, so that the two can be compared: louder always sounds better, and a comparison at two levels says nothing.
 
-`--for` takes the platforms' names as platform-zones has them (`reels`, `tiktok`, `shorts`, `youtube`, `linkedin`, …) and `podcast`; without it the master for video (`targets` below).
+`--for` takes the platforms' names as platform-zones has them (`reels`, `tiktok`, `shorts`, `youtube`, `linkedin`, …) and `podcast`; without it the master for video (`targets` below). A video keeps its picture in its own kind of file (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`). When the line says the video has several audio streams, the first was taken: `--audio <n>` takes another.
+
+It refuses, in one sentence, a recording in which it finds no voice or under a second of one, and a voice so quiet that it would need over 40 dB of gain. Pass the reason on in their words and ask for the recording they meant, or for one made closer to the microphone; do not try to get round it.
 
 What it cannot mend it says, and you pass that on as it is, never softened:
 
 - **The room** (a hall, an echoing kitchen): it stays. Next time closer to the microphone, a room with soft things in it.
-- **Noise that changes** (traffic, voices, a keyboard, wind): lowered a little at most.
+- **Noise that changes** (traffic, voices, a keyboard, wind): with the denoiser on the machine it is taken down, by as much as the line says, and what remains remains; without the denoiser it stays nearly as it was.
 - **A narrow source** (a call, a 16 kHz recording): what was not recorded is not brought back.
 
 ### 2. Let them hear it
@@ -54,10 +56,10 @@ You measured it, you did not hear it. Show both, the result first, with what you
 ```hiccup
 [:div
  [:p [:strong "After"]] [:audio {:src "artifacts/kueche.m4a" :controls true}]
- [:p [:strong "Before"] " (as loud as after, to compare)"] [:audio {:src "artifacts/kueche-before.m4a" :controls true}]
+ [:p [:strong "Before"] " (brought to the same loudness, to compare)"] [:audio {:src "artifacts/kueche-before.m4a" :controls true}]
  [:ul
   [:li "It was quiet and uneven: now every sentence is as loud as the videos around it."]
-  [:li "The fridge's hum is out, the hiss in the pauses is lower."]
+  [:li "The fridge's hum is out, the noise in the pauses is lower."]
   [:li "The kitchen's echo stays: no filter takes a room out of a voice."]]
  [:p "I measured this, I did not hear it. Does it sound right?"]
  [:button {:class "primary" :send "The sound is good"} "Sounds good"]
@@ -75,7 +77,7 @@ Run `clean` again on the upload (never on a result) with the option, and show bo
 | watery, tinny, robotic, "under water", syllables swallowed | `--denoise gentle`; still so: `--denoise off` |
 | still noisy | `--denoise strong`, and say that it may cost the voice some of its body |
 | "that is not my voice", too sharp, too dull | `--tone off` |
-| it pumps, it breathes, too flat, "like the radio" | `--level plain`: as loud as before, but the recording's own dynamics (no evening out, no compressor) |
+| it pumps, it breathes, too flat, "like the radio" | `--level plain`: as loud, with the recording's own dynamics (no evening out of its phrases) |
 | too loud, too quiet beside other videos | `--loudness <LUFS>` (a platform's own figure: `targets`) |
 | the echo, the room | nothing here helps; say so, and how to record it next time |
 
@@ -91,18 +93,24 @@ node <skill>/tools/voice.mjs targets [platform…] [--json]         # what the p
 node <skill>/tools/voice.mjs targets list
 ```
 
-`measure` for "what is wrong with my sound?" and before advising how to record. `targets` when the person asks what a platform wants: each line says whether it is the platform's own word (`official`), someone's measurement (`measured`), its ads' number (`ads`) or not known (`unknown`); say "not known" where it says so. No platform publishes a loudness for organic video; never state one as theirs.
+`measure` for "what is wrong with my sound?" and before advising how to record. Where it says that something was not judged (a hum, in a recording without pauses), say that, not that it is absent. `targets` when the person asks what a platform wants: each line says whether it is the platform's own word (`official`), someone's measurement (`measured`), its ads' number (`ads`) or not known (`unknown`); say "not known" where it says so. No platform publishes a loudness for organic video; never state one as theirs.
 
 ## For another skill
 
 A skill runs the tool as a program, never imports its code: `VOICE_SOUND` naming `tools/voice.mjs`, else `<skill>/../voice-sound/tools/voice.mjs` beside it, else `/home/sprite/skills/voice-sound/tools/voice.mjs`. Without the tool such a skill says: "The voice's sound needs agentitos' voice-sound skill beside this one (or VOICE_SOUND naming its tools/voice.mjs)."
 
-- `clean <in> <out> --json` writes `<out>` and `<out>.json` (what was measured before and after, every step with its `why`, what was `left`); stdout is that JSON, exit 1 with `{"error": "…"}`.
-- A skill that levels itself (best-takes, take by take): `clean <in> <out.wav> --level off` mends and leaves the level alone (`--level plain`: the target loudness by gain alone). Clean the whole recording before it is cut: the noise is read in its pauses, which a cut removes.
-- `--mono` for a voice that is mounted as one track of a film; its loudness is then the one channel's, 3 LU under what it plays at on two speakers.
+- `clean <in> <out> --json` writes `<out>` and `<out>.json` (what was measured before and after, every step with its `why`, what was `left`) together at its end; stdout is that JSON; a refusal or an error is exit 1 with `{"error": "…"}` and no output file. While it runs, its working files lie in a hidden folder beside `<out>`, about 23 MB for a minute of sound, gone at the end.
+- A skill that sets the level itself (best-takes, take by take): `clean <in> <out.wav> --level off` mends and keeps the loudness the recording came with (`--level plain`: the target loudness by gain and the limiter alone). Clean the whole recording before it is cut: the noise is read in its pauses, which a cut removes.
+- Loudness is always as played on two speakers. `--mono` writes one channel for a voice that is mounted as one track of a film: at a target of −14 LUFS that file measures −17 as ffmpeg measures a file of one channel, and plays at −14.
 - Loudness, peak and range numbers come from `targets --json` (`master.lufs`, `master.truePeakDbtp.aim` and `.max`, `master.rangeLu`), never from a number written into the skill.
 - `measure <file> --json` for a check of its own (`findings`: `quiet`, `noise`, `hum`, `clipped`, `uneven`, `roomy`, …, each `some` or `strong`).
 
-## In the chat
+## UI in the chat
 
-Speak the person's language and keep it short. Say what you did as what they will hear, not as filters ("the hum is out", never "four notches at 50 Hz"); a number only when they ask. Always say that you measured and did not hear. Never put a token, a path of your working files or a raw error into the chat.
+Speak the person's language and keep it short: one or two sentences and a block. Say what you did as what they will hear, not as filters ("the hum is out", never "notches at 50 Hz"); a number only when they ask. Always say that you measured and did not hear. Never put a token, a path of your working files or a raw error into the chat.
+
+Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:send "text"` on a button sends that text as the person's next message. Links, sounds and videos point at `https://…`, `artifacts/…` or `uploads/…`. No text fields: for a change they type.
+
+- One question per block, with buttons for the likely answers when a click is the whole answer, and a line under them saying that they can type anything else.
+- A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
+- The button that moves on gets `:class "primary"`; the others stay plain. A button's text says what happens; its `:send` reads as the person's answer ("The sound is good").

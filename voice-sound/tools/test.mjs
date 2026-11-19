@@ -17,6 +17,8 @@ import { measure, lines } from "./voice.mjs";
 import { CLIP_SOME_SHARE, CLIP_MIN_RUNS, CLIP_MIN_RUN_SAMPLES } from "./lib/findings.mjs";
 
 const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), "voice.mjs");
+// the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
+process.env.VOICE_SOUND_DENOISER = "/nonexistent/voice-sound-no-denoiser";
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const skip = !ffmpeg && "no ffmpeg";
 const near = (x, y, by, what = "") => assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`);

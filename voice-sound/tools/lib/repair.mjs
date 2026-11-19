@@ -293,16 +293,20 @@ export function repairPlan(m, opts = {}) {
   const noisy = has("noise") && snr != null;
   // ("ffmpeg": ffmpeg's own choice below, as if the neural denoiser were not on the machine)
   const wants = asked === "ffmpeg" ? null : asked;
+  // noise under the voice that the pauses do not show, as the denoiser's probe found it (repair
+  // runs the probe and plans again with opts.underVoice)
+  const under = !noisy && opts.underVoice?.fires ? opts.underVoice : null;
   // the neural denoiser: asked for, or the default where the machine has it
-  const dn = noisy && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
+  const dn = (noisy || under) && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
   if (wants === "dpdfnet" && noisy && strength !== "off" && !dn) refuse(`dpdfnet needs sherpa-onnx's offline denoiser and the DPDFNet-2 model (${DPDFNET_MODEL}): name them in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET (the skill ships neither).`);
   let neural = null;
   if (noisy && n?.kind === "changing" && !dn)
     left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB)${model && (wants ?? "arnndn") === "arnndn" ? ": RNNoise follows some of it, not all" : ": a filter that learns one noise cannot follow it, so some of it stays"}.` });
   if (dn) {
     // its attenuation limit: what the aim needs, never more than --denoise allows (DPDFNET_LIMITS)
+    const est = under ? under.underDb : snr;
     const cap = DPDFNET_LIMITS[strength];
-    const needed = DENOISE_AIM_DB - snr;
+    const needed = DENOISE_AIM_DB - est;
     const limit = r1(Math.max(0, Math.min(needed, cap)));
     if (limit >= DENOISE_MIN_DB) {
       method = "dpdfnet";
@@ -312,14 +316,18 @@ export function repairPlan(m, opts = {}) {
       neural = { ...dn, limit, tune: t, pauses };
       const tail = needed > cap ? `, the most --denoise ${strength} allows (the aim needed ${dB(needed)})` : "";
       const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${Math.ceil(Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE / 60)} minutes` : "";
+      const said = under
+        ? `Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of ${Math.round(under.sampleS)} s of it: about ${dB(est)} dB under the speech; DPDFNet-2 asked to take at most ${dB(limit)} dB off`
+        : `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off`;
       steps.push({
-        id: "denoise", why: `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off${tail}${many}.`,
-        method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: limit, limitDb: limit, model: path.basename(dn.model),
+        id: "denoise", why: `${said}${tail}${many}.`,
+        method, snrDb: est, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: limit, limitDb: limit, model: path.basename(dn.model),
+        ...(under && { underVoiceDb: est, probe: under }),
         pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })), seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
       });
-      if (n?.kind === "changing")
+      if (!under && n?.kind === "changing")
         left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB): the neural denoiser took up to ${dB(limit)} dB off it, and what is left of it stays.` });
-      if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${dB(snr)} dB under the speech; ${dB(limit)} dB less is as far as --denoise ${strength} lets the neural denoiser go, so it ends about ${dB(snr + limit)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
+      if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${under ? "about " : ""}${dB(est)} dB under the speech; ${dB(limit)} dB less is as far as --denoise ${strength} lets the neural denoiser go, so it ends about ${dB(est + limit)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
     }
   } else if (noisy && strength !== "off" && wants !== "off") {
     method = wants ?? (n?.kind === "changing" && model ? "arnndn" : pause ? "afftdn-sample" : "afftdn-profile");
@@ -476,15 +484,23 @@ function graphOf(head, chain, den, after) {
 
 export async function repair(file, outWav, m, opts = {}) {
   if (!fs.existsSync(file)) refuse(`There is no ${file}.`);
-  let plan = repairPlan(m, opts);
+  let plan = withTone(m, opts);
+  // no noise in the pauses: the denoiser's probe asks whether it lies under the voice
+  let probe = null;
+  if (!plan.neural && probeWanted(m, opts)) {
+    checkFilters(plan.filters);
+    probe = await probeNoise(file, m, opts, opts.tmp ?? path.dirname(path.resolve(outWav)));
+    if (probe.fires) plan = withTone(m, { ...opts, underVoice: probe });
+  }
   // the neural denoiser between two passes; where it fails, ffmpeg's method in one, as without it
   if (plan.neural) {
     checkFilters(plan.filters);
     try {
-      return await neuralRepair(file, outWav, plan, opts);
+      const r = await neuralRepair(file, outWav, plan, opts);
+      return probe ? { ...r, probe } : r;
     } catch (e) {
       if (!(e instanceof NeuralFailure)) throw e;
-      plan = fallbackPlan(m, opts, e);
+      plan = fallbackPlan(m, { ...opts, ...(probe && { underVoice: probe }) }, e);
     }
   }
   // (the filters of opts.after are the tone stage's to check)
@@ -520,7 +536,7 @@ export async function repair(file, outWav, m, opts = {}) {
     refuse(`ffmpeg's filters wrote ${bad.value} at ${clockOf(bad.at)} of the repaired sound (${plan.method === "off" ? "the repair" : plan.method}): run it again with --denoise off or another method, and tell the skill's authors.`);
   }
   const { steps, left, method, graph } = plan;
-  return { steps, left, method, graph };
+  return { steps, left, method, graph, ...(probe && { probe }) };
 }
 
 // the first sample of a 32-bit float WAV that is no number or lies beyond ±16 (+24 dBFS: rebuilt
@@ -667,12 +683,133 @@ class NeuralFailure extends Error {}
 
 // ffmpeg's method for the whole recording, the denoise step saying why
 function fallbackPlan(m, opts, e) {
-  const plan = repairPlan(m, { ...opts, method: "ffmpeg" });
+  const plan = withTone(m, { ...opts, method: "ffmpeg" });
   const said = `the neural denoiser failed (${e.message}), so ffmpeg's ${plan.method} did this for the whole recording`;
   const st = plan.steps.find((s) => s.id === "denoise");
+  const u = opts.underVoice;
   if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; ${said}.`, fallback: { from: "dpdfnet", reason: e.message } });
+  else if (u?.fires) plan.steps.push({ id: "denoise", why: `Noise lies under the voice, about ${dB(u.underDb)} dB under the speech as the neural denoiser's probe found it, but the denoiser then failed (${e.message}), and ffmpeg's methods learn a noise from the pauses, where there is too little of it: it stays.`, method: "off", underVoiceDb: u.underDb, probe: u, fallback: { from: "dpdfnet", reason: e.message } });
   else plan.steps.push({ id: "denoise", why: `The ${said.replace(/, so .*/, "")}, and ffmpeg's method has nothing to take off here.`, method: "off", fallback: { from: "dpdfnet", reason: e.message } });
   return plan;
+}
+
+// The plan, its `after` (the tone stage's filters) asked again of opts.retone where repair knows
+// better than the caller did what the noise step does (the probe found noise, the denoiser failed)
+function withTone(m, opts) {
+  const plan = repairPlan(m, opts);
+  if (typeof opts.retone !== "function") return plan;
+  const after = (opts.retone(plan.steps.find((s) => s.id === "denoise") || null) || "").trim();
+  return after === (opts.after || "").trim() ? plan : repairPlan(m, { ...opts, after });
+}
+
+// ---------------------------------------------------------------- the probe
+//
+// `measure` names noise from the pauses; noise that changes often is not in them (a keyboard or a
+// café under the voice, pauses short or quiet). Where the denoiser is on the machine, --denoise
+// is not off and measure named no noise, the denoiser runs without a limit on a sample of the
+// mended sound: what it took out (input minus output, in step: its delay is 0) against what it
+// kept, over the frames with speech, is the noise under the voice. Over PROBE_FIRES_DB under it
+// nothing is done (the denoiser takes a little off clean speech too); within it the recording
+// counts as noisy, and the limit follows from the estimate as from the pauses' SNR.
+//
+// The sample: the whole of a recording up to PROBE.wholeS, else PROBE.windows stretches of
+// PROBE.windowS spread evenly over it, each through the steps before the noise, joined; each
+// stretch's first skipS left out of the sums (the filters' and the network's start).
+//
+// PROBE_FIRES_DB, from the lab's tune split (2026-11-20; the estimate where measure named no noise):
+// 42 clean recordings 22.5 to 41.4 dB (median 35.8: the denoiser takes a little off clean speech
+// too), 43 faults that are not noise 17.8 to 43.6 (reverb-small 17.8, clip-20db 19.8, the rest from
+// 22.5), 9 real café and keyboard recordings 9.0 to 21.6. There is no gap. The criterion is harm,
+// not silence (runs/voice/2026-11-20-probe-thresholds, 2026-11-20, against ffmpeg's method and the
+// recording as it was, 0.15 on DNSMOS overall or voice or on PESQ): at 16 the probe fired on 5 of
+// the 9, at 19 on 6 and reverb-small, at 21 on 7, reverb-small and clip-20db; no recording it
+// fired on got worse at any of them (reverb-small at 21: overall 2.34 → 2.62, voice 3.01 → 3.08,
+// PESQ 1.44 → 1.49, but NISQA 1.93 → 1.58; clip-20db: overall 3.37 → 3.45, PESQ 2.17 → 2.31,
+// NISQA 2.91 → 3.62), and the background score of the 12 real ones rose from 3.36 to 3.53. So 21,
+// 1.5 dB under the nearest clean recording. The gentle limit for an estimate over 16 (tried at 21)
+// gave 3.49 there and nothing else that differed: not taken. The estimate is coarse: on the
+// VoiceBank pairs (true SNR 7.5, 12.5, 17.5 dB) its medians were 21, 27.5 and 29.5.
+export const PROBE = { wholeS: 40, windows: 6, windowS: 5, skipS: 0.5, frameS: 0.02, speechDb: 20 };
+export const PROBE_FIRES_DB = 21;
+// (for the lab only: VOICE_SOUND_PROBE_DB another threshold)
+const probeThreshold = () => Number(process.env.VOICE_SOUND_PROBE_DB) || PROBE_FIRES_DB;
+
+function probeWanted(m, opts) {
+  const strength = opts.denoise ?? "auto";
+  const asked = opts.method || process.env.VOICE_SOUND_DENOISE || null;
+  const findings = m.findings ?? findingsOf(m);
+  return strength !== "off" && (asked == null || asked === "dpdfnet") && !findings.some((f) => f.id === "noise") &&
+    (m.speech?.seconds ?? 0) > 0 && !!neuralDenoiser();
+}
+
+// → { fires, underDb, removedDb, sampleS, speechS, windows, seconds } (the estimate: how far the
+// noise lies under the voice, dB), or { fires: false, failed } where it could not be run
+export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir()) {
+  const t0 = Date.now();
+  const dn = neuralDenoiser();
+  const P = { ...PROBE, ...opts.probe };
+  const done = (x) => ({ fires: false, ...x, threshold: probeThreshold(), seconds: r1((Date.now() - t0) / 1000) });
+  if (!dn) return done({ failed: "no denoiser" });
+  const graph = repairPlan(m, { denoise: "off", tune: opts.tune }).graph;
+  const S = m.analysed?.seconds ?? 0;
+  const spans = S <= P.wholeS ? [[0, S]] : [...Array(P.windows).keys()].map((i) => [Math.max(0, ((i + 0.5) * S) / P.windows - P.windowS / 2), P.windowS]);
+  fs.mkdirSync(workDir, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(workDir, ".voice-sound-probe-"));
+  try {
+    // the stretches through the steps before the noise, as floats
+    const parts = [];
+    for (const [from, len] of spans) {
+      const raw = path.join(tmp, `w${parts.length}.f32`);
+      const c = await ffmpegPass([...(from > 0 ? ["-ss", from.toFixed(3)] : []), "-t", len.toFixed(3), "-i", ffPath(file), "-filter_complex", graph, "-map", "[out]", "-f", "f32le", ffPath(raw)]);
+      if (c !== 0) return done({ failed: `ffmpeg: ${c}` });
+      const b = fs.readFileSync(raw);
+      parts.push(new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)));
+      fs.rmSync(raw, { force: true });
+    }
+    const n = parts.reduce((s, p) => s + p.length, 0);
+    if (n < RATE) return done({ failed: "too short" });
+    const x = new Float32Array(n);
+    let o = 0, peak = 0;
+    for (const p of parts) { x.set(p, o); o += p.length; }
+    for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(x[i]));
+    if (!(peak > 0)) return done({ failed: "silent" });
+    const g = 10 ** ((NEURAL.peakDb - 20 * Math.log10(peak)) / 20);
+    const padded = Math.ceil(n / BLOCK) * BLOCK + 24000;
+    const inW = path.join(tmp, "probe.wav"), outW = path.join(tmp, "probe.out.wav");
+    const xi = new Float32Array(padded);
+    for (let i = 0; i < n; i++) xi[i] = x[i] * g;
+    fs.writeFileSync(inW, Buffer.concat([floatHeader(padded), Buffer.from(xi.buffer)]));
+    const failed = await runDenoiser({ ...dn, limit: 0 }, inW, outW, padded / RATE);
+    if (failed) return done({ failed });
+    const oi = wavInfo(outW);
+    if (!oi || oi.samples !== padded || oi.rate !== RATE || oi.channels !== 1) return done({ failed: "its output is not as long as its input" });
+    const fd = fs.openSync(outW, "r");
+    const y = readRange(fd, oi, 0, n);
+    fs.closeSync(fd);
+    // per frame: what it kept and what it took out; speech: the frames whose kept level lies within
+    // speechDb of the loud kept frames (the 95th percentile), past each stretch's start
+    const F = Math.round(P.frameS * RATE), skip = Math.round(P.skipS * RATE);
+    const frames = [];
+    let start = 0;
+    for (const p of parts) {
+      for (let a = start + skip; a + F <= start + p.length; a += F) {
+        let k = 0, r = 0;
+        for (let i = a; i < a + F; i++) { const v = y[i], d = xi[i] - v; if (!Number.isFinite(v)) return done({ failed: "not finite" }); k += v * v; r += d * d; }
+        frames.push({ k, r });
+      }
+      start += p.length;
+    }
+    if (frames.length < 10) return done({ failed: "too short" });
+    const lv = frames.map((f) => 10 * Math.log10(f.k / F + 1e-20)).sort((a, b) => a - b);
+    const loud = lv[Math.floor(lv.length * 0.95)];
+    let K = 0, Rm = 0, sp = 0;
+    for (const f of frames) if (10 * Math.log10(f.k / F + 1e-20) >= loud - P.speechDb) { K += f.k; Rm += f.r; sp++; }
+    if (!(K > 0)) return done({ failed: "no speech kept" });
+    const underDb = r1(Math.min(99, Rm > 0 ? 10 * Math.log10(K / Rm) : 99));
+    return done({ fires: underDb <= probeThreshold(), underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 const WAV_OUT = ["-map_metadata", "-1", "-fflags", "+bitexact", "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav"];
@@ -801,7 +938,11 @@ function lagOf(x, y) {
 async function neuralRepair(file, outWav, plan, opts) {
   const nr = plan.neural, t = nr.tune;
   fs.mkdirSync(path.dirname(path.resolve(outWav)), { recursive: true });
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "voice-sound-neural-"));
+  // (beside the output, in the caller's working folder where it names one: clean removes that
+  // folder on a signal, and ends this run's children with it)
+  const workDir = opts.tmp ?? path.dirname(path.resolve(outWav));
+  fs.mkdirSync(workDir, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(workDir, ".voice-sound-neural-"));
   const fds = [];
   const open = (f, flags) => { const fd = fs.openSync(f, flags); fds.push(fd); return fd; };
   const close = (fd) => { const i = fds.indexOf(fd); if (i >= 0) fds.splice(i, 1); fs.closeSync(fd); };

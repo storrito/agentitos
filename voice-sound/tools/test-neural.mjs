@@ -13,9 +13,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, neuralDenoiser, piecesOf, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL } from "./lib/repair.mjs";
+import { repair, repairPlan, neuralDenoiser, piecesOf, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL, PROBE_FIRES_DB } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
@@ -23,6 +24,7 @@ const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const skip = !ffmpeg && "no ffmpeg";
 const run = (args) => { const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); };
 const ids = (list) => list.map((s) => s.id);
+const near = (x, y, by, what = "") => assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`);
 const db = (x) => 10 * Math.log10(x);
 
 // the synthetic voice of test-repair.mjs (phrases of 2.5 s, pauses of 1.1 s), with pink noise
@@ -40,6 +42,8 @@ const fs = require("fs");
 const a = Object.fromEntries(process.argv.slice(2).map((s) => s.replace(/^--/, "").split(/=(.*)/s).slice(0, 2)));
 const E = process.env;
 if (E.STANDIN_LOG) fs.appendFileSync(E.STANDIN_LOG, JSON.stringify(a) + "\\n");
+if (E.STANDIN_PID) fs.appendFileSync(E.STANDIN_PID, process.pid + "\\n");
+if (E.STANDIN_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(E.STANDIN_SLEEP) * 1000);
 let count = 1;
 if (E.STANDIN_COUNT) { count = (Number(fs.existsSync(E.STANDIN_COUNT) ? fs.readFileSync(E.STANDIN_COUNT, "utf8") : 0) || 0) + 1; fs.writeFileSync(E.STANDIN_COUNT, String(count)); }
 if (!fs.existsSync(a["speech-denoiser-dpdfnet-model"] || "")) { console.error("no model"); process.exit(2); }
@@ -77,7 +81,7 @@ fs.writeFileSync(a["output-wav"], Buffer.concat([h, o]));
 
 let dir, standin, model, noisy;
 const file = (name) => path.join(dir, name);
-const SWITCHES = ["STANDIN_LOG", "STANDIN_COUNT", "STANDIN_FAIL", "STANDIN_FAIL_AFTER", "STANDIN_NOTHING", "STANDIN_LENGTH", "STANDIN_GAIN_DB", "STANDIN_DELAY", "STANDIN_SILENCE", "STANDIN_NAN"];
+const SWITCHES = ["STANDIN_PID", "STANDIN_SLEEP", "STANDIN_LOG","STANDIN_COUNT", "STANDIN_FAIL", "STANDIN_FAIL_AFTER", "STANDIN_NOTHING", "STANDIN_LENGTH", "STANDIN_GAIN_DB", "STANDIN_DELAY", "STANDIN_SILENCE", "STANDIN_NAN"];
 const ENV = ["VOICE_SOUND_DENOISER", "VOICE_SOUND_DPDFNET", "VOICE_SOUND_DENOISE", "PATH", ...SWITCHES];
 // runs fn with the environment set as given (null: unset), and puts it back after
 async function withEnv(vars, fn) {
@@ -143,6 +147,7 @@ before(() => {
   if (!ffmpeg) return;
   noisy = file("noisy.wav");
   run(["-filter_complex", VOICE, "-ac", "1", "-c:a", "pcm_f32le", noisy]);
+  run(["-filter_complex", VOICE.replace("amplitude=0.02", "amplitude=0.0003"), "-ac", "1", "-c:a", "pcm_f32le", file("quiet-noise.wav")]);
 });
 after(() => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
 
@@ -402,4 +407,99 @@ test("a file whose name begins with a dash, in and out, with and without the den
       assert.equal(samples(file("-out.wav")).length, samples(file("-dash.wav")).length);
     }
   } finally { process.chdir(cwd); }
+});
+
+// ---------------------------------------------------------------- the probe
+
+test("no noise in the pauses: the probe, unlimited, on the mended sound; quiet where nothing was taken out", { skip }, async () => {
+  const m = await measure(file("quiet-noise.wav"));
+  assert.ok(!m.findings.some((f) => f.id === "noise"), "measure names no noise");
+  const log = file("probe.log"), work = file("work-a");
+  fs.mkdirSync(work, { recursive: true });
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log }, () => repair(file("quiet-noise.wav"), path.join(work, "out.wav"), m, { tmp: work }));
+  assert.equal(r.method, "off");
+  assert.deepEqual(ids(r.steps), ["highpass"]);
+  assert.equal(r.probe.fires, false);
+  // (the stand-in took nothing out but its 16-bit rounding)
+  assert.ok(r.probe.underDb > 60, `${r.probe.underDb}`);
+  assert.equal(r.probe.threshold, PROBE_FIRES_DB);
+  const calls = fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]["speech-denoiser-dpdfnet-attenuation-limit-db"], "0", "the probe runs without a limit");
+  // nothing of it left in the working folder, nothing in the system's temp directory
+  assert.deepEqual(fs.readdirSync(work), ["out.wav"]);
+  // the output is what the plan without a probe gives, to the sample
+  const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("plain-q.out.wav"), m));
+  assert.ok(fs.readFileSync(path.join(work, "out.wav")).equals(fs.readFileSync(file("plain-q.out.wav"))));
+  assert.equal(plain.probe, undefined);
+  // asked for ffmpeg's method, or --denoise off: no probe
+  for (const o of [{ method: "ffmpeg" }, { denoise: "off" }]) {
+    fs.rmSync(log, { force: true });
+    const x = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log }, () => repair(file("quiet-noise.wav"), file("np.out.wav"), m, o));
+    assert.equal(x.probe, undefined, JSON.stringify(o));
+    assert.ok(!fs.existsSync(log), JSON.stringify(o));
+  }
+});
+
+test("the probe fires where the denoiser took much out: the whole recording denoised, the step says it was found under the voice", { skip }, async () => {
+  const m = await measure(file("quiet-noise.wav"));
+  const tones = [];
+  // (a stand-in that halves everything took out as much as it kept: 0 dB under the voice)
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -6 }, () =>
+    repair(file("quiet-noise.wav"), file("fired.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return d ? "volume=0dB" : ""; } }));
+  assert.equal(r.method, "dpdfnet");
+  assert.equal(r.probe.fires, true);
+  near(r.probe.underDb, 0, 0.2, "the estimate");
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.equal(st.underVoiceDb, r.probe.underDb);
+  assert.equal(st.limitDb, DPDFNET_LIMITS.auto);
+  assert.match(st.why, /^Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of \d+ s of it: about 0 dB under the speech; DPDFNet-2 asked to take at most 18 dB off/);
+  assert.equal(st.why.split(/\. /).length, 1);
+  // the tone stage was asked again, with the step that ran
+  assert.equal(tones.at(-1)?.method, "dpdfnet");
+  assert.equal(samples(file("fired.out.wav")).length, samples(file("quiet-noise.wav")).length);
+  // the denoiser failing after the probe fired: nothing ffmpeg can do, said so, the tone told
+  tones.length = 0;
+  const f = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -6, STANDIN_FAIL: 4, STANDIN_FAIL_AFTER: 1, STANDIN_COUNT: file("count-p") }, () =>
+    repair(file("quiet-noise.wav"), file("fired-failed.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return ""; } }));
+  fs.rmSync(file("count-p"), { force: true });
+  const fs1 = f.steps.find((s) => s.id === "denoise");
+  assert.equal(f.method, "off");
+  assert.match(fs1.why, /^Noise lies under the voice, about 0 dB under the speech as the neural denoiser's probe found it, but the denoiser then failed \(it exited with 4\)/);
+  assert.equal(tones.at(-1), null, "the tone stage told that no noise was taken out");
+});
+
+test("after a fallback the tone stage hears what ffmpeg's method did, not what the denoiser would have", { skip }, async () => {
+  const m = await measure(noisy);
+  const tones = [];
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_FAIL: 1 }, () => repair(noisy, file("ft.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return ""; } }));
+  assert.equal(r.method, "afftdn-sample");
+  assert.equal(tones[0].method, "dpdfnet");
+  assert.equal(tones.at(-1).method, "afftdn-sample");
+  assert.equal(tones.at(-1).reduceDb, 12);
+});
+
+test("a signal to clean ends a running denoiser and leaves none of its files", { skip }, async () => {
+  const out = file("sig/out.m4a"), pids = file("sig.pids");
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const tool = path.join(path.dirname(fileURLToPath(import.meta.url)), "voice.mjs");
+  const env = { ...process.env, VOICE_SOUND_DENOISER: standin, VOICE_SOUND_DPDFNET: model, STANDIN_SLEEP: 60, STANDIN_PID: pids };
+  delete env.VOICE_SOUND_DENOISE;
+  const p = spawn(process.execPath, [tool, "clean", noisy, out], { env, stdio: "ignore" });
+  const t0 = Date.now();
+  while (!fs.existsSync(pids) && Date.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(fs.existsSync(pids), "the denoiser started");
+  await new Promise((r) => setTimeout(r, 300));
+  const pid = Number(fs.readFileSync(pids, "utf8").trim().split("\n")[0]);
+  // (its files lie in clean's working folder beside the output)
+  const work = fs.readdirSync(path.dirname(out)).filter((n) => n.startsWith(".voice-sound-clean-"));
+  assert.equal(work.length, 1);
+  assert.ok(fs.readdirSync(path.join(path.dirname(out), work[0])).some((n) => n.startsWith(".voice-sound-neural-")));
+  const ended = new Promise((r) => p.on("exit", (code, sig) => r({ code, sig })));
+  p.kill("SIGTERM");
+  const e = await ended;
+  assert.equal(e.code, 143);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.throws(() => process.kill(pid, 0), "the denoiser is gone");
+  assert.deepEqual(fs.readdirSync(path.dirname(out)), []);
 });

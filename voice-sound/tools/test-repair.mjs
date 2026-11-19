@@ -18,6 +18,8 @@ import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSam
 import { Refusal } from "./lib/analyse.mjs";
 import { fftOf } from "./lib/fft.mjs";
 
+// the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
+process.env.VOICE_SOUND_DENOISER = "/nonexistent/voice-sound-no-denoiser";
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const skip = !ffmpeg && "no ffmpeg";
 const run = (args) => { const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); };
