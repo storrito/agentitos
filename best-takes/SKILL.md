@@ -21,7 +21,7 @@ You run in rragent: chat left, artifacts beside it. `<skill>` is this file's fol
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `transcribe` skill beside this one, for b-roll its `b-roll` skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (found at `http://sprite.internal`; an rragent agent there often has no key). Words from ElevenLabs Scribe ("äh" included), the cut proposed by Gemini watching the videos: about two cents a minute of recording. Nothing to `npm install`; when something is missing, say so in one sentence, never install it.
+Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `transcribe` skill beside this one, for the faces its `clips` and `layout` skills, for b-roll its `b-roll` skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (found at `http://sprite.internal`; an rragent agent there often has no key). Words from ElevenLabs Scribe ("äh" included), the cut proposed by Gemini watching the videos: about two cents a minute of recording. Nothing to `npm install`; when something is missing, say so in one sentence, never install it.
 
 ## From the recordings to the video, all in the chat
 
@@ -59,6 +59,17 @@ node <skill>/tools/takes.mjs check takes/<name>
 ```
 
 The title is the topic in the person's words. `build` cuts between words, evens each take's level and handles pauses over a second by the picture: moving no more than while the person speaks (a face, a hand-held phone) → jump cut; something moving clearly more (a thing held into the picture, a click, a page loading) → kept muted, a long one as a timelapse (up to ×10); a silent moment worth seeing that it cannot measure (a look, a reaction) is yours to keep with `"pauses": "keep"` on its keep. A wait the speaker announces ("let's wait until then", any language) never goes (a timelapse when the picture moves, else held 3 s before the cut): the proposal lists it in `"waits"`; check that it did and add the sentence's last word yourself when not. The player beside the chat reloads after every build; nothing is rendered. It also writes the cut's voice as one file, `takes/<name>/voice.cut.m4a`: with the words of `takes/<name>/edit.json`, timed in the cut, that is what another skill takes when its pictures are to follow this voice. `check` prints the cut piece by piece with the words, what it leaves out, each pause with what it did and why, the levels and problems: fix every ✗ in `cut.json` and build again; fix a ⚠ unless you have a reason (a short piece that is a whole keep, like "Tschüss.", is fine). Where a skill that framed the videos left `source/faces.json` and `place.json` (clips does), the captions and the hook stand where `place.json` says and `check` names text that lies on a face; that skill's own step (clips' `place`) changes it, never an edit of `place.json` by hand.
+
+### 3b. The faces, and where the picture and the text go
+
+On your own (no other skill framed the videos), after the first build:
+
+```bash
+node <skill>/tools/takes.mjs faces takes/<name>
+node <skill>/tools/takes.mjs place takes/<name>
+```
+
+`faces` finds every face of each video over time (a model on stills of it, followed between them): 2 to 4 cents and 40 to 100 s for a take of a minute, once per recording. `place` (free, a few seconds; it builds again) keeps an upright video as it is, crops a wide one around the speaker, sets the captions in one place clear of the face, raises the picture where a chin would reach into them, puts the hook on no face, and writes `takes/<name>/placed.sheet.jpg` with layout's first three pictures: look at it and choose. Run `place` again after a change of the cut, the caption style or the hook (build and check say so). Where the person does not want their video seen by a model, or `faces` finds no face in a take of a person: the faces by your own eyes (`faces --grid`, then `--eye`), as `<skill>/references/place.md` says. Skipped, the captions stand on the safe box's bottom and the hook at the top whatever is there, unchecked against the face: say so. Read `<skill>/references/place.md` before you change what `place` chose or answer a ✗ it prints.
 
 ### 4. Ask whether it is right
 

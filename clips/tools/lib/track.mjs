@@ -14,8 +14,11 @@ const POOR = 28;
 
 // the footage at TRACK_FPS, TRACK_W wide, grey: { frames, w, h, fps, start }
 export function greyFrames(video, { start = 0 } = {}) {
-  const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", video], { encoding: "utf8" });
-  const [W, H] = probe.stdout.trim().split(",").map(Number);
+  // the size as shown: ffmpeg turns a phone's upright picture stored on its side (rotation ±90) upright as it reads it
+  const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_side_data=rotation:stream_tags=rotate", "-of", "json", video], { encoding: "utf8" });
+  const v = JSON.parse(probe.stdout || "{}").streams?.[0] || {};
+  const side = Math.abs(Number(v.side_data_list?.find((d) => d.rotation != null)?.rotation ?? v.tags?.rotate ?? 0)) % 180 === 90;
+  const [W, H] = side ? [v.height, v.width] : [v.width, v.height];
   const w = TRACK_W, h = Math.round((TRACK_W * H) / W / 2) * 2;
   const r = spawnSync("ffmpeg", ["-v", "error", "-i", video, "-an", "-sn", "-vf", `fps=${TRACK_FPS},scale=${w}:${h}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
   if (r.status !== 0) throw new Error(`ffmpeg could not read the frames of ${video}: check that the file plays (ffprobe ${video}), else cut it again.`);

@@ -1355,6 +1355,38 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     const r = textOverTime({ zones: Z9, shots: [shot(0, 2, [still([355, 300, 370, 500], 0, 2)]), shot(2, 6, [still([60, 250, 960, 1000], 2, 6)], null)], needs: [{ role: "hook", start: 0, end: 3.5 }] });
     ok(r.hook && r.hook.until === 2 && /ends at the cut/.test(r.hook.why), JSON.stringify(r.hook));
   });
+  t("a take filmed too close leaves the hook no place: it goes where it lies on no eyes, nose or mouth (a card on the forehead before a text on the mouth, though that covers less of the face), said; hook:text is a wish: it does not put the text on the mouth while the card clears it, and says it took the card (the review: hook:text and hook:card put hooks on eyes, nose or mouth for 3.1 s where main had none)", () => {
+    // best-takes' tight stand-in, raised: the head from y 200, 1100 px tall, the eyes, nose and mouth 620–1150
+    const f = { who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [130, 200, 820, 1100], feat: [270, 620, 540, 530] })) };
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.hook && r.hook.kind === "card" && r.hook.where === "top" && r.hook.onFace.features === 0 && r.hook.onFace.seconds > 0, JSON.stringify(r.hook));
+    ok(r.conflicts.some((c) => /on the forehead or the hair, never on the eyes, nose or mouth/.test(c)), r.conflicts.join(" "));
+    const t2 = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", kind: "text", start: 0, end: 3 }] });
+    ok(t2.hook.kind === "card" && t2.hook.onFace.features === 0 && t2.hook.asked === "text" && t2.notes.some((n) => /The hook is a card, not the text asked for/.test(n)), JSON.stringify([t2.hook, t2.notes]));
+    // the review's synthetic s4 with hook:card (a face high, room below the chin): the text there clears the face, the card does not
+    const high = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [390 + (i % 7) * 3, 300 + (i % 5) * 4, 300, 400] })) };
+    const c4 = textOverTime({ zones: Z9, shots: [shot(0, 4, [high])], needs: [...cap, { role: "hook", kind: "card", start: 0, end: 3 }] });
+    ok(!(c4.hook.onFace?.seconds > 0), JSON.stringify(c4.hook));
+  });
+  t("captions above a head that fills the frame leave the hook only their own place: they give way to the next place that leaves it better off and lies on the faces no longer (best-takes' own phone take: the captions above the head, the hook's card over them), said; a --caption-y the caller fixed stays", () => {
+    // the phone take as read off its grid: the face from y 690 to the chin at 1470, the head's top at 570
+    const f = { who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [330, 690, 540, 780] })) };
+    const alone = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: cap });
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(alone.caption.where === "above-head", `without a hook the captions stand ${alone.caption.where}`);
+    ok(r.caption.where === "below-chin" && r.shots[0].lift > 0 && r.caption.seconds === 0, JSON.stringify(r.caption));
+    ok(r.hook && !(inter(r.hook.box, r.caption.box) > 0) && !(r.hook.onFace?.seconds > 0), JSON.stringify(r.hook));
+    ok(r.notes.some((n) => /The captions stand with their middle at [\d.]+ % of the height, not at [\d.]+ %/.test(n)), r.notes.join(" "));
+    const kept = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }], fixed: { y: alone.caption.options.y } });
+    ok(kept.caption.options.y === alone.caption.options.y, JSON.stringify(kept.caption.options));
+  });
+  t("the captions never pay for the hook: a hook already on no face is not given its margin by a smaller type for the whole video (the review's s5: 77 px became 69 px for it), and they give way only to a place that keeps their type", () => {
+    const f = { who: "A", track: Array.from({ length: 41 }, (_, j) => ({ t: +(j / 10).toFixed(2), box: [200 + (j % 7) * 3, 900 + (j % 5) * 4, 680, 900], feat: [200 + 0.18 * 680, 900 + 0.38 * 900, 0.64 * 680, 0.48 * 900] })) };
+    const alone = textOverTime({ zones: Z9, shots: [shot(0, 4, [f])], needs: cap });
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 4, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.caption.font === alone.caption.font && r.caption.font === DEFAULTS.caption.font.tall, `type ${r.caption.font} with the hook, ${alone.caption.font} without`);
+    ok(!(r.hook.onFace?.seconds > 0), JSON.stringify(r.hook));
+  });
   t("the command: text writes text.json and lists every shot; a --lift fixes one shot; a wrong --lift and a shots file without tracks are refused in one sentence", () => {
     const dir = fs.mkdtempSync(path.join(OUT, "text-")), file = path.join(dir, "shots.json");
     fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 8, [still([355, 850, 370, 500], 4, 8)])], hook: { start: 0, end: 2.5 } }));

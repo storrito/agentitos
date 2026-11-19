@@ -142,10 +142,16 @@ export const PANEL = 0.36, SEAM = 6;
 const PANEL_FACE_Y = 0.42, BANTER = 5, BANTER_TURNS = 3;
 export const KINDS = ["people", "split", "broll"];
 
+// The size as shown: a phone stores an upright picture as a wide one with a rotation of 90 or −90
+// (most Android takes, an iPhone's "Most Compatible" ones), and ffmpeg turns its frames upright when
+// it reads them (the stills the model sees, the tracker's frames, the render), so every box of the
+// footage is in px of the upright picture
+export const turned = (stream) => Math.abs(Number(stream?.side_data_list?.find((d) => d.rotation != null)?.rotation ?? stream?.tags?.rotate ?? 0)) % 180 === 90;
 export const probe = (file) => {
-  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,start_time:format=duration,start_time", "-of", "json", file], { encoding: "utf8" }));
+  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,start_time:stream_side_data=rotation:stream_tags=rotate:format=duration,start_time", "-of", "json", file], { encoding: "utf8" }));
   const [a, b] = String(j.streams[0].r_frame_rate || "25/1").split("/").map(Number);
-  return { width: j.streams[0].width, height: j.streams[0].height, fps: b ? a / b : 25, duration: Number(j.format.duration),
+  const v = j.streams[0], t = turned(v);
+  return { width: t ? v.height : v.width, height: t ? v.width : v.height, fps: b ? a / b : 25, duration: Number(j.format.duration),
     // the picture's start after the file's own (ffmpeg's filters count from the file's start)
     start: Math.max(0, (Number(j.streams[0].start_time) || 0) - (Number(j.format.start_time) || 0)) };
 };
@@ -258,7 +264,8 @@ const ask = async (or, content, log, schema = SCHEMA, name = "people") => {
 //   (version 3: one features_2d for all three; version 2: the faces without features and looks)
 export async function locate(video, words, shots, meta, { log = () => {} } = {}) {
   const cache = video.replace(/\.[^.]+$/, "") + ".people.json";
-  if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return JSON.parse(fs.readFileSync(cache, "utf8"));
+  // (the answer of before, kept beside the video: no request, nothing spent now; ask afresh without it)
+  if (fs.existsSync(cache) && fs.statSync(cache).mtimeMs >= fs.statSync(video).mtimeMs) return { ...JSON.parse(fs.readFileSync(cache, "utf8")), cached: true };
   const or = await openrouter();
   if (!or) return null;
   const lines = turnsOf(words).map((t) => `[${t.start.toFixed(1)}–${t.end.toFixed(1)} s] ${t.speaker}: ${t.text}`).join("\n");
@@ -355,9 +362,13 @@ function pixels(b, { width, height }, { order = "yx" } = {}) {
     [t, l, bo, r] = order === "yx" ? b : [b[1], b[0], b[3], b[2]];
   } else if (b && ["left", "top", "right", "bottom"].every((e) => Number.isFinite(b[e]))) ({ left: l, top: t, right: r, bottom: bo } = b);
   else return null;
+  // a box whose end comes before its start, or that lies mostly outside the picture, is no box (the
+  // review's answer [950, 980, 20, 10], taken in order, was the whole picture)
+  if (!(r > l && bo > t)) return null;
   const c = (v) => Math.min(1000, Math.max(0, v)) / 1000;
-  [l, r] = [c(l), c(r)].sort((p, q) => p - q);
-  [t, bo] = [c(t), c(bo)].sort((p, q) => p - q);
+  if ((c(r) - c(l)) * (c(bo) - c(t)) < 0.5 * ((r - l) / 1000) * ((bo - t) / 1000)) return null;
+  [l, r] = [c(l), c(r)];
+  [t, bo] = [c(t), c(bo)];
   if (r - l <= 0 || bo - t <= 0) return null;
   return { x: ((l + r) / 2) * width, y: ((t + bo) / 2) * height, w: (r - l) * width, h: (bo - t) * height };
 }
@@ -1190,16 +1201,36 @@ export async function locateMore(video, people, extra, meta, { log = () => {} } 
   }
 }
 
-export async function frame(video, words, { aspect = [9, 16], out, kinds = [], lifts = [], log = () => {} }) {
+// The agent's own boxes of a face, read off a grid picture where no model may see the footage, in
+// the form of the model's answer: one person, every box a still of the shot it falls in, no eyes,
+// nose or mouth (the head's proportions stand in for them wherever a box is used). `tracks`: one
+// list of { t, box: [x, y, w, h] } (px of the footage) per person.
+export function answerOf(tracks, shots, { width, height }) {
+  const k = (v, n) => +Math.min(1000, Math.max(0, (v / n) * 1000)).toFixed(1);
+  return {
+    version: 4, model: "the agent's eyes", cost: 0, by: "eye", extra: { stills: 0, cost: 0 }, missed: [],
+    shots: shots.map((s) => ({
+      start: s.start, end: s.end, kind: "people", material: false, subject: null,
+      people: tracks.map((_, i) => ({ who: tracks.length > 1 ? `person ${i + 1}` : "the speaker", speaker: null })),
+      stills: [...new Set(tracks.flat().filter((m) => m.t >= s.start && m.t <= s.end).map((m) => m.t))].sort((a, b) => a - b).map((t) => ({
+        t, faces: tracks.flatMap((tr, i) => tr.filter((m) => m.t === t).map((m) => ({ person: i, box_2d: [k(m.box[1], height), k(m.box[0], width), k(m.box[1] + m.box[3], height), k(m.box[0] + m.box[2], width)], eyes_2d: null, nose_2d: null, mouth_2d: null, looks: "camera" }))),
+      })),
+    })),
+  };
+}
+
+// The shots of the footage and every face in them followed between the stills: { meta, shots,
+// seen, people } (seen: shotsOf's shots with each person's track filled in by the tracker), or
+// null without an answer. `tracks`: the agent's own boxes instead of the model's (answerOf).
+async function facesOf(video, words, { aspect = [9, 16], tracks = null, log = () => {} }) {
   const meta = probe(video);
-  if (!needsFrame(meta, aspect)) return null;
   log("frame: the cuts, frame by frame …");
   const found = cutsOf(video, meta);
   let shots = shotList(found, meta);
-  let people = await locate(video, words, shots, meta, { log });
+  let people = tracks ? answerOf(tracks, shots, meta) : await locate(video, words, shots, meta, { log });
   if (!people) return null;
   // the cuts the model saw and the frames only hinted at
-  shots = shotList(found, meta, people.missed || []);
+  if (!tracks) shots = shotList(found, meta, people.missed || []);
   // the faces between the stills, followed in the frames
   const grey = greyFrames(video, { start: meta.start });
   const follow = (answer) => {
@@ -1221,6 +1252,51 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
     fs.writeFileSync(video.replace(/\.[^.]+$/, "") + ".people.json", JSON.stringify(people, null, 1));
     if (people.extra.stills) seen = follow(people);
   }
+  return { meta, shots, seen, people };
+}
+
+// Every face of the footage over time, in its own pixels, every `step` seconds: for a skill that
+// places the picture itself (best-takes on its own, by agentitos' layout), from footage of any
+// shape. { footage, size, step, by, cost, shots: [{ start, end, kind, note?, doubtful? }], faces:
+// [{ t, boxes: [{ who, box: [x, y, w, h], feat?: [x, y, w, h], between? }] }] }: box the head's,
+// feat the eyes, nose and mouth where the model's hold (between: the two stills they are an
+// estimate between), best-takes' source/faces.json for one video.
+export function facesOver(seen, meta, { step = 0.1 } = {}) {
+  const faces = [];
+  for (const s of seen) {
+    if (s.kind !== "people") continue;
+    for (let t = s.start; t < s.end - 1e-6; t += step) {
+      const boxes = [];
+      for (const p of s.people) {
+        const f = faceAt(p, t);
+        if (!f) continue;
+        const r = (v) => Math.round(v);
+        boxes.push({ who: p.who ?? p.speaker, box: [r(f.x - f.w / 2), r(f.y - f.h / 2), r(f.w), r(f.h)],
+          ...(f.feat ? { feat: [r(f.feat.x0), r(f.feat.y0), r(f.feat.x1 - f.feat.x0), r(f.feat.y1 - f.feat.y0)] } : {}), ...(f.feat?.between ? { between: f.feat.between } : {}) });
+      }
+      if (boxes.length) faces.push({ t: +t.toFixed(3), boxes });
+    }
+  }
+  return {
+    size: [meta.width, meta.height], step,
+    shots: seen.map((s) => ({ start: +s.start.toFixed(3), end: +s.end.toFixed(3), kind: s.kind, ...(s.note ? { note: s.note } : {}), ...(s.doubtful ? { doubtful: s.doubtful } : {}) })),
+    faces,
+  };
+}
+
+export async function faces(video, words, { aspect = [9, 16], tracks = null, log = () => {} } = {}) {
+  const r = await facesOf(video, words, { aspect, tracks, log });
+  if (!r) return null;
+  // what was spent now: nothing where the answer of before was read again
+  return { footage: path.basename(video), by: r.people.by || "model", model: r.people.model, cost: r.people.cached ? 0 : +((r.people.cost || 0)).toFixed(4), ...(r.people.cached ? { cached: true } : {}), ...facesOver(r.seen, r.meta) };
+}
+
+export async function frame(video, words, { aspect = [9, 16], out, kinds = [], lifts = [], log = () => {} }) {
+  const meta0 = probe(video);
+  if (!needsFrame(meta0, aspect)) return null;
+  const found = await facesOf(video, words, { aspect, log });
+  if (!found) return null;
+  const { meta, seen } = found;
   const outW = 1080, outH = Math.round((outW * aspect[1]) / aspect[0] / 2) * 2;
   const windows = windowsOf(seen, speakerTimeline(words), { ...meta, aspect, kinds, lifts, outW });
   const edges = edgesOf(windows, seen, meta);
@@ -1243,8 +1319,33 @@ export async function frame(video, words, { aspect = [9, 16], out, kinds = [], l
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const opt = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : undefined; };
+  const all = (k) => args.flatMap((a, i) => (a === `--${k}` && args[i + 1] !== undefined ? [args[i + 1]] : []));
   const [video, transcript] = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
-  if (!video || !transcript || !opt("out")) { console.log("frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…] [--lift <s>:<px>,…]"); process.exit(1); }
+  const usage = "frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…] [--lift <s>:<px>,…]\n   or: frame.mjs <video> <transcript.json> --faces <faces.json> [--face-at <s>:x,y,w,h …| --face-track <file.json>]";
+  if (!video || !transcript || !(opt("out") || opt("faces"))) { console.log(usage); process.exit(1); }
+  if (opt("faces")) {
+    // the faces alone, in the footage's pixels: the model's, or the agent's own boxes followed by the tracker
+    let tracks = null;
+    if (all("face-at").length) tracks = [all("face-at").map((v) => {
+      const m = String(v).match(/^(\d+(?:\.\d+)?):(-?[\d.]+),(-?[\d.]+),([\d.]+),([\d.]+)$/);
+      if (!m) { console.log(`--face-at is <second>:x,y,w,h in px of the footage, as 2.5:300,570,600,900 (read off a grid picture), not "${v}".`); process.exit(1); }
+      const box = m.slice(2).map(Number);
+      if (!(box[2] >= 4 && box[3] >= 4)) { console.log(`--face-at ${v}: a box is x,y,w,h, its corner, then its width and height (4 px at least), not two corners.`); process.exit(1); }
+      return { t: Number(m[1]), box };
+    })];
+    else if (opt("face-track")) {
+      try { const j = JSON.parse(fs.readFileSync(opt("face-track"), "utf8")); tracks = Array.isArray(j[0]) ? j : [j]; } catch (e) { console.log(`--face-track ${opt("face-track")} cannot be read (${e.message}): it is a list of {"t": seconds, "box": [x, y, w, h]}, or one such list per person.`); process.exit(1); }
+      if (!tracks.every((tr) => tr.length && tr.every((m) => Number.isFinite(m.t) && Array.isArray(m.box) && m.box.length === 4 && m.box.every(Number.isFinite)))) { console.log(`--face-track ${opt("face-track")}: every moment is {"t": seconds, "box": [x, y, w, h]} in px of the footage.`); process.exit(1); }
+    }
+    const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
+    const r = await faces(video, Array.isArray(raw) ? raw : raw.words, { aspect: (opt("aspect") || "9:16").split(":").map(Number), tracks, log: console.error });
+    if (!r) { console.log("No faces: there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above). Read the faces off a grid picture yourself and give them with --face-at."); process.exit(1); }
+    fs.writeFileSync(opt("faces"), JSON.stringify(r) + "\n");
+    const seconds = r.faces.length * r.step;
+    console.log(`${opt("faces")}: ${r.shots.length} shot(s), a face at ${r.faces.length} moments (${seconds.toFixed(1)} s), ${r.by === "eye" ? "from your boxes, followed between them in the frames (no model)" : `by ${r.model}, ${r.cached ? `its answer of before (the .people.json beside the video), nothing spent now` : `$${r.cost.toFixed(4)}`}`}${r.faces.some((f) => f.boxes.some((b) => b.feat)) ? ", with the eyes, nose and mouth" : ", the eyes, nose and mouth from the head's proportions"}.`);
+    for (const s of r.shots) for (const d of s.doubtful || []) console.log(`  ⚠ ${d.who ?? "a face"} at ${d.t.toFixed(1)} s: ${d.features || `${d.off} px from where the frames before and after lead`}; that still is left out`);
+    process.exit(0);
+  }
   const at = (k, kind) => String(opt(k) || "").split(",").filter(Boolean).map((v) => ({ t: Number(v), kind })).filter((o) => Number.isFinite(o.t));
   const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
   const r = await frame(video, Array.isArray(raw) ? raw : raw.words, {

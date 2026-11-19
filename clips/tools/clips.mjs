@@ -111,9 +111,11 @@ function writeStill(dir) {
   fs.writeFileSync(path.join(td, "still.json"), JSON.stringify({ "01.mp4": whole }) + "\n");
 }
 
+// the size as shown (a phone's upright picture stored on its side with a rotation of ±90)
 const probe = (file) => {
-  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", file], { encoding: "utf8" }));
-  return { width: j.streams[0].width, height: j.streams[0].height, duration: Number(j.format.duration) };
+  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_side_data=rotation:stream_tags=rotate:format=duration", "-of", "json", file], { encoding: "utf8" }));
+  const v = j.streams[0], side = Math.abs(Number(v.side_data_list?.find((d) => d.rotation != null)?.rotation ?? v.tags?.rotate ?? 0)) % 180 === 90;
+  return { width: side ? v.height : v.width, height: side ? v.width : v.height, duration: Number(j.format.duration) };
 };
 
 // ---------------------------------------------------------------------------------- prepare

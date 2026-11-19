@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA } from "./frame.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA, answerOf, facesOver, probe } from "./frame.mjs";
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -598,4 +598,71 @@ test("the features between two stills are an estimate: faceAt names the two stil
   assert.equal(faceAt(p, 2.4).feat.between, undefined);
   // after the last still, as there: an estimate from it alone once it is far
   assert.deepEqual(faceAt(p, 3).feat.between, [2.5, 2.5]);
+});
+
+test("the faces alone, from the agent's own boxes: each box a still of its shot, no request, the face between two of them on the line, none in a shot without a box", () => {
+  const meta = { width: 1080, height: 1920 };
+  const shots = [{ start: 0, end: 10 }, { start: 10, end: 14 }];
+  const answer = answerOf([[{ t: 1, box: [300, 570, 600, 900] }, { t: 9, box: [340, 610, 600, 900] }]], shots, meta);
+  assert.equal(answer.by, "eye");
+  assert.equal(answer.cost, 0);
+  assert.deepEqual(answer.shots[0].stills.map((s) => s.t), [1, 9]);
+  assert.deepEqual(answer.shots[1].stills, []);
+  // thousandths, [ymin, xmin, ymax, xmax], as the model answers
+  assert.deepEqual(answer.shots[0].stills[0].faces[0].box_2d, [296.9, 277.8, 765.6, 833.3]);
+  const seen = shotsOf(answer, shots, meta);
+  const r = facesOver(seen, meta);
+  assert.deepEqual(r.size, [1080, 1920]);
+  const at = (t) => r.faces.find((f) => Math.abs(f.t - t) < 1e-6)?.boxes[0];
+  near(at(1).box[0], 300, 1); near(at(1).box[1], 570, 1); near(at(1).box[3], 900, 1);
+  // halfway between the two boxes
+  near(at(5).box[0], 320, 1); near(at(5).box[1], 590, 1);
+  // no eyes, nose and mouth from the agent: the head's proportions stand in where a box is used
+  assert.equal(at(5).feat, undefined);
+  // the second shot has no box of the agent: no face there
+  assert.equal(r.faces.some((f) => f.t >= 10), false);
+});
+
+test("a phone's upright take stored on its side (rotation 90, −90) or upside down (180): the size as shown everywhere a frame is read and a box is scaled: the probe, the tracker's frames, the faces written", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  const up = path.join(dir, "up.mp4"), side = path.join(dir, "side.mp4");
+  let r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=180x320:r=10,format=yuv420p", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", up], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  // stored as 320×180, the picture turned a quarter, as a phone writes it
+  r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", up, "-vf", "transpose=2", "-c:v", "libx264", "-preset", "ultrafast", side], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const words = path.join(dir, "words.json");
+  fs.writeFileSync(words, JSON.stringify([{ text: "hallo", start: 0.2, end: 0.6, speaker: "A" }]));
+  for (const [deg, shown] of [[90, [180, 320]], [270, [180, 320]], [180, [320, 180]]]) {
+    const v = path.join(dir, `rot${deg}.mp4`);
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", side, "-c", "copy", "-metadata:s:v:0", `rotate=${deg}`, v], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const p = probe(v);
+    assert.deepEqual([p.width, p.height], shown, `rotation ${deg}: the probe`);
+    const g = greyFrames(v);
+    assert.ok(Math.abs(g.h / g.w - shown[1] / shown[0]) < 0.02, `rotation ${deg}: the tracker's frames ${g.w}×${g.h}`);
+    // the faces alone from the agent's boxes: in px of the picture as shown, a box inside it accepted
+    const out = path.join(dir, `rot${deg}.faces.json`);
+    r = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "frame.mjs"), v, words, "--faces", out, "--face-at", `0.5:${Math.round(shown[0] * 0.3)},${Math.round(shown[1] * 0.2)},${Math.round(shown[0] * 0.4)},${Math.round(shown[1] * 0.25)}`], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(out, "utf8")).size, shown, `rotation ${deg}: faces.json's size`);
+  }
+});
+
+test("the model's nonsense is no face: a box whose end comes before its start (the review's [950, 980, 20, 10], taken as the whole picture before) is left out; an answer read again from its file costs nothing now and says so", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const meta = { width: 1280, height: 720 };
+  const shots = [{ start: 0, end: 2 }];
+  const answer = { version: 4, shots: [{ start: 0, end: 2, kind: "people", people: [{ who: "A", speaker: "A" }], stills: [{ t: 1, faces: [{ person: 0, box_2d: [950, 980, 20, 10], eyes_2d: [0, 0, 1000, 1000], nose_2d: null, mouth_2d: null, looks: "camera" }] }] }], missed: [] };
+  assert.equal(shotsOf(answer, shots, meta)[0].people.length, 0);
+  // the answer of before, beside the video: read again, nothing spent
+  const dir = tmp(), v = path.join(dir, "take.mp4");
+  const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10,format=yuv420p", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", v], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const good = { ...answer, cost: 0.0432, extra: { stills: 0, cost: 0 }, shots: [{ ...answer.shots[0], stills: [{ t: 1, faces: [{ person: 0, box_2d: [200, 400, 700, 600], eyes_2d: null, nose_2d: null, mouth_2d: null, looks: "camera" }] }] }] };
+  fs.writeFileSync(path.join(dir, "take.people.json"), JSON.stringify(good));
+  const { faces } = await import("./frame.mjs");
+  const out = await faces(v, [{ text: "a", start: 0.1, end: 0.4, speaker: "A" }]);
+  assert.equal(out.cost, 0);
+  assert.equal(out.cached, true);
+  assert.ok(out.faces.length > 0);
 });
