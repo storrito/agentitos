@@ -32,8 +32,9 @@
 
 - `from`, `to`: seconds of the film. Beats follow each other without a gap. Change between sentences, in the pause, or at a comma; never inside a word. The first starts at 0; the last ends with the last word and is stretched 0.7 s past it by itself, so its stretch of the source must last that long.
 - `at`: the second of the source where the clip starts.
-- `frame` (may be left out): `whole` (the default: the whole wide frame as a band over a blurred copy of itself), `fill` (a 9:16 crop from the middle, only when the subject stays in the middle), `native` (the source is vertical).
-- `zoom` (1 to 3), `pan` (with `whole`): the band larger, and which part of its width stays: 0 the left, 0.5 the middle, 1 the right. A bigger subject, a logo in a corner gone: a logo top left → `"zoom": 1.4, "pan": 1`.
+- `frame` (may be left out): `whole` (the default: the whole wide frame as a band over a blurred copy of itself), `fill` (a 9:16 crop, from the middle unless `pan` or the faces say otherwise; with faces, a crop or a band where a fill cannot show them), `native` (the source is vertical).
+- `zoom` (1 to 3), `pan` (with `whole`, and with a `fill` whose faces `faces` found): the band larger, and which part of its width stays: 0 the left, 0.5 the middle, 1 the right. A bigger subject, a logo in a corner gone: a logo top left → `"zoom": 1.4, "pan": 1`. A `pan` you give stands, also where it cuts a face (build says so).
+- `people`: `true` where the stretch shows a face you can recognise on its strip (people walking far off, a gloved hand, the back of a helmet are none). `faces` sends only these beats; `faces --all` sends every one.
 - `speed`: 0.5 to 1 slows the source down, to fill a beat from a shorter stretch.
 
 Every clip moves in or out by a twenty-fifth while it runs, in turn: nothing to set.
@@ -44,6 +45,16 @@ Every clip moves in or out by a twenty-fifth while it runs, in turn: nothing to 
 - **No clip across a cut of the source.** `cuts` in `footage/<name>/sources.json` are the source's own cuts: the stretch `at … at + (to − from)` holds none (earlier, later, or `speed`). `build` asks with `?` when one lies inside.
 - **The subject of the sentence is in the picture.** People talking: two seconds at most.
 - **Never start on a fade**: `at` a second or more into a shot.
+
+## Beats with people
+
+`node <skill>/tools/short.mjs faces short/<name>` sends each beat marked `people` (its stretch, at most 1080 lines, without sound and the file's tags) to agentitos' clips, which finds every face over time with its eyes, nose and mouth (`short/<name>/faces/<id>.json`). Measured on public footage (2026-11-19, eleven beats): 0.3 to 1.5 cents and 6 to 32 s a beat; a beat kept from before costs nothing. Then `build`, which per beat:
+
+- shows the faces that count: the main face (the tallest seen in half the beat) and any other seen in a quarter of it at 70 % of its height or more; a smaller face in the background, a passer-by, a speck counts for nothing. A `fill` shows them in this order: a fill on their eyes, nose and mouth (from the middle, else moved; an ear, the back of a head or a face in the background may be cut, and where the middle shows the main face's, it stays a fill even if another is cut); else a 4:5 or 1:1 crop that holds them, placed high above the captions (agentitos' layout `place` proposes it); the whole picture as a band last, as large as holds them. A fill whose eyes or noses would lie under the captions is raised (same size, the ground below it). A `whole` stays your band; the first beat's own 1.6× band moves to the faces, or becomes smaller where they need it. Your own `zoom` and `pan` stand; where they cut a face's eyes, nose or mouth, a `!` says so.
+- says what it did: `the faces (…) are in the picture as it is`, `close-up kept, an ear cut`, `a face in the background cut (…)`, `the crop moved to the faces (…)`, `raised … px`, `a 4:5 crop placed high instead`, `close-up kept on …: … cut`, `a fill would cut … the whole picture as a band`, `! … close-up became a small band …: another stretch?` (a close-up shown small: another stretch, or the beat as `whole` on purpose), `its faces … are too small or seen too briefly to move the picture for`.
+- keeps the captions off the eyes and noses: nobody shown speaks in a narrated short, so captions on a mouth, a mask or a chin stay (said). Where they lie on eyes or a nose that the picture could not give way for, agentitos' layout gives one place for the captions of the whole short (captions that jump from beat to beat read badly), at their own size: one beat never makes them smaller for the whole short. The hook may lie on hair or a forehead (said), never on the eyes: where it would, it gets smaller first, in its place; then layout's place for it, never on the captions or directly above or below them (two blocks of text stacked read as one); where no place is left, `! the hook: … it stands where it stood`: a shorter hook, or another first beat. The lines `the captions: …`, `the hook: …` say where each went and why. Nothing on a face: `the captions and the hook lie on no face: they stand where they stood`.
+
+Without `faces` (or with `build --no-faces`) the short is built exactly as before. A beat whose stretch changed after `faces`: build says its faces are of another stretch and leaves them out; run `faces` again. Look at the beats it moved on the sheet: whether the person who matters is in the picture is still yours.
 
 ## The first beat
 
@@ -71,6 +82,7 @@ For the comparison sentence of the script (script.md): `at` is the start of that
 - `! … stand still`: a still shot may be meant.
 - `? … a cut of its own inside`: look at the stretch; a real cut means move it or slow it, fast motion can trip the detector. `? … the cuts of its source are not known`: a source given as a file, or one the footage skill did not look at: look at the stretch yourself.
 - `the first beat's band is 1.6 times larger`, `black bars in the source cut away`: what it did by itself.
+- the lines of the faces (above, "Beats with people"): what it did with a beat's picture and with the captions and the hook; a `!` is yours to look at.
 - `freezes at … look at …`: look at that picture now (quality.md, point 2). `! … no freeze`, or `! … the freeze needs agentitos' freeze-cutout`: the plain clip is used; another `freeze` second, or none.
 - `!` for the card, the hook text, a key or a box: what it says. `! the captions skill here knows no boxes yet`: the phrases show as plain captions.
 

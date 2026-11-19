@@ -1223,7 +1223,7 @@ export function answerOf(tracks, shots, { width, height }) {
 // The shots of the footage and every face in them followed between the stills: { meta, shots,
 // seen, people } (seen: shotsOf's shots with each person's track filled in by the tracker), or
 // null without an answer. `tracks`: the agent's own boxes instead of the model's (answerOf).
-async function facesOf(video, words, { aspect = [9, 16], tracks = null, log = () => {} }) {
+async function facesOf(video, words, { aspect = [9, 16], tracks = null, every = false, log = () => {} }) {
   const meta = probe(video);
   log("frame: the cuts, frame by frame …");
   const found = cutsOf(video, meta);
@@ -1236,7 +1236,7 @@ async function facesOf(video, words, { aspect = [9, 16], tracks = null, log = ()
   const grey = greyFrames(video, { start: meta.start });
   const follow = (answer) => {
     const seen = shotsOf(answer, shots, meta);
-    for (const s of seen) if (s.kind === "people") {
+    for (const s of seen) if (s.kind === "people" || every) {
       for (const p of s.people) {
         p.track = fillTrack(grey, p.track, s.start, s.end);
         for (const d of p.track.doubtful) (s.doubtful ||= []).push({ who: p.who || p.speaker, t: d.t, off: d.off });
@@ -1262,11 +1262,13 @@ async function facesOf(video, words, { aspect = [9, 16], tracks = null, log = ()
 // [{ t, boxes: [{ who, box: [x, y, w, h], feat?: [x, y, w, h], eye?, between? }] }] }: box the head's,
 // feat the eyes, nose and mouth where the model's hold, eye the y of the middle of the eyes' own
 // box (the eyes with their brows) where the model gave one (between: the two stills they are an
-// estimate between), best-takes' source/faces.json for one video.
-export function facesOver(seen, meta, { step = 0.1 } = {}) {
+// estimate between), best-takes' source/faces.json for one video. Only the shots the model calls
+// people, unless `every`: footage with nobody of a conversation in it (narrated-short's B-roll of a
+// crew at work) is "broll" to the model, and its faces are what such a skill asks for.
+export function facesOver(seen, meta, { step = 0.1, every = false } = {}) {
   const faces = [];
   for (const s of seen) {
-    if (s.kind !== "people") continue;
+    if (s.kind !== "people" && !every) continue;
     for (let t = s.start; t < s.end - 1e-6; t += step) {
       const boxes = [];
       for (const p of s.people) {
@@ -1286,11 +1288,11 @@ export function facesOver(seen, meta, { step = 0.1 } = {}) {
   };
 }
 
-export async function faces(video, words, { aspect = [9, 16], tracks = null, log = () => {} } = {}) {
-  const r = await facesOf(video, words, { aspect, tracks, log });
+export async function faces(video, words, { aspect = [9, 16], tracks = null, every = false, log = () => {} } = {}) {
+  const r = await facesOf(video, words, { aspect, tracks, every, log });
   if (!r) return null;
   // what was spent now: nothing where the answer of before was read again
-  return { footage: path.basename(video), by: r.people.by || "model", model: r.people.model, cost: r.people.cached ? 0 : +((r.people.cost || 0)).toFixed(4), ...(r.people.cached ? { cached: true } : {}), ...facesOver(r.seen, r.meta) };
+  return { footage: path.basename(video), by: r.people.by || "model", model: r.people.model, cost: r.people.cached ? 0 : +((r.people.cost || 0)).toFixed(4), ...(r.people.cached ? { cached: true } : {}), ...facesOver(r.seen, r.meta, { every }) };
 }
 
 export async function frame(video, words, { aspect = [9, 16], out, kinds = [], lifts = [], log = () => {} }) {
@@ -1322,8 +1324,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   const opt = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : undefined; };
   const all = (k) => args.flatMap((a, i) => (a === `--${k}` && args[i + 1] !== undefined ? [args[i + 1]] : []));
-  const [video, transcript] = args.filter((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
-  const usage = "frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…] [--lift <s>:<px>,…]\n   or: frame.mjs <video> <transcript.json> --faces <faces.json> [--face-at <s>:x,y,w,h …| --face-track <file.json>]";
+  const FLAGS = ["--every-shot"];
+  const [video, transcript] = args.filter((a, i) => !a.startsWith("--") && (!args[i - 1]?.startsWith("--") || FLAGS.includes(args[i - 1])));
+  const usage = "frame.mjs <video> <transcript.json> --aspect 9:16 --out <framed.mp4> [--whole <s>,…] [--follow <s>,…] [--lift <s>:<px>,…]\n   or: frame.mjs <video> <transcript.json> --faces <faces.json> [--face-at <s>:x,y,w,h …| --face-track <file.json>] [--every-shot]";
   if (!video || !transcript || !(opt("out") || opt("faces"))) { console.log(usage); process.exit(1); }
   if (opt("faces")) {
     // the faces alone, in the footage's pixels: the model's, or the agent's own boxes followed by the tracker
@@ -1340,7 +1343,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (!tracks.every((tr) => tr.length && tr.every((m) => Number.isFinite(m.t) && Array.isArray(m.box) && m.box.length === 4 && m.box.every(Number.isFinite)))) { console.log(`--face-track ${opt("face-track")}: every moment is {"t": seconds, "box": [x, y, w, h]} in px of the footage.`); process.exit(1); }
     }
     const raw = JSON.parse(fs.readFileSync(transcript, "utf8"));
-    const r = await faces(video, Array.isArray(raw) ? raw : raw.words, { aspect: (opt("aspect") || "9:16").split(":").map(Number), tracks, log: console.error });
+    const r = await faces(video, Array.isArray(raw) ? raw : raw.words, { aspect: (opt("aspect") || "9:16").split(":").map(Number), tracks, every: args.includes("--every-shot"), log: console.error });
     if (!r) { console.log("No faces: there is no OpenRouter (OPENROUTER_API_KEY, or a Sprite gateway), or the clip is too large for the gateway (said above). Read the faces off a grid picture yourself and give them with --face-at."); process.exit(1); }
     fs.writeFileSync(opt("faces"), JSON.stringify(r) + "\n");
     const seconds = r.faces.length * r.step;
