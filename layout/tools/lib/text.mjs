@@ -5,7 +5,10 @@
 //   layoutText(ctx, faces, keep, win, isWin, { seam }) → { placed: [{ role, where, on, box, ink,
 //       lines, font, style, align, shrunk? }], unmet: [role], penalty, fullSize }
 //   keepOut(face, D) → the face's box with its margins: what text stays out of
-//   captionHeight(ctx) → how tall the captions' area is: its lines and the padding of a style's box
+//   captionHeight(ctx) → how tall the captions' area is: its lines and the padding of a style's box;
+//       a band the caller fixed (ctx.captionArea, captions' area.json): its height
+//   captionTop(ctx) → where the captions' area starts: a fixed band's top, else its height above
+//       the safe box's bottom
 
 import { EPS, X1, Y1, area, inter, contains, grow } from "./boxes.mjs";
 
@@ -14,7 +17,8 @@ import { EPS, X1, Y1, area, inter, contains, grow } from "./boxes.mjs";
 // 0.76, descenders 0.24 em); checked to ±3 px against what platform-zones measured on the layouts made by hand
 export const inkRows = (top, n, L, f) => [top + (L / 2 - 0.372) * f, top + (n - 1) * L * f + (L / 2 + 0.628) * f];
 
-export const captionHeight = ({ cap, D, tall }) => (cap ? (cap.lines * D.caption.line + D.caption.padEm) * (tall ? D.caption.font.tall : D.caption.font.wide) : 0);
+export const captionHeight = ({ cap, D, tall, captionArea: CA }) => (!cap ? 0 : CA ? CA.bottom - CA.top : (cap.lines * D.caption.line + D.caption.padEm) * (tall ? D.caption.font.tall : D.caption.font.wide));
+export const captionTop = (ctx) => (ctx.captionArea ? ctx.captionArea.top : ctx.Z.safe[1] + ctx.Z.safe[3] - captionHeight(ctx));
 
 export function keepOut(f, D) {
   const up = Math.max(D.free.aboveMin, D.free.above * f[3]);
@@ -90,7 +94,11 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
 
   // where captions may stand, in the order they are tried
   const capOpts = [];
-  if (cap) {
+  // a band the caller fixed (captions built already, the picture placed around them): the captions
+  // stand there or nowhere; it is judged as any place (on a face's margins: no place)
+  const CA = ctx.captionArea;
+  if (cap && CA) capOpts.push({ role: "caption", style: "cap", lines: CA.lines, font: CA.size, box: [CA.left, CA.top, CA.width, CA.bottom - CA.top], align: "center", zone: [0, 0, W, H], pref: 0, fixed: true });
+  else if (cap) {
     const f = tall ? D.caption.font.tall : D.caption.font.wide, h = captionHeight(ctx);
     const w = Math.min(C[2], D.caption.maxEm * f, Math.max(tall ? D.caption.minWidth.tall : D.caption.minWidth.wide, 2 * Math.min(W / 2 - cx0, cx1 - W / 2))), x = W / 2 - w / 2;
     const mk = (box, align, zone, pref) => ({ role: "caption", style: "cap", lines: cap.lines, font: f, box, align, zone, pref });
@@ -198,8 +206,9 @@ export function layoutText(ctx, faces, keep, win, isWin, opts = {}) {
       : (Y1(t.box) <= win[1] + EPS ? "band-above" : y >= Y1(win) - EPS ? "band-below" : "beside");
     const L = t.style === "card" ? D.hookCard.line : t.style === "text" ? D.hookText.line : t.style === "big" ? D.hookBig.line : D.caption.line;
     // a card's and a hook text's lines stand in the middle of their block; the captions' lines inside the padding of their box
-    const rows = inkRows(t.style === "card" || t.style === "text" ? y + (h - 2 * L * t.font) / 2 : t.style === "cap" ? y + D.caption.padEm * t.font / 2 : y, t.lines, L, t.font);
-    return { role: t.role, where, on: onPicture ? "picture" : "ground", box: [x, y, w, h], ink: [x, rows[0], w, rows[1] - rows[0]], lines: t.lines, font: t.font, style: t.style, align: t.align, ...(t.role === "hook" && !t.full ? { shrunk: true } : {}) };
+    // (a fixed band is captions' line boxes: the letters are judged in all of it)
+    const rows = t.fixed ? [y, y + h] : inkRows(t.style === "card" || t.style === "text" ? y + (h - 2 * L * t.font) / 2 : t.style === "cap" ? y + D.caption.padEm * t.font / 2 : y, t.lines, L, t.font);
+    return { role: t.role, where, on: onPicture ? "picture" : "ground", box: [x, y, w, h], ink: [x, rows[0], w, rows[1] - rows[0]], lines: t.lines, font: t.font, style: t.style, align: t.align, ...(t.role === "hook" && !t.full ? { shrunk: true } : {}), ...(t.fixed ? { band: CA.from || "given", lineBox: true } : {}) };
   });
   const roles = placed.map((t) => t.role);
   return {

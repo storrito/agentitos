@@ -66,6 +66,7 @@ import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
+import { faceView } from "./lib/placement.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
@@ -142,7 +143,12 @@ function layoutOf(s, cut = {}) {
 async function faceOfWebcam(dir, meta) {
   const cam = meta.sources.webcam;
   if (!cam?.video || cam.face !== undefined) return;
-  try { cam.face = await findFace(source(dir, cam.file), cam.duration, { log: console.log }); } catch (e) {
+  try {
+    const found = await findFace(source(dir, cam.file), cam.duration, { log: console.log });
+    cam.face = found?.face ?? null;
+    if (found?.at) cam.faceAt = found.at;
+    if (found?.atWhy) cam.faceAtWhy = found.atWhy;
+  } catch (e) {
     console.log(`webcam: the face was not found (${e.message.split("\n")[0]}): the circle shows the picture's middle`);
     cam.face = null;
   }
@@ -310,7 +316,7 @@ function joinRecordings(dir, parts) {
     execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", source(dir, `${k}.list.txt`), "-an", "-c", "copy", "-movflags", "+faststart", source(dir, `${k}.mp4`)], { stdio: ["ignore", "ignore", "inherit"] });
     const p = probe(source(dir, `${k}.mp4`));
     sources[k] = { file: `${k}.mp4`, from: having.map((h) => h.src.from).join(" + "), offset: +begins[0].toFixed(3), duration: p.duration, width: first.width, height: first.height,
-      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), sessions: having.map((h) => h.n) };
+      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), ...(first.faceAt ? { faceAt: first.faceAt } : {}), ...(first.faceAtWhy ? { faceAtWhy: first.faceAtWhy } : {}), sessions: having.map((h) => h.n) };
     // a recording scaled into the first one's size sits in bars: its boxes moved into them, its
     // grid cells (on its own frame) left out
     const into = (src) => {
@@ -760,6 +766,7 @@ async function cmdBuild(dir, opts) {
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
     if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
+    if (keep.layout !== undefined && (typeof keep.layout !== "string" || !keep.layout.trim())) fail(`✗ keep ${k + 1}: "layout" names how the face view lays the webcam into the frame, as the build lists it ("crop 4:5", "inset", "cover"), or is left out`);
   }
 
   // the pictures that move in a pause: any source but the webcam; a camera among them (the
@@ -893,6 +900,9 @@ async function cmdBuild(dir, opts) {
       ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
+  // the face view: the webcam's picture placed by where its face is (the layout skill), around the
+  // captions as they were just built; each face keep the candidate it names, else the rule's
+  const faceSaid = faceView(dir, cut, r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null });
   let music = null;
   if (cut.music?.file) {
     if (!fs.existsSync(cut.music.file)) fail(`✗ cut.json "music": there is no ${cut.music.file}`);
@@ -930,6 +940,7 @@ async function cmdBuild(dir, opts) {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
       view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
+      ...(p.picture ? { picture: p.picture } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
@@ -939,6 +950,7 @@ async function cmdBuild(dir, opts) {
   for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
+  for (const line of faceSaid) console.log(line);
   if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
   else if (cut.captions !== false) console.log("No captions: agentitos' captions skill is not beside this one.");
   if (talk.rate) console.log(`Speech: ${talk.rate} syllables a second where someone speaks${s.speed === "auto" ? (speed > 1 ? ` → played at ${speed}× (--speed auto: towards ${TARGET} a second, at most ${MOST}×; --speed 1 as recorded)` : `: fast enough, played as recorded (--speed auto)`) : `; played at ${speed}× (--speed ${s.speed})`}.`);
@@ -1010,6 +1022,13 @@ function cmdCheck(dir) {
   // the end holds
   const lastWord = e.words.at(-1);
   if (lastWord && e.duration - lastWord.end < 1) warnings.push(`the cut ends ${(e.duration - lastWord.end).toFixed(1)} s after its last word: give the end a moment ("hold": 1.5 on the last keep)`);
+
+  // the face view: a picture that fails the layout skill's checks (named by the keep, or nothing passed)
+  for (const k of [...new Set(e.pieces.filter((p) => p.picture && ["✗", "–"].includes(p.picture.mark)).map((p) => p.keep))]) {
+    const pic = e.pieces.find((p) => p.keep === k && p.picture).picture;
+    if (pic.mouth) { warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×${pic.named ? ", as the keep names it" : ""}) has the captions on the mouth for ${pic.mouth.seconds} s of its ${pic.mouth.of} s (${pic.mouth.from}–${pic.mouth.to} s of the recording): ${pic.mouth.split ? `split it ("words": ${pic.mouth.split.map((r) => `"${r}"`).join(", ")}) and name another picture on the part with the lean` : "split it where the lean begins"}${pic.mouth.smaller ? `, or name "${pic.mouth.smaller}" on it` : ""}`); continue; }
+    warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×) ${pic.mark === "✗" ? "fails the layout skill's checks (enlarged over 2×, or the face under the apps' buttons)" : "leaves the captions no place clear of the face"}${pic.named ? ` and is the one the keep names ("layout")` : ": nothing passes"}; the build's list says which pass`);
+  }
 
   // the sources are on one clock
   for (const [k, s] of Object.entries(meta.sources)) {

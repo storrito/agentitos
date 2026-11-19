@@ -4,11 +4,13 @@
 //
 //   node tools/takes.mjs new <dir> <video> [<video> …]   the videos into <dir>/source/, in the order
 //                                         they were recorded: their words ("äh" included), their
-//                                         level; writes source/brief.md
-//   node tools/takes.mjs propose <dir>    a model watches the videos and proposes the keeps:
-//                                         <dir>/proposal.json, in the format of cut.json
+//                                         level; writes source/brief.md. Recordings of sound alone
+//                                         (MP3, M4A, WAV, a video file without a picture) the same
+//   node tools/takes.mjs propose <dir>    a model watches the videos (listens to the sound) and
+//                                         proposes the keeps: <dir>/proposal.json, as cut.json
 //   node tools/takes.mjs build <dir>      cut.json → the cut as a HyperFrames project (a preview,
-//                                         nothing rendered yet) and <dir>/edit.json
+//                                         nothing rendered yet) and <dir>/edit.json; of sound
+//                                         alone the cut's voice at its loudness, no project
 //   node tools/takes.mjs check <dir>      the cut as text, what it leaves out, the levels, problems
 //   node tools/takes.mjs finish <dir> <video.mp4>  the rendered video (rragent's render tool) brought
 //                                         to the final loudness; subtitles beside it (<video>.srt)
@@ -22,7 +24,8 @@
 //
 // Options, kept in source/settings.json for the next steps:
 //   --out <folder>     the composition/ folder of the HyperFrames project the preview shows
-//                      (rragent: artifacts/<name>/composition; default <dir>/composition)
+//                      (rragent: artifacts/<name>/composition; default <dir>/composition); of
+//                      sound alone a file <name>.m4a the voice is copied to, its .srt beside it
 //   --title "…"        the preview's title          --lang de    the language of the words
 //   --aspect source|9:16|16:9|1:1|4:5    the frame (default: the first video's)
 //   --platform reels,tiktok    where the video goes: its captions keep clear of what those apps lay
@@ -53,9 +56,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { probe, playable, samples, hyperframes, clock } from "./lib/media.mjs";
+import { probe, playable, samples, hyperframes, clock, copyName } from "./lib/media.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
-import { voiceTrack } from "./lib/tracks.mjs";
+import { voiceTrack, levelled, levelledTo } from "./lib/tracks.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { activity } from "./lib/motion.mjs";
@@ -148,44 +151,57 @@ async function cmdNew(dir, files, opts) {
   // the options first: a wrong one fails before anything is paid for
   settings(dir, opts);
 
-  let list = files.map((f) => ({ from: f, ...probe(f) }));
+  let list;
+  try { list = files.map((f) => ({ from: f, ...probe(f) })); } catch (e) { fail(`✗ ${e.message}: best-takes cuts videos and recordings of sound (MP3, M4A, WAV).`); }
+  // sound alone is cut as a video is, without a picture: all of one kind, or the cut has no frame
+  if (list.some((c) => c.audio) && !list.every((c) => c.audio)) fail(`✗ ${list.filter((c) => c.audio).map((c) => c.from).join(", ")} ${list.filter((c) => c.audio).length > 1 ? "are" : "is"} sound alone, the others videos: cut the videos together, and the sound on its own.`);
+  const audio = list[0].audio === true, kind = audio ? "recording" : "video";
   const byTime = list.every((c) => c.created) && opts.order !== "given";
   if (byTime) list = [...list].sort((a, b) => Date.parse(a.created) - Date.parse(b.created));
-  if (list.length > 1) console.log(`${list.length} videos, ${byTime ? "in the order they were recorded" : "in the order given"}: ${list.map((c) => c.from).join(", ")}`);
+  if (list.length > 1) console.log(`${list.length} ${kind}s, ${byTime ? "in the order they were recorded" : "in the order given"}: ${list.map((c) => c.from).join(", ")}`);
 
   const clips = {}, words = [];
-  let asr = null;
+  let asr = null, unmarked = false;
   for (const [k, c] of list.entries()) {
-    const n = k + 1, name = `${String(n).padStart(2, "0")}.mp4`, file = source(dir, name);
+    const n = k + 1, name = copyName(n, c.from, audio), file = source(dir, name);
     const how = playable(c.from, file);
     const p = probe(file);
-    console.log(`video ${n}: ${c.from} (${clock(p.duration, false)}, ${p.width}×${p.height}${how.startsWith("transcoded") ? `, ${how} to H.264` : ""}) – listening …`);
+    console.log(`${kind} ${n}: ${c.from} (${clock(p.duration, false)}, ${audio ? "sound alone" : `${p.width}×${p.height}`}${how.startsWith("transcoded") ? `, ${how} to H.264` : ""}) – listening …`);
     const env = envelope(samples(file));
     fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.env`), Buffer.from(env.buffer));
-    let heard, edges;
-    try { ({ words: heard, model: asr, edges } = await transcribeFile(file, { log: console.log })); } catch (e) { fail(e.message); }
+    let heard, edges, gaps;
+    try { ({ words: heard, model: asr, edges, unwritten: gaps } = await transcribeFile(file, { log: console.log })); } catch (e) { fail(e.message); }
     // words whose times the transcribe skill has set by the sound (edges: "sound") are not timed a second time
     const moved = edges === "sound" ? 0 : retime(heard, env, threshold(env));
     if (moved) console.log(`  ${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
     const { kept: said, runs } = ghosts(heard);
     for (const r of runs) console.log(`  left out, the voice has no time for them (the recognizer wrote them twice): ${r}`);
+    // voice the transcribe skill found no words for, even heard again: an item of its own, so that
+    // its time never passes as a pause between the words around it
+    if (!Array.isArray(gaps) && edges !== "sound") unmarked = true;
+    for (const g of gaps || []) said.push({ text: "…", start: g.from, end: g.to, kind: "unwritten", voiced: g.voiced });
+    if (gaps?.length) console.log(`  ${gaps.length} stretch${gaps.length > 1 ? "es" : ""} of voice without words, even heard again (${gaps.map((g) => clock(g.from)).join(", ")}): the brief marks them as speech not written down`);
+    const added = heard.filter((w) => w.added).length;
+    if (added) console.log(`  ${added} words the speech model left out the first time, written in from a second hearing`);
     const blocks = loudnessBlocks(file);
     fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.loudness.json`), JSON.stringify(blocks));
     const speech = said.filter((w) => w.kind === "word");
     const level = loudness(blocks, speech.length ? speech.map((w) => [w.start, w.end]) : [[0, p.duration]]);
-    clips[n] = { n, file: name, from: c.from, duration: p.duration, width: p.width, height: p.height, fps: p.fps, created: c.created, lufs: level };
+    clips[n] = { n, file: name, from: c.from, duration: p.duration, ...(audio ? { audio: true } : { width: p.width, height: p.height, fps: p.fps }), created: c.created, lufs: level };
     const items = said.sort((a, b) => a.start - b.start);
     for (const w of items) words.push({ i: words.length, clip: n, ...w });
     const fillers = items.filter((w) => w.kind === "filler").length;
     console.log(`  ${speech.length} words, ${fillers} "äh"s and the like, speech at ${level ?? "?"} LUFS`);
   }
-  if (!words.some((w) => w.kind === "word")) fail("No speech found in the videos: this tool cuts by what is said.");
+  if (!words.some((w) => w.kind === "word")) fail(`No speech found in the ${kind}s: this tool cuts by what is said.`);
+  if (unmarked) console.log("  (the transcribe skill beside this one is older: voice it wrote no words for is not marked, and may pass for a pause; update it)");
 
   fs.writeFileSync(source(dir, "words.json"), JSON.stringify({ asr, clips, words }, null, 1));
   const s = settings(dir, opts);
   fs.writeFileSync(source(dir, "brief.md"), brief(clips, words, s));
   const levels = Object.values(clips).map((c) => c.lufs).filter((l) => l != null);
-  if (levels.length > 1) console.log(`The videos' levels: ${levels.join(", ")} LUFS (${(Math.max(...levels) - Math.min(...levels)).toFixed(1)} dB apart); the build evens them out.`);
+  if (audio) console.log(`Sound alone: no picture to watch, so a pause over ${s.pause} s inside a keep is cut to a breath of the room's own quiet, and build writes the cut's voice with its words, no HyperFrames project.`);
+  if (levels.length > 1) console.log(`The ${kind}s' levels: ${levels.join(", ")} LUFS (${(Math.max(...levels) - Math.min(...levels)).toFixed(1)} dB apart); the build evens them out.`);
   console.log(`\nNext: node ${self()} propose ${rel(dir)}, then read ${rel(source(dir, "brief.md"))} (all of it), write ${rel(path.join(dir, "cut.json"))}, then: node ${self()} build ${rel(dir)}`);
 }
 
@@ -205,7 +221,7 @@ async function cmdPropose(dir, opts) {
   };
   const short = (t) => (t.length > 110 ? `${t.slice(0, 60)} … ${t.slice(-45)}` : t);
   console.log(`${p.model}, $${p.cost.toFixed(4)}\n\nKeep:`);
-  for (const k of p.keep) console.log(`  [${k.words}]${k.pauses ? " (pauses stay)" : ""} ${short(text(k.words))}\n      ${k.why}`);
+  for (const k of p.keep) console.log(`  [${k.words}]${k.pauses ? " (pauses stay)" : ""}${k.unwritten ? " (plays speech not written down)" : ""} ${short(text(k.words))}\n      ${k.why}`);
   if (p.retries.length) console.log("\nRetries left out:");
   for (const r of p.retries) console.log(`  [${r.dropped}] "${short(text(r.dropped))}" → [${r.kept}]: ${r.why}`);
   if (p.visual.length) console.log("\nShown in the picture:");
@@ -289,12 +305,14 @@ function cmdBuild(dir, opts) {
   try { cut = read(cutFile); } catch (e) { fail(`✗ ${rel(cutFile)} is no valid JSON: ${e.message}`); }
   const s = settings(dir, opts);
   const { clips, words } = read(source(dir, "words.json"));
-  // how much the picture moves in a stretch, measured in the video itself; tight: not needed
+  const audio = isAudio(clips);
+  // how much the picture moves in a stretch, measured in the video itself; tight or sound alone: not needed
   const tight = s.pauses === "tight";
-  const motion = tight ? null : (clip, from, to) => activity(source(dir, clips[clip].file), from, to, clips[clip]);
-  const r = plan(words, cut, s, voicesOf(dir, clips), motion);
+  const motion = tight || audio ? null : (clip, from, to) => activity(source(dir, clips[clip].file), from, to, clips[clip]);
+  const r = plan(words, cut, { ...s, audio }, voicesOf(dir, clips), motion);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
+  if (audio) return buildVoice(dir, clips, r, s);
 
   const out = path.resolve(s.out || path.join(dir, "composition"));
   const [width, height] = size(s, clips[r.pieces[0].clip]);
@@ -416,12 +434,54 @@ function cmdBuild(dir, opts) {
   console.log(`Next: node ${self()} check ${rel(dir)}`);
 }
 
+// sound alone: every recording without a picture
+const isAudio = (clips) => Object.values(clips).every((c) => c.audio);
+const NO_PICTURE = "this cut is of sound alone: there is no picture to put it on";
+
+// The cut of sound alone: no HyperFrames project, nothing to render. The cut's voice as one file
+// at the final loudness (the room's quiet between its stretches, lib/cut.mjs), every kept word
+// with its time in it (edit.json), and subtitles beside it; with --out <file.m4a> a copy there
+// (rragent: artifacts/<name>.m4a, which the chat plays).
+function buildVoice(dir, clips, r, s) {
+  const file = path.join(dir, "voice.cut.m4a");
+  let level;
+  try {
+    // levelled to another loudness before: made again from its pieces, not run through the chain twice
+    const done = levelledTo(file);
+    if (done && done.target !== s.final) fs.rmSync(`${file}.json`, { force: true });
+    voiceTrack((p) => source(dir, clips[p.clip].file), r.pieces, file);
+    level = levelled(file, s.final);
+  } catch (e) { fail(`✗ ${e.message}`); }
+  const srtFile = path.join(dir, "voice.cut.srt");
+  fs.writeFileSync(srtFile, srt(r.words));
+  let copy = null;
+  if (s.out) {
+    copy = path.resolve(/\.(m4a|mp4)$/i.test(s.out) ? s.out : path.join(s.out, "voice.m4a"));
+    fs.mkdirSync(path.dirname(copy), { recursive: true });
+    fs.copyFileSync(file, copy);
+    fs.copyFileSync(srtFile, copy.replace(/\.[^.]+$/, ".srt"));
+  }
+  const quiet = r.pieces.filter((p) => p.quiet);
+  fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
+    audio: true, voice: rel(file), ...(copy ? { copy: rel(copy) } : {}), loudness: { lufs: level.lufs, peak: level.peak }, duration: r.duration,
+    recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
+    pieces: r.pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
+      ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : p.quiet ? { quiet: true } : { shows: true, rate: 1, ...(p.wait ? { wait: true } : {}) }), keep: p.keep })),
+    removed: r.removed, warnings: r.warnings, words: r.words,
+  }, null, 1));
+  const gains = r.pieces.filter((p) => p.words.length).map((p) => p.gain);
+  console.log(`${rel(file)}: ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length - quiet.length} pieces, ${quiet.length} breaths of the room's quiet between them, takes evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB, the whole at ${level.lufs} LUFS (true peak ${level.peak} dBTP)`);
+  console.log(`Words: ${r.words.length}, each timed in the voice: ${rel(path.join(dir, "edit.json"))} ("words"), subtitles ${rel(srtFile)}${copy ? `; a copy of both at ${rel(copy)}` : ""}. No HyperFrames project: there is no picture.`);
+  console.log(`Next: node ${self()} check ${rel(dir)}`);
+}
+
 // --------------------------------------------------------------------------------- captions
 function cmdCaptions(dir, opts) {
   const cutFile = path.join(dir, "cut.json"), editFile = path.join(dir, "edit.json");
   if (!fs.existsSync(editFile)) fail(`Build first: takes.mjs build ${rel(dir)}`);
   // the platform first: a wrong one fails before the key words are marked (and paid for)
   if (opts.platform !== undefined) settings(dir, { platform: opts.platform });
+  if (read(editFile).audio) fail(`✗ Captions in the picture: ${NO_PICTURE}. The cut's words with their times are in ${rel(editFile)}, subtitles in ${rel(path.join(dir, "voice.cut.srt"))}.`);
   const cut = read(cutFile);
   if (opts.off) {
     delete cut.captions;
@@ -441,6 +501,7 @@ function cmdCaptions(dir, opts) {
 function cmdBroll(dir, file, opts) {
   const cutFile = path.join(dir, "cut.json");
   if (!fs.existsSync(path.join(dir, "edit.json"))) fail(`Build first: takes.mjs build ${rel(dir)}`);
+  if (read(path.join(dir, "edit.json")).audio) fail(`✗ B-roll: ${NO_PICTURE} of the person to lay it over; the b-roll skill takes ${rel(path.join(dir, "edit.json"))} and the voice for a film of its own.`);
   const cut = read(cutFile);
   if (opts.off) delete cut.broll;
   else {
@@ -740,10 +801,10 @@ function cmdPlace(dir, opts) {
   if (faced.length && known < 0.5 * cutLength) console.log(`✗ A face is known for ${known.toFixed(1)} of the cut's ${cutLength.toFixed(1)} s only. Where a person speaks to the camera, the faces were missed: the text is placed against none there. Read them yourself (faces ${rel(dir)} --grid, then --eye), then place again.`);
   const c = text.caption;
   if (c) console.log(`The captions: one place for the cut, ${c.lines > 1 ? "up to two lines" : "one line"} of ${c.font} px, the lowest line at y ${capOpts.y} (their middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the cut: where published Shorts set them" : c.where === "above-head" ? "above the head" : "below the chin"})${!cut.captions ? "; no captions in the cut yet: placed for the tallest style, place again after the captions command" : ""}.`);
-  const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : ""].filter(Boolean).join(", ");
+  const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.hair ? `the hair or forehead ${t.hair} s${t.maybe ? ` (${t.maybe} s of it where the eyes may begin: not known)` : ""}` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : ""].filter(Boolean).join(", ");
   text.shots.forEach((x, i) => {
     const on = x.touches.filter((t) => t.seconds > 0.05);
-    const where = !on.length ? "on no face" : x.fault === "nose" ? `✗ on the nose or eyes: ${on.map(parts).join("; ")}` : x.fault === "mouth" ? `✗ on the mouth: ${on.map(parts).join("; ")}` : x.hair ? "above the head, on the hair" : x.lip ? `on the lower lip and chin (${on.map(parts).join("; ")}), not on the mouth: not avoidable at a readable size` : `on the chin ${on.reduce((n, t) => n + t.seconds, 0).toFixed(1)} s, below the mouth`;
+    const where = !on.length ? "on no face" : x.fault === "nose" ? `✗ on the nose or eyes: ${on.map(parts).join("; ")}` : x.fault === "mouth" ? `✗ on the mouth: ${on.map(parts).join("; ")}` : x.hair ? (x.on?.hair ? `above the eyes, on the hair or forehead (${on.map(parts).join("; ")})` : "above the head, on the hair") : x.lip ? `on the lower lip and chin (${on.map(parts).join("; ")}), not on the mouth: not avoidable at a readable size` : `on the chin ${on.reduce((n, t) => n + t.seconds, 0).toFixed(1)} s, below the mouth`;
     console.log(`  ${files[i]}: ${x.lift ? `raised ${x.lift} px${x.ground ? `, a blurred band of ${x.ground} px at the bottom` : ""}${x.fixed ? " as you fixed it" : x.past ? ", past the head's top so that the captions keep off the mouth" : ""}` : "not raised"}${x.headCut?.seconds ? `; the head cut at the top ${x.headCut.px} px for ${x.headCut.seconds} s` : ""}; captions ${where}`);
   });
   if (text.hook) console.log(`The hook: ${text.hook.kind === "card" ? "a card" : "a short text"} ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle of the frame (no face)" })[text.hook.where] || `(${text.hook.where})`}, ${text.hook.font} px${text.hook.why ? `; ${text.hook.why}` : ""}${text.hook.onFace?.seconds ? `; ✗ on a face for ${text.hook.onFace.seconds} s` : ""}.`);
@@ -802,12 +863,20 @@ function cmdCheck(dir) {
   const voices = voicesOf(dir, clips);
   const text = (a, b) => words.slice(a, b + 1).filter((w) => w.kind === "word").map((w) => cut.fixes?.[w.i] ?? w.text).filter(Boolean).join(" ");
   const several = Object.keys(clips).length > 1;
-  const where = (c, t) => `${several ? `video ${c} ` : ""}${clock(t)}`;
+  const where = (c, t) => `${several ? `${e.audio ? "recording" : "video"} ${c} ` : ""}${clock(t)}`;
   const errors = [], warnings = [...e.warnings];
 
   console.log(`${clock(e.recorded)} recorded → ${clock(e.duration)} cut (−${Math.round(e.recorded - e.duration)} s), ${e.pieces.length} pieces\n`);
   console.log("As it plays:");
   e.pieces.forEach((p, k) => {
+    if (p.quiet) {
+      console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (the room's quiet, ${p.duration.toFixed(2)} s)`);
+      return;
+    }
+    if (p.shows && e.audio) {
+      console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: the wait, ${p.duration.toFixed(1)} s as recorded)   (${where(p.clip, p.in)})`);
+      return;
+    }
     if (p.shows) {
       const what = p.wait ? (p.rate > 1 ? "the wait, as a timelapse" : "the wait, held before the cut") : "something moves in the pause";
       console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${what}, ${(p.out - p.in).toFixed(1)} s ${p.rate > 1 ? `×${p.rate} in ${p.duration.toFixed(1)} s` : "as it is"}, muted)   (${where(p.clip, p.in)})`);
@@ -819,12 +888,16 @@ function cmdCheck(dir) {
     // right after a filler that went is meant: the two touch)
     const v = voices[p.clip], at = (t) => v.env[Math.round(t / HOP)] ?? 0;
     const first = words[p.words[0]], prior = words[p.words[0] - 1];
-    const afterFiller = prior && prior.clip === p.clip && prior.kind !== "word" && first.start - prior.end < 0.15;
+    const afterFiller = prior && prior.clip === p.clip && prior.kind !== "word" && prior.kind !== "unwritten" && first.start - prior.end < 0.15;
     if (!afterFiller && p.in >= first.start - 0.03 && [-0.03, -0.02, -0.01, 0].every((d) => at(p.in + d) > v.thr)) {
       warnings.push(`piece ${k + 1} ("${text(p.words[0], p.words[1])}") starts while the voice is on (${where(p.clip, p.in)}): the sentence likely begins earlier; look at the words before ${p.words[0]} in the brief (squeezed or doubled words are the recognizer's) and start the keep where the sentence starts`);
     }
     // a short piece that is a whole keep ("Tschüss.") is meant; one left over by a cut is not
     const whole = (range(cut.keep[p.keep]?.words) || []).join() === p.words.join();
+    // speech not written down that plays: its words are in no subtitle
+    for (const u of words.slice(p.words[0], p.words[1] + 1).filter((w) => w.kind === "unwritten")) {
+      warnings.push(`piece ${k + 1} plays speech not written down at ${where(u.clip, u.start)} (${(u.end - u.start).toFixed(1)} s, "unwritten": "keep" on keep ${p.keep + 1}): listen that it belongs to the sentence; its words are in no subtitle`);
+    }
     if (p.duration < 0.6 && p.words[1] - p.words[0] < 2 && !whole) warnings.push(`piece ${k + 1} ("${text(p.words[0], p.words[1])}") is ${p.duration.toFixed(2)} s long: that sounds chopped; keep the whole phrase, or start or end the keep beside it`);
   });
 
@@ -834,6 +907,11 @@ function cmdCheck(dir) {
   if (!dropped.length) console.log("    no words");
   const snd = e.removed.filter((r) => r.kind === "filler"), pauses = e.removed.filter((r) => r.kind === "pause");
   if (snd.length) console.log(`    ${snd.length} fillers inside the keeps (${[...new Set(snd.map((r) => shown(words[r.words[0]])))].slice(0, 5).join(", ")})`);
+  // voice the speech model wrote no words for: between the keeps, and cut inside one as it said
+  const unheard = words.filter((w) => w.kind === "unwritten"), cutOut = e.removed.filter((r) => r.kind === "unwritten");
+  const between = unheard.filter((u) => e.removed.some((r) => r.kind === "dropped" && u.i >= r.words[0] && u.i <= r.words[1]));
+  if (between.length) console.log(`    ${between.length} stretch${between.length > 1 ? "es" : ""} of speech not written down (${between.map((u) => where(u.clip, u.start)).join(", ")})`);
+  for (const r of cutOut) console.log(`    ${where(r.clip, r.from)}–${clock(r.to)}  speech not written down inside keep ${cut.keep.findIndex((k) => { const g = range(k.words); return g && r.words[0] >= g[0] && r.words[0] <= g[1]; }) + 1}, cut as the keep says ("unwritten": "cut")`);
   // every pause the tool decided on, what it did and why, so that the agent can overrule it
   if (pauses.length) {
     console.log(`\nPauses (over ${s.pause} s inside a keep, and the waits):`);
@@ -844,13 +922,16 @@ function cmdCheck(dir) {
       const shownTime = (r.moving || []).reduce((t, m) => t + m.to - m.from, 0);
       console.log(`    ${where(r.clip, r.from)}–${clock(r.to)} (${(r.to - r.from).toFixed(1)} s, after word ${r.words[0]}): ${r.why ?? (shownTime ? "kept: the picture moves" : "cut")}`);
     }
-    if (s.pauses !== "tight") console.log(`    (a pause cut that is worth seeing: "pauses": "keep" on its keep; a pause kept that shows nothing: end its keep before it, start the next after it)`);
+    if (e.audio) console.log(`    (a silence that belongs to what is said: "pauses": "keep" on its keep)`);
+    else if (s.pauses !== "tight") console.log(`    (a pause cut that is worth seeing: "pauses": "keep" on its keep; a pause kept that shows nothing: end its keep before it, start the next after it)`);
   }
 
   const levels = [...new Set(e.pieces.map((p) => p.lufs).filter((l) => l != null))];
   if (levels.length) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
-    console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; finish brings the rendered video to ${s.final} LUFS.`);
+    console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; ${e.audio ? `the voice as a whole is at ${e.loudness?.lufs} LUFS, true peak ${e.loudness?.peak} dBTP` : `finish brings the rendered video to ${s.final} LUFS`}.`);
+    const breaths = e.pieces.filter((p) => p.quiet);
+    if (breaths.length) console.log(`Breaths: ${breaths.length} of the room's own quiet between the stretches, ${breaths.reduce((t, p) => t + p.duration, 0).toFixed(1)} s in all.`);
   }
   // text on a face, where the faces are known (source/faces.json, from the skill that framed the videos, or this skill's place)
   const faces = readFaces(dir);
@@ -884,16 +965,18 @@ function cmdCheck(dir) {
   const over = overTarget(e.duration, s.target);
   if (over) warnings.push(over);
 
-  // HyperFrames' own check of the project
-  const [cmd, ...pre] = hyperframes();
-  const lint = spawnSync(cmd, [...pre, "lint"], { cwd: path.resolve(e.out), encoding: "utf8" });
-  for (const m of (lint.stdout + lint.stderr).matchAll(/✗\s+(.+)/g)) errors.push(`HyperFrames: ${m[1]}`);
-  for (const m of (lint.stdout + lint.stderr).matchAll(/⚠\s+(.+)/g)) warnings.push(`HyperFrames: ${m[1]}`);
+  // HyperFrames' own check of the project (sound alone has none)
+  if (!e.audio) {
+    const [cmd, ...pre] = hyperframes();
+    const lint = spawnSync(cmd, [...pre, "lint"], { cwd: path.resolve(e.out), encoding: "utf8" });
+    for (const m of (lint.stdout + lint.stderr).matchAll(/✗\s+(.+)/g)) errors.push(`HyperFrames: ${m[1]}`);
+    for (const m of (lint.stdout + lint.stderr).matchAll(/⚠\s+(.+)/g)) warnings.push(`HyperFrames: ${m[1]}`);
+  }
 
   if (errors.length || warnings.length) console.log("");
   for (const x of errors) console.log(`✗ ${x}`);
   for (const x of warnings) console.log(`⚠ ${x}`);
-  console.log(errors.length ? "\nFix the errors (✗) and build again." : `\n${warnings.length ? "No errors." : "No problems."} The preview: ${e.out}/index.html`);
+  console.log(errors.length ? "\nFix the errors (✗) and build again." : `\n${warnings.length ? "No errors." : "No problems."} ${e.audio ? `The voice: ${e.copy || e.voice}` : `The preview: ${e.out}/index.html`}`);
   if (errors.length) process.exit(1);
 }
 
@@ -932,6 +1015,7 @@ function cmdFinish(dir, file) {
   if (!file) fail("Usage: takes.mjs finish <dir> <video.mp4>");
   if (!fs.existsSync(file)) fail(`There is no ${file}: render the project first.`);
   const e = read(path.join(dir, "edit.json"));
+  if (e.audio) fail(`✗ A cut of sound alone is not rendered: build wrote its voice, ${e.voice}, at ${e.loudness?.lufs} LUFS, and its words with their times in ${rel(path.join(dir, "edit.json"))}.`);
   const s = settings(dir, {});
   const p = probe(file);
   if (Math.abs(p.duration - e.duration) > 0.5) fail(`✗ ${rel(path.resolve(file))} is ${clock(p.duration)} long, the cut ${clock(e.duration)}: it is from before the last build. Render again.`);

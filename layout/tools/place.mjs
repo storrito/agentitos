@@ -14,6 +14,9 @@
 //         afterwards, as published Shorts set it, else a card across the top; hook:text and
 //         hook:card name one of the two)
 //        the candidates, ranked, into <folder>/placement.json
+//        (--caption-area <area.json>: captions built already, the picture placed around them;
+//         --pick speaker [--cover scale,left,top]: in the order for a picture of one speaker, the
+//         picture the caller draws today first where it passes, lib/solve.mjs pickSpeaker)
 //   node place.mjs beside <folder> --frame 9:16 --source 1280x720 --face 555,150,180,195
 //                  --material-min 600x340 [--material-ratio 16:9 | --material 1920x1080]
 //                  [--text caption] [--before scale,left,top] [--platform …] [--json]
@@ -84,7 +87,7 @@ const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text
 const OPTIONS = {
   beside: ["frame", "source", "face", "face-at", "face-track", "material", "material-min", "material-ratio", "text", "caption-area", "caption-style", "before", "platform", "set", "json"],
   grid: ["at"],
-  place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
+  place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "caption-area", "pick", "cover", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
   captions: ["candidate", "json"],
   text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "area-top", "area-bottom", "top", "set", "json"],
@@ -173,7 +176,9 @@ function printResult(res) {
   console.log(`${res.frame} ${W}×${H} for ${res.platforms.join(", ")}${res.fallback ? " (no platform named: the usual ones of this frame)" : ""}`);
   const srcLine = (q, i, n) => `source${n > 1 ? ` ${i + 1}` : ""} ${q.size.join("×")}, ${plural(q.faces.length, "face")}${q.faces.length ? ` (${q.faces.map((f) => boxText(f)).join("; ")})` : ""}`;
   console.log(`${res.screen ? `screen ${res.source.join("×")}, region ${boxText(res.screen.region)} (${res.screen.region[2]}×${res.screen.region[3]})${res.screen.minTextHeight ? `, smallest text ${res.screen.minTextHeight} px (reads from ${res.screen.readable} px in this frame)` : ""}` : (res.sources || [{ size: res.source, faces: res.faces }]).map((q, i, l) => srcLine(q, i, l.length)).join("; ")}; text: ${res.needs.length ? res.needs.map((n) => (n.role === "caption" ? plural(n.lines, "caption line") : n.kind ? `hook as ${n.kind}` : "hook")).join(" + ") : "none"}`);
+  if (res.captionArea) { const a = res.captionArea; console.log(`captions: fixed in x ${a.left}–${a.left + a.width}, y ${a.top}–${a.bottom} (${a.from}, ${plural(a.lines, "line")} at ${a.size} px): there or nowhere, the picture placed around them`); }
   for (const n of res.notes) console.log(`note: ${n}`);
+  if (res.pick) console.log(`ordered for a speaker: the picture you draw today first where it passes${res.pick.cover ? ` (--cover ${res.pick.cover.scale}, ${res.pick.cover.left}, ${res.pick.cover.top}: "cover")` : " (none given)"}, then the pictures across the frame's width, the face nearest ${pct(res.pick.usual)} of the height, then narrower ones; captions on the chin pass, on the mouth they do not${res.pick.note ? `\nnote: ${res.pick.note}` : ""}`);
   for (const tr of res.tracks || []) {
     console.log(`face ${tr.face}: usual box ${boxText(tr.usual)}, hull ${boxText(tr.hull)}; its edges come from: top ${tr.edges.top} s, bottom ${tr.edges.bottom} s, left ${tr.edges.left} s, right ${tr.edges.right} s`);
     if (!tr.decides.length) console.log(`   no single moment decides: with any one of them left out the first candidate stays (${tr.placed})`);
@@ -197,6 +202,7 @@ function printResult(res) {
     for (const b of c.groundShows?.behind || []) console.log(`   ground  behind the ${b.role}: ${b.shows} (the ground is ${c.groundShows.kind})`);
     if (c.alike) console.log(`   the same to the eye as ${c.alike.map((a) => `${nameOf(a)} at ${a.scale}× (${a.apart} px from it)`).join("; ")}: listed once`);
     console.log(`   why: ${c.why.join("; ")}${c.behind ? `; ${c.behind}` : ""}`);
+    if (c.pick) console.log(`   for a speaker: ${c.pick.passes ? "passes" : "–"}, ${c.pick.why}${c.pick.layout ? ` (layout's ${c.pick.layout}.)` : ""}`);
   });
 }
 
@@ -207,6 +213,8 @@ function cmdPlace(o) {
   several people:    [--speaker N]  |  --source WxH --face … --source WxH --face …   (two files)
   a face that moves: --face-at seconds:x,y,w,h …   (one face per source; two that move: --face-track file.json, a list of moments each)
   a screen:          --source WxH --region x,y,w,h --min-text-height N [--readable N] [--face … | --source WxH --face …   (the webcam)]
+  captions built:    --caption-area <area.json> | left,width,top,bottom,size,lines   (they stand there; the picture is placed around them)
+  a speaker:         --pick speaker [--cover scale,left,top]   (the order for a picture of a speaker: the picture you draw today first where it passes, then across the frame's width)
   the ranking:       [--weights file.json] [--set weights.enlarge.softFrom=1.4]
 The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   const [folder] = o._;
@@ -215,10 +223,20 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   if (fs.existsSync(folder) && !fs.statSync(folder).isDirectory()) fail(`${folder} is a file: place writes its placement.json into a folder, name one.`);
   if (!/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame)) fail(`--frame is a ratio or a size, as 9:16 or 1080x1920.`);
   const platforms = platformList(o.platform);
+  if (o.pick !== undefined && o.pick !== "speaker") fail(`--pick takes speaker (the order for a picture of one speaker), not "${o.pick}".`);
+  if (o.cover !== undefined && o.pick === undefined) fail("--cover is the picture you draw today, judged in the order for a speaker: give --pick speaker with it.");
+  let cover = null;
+  if (o.cover !== undefined) {
+    const v = String(o.cover).split(",").map(Number);
+    if (v.length !== 3 || v.some((x) => !Number.isFinite(x)) || !(v[0] > 0)) fail(`--cover is scale,left,top of the picture covering the frame, in px of the frame, as 1.5,-120,0, not "${o.cover}".`);
+    cover = { scale: v[0], left: v[1], top: v[2] };
+  }
   let res;
   try {
     res = solve({
+      ...(o.pick ? { pick: o.pick, cover } : {}),
       zones: askZones(o.frame, platforms), sources, needs: parseNeeds(o.text),
+      ...(o["caption-area"] !== undefined ? { captionArea: areaFile(o["caption-area"]) } : {}),
       speaker: o.speaker !== undefined ? Number(o.speaker) : null,
       set: { ...(o.readable !== undefined ? { "readable.height": Number(o.readable) } : {}), ...Object.fromEntries(o.set.map((s) => { const i = s.indexOf("="); if (i < 1) fail(`--set is key=value, as weights.enlarge.softFrom=1.4.`); return [s.slice(0, i), num(s.slice(i + 1))]; })) },
       all: !!o.all, weights: o.weights ? readWeights(o.weights) : null,
@@ -573,9 +591,9 @@ function cmdText(o) {
   if (c) console.log(`captions: one place for the clip, ${plural(c.lines, "line")} of ${c.font} px, ${boxText(c.box)} (its middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the clip: where published Shorts set them, as low as the safe box allows" : c.where}); ${c.seconds ? `on a face for ${c.seconds} s` : "on no face"}${c.lifted ? `, ${plural(c.lifted, "shot")} raised for it` : ""}`);
   for (const s of res.shots) {
     // the seconds on each part, the part named; a ✗ only where something can still be done
-    const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s${t.lipEst ? ` (${t.lipEst} s of it an estimate ${stillsText(t.stills)})` : ""}` : ""].filter(Boolean).join(", ");
+    const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.hair ? `the hair or forehead ${t.hair} s${t.maybe ? ` (${t.maybe} s of it where the eyes may begin: not known)` : ""}` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s${t.lipEst ? ` (${t.lipEst} s of it an estimate ${stillsText(t.stills)})` : ""}` : ""].filter(Boolean).join(", ");
     const on = s.touches.map((t) => `${t.who}'s face ${t.from}–${t.to} s (${t.seconds} s${parts(t) ? `, of them ${parts(t)}` : ""}, up to ${Math.round(t.share * 100)} % of it)`).join("; ");
-    const what = s.fault === "nose" ? "✗ on the nose or eyes of" : s.fault === "mouth" ? "✗ on the mouth of" : s.fault ? "✗ on" : s.hair ? "above the head, on the hair of" : s.lip ? "on the lower lip and chin of" : "on the chin of";
+    const what = s.fault === "nose" ? "✗ on the nose or eyes of" : s.fault === "mouth" ? "✗ on the mouth of" : s.fault ? "✗ on" : s.hair ? (s.on?.hair > 0.05 ? "above the eyes, on the hair or forehead of" : "above the head, on the hair of") : s.lip ? "on the lower lip and chin of" : "on the chin of";
     const cut = s.headCut?.seconds ? `; the head cut at the top ${s.headCut.px} px for ${s.headCut.seconds} s${s.headCut.byLift ? ` (${s.headCut.byLift} px of it by the raise)` : ""}` : "";
     console.log(`  shot ${s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.past ? ", past the head's top to keep the mouth free" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${cut}${on ? `  ${what} ${on}` : ""}`);
   }
@@ -613,9 +631,9 @@ function textArea(o, folder, shots, needs) {
   if (o.json) return console.log(JSON.stringify(res, null, 1));
   const a = res.area, s1 = (v) => Math.round(v * 10) / 10;
   console.log(`${res.frame} for ${res.platforms.join(", ")}, ${plural(shots.length, "shot")}`);
-  console.log(`the type: one area for the clip, ${boxText(a.box)} (${Math.round(a.share * 100)} % of the height${a.lower > 0 ? `, its top ${Math.round(a.lower)} px below the usual ${Math.round(a.usual)}` : ", its usual top"}); on a mouth, nose or eyes ${s1(a.seconds.nose + a.seconds.mouth + a.seconds.lip)} s, on a chin or neck ${a.seconds.chin} s${a.lifted ? `, ${plural(a.lifted, "shot")} raised for it` : ""}`);
+  console.log(`the type: one area for the clip, ${boxText(a.box)} (${Math.round(a.share * 100)} % of the height${a.lower > 0 ? `, its top ${Math.round(a.lower)} px below the usual ${Math.round(a.usual)}` : ", its usual top"}); on a mouth, nose or eyes ${s1(a.seconds.nose + a.seconds.mouth + a.seconds.lip)} s,${a.seconds.hair ? ` on the hair or forehead ${a.seconds.hair} s,` : ""} on a chin or neck ${a.seconds.chin} s${a.lifted ? `, ${plural(a.lifted, "shot")} raised for it` : ""}`);
   for (const s of res.shots) {
-    const on = s.touches.map((t) => `${t.who} ${t.from}–${t.to} s (${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")})`).join("; ");
+    const on = s.touches.map((t) => `${t.who} ${t.from}–${t.to} s (${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.hair ? `the hair or forehead ${t.hair} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")})`).join("; ");
     const cut = s.headCut?.byLift ? `; the head cut at the top ${s.headCut.byLift} px more by the raise` : "";
     console.log(`  shot ${s.n ?? s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${s.eyes != null ? `, ${s.eyesAre ? eyesText(s.eyesAre, s.eyes).replace(" at ", " from ") : `the eyes from ${Math.round(s.eyes * 100)} % of the height`}` : ""}${cut}  ${on ? `${s.fault ? "✗ " : ""}on ${on}` : "on no face"}`);
   }

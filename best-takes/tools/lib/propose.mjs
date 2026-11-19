@@ -1,6 +1,6 @@
-// A first cut by a model that watches and listens: the videos (small) and every word, numbered,
-// go to Gemini through OpenRouter; it answers with the keeps of cut.json, the retries it left
-// out and why, and where a silence must play at its own speed. The words alone cannot tell which
+// A first cut by a model that watches and listens: the videos (small; recordings of sound alone
+// as MP3) and every word, numbered, go to Gemini through OpenRouter; it answers with the keeps of
+// cut.json, the retries it left out and why, and where a silence must play at its own speed. The words alone cannot tell which
 // of two attempts is said better, or that a pause is someone turning a camera in the picture.
 
 import fs from "node:fs";
@@ -19,7 +19,8 @@ const SCHEMA = {
   additionalProperties: false,
   required: ["keep", "retries", "visual", "waits"],
   properties: {
-    keep: { type: "array", items: { type: "object", additionalProperties: false, required: ["words", "why", "pauses"], properties: {
+    keep: { type: "array", items: { type: "object", additionalProperties: false, required: ["words", "why", "pauses", "unwritten"], properties: {
+      unwritten: { type: "boolean", description: "true only when the range holds speech not written down that belongs to the attempt it keeps (its first words, a word the speech model left out), to be played as recorded; a range never holds one that is another attempt" },
       words: { type: "string", description: "first-last word number, both included, e.g. 12-40, or one number" },
       why: { type: "string", description: "what the range is, and which attempt it is when it replaces another" },
       pauses: { type: "boolean", description: "true only when a silence inside this range must play at its own speed: the speaker holds or turns something in the picture slowly, a reaction. A screen that changes (clicks, pages, scrolling) is not: the tool keeps what moves and speeds up long stretches" },
@@ -38,24 +39,43 @@ export async function propose(dir, clips, words, settings, { model = PROPOSE_MOD
   const or = await need("The proposal");
   const list = Object.values(clips);
   const minutes = list.reduce((t, c) => t + c.duration, 0) / 60;
-  if (minutes > MAX_MINUTES) throw new Error(`${Math.round(minutes)} minutes of video: the model takes ${MAX_MINUTES} at most; read the brief and cut yourself`);
+  // sound alone: the model listens, there is nothing to watch
+  const audio = list.every((c) => c.audio), kind = audio ? "recording" : "video";
+  if (minutes > MAX_MINUTES) throw new Error(`${Math.round(minutes)} minutes of ${kind}: the model takes ${MAX_MINUTES} at most; read the brief and cut yourself`);
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-propose-"));
   const content = [];
   try {
     const several = list.length > 1;
-    const numbered = list.map((c) => `${several ? `Video ${c.n}: ` : ""}${words.filter((w) => w.clip === c.n).map((w) => `[${w.i}]${shown(w)}`).join(" ")}`).join("\n\n");
-    content.push({ type: "text", text: `You are cutting a raw recording for a short social video. Watch and listen to the video${several ? "s" : ""}, then choose the word ranges to keep.
+    const numbered = list.map((c) => `${several ? `${audio ? "Recording" : "Video"} ${c.n}: ` : ""}${words.filter((w) => w.clip === c.n).map((w) => `[${w.i}]${shown(w)}`).join(" ")}`).join("\n\n");
+    content.push({ type: "text", text: audio ? `You are cutting a raw recording of a voice (sound alone, no picture), read or spoken with retries, to the clean narration a listener should hear. Listen to the recording${several ? "s" : ""}, then choose the word ranges to keep.
+
+${rules(several, { ...settings, audio })}
+
+Judge the delivery you hear, not only the words: which attempt is fluent, which one stumbles or breaks off. Fillers appear as (äh), noises as [ … ], voice the speech model wrote no words for as (speech not written down, 1.7 s): listen to it; it is nearly always an attempt it skipped.
+
+For every retry you leave out, say which range it was, which range replaces it and why. "visual" stays empty; in "waits" every kept sentence that announces waiting.
+
+All words, numbered:
+${numbered}` : `You are cutting a raw recording for a short social video. Watch and listen to the video${several ? "s" : ""}, then choose the word ranges to keep.
 
 ${rules(several, settings)}
 
-Judge the delivery you hear and see, not only the words: which attempt is fluent, which one stumbles, where the speaker laughs or looks away. Fillers appear as (äh), noises as [ … ].
+Judge the delivery you hear and see, not only the words: which attempt is fluent, which one stumbles, where the speaker laughs or looks away. Fillers appear as (äh), noises as [ … ], voice the speech model wrote no words for as (speech not written down, 1.7 s): listen to it; it is nearly always an attempt it skipped.
 
 For every retry you leave out, say which range it was, which range replaces it and why. List where the speaker shows something visually, and in "waits" every kept sentence that announces waiting.
 
 All words, numbered:
 ${numbered}` });
     for (const c of list) {
+      if (audio) {
+        // the sound as MP3, without the file's tags (a phone's recording names the place it was made at)
+        const small = path.join(tmp, `${c.n}.mp3`);
+        execFileSync("ffmpeg", ["-v", "error", "-y", "-i", path.join(dir, "source", c.file), "-vn", "-map_metadata", "-1", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "32k", small]);
+        if (several) content.push({ type: "text", text: `Recording ${c.n}:` });
+        content.push({ type: "input_audio", input_audio: { data: fs.readFileSync(small).toString("base64"), format: "mp3" } });
+        continue;
+      }
       const small = path.join(tmp, `${c.n}.mp4`);
       // without the file's tags: a phone's video names the place it was recorded at, and ffmpeg
       // would carry that into the copy the model watches
@@ -69,8 +89,8 @@ ${numbered}` });
 
   const body = JSON.stringify({ model, messages: [{ role: "user", content }], response_format: { type: "json_schema", json_schema: { name: "cut", strict: true, schema: SCHEMA } } });
   const size = Buffer.byteLength(body);
-  if (or.gateway && size > GATEWAY_MAX) throw new Error(`the request with the small videos takes ${(size / 1e6).toFixed(1)} MB, more than the Sprites gateway takes (${GATEWAY_MAX / 1e6} MB): read the brief and cut yourself, or set OPENROUTER_API_KEY`);
-  log(`proposing a cut (${model}, ${Math.max(1, Math.round(minutes))} min of video) …`);
+  if (or.gateway && size > GATEWAY_MAX) throw new Error(`the request with the small ${kind}s takes ${(size / 1e6).toFixed(1)} MB, more than the Sprites gateway takes (${GATEWAY_MAX / 1e6} MB): read the brief and cut yourself, or set OPENROUTER_API_KEY`);
+  log(`proposing a cut (${model}, ${Math.max(1, Math.round(minutes))} min of ${audio ? "sound" : "video"}) …`);
   let j;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -93,7 +113,7 @@ ${numbered}` });
   return {
     model,
     cost: j.usage?.cost ?? 0,
-    keep: ans.keep.map((k) => ({ words: k.words, why: k.why, ...(k.pauses ? { pauses: "keep" } : {}) })),
+    keep: ans.keep.map((k) => ({ words: k.words, why: k.why, ...(k.pauses ? { pauses: "keep" } : {}), ...(k.unwritten ? { unwritten: "keep" } : {}) })),
     ...(ans.waits?.length ? { waits: ans.waits } : {}),
     retries: ans.retries,
     visual: ans.visual,
