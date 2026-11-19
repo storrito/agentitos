@@ -32,7 +32,7 @@
 //   node tools/launch.mjs words <work> <composition>      the voice's words at their times in the film,
 //                                                         as the film's <audio> places the lines → <work>/words.json
 //   node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
-//        [--pause <from>-<to>,…] [--follow]               the captions (agentitos' captions skill) in
+//        [--pause <from>-<to>,…] [--follow] [--edge]      the captions (agentitos' captions skill) in
 //                                                         <composition>/captions, and the line that mounts them;
 //                                                         none in the stretches the picture carries the words
 //   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--under 17]   music
@@ -82,7 +82,7 @@ const IMAGE_MODEL = "google/gemini-3.1-flash-image";
 const UNDER = 17;
 
 // options that take no value
-const FLAGS = ["mark", "vocals", "json", "follow"];
+const FLAGS = ["mark", "vocals", "json", "follow", "edge"];
 
 function parse(args) {
   const pos = [], opts = {};
@@ -1037,7 +1037,7 @@ export function captionWords(words, spans = []) {
 }
 
 function cmdCaptions(work, composition, opts) {
-  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md] [--pause <from>-<to>,…] [--follow]")}`);
+  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md] [--pause <from>-<to>,…] [--follow] [--edge]")}`);
   const tool = captionsTool();
   if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
   let spans;
@@ -1063,7 +1063,7 @@ function cmdCaptions(work, composition, opts) {
     writeJson(shown, { ...all, words: kept });
     console.log(`The captions pause in ${pauses.map(([a, b]) => `${a}–${b} s`).join(", ")}: ${all.words.length - kept.length} word${all.words.length - kept.length === 1 ? "" : "s"} the picture carries are left out (${rel(shown)}).`);
   }
-  run(["build", shown, path.join(composition, "captions"), "--style", String(opts.style || "hormozi"), ...(ids.length ? ["--platform", ids.join(",")] : []), ...(brand ? ["--brand", brand] : []), ...(opts.follow ? ["--follow"] : [])]);
+  run(["build", shown, path.join(composition, "captions"), "--style", String(opts.style || "hormozi"), ...(ids.length ? ["--platform", ids.join(",")] : []), ...(brand ? ["--brand", brand] : []), ...(opts.follow ? ["--follow"] : []), ...(opts.edge ? ["--edge"] : [])]);
   console.log(`Mount it once, as the root's last child; build captions again after moving a line of the voice (it reads where the root places them).`);
 }
 
