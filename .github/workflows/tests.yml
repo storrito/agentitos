@@ -14,9 +14,23 @@ on:
         description: "How many times the layout skill's tests run one after the other (to catch one that fails now and then)"
         type: number
         default: 1
+      break-cache:
+        description: "Make one cached package unreadable, to see the install fall back to Ubuntu's mirrors"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+# (bash with pipefail: a pipe's failure fails the step, not only its last command's)
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Ubuntu's packages the tests need, installed by .github/debs.sh and kept in one cache entry
+  # that both jobs share
+  DEBS: ffmpeg fonts-noto-core
 
 concurrency:
   # (a manual run is a group of its own: a push does not cancel it)
@@ -27,7 +41,7 @@ jobs:
   skills:
     name: skills (all but layout)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,34 +53,36 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: "*/package-lock.json"
-      # Ubuntu's ffmpeg (6.1.1) and Noto Sans (the font the layout skill's pages measure with), as
-      # packages kept in GitHub's cache for this runner image: Ubuntu's mirrors took from one to
-      # more than eight minutes to send them, a static ffmpeg counted other frames than Ubuntu's
-      - id: image
-        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      # Ubuntu's ffmpeg (6.1.1) and Noto Sans (the font the layout skill's pages measure with):
+      # the packages are kept in GitHub's cache under the Ubuntu release and the list of packages
+      # (not the image's build, of which GitHub hands out several at once); .github/debs.sh says
+      # why that is safe and what happens when a set no longer fits
+      - id: debs
+        run: echo "key=debs-$ImageOS-$(printf %s "$DEBS" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
         with:
           path: ~/debs
-          key: debs-ffmpeg-noto-${{ steps.image.outputs.version }}
+          key: ${{ steps.debs.outputs.key }}
+          restore-keys: ${{ steps.debs.outputs.key }}-
       - name: ffmpeg and fonts
-        timeout-minutes: 15
-        run: |
-          if ! ls ~/debs/*.deb >/dev/null 2>&1; then
-            sudo apt-get update -o Acquire::Retries=3
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --download-only --no-install-recommends ffmpeg fonts-noto-core < /dev/null
-            mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
-          fi
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo DEBIAN_FRONTEND=noninteractive dpkg -i ~/debs/*.deb > /dev/null
-          ffmpeg -hide_banner -version | head -1
-          fc-match "Noto Sans"
+        id: install
+        timeout-minutes: 25
+        env:
+          DEBS_BREAK: ${{ inputs.break-cache && '1' || '' }}
+        run: .github/debs.sh
+      # a set made anew is kept under a key of its own; a restore takes the newest
+      - if: steps.install.outputs.fresh == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/debs
+          key: ${{ steps.debs.outputs.key }}-${{ github.run_id }}-${{ github.job }}
       - name: tests
         run: node .github/run-tests.mjs --install --except layout --jobs 3
 
   layout:
     name: layout (with Chrome)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
         with:
@@ -74,27 +90,29 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      # Ubuntu's ffmpeg (6.1.1) and Noto Sans (the font the layout skill's pages measure with), as
-      # packages kept in GitHub's cache for this runner image: Ubuntu's mirrors took from one to
-      # more than eight minutes to send them, a static ffmpeg counted other frames than Ubuntu's
-      - id: image
-        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      # Ubuntu's ffmpeg (6.1.1) and Noto Sans (the font the layout skill's pages measure with):
+      # the packages are kept in GitHub's cache under the Ubuntu release and the list of packages
+      # (not the image's build, of which GitHub hands out several at once); .github/debs.sh says
+      # why that is safe and what happens when a set no longer fits
+      - id: debs
+        run: echo "key=debs-$ImageOS-$(printf %s "$DEBS" | sha256sum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
         with:
           path: ~/debs
-          key: debs-ffmpeg-noto-${{ steps.image.outputs.version }}
+          key: ${{ steps.debs.outputs.key }}
+          restore-keys: ${{ steps.debs.outputs.key }}-
       - name: ffmpeg and fonts
-        timeout-minutes: 15
-        run: |
-          if ! ls ~/debs/*.deb >/dev/null 2>&1; then
-            sudo apt-get update -o Acquire::Retries=3
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --download-only --no-install-recommends ffmpeg fonts-noto-core < /dev/null
-            mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
-          fi
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo DEBIAN_FRONTEND=noninteractive dpkg -i ~/debs/*.deb > /dev/null
-          ffmpeg -hide_banner -version | head -1
-          fc-match "Noto Sans"
+        id: install
+        timeout-minutes: 25
+        env:
+          DEBS_BREAK: ${{ inputs.break-cache && '1' || '' }}
+        run: .github/debs.sh
+      # a set made anew is kept under a key of its own; a restore takes the newest
+      - if: steps.install.outputs.fresh == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/debs
+          key: ${{ steps.debs.outputs.key }}-${{ github.run_id }}-${{ github.job }}
       - name: tests
         env:
           REPEAT: ${{ inputs.repeat || 1 }}
