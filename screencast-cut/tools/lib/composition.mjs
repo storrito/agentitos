@@ -95,11 +95,14 @@ export function shots(pieces, sources, width, height, a, labels = []) {
     };
     if (p.show) {
       // another video instead of the recording: whole, as large as the room holds it, from its
-      // own time on at its own speed (the piece's speed-up is the recording's), up to its end
+      // own time on at its own speed (the piece's speed-up is the recording's), up to its end.
+      // Without the circle (a show keep's default since 2026-11-19, show.circleOn) the room a whole
+      // picture gets: the frame's height above the captions, centred, an upright video and a wide
+      // one alike (a wide one used to stay in the safe box, off the middle where its margins differ)
       const shown = sources[p.show.source];
       const tallShown = shown.height > shown.width * 1.25;
       const room = p.pip === false || !sources.webcam
-        ? (tallShown ? [a.tall, ...(a.solo || []), ...whole(shown.width / shown.height)] : a.solo || a.content)
+        ? (tallShown ? [a.tall, ...(a.solo || []), ...whole(shown.width / shown.height)] : [...(a.solo || a.content), ...whole(shown.width / shown.height)])
         : (tallShown ? a.tall : [...a.content, ...(a.beside || [])]);
       const duration = Math.min(p.duration, p.show.until - p.start);
       if (duration > 0.001) out.push({ source: p.show.source, box: fit(room, shown.width / shown.height), crop: [0, 0, 1, 1], main: true, show: true, round, start: p.start, duration, in: p.show.in, rate: 1 });

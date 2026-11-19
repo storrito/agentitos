@@ -289,5 +289,6 @@ export function headerSentence(k, list, height, what = "phone") {
   const by = new Map();
   for (const u of list) by.set(u.px, [...(by.get(u.px) || []), u.name]);
   const parts = [...by.entries()].sort((a, b) => b[0] - a[0]).map(([px, names]) => `${px} px under the header of ${names.join(" and ")}`);
-  return `! keep ${k + 1}: the top of the ${what} (${Math.round(height)} px high) lies under the apps' header: ${parts.join(", ")}${what === "phone" ? " (its status bar and the screen's top below it)" : ""}; where that top matters for these words, give the keep a "zoom" on the top of the screen, or leave out "circle": false so it stays in the safe box beside the circle.`;
+  const phone = what === "phone";
+  return `! keep ${k + 1}: the top of the ${what} (${Math.round(height)} px high) lies under the apps' header: ${parts.join(", ")}${phone ? " (its status bar and the screen's top below it)" : ""}; where that top matters for these words, ${phone ? `give the keep a "zoom" on the top of the screen, or leave out "circle": false so it stays in the safe box beside the circle` : `set "circle": true on the keep: it then stays in the safe box beside the circle`}.`;
 }

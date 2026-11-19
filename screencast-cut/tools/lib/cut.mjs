@@ -339,3 +339,37 @@ function sentenceEndOfFiller(last, between, sameClip) {
 function locale(lang) {
   try { return lang ? Intl.getCanonicalLocales(lang)[0] : "und"; } catch { return "und"; }
 }
+
+// check's sentences on how the cut and a piece end (the run of 2026-11-19: both asked for what the
+// recording did not have). The words are the recording's (words.json, by number); a word of the
+// keep where the speaker can stop: the end of a sentence, or a pause of PAUSE_AT s at least after it.
+const PAUSE_AT = 0.3;
+const said = (words, i) => words.slice(i + 1).find((w) => w.kind === "word");
+function stopBefore(words, from, last) {
+  for (let j = last - 1; j >= from; j--) {
+    const w = words[j], next = said(words, j);
+    if (w?.kind === "word" && (endsSentence(w.text) || (next && next.start - w.end >= PAUSE_AT))) return { w, pause: next ? next.start - w.end : null };
+  }
+  return null;
+}
+const quoteOf = (w) => `word ${w.i} ("${w.text.replace(/[,;:]+$/u, "")}")`;
+
+// A piece that ends right after its last word (out: the piece's end in the recording, under 0.12 s
+// after the word's end). first, last: the piece's first and last word numbers; recorded: the
+// recording's length. Where no word follows in the recording, or it ends there, there is no word
+// later: the sentence names the last place to stop before it.
+export function pieceEndSaid({ k, out, first, last, words, recorded }) {
+  const w = words[last], gap = out - w.end;
+  const atEnd = !said(words, last) || out >= recorded - 0.1;
+  if (!atEnd) return `piece ${k + 1} ends ${gap.toFixed(2)} s after "${w.text}" (the next words follow right after it in the recording): it may sound cut off; end the keep a word later, or where the speaker pauses`;
+  const stop = stopBefore(words, first, last);
+  return `piece ${k + 1} ends ${gap.toFixed(2)} s after "${w.text}", where the recording ends: there is no word later, and it may sound cut off; end the keep ${stop ? `at ${quoteOf(stop.w)}, ${endsSentence(stop.w.text) ? "the end of a sentence" : `where the speaker pauses ${stop.pause.toFixed(1)} s`}` : "on an earlier sentence"}, or leave it`;
+}
+
+// The cut's end: under 1 s after its last word. lastOut: the last piece's end in the recording.
+// Where the recording ends there, a longer "hold" cannot play: said, with what can be done instead.
+export function endSaid({ gap, lastOut, recorded }) {
+  if (gap >= 1) return null;
+  if (lastOut >= recorded - 0.1) return `the cut ends ${gap.toFixed(1)} s after its last word, where the recording ends: a "hold" cannot play past it; for a moment after the last word, end the cut on an earlier sentence that has a pause after it, or leave it`;
+  return `the cut ends ${gap.toFixed(1)} s after its last word: give the end a moment ("hold": 1.5 on the last keep)`;
+}
