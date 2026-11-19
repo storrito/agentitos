@@ -66,6 +66,8 @@ The fonts are among those HyperFrames embeds by itself when it renders (Montserr
 
 **`--follow`** (2026-11-19, for narrated explainers): in a style whose words stay as they are (`clean`, `bold`, `subtitle`, `editorial`, `outline`, `impact`) or only turn the text's colour (`label`), the word being said lights up: `active: "fill"` with the words waiting at half their colour (`label` keeps its grey), the light in the brand's primary where the style gives the brand the word being said or the key words and it reads there, else the style's key colour. Styles that light the word already, and `single`, stay as they are and the tool says so. Without `--follow` every built file is as before.
 
+**`--edge`** (2026-11-19, for a ground as light as the box): a style's box gets an edge of the other lightness, as thick as a card's border (3 px at 58 px type): `label`'s white box of every line a dark ring (`rgba(17,24,39,0.30)`) and a soft shadow, `clean`'s dark box a light ring. Made because `label`'s boxes vanished on a narrated explainer's near-white ground (part one of the word-timing films: the words read, the box did not); `label --follow --edge` on that ground was rendered and looked at the same day. Styles without a box stay as they are and the tool says so; without `--edge` every built file is as before.
+
 ### Groups and timing (`tools/lib/group.mjs`)
 
 - First the phrases: a group never runs over the end of a sentence, a pause (0.25–0.45 s by style) or a comma once it is half full.

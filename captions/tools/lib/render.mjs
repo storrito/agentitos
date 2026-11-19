@@ -114,10 +114,25 @@ export function follows(style, look, brandPrimary) {
   return { active: "fill", accent: light, wait };
 }
 
+// --edge: a style's box (label's box for every line, clean's box) gets an edge of the other
+// lightness, so that it stands out on a ground as light (or as dark) as the box itself: label's
+// white boxes vanished on a narrated explainer's near-white ground (2026-11-19, part one of the
+// word-timing films; the words read, the box did not). A light box gets a dark ring and a soft
+// shadow, a dark box a light ring, as thick as a card's border. Styles without a box: null.
+export function edgeOf(look, type) {
+  const box = look.lineBox || look.box;
+  if (!box) return null;
+  const hex = /^#([0-9a-f]{6})$/i.exec(box), rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(box);
+  const [r, g, b] = hex ? [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16)) : rgb ? rgb.slice(1, 4).map(Number) : [0, 0, 0];
+  const light = 0.2126 * r + 0.7152 * g + 0.0722 * b > 128;
+  const px = Math.max(2, Math.round(type * 0.045));
+  return { px, light, shadow: light ? `0 0 0 ${px}px rgba(17,24,39,0.30), 0 ${px * 2}px ${px * 6}px rgba(17,24,39,0.16)` : `0 0 0 ${px}px rgba(255,255,255,0.45)` };
+}
+
 // zones: platform-zones' answer for the frame (tools/lib/zones.mjs); place: where the caller wants
 // the captions instead of where it says (areaOf above). Without place the file is what it was
-// before there was one; without follow, as before there was that.
-export function writeCaptions(out, { words: said, style, width, height, duration, brand, zones, place, follow = false }) {
+// before there was one; without follow or edge, as before there was that.
+export function writeCaptions(out, { words: said, style, width, height, duration, brand, zones, place, follow = false, edge = false }) {
   const words = fold(said);   // a mark alone ("…") is no caption: group.mjs
   const look = { ...style.look }, area = areaOf(place, style, width, height, zones.centred);
   fs.mkdirSync(out, { recursive: true });
@@ -268,6 +283,11 @@ export function writeCaptions(out, { words: said, style, width, height, duration
         #root .cap-group.cap-card { background: ${look.lineBox}; }` : "") + (look.keyFont ? `
         #root .cap-word.key { font-family: "${look.keyFont}", serif; font-weight: ${look.keyWeight || look.weight}; font-style: ${look.keyItalic ? "italic" : "normal"};
           font-size: ${look.keyScale || 1}em; line-height: ${n(look.lineHeight / (look.keyScale || 1))}; margin-top: -0.2em; letter-spacing: 0; }` : "");
+  // --edge: the box of every line, or the style's box, with an edge of the other lightness
+  const edged = edge ? edgeOf(look, area.type) : null;
+  const edgeRule = !edged ? "" : look.lineBox ? `
+        #root .cap-box { box-shadow: ${edged.shadow}; }` : `
+        #root .cap-group.boxed { box-shadow: ${edged.shadow}; }`;
   // which groups keep room at their sides that is no room for a word (a card has its own padding)
   const sides = look.lineBox ? "lined padded" : look.pill || inset ? "padded" : "";
 
@@ -294,7 +314,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
         #root .cap-word { display: inline-block; color: ${look.color}; text-shadow: ${look.shadow};
           ${look.stroke ? `-webkit-text-stroke: ${Math.round(look.stroke * area.grow)}px ${look.strokeColor}; paint-order: stroke fill;` : ""}
           ${look.pill ? `padding: 0.04em ${PILL.pad}em; margin: 0 -${PILL.pull}em; border-radius: 0.28em;` : ""} transform-origin: 50% 60%; }
-        #root .cap-word.own { text-transform: none; }${rules}
+        #root .cap-word.own { text-transform: none; }${rules}${edgeRule}
       </style>
       <div id="root" data-composition-id="${ID}" data-width="${width}" data-height="${height}"${duration ? ` data-duration="${n(duration)}"` : ""}></div>
       <script>
@@ -431,7 +451,7 @@ ${links.map((l) => `    <link rel="stylesheet" href="${l}" />`).join("\n")}
   // are never cut to an area.
   const ends = height - area.bottom, cards = gs.filter((g) => g.box).length;
   const around = cards ? 0.44 * area.type + 2 * Math.max(3, Math.round(area.type * 0.045)) : look.box ? 0.44 * area.type : look.lineBox ? 2 * look.linePad[0] * area.type : 0;
-  return { groups: gs.length, cards, wide, joined, small, smaller, kept, followed, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
+  return { groups: gs.length, cards, wide, joined, small, smaller, kept, followed, edged: edge ? edged || { none: true } : null, area: { left: area.left, width: area.maxWidth, bottom: ends, top: Math.round(ends - area.lines * area.type * look.lineHeight - around), align: area.align, size: Math.round(area.type), lines: area.lines, own: !!area.own } };
 }
 
 // The clip that mounts the captions in a host composition: on top of everything, the whole length.

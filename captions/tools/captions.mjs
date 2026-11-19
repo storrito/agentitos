@@ -27,6 +27,8 @@
 //   --track <n> (build: the mount's track, default 9)
 //   --follow (build, project: the word being said lights up, in the brand's primary where it reads,
 //   in a style whose words otherwise stay as they are: clean, label, bold, subtitle, …)
+//   --edge (build, project: a style's box, label's for every line or clean's, gets an edge of the
+//   other lightness, for a ground as light as label's white boxes or as dark as clean's)
 //   --platform reels,tiktok (where the video goes: the captions keep clear of what those apps lay
 //   over it, from agentitos' platform-zones skill; none: the usual platforms of the frame)
 //   --fit cover|contain (project: a video of another shape than --size fills the frame, cut at its
@@ -66,8 +68,8 @@ const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : re
 function parse(args) {
   const pos = [], opts = {};
   for (let i = 0; i < args.length; i++) {
-    // --follow takes no value
-    if (args[i].startsWith("--")) opts[args[i].slice(2)] = args[i] === "--follow" || args[i + 1]?.startsWith("--") || args[i + 1] === undefined ? true : args[++i];
+    // --follow and --edge take no value
+    if (args[i].startsWith("--")) opts[args[i].slice(2)] = args[i] === "--follow" || args[i] === "--edge" || args[i + 1]?.startsWith("--") || args[i + 1] === undefined ? true : args[++i];
     else pos.push(args[i]);
   }
   return [pos, opts];
@@ -267,10 +269,11 @@ function captionsFor(words, folder, opts, size, duration) {
   const place = placeOf(opts, size);
   let z;
   try { z = zones(size[0], size[1], platformList(opts.platform)); } catch (e) { fail(e.message); }
-  const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z, place, follow: !!opts.follow });
+  const r = writeCaptions(folder, { words, style: s, width: size[0], height: size[1], duration, brand, zones: z, place, follow: !!opts.follow, edge: !!opts.edge });
   // (a brand's colour that the key words could not carry: said in a line of its own, before where they are placed)
   let kept = r.kept ? `  (the brand's ${r.kept.primary} ${r.kept.why}: ${r.kept.what} keep the style's ${r.kept.highlight})\n` : "";
   if (r.followed) kept += r.followed.already ? `  (--follow: ${s.label} lights the word being said already, or shows one word at a time: nothing changed)\n` : `  (--follow: the word being said lights up in ${r.followed.accent}, the words wait dimmer and stand in the text's colour once said)\n`;
+  if (r.edged) kept += r.edged.none ? `  (--edge: ${s.label} has no box: nothing changed)\n` : `  (--edge: ${s.look.lineBox ? "the box of every line" : "the box"} has a ${r.edged.px} px edge, ${r.edged.light ? "dark, with a soft shadow, for a light ground" : "light, for a dark ground"})\n`;
   // (the words a style in capitals keeps small letters in: the caller sees them and can undo one by writing it otherwise)
   const small = r.small.length ? `  (in capitals but for small letters that would say something else: ${[...new Set(r.small)].slice(0, 8).map((w) => `"${w}"`).join(", ")}${new Set(r.small).size > 8 ? ", …" : ""})\n` : "";
   return { ...r, style: s, brand, zones: z, placed: kept + small + (place ? placedAs(r, z, size, platformList(opts.platform)) : placedFor(z)) };
