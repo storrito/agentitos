@@ -1270,3 +1270,36 @@ test("review 6: a \"text\" fault does not keep the circle on the region (16:9, z
     assert.match(said, /screen-<keep>\/placement\.json/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ------------------------------------------------------ the second review of the screen's picture
+test("second review 1: the smallest shift that puts the region where it passes: 9:16, a 1280×720 screen's top and bottom right corners at 2× move 60 px into the wide stretch above the buttons, not 192 px into the safe box; a region that reaches down to the buttons still moves 192 px", () => {
+  const { z, a } = frameOf(1080, 1920), src = { width: 1280, height: 720 };
+  for (const crop of [[0.7, 0, 1, 0.3], [0.7, 0.7, 1, 1]]) {
+    const b = beforePicture(crop, src, a, true);
+    const s = shiftedInside(b, src, z, a, 1080);
+    assert.equal(s.shift, -60, JSON.stringify(crop));
+    assert.deepEqual(s.region, [252, 329, 768, 432]);
+    assert.deepEqual(judge(s, { zones: z, width: 1080, height: 1920 }).faults, []);
+  }
+  // reaching below the wide stretch (to y 1000): only the safe box holds it, 192 px
+  const low = { fit: BEFORE, scale: 2, left: -1408, top: 0, window: [0, 0, 1080, 1200], region: [312, 600, 768, 400] };
+  assert.equal(shiftedInside(low, src, z, a, 1080).shift, -192);
+});
+
+test("second review 2: a circle moved to a bottom corner ends the skill's gap above the captions' band as built (16:9: band at y 772, the circle's bottom at 748, not 776) and keeps that gap from a label; without room at the bottom the top corners are tried as before", () => {
+  const { z, a } = frameOf(1920, 1080);
+  const gap = Math.round(1080 * 0.022);
+  const pic = { circle: a.pip, region: [96, 108, 1300, 300] };
+  const free = freeCorner(pic, { zones: z, areas: a, width: 1920, height: 1080, band: 772 });
+  assert.deepEqual(free, { circle: [1608, 772 - gap - 216, 216], corner: "bottom right" });
+  assert.equal(freeCorner(pic, { zones: z, areas: a, width: 1920, height: 1080 }).circle[1] + 216, a.bleed[3], "without the band: the areas' bottom, as before");
+  // a label 10 px beside the top left corner's circle: nearer than the gap, so that corner is not taken
+  const right = { circle: [1608, 108, 216], region: [400, 108, 1424, 300] }, o = { zones: z, areas: a, width: 1920, height: 1080, band: 772 };
+  assert.equal(freeCorner(right, o).corner, "top left");
+  assert.equal(freeCorner(right, { ...o, labels: [[96 + 216 + 10, 108, 200, 70]] }).corner, "bottom right");
+  // the band so high that no bottom corner has room: a top corner
+  const t = freeCorner({ circle: [1608, 600, 216], region: [400, 500, 1000, 300] }, { zones: z, areas: a, width: 1920, height: 1080, band: 300 });
+  assert.match(t.corner, /^top/);
+  // seat passes the band on (top left has the label, bottom right meets the region: bottom left)
+  assert.deepEqual(seat({ region: [1100, 150, 700, 400] }, a.pip, { zones: z, areas: a, width: 1920, height: 1080, band: 772, labels: [[96, 108, 300, 70]] }).circle, [96, 772 - gap - 216, 216]);
+});

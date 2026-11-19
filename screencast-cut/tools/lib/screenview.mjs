@@ -65,15 +65,22 @@ export function beforePicture(c, src, a, pip) {
 // areas keep it), in the order the layout skill tries them (upright: bottom left, bottom right, top
 // left, top right; else top right, top left, bottom right, bottom left): the first that lies off
 // the region and off the labels; over the rest of the screen is allowed. null where none is free.
-export function freeCorner(pic, { zones, areas, labels = [], width, height }) {
+// The bottom corners end the skill's gap above the captions' band as built (band: its top, from
+// captions/area.json, which can lie above the areas' estimate: 772 against 800 in 16:9), and a
+// corner keeps that gap from a label too.
+export function freeCorner(pic, { zones, areas, labels = [], width, height, band = null }) {
   if (!pic.circle) return null;
-  const [sx, sy, sw] = zones.safe, d = pic.circle[2], bottom = areas.bleed ? areas.bleed[3] : sy + zones.safe[3];
+  const gap = Math.round(Math.min(width, height) * 0.022);
+  const [sx, sy, sw] = zones.safe, d = pic.circle[2];
+  const bottom = Math.min(areas.bleed ? areas.bleed[3] : sy + zones.safe[3], Number.isFinite(band) ? band - gap : Infinity);
+  const near = labels.map((l) => [l[0] - gap, l[1] - gap, l[2] + 2 * gap, l[3] + 2 * gap]);
   const order = height >= width * 1.5 ? ["bottom left", "bottom right", "top left", "top right"] : ["top right", "top left", "bottom right", "bottom left"];
   for (const corner of order) {
     const c = [corner.endsWith("left") ? sx : sx + sw - d, corner.startsWith("top") ? sy : bottom - d, d];
     const sq = [c[0], c[1], d, d];
     if (Math.abs(c[0] - pic.circle[0]) < 1 && Math.abs(c[1] - pic.circle[1]) < 1) continue;
-    if (meets(sq, pic.region) || labels.some((l) => meets(l, sq))) continue;
+    if (corner.startsWith("bottom") && bottom - d < sy) continue;
+    if (meets(sq, pic.region) || near.some((l) => meets(l, sq))) continue;
     return { circle: c, corner };
   }
   return null;
@@ -85,10 +92,11 @@ export function freeCorner(pic, { zones, areas, labels = [], width, height }) {
 // where it needs no move (decided 2026-11-19, circle-still: a shift comes before a shrink)
 export function shiftedInside(pic, src, zones, areas, width) {
   const R = pic.region, Wd = zones.wide;
-  const into = [zones.safe, ...(Wd && R[1] + R[3] <= Wd[1] + Wd[3] + 0.5 ? [Wd] : [])].find((b) => R[2] <= b[2] + 0.5);
-  if (!into) return null;
-  const [sx, , sw] = into;
-  const dx = Math.max(sx - R[0], Math.min(0, sx + sw - (R[0] + R[2])));
+  // of the boxes that hold it (the wide stretch only where the region lies above the buttons), the
+  // smallest shift: 60 px into the wide stretch rather than 192 px into the safe box in 9:16
+  const into = [zones.safe, ...(Wd && R[1] + R[3] <= Wd[1] + Wd[3] + 0.5 ? [Wd] : [])].filter((b) => R[2] <= b[2] + 0.5);
+  if (!into.length) return null;
+  const dx = into.map(([sx, , sw]) => Math.max(sx - R[0], Math.min(0, sx + sw - (R[0] + R[2])))).reduce((a, b) => (Math.abs(b) < Math.abs(a) ? b : a));
   if (Math.abs(dx) < 0.5) return null;
   const left = pic.left + dx, w = src.width * pic.scale, h = src.height * pic.scale;
   const [bx, by, bw, bh] = areas.bleed || [0, 0, width, pic.window[1] + pic.window[3]];
@@ -99,13 +107,13 @@ export function shiftedInside(pic, src, zones, areas, width) {
 // The circle at main's place and main's size (decided 2026-11-19, circle-still: it stands still
 // between keeps); only where that place lies on the picture's region or on a label, in the first
 // free corner (freeCorner). main: areas().pip ([x, y, d]) or null without the circle.
-export function seat(pic, main, { zones, areas, labels = [], width, height }) {
+export function seat(pic, main, { zones, areas, labels = [], width, height, band = null }) {
   const at = { ...pic, circle: main ? [main[0], main[1], main[2]] : null };
   delete at.corner;
   if (!main) return at;
   const sq = [main[0], main[1], main[2], main[2]];
   if (!meets(sq, at.region) && !labels.some((l) => meets(l, sq))) return at;
-  const free = freeCorner(at, { zones, areas, labels, width, height });
+  const free = freeCorner(at, { zones, areas, labels, width, height, band });
   return free ? { ...at, circle: free.circle, corner: free.corner } : at;
 }
 
@@ -233,6 +241,9 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
   const cam = sources.webcam?.video ? sources.webcam : null;
   const said = [`Screen (${tool ? `the layout skill, ${area ? "around the captions as built" : "no captions"}` : "as before: agentitos' layout skill is not beside this one, or LAYOUT_TOOL naming its tools/place.mjs"}): the picture as before where it passes (its region inside the safe box across, the circle and the label off it, its text read where the keep's "text" says how tall); else, where the circle lies on the region, the circle in a corner off it; where the region runs past the margins, the same picture moved inside them; else the layout skill's first that removes a fault and adds none, unless a keep names another with "layout"; the circle stays at its place and size wherever it is off the region:`];
   const done = new Map(), folders = [];
+  // the captions' band as built: a moved circle ends above it (freeCorner)
+  let band = null;
+  try { band = area && fs.existsSync(area) ? Number(JSON.parse(fs.readFileSync(area, "utf8")).top) : null; } catch { band = null; }
   const keepSpan = (k) => { const own = pieces.filter((p) => p.keep === k); return `${clock(own[0].start)}–${clock(own.at(-1).start + own.at(-1).duration)}`; };
   for (const p of ps) {
     const keep = cut.keep?.[p.keep] || {};
@@ -248,7 +259,7 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
         // the folder is named by the keep (screen-3 for keep 3; screen-3-2 for its second picture)
         const m = folders.filter((k) => k === p.keep).length;
         folders.push(p.keep);
-        got = placeOne({ dir, name: `screen-${p.keep + 1}${m ? `-${m + 1}` : ""}`, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, zones, areas });
+        got = placeOne({ dir, name: `screen-${p.keep + 1}${m ? `-${m + 1}` : ""}`, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, band, zones, areas });
         done.set(key, got);
         said.push(...got.lines.map((l, j) => (j ? `    ${l}` : `  keep ${p.keep + 1} (${keepSpan(p.keep)}${c.join() === "0,0,1,1" ? ", the whole screen" : `, zoom [${c.join(", ")}]`}): ${l}`)));
       }
@@ -260,7 +271,7 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
   return said;
 }
 
-function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, zones, areas }) {
+function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, band, zones, areas }) {
   const before = beforePicture(c, src, areas, pip);
   const facts = (pic, j, extra = {}) => ({ fit: pic.fit, scale: r2(pic.scale), ground: j.ground, region: pic.region.map(r0), ...(text ? { text, textHeight: j.textHeight } : {}),
     ...(extra.readable ? { readable: extra.readable } : {}), under: j.under, faults: j.faults.map((f) => f.code), ...(pic.mark ? { mark: pic.mark } : {}), ...(extra.named ? { named: true } : {}) });
@@ -273,16 +284,16 @@ function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, 
   if (placed.why) return asBefore(placed.why);
   if (!placed.res || typeof placed.res !== "object" || Array.isArray(placed.res)) return asBefore("layout's place answered no placement for it");
   try {
-    return chosen({ before, res: placed.res, c, src, text, pip, on, keep, width, height, zones, areas, facts }) || asBefore("layout's place gave no picture to draw for it");
+    return chosen({ before, res: placed.res, c, src, text, pip, on, keep, width, height, band, zones, areas, facts }) || asBefore("layout's place gave no picture to draw for it");
   } catch (e) {
     return asBefore(`layout's answer for it could not be drawn (${String(e?.message || e).split("\n")[0]})`);
   }
 }
 
-function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones, areas, facts }) {
+function chosen({ before, res, c, src, text, pip, on, keep, width, height, band, zones, areas, facts }) {
   const readable = Number.isFinite(res.screen?.readable) && res.screen.readable > 0 ? res.screen.readable : 0;
   const opts = { zones, labels: on, text, readable, width, height };
-  const env = { zones, areas, labels: on, width, height };
+  const env = { zones, areas, labels: on, width, height, band };
   const main = pip ? areas.pip : null;
   before.j = judge(before, opts);
   const asJudged = (pic) => Object.assign(pic, { j: judge(pic, opts) });
