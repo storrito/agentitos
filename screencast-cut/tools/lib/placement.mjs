@@ -24,6 +24,7 @@
 //   geometry(pic, cam)                   → the webcam element's left, top, width, height and inset
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -63,14 +64,31 @@ export function speakerMoments(cam) {
 // of the frames, its place over the keep's time. The box's size between two frames is on a
 // straight line (the tracker follows where the face is, not how large it grows). The small copy
 // is held in memory whole, so a webcam over FOLLOW_MAX seconds is not followed. Kept in `out`
-// with the boxes it started from, so that it is done once.
+// with what it was made from (followKey: the boxes, the webcam's file by its size and time, the
+// tracker's code), so that it is done once for that webcam and tracker.
 export const FOLLOW_MAX = 600;
+
+// What a kept track was made from: the model's boxes, the webcam's file (its size and modification
+// time, as tracks.mjs keys its sound), and the tracker's version: a hash of clips' frame.mjs and of
+// the files of its lib/ it imports (the tracker is lib/track.mjs, the cuts lib/cuts.mjs).
+export function followKey({ tool, file, from }) {
+  const st = fs.statSync(file);
+  const h = crypto.createHash("sha1");
+  const code = fs.readFileSync(tool, "utf8");
+  h.update(code);
+  for (const m of code.matchAll(/^import [^;]*? from "(\.\/lib\/[^"]+)";/gm)) {
+    const f = path.join(path.dirname(tool), m[1]);
+    if (fs.existsSync(f)) h.update(fs.readFileSync(f));
+  }
+  return { from, webcam: { size: st.size, mtime: st.mtimeMs }, tracker: h.digest("hex").slice(0, 16) };
+}
 export function followFace({ tool, file, cam, out }) {
   if (!Array.isArray(cam.faceAt) || !cam.faceAt.length) return { why: "the model gave no box for each of its frames" };
   if (!tool) return { why: "agentitos' clips skill is not beside this one (or FRAME_TOOL naming its tools/frame.mjs)" };
   if (cam.duration > FOLLOW_MAX) return { why: `the webcam runs ${Math.round(cam.duration / 60)} minutes, over the ${FOLLOW_MAX / 60} the tracker holds in memory` };
   const from = faceMoments(cam);
-  try { const kept = JSON.parse(fs.readFileSync(out, "utf8")); if (JSON.stringify(kept.from) === JSON.stringify(from)) return kept; } catch {}
+  const key = followKey({ tool, file, from });
+  try { const kept = JSON.parse(fs.readFileSync(out, "utf8")); if (JSON.stringify(kept.key) === JSON.stringify(key)) return kept; } catch {}
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "follow-"));
   try {
     const words = path.join(tmp, "words.json"), faces = path.join(tmp, "faces.json");
@@ -81,7 +99,7 @@ export function followFace({ tool, file, cam, out }) {
     const moments = JSON.parse(fs.readFileSync(faces, "utf8")).faces.filter((f) => f.boxes?.length)
       .map((f) => ({ t: f.t, box: [...f.boxes].sort((a, b) => b.box[2] * b.box[3] - a.box[2] * a.box[3])[0].box.map((v) => +v.toFixed(1)) }));
     if (!moments.length) return { why: "clips' tracker found the face at no moment" };
-    const kept = { from, moments };
+    const kept = { key, from, moments };
     fs.writeFileSync(out, JSON.stringify(kept));
     return kept;
   } finally {

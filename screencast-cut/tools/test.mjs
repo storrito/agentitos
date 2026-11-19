@@ -223,7 +223,7 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 // the model's three boxes by clips' tracker, the element's geometry, and the old cover where no
 // face is known. The layout skill and clips run as programs, beside this one.
 import { readFaces } from "./lib/face.mjs";
-import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
+import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, followKey, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
 
@@ -299,8 +299,10 @@ test("clips' tracker follows a head that moves between the model's boxes, as a p
     assert.ok(f.moments?.length > 40, JSON.stringify(f).slice(0, 300));
     const at3 = f.moments.find((m) => Math.abs(m.t - 3) < 0.06);
     assert.ok(at3 && Math.abs(at3.box[1] - 140) < 12, `at 3 s the box's top at ${at3?.box[1]} (the patch at 140, the straight line between the boxes at 60)`);
-    // kept: a second call reads the file (a tool that does not exist is not run)
-    assert.deepEqual(followFace({ tool: "/nonexistent/frame.mjs", file, cam, out }), f);
+    // kept: a second call reads the file (the tracker is not run again: the file stays as it was)
+    const was = fs.statSync(out).mtimeMs;
+    assert.deepEqual(followFace({ tool: CLIPS, file, cam, out }), f);
+    assert.equal(fs.statSync(out).mtimeMs, was);
     assert.match(followFace({ tool: null, file, cam, out: path.join(dir, "x.json") }).why, /clips skill is not beside this one/);
     assert.match(followFace({ tool: CLIPS, file, cam: { ...cam, faceAt: undefined }, out: path.join(dir, "x.json") }).why, /no box for each of its frames/);
     assert.match(followFace({ tool: CLIPS, file, cam: { ...cam, duration: FOLLOW_MAX + 60 }, out: path.join(dir, "x.json") }).why, /over the 10 the tracker holds in memory/);
@@ -409,4 +411,31 @@ test("the face view follows one person, the circle's: the review's answers that 
   const side = { width: 1280, height: 720, face: [0.241, 0.014, 0.474, 0.495], faceAt: [{ t: 15.01, box: [0.184, 0.025, 0.412, 0.509] }, { t: 37.53, box: [0.241, 0.014, 0.474, 0.495] }, { t: 60.05, box: [0.391, 0.014, 0.623, 0.489] }] };
   assert.equal(speakerMoments(side).moments.length, 3);
   assert.deepEqual(speakerMoments(CAM).moments, faceMoments(CAM));
+});
+
+// The review: a different webcam with the same three boxes got the first webcam's track back in
+// 0.0 s, since the kept track was keyed on the boxes alone.
+test("a kept track is the one of this webcam and this tracker: another webcam with the same boxes, or a changed tracker, is followed anew", { skip: !CLIPS && "no clips skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-key-"));
+  try {
+    const make = (file, y) => assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=640x360:d=4:r=30", "-f", "lavfi", "-i", "testsrc2=s=120x150:d=4:r=30", "-filter_complex", `[0][1]overlay=x=260:y='${y}'`, "-c:v", "libx264", "-pix_fmt", "yuv420p", file]).status, 0);
+    const file = path.join(dir, "webcam.mp4"), out = path.join(dir, "webcam.followed.json");
+    const cam = { width: 640, height: 360, duration: 4, faceAt: [{ t: 0.5, box: [260 / 640, 60 / 360, 380 / 640, 210 / 360] }, { t: 3.5, box: [260 / 640, 60 / 360, 380 / 640, 210 / 360] }] };
+    make(file, "60");
+    const a = followFace({ tool: CLIPS, file, cam, out });
+    assert.ok(a.moments?.length && a.key.webcam.size === fs.statSync(file).size && /^[0-9a-f]{16}$/.test(a.key.tracker), JSON.stringify(a.key));
+    // the same name, another picture: the patch 80 px lower from 1.5 to 2.5 s
+    make(file, "60+80*min(1,max(0,(t-1)*2))-80*min(1,max(0,(t-2.5)*2))");
+    const b = followFace({ tool: CLIPS, file, cam, out });
+    assert.notDeepEqual(b.key.webcam, a.key.webcam);
+    const at = (r) => r.moments.find((m) => Math.abs(m.t - 2) < 0.06).box[1];
+    assert.ok(Math.abs(at(a) - 60) < 12 && Math.abs(at(b) - 140) < 12, `at 2 s: ${at(a)} before, ${at(b)} now`);
+    // a tracker that changed (a copy of clips' frame.mjs with one more line) is a new version
+    const tools = path.join(dir, "clips-tools");
+    fs.cpSync(path.dirname(CLIPS), tools, { recursive: true });
+    fs.appendFileSync(path.join(tools, "frame.mjs"), "\n// changed\n");
+    assert.notEqual(followKey({ tool: path.join(tools, "frame.mjs"), file, from: b.from }).tracker, b.key.tracker);
+    fs.appendFileSync(path.join(tools, "lib", "track.mjs"), "\n// changed\n");
+    assert.notEqual(followKey({ tool: path.join(tools, "frame.mjs"), file, from: b.from }).tracker, followKey({ tool: CLIPS, file, from: b.from }).tracker);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
