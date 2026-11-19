@@ -417,7 +417,7 @@ test("a face that fills the frame already (its box half the frame's height or mo
 });
 
 // ------------------------------------------------------------------- on its own: faces, picture, text
-import { covering, whole, takeKind, pictureRule, shotChange, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { covering, whole, takeKind, pictureRule, shotChange, inFrame, faceTrack, facesFault, speakerPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
 import { pieceStyle } from "./lib/composition.mjs";
 
 test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
@@ -511,15 +511,37 @@ test("on its own: faces of a phone's take stored on its side, found before the f
   assert.deepEqual(faceTrack(list, [{ clip: 1, in: 0, out: 1 }], 1)[0].box, [300, 1200, 600, 720]);
 });
 
-test("on its own: a wide 720p take is placed so that its face comes nearest the usual size under the hard limit of enlargement, not smallest for sharpness (the review: the square band at 1.5×, the face 14 %, before the 4:5 crop at 1.875×)", () => {
-  // layout's candidates for the Epps interview, in layout's order, the model's face 309 px tall
-  const c = (fit, crop, scale, extra = {}) => ({ fit, crop, scale, left: 0, top: 0, hard: 0, unmet: [], soft: 0, problems: [], text: [], ...extra });
-  const list = [c("crop", "1:1", 1.5), c("crop", "1:1", 1.5, { onGround: true }), c("crop", "4:5", 1.875, { soft: 1 }), c("inset", null, 0.8438), c("full", null, 2.6667, { hard: 1 })];
-  const r = rankPictures(list, 309, 1920);
-  assert.deepEqual(r.map((x) => x.n), [3, 1, 2, 4, 5]);
-  assert.ok(Math.abs(r[0].face - 0.302) < 0.001);
-  // a face that would come out larger than the usual band is not pushed past it
-  assert.equal(rankPictures([c("crop", "4:5", 1.875), c("crop", "1:1", 1.5)], 400, 1920)[0].crop, "1:1");
+// layout's order for a picture of one speaker (its place --pick speaker --cover), as place asks it
+const layoutPlace = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "layout", "tools", "place.mjs");
+const speakerOrder = (size, box) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "takes-pick-")), track = path.join(dir, "track.json");
+  fs.writeFileSync(track, JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ t: i / 2, box }))));
+  const r = spawnSync(process.execPath, [layoutPlace, "place", path.join(dir, "01"), "--frame", "1080x1920", "--source", size, "--face-track", track, "--text", "caption", "--text", "hook", "--pick", "speaker", "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+};
+
+test("on its own: a wide take's picture is the first of layout's order for a speaker, asked without a cover (the centred cover of a wider take is nobody's choice: the rig's takes-4k-suit): the 720p interview's 4:5 crop at 1.875×, a 1080p take of the same framing the 4:5 crop at 1.25×; each candidate keeps layout's own number", { skip: !fs.existsSync(layoutPlace) && "agentitos' layout skill is not beside this one" }, () => {
+  // the Epps interview: the model's face 309 px tall in 1280×720
+  const epps = speakerPictures(speakerOrder("1280x720", [541, 52, 223, 308]), 308, 1920);
+  assert.equal(epps.older, false);
+  assert.deepEqual([epps.list[0].fit, epps.list[0].crop, epps.list[0].scale, epps.list[0].passes], ["crop", "4:5", 1.875, true]);
+  assert.ok(Math.abs(epps.list[0].face - 0.301) < 0.002);
+  // the same framing at 1920×1080: no cover among the candidates, the 4:5 crop first
+  const hd = speakerPictures(speakerOrder("1920x1080", [812, 78, 334, 462]), 462, 1920);
+  assert.ok(!hd.list.some((x) => x.n === 0));
+  assert.deepEqual([hd.list[0].fit, hd.list[0].crop, hd.list[0].scale, hd.list[0].passes], ["crop", "4:5", 1.25, true]);
+  // numbers as layout gives them without the order, so that --picture <number> names the same picture
+  assert.deepEqual(hd.list.filter((x) => x.n).map((x) => x.n).sort((a, b) => a - b), hd.list.filter((x) => x.n).map((_, i) => i + 1));
+});
+
+test("on its own: a layout without the order for a speaker (an older clone) gives its candidates in its own order, those that pass first, and says it is older", () => {
+  const c = (fit, scale, extra = {}) => ({ fit, scale, left: 0, top: 0, hard: 0, unmet: [], soft: 0, problems: [], text: [], ...extra });
+  const r = speakerPictures({ candidates: [c("full", 2.6667, { hard: 1 }), c("crop", 1.875), c("inset", 0.8438, { unmet: ["hook"] }), c("crop", 1.5)] }, 309, 1920);
+  assert.equal(r.older, true);
+  assert.deepEqual(r.list.map((x) => x.n), [2, 4, 1, 3]);
+  assert.ok(Math.abs(r.list[0].face - 0.302) < 0.001);
 });
 
 test("on its own: faces that miss most of the cut are counted, so that place and check say so", () => {
