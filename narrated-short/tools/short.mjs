@@ -67,6 +67,11 @@ const DARK_MAX = { whole: 12, crop: 12, fill: 24, native: 24 };
 const SHORT_TOL = 0.15;     // seconds a clip may be shorter than its beat
 const FROZEN_PART = 0.5;    // part of a clip that stands still before it is mentioned
 const OPEN_PART = 0.5;      // the hook's first frame reaches this part of the clip's median luma
+// A beat's faces took 6 to 32 s (2026-11-19, twenty beats of public footage, 18 s on the mean); a
+// model that never answers would hold a beat 600 s. A beat may take three times the slowest, the
+// whole step twenty beats at the mean: what is left after it is built as without faces.
+// (FACES_BEAT_SECONDS and FACES_STEP_SECONDS set others, for a test.)
+const BEAT_LIMIT = (Number(process.env.FACES_BEAT_SECONDS) || 90) * 1e3, STEP_LIMIT = (Number(process.env.FACES_STEP_SECONDS) || 360) * 1e3;
 const UNDER = 17;           // LU the music lies under the voice: as launch-video's `music` lays it, the distance the owner chose by ear
 const lufs = (x) => x.toFixed(1).replace("-", "−");
 
@@ -91,9 +96,19 @@ function tool(env, skill, file) {
   return [process.env[env], path.join(here, skill, "tools", file), `/home/sprite/skills/${skill}/tools/${file}`].find((p) => p && fs.existsSync(p)) || null;
 }
 const onPath = (name) => String(process.env.PATH || "").split(path.delimiter).map((d) => path.join(d, name)).find((p) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } }) || null;
-// what a program that ended badly said, or why it did not run or was stopped
-const reason = (r) => (r.error ? (r.error.code === "ENOENT" ? "the program is not on this machine" : r.error.code === "ETIMEDOUT" ? "it took too long and was stopped" : r.error.message)
-  : r.signal ? `it was stopped (${r.signal})` : String(r.stdout || r.stderr || "").trim().split("\n").pop() || "it gave no reason");
+// what a program that ended badly said, or why it did not run or was stopped: its own sentence (the
+// tools print one), else the error of a crash (never Node's last line, its version), with its cause
+const reason = (r) => (r.error ? (r.error.code === "ENOENT" ? "the program is not on this machine" : r.error.code === "ETIMEDOUT" ? `it took longer than ${Math.round((r.limit || 0) / 1000) || "the"} s it may take and was stopped` : r.error.message)
+  : r.signal ? `it was stopped (${r.signal})` : String(r.stdout || "").trim().split("\n").pop() || crashed(String(r.stderr || "")) || "it gave no reason");
+function crashed(err) {
+  const lines = err.split("\n");
+  const e = lines.map((l) => l.match(/^(\w*Error)(?: \[\w+\])?: (.+)$/)).filter(Boolean).pop();
+  if (!e) return lines.map((l) => l.trim()).filter((l) => l && !/^at |^Node\.js v|^\^+$|^file:\/\/|^[{}]$/.test(l)).pop() || "";
+  const code = err.match(/\b(ECONNREFUSED|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR_\w+)\b/)?.[1];
+  if (e[1] === "SyntaxError") return `the model's answer could not be read (${e[2].slice(0, 120)})`;
+  if (/fetch failed/.test(e[2])) return `OpenRouter could not be reached${code ? ` (${code})` : ""}`;
+  return e[2].slice(0, 200);
+}
 
 const ff = (args, opts = {}) => spawnSync("ffmpeg", ["-nostdin", ...args], { encoding: "utf8", maxBuffer: 256 << 20, ...opts });
 function probe(file) {
@@ -194,7 +209,7 @@ function faces(args) {
   const sources = sourcesOf(cfg, asked, beatsFile);
   const none = path.join(dir, "none.json");
   fs.writeFileSync(none, "[]\n");   // nobody speaks in a narrated short's footage
-  let cost = 0, sent = 0;
+  let cost = 0, sent = 0, late = [];
   const started = Date.now();
   asked.forEach((b, k) => {
     const src = sources[k], taken = takenOf(b), key = facesKey(src, b, taken);
@@ -202,6 +217,9 @@ function faces(args) {
     let kept = null;
     try { kept = JSON.parse(fs.readFileSync(out, "utf8")); } catch { /* not found yet */ }
     if (kept && kept.key === key && !opts.again) { console.log(`  ${b.id}: ${saidOf(kept)} (kept from before, nothing spent)`); return; }
+    // a model that never answers costs a beat BEAT_LIMIT at most, and the step STEP_LIMIT in all
+    const left = STEP_LIMIT - (Date.now() - started);
+    if (left < 10e3) { late.push(b.id); return; }
     for (const f of [out, stretch, path.join(dir, `${b.id}.people.json`)]) fs.rmSync(f, { force: true });
     const t0 = Date.now();
     const shown = shownSize(src.file, src.size);
@@ -209,9 +227,10 @@ function faces(args) {
       "-c:v", "libx264", "-crf", "20", "-preset", "veryfast", stretch]);
     if (c.status !== 0 || !fs.existsSync(stretch)) { fs.rmSync(stretch, { force: true }); console.log(`  ! ${b.id}: its stretch could not be cut (${reason({ ...c, stdout: "" })}); built as without faces`); return; }
     const tmp = path.join(dir, `${b.id}.tmp.json`);
-    const r = spawnSync(process.execPath, [frameTool, stretch, none, "--aspect", "9:16", "--faces", tmp, "--every-shot"], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 600e3 });
+    const limit = Math.min(BEAT_LIMIT, left);
+    const r = spawnSync(process.execPath, [frameTool, stretch, none, "--aspect", "9:16", "--faces", tmp, "--every-shot"], { encoding: "utf8", maxBuffer: 64 << 20, timeout: limit, killSignal: "SIGKILL" });
     sent++;
-    if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); console.log(`  ! ${b.id}: no faces (${reason(r)}); built as without faces`); return; }
+    if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); console.log(`  ! ${b.id}: no faces (${reason({ ...r, limit })}); built as without faces`); return; }
     const got = JSON.parse(fs.readFileSync(tmp, "utf8"));
     fs.rmSync(tmp, { force: true });
     // the stretch's px back to the source's, as shown
@@ -223,6 +242,7 @@ function faces(args) {
     cost += list.cost;
     console.log(`  ${b.id}: ${saidOf(list)}; $${list.cost.toFixed(3)}, ${list.seconds.toFixed(0)} s`);
   });
+  if (late.length) console.log(`  ! ${late.join(", ")}: not sent, the step has had its ${Math.round(STEP_LIMIT / 1e3)} s; built as without faces (node ${self()} faces ${rel(work)} again sends them, the others are kept)`);
   console.log(`${sent ? `${sent} beat(s) sent, $${cost.toFixed(3)} in all, ${((Date.now() - started) / 1000).toFixed(0)} s` : "Nothing sent"}; the faces in ${rel(dir)}. Next: node ${self()} build ${rel(work)} <composition>: it moves a crop that would cut a face and keeps the captions and the hook off them, and says per beat what it did.`);
 }
 // a beat's faces in a line: who, how large, how often

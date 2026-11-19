@@ -11,7 +11,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume, distance, LOWEST, HIGHEST } from "./lib/level.mjs";
 
@@ -501,5 +501,53 @@ test("build with faces: the hook may lie on hair or a forehead (epps2 stays at t
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /! the hook: it reached the eyes in a \(the eyes or nose [\d.]+ s\), at every size, and agentitos' layout's place for it lies on the captions or directly above them: it stands where it stood: a shorter hook, or another first beat/);
     assert.equal(hookTag(comp), plain);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The review's stand-in for OpenRouter (its fake.mjs): an HTTP 500, an answer that is no JSON, one
+// that never comes; and a refused connection. Each ends as "built as without faces", exit 0, with
+// what went wrong in its sentence, never Node's version; a beat and the step each have a limit.
+test("faces, unattended: a server error, an unreadable answer, a refused connection and no answer each say what went wrong and build as without faces; no answer costs a beat its limit and the step its own", { skip: (!ffmpeg && "no ffmpeg") || (!fs.existsSync(path.join(here, "..", "..", "clips", "tools", "frame.mjs")) && "no clips beside") }, async () => {
+  const dir = tmp();
+  const fake = path.join(dir, "fake.mjs");
+  fs.writeFileSync(fake, `import http from "node:http";
+const mode = process.argv[2], port = Number(process.argv[3]);
+http.createServer((req, res) => { req.resume(); req.on("end", () => {
+  if (req.url.endsWith("/key")) { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ data: { limit: null, usage: 0 } })); }
+  if (mode === "hang") return;
+  if (mode === "500") { res.writeHead(500, { "content-type": "application/json" }); return res.end('{"error":"down"}'); }
+  res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ choices: [{ message: { content: "this is not json at all" } }], usage: { cost: 0 } }));
+}); }).listen(port, "127.0.0.1", () => console.log("ready"));`);
+  const serve = (mode, port) => new Promise((ok) => { const p = spawn(process.execPath, [fake, mode, String(port)]); p.stdout.once("data", () => ok(p)); });
+  try {
+    const { work } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    const faces = (port, env = {}) => spawnSync(process.execPath, [path.join(here, "short.mjs"), "faces", work, "--again"], { encoding: "utf8", cwd: dir, env: { ...process.env, OPENROUTER_API_KEY: "test", OPENROUTER_BASE_URL: `http://127.0.0.1:${port}`, ...env } });
+    for (const [mode, said] of [["garbage", /! a: no faces \(the model's answer could not be read \(Unexpected token[^)]*\)\); built as without faces/], ["500", /! a: no faces \(OpenRouter 500: \{"error":"down"\}\); built as without faces/]]) {
+      const server = await serve(mode, 18571);
+      try {
+        const r = faces(18571);
+        assert.equal(r.status, 0, r.stdout + r.stderr);
+        assert.match(r.stdout, said);
+        assert.doesNotMatch(r.stdout, /Node\.js v/);
+      } finally { server.kill(); }
+    }
+    let r = faces(18572);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /! a: no faces \(OpenRouter could not be reached \(ECONNREFUSED\)\); built as without faces/);
+    // no answer: the beat is stopped at its limit; a second beat finds the step's time spent
+    cfg.beats[1].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    const server = await serve("hang", 18573);
+    try {
+      const t0 = Date.now();
+      r = faces(18573, { FACES_BEAT_SECONDS: "8", FACES_STEP_SECONDS: "15" });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.match(r.stdout, /! a: no faces \(it took longer than 8 s it may take and was stopped\); built as without faces/);
+      assert.match(r.stdout, /! b: (no faces \(it took longer than [\d]+ s it may take and was stopped\); built as without faces|not sent, the step has had its 15 s)/);
+      assert.ok(Date.now() - t0 < 40e3, `${Date.now() - t0} ms`);
+    } finally { server.kill(); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
