@@ -67,7 +67,7 @@ import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
-import { showOf, showProblem, placeShows, cutShownSound } from "./lib/show.mjs";
+import { showOf, showProblem, placeShows, cutShownSound, shownVideo } from "./lib/show.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
@@ -779,7 +779,12 @@ async function cmdBuild(dir, opts) {
       }
       const problem = showProblem(keep, k, info);
       if (problem) fail(problem);
-      showInfo.set(file, info);
+      // converted as the recordings are at new (a steady rate, H.264, no tags), kept between builds
+      if (!showInfo.has(file)) {
+        const v = await shownVideo(dir, file, s.fps);
+        if (v.why) fail(`✗ keep ${k + 1}: "show": ${v.why}`);
+        showInfo.set(file, v.info);
+      }
     }
   }
 
@@ -963,7 +968,7 @@ async function cmdBuild(dir, opts) {
   // Where ffmpeg cannot, the video plays muted and the build says so
   for (const i of shown.inserts) {
     const audio = `${i.key}.m4a`;
-    const a = cutShownSound(i.file, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
+    const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
     i.lufs = a.lufs; i.gain = a.gain;
     if (a.ok) { i.audio = audio; shown.notes.push(`keep ${i.k + 1}: the sound of ${i.file} measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${TAKE_LEVEL} LUFS ("sound": 1 is the voice's level), through the voice's bus.`); }
     else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);

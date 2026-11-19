@@ -14,15 +14,42 @@
 //   showOf(keep)                         → { file, from, sound } (a file's name alone: { file })
 //   showProblem(keep, k, info)           → null, or the one sentence that says what to change
 //                                          (info: probe() of its file, or { missing } or { error })
+//   shownCopy(dir, file)                 → where the shown file's conversion is kept (keyed on its
+//                                          size and time)
 //   placeShows(cut, pieces, words, infoOf) → { sources, inserts, warnings, notes }: each show
 //                                          keep's video as a source of its own (show-<k>), its
 //                                          pieces' p.show set; inserts: the keeps whose sound plays
 //   soundPoints({ sound, duration, spoken }) → the volume's points of a shown video's sound
 
 import path from "node:path";
+import fs from "node:fs";
 import { spawnSync } from "node:child_process";
+import { prepare, probe } from "./media.mjs";
 
 export const RISE = 1.5, FADE = 0.25;
+
+// The shown file goes through the conversion the recordings get at `new` (media.prepare: H.264 at a
+// steady frame rate, AAC, no file tags): a phone's clip (HEVC, a varying rate) shows black or
+// stutters in Chrome. Kept in source/shown/ between builds, under the file's name, size and time.
+export function shownCopy(dir, file, stat) {
+  const base = path.basename(file, path.extname(file)).replace(/[^\w.-]+/g, "_").slice(0, 60);
+  return path.join(dir, "source", "shown", `${base}-${stat.size}-${Math.round(stat.mtimeMs)}.mp4`);
+}
+
+// The shown file converted (once; kept): { info: probe() of the copy with its path } or { why }
+export async function shownVideo(dir, file, fps = 30) {
+  const copy = shownCopy(dir, file, fs.statSync(file));
+  if (!fs.existsSync(copy)) {
+    fs.mkdirSync(path.dirname(copy), { recursive: true });
+    const part = copy.replace(/\.mp4$/, ".part.mp4");
+    try { await prepare(file, part, { fps, tags: false }); fs.renameSync(part, copy); }
+    catch (e) {
+      fs.rmSync(part, { force: true });
+      return { why: `ffmpeg cannot convert ${file} into a video the preview plays (${(e.message.split(": ").slice(1).join(": ") || "it stopped").slice(0, 200)}); give it as MP4 (H.264), the result as it was posted or rendered.` };
+    }
+  }
+  return { info: { ...probe(copy), path: copy } };
+}
 
 export const showOf = (keep) => (typeof keep.show === "string" ? { file: keep.show } : keep.show && typeof keep.show === "object" ? keep.show : {});
 
@@ -71,12 +98,12 @@ export function placeShows(cut, pieces, words, infoOf) {
     const sound = Number(show.sound) || 0;
     if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground${sound > 0 && spoken > duration - FADE ? ", and its sound stays low under the words and fades out where it ends, before the last word" : ""}: an earlier "from", a shorter "hold", or end the keep a word earlier`);
     const key = `show-${k + 1}`;
-    sources[key] = { file: `${key}${path.extname(show.file) || ".mp4"}`, path: path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };
+    sources[key] = { file: `${key}${path.extname(info.path || show.file) || ".mp4"}`, path: info.path || path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };
     for (const p of ps) p.show = { source: key, in: from + (p.start - start), until: start + duration };
     const skipped = leftOut(keep);
     if (skipped.length) notes.push(`! keep ${k + 1}: "show" plays ${show.file} over the whole keep, so its ${skipped.join(" and ")} ${skipped.length > 1 ? "are" : "is"} left out (the shown video is the keep's picture); to see ${keep.view === "face" ? "the face" : keep.zoom !== undefined && keep.zoom !== "off" ? "the zoom" : "that picture"} too, give it a keep of its own without "show".`);
     if (sound > 0 && duration > 0.1) {
-      inserts.push({ k, key, file: show.file, from, start, duration, sound, spoken });
+      inserts.push({ k, key, file: show.file, src: info.path || show.file, from, start, duration, sound, spoken });
     }
   }
   return { sources, inserts, warnings, notes };

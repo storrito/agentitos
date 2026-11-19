@@ -891,3 +891,42 @@ test("show's sound is levelled when it is cut: a loud and a quiet clip both come
     assert.match(html, /<audio id="show-sound-1"[^>]*data-audio-group="voice"/);
   } finally { fs.rmSync(d2, { recursive: true, force: true }); }
 });
+
+test("the shown file is converted as the recordings are at new: an HEVC clip with a varying frame rate and a place in its tags becomes H.264 at a steady rate without tags, kept between builds by its size and time; a file ffmpeg cannot convert gives one sentence", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, async () => {
+  const { shownVideo } = await import("./lib/show.mjs");
+  const hevc = spawnSync("ffmpeg", ["-hide_banner", "-encoders"], { encoding: "utf8" }).stdout.includes("libx265");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "show-convert-"));
+  try {
+    const src = path.join(dir, "phone clip.mov");
+    // frames 0.03 s apart, then 0.1 s apart: a varying rate, as a phone writes it
+    assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x568:d=3:r=30", "-f", "lavfi", "-i", "sine=d=3",
+      "-vf", "setpts='if(lt(N,30),N*0.03,0.9+(N-30)*0.1)/TB'", "-vsync", "vfr", "-metadata", "location=+52.5200+013.4050/",
+      "-c:v", hevc ? "libx265" : "libx264", ...(hevc ? ["-x265-params", "log-level=error", "-tag:v", "hvc1"] : []), "-pix_fmt", "yuv420p", "-c:a", "aac", src]).status, 0);
+    const streams = (f) => JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", f], { encoding: "utf8" }).stdout);
+    const before = streams(src);
+    if (hevc) assert.equal(before.streams[0].codec_name, "hevc");
+    assert.ok(before.format.tags?.location, "the place is in the source's tags");
+    assert.notEqual(before.streams.find((x) => x.codec_type === "video").avg_frame_rate, "30/1", "the source's rate varies");
+    const v = await shownVideo(dir, src, 30);
+    assert.ok(v.info, v.why);
+    const after = streams(v.info.path), video = after.streams.find((x) => x.codec_type === "video");
+    assert.equal(video.codec_name, "h264");
+    assert.equal(video.r_frame_rate, "30/1");
+    assert.equal(video.avg_frame_rate, "30/1", "a steady rate");
+    assert.ok(!after.format.tags?.location && !JSON.stringify(after).includes("52.5200"), "no place in the copy");
+    assert.ok(v.info.path.startsWith(path.join(dir, "source", "shown")));
+    // kept: the second build takes the copy as it is; a changed file (another size or time) is converted anew
+    const mtime = fs.statSync(v.info.path).mtimeMs;
+    const again = await shownVideo(dir, src, 30);
+    assert.equal(again.info.path, v.info.path);
+    assert.equal(fs.statSync(again.info.path).mtimeMs, mtime);
+    fs.utimesSync(src, new Date(), new Date(Date.now() + 5000));
+    assert.notEqual((await shownVideo(dir, src, 30)).info.path, v.info.path);
+    // a file ffmpeg cannot read as a video
+    const bad = path.join(dir, "broken.mp4");
+    fs.writeFileSync(bad, Buffer.alloc(4096, 7));
+    const said = await shownVideo(dir, bad, 30).catch((e) => ({ why: `threw: ${e.message}` }));
+    assert.match(said.why, /^ffmpeg cannot convert .*broken\.mp4 into a video the preview plays \(.+\); give it as MP4 \(H\.264\), the result as it was posted or rendered\.$/);
+    if (!hevc) console.log("# this machine's ffmpeg has no HEVC encoder: tried with an H.264 clip of a varying rate");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

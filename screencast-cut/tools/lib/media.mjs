@@ -34,10 +34,10 @@ export function probe(file) {
 // With `frames` (activity.differ of activity.grid) the same decoding also streams the grey frames
 // the activity is measured on, so the source is read once; `progress` hears how many seconds of
 // it are done. Resolves with what the copy is (probe).
-export function prepare(file, out, { fps = 30, frames, progress } = {}) {
+export function prepare(file, out, { fps = 30, frames, progress, tags = true } = {}) {
   const p = probe(file);
   fs.rmSync(out, { force: true });
-  const args = ["-v", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", file];
+  const args = ["-v", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", file, ...(tags ? [] : ["-map_metadata", "-1"])];
   if (p.video) {
     args.push("-map", "0:v:0", "-map", "0:a:0?", "-vf", `scale='min(2560,iw)':-2,fps=${fps}`, ...steadyRate(),
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", String(fps), "-keyint_min", String(fps));
