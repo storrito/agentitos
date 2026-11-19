@@ -1,0 +1,735 @@
+{
+ "frame": "9:16",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels"
+ ],
+ "fallback": false,
+ "source": [
+  1920,
+  1080
+ ],
+ "faces": [
+  [
+   0,
+   0,
+   1920,
+   1080
+  ]
+ ],
+ "screen": {
+  "region": [
+   0,
+   0,
+   1920,
+   1080
+  ],
+  "minTextHeight": 12,
+  "readable": 24
+ },
+ "sources": [
+  {
+   "size": [
+    1920,
+    1080
+   ],
+   "faces": [
+    [
+     0,
+     0,
+     1920,
+     1080
+    ]
+   ],
+   "screen": true
+  },
+  {
+   "size": [
+    1280,
+    720
+   ],
+   "faces": [
+    [
+     200,
+     160,
+     220,
+     300
+    ],
+    [
+     860,
+     160,
+     220,
+     300
+    ]
+   ]
+  }
+ ],
+ "needs": [
+  {
+   "role": "caption",
+   "lines": 1
+  }
+ ],
+ "captionArea": {
+  "left": 120,
+  "width": 840,
+  "top": 1410,
+  "bottom": 1500,
+  "size": 52,
+  "lines": 1,
+  "from": "the six values given"
+ },
+ "defaults": {
+  "caption": {
+   "font": {
+    "tall": 77,
+    "wide": 50,
+    "least": 61
+   },
+   "line": 1.3,
+   "padEm": 0.44,
+   "minWidth": {
+    "tall": 540,
+    "wide": 600
+   },
+   "maxEm": 24,
+   "longWord": 9
+  },
+  "hookText": {
+   "font": 96,
+   "minFont": 72,
+   "heightEm": 2.48,
+   "line": 1.14,
+   "width": 0.72,
+   "centre": 0.53
+  },
+  "hookCard": {
+   "font": 76,
+   "minFont": 64,
+   "heightEm": 3.1,
+   "line": 1.14
+  },
+  "hookBig": {
+   "font": 112,
+   "minFont": 72,
+   "widthEm": 10,
+   "heightEm": 2.25,
+   "line": 1.08
+  },
+  "gap": 24,
+  "edgePad": 16,
+  "free": {
+   "above": 0.35,
+   "aboveMin": 16,
+   "below": 0.08,
+   "belowMin": 24,
+   "beside": 0.25,
+   "besideMin": 24
+  },
+  "facePad": 20,
+  "eyes": 0.42,
+  "eyeLine": 0.27,
+  "area": {
+   "least": 0.15,
+   "chin": 1,
+   "smaller": 3.6
+  },
+  "zoomStep": 0.01,
+  "zoomMax": 1.6,
+  "insetStep": 0.01,
+  "insetMin": 0.5,
+  "panelMin": 0.6,
+  "insetFace": 19,
+  "bands": [
+   "4:5",
+   "1:1"
+  ],
+  "track": {
+   "far": 2
+  },
+  "together": 2,
+  "togetherSize": 0.67,
+  "same": {
+   "px": 0.02,
+   "scale": 0.02
+  },
+  "readable": {
+   "height": 24,
+   "per": 1080
+  },
+  "circle": {
+   "tall": 0.22,
+   "square": 0.16,
+   "wide": 0.2,
+   "min": 0.12
+  },
+  "screenFace": {
+   "height": 0.18,
+   "panel": 0.5
+  },
+  "weights": {
+   "enlarge": {
+    "softFrom": 1.5,
+    "forbiddenFrom": 2,
+    "costAtForbidden": 3
+   },
+   "subject": {
+    "from": 23,
+    "to": 34,
+    "smaller": 0.3,
+    "larger": 0.05,
+    "regionEnough": 50
+   },
+   "ground": {
+    "cost": 0.1
+   },
+   "soft": {
+    "cost": 0.5
+   },
+   "text": {
+    "away": 0.05,
+    "hookSmaller": 0.02
+   }
+  }
+ },
+ "notes": [
+  "at the size that reads (2×) the region would be 3840×2160 px, larger than the room the frame leaves it (900×1136 or 960×790 px): at most 0.5×, the text then 6 px tall. A narrower region reads: at most 480×395 px of the source (this one is 1920×1080); give the part that matters at this moment, and another region for the next"
+ ],
+ "candidates": [
+  {
+   "fit": "screen-panel",
+   "scale": 0.9677,
+   "left": 60,
+   "top": 250,
+   "zoom": 0.54,
+   "enlargement": 0.97,
+   "window": [
+    0,
+    0,
+    1080,
+    1920
+   ],
+   "faceInFrame": [
+    [
+     60,
+     250,
+     960,
+     540
+    ],
+    [
+     88.4,
+     958.1,
+     212.9,
+     290.3
+    ],
+    [
+     727.1,
+     958.1,
+     212.9,
+     290.3
+    ]
+   ],
+   "parts": [
+    {
+     "source": 1,
+     "scale": 0.5,
+     "left": 60,
+     "top": 250,
+     "window": [
+      60,
+      250,
+      960,
+      540
+     ]
+    },
+    {
+     "source": 2,
+     "scale": 0.9677,
+     "left": -105.1,
+     "top": 803.3,
+     "window": [
+      0,
+      814,
+      1080,
+      686
+     ]
+    }
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "ink": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "lines": 1,
+     "font": 52,
+     "style": "cap",
+     "align": "center",
+     "band": "the six values given",
+     "lineBox": true
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "region",
+     "what": "6 % cut where the Instagram feed shows 4:5"
+    },
+    {
+     "level": "unmet",
+     "code": "small",
+     "kind": "picture",
+     "of": "screen text",
+     "what": "the smallest text is 6 px tall in the frame, under the 24 px that read"
+    }
+   ],
+   "hard": 0,
+   "soft": 1,
+   "unmet": [
+    "readable"
+   ],
+   "fullSize": true,
+   "textHeight": 6,
+   "ground": 0.393,
+   "faceHeight": 290,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 3.93,
+    "subject": 0.864,
+    "soft": 0.5,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 5.294,
+   "rank": [
+    0,
+    1,
+    0,
+    0,
+    5294,
+    0,
+    0
+   ],
+   "stack": {
+    "width": "frame",
+    "screen": {
+     "box": [
+      60,
+      250,
+      960,
+      540
+     ],
+     "scale": 0.5,
+     "textHeight": 6,
+     "in": "wide"
+    },
+    "panel": {
+     "box": [
+      0,
+      814,
+      1080,
+      686
+     ],
+     "width": "frame"
+    },
+    "camera": {
+     "scale": 0.9677,
+     "left": -105.1,
+     "top": 803.3,
+     "window": [
+      0,
+      814,
+      1080,
+      686
+     ],
+     "crop": [
+      108.6,
+      11.1,
+      1116.1,
+      708.9
+     ],
+     "enlargement": 0.97
+    },
+    "face": {
+     "box": [
+      88.4,
+      958.1,
+      851.6,
+      290.3
+     ],
+     "height": 290,
+     "pct": 15.1,
+     "aim": 346,
+     "least": 230,
+     "heldBy": "the panel's height"
+    },
+    "ground": 0.393,
+    "captions": {
+     "top": 1410,
+     "bottom": 1500,
+     "fixed": true
+    },
+    "change": {
+     "before": {
+      "scale": 2.6667,
+      "left": -1166.7,
+      "top": 0,
+      "window": [
+       0,
+       0,
+       1080,
+       1920
+      ],
+      "face": [
+       -633.4,
+       426.7,
+       2346.7,
+       800
+      ],
+      "assumed": true
+     },
+     "after": {
+      "scale": 0.9677,
+      "left": -105.1,
+      "top": 803.3,
+      "window": [
+       0,
+       814,
+       1080,
+       686
+      ],
+      "face": [
+       88.4,
+       958.1,
+       851.6,
+       290.3
+      ]
+     },
+     "face": {
+      "dx": -25.8,
+      "dy": 276.6,
+      "zoom": 0.36
+     },
+     "says": "the face moves 26 px to the left and 277 px down, and becomes 0.36× as large (the speaker before assumed covering the frame: give --before)"
+    },
+    "says": [
+     "the screen's region 960×540 at 0.5× inside the wide stretch above the buttons across, y 250–790, its smallest text 6 px tall",
+     "the speaker's panel across the frame, 1080×686 from y 814 down to the caption line's foot, the face 290 px (15 % of the frame's height), under its aim of 346 px: the panel holds no more with the head inside it and the chin above the captions",
+     "from the speaker full-frame (assumed: give --before): the face moves 26 px left, 277 px down, ×0.36"
+    ]
+   },
+   "score": 0,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line below-chin",
+    "the screen's smallest text does not read",
+    "the source's pixels are not enlarged (0.97×)",
+    "the region is 960×540 px, its smallest text 6 px tall",
+    "39 % of the frame is ground",
+    "soft: region 6 % cut where the Instagram feed shows 4:5",
+    "the screen's region 960×540 at 0.5× inside the wide stretch above the buttons across, y 250–790, its smallest text 6 px tall",
+    "the speaker's panel across the frame, 1080×686 from y 814 down to the caption line's foot, the face 290 px (15 % of the frame's height), under its aim of 346 px: the panel holds no more with the head inside it and the chin above the captions",
+    "from the speaker full-frame (assumed: give --before): the face moves 26 px left, 277 px down, ×0.36",
+    "cost 5.294 (ground +3.93, subject +0.864, soft problems +0.5)"
+   ]
+  },
+  {
+   "fit": "screen-fit",
+   "scale": 0.5,
+   "left": 60,
+   "top": 423,
+   "zoom": 0.28,
+   "enlargement": 0.5,
+   "window": [
+    60,
+    423,
+    960,
+    540
+   ],
+   "faceInFrame": [
+    [
+     60,
+     423,
+     960,
+     540
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "ink": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "lines": 1,
+     "font": 52,
+     "style": "cap",
+     "align": "center",
+     "band": "the six values given",
+     "lineBox": true
+    }
+   ],
+   "problems": [
+    {
+     "level": "unmet",
+     "code": "small",
+     "kind": "picture",
+     "of": "screen text",
+     "what": "the smallest text is 6 px tall in the frame, under the 24 px that read"
+    }
+   ],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [
+    "readable"
+   ],
+   "fullSize": true,
+   "textHeight": 6,
+   "circle": {
+    "box": [
+     60,
+     1148,
+     238,
+     238
+    ],
+    "d": 238,
+    "corner": "bottom-left",
+    "covers": 0,
+    "crop": [
+     0,
+     0,
+     720,
+     720
+    ],
+    "enlargement": 0.33,
+    "faceHeight": 99,
+    "of": "webcam",
+    "first": "bottom-left",
+    "size": 238
+   },
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 2.08× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.75,
+   "faceHeight": 540,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 7.5,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 7.5,
+   "rank": [
+    0,
+    1,
+    0,
+    0,
+    7500,
+    0,
+    0
+   ],
+   "alike": [
+    {
+     "fit": "screen-whole",
+     "scale": 0.495,
+     "left": 64.8,
+     "top": 425.7,
+     "apart": 10
+    }
+   ],
+   "score": 0,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the screen's smallest text does not read",
+    "the source's pixels are not enlarged (0.5×)",
+    "the region is 960×540 px, its smallest text 6 px tall",
+    "the webcam's circle (238 px) bottom-left",
+    "75 % of the frame is ground",
+    "cost 7.5 (ground +7.5)"
+   ],
+   "behind": "behind the first by 2.206 points (ground +3.57)"
+  },
+  {
+   "fit": "screen-stacked",
+   "scale": 1.152,
+   "left": 60,
+   "top": 384.8,
+   "zoom": 0.65,
+   "enlargement": 1.15,
+   "window": [
+    0,
+    0,
+    1080,
+    1920
+   ],
+   "faceInFrame": [
+    [
+     60,
+     384.8,
+     900,
+     506.2
+    ],
+    [
+     230.4,
+     1126.8,
+     253.4,
+     345.6
+    ],
+    [
+     990.7,
+     1126.8,
+     253.4,
+     345.6
+    ]
+   ],
+   "parts": [
+    {
+     "source": 1,
+     "scale": 0.4687,
+     "left": 60,
+     "top": 384.8,
+     "window": [
+      60,
+      384.8,
+      900,
+      506.2
+     ]
+    },
+    {
+     "source": 2,
+     "scale": 1.152,
+     "left": 0,
+     "top": 942.4,
+     "window": [
+      0,
+      960,
+      1080,
+      811.9
+     ]
+    }
+   ],
+   "seam": 960,
+   "text": [],
+   "problems": [
+    {
+     "level": "hard",
+     "code": "off-frame",
+     "kind": "face",
+     "of": "webcam",
+     "what": "65 % outside the frame"
+    },
+    {
+     "level": "hard",
+     "code": "covered",
+     "kind": "face",
+     "of": "webcam",
+     "what": "under like, comment, share, save and the audio's cover (instagram-reels)"
+    },
+    {
+     "level": "unmet",
+     "code": "no-room",
+     "kind": "text",
+     "of": "caption",
+     "what": "no free place for the 1 caption line"
+    },
+    {
+     "level": "unmet",
+     "code": "small",
+     "kind": "picture",
+     "of": "screen text",
+     "what": "the smallest text is 5.6 px tall in the frame, under the 24 px that read"
+    }
+   ],
+   "hard": 2,
+   "soft": 0,
+   "unmet": [
+    "caption",
+    "readable"
+   ],
+   "fullSize": true,
+   "textHeight": 5.6,
+   "ground": 0.357,
+   "faceHeight": 346,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 3.57,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 3.57,
+   "rank": [
+    1,
+    2,
+    0,
+    0,
+    3570,
+    0,
+    0
+   ],
+   "score": 0,
+   "why": [
+    "fails: webcam 65 % outside the frame; webcam under like, comment, share, save and the audio's cover (instagram-reels)",
+    "text without a place: caption",
+    "the screen's smallest text does not read",
+    "the source's pixels are enlarged 1.15×, not over the 1.5× from where it shows",
+    "the region is 900×506 px, its smallest text 5.6 px tall",
+    "36 % of the frame is ground",
+    "cost 3.57 (ground +3.57)"
+   ],
+   "behind": "behind the first because it has a hard problem"
+  }
+ ],
+ "screenPanel": {
+  "offered": true,
+  "width": "frame"
+ },
+ "asked": {
+  "frame": "9:16",
+  "platforms": [
+   "reels"
+  ]
+ }
+}

@@ -91,7 +91,7 @@ const MANY = new Set(["source", "face", "face-at", "face-track", "region", "text
 const OPTIONS = {
   beside: ["frame", "source", "face", "face-at", "face-track", "material", "material-min", "material-ratio", "text", "caption-area", "caption-style", "before", "platform", "set", "json"],
   grid: ["at"],
-  place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "caption-area", "pick", "cover", "platform", "weights", "set", "all", "json"],
+  place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "caption-area", "pick", "cover", "platform", "weights", "set", "all", "json", "screen-panel", "label-bottom", "before"],
   page: ["candidate", "still", "at"],
   captions: ["candidate", "json"],
   text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "area-top", "area-bottom", "top", "set", "measure", "json"],
@@ -105,6 +105,8 @@ function parseArgs(cmd, argv) {
     const k = a.slice(2);
     if (!OPTIONS[cmd].includes(k)) fail(`${cmd} has no option --${k}: it takes ${OPTIONS[cmd].map((x) => `--${x}`).join(", ")}.`);
     if (FLAGS.has(k)) { o[k] = true; continue; }
+    // --screen-panel alone (the panel across the frame), or --screen-panel frame | screen
+    if (k === "screen-panel") { o[k] = ["frame", "screen"].includes(argv[i + 1]) ? argv[++i] : "frame"; continue; }
     const v = argv[++i];
     if (v === undefined) fail(`--${k} needs a value.`);
     if (MANY.has(k)) { o[k].push(v); o.order.push([k, v]); } else o[k] = v;
@@ -193,6 +195,13 @@ function printResult(res) {
       console.log(`\n${i + 1}. ${markOf(c)} ${c.fit}  score ${c.score}`);
       c.parts.forEach((q, k) => console.log(`   part ${k + 1}  ${boxText(q.window)}: source ${q.source} at scale ${q.scale}, left ${q.left}, top ${q.top}${q.smaller ? " (does not fill its part: ground beside it)" : ""}`));
       if (c.ground) console.log(`   ${pct(c.ground)} ground`);
+      if (c.stack) {
+        const k = c.stack;
+        console.log(`   screen  ${boxText(k.screen.box)} at ${k.screen.scale}×${k.screen.textHeight != null ? `, smallest text ${k.screen.textHeight} px` : ""}`);
+        console.log(`   panel   ${boxText(k.panel.box)} (${k.width === "screen" ? "as wide as the screen" : "across the frame"}); the webcam at ${k.camera.scale}×, its crop ${boxText(k.camera.crop)} of the webcam's picture`);
+        console.log(`   face    ${boxText(k.face.box)}, ${k.face.height} px (${k.face.pct} % of the frame's height)`);
+        console.log(`   change  from full-frame (${k.change.before.scale}× at ${k.change.before.left}, ${k.change.before.top}${k.change.before.assumed ? ", assumed" : ""}): ${k.change.says}`);
+      }
     } else {
       console.log(`\n${i + 1}. ${markOf(c)} ${nameOf(c)}  scale ${c.scale} (${c.zoom}× of covering) at left ${c.left}, top ${c.top}  score ${c.score}`);
       if (c.ground) console.log(`   picture ${boxText(c.window)}, ${pct(c.ground)} ground`);
@@ -212,6 +221,13 @@ function printResult(res) {
 
 // ---- place ----
 
+// --before: the speaker full-frame just before (beside, and place's --screen-panel)
+function beforeOf(v) {
+  const b = String(v).split(",").map(Number);
+  if (![3, 7].includes(b.length) || b.some((x) => !Number.isFinite(x)) || !(b[0] > 0) || (b.length === 7 && !(b[5] > 0 && b[6] > 0))) fail(`--before is scale,left,top of the speaker just before, as place hands them over (1.875,-660,0), and its window as x,y,w,h after them where it did not fill the frame (1.875,-660,0,0,285,1080,1350).`);
+  return { scale: b[0], left: b[1], top: b[2], ...(b.length === 7 ? { window: b.slice(3) } : {}) };
+}
+
 function cmdPlace(o) {
   const usage = `${self()} place <folder> --frame 9:16 --source 1080x1920 --face x,y,w,h [--face …] [--text caption] [--text hook] [--platform reels,tiktok] [--json]
   several people:    [--speaker N]  |  --source WxH --face … --source WxH --face …   (two files)
@@ -219,6 +235,7 @@ function cmdPlace(o) {
   a screen:          --source WxH --region x,y,w,h --min-text-height N [--readable N] [--face … | --source WxH --face …   (the webcam)]
   captions built:    --caption-area <area.json> | left,width,top,bottom,size,lines   (they stand there; the picture is placed around them)
   a speaker:         --pick speaker [--cover scale,left,top]   (the order for a picture of a speaker: the picture you draw today first where it passes, then across the frame's width)
+  screen and webcam: --screen-panel [frame|screen] [--label-bottom px] [--before scale,left,top[,x,y,w,h]]   (also the screen above, the speaker in a panel down to the caption line: 9:16 and 4:5)
   the ranking:       [--weights file.json] [--set weights.enlarge.softFrom=1.4]
 The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
   const [folder] = o._;
@@ -235,10 +252,18 @@ The boxes are read off a frame: ${self()} grid <video|image> <out.jpg>.`;
     if (v.length !== 3 || v.some((x) => !Number.isFinite(x)) || !(v[0] > 0)) fail(`--cover is scale,left,top of the picture covering the frame, in px of the frame, as 1.5,-120,0, not "${o.cover}".`);
     cover = { scale: v[0], left: v[1], top: v[2] };
   }
+  if ((o["label-bottom"] !== undefined || o.before !== undefined) && !o["screen-panel"]) fail("--label-bottom and --before belong to --screen-panel (the screen above, the speaker's panel below): give it with them, or leave them out.");
+  let screenPanel = null;
+  if (o["screen-panel"]) {
+    const lb = o["label-bottom"] !== undefined ? Number(o["label-bottom"]) : null;
+    if (lb !== null && !(Number.isFinite(lb) && lb >= 0)) fail(`--label-bottom is the y in px of the frame where the keep's label ends (the screen starts a gap below it), as 330, not "${o["label-bottom"]}".`);
+    screenPanel = { width: o["screen-panel"], labelBottom: lb, before: o.before !== undefined ? beforeOf(o.before) : null };
+  }
   let res;
   try {
     res = solve({
       ...(o.pick ? { pick: o.pick, cover } : {}),
+      ...(screenPanel ? { screenPanel } : {}),
       zones: askZones(o.frame, platforms), sources, needs: parseNeeds(o.text),
       ...(o["caption-area"] !== undefined ? { captionArea: areaFile(o["caption-area"]) } : {}),
       speaker: o.speaker !== undefined ? Number(o.speaker) : null,
@@ -302,12 +327,7 @@ function cmdBeside(o) {
   if (!material.min && !material.fixed) fail(`beside needs what the material needs: --material-min WxH, the smallest field it reads in (px of the frame), or --material WxH, the size of a picture or clip of fixed size.`);
   const needs = parseNeeds(o.text);
   if (needs.some((n) => n.role === "hook")) fail(`beside sets captions only (--text caption or caption:2): a hook stands before the material shows, place it with ${self()} place.`);
-  let before = null;
-  if (o.before !== undefined) {
-    const b = String(o.before).split(",").map(Number);
-    if (![3, 7].includes(b.length) || b.some((v) => !Number.isFinite(v)) || !(b[0] > 0) || (b.length === 7 && !(b[5] > 0 && b[6] > 0))) fail(`--before is scale,left,top of the speaker just before, as place hands them over (1.875,-660,0), and its window as x,y,w,h after them where it did not fill the frame (1.875,-660,0,0,285,1080,1350).`);
-    before = { scale: b[0], left: b[1], top: b[2], ...(b.length === 7 ? { window: b.slice(3) } : {}) };
-  }
+  const before = o.before !== undefined ? beforeOf(o.before) : null;
   const platforms = platformList(o.platform);
   // the captions' band as captions builds it: its area.json, or a style it measures
   if (o["caption-area"] !== undefined && o["caption-style"] !== undefined) fail(`--caption-area and --caption-style both give the captions' band: give one.`);
