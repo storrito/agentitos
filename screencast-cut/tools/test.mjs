@@ -1782,18 +1782,18 @@ test("a screen picture of the layout skill's marked ! carries its reason (\"enla
 });
 
 // ------------------------------------------------------------------ the stack (stack-916, stack-panel)
-import { STACK, CIRCLE, stackPicture, stackQuestion } from "./lib/screenview.mjs";
+import { STACK, CIRCLE, stackPicture, stackQuestion, webcamPeople } from "./lib/screenview.mjs";
 const LABEL_TEXT = "02 · The mission";
 // screen keeps through screenView with one caption line (as captions built it) and the webcam's
 // face known; the first keep is the face view with its picture, so the stack hears where it was
-function stackRun({ width, height, keeps, tool, face = CAM16.face, line = LINE[`${width}x${height}`], dir = null, timeout }) {
+function stackRun({ width, height, keeps, tool, face = CAM16.face, faceAt = null, line = LINE[`${width}x${height}`], dir = null, timeout }) {
   const own = !dir;
   dir = dir || fs.mkdtempSync(path.join(os.tmpdir(), "stack-"));
   const z = realZones(width, height, ["reels"]), labelled = keeps.some((k) => k.label);
   const a = areas(width, height, z, { captions: true, labels: labelled, line });
   const area = path.join(dir, "area.json");
   fs.writeFileSync(area, JSON.stringify(line || { ...BANDS[`${width}x${height}`] }));
-  const sources = { screen: { width: 1920, height: 1080, offset: 0, video: true }, webcam: { ...CAM16, face } };
+  const sources = { screen: { width: 1920, height: 1080, offset: 0, video: true }, webcam: { ...CAM16, face, ...(faceAt ? { faceAt } : {}) } };
   const cut = { keep: [{ view: "face" }, ...keeps] };
   const ps = cut.keep.map((k, i) => ({ keep: i, view: i ? "screen" : "face", source: i ? "screen" : "webcam", start: i * 4, duration: 4, in: i * 4, out: i * 4 + 4, ...(i ? { crop: Array.isArray(k.zoom) ? k.zoom : [0, 0, 1, 1] } : { picture: { fit: "crop 4:5", scale: 1.875, left: -660, top: 0, window: [0, 0, width, height] } }) }));
   const labels = cut.keep.flatMap((k, i) => (k.label ? [{ text: k.label, start: i * 4, duration: 4 }] : []));
@@ -1956,4 +1956,22 @@ test("the stack in the composition: the one webcam element is set to the panel a
     const rings = [...html.matchAll(/class="clip ring" data-start="([\d.]+)"/g)].map((m) => +m[1]);
     assert.deepEqual(rings, [8]);
   } finally { r.done(); fs.rmSync(out, { recursive: true, force: true }); }
+});
+
+test("the stack with two people in the webcam (the rig's two-mix webcam, the model's answers left, right, left): both go to the layout skill, which stands them in the panel together or refuses with its sentence; main's own call keeps the one face", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const face = [0.174, 0.126, 0.339, 0.498], faceAt = [{ t: 0, box: [0.198, 0.111, 0.334, 0.463] }, { t: 2, box: [0.625, 0.111, 0.729, 0.482] }, { t: 4, box: [0.198, 0.111, 0.334, 0.463] }];
+  assert.deepEqual(webcamPeople({ face, faceAt }), [face, faceAt[1].box]);
+  assert.equal(webcamPeople({ face: CAM16.face, faceAt: [{ t: 1, box: [0.39, 0.2, 0.61, 0.68] }] }), null);
+  assert.equal(webcamPeople({ face: null, faceAt }), null);
+  const r = stackRun({ width: 1080, height: 1920, face, faceAt, keeps: [{ zoom: "off" }] });
+  try {
+    const stack = JSON.parse(fs.readFileSync(path.join(r.dir, "placement", "screen-2", "stack", "placement.json"), "utf8"));
+    const main = JSON.parse(fs.readFileSync(path.join(r.dir, "placement", "screen-2", "placement.json"), "utf8"));
+    assert.equal(stack.sources[1].faces.length, 2, JSON.stringify(stack.sources[1]));
+    assert.equal(main.sources[1].faces.length, 1);
+    if (r.ps[1].screenPic?.fit === STACK) {
+      const fb = r.ps[1].screenPic.stack.face.box, pb = r.ps[1].screenPic.stack.panel;
+      assert.ok(fb[0] >= pb[0] - 0.5 && fb[0] + fb[2] <= pb[0] + pb[2] + 0.5, "both faces inside the panel");
+    } else assert.match(r.said, /not the stack \([^)]*\): /);
+  } finally { r.done(); }
 });

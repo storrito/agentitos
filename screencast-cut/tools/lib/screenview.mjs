@@ -154,14 +154,16 @@ export function regionPx(c, src) {
 // layout's candidates for one screen part, or the reason there are none (place's own words kept
 // in the folder's place.log). cam: the webcam ({ width, height, face }) where the circle shows,
 // its face (0–1) for the crop; without a known face, the webcam's middle, a little high, stands in.
-export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, width, height, area = null, platforms = [], timeout = PLACE_TIMEOUT, extra = [] }) {
+export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, faces = null, width, height, area = null, platforms = [], timeout = PLACE_TIMEOUT, extra = [] }) {
   try {
     fs.mkdirSync(folder, { recursive: true });
     const R = regionPx(crop, src);
     const f = cam ? (cam.face || [0.35, 0.2, 0.65, 0.65]) : null;
-    const face = f && [f[0] * cam.width, f[1] * cam.height, (f[2] - f[0]) * cam.width, (f[3] - f[1]) * cam.height].map((v) => r0(v));
+    const px = (b) => [b[0] * cam.width, b[1] * cam.height, (b[2] - b[0]) * cam.width, (b[3] - b[1]) * cam.height].map((v) => r0(v));
+    // faces: every person of the webcam's picture (0–1 boxes) where more than one was seen (the stack)
+    const boxes = cam ? (faces?.length ? faces : [f]).map(px) : [];
     const args = [tool, "place", folder, "--frame", `${width}x${height}`, "--source", `${src.width}x${src.height}`, ...(text ? ["--min-text-height", String(text)] : []), "--region", R.join(","),
-      ...(cam ? ["--source", `${cam.width}x${cam.height}`, "--face", face.join(",")] : []),
+      ...(cam ? ["--source", `${cam.width}x${cam.height}`, ...boxes.flatMap((b) => ["--face", b.join(",")])] : []),
       ...(area ? ["--caption-area", area] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...extra, "--json"];
     const r = spawnSync(process.execPath, args, { encoding: "utf8", maxBuffer: 64 << 20, timeout: timeout * 1000 });
     if (r.error?.code === "ETIMEDOUT" || r.signal) return { why: `layout's place ran over ${timeout} s for it and was stopped` };
@@ -368,6 +370,19 @@ export function stackPicture(res, { width, height }) {
       face: { box: s.face.box, height: s.face.height, pct: s.face.pct }, ground: s.ground, ...(s.change?.says && !s.change.before?.assumed ? { change: s.change.says } : {}) } } };
 }
 
+// The people in the webcam's picture for the panel: the circle's face, and each of the model's boxes
+// (faceAt) that lies further than a face's width or height from it and from those already taken
+// (another person, as placement.speakerMoments tells them apart): the layout skill stands those
+// who fit in the panel together and refuses the stack where they do not (decided 2026-11-19 in its
+// pull request 112). null for one person.
+export function webcamPeople(cam) {
+  if (!cam?.face || !Array.isArray(cam.faceAt)) return null;
+  const far = (a, b) => Math.abs((a[0] + a[2]) / 2 - (b[0] + b[2]) / 2) > b[2] - b[0] || Math.abs((a[1] + a[3]) / 2 - (b[1] + b[3]) / 2) > b[3] - b[1];
+  const people = [cam.face];
+  for (const m of cam.faceAt) if (Array.isArray(m?.box) && m.box.length === 4 && m.box.every(Number.isFinite) && people.every((p) => far(m.box, p))) people.push(m.box);
+  return people.length > 1 ? people : null;
+}
+
 function stackOne({ got, name, dir, c, src, text, cam, on, keep, asked, tool, timeout, width, height, platforms, area, zones, areas, labelBottom, faceBefore, facts, pip }) {
   const q = stackQuestion({ width, height, areas, cam, pip, asked });
   const refused = (why) => {
@@ -385,7 +400,7 @@ function stackOne({ got, name, dir, c, src, text, cam, on, keep, asked, tool, ti
   if (!tool) return refused("the layout skill is missing");
   const b = faceBefore && [faceBefore.scale, faceBefore.left, faceBefore.top, ...(box4(faceBefore.window) && !(faceBefore.window[0] === 0 && faceBefore.window[1] === 0 && faceBefore.window[2] === width && faceBefore.window[3] === height) ? faceBefore.window : [])];
   const folder = path.join(dir, "placement", name, "stack");
-  const placed = placeScreen({ tool, folder, src, crop: c, text, cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout,
+  const placed = placeScreen({ tool, folder, src, crop: c, text, cam, faces: webcamPeople(cam), width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout,
     extra: ["--screen-panel", "frame", ...(Number.isFinite(labelBottom) ? ["--label-bottom", String(Math.round(labelBottom))] : []), ...(b ? ["--before", b.map((v) => +(+v).toFixed(4)).join(",")] : [])] });
   if (placed.why) return refused(placed.why.replace(/ for it/, " for the stack"));
   let st;
