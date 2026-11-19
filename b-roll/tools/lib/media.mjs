@@ -66,10 +66,12 @@ export function still(file, at, out) {
   execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, at)), "-i", file, "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", out], { stdio: ["ignore", "ignore", "inherit"] });
 }
 
-// the HyperFrames CLI: one on the PATH, else the version this skill pins
+// the HyperFrames CLI: one on the PATH, else the version this skill was last tried with (its
+// project's lint, render and `sheet` the same under 0.8.221 and 0.9.70 on 2026-11-19)
+export const HYPERFRAMES_TESTED = "0.9.70";
 export function hyperframes() {
   const r = spawnSync("hyperframes", ["--version"], { stdio: "ignore" });
-  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.221"];
+  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", `hyperframes@${HYPERFRAMES_TESTED}`];
 }
 
 export const clock = (s) => {
