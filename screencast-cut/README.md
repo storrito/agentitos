@@ -97,6 +97,6 @@ The sources are `screen`, `webcam`, `phone` (the phone's camera), `phone-screen`
 | `keep[].pauses` / `sounds` / `gain` | as in best-takes: `"keep"` plays its pauses / fillers as they are; dB on top of the evened-out level |
 | `waits` | word numbers after which the time up to the next keep plays as a timelapse |
 | `fixes` | the captions' spelling by word number; `""` drops a word from the text |
-| `captions` | written by `captions`: the style and the key words, `"lines": 2` for two lines over a band as before (kept by `captions`); `false` for none (default: clean subtitles in one line) |
+| `captions` | written by `captions`: the style and the key words, `"lines": 2` for two lines over a band as before (kept by `captions`; a cut with highlights and no style writes `{"highlight": […], "lines": 2}`, hormozi as on main, and `{"lines": 2}` alone keeps the clean subtitles); `false` for none (default: clean subtitles in one line) |
 | `background` | `plain`: the brand's background behind the shots instead of the blurred screen |
 | `music` | `file`, `volume` (0–1, default 0.35), `from` (seconds into the file) |

@@ -94,13 +94,14 @@ export function areas(width, height, zones, { captions = true, labels = false, l
 export const linesOf = (caps) => (caps?.lines === 2 ? 2 : 1);
 
 // The captions of a cut: clean subtitles unless cut.json says otherwise ("captions": false: none;
-// an object: the style the captions command wrote, and "lines"); an object without a style keeps the
-// default's clean subtitles, so that { "lines": 2 } alone builds as main (review of
-// screencast-clear, 3: it fell back to "hormozi"); none by default when the captions skill is
-// missing (tool: whether it is beside this one)
+// an object: the style the captions command wrote, and "lines"); an object without a style is
+// hormozi as on main (how highlights were given), except one that holds nothing but "lines": that
+// keeps the default's clean subtitles, so that { "lines": 2 } alone builds as main for a cut that
+// set nothing (review of screencast-clear, 3); none by default when the captions skill is missing
+// (tool: whether it is beside this one)
 export function captionsFor(cut = {}, tool = true) {
   if (cut.captions === false) return null;
-  if (cut.captions && typeof cut.captions === "object") return cut.captions.style ? cut.captions : { style: "clean", highlight: [], ...cut.captions };
+  if (cut.captions && typeof cut.captions === "object") return !cut.captions.style && Object.keys(cut.captions).every((k) => k === "lines") ? { style: "clean", highlight: [], ...cut.captions } : cut.captions;
   if (cut.captions) return cut.captions;
   return tool ? { style: "clean", highlight: [] } : null;
 }

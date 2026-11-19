@@ -1433,6 +1433,16 @@ import { captionsFor, captionArea } from "./lib/layout.mjs";
 test("review of screencast-clear, 3: \"captions\": { \"lines\": 2 } alone keeps main's clean subtitles (not hormozi) and main's numbers; a style the cut names stays; a broken area.json is not handed on", () => {
   assert.deepEqual(captionsFor({}), { style: "clean", highlight: [] });
   assert.deepEqual(captionsFor({ captions: { lines: 2 } }), { style: "clean", highlight: [], lines: 2 });
+  // every form as on main but { "lines": n } alone (second review): the style the build takes, the lines
+  const look = (captions) => { const c = captionsFor(captions === undefined ? {} : { captions }); return [c.style || "hormozi", linesOf(c)]; };
+  assert.deepEqual(look(undefined), ["clean", 1]);
+  assert.deepEqual(look("outline"), ["hormozi", 1], "a string, as on main");
+  assert.deepEqual(look({ lines: 2 }), ["clean", 2]);
+  assert.deepEqual(look({ lines: 1 }), ["clean", 1]);
+  assert.deepEqual(look({ highlight: [4, 9] }), ["hormozi", 1]);
+  assert.deepEqual(look({ highlight: [4, 9], lines: 2 }), ["hormozi", 2]);
+  assert.deepEqual(look({ style: "hormozi", lines: 2 }), ["hormozi", 2]);
+  assert.deepEqual(captionsFor({ captions: { highlight: [4, 9] } }), { highlight: [4, 9] }, "the object as main reads it");
   assert.deepEqual(captionsFor({ captions: { style: "hormozi", highlight: [3] } }), { style: "hormozi", highlight: [3] });
   assert.deepEqual(captionsFor({ captions: { style: "clean", highlight: [], lines: 2 } }), { style: "clean", highlight: [], lines: 2 });
   assert.equal(captionsFor({ captions: false }), null);
