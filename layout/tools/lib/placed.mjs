@@ -100,22 +100,35 @@ export const downTo = (f, lift, line) => [f.box[0], f.box[1] - lift, f.box[2], l
 const r0 = (v) => Math.round(v);
 const r1 = (v) => Math.round(v * 10) / 10;
 
-// the moments of a shot: every face's boxes, with how long each stands (half the gap to its
-// neighbours, within the shot)
+// the moments of a shot: every face's boxes, with how long each stands: half the gap to its
+// neighbours, within the shot, and only while a face is there (a face counts up to REACH before
+// and after a moment of its track, half the gap to the next where that is nearer: one tracked at a
+// single moment of a 6 s shot counted for all 6 s and made the type 31 % smaller, the review of
+// 2026-11-19)
+const REACH = 0.26;
 export function momentsOf(shot) {
   const ts = [...new Set(shot.faces.flatMap((f) => f.track.map((m) => m.t)))].sort((a, b) => a - b);
   if (!ts.length) return [];
+  const sorted = shot.faces.map((f) => [...f.track].sort((p, q) => p.t - q.t));
   return ts.map((t, i) => {
     const a = i ? (ts[i - 1] + t) / 2 : shot.start, b = i < ts.length - 1 ? (t + ts[i + 1]) / 2 : shot.end;
-    const faces = shot.faces.map((f) => { const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t); return m?.box ? { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}) } : null; }).filter(Boolean);
-    return { t, dt: Math.max(0, b - a), faces };
+    let from = Infinity, to = -Infinity;
+    const faces = shot.faces.map((f, k) => {
+      const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t);
+      if (!m?.box) return null;
+      const tr = sorted[k], j = tr.indexOf(m), prev = tr[j - 1], next = tr[j + 1];
+      from = Math.min(from, m.t - (prev ? Math.min(REACH, (m.t - prev.t) / 2) : REACH));
+      to = Math.max(to, m.t + (next ? Math.min(REACH, (next.t - m.t) / 2) : REACH));
+      return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}) };
+    }).filter(Boolean);
+    return { t, dt: faces.length ? Math.max(0, Math.min(b, to) - Math.max(a, from)) : Math.max(0, b - a), faces };
   });
 }
 function nearest(track, t) {
   let best = null;
   for (const m of track) if (!best || Math.abs(m.t - t) < Math.abs(best.t - t)) best = m;
   // a face not tracked near this moment is not there
-  return best && Math.abs(best.t - t) <= 0.26 ? best : null;
+  return best && Math.abs(best.t - t) <= REACH ? best : null;
 }
 export const up = (b, d) => [b[0], b[1] - d, b[2], b[3]];
 export const overlapsX = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > EPS;

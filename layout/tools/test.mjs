@@ -1471,6 +1471,18 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 3, [a]), shot(3, 6, [still([390, 250, 300, 380], [450, 390, 180, 180], 3, 6, "B")]), shot(6, 9, [b])], area: { top: usual }, raise: "full" });
     ok(r.shots[0].lift === r.shots[2].lift && r.shots[0].lift > 0, JSON.stringify(r.shots.map((s) => s.lift)));
   });
+  t("a face counts for the time it is there: tracked at a single moment of a 6 s shot it is under the type for half a second, not six (the review's made-up case); one that leaves the picture halfway counts until then; a track ten times a second counts as before", () => {
+    const box = [200, 300, 680, 1000], feat = [330, 620, 420, 420];
+    const one = areaOverTime({ zones: Z9, shots: [shot(0, 6, [{ who: "A", track: [{ t: 3, box, feat }] }])], area: { top: usual }, raise: "full" });
+    const at = one.shots[0].on;
+    ok(at.chin + at.lip + at.mouth + at.nose > 0.4 && at.chin + at.lip + at.mouth + at.nose <= 0.6, JSON.stringify(one.shots[0]));
+    ok(!one.notes.some((n) => /for 6 s/.test(n)), one.notes.join(" | "));
+    const half = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still(box, feat, 0, 2)])], area: { top: usual }, raise: "full" });
+    near(half.shots[0].touches[0].seconds, 2.3, 0.15, "a face until 2 s, counted to 2.26 s");
+    const dense = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still(box, feat, 0, 4)])], area: { top: usual }, raise: "full" });
+    near(dense.shots[0].touches[0].seconds, 4, 0.01, "ten times a second, the whole shot");
+    return `one moment: ${Math.round((at.chin + at.lip + at.mouth + at.nose) * 100) / 100} s`;
+  });
   t("a clip without a face: the usual top, said as no-face", () => {
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [])], area: { top: usual } });
     ok(r.area.top === usual && r.area.where === "no-face" && !r.notes.length, JSON.stringify(r.area));
