@@ -161,6 +161,10 @@ test("a close-up whose mouth lies where the build sets the type: place lowers th
   assert.doesNotMatch(run(env, "build", dir).stdout, /made for another cut/);
   // the agent's own choice, kept, and given back with ""
   assert.match(run(env, "place", dir, "--type-top", "1300").stdout, /--type-top 1300 leaves the type no room: give a y from \d+ to 1152/);
+  // a lift past what the picture allows (its ground under the apps' bottom, 480 px here) is refused
+  r = run(env, "place", dir, "--lift", "2:9999");
+  assert.ok(r.status === 1 && /--lift 2:9999 raises shot 1 further than its picture allows: give 0 to 480 px\./.test(r.stdout), r.stdout);
+  assert.ok(run(env, "place", dir, "--lift", "2:-5").status === 1, "a negative lift");
   r = run(env, "place", dir, "--type-top", "1140", "--raise", "head");
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const q = JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8"));

@@ -305,6 +305,10 @@ function place(dir, opts) {
   const lifts = Object.entries(fixed.lifts || {}).map(([t, px]) => {
     const k = shots.findIndex((x) => Number(t) >= x.start && Number(t) < x.end);
     if (k < 0) fail(`No shot at ${t} s: --lift takes a second of the short as source/place.sheet.jpg lists the shots.`);
+    // as far as the picture allows: its room in the footage and a ground under the apps' bottom
+    // (layout's own limit for a raise); a shot shown whole or as two panels not at all
+    const room = shots[k].room, most = room ? Math.max(0, room.free || 0) + Math.max(0, Math.round((1 - (plan.zones?.safe?.[3] ?? 1)) * plan.height)) : 0;
+    if (px > most) fail(`--lift ${t}:${px} raises shot ${k + 1} further than its picture allows: give 0 to ${most} px${most ? "" : " (it is shown whole and is not raised)"}.`);
     return { shot: k, px };
   });
   const raise = fixed.raise || "full";
