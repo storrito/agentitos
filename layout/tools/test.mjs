@@ -805,25 +805,27 @@ console.log("\nThe screen above, the speaker in a panel down to the caption line
   const CAM = { size: [1280, 720], faces: [[500, 140, 280, 350]] };
   const R916 = askZones("9:16", ["instagram-reels"]), F45 = askZones("4:5", ["instagram-feed"]);
   const L916 = { left: 120, width: 840, top: 1410, bottom: 1500, size: 52, lines: 1, from: "test" }, L45 = { ...L916, top: 1140, bottom: 1230 };
+  // with the apps the page check knows by default (all five upright ones): the caption line inside their safe box
+  const LD = { ...L916, width: 708, top: 1350, bottom: 1440 };
   const panelOf = (zones, region, band, ask = {}, cam = CAM, minTextHeight = 12) => solve({ zones, sources: [{ size: SCR, region, minTextHeight }, cam], needs: [], captionArea: band, screenPanel: { width: "frame", labelBottom: null, before: null, ...ask } });
   const theOne = (res) => res.candidates.find((c) => c.fit === "screen-panel");
 
   t("--screen-panel in 9:16: the whole screen and a wide zoom stand inside the safe box's wide stretch from its top, the speaker's panel across the frame from a gap under them down to the caption line's foot, the face 18 % of the frame's height or more with its head inside the panel and its chin above the captions, which stay where they were fixed; the screen's text is said as unread, nothing else is unmet; about 40 % ground; the change from the face keep given straight down at about half the size", () => {
     const out = [];
     for (const region of [WHOLE, WIDE]) {
-      const res = panelOf(R916, region, L916, { before: { scale: 2.667, left: -1167, top: 0 } }), c = theOne(res), k = c?.stack;
+      const res = panelOf(Z916, region, LD, { before: { scale: 2.667, left: -1167, top: 0 } }), c = theOne(res), k = c?.stack;
       ok(c && res.screenPanel.offered, `not offered: ${res.screenPanel.why}`);
       ok(!c.hard && c.unmet.join() === "readable", `${c.unmet} ${JSON.stringify(c.problems)}`);
-      near(k.screen.box[0], 60, 0.5, "the screen's left"); near(k.screen.box[2], 960, 0.5, "the screen's width"); near(k.screen.box[1], R916.safe[1], 0.5, "the screen's top");
-      ok(inside(R916.wide, k.screen.box) && k.screen.in === "wide", `the screen ${k.screen.box} in ${k.screen.in}`);
-      near(k.panel.box[1], Y1(k.screen.box) + DEFAULTS.gap, 0.5, "the panel's top"); near(Y1(k.panel.box), 1500, 0.5, "the panel's foot"); ok(k.panel.box[0] === 0 && k.panel.box[2] === 1080, `the panel ${k.panel.box}`);
+      near(k.screen.box[0], 60, 0.5, "the screen's left"); near(k.screen.box[2], 960, 0.5, "the screen's width"); near(k.screen.box[1], Z916.safe[1], 0.5, "the screen's top");
+      ok(inside(Z916.wide, k.screen.box) && k.screen.in === "wide", `the screen ${k.screen.box} in ${k.screen.in}`);
+      near(k.panel.box[1], Y1(k.screen.box) + DEFAULTS.gap, 0.5, "the panel's top"); near(Y1(k.panel.box), 1440, 0.5, "the panel's foot"); ok(k.panel.box[0] === 0 && k.panel.box[2] === 1080, `the panel ${k.panel.box}`);
       ok(k.face.height >= 0.18 * 1920 - 1 && k.face.pct >= 17.9, `the face ${k.face.height} px`);
       const f = k.face.box, keep = keepOut(f, DEFAULTS);
-      ok(f[1] - Math.min(DEFAULTS.free.above * f[3], k.camera.scale * 140) >= k.panel.box[1] - 0.5 && Y1(keep) <= 1410 + 0.5, `the face ${f} in the panel ${k.panel.box}`);
+      ok(f[1] - Math.min(DEFAULTS.free.above * f[3], k.camera.scale * 140) >= k.panel.box[1] - 0.5 && Y1(keep) <= 1350 + 0.5, `the face ${f} in the panel ${k.panel.box}`);
       const eyes = (f[1] + DEFAULTS.eyes * f[3] - k.panel.box[1]) / k.panel.box[3];
       ok(eyes > 0.25 && eyes < 0.45, `the eyes ${r2(eyes)} down the panel`);
       const capt = c.text.find((x) => x.role === "caption");
-      ok(capt && capt.box[1] === 1410 && !overlap(capt.box, [f[0], f[1], f[2], 0.85 * f[3]]), `the captions ${capt && capt.box}`);
+      ok(capt && capt.box[1] === 1350 && !overlap(capt.box, [f[0], f[1], f[2], 0.85 * f[3]]), `the captions ${capt && capt.box}`);
       ok(k.ground > 0.3 && k.ground < 0.45, `ground ${k.ground}`);
       ok(k.camera.enlargement <= 1 && inside([0, 0, 1280, 720], k.camera.crop), `the camera ${JSON.stringify(k.camera)}`);
       ok(Math.abs(k.change.face.dx) < 30 && k.change.face.dy > 0 && k.change.face.zoom > 0.3 && k.change.face.zoom < 0.5, `the change ${JSON.stringify(k.change.face)}`);
