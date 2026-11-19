@@ -44,6 +44,7 @@ So, when you say which styles fit (never as a recommendation of one):
 - **Screen with a face (tutorial, demo):** `clean` first; `fill`, `karaoke` and `outline` stand on a busy screen. `bold`, `subtitle` and `editorial` have nothing behind the words and get lost on a bright screen.
 - **Narrated, nobody in the picture (maps, stock footage, slides):** `bold`, `clean`, `subtitle`, `outline`.
 - Seven in ten of the 198 have no emphasis at all, one in ten a word that follows the voice (`hormozi`, `karaoke`, `fill`, `label`, `wipe`), one in twelve coloured key words: a style that lights up every word is a choice for energy, not the rule.
+- `--follow` lights the word being said in the styles that do not (`clean`, `label`, `bold`, `subtitle`, `editorial`, `outline`, `impact`): the words wait at half their colour (`label`: its grey), the one being said takes the key colour (the brand's where it reads), said words stand in the text's colour. Made for narrated explainers (2026-11-19): `label --follow` on a light ground, `clean --follow` on a dark or busy one.
 - 122 are in sentence case, 45 in capitals, 23 all lowercase: only `hormozi`, `impact` and `wipe` set capitals.
 
 ## Near each other

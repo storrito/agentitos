@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loudness, musicVolume, distance, inFilm, LOWEST, HIGHEST } from "./lib/level.mjs";
-import { soundLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords } from "./launch.mjs";
+import { soundLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords, gapSpecs, splitVoice, duckLane, filled, fillVerdict } from "./launch.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
@@ -352,6 +352,73 @@ test("musicLane: level under the voice and through short pauses, up only in paus
   const late = musicLane([w(12, 13)], { start: 10, duration: 5, low: 0.5 });
   assert.deepEqual(late.slice(0, 3), [{ t: 0, v: 1 }, { t: 1.5, v: 1 }, { t: 1.85, v: 0.5 }]);
   assert.ok(late.every((p, k) => k === 0 || p.t >= late[k - 1].t));
+});
+
+// ------------------------------------------------------------------------------- footage with its own sound
+
+test("narration --gap: the voice cut in the pause after a word, the footage in the gap, the voice again after it", () => {
+  assert.deepEqual(gapSpecs("101+15, 45.7+9.4"), [{ at: 45.7, length: 9.4 }, { at: 101, length: 15 }]);
+  assert.deepEqual(gapSpecs(undefined), []);
+  assert.throws(() => gapSpecs("45.7"), /--gap takes "<seconds of the voice>\+<seconds of footage>"/);
+  const w = (text, start, end) => ({ text, start, end });
+  // "line." ends at 4.2, the next word at 5.2; "again." ends at 8, the next at 8.3
+  const words = [w("The", 3, 3.4), w("line.", 3.5, 4.2), w("Here", 5.2, 5.6), w("again.", 7.6, 8), w("With", 8.3, 8.6)];
+  const { pieces, footage } = splitVoice(words, 10, [{ at: 5, length: 9.4 }, { at: 8.1, length: 15 }]);
+  // cut a quarter second after "line.", and half of the short pause after "again."
+  assert.deepEqual(pieces.map((p) => [p.start, p.mediaStart, p.duration, p.first, p.last]), [[0, 0, 4.45, "The", "line."], [14.35, 4.45, 3.7, "Here", "again."], [33.55, 8.15, 1.85, "With", "With"]]);
+  assert.deepEqual(footage.map((f) => [f.start, f.duration, f.after]), [[4.7, 9.4, "line."], [18.3, 15, "again."]]);
+  // every word on the film's clock lies in a piece, never in a gap
+  for (const x of words) {
+    const p = pieces.find((q) => x.start >= q.mediaStart && x.end <= q.mediaStart + q.duration);
+    assert.ok(p, x.text);
+    const t = p.start + x.start - p.mediaStart;
+    assert.ok(!footage.some((f) => t < f.start + f.duration && t + (x.end - x.start) > f.start), `${x.text} at ${t}`);
+  }
+  assert.throws(() => splitVoice(words, 10, [{ at: 9.5, length: 3 }]), /after the last word/);
+  assert.throws(() => splitVoice(words, 10, [{ at: 1, length: 3 }]), /no word ends by 1 s/);
+});
+
+test("level with footage: the music out while the footage plays, no swell beside it, level and up elsewhere as before", () => {
+  const w = (start, end) => ({ text: "w", start, end });
+  // the voice, footage 5-10 s (1.2 s after the last word before it, 1.3 s before the next), the voice again
+  const words = [w(0.2, 1), w(1.4, 3.8), w(11.3, 12), w(13.5, 14)];
+  const pts = duckLane(musicLane([...words, { start: 5, end: 10, footage: true }], { duration: 18, low: 0.4 }), [[5, 10]]);
+  const at = (t) => {
+    if (t <= pts[0].t) return pts[0].v;
+    for (let k = 1; k < pts.length; k++) if (t <= pts[k].t) { const a = pts[k - 1], b = pts[k]; return a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t || 1); }
+    return pts.at(-1).v;
+  };
+  // out under the footage, reached when it starts and held to its end
+  for (const t of [5, 6, 9.9, 10]) assert.equal(at(t), 0, `at ${t}`);
+  // level (never up) in the pauses beside it, though they are over a second
+  for (const t of [4.2, 4.6, 10.4, 11]) assert.ok(at(t) <= 0.4 + 1e-9, `at ${t}: ${at(t)}`);
+  assert.ok(at(4.85) < 0.4 && at(4.85) > 0);
+  // a pause of 1.5 s away from the footage still brings it up, and the end too
+  assert.equal(at(12.8), 1);
+  assert.equal(at(16), 1);
+  assert.ok(pts.every((p, k) => k === 0 || p.t > pts[k - 1].t));
+});
+
+// ------------------------------------------------------------------------------- how a still is filled
+
+test("fill: an empty frame, a sparse one high in the frame, and a full one in the middle, the captions' band left out", () => {
+  const cols = 96, rows = 54;
+  const frame = (paint) => { const c = new Uint8Array(cols * rows).fill(248); paint((x0, y0, x1, y1, v = 30) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) c[y * cols + x] = v; }); return c; };
+  const safe = [96 / 1920, 108 / 1080, 1728 / 1920, 822 / 1080], skip = [0.7, 0.87];
+  // captions alone: empty
+  const caps = frame((r) => r(30, 40, 66, 45));
+  assert.equal(fillVerdict(filled(caps, cols, rows, { skip }), safe).mark, "✗");
+  // a thin line of small type near the top: sparse and high
+  const high = fillVerdict(filled(frame((r) => r(30, 8, 66, 10)), cols, rows, { skip }), safe);
+  assert.equal(high.mark, "!");
+  assert.match(high.why, /sparse: picture on \d+ % .*high: its middle at 1\d % of the frame's height/);
+  // a figure across the middle band
+  const full = fillVerdict(filled(frame((r) => { r(8, 16, 88, 34); r(20, 6, 76, 10); }), cols, rows, { skip }), safe);
+  assert.equal(full.mark, "✓", full.why);
+  // the ground is the border's commonest level, a dark ground as well as a light one
+  const dark = new Uint8Array(cols * rows).fill(20);
+  for (let y = 20; y < 30; y++) for (let x = 10; x < 80; x++) dark[y * cols + x] = 220;
+  assert.deepEqual(filled(dark, cols, rows).box.map((v) => +v.toFixed(3)), [+(10 / 96).toFixed(3), +(20 / 54).toFixed(3), +(70 / 96).toFixed(3), +(10 / 54).toFixed(3)]);
 });
 
 test("level: a music that fades out right after the last word is said, with the film's end to move", () => {
