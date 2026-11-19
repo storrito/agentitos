@@ -836,20 +836,29 @@ console.log("\nThe screen above, the speaker in a panel down to the caption line
     return out.join("; ");
   });
 
-  t("--screen-panel says no where the region is too tall: a tight zoom at 2× is a screen's part over 600 px (of a frame 1080 wide) and leaves the panel too little, in 9:16 and in 4:5, with or without a label: no candidate, a note and screenPanel.why that names the screen's height, the panel's and what the stack needs; the whole screen keeps the stack under a label's room of 60, 90 and 120 px in both frames and loses it only where the panel falls under 440 px (in 4:5 past a room of about 165 px), said with the panel's height", () => {
+  t("--screen-panel says no where the region is too tall: a tight zoom at 2× is a screen's part over 640 px (of a frame 1080 wide) and leaves the panel too little, in 9:16 and in 4:5, with or without a label: no candidate, a note and screenPanel.why that names the screen's height, the panel's and what the stack needs; the whole screen keeps the stack under a label's room of 60, 90 and 120 px in both frames and loses it only where the panel falls under 420 px (in 4:5 past a room of about 185 px), said with the panel's height", () => {
     const room = (Z, R) => (R ? Z.safe[1] + R - DEFAULTS.gap : null);
     const out = [];
     for (const [Z, band, name] of [[R916, L916, "9:16"], [F45, L45, "4:5"]]) {
       for (const R of [0, 60, 90, 120]) {
         const no = panelOf(Z, TIGHT, band, { labelBottom: room(Z, R) });
-        ok(!theOne(no) && no.screenPanel.code === "tall" && /is \d+ px tall, over the 600 px/.test(no.screenPanel.why) && /leaves the panel \d+ px/.test(no.screenPanel.why) && /panel of at least 440 px/.test(no.screenPanel.why) && no.notes.some((x) => /^no screen-panel/.test(x)), `${name} tight, room ${R}: ${JSON.stringify(no.screenPanel)}`);
+        ok(!theOne(no) && no.screenPanel.code === "tall" && /is \d+ px tall, over the 640 px/.test(no.screenPanel.why) && /leaves the panel \d+ px/.test(no.screenPanel.why) && /panel of at least 420 px/.test(no.screenPanel.why) && no.notes.some((x) => /^no screen-panel/.test(x)), `${name} tight, room ${R}: ${JSON.stringify(no.screenPanel)}`);
         const yes = panelOf(Z, WHOLE, band, { labelBottom: room(Z, R) }), c = theOne(yes);
-        ok(c && !c.hard && c.unmet.join() === "readable" && c.stack.panel.box[3] >= 440 && c.stack.face.height >= 230, `${name} whole, room ${R}: ${yes.screenPanel.why || JSON.stringify(c.stack.face)}`);
+        ok(c && !c.hard && c.unmet.join() === "readable" && c.stack.panel.box[3] >= 420 && c.stack.face.height >= 230, `${name} whole, room ${R}: ${yes.screenPanel.why || JSON.stringify(c.stack.face)}`);
         if (R === 120) out.push(`${name} under 120 px: panel ${Math.round(c.stack.panel.box[3])}, face ${c.stack.face.height}`);
       }
     }
+    // a whole 16:10 and 21:9 screen too, under a label's room of 0 to 120 px; a strip (a tab bar, 64 px of the screen) never: under the 400 px a screen above the speaker needs
+    for (const [Z, band, name] of [[R916, L916, "9:16"], [F45, L45, "4:5"]]) {
+      for (const [size, R] of [[[2560, 1600], 0], [[2560, 1600], 120], [[3440, 1440], 0], [[3440, 1440], 120]]) {
+        const r = solve({ zones: Z, sources: [{ size, region: [0, 0, ...size], minTextHeight: 12 }, CAM], needs: [], captionArea: band, screenPanel: { width: "frame", labelBottom: room(Z, R) } });
+        ok(theOne(r) && theOne(r).stack.screen.box[3] >= 400 - 0.5, `${name} ${size.join("x")} under ${R} px: ${JSON.stringify(r.screenPanel)}`);
+      }
+      const strip = panelOf(Z, [0, 0, 1920, 64], band);
+      ok(!theOne(strip) && strip.screenPanel.code === "strip" && /is \d+ px tall .*under the 400 px a screen above the speaker needs: a strip/.test(strip.screenPanel.why), `${name} strip: ${JSON.stringify(strip.screenPanel)}`);
+    }
     const lost = panelOf(F45, WHOLE, L45, { labelBottom: room(F45, 200) });
-    ok(lost.screenPanel.code === "small" && /the panel below the screen is \d+ px high .*under the 440 px/.test(lost.screenPanel.why), JSON.stringify(lost.screenPanel));
+    ok(lost.screenPanel.code === "small" && /the panel below the screen is \d+ px high .*under the 420 px/.test(lost.screenPanel.why), JSON.stringify(lost.screenPanel));
     const y45 = panelOf(F45, WHOLE, L45), c = theOne(y45);
     ok(c && c.stack.face.pct > 20 && Math.abs(Y1(c.stack.panel.box) - 1230) < 0.5, JSON.stringify(c?.stack.face));
     agree(c, y45, "screen-panel-45");
