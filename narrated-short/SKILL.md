@@ -56,7 +56,7 @@ node <launch> voice short/<name> short/<name>/script.json artifacts/<name>/compo
 node <skill>/tools/short.mjs clock short/<name>
 ```
 
-Make the project first, once, with the `project` tool (create, name `<name>`, kind `hyperframes`). `voice` speaks each line and hears it back: a word said wrong is rewritten in that line as it should sound, and `voice` run again speaks only that line. `voice`'s last lines (place each line as `<audio …>`, then `captions`) are launch-video's own steps: here `clock` and `build` do them. `clock` prints every sentence and word with its time in the film; these times set everything after. Longer than 46 s: cut a sentence, then `voice` and `clock` again.
+Make the project first, once, with the `project` tool (create, name `<name>`, kind `hyperframes`). `voice` speaks each line and hears it back: a word said wrong is rewritten in that line as it should sound, and `voice` run again speaks only that line. `clock` prints every sentence and word with its time in the film; these times set everything after. Longer than 46 s: cut a sentence, then `voice` and `clock` again.
 
 ### 4. The beats
 
@@ -76,7 +76,7 @@ node <launch> music short/<name> artifacts/<name>/composition --prompt "<instrum
 node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --platform tiktok
 ```
 
-The second build lays it under the voice (`music`'s "In the root: <audio id="music" …>" is launch-video's step: the build does it). No music came back: the prompt in other words, once more.
+The second build lays it under the voice. No music came back: the prompt in other words, once more.
 
 ### 6. Look at it
 
@@ -86,7 +86,7 @@ node <launch> check short/<name> artifacts/<name>/composition
 node <skill>/tools/short.mjs sheet short/<name> artifacts/<name>/composition
 ```
 
-Read `<skill>/references/quality.md` and go through `short/<name>/sheet.jpg` by it. `lint` must name no error; its warnings `nested_structure_needs_subcomposition` (the hook text, the card, the handle: two without a card) are this composition's own and stay. `check` names text the apps would cover: a `✗` is always fixed; its `!` for the hook text and for the card may stay, both stand in the wide stretch above the buttons on purpose. Two of its lines are launch-video's own: `! Sound: … Run level again` means build again (the build lays the music; voice or music changed since), and `✗ HyperFrames' check found errors before it could look at the film` while `lint` names no error means its browser did not run: check once more, and failing again, say that the text under the buttons is not checked. Fix every defect in the beats or the script, build, look again, until nothing is left.
+Read `<skill>/references/quality.md` and go through `short/<name>/sheet.jpg` by it. `lint` must name no error; its warnings `nested_structure_needs_subcomposition` (the hook text, the card, the handle: two without a card) are this composition's own and stay. `check` names text the apps would cover: a `✗` is always fixed; its `!` for the hook text and for the card may stay, both stand in the wide stretch above the buttons on purpose. Fix every defect in the beats or the script, build, look again, until nothing is left.
 
 ### 7. Ask whether it is right
 
