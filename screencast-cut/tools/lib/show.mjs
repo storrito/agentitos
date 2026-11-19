@@ -9,9 +9,12 @@
 // "zoom" or a "layout" on the same keep are left out, and the build says so. With "sound" (0–1)
 // its sound plays as a track of its own: a quarter of that level under the first words, rising
 // over the last RISE seconds of them to the level at the keep's last word, held, out over the
-// last FADE seconds.
+// last FADE seconds. With "sound": {"hold": 0–1} it is silent under the words and comes up over
+// FADE seconds after the last word to that level in the keep's "hold" (a clip that speaks: the
+// run of 2026-11-19 had to drop "sound", and the hold went silent while the clip's speaker talked).
 //
 //   showOf(keep)                         → { file, from, sound } (a file's name alone: { file })
+//   soundOf(show)                        → { level, hold }: "sound"'s level, and whether only in the hold
 //   showProblem(keep, k, info)           → null, or the one sentence that says what to change
 //                                          (info: probe() of its file, or { missing } or { error })
 //   shownCopy(dir, file)                 → where the shown file's conversion is kept (keyed on its
@@ -64,6 +67,12 @@ export const circleOn = (keep) => (keep.show !== undefined ? keep.circle === tru
 
 const USAGE = `"show": "uploads/result.mp4", or {"file": "uploads/result.mp4", "from": 2, "sound": 0.8}`;
 
+// "sound" as a number (its level under the words and up to it by the last), or {"hold": level}
+// (silent under the words, at its level in the hold after them)
+export const soundOf = (show) => (show.sound && typeof show.sound === "object" && !Array.isArray(show.sound)
+  ? { level: Number(show.sound.hold) || 0, hold: true } : { level: Number(show.sound) || 0, hold: false });
+const holdForm = (sound) => sound && typeof sound === "object" && !Array.isArray(sound) && Object.keys(sound).length === 1 && Number(sound.hold) >= 0 && Number(sound.hold) <= 1;
+
 // what is wrong with a keep's "show", in one sentence that says what to do; null where it is fine
 export function showProblem(keep, k, info) {
   if (keep.show === undefined) return null;
@@ -73,8 +82,8 @@ export function showProblem(keep, k, info) {
   if (info?.error || !info) return `${name}: ${show.file} is no video ffprobe can read (${info?.error || "nothing read"}); give a video file (MP4, MOV, WebM), the result as it was posted or rendered.`;
   if (!info.video) return `${name}: ${show.file} has no picture (a sound or a still); give a video file, the result as it was posted or rendered.`;
   if (show.from !== undefined && !(Number(show.from) >= 0 && Number(show.from) < info.duration)) return `${name} "from" is the second of ${show.file} to start at, 0–${info.duration.toFixed(1)}; set it within that or leave it out (0).`;
-  if (show.sound !== undefined && !(Number(show.sound) >= 0 && Number(show.sound) <= 1)) return `${name} "sound" is the level of its sound, 0–1 (0.8 plays it well under the voice's words and full by the last); leave it out for none.`;
-  if (Number(show.sound) > 0 && !info.audio) return `${name} "sound": ${show.file} has no sound; leave "sound" out, or ask the person for the file with the sound (a Story's music is added by Instagram: only the posted Story, downloaded or recorded on the phone, has it).`;
+  if (show.sound !== undefined && !(show.sound && typeof show.sound === "object" ? holdForm(show.sound) : Number(show.sound) >= 0 && Number(show.sound) <= 1)) return `${name} "sound" is the level of its sound, 0–1 (0.8 plays it well under the voice's words and full by the last), or {"hold": 0.8} for it only in the "hold" after the last word, silent under the words; leave it out for none.`;
+  if (soundOf(show).level > 0 && !info.audio) return `${name} "sound": ${show.file} has no sound; leave "sound" out, or ask the person for the file with the sound (a Story's music is added by Instagram: only the posted Story, downloaded or recorded on the phone, has it).`;
   return null;
 }
 
@@ -104,15 +113,20 @@ export function placeShows(cut, pieces, words, infoOf) {
     const duration = Math.min(end - start, info.duration - from);
     const said = words.filter((w) => w.start >= start - 0.01 && w.end <= end + 0.01);
     const spoken = said.length ? said.at(-1).end - start : 0;
-    const sound = Number(show.sound) || 0;
-    if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground${sound > 0 && spoken > duration - FADE ? ", and its sound stays low under the words and fades out where it ends, before the last word" : ""}: an earlier "from", a shorter "hold", or end the keep a word earlier`);
+    const { level: sound, hold: holdOnly } = soundOf(show);
+    if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground${sound > 0 && spoken > duration - FADE ? `, and its sound ${holdOnly ? "is never heard, the video ending before the last word" : "stays low under the words and fades out where it ends, before the last word"}` : ""}: an earlier "from", a shorter "hold", or end the keep a word earlier`);
+    // the keep's hold whose voice is muted (the recording's sound there is the next words, or a cut
+    // filler): with no sound of the shown video in it, digital silence while the video plays on
+    const muted = ps.filter((p) => p.mute && p.hold && p.start < start + duration - 0.05).reduce((t, p) => t + Math.min(p.duration, start + duration - p.start), 0);
+    const heardInHold = sound > 0 && info.audio && duration - Math.max(spoken, 0) > FADE + 0.1;
+    if (muted >= 0.3 && !heardInHold) warnings.push(`keep ${k + 1}: its "hold" after the last word is ${muted.toFixed(1)} s of silence (the recording's sound stops with the words there) while ${show.file} plays on${info.audio ? `: let its sound play there, "sound": {"hold": 0.8} (silent under the words), or end the keep at its last word, "hold": 0` : `, which has no sound: end the keep at its last word, "hold": 0`}`);
     const key = `show-${k + 1}`;
     sources[key] = { file: `${key}${path.extname(info.path || show.file) || ".mp4"}`, path: info.path || path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };
     for (const p of ps) p.show = { source: key, in: from + (p.start - start), until: start + duration };
     const skipped = leftOut(keep);
     if (skipped.length) notes.push(`! keep ${k + 1}: "show" plays ${show.file} over the whole keep, so its ${skipped.join(" and ")} ${skipped.length > 1 ? "are" : "is"} left out (the shown video is the keep's picture); to see ${keep.view === "face" ? "the face" : keep.zoom !== undefined && keep.zoom !== "off" ? "the zoom" : "that picture"} too, give it a keep of its own without "show".`);
-    if (sound > 0 && duration > 0.1) {
-      inserts.push({ k, key, file: show.file, src: info.path || show.file, from, start, duration, sound, spoken });
+    if (sound > 0 && duration > 0.1 && !(holdOnly && spoken > 0.3 && duration - spoken <= FADE + 0.1)) {
+      inserts.push({ k, key, file: show.file, src: info.path || show.file, from, start, duration, sound, spoken, ...(holdOnly ? { hold: true } : {}) });
     }
   }
   return { sources, inserts, warnings, notes };
@@ -124,9 +138,12 @@ const n = (x) => +x.toFixed(3);
 // level under the first words, rising over the last RISE s of them to its level at the last word,
 // held, out over the last FADE s. A keep without words (by its time) has it up at once. The rise
 // belongs to the last word: a video that ends before that word keeps its sound low under the words
-// and fades out at its own end (it never comes up while the speaker is still talking).
-export function soundPoints({ sound, duration, spoken }) {
+// and fades out at its own end (it never comes up while the speaker is still talking). In the hold
+// alone (hold: true): nothing under the words, up over FADE s from the last word's end.
+export function soundPoints({ sound, duration, spoken, hold = false }) {
   const top = sound, low = top / 4, d = duration, out = Math.max(0, d - FADE), s = Math.max(spoken || 0, 0);
+  if (hold && s > 0.3) return [{ t: 0, v: 0 }, { t: n(s), v: 0 }, { t: n(Math.min(s + FADE, out)), v: top }, { t: n(out), v: top }, { t: n(d), v: 0 }]
+    .filter((x, j, all) => j === 0 || x.t > all.slice(0, j).reduce((m, y) => Math.max(m, y.t), -1));
   if (s > 0.3 && s > out) return [{ t: 0, v: low }, { t: n(out), v: low }, { t: n(d), v: 0 }].filter((x, j, all) => j === 0 || x.t > all[j - 1].t);
   return (s > 0.3 ? [{ t: 0, v: low }, { t: n(Math.max(0, s - RISE)), v: low }, { t: n(s), v: top }] : [{ t: 0, v: 0 }, { t: n(Math.min(0.2, out)), v: top }])
     .concat([{ t: n(out), v: top }, { t: n(d), v: 0 }])
@@ -187,7 +204,8 @@ export function heardSaid(i, heard, said, clock) {
   const at = (l) => `${clock(l[0][0])} to ${clock(l.at(-1)[1])}`;
   if (both.length) {
     const sum = both.reduce((t, [a, b]) => t + b - a, 0);
-    return `two voices at once from ${at(both)} (${sum.toFixed(1)} s: the clip speaks ${at(clip)}, the speaker ${at(mine)}): drop "sound", or show it where you do not speak, or let it speak in the "hold" after your last word (${cost})`;
+    const hold = i.duration - i.spoken;
+    return `two voices at once from ${at(both)} (${sum.toFixed(1)} s: the clip speaks ${at(clip)}, the speaker ${at(mine)}): let it speak only in the "hold" after your last word, "sound": {"hold": ${i.sound}} (silent under your words${hold < 1 ? `, with "hold": 1.5 on the keep: its hold is ${hold.toFixed(1)} s now` : ""}), or drop "sound", or show it where you do not speak (${cost})`;
   }
   return `it speaks ${at(clip)}, where the speaker does not: no two voices at once (${cost})`;
 }
@@ -198,11 +216,13 @@ export function heardSaid(i, heard, said, clock) {
 // speaker's for 2.7 s, two voices at once.
 // heard: heardSaid's sentence where the clip was listened to, else null (the general sentence).
 export function soundSaid(i, target, clock, heard = null) {
+  const tail = `measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${target} LUFS ("sound": 1 is the voice's level), through the voice's bus.`;
+  if (i.hold && i.spoken > 0.3) return `keep ${i.k + 1}: the sound of ${i.file} is silent under the keep's words and plays at ${i.sound} in its hold, from ${clock(i.start + i.spoken)} for ${(i.duration - i.spoken).toFixed(1)} s; ${tail}`;
   const level = i.spoken > i.duration - FADE ? "at a quarter of its level, the video ending before the last word" : `at a quarter of its level under the first, up to ${i.sound} by the last at ${clock(i.start + i.spoken)}`;
   const under = heard ? `runs under the keep's words (${level}); ${heard}; `
-    : i.spoken > 0.3 ? `runs under the keep's words (${level}), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; `
+    : i.spoken > 0.3 ? `runs under the keep's words (${level}), so if it speaks, its speech is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point; a clip that speaks gets "sound": {"hold": ${i.sound}}, heard only in the "hold" after the last word; `
     : "";
-  return `keep ${i.k + 1}: the sound of ${i.file} ${under}measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${target} LUFS ("sound": 1 is the voice's level), through the voice's bus.`;
+  return `keep ${i.k + 1}: the sound of ${i.file} ${under}${tail}`;
 }
 
 // The gain in dB that brings a shown video's sound (its stretch's integrated loudness, ebur128 as
