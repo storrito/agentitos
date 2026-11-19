@@ -219,9 +219,10 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 
 // ------------------------------------------------------------------------------ the face view
 // The face view placed by the layout skill (lib/placement.mjs): its order for a picture of a
-// speaker (place --pick speaker, the old cover among the candidates), the element's geometry, and
-// the old cover where no face is known. The layout skill runs as a program, beside this one.
-import { nameOf, markOf, faceMoments, placeFace, coverOf, geometry, layoutTool } from "./lib/placement.mjs";
+// speaker (place --pick speaker, the old cover among the candidates), the face followed between
+// the model's three boxes by clips' tracker, the element's geometry, and the old cover where no
+// face is known. The layout skill and clips run as programs, beside this one.
+import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
 
@@ -235,7 +236,7 @@ test("the webcam's face in px: the three moments the model saw, else the one box
 // the public test's webcam (a close 720p picture) and the captions' bands captions built in each frame
 const CAM = { width: 1280, height: 720, face: [0.388, 0.202, 0.614, 0.685], faceAt: [{ t: 9, box: [0.388, 0.204, 0.614, 0.692] }, { t: 22.51, box: [0.388, 0.202, 0.614, 0.685] }, { t: 36.01, box: [0.388, 0.204, 0.614, 0.69] }] };
 const BANDS = { "1080x1920": { left: 192, width: 696, top: 1282, bottom: 1440, size: 52, lines: 2 }, "1080x1350": { left: 54, width: 972, top: 1072, bottom: 1230, size: 52, lines: 2 }, "1920x1080": { left: 96, width: 1728, top: 772, bottom: 930, size: 52, lines: 2 } };
-const LAYOUT = layoutTool();
+const LAYOUT = layoutTool(), CLIPS = framingTool();
 const placed = (dir, size, moments = faceMoments(CAM)) => {
   const [width, height] = size.split("x").map(Number), area = path.join(dir, `area-${size}.json`);
   fs.mkdirSync(dir, { recursive: true });
@@ -261,6 +262,45 @@ test("the face view is in the layout skill's order for a speaker: the frame cove
     // the inset (the whole webcam at 0.84×) stands behind every picture across the width that passes
     const inset = res.candidates.findIndex((x) => x.fit === "inset");
     assert.ok(res.candidates.slice(0, inset).every((x) => x.pick.passes && x.pick.across));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a keep whose speaker leans in: with the face followed over the keep the frame covered in 16:9 puts the captions on the mouth and is not taken; the keeps around it keep it", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-lean-"));
+  try {
+    // the public webcam's lean as clips' tracker follows it: the face 95 px lower from 26 to 29 s
+    const followed = { moments: Array.from({ length: 101 }, (_, i) => { const t = 20 + i / 10, d = t < 24.5 || t > 30.5 ? 0 : t < 26 ? (t - 24.5) / 1.5 : t > 29 ? (30.5 - t) / 1.5 : 1; return { t: +t.toFixed(1), box: [496.6, +(146 + 95 * d).toFixed(1), 289.3, 348.5] }; }) };
+    const lean = keepMoments(followed, 22, 30.7, faceMoments(CAM)), before = keepMoments(followed, 20, 23.5, faceMoments(CAM));
+    assert.ok(lean.followed && lean.moments.length > 30 && lean.moments.every((m, i) => i === 0 || m.t > lean.moments[i - 1].t));
+    const leaning = placed(dir, "1920x1080", lean.moments), still = placed(path.join(dir, "b"), "1920x1080", before.moments);
+    assert.notEqual(nameOf(leaning.candidates[0]), "cover");
+    assert.ok(/on the mouth/.test(leaning.candidates.find((x) => nameOf(x) === "cover").pick.why));
+    assert.equal(nameOf(still.candidates[0]), "cover");
+    // outside every followed moment the model's three boxes stand
+    assert.deepEqual(keepMoments(followed, 40, 44, faceMoments(CAM)), { moments: faceMoments(CAM), followed: false });
+    assert.deepEqual(keepMoments(null, 0, 5, faceMoments(CAM)).moments, faceMoments(CAM));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("clips' tracker follows a head that moves between the model's boxes, as a program and without a model, once; where it cannot run the reason is said", { skip: !CLIPS && "no clips skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-follow-"));
+  try {
+    // a made-up webcam: a patterned patch on grey that drops 80 px between 2 and 2.5 s and comes back between 3.5 and 4 s
+    const file = path.join(dir, "webcam.mp4");
+    const y = "60+80*min(1,max(0,(t-2)*2))-80*min(1,max(0,(t-3.5)*2))";
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=640x360:d=6:r=30", "-f", "lavfi", "-i", "testsrc2=s=120x150:d=6:r=30", "-filter_complex", `[0][1]overlay=x=260:y='${y}'`, "-c:v", "libx264", "-pix_fmt", "yuv420p", file]);
+    assert.equal(r.status, 0, r.stderr);
+    const cam = { width: 640, height: 360, duration: 6, faceAt: [{ t: 1, box: [260 / 640, 60 / 360, 380 / 640, 210 / 360] }, { t: 5, box: [260 / 640, 60 / 360, 380 / 640, 210 / 360] }] };
+    const out = path.join(dir, "webcam.followed.json");
+    const f = followFace({ tool: CLIPS, file, cam, out });
+    assert.ok(f.moments?.length > 40, JSON.stringify(f).slice(0, 300));
+    const at3 = f.moments.find((m) => Math.abs(m.t - 3) < 0.06);
+    assert.ok(at3 && Math.abs(at3.box[1] - 140) < 12, `at 3 s the box's top at ${at3?.box[1]} (the patch at 140, the straight line between the boxes at 60)`);
+    // kept: a second call reads the file (a tool that does not exist is not run)
+    assert.deepEqual(followFace({ tool: "/nonexistent/frame.mjs", file, cam, out }), f);
+    assert.match(followFace({ tool: null, file, cam, out: path.join(dir, "x.json") }).why, /clips skill is not beside this one/);
+    assert.match(followFace({ tool: CLIPS, file, cam: { ...cam, faceAt: undefined }, out: path.join(dir, "x.json") }).why, /no box for each of its frames/);
+    assert.match(followFace({ tool: CLIPS, file, cam: { ...cam, duration: FOLLOW_MAX + 60 }, out: path.join(dir, "x.json") }).why, /over the 10 the tracker holds in memory/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
