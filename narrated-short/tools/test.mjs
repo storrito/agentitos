@@ -383,6 +383,18 @@ test("faces: layout's measure as build reads it: the eyes, the mouth, the lower 
   assert.equal(onOf(measured([100, 60, 900, 130], feat)).nose, 0.1);
 });
 
+test("faces: text beside the eyes, nose and mouth (an ear, the side of the head) is the hair's kind, not the eyes, as before the measure was layout's (the review: a head x 800–1100, its features 860–1040, captions ending at x 840 at eye height were 'nose')", { skip: !layoutHere && "no layout beside" }, () => {
+  const head = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [800, 400, 300, 400], feat: [860, 520, 180, 220] }] }];
+  const side = measured([0, 560, 840, 80], head);
+  assert.deepEqual([side.moments[0].on[0].part, side.moments[0].on[0].beside], ["nose", true]);
+  const o = onOf(side);
+  assert.deepEqual([o.hair, o.nose, o.hard], [0.5, 0, 0]);
+  // across the features: the eyes
+  assert.equal(onOf(measured([0, 560, 870, 80], head)).nose, 0.5);
+  // beside the mouth of one who talks into the camera: the hair too, not the talking mouth
+  assert.equal(onOf(measured([0, 690, 840, 40], head), { talks: { 0: "A" } }).hard, 0);
+});
+
 test("build with faces: a face off the middle moves the fill to it and the hook off it, each said; --no-faces and no faces build the same short; faces of another stretch are left out and said", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
   const dir = tmp();
   try {

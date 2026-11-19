@@ -657,7 +657,8 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
 // raised): for each box of the frame over [start, end) of the shots' clock, per moment (momentsOf,
 // with how long it stands) the faces whose box it overlaps, each with the worst part of it the text
 // reaches (PARTS, as the captions' list counts them; `maybe` where a head known by its box alone
-// may have its eyes there), and the seconds per part over all, the worst part of a moment counting,
+// may have its eyes there; `beside` where it lies beside the features' width, `boxOnly` where the
+// face has none), and the seconds per part over all, the worst part of a moment counting,
 // and per face. For a caller that weighs the parts by rules of its own (narrated-short: nobody shown
 // speaks, so a mouth may be covered, except of one who talks into the camera): it reads `moments`.
 // boxes: [{ name, box: [x, y, w, h], start?, end? }]
@@ -673,7 +674,11 @@ export function measureOver({ shots, boxes }) {
       for (const f of m.faces) {
         if (inter(f.box, b.box) <= 0) continue;
         const part = PARTS[partOf(f, 0, b.box)], maybe = part === "hair" && inMaybe(f, 0, b.box);
-        on.push({ who: f.who, part, ...(maybe ? { maybe: true } : {}) });
+        // (beside: the text overlaps the head but not the width of its eyes, nose and mouth, an ear
+        // or the side of the head, for a caller that reads that as the hair; boxOnly: no features
+        // given, the eyes taken from the head's proportions)
+        const e = featOf(f), beside = !(Math.min(X1(b.box), X1(e)) - Math.max(b.box[0], e[0]) > 0);
+        on.push({ who: f.who, part, ...(maybe ? { maybe: true } : {}), ...(beside ? { beside: true } : {}), ...(f.feat ? {} : { boxOnly: true }) });
         const w = who.get(f.who) || { who: f.who, seconds: 0, nose: 0, hair: 0, maybe: 0, mouth: 0, lip: 0, chin: 0 };
         w.seconds += m.dt; w[part] += m.dt; if (maybe) w.maybe += m.dt;
         who.set(f.who, w);

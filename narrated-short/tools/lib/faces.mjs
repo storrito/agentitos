@@ -435,7 +435,8 @@ export const WEIGHT = { nose: 100, mouth: 2, lip: 1, hair: 0.5, chin: 0.2, talk:
 
 // What a text lies on, from agentitos' layout's measure of it (its tools/place.mjs text --measure,
 // run by the caller: per moment the faces the text overlaps, each with the worst part of it the
-// text reaches, the parts as layout draws them), over [from, to) of the film and the shots given
+// text reaches, the parts as layout draws them; text beside the features' width counts here as
+// the hair, as an ear or the side of the head), over [from, to) of the film and the shots given
 // (their index; all where null): seconds on a face and on each part (the worst it lies on at a
 // moment, by WEIGHT; the mouth or lower lip of the face that talks into the camera in its shot,
 // talks[shot], is "talk"), their weighed sum, and `hard`: the seconds on what must stay clear (the
@@ -446,7 +447,9 @@ export function onOf(measured, { from = 0, to = Infinity, shots = null, talks = 
     if (m.t < from || m.t >= to || (shots && !shots.includes(m.shot))) continue;
     let worst = null;
     for (const f of m.on) {
-      const part = talks[m.shot] != null && f.who === talks[m.shot] && (f.part === "mouth" || f.part === "lip") ? "talk" : f.part;
+      // beside the eyes, nose and mouth (an ear, the side of the head) is the hair's kind, mild
+      const seen = f.beside && (f.part === "nose" || f.part === "mouth" || f.part === "lip") ? "hair" : f.part;
+      const part = talks[m.shot] != null && f.who === talks[m.shot] && (seen === "mouth" || seen === "lip") ? "talk" : seen;
       if (WEIGHT[part] == null) continue;
       if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
     }

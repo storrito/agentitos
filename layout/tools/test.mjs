@@ -1684,6 +1684,12 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     // two faces under one text at once: each face its part, the moment once with the worst
     const two = measureOver({ shots: [shot(0, 3, [head(feat), head([386, 1300, 307, 50], "B", 0)])], boxes: [{ name: "x", box: [200, 1250, 600, 80] }] })[0];
     ok(two.seconds === 3 && two.nose === 3 && two.faces.length === 2 && two.moments.every((x) => x.on.length === 2), JSON.stringify(two).slice(0, 500));
+    // beside the features' width (the review: a head x 800–1100, features 860–1040, a text ending at
+    // x 840 at eye height): still "nose" in layout's own reading, said as beside for a caller that
+    // reads it otherwise; across them not beside; a head without features said as boxOnly
+    const at = (b, f = [860, 520, 180, 220]) => measureOver({ shots: [shot(0, 1, [{ who: "A", track: [{ t: 0, box: [800, 400, 300, 400], ...(f ? { feat: f } : {}) }] }])], boxes: [{ name: "x", box: b }] })[0].moments[0].on[0];
+    const by = at([0, 560, 840, 80]), over = at([0, 560, 870, 80]), bare = at([0, 560, 870, 80], null);
+    ok(by.part === "nose" && by.beside && !by.boxOnly && over.part === "nose" && !over.beside && bare.boxOnly, JSON.stringify([by, over, bare]));
     // the command
     const dir = fs.mkdtempSync(path.join(OUT, "measure-")), file = path.join(dir, "shots.json"), boxes = path.join(dir, "boxes.json");
     fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 3, [head(feat)])] }));
