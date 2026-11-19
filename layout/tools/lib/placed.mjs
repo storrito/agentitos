@@ -339,7 +339,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   const spansOf = (from, to) => (hook.spans?.length > 1 && from === hook.start && to === hook.end ? hook.spans : [[from, to]]);
   const hookWith = (cand) => {
     const lifts = cand ? cand.per.map((r) => r.lift) : list.map(() => 0);
-    const place = (from, to) => {
+    const place = (from, to, any = false) => {
       const spans = spansOf(from, to), inside = (t, pad = 0) => spans.some(([a, b]) => t >= a - pad && t <= b + pad);
       const over = list.filter((s) => spans.some(([a, b]) => s.end > a + EPS && s.start < b - EPS));
       const faces = [], keep = [];
@@ -352,21 +352,24 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
           if (f.feat) keep.push(grow(up(f.feat, lifts[s.i]), D.gap));
         }
       }
-      const r = layoutText({ ...ctx, cap: null, hook: hook.kind ? { kind: hook.kind } : {} }, faces, keep, [0, 0, W, H], false, { placed: cand ? [cand.box] : [] });
+      const r = layoutText({ ...ctx, cap: null, hook: hook.kind && !any ? { kind: hook.kind } : {} }, faces, keep, [0, 0, W, H], false, { placed: cand ? [cand.box] : [] });
       return r.placed[0] ? { ...r.placed[0], over: over.map((s) => s.i) } : null;
     };
-    let h = place(hook.start, hook.end), until = hook.end, why = null;
-    if (!h) {
-      // the first shot changes within the hook's time and the next leaves it no place: it ends at the cut
-      const first = hook.spans?.length > 1 ? hook.spans[0] : [hook.start, hook.end];
-      const cut = list.find((s) => s.start > first[0] + 1.2 && s.start < first[1] - EPS);
-      if (cut) { h = place(hook.start, cut.start); if (h) { until = cut.start; why = `it ends at the cut at ${r1(cut.start)} s: the shot after it leaves it no place`; } }
+    let h = null, until = hook.end, why = null;
+    // the first shot changes within the hook's time and the next leaves it no place: it ends at the cut
+    const first = hook.spans?.length > 1 ? hook.spans[0] : [hook.start, hook.end];
+    const cut = list.find((s) => s.start > first[0] + 1.2 && s.start < first[1] - EPS);
+    // the kind asked for is a wish: the whole time, then until the cut; only then the other kind
+    for (const any of hook.kind ? [false, true] : [false]) {
+      h = place(hook.start, hook.end, any);
+      if (!h && cut) { h = place(hook.start, cut.start, any); if (h) { until = cut.start; why = `it ends at the cut at ${r1(cut.start)} s: the shot after it leaves it no place`; } }
+      if (h) { if (any) h.instead = true; break; }
     }
     return { h, until, why, lifts };
   };
   // Where no place is clear of the faces' margins: the least bad of the hook's usual places beside
-  // the captions' place cand, a text in the middle or a card at the top (the kind the caller asked
-  // for, hook:text or hook:card, alone): never on the captions where one is not, then on no eyes,
+  // the captions' place cand, a text in the middle or a card at the top: never on the captions where
+  // one is not, then on no eyes,
   // nose or mouth (the features, else the head's proportions) where one is not, whatever the share
   // (a tight close-up: a text in the middle lay on the mouth for 12 % of the face, a card at the top
   // on the forehead for more), then the least on a face
@@ -374,10 +377,11 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     const tries = [];
     const ht = D.hookText, hc = D.hookCard, z0 = Z.wide || [C[0], S[1], C[2], S[3] / 2];
     const tw = Math.min(ht.width * W, C[2]);
-    if (hook.kind !== "card") tries.push({ kind: "text", font: ht.minFont, box: [W / 2 - tw / 2, ht.centre * H - ht.minFont * ht.heightEm / 2, tw, ht.minFont * ht.heightEm], where: "middle" });
-    if (hook.kind !== "text") tries.push({ kind: "card", font: hc.minFont, box: [z0[0], z0[1], z0[2], hc.minFont * hc.heightEm], where: "top" });
+    tries.push({ kind: "text", font: ht.minFont, box: [W / 2 - tw / 2, ht.centre * H - ht.minFont * ht.heightEm / 2, tw, ht.minFont * ht.heightEm], where: "middle" });
+    tries.push({ kind: "card", font: hc.minFont, box: [z0[0], z0[1], z0[2], hc.minFont * hc.heightEm], where: "top" });
     for (const x of tries) {
-      x.seconds = 0; x.share = 0; x.features = 0; x.onCaptions = !!cand && inter(cand.box, x.box) > 0;
+      // (on the captions: more than a sliver of the hook's box over theirs)
+      x.seconds = 0; x.share = 0; x.features = 0; x.onCaptions = !!cand && inter(cand.box, x.box) > 0.05 * area(x.box);
       for (const s of list) for (const m of s.moments) {
         if (hook.spans?.length > 1 ? !hook.spans.some(([a, b]) => m.t >= a && m.t <= b) : m.t < hook.start || m.t > hook.end) continue;
         const on = m.faces.filter((f) => inter(up(f.box, lifts[s.i]), x.box) > 0);
@@ -385,7 +389,9 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         if (on.some((f) => inter(up(featOf(f), lifts[s.i]), x.box) > 0)) x.features += m.dt;
       }
     }
-    tries.sort((a, b) => a.onCaptions - b.onCaptions || a.features - b.features || a.seconds * (1 + a.share) - b.seconds * (1 + b.share));
+    // (the kind asked for, hook:text or hook:card, is a wish: it comes first among places that lie on a face alike, never before one that clears it)
+    const other = (x) => (hook.kind && x.kind !== hook.kind ? 1 : 0);
+    tries.sort((a, b) => a.onCaptions - b.onCaptions || a.features - b.features || (a.seconds > 0) - (b.seconds > 0) || other(a) - other(b) || a.seconds * (1 + a.share) - b.seconds * (1 + b.share));
     return tries[0];
   };
   // how the hook fares beside a captions' place: 0 a place clear of the faces, else its least bad one
@@ -401,18 +407,20 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
   // faces no longer: else the hook went over the captions' line or onto a face (best-takes' own phone
   // take: the captions above the head, the hook's card over them for its four seconds)
   let gaveWay = null;
-  if (hook && best && fixed.y == null && hookFare(best) > 0) {
+  // (a hook on no face but within a face's margin is not worth it: the hook shows for a few seconds,
+  // the captions all through; and never a smaller type for it)
+  if (hook && best && fixed.y == null && hookFare(best) >= 2) {
     const fare0 = hookFare(best);
     let alt = null, fare = fare0;
     for (const c of candidates.slice(1)) {
-      if (!(c.touch <= best.touch + 1e-6 && c.lip <= best.lip + 1e-6 && c.mouth <= best.mouth + 1e-6 && c.nose <= best.nose + 1e-6)) continue;
+      if (!(c.font >= best.font && c.touch <= best.touch + 1e-6 && c.lip <= best.lip + 1e-6 && c.mouth <= best.mouth + 1e-6 && c.nose <= best.nose + 1e-6)) continue;
       const f = hookFare(c);
       if (f < fare) { alt = c; fare = f; if (!f) break; }
     }
     if (alt) {
       gaveWay = { from: best, to: alt };
       const mid = (c) => Math.round(((c.box[1] + c.box[3] / 2) / H) * 1000) / 10;
-      notes.push(`The captions stand with their middle at ${mid(alt)} % of the height${alt.font !== best.font ? ` at ${alt.font} px` : ""}, not at ${mid(best)} %: there the hook would have ${["", "", "lain on a face", "lain on the eyes, nose or mouth", "lain on the captions"][fare0]}${fare0 < 2 ? "found no place clear of the faces" : ""}, here it ${["finds a place clear of the faces", "lies on no face", "lies on a face, not on its eyes, nose or mouth", "lies on the eyes, nose or mouth"][fare]} (the captions on the faces no longer; ${r1(alt.cost - best.cost)} more of the cost).`);
+      notes.push(`The captions stand with their middle at ${mid(alt)} % of the height${alt.font !== best.font ? ` at ${alt.font} px` : ""}, not at ${mid(best)} %: there the hook would have ${["", "", "lain on a face", "lain on the eyes, nose or mouth or on the captions", "lain on the captions"][fare0]}${fare0 < 2 ? "found no place clear of the faces" : ""}, here it ${["finds a place clear of the faces", "lies on no face", "lies on a face, not on its eyes, nose or mouth", "lies on the eyes, nose or mouth"][fare]} (the captions on the faces no longer; ${r1(alt.cost - best.cost)} more of the cost).`);
       best = alt;
     }
   }
@@ -455,6 +463,14 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
         hookOut.kindWhy = "a card in the middle: no place clear of the faces' margins, and behind it the picture is not calm (the caller said so)";
       }
       if (!(x.seconds > 0)) notes.push(`The hook found no place clear of the faces' margins on the shots it is shown over; it stands ${x.where === "top" ? "at the top" : "in the middle"}, on no face but within a face's margin (the hair, the ears, the neck): look at it on the sheet.`);
+    }
+    // the kind asked for not taken: said, with why
+    if (hookOut && hook.kind && hookOut.kind !== hook.kind) {
+      const why = h?.instead ? `a ${hook.kind} finds no place clear of the faces on these shots, a ${hookOut.kind} does`
+        : !h ? `every place of a ${hook.kind} lies ${hookOut.onFace?.seconds > 0 ? "more" : ""} on a face${hookOut.onFace?.features > 0 ? "" : " or the captions"} than this one`
+        : "behind its place the picture is not calm (the caller said so)";
+      hookOut.asked = hook.kind;
+      notes.push(`The hook is a ${hookOut.kind === "card" ? "card" : "text"}, not the ${hook.kind} asked for: ${why}.`);
     }
   }
 

@@ -12,7 +12,7 @@
 
 ## What to do with the list
 
-- `✗ The hook lies on a face … on the forehead or the hair`: a take filmed this close has no free place for it. Ask the person once whether the video opens without the hook (`build … --hook ""`, then `place`), or keep it on the forehead if they want it. `… on the eyes, nose or mouth`: never keep that; `--hook-kind card` or no hook.
+- `✗ The hook lies on a face … on the forehead or the hair`: a take filmed this close has no free place for it. Ask the person once whether the video opens without the hook (`build … --hook ""`, then `place`), or keep it on the forehead if they want it. `… on the eyes, nose or mouth`: never keep that: no hook, or a shorter one. `--hook-kind` is a wish: where the kind asked for would lie on a face and the other would not, the other is taken and a `note:` says so.
 - `captions on the chin …, below the mouth` and `on the lower lip …: not avoidable at a readable size` are what a close take leaves: nothing to fix. A `✗` on the mouth or the nose is: a smaller type by hand (`--font-size`), `--raise full`, or a cut there.
 - A crop that leaves something out that matters (a second person, a thing held up), or a band the person does not like: `place takes/<name> --picture <candidate>` with another number of the list (`--picture cover` fills the frame from the middle, as the build did before). Look at `placed.sheet.jpg` again after each change.
 - The person says a raise is too much, or the band shows: `--lift <px>` (0: not raised) or `--raise head`. They want the captions higher or smaller: `--caption-y <px>` (where the lowest line ends; the safe box's bottom at most), `--font-size <px>`.
