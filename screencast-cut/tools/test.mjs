@@ -1127,10 +1127,12 @@ const frameOf = (width, height, { labels = false } = {}) => {
 };
 const CAM16 = { width: 1280, height: 720, offset: 0, video: true, face: [0.388, 0.202, 0.614, 0.685] };
 // one screen keep through screenView with the layout skill beside: its piece, what it said, its circle as drawn
-function oneKeep({ width, height, screen, crop, text = 0, label = null, segments = null, pip = true, tool }) {
+function oneKeep({ width, height, screen, crop, text = 0, label = null, segments = null, pip = true, tool, line = null }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "screen-review-"));
   try {
-    const { z, a, band } = frameOf(width, height, { labels: !!label });
+    const f = frameOf(width, height, { labels: !!label }), z = f.z;
+    // line: one caption line as captions built it (area.json), else the band for two lines as on main
+    const band = line || f.band, a = line ? areas(width, height, z, { captions: true, labels: !!label, line }) : f.a;
     const area = path.join(dir, "area.json");
     fs.writeFileSync(area, JSON.stringify(band));
     const sources = { screen: { width: screen[0], height: screen[1], offset: 0, video: true }, ...(pip ? { webcam: CAM16 } : {}) };
@@ -1409,5 +1411,20 @@ test("review of screencast-clear, 1: a zoom at the screen's bottom edge stands o
     const { one: o, two: t } = oneLine(w, h), cc = [0.6, 0.7, 1, 1], src = { width: 1920, height: 1080 };
     const g = (a) => { const s = spread(a.content, a.bleed, cc, src, { maxScale: 2, near: !!a.line }); return 1 - (s.box[2] * s.box[3]) / (w * h); };
     assert.ok(g(o) <= g(t) + 1e-9, `${w}x${h}: ${g(o)} against main's ${g(t)}`);
+  }
+});
+
+test("review of screencast-clear, 2: the room of one line never puts the circle on a region where main's picture had it off; with no corner free the keep keeps main's picture (16:9, a 3440×1440 screen, the four corner zooms: 1.55× with the circle off, not 1.64× shifted under the circle at x 1608)", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const meets = (a, b) => Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]) > 0.5 && Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]) > 0.5;
+  for (const crop of [[0, 0, 0.3, 0.3], [0.7, 0, 1, 0.3], [0, 0.7, 0.3, 1], [0.7, 0.7, 1, 1]]) {
+    const two = oneKeep({ width: 1920, height: 1080, screen: [3440, 1440], crop });
+    const one = oneKeep({ width: 1920, height: 1080, screen: [3440, 1440], crop, line: LINE["1920x1080"] });
+    const [c2] = two.circles, [c1] = one.circles, r1 = one.p.screen.region;
+    assert.ok(!meets([c2.box[0], c2.box[1], c2.box[2], c2.box[3]], two.p.screen.region), `${crop}: main has the circle off`);
+    assert.ok(!meets([c1.box[0], c1.box[1], c1.box[2], c1.box[3]], r1), `${crop}: the circle ${c1.box} on the region ${r1}`);
+    assert.ok(!one.p.screen.faults.includes("circle"), one.said);
+    assert.equal(one.p.screen.scale, two.p.screen.scale, `${crop}: main's scale (1.55×), ${one.said}`);
+    assert.deepEqual(c1.box, c2.box, `${crop}: the circle where main has it`);
+    assert.match(one.said, /as with two caption lines at 1\.55×[^:]*: in the room of one line the circle would lie on the region and no corner is free of it/);
   }
 });

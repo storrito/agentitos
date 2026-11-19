@@ -52,7 +52,8 @@ export function areas(width, height, zones, { captions = true, labels = false, l
   // the captions: a screen's text shows through their box and makes them hard to read, and in
   // a Reel the app's own caption covers what is below them anyway
   const bleed = one ? [0, 0, width, height] : [0, 0, width, capTop - gap];
-  const extra = one ? { floor: twoTop - gap, line: { top: line.top, bottom: Number.isFinite(line.bottom) ? line.bottom : sy + sh, above: capTop - gap } } : {};
+  // main: the areas with the band for two lines, which the screen's rule compares with (screenview)
+  const extra = one ? { floor: twoTop - gap, line: { top: line.top, bottom: Number.isFinite(line.bottom) ? line.bottom : sy + sh, above: capTop - gap }, main: areas(width, height, zones, { captions, labels }) } : {};
   const whole = [0, gap, width, capTop - 2 * gap];
   const wholeLabelled = labels ? [0, top, width, capTop - gap - top] : whole;
   if (height >= width * 1.5) {
