@@ -6,18 +6,20 @@
 //
 //   sane(list, [w, h]) → { list, dropped: Map who → moments }: the boxes that can be faces
 //   counted(list, [w, h], seconds) → { main, held: [person], small: [person] }: who the picture must show
+//   looking(people, seconds, step) → { who, share } | { who, unknown } | null: whether the main face looks into the camera
 //   planWindow({ frame, zoom, pan, zoomSet, panSet, size, people, captions, crop }) → what the beat's picture becomes
 //   mapper({ frame, zoom, pan, x, box, size }) → box of the source → box of the 1080×1920 clip
 //   framed(…) → [{ t, boxes: [{ who, box, feat? }] }] on the film's clock, as the composition plays it
-//   textOn(box, moments, from, to) → { seconds, nose, mouth, lip, hair, chin, cost }: a text box on faces
+//   textOn(box, moments, from, to) → { seconds, nose, mouth, lip, hair, chin, talk, cost, hard }: a text box on faces
 //
 // A box is [x, y, w, h]. Every list of faces is { step, faces: [{ t, boxes: [{ who, box, feat? }] }] }
 // in px of the source and seconds of the stretch (0 = the beat's `at`).
 //
-// In a narrated short nobody shown speaks: every clip is cut without its sound and a voice tells the
-// story. So a caption may lie on a mouth, a mask or a chin; only the eyes and nose must stay clear.
-// (A skill whose beats kept the source's own sound, a person speaking to the camera, would keep the
-// mouth clear too; this one has no such beat.)
+// In a narrated short nobody shown is heard: every clip is cut without its sound and a voice tells
+// the story. So a caption may lie on a mouth, a mask or a chin; only the eyes and nose must stay
+// clear. Except where a speaker talks into the camera (an interview, a webcam): a moving mouth under
+// the captions reads as a mistake, though nobody hears it, so there the mouth weighs as the eyes do
+// (looking, below).
 
 export const SIZE = [1080, 1920];
 // Who the picture must show. The main face: the tallest of those seen in half of the beat's moments
@@ -33,7 +35,13 @@ export const SIZE = [1080, 1920];
 // widened the picture to a band at 1.1× where a crop on the two women held them larger); every
 // second person really there in the people beats of crew4, epps2 and the review's short is seen in
 // 94 % of the moments or more (the review's b2, b4, b7, b9; crew4 b5's two women).
-export const SEEN = 0.25, MAIN_SEEN = 0.5, HELD_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04;
+// Time alone misses one who enters late and stays: the review's h1, a woman seen from a cut 1.7 s
+// into the beat to its end, 43 % of the moments. A face there at the beat's last moment, without a
+// break (no gap over GAP) for STAY seconds and SEEN of the moments or more, is held as one seen in
+// half of it: the beat ends on her, the picture should show her. STAY stands on that beat (1.1 s, so
+// it must count) and on crew4 b5's passer-by (the first 0.7 s, then gone: not there at the end); a
+// face that comes in for the last half second is no presence.
+export const SEEN = 0.25, MAIN_SEEN = 0.5, HELD_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04, STAY = 1, GAP = 0.25;
 // A face that does not count is said by why: "in the background" only where it is smaller than
 // BEHIND of the main face's height (the review's b3: the woman at the laptop, 53 %, the panel far
 // behind, 25 to 32 %); one larger than that is beside the others (the review's b9: a fourth man
@@ -79,23 +87,63 @@ const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.lengt
 const IMPLIED = [0.38, 0.86];
 const featOf = (b, feat) => feat || [b[0] + 0.18 * b[2], b[1] + IMPLIED[0] * b[3], 0.64 * b[2], (IMPLIED[1] - IMPLIED[0]) * b[3]];
 const noseOf = (e) => e[1] + 0.7 * e[3];
+// the lowest line of a face that text must keep off: the nose's, or of one who talks into the
+// camera the mouth's (its lower lip and 15 % more, as partsOn takes it)
+const lowOf = (p, e) => (p.talks ? e[1] + 1.15 * e[3] : noseOf(e));
 
 export function counted(list, [, h], seconds) {
   const moments = Math.max(1, Math.round(seconds / (list?.step || 0.1)));
   const people = new Map();
   for (const f of list?.faces || []) for (const b of f.boxes || []) {
     const who = b.who ?? "a face";
-    if (!people.has(who)) people.set(who, { who, boxes: [], feats: [], ts: [] });
+    if (!people.has(who)) people.set(who, { who, boxes: [], feats: [], ts: [], looks: [] });
     const p = people.get(who);
-    p.boxes.push(b.box); p.feats.push(featOf(b.box, b.feat)); p.ts.push(f.t);
+    p.boxes.push(b.box); p.feats.push(featOf(b.box, b.feat)); p.ts.push(f.t); p.looks.push(b.looks ?? null);
   }
   const all = [...people.values()].map((p) => ({ ...p, n: p.boxes.length, h: median(p.boxes.map((b) => b[3])) }));
   const tallest = (ps) => ps.reduce((a, p) => (!a || p.h > a.h ? p : a), null);
   const main = tallest(all.filter((p) => p.n >= MAIN_SEEN * moments)) || tallest(all.filter((p) => p.n >= SEEN * moments));
-  const held = main ? all.filter((p) => p === main || (p.n >= HELD_SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
+  // there long enough: in half of the moments, or there at the end since a real stretch (STAY)
+  const step = list?.step || 0.1, end = (moments - 1) * step;
+  const stays = (p) => {
+    const ts = [...p.ts].sort((a, b) => a - b);
+    if (!ts.length || ts.at(-1) < end - GAP) return false;
+    let k = ts.length - 1;
+    while (k > 0 && ts[k] - ts[k - 1] <= GAP) k--;
+    return ts.at(-1) - ts[k] + step >= STAY && p.n >= SEEN * moments;
+  };
+  const there = (p) => p.n >= HELD_SEEN * moments || stays(p);
+  const held = main ? all.filter((p) => p === main || (there(p) && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
   // why a face does not count: behind (small against the main face, or a speck), passing (seen too briefly), side (a little smaller than to count)
-  const why = (p) => (!main || p.h < BEHIND * main.h || p.h < MIN_FACE * h ? "behind" : p.n < HELD_SEEN * moments ? "passing" : "side");
+  const why = (p) => (!main || p.h < BEHIND * main.h || p.h < MIN_FACE * h ? "behind" : !there(p) ? "passing" : "side");
   return { main: held.length ? main : null, held, small: all.filter((p) => !held.includes(p)).map((p) => ({ ...p, why: why(p) })) };
+}
+
+// A speaker to the camera: the main face looks into it (the model's "camera") in TALK_SEEN of the
+// beat's moments or more, and is shown TALK_FACE of the frame's height or more in the picture the
+// beat gets without it (talksIn). Its mouth then weighs as its eyes: the picture gives way for it
+// as for them, and captions and the hook keep off it. TALK_FACE stands on the test shorts
+// (2026-11-19): Jeanette Epps' interview as a fill, 38 % (the model: "camera" on every still), and
+// a council member alone at her webcam in a Zoom recording as a fill, 16 % (her lower lip under the
+// captions 2.4 s before), must count; two faces of that Zoom gallery shown together as a band at
+// 1.48× (11 %) or in a 1:1 crop (13 %), and the small figures of the crew's B-roll looking towards
+// the lens (2 %), must not: their mouths are too small under the type to read as moving.
+export const TALK_SEEN = 0.5, TALK_FACE = 0.15;
+// → { who, share } where the main face looks into the camera that long, { who, unknown: true }
+// where its faces say nothing of where it looks (found before they did), else null
+export function looking(people, seconds, step = 0.1) {
+  const main = people?.main;
+  if (!main) return null;
+  if (!main.looks?.some(Boolean)) return { who: main.who, unknown: true };
+  const moments = Math.max(1, Math.round(seconds / step)), n = main.looks.filter((l) => l === "camera").length;
+  return n >= TALK_SEEN * moments ? { who: main.who, share: Math.min(1, n / moments) } : null;
+}
+// how tall a person's face is shown in a beat's picture: the median of its boxes there, a share of the frame's height
+export const shownShare = (place, p) => median(p.boxes.map((b) => mapper(place)(b)[3])) / SIZE[1];
+// the people with the main face as one who talks into the camera (its mouth kept clear as its eyes)
+export function talksIn(people) {
+  const main = { ...people.main, talks: true };
+  return { ...people, main, held: people.held.map((p) => (p === people.main ? main : p)) };
 }
 
 // the stretch of the source's width the held faces need: [x0, x1], each face with SIDE of its width beside it
@@ -170,12 +218,23 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   const cutOf = (win, why) => (people.small || []).filter((p) => (p.why || "behind") === why && p.n >= 0.25 * Math.max(...held.map((q) => q.n)) && !within(win, featHull([p])));
   const few = (ps) => (ps.length > 2 ? `${names(ps.slice(0, 2))} and ${ps.length - 2} more` : names(ps));
   const passing = (win) => { const ps = cutOf(win, "passing"); return ps.length ? [`${ps.length > 1 ? "passers-by" : "a passer-by"} not held (${few(ps)})`] : []; };
-  // a face a little smaller than to count, beside the held ones: how many count and are held, and that it is cut
+  // a face a little smaller than to count, beside the held ones: how many count and are held, that
+  // it is cut, and what shows it: the fill's "pan" that holds it with them where one does (the
+  // agent's pan stands), else a pan towards it cuts another; "frame": "whole" keeps everyone
   const beside = (win) => {
     const ps = cutOf(win, "side");
     if (!ps.length) return [];
     const tall = ps.length > 1 ? `${ps.map((p) => Math.round((p.h / main.h) * 100)).join(" and ")} %` : `${Math.round((ps[0].h / main.h) * 100)} %`;
-    return [`${held.length > 1 ? `the ${held.length} faces that count` : "the face that counts"} held, ${ps.length > 1 ? `the ${ps.length} at the side` : "the one at the side"} cut (${few(ps)}: ${tall} as tall as the largest, too small to count)`];
+    const it = ps.length > 1 ? "them" : "it", all = featHull([...held, ...ps]);
+    const k = SIZE[1] / ch, play = 2 * Math.round((cw * k) / 2) - SIZE[0];
+    let fix = null;
+    if (frame === "fill" && play > 0 && all[1] - all[0] <= win[1] - win[0]) {
+      const at = Math.max(0, Math.min(1, (((all[0] + all[1]) / 2) * k - SIZE[0] / 2) / play));
+      fix = [0, -0.01, 0.01, -0.02, 0.02].map((d) => Math.round((at + d) * 100) / 100).find((v) => v >= 0 && v <= 1 && within(shown({ frame, pan: v, size: [cw, ch] }), all));
+    }
+    const side = (ps.reduce((n, p) => n + featHull([p])[0] + featHull([p])[1], 0) / ps.length / 2) > (win[0] + win[1]) / 2 ? "right" : "left";
+    const show = fix != null ? `"pan": ${fix} holds ${it} with them, "frame": "whole" keeps everyone` : `"frame": "whole" keeps everyone, a "pan" towards the ${side} cuts another`;
+    return [`${held.length > 1 ? `the ${held.length} faces that count` : "the face that counts"} held, ${ps.length > 1 ? `the ${ps.length} at the side` : "the one at the side"} cut (${few(ps)}: ${tall} as tall as the largest, too small to count; to show ${it}: ${show})`];
   };
   const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", cutOf(win, "behind").length ? `${cutOf(win, "behind").length > 1 ? "faces" : "a face"} in the background cut (${few(cutOf(win, "behind"))})` : "", ...beside(win), ...passing(win)].filter(Boolean);
   const now = shown({ frame, zoom, pan, size: [cw, ch] });
@@ -259,7 +318,7 @@ export function noseZoom(held, [cw, ch], above) {
   if (above == null) return Infinity;
   let k = Infinity;
   for (const p of held) for (const e of p.feats) {
-    const below = (noseOf(e) - ch / 2) * MOVE, room = above - SIZE[1] / 2 - MARGIN;
+    const below = (lowOf(p, e) - ch / 2) * MOVE, room = above - SIZE[1] / 2 - MARGIN;
     if (below > 0) k = Math.min(k, room / below);
   }
   return Number.isFinite(k) ? Math.max(0, (k * cw) / SIZE[0]) : Infinity;
@@ -278,12 +337,12 @@ function raiseFill(out, win, held, [cw, ch], captions) {
   if (!captions) return out;
   const k = SIZE[1] / ch;
   let lift = 0;
-  for (const p of held) for (const e of p.feats) if (overX(e, captions, k, win[0]) && under(e[1] * k, noseOf(e) * k, captions)) lift = Math.max(lift, grown(noseOf(e) * k) + MARGIN - captions[1]);
+  for (const p of held) for (const e of p.feats) if (overX(e, captions, k, win[0]) && under(e[1] * k, lowOf(p, e) * k, captions)) lift = Math.max(lift, grown(lowOf(p, e) * k) + MARGIN - captions[1]);
   if (lift <= 0) return out;
   lift = even(Math.ceil(lift));
   if (lift > MAX_LIFT) { out.said += `; the eyes would lie under the captions, too low to raise the picture for (${lift} px)`; return out; }
   const box = { ...cropBox([win[0], lift / k, win[1] - win[0], (SIZE[1] - lift) / k], [0, 0, SIZE[0], SIZE[1] - lift], [cw, ch]), fade: FADE };
-  return { ...out, frame: "crop", box, x: null, changed: true, said: `${out.said}; raised ${lift} px, so that the captions lie on no eyes or nose (the ground below it)` };
+  return { ...out, frame: "crop", box, x: null, changed: true, said: `${out.said}; raised ${lift} px, so that the captions lie on no eyes or nose${held.some((p) => p.talks) ? " or the mouth of who talks" : ""} (the ground below it)` };
 }
 
 // whether a crop shows the eyes, nose and mouth of every held face, their eyes inside it and their noses above the captions
@@ -291,7 +350,7 @@ function cropHolds(box, held, captions) {
   const [sx, sy, sw, sh] = box.src, [wx, wy, ww, wh] = box.at, kx = ww / sw, ky = wh / sh;
   for (const p of held) for (const e of p.feats) {
     if (e[0] < sx - 1 || e[0] + e[2] > sx + sw + 1 || e[1] < sy - 1) return false;
-    if (captions && under(wy + (e[1] - sy) * ky, wy + (noseOf(e) - sy) * ky, captions) && Math.min(wx + (e[0] + e[2] - sx) * kx, captions[0] + captions[2]) > Math.max(wx + (e[0] - sx) * kx, captions[0])) return false;
+    if (captions && under(wy + (e[1] - sy) * ky, wy + (lowOf(p, e) - sy) * ky, captions) && Math.min(wx + (e[0] + e[2] - sx) * kx, captions[0] + captions[2]) > Math.max(wx + (e[0] - sx) * kx, captions[0])) return false;
   }
   return true;
 }
@@ -346,7 +405,8 @@ function clip(b, top = 0, bottom = SIZE[1]) {
 // The faces of a beat in the frame on the film's clock: the stretch's second s plays at the film's
 // from + s / speed; every clip moves by a twenty-fifth while it runs (scale `move` [from, to] about
 // the frame's middle), as the composition does. Only faces TEXT_FACE of the frame tall or more.
-export function framed({ list, place, from, seconds, speed = 1, move = [1, 1], band = null }) {
+// `talks`: who talks into the camera in the beat (its boxes marked `talks`), or null.
+export function framed({ list, place, from, seconds, speed = 1, move = [1, 1], band = null, talks = null }) {
   const out = [];
   const to = mapper(place);
   for (const f of list?.faces || []) {
@@ -359,7 +419,7 @@ export function framed({ list, place, from, seconds, speed = 1, move = [1, 1], b
       const box = clip(grow(to(b.box)), band?.[0], band?.[1]);
       if (!box || box[3] < TEXT_FACE * SIZE[1]) continue;
       const feat = b.feat ? grow(to(b.feat)) : null;
-      boxes.push({ who: b.who ?? "a face", box: box.map((v) => Math.round(v)), ...(feat ? { feat: feat.map((v) => Math.round(v)) } : {}) });
+      boxes.push({ who: b.who ?? "a face", box: box.map((v) => Math.round(v)), ...(feat ? { feat: feat.map((v) => Math.round(v)) } : {}), ...(talks != null && (b.who ?? "a face") === talks ? { talks: true } : {}) });
     }
     if (boxes.length) out.push({ t: Math.round((from + c) * 1000) / 1000, step: (list.step || 0.1) / speed, boxes });
   }
@@ -372,9 +432,10 @@ export function framed({ list, place, from, seconds, speed = 1, move = [1, 1], b
 // bottom at 86 % of its height).
 const overlaps = (a, b) => Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]) > 0 && Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]) > 0;
 // what a second on each part weighs (a guess, to tell two places apart): the eyes or nose most;
-// the mouth little, since nobody shown speaks (above); the hair or forehead (and the side of a head,
+// the mouth little, since nobody shown is heard (above), but the mouth and lower lip of one who
+// talks into the camera (talk) as much as the eyes; the hair or forehead (and the side of a head,
 // beside the eyes, nose and mouth) is a part of its own and mild: a text there covers no feature
-export const WEIGHT = { nose: 100, mouth: 2, lip: 1, hair: 0.5, chin: 0.2 };
+export const WEIGHT = { nose: 100, mouth: 2, lip: 1, hair: 0.5, chin: 0.2, talk: 100 };
 
 // The parts of a face a text box lies on, top to bottom, each only where the box overlaps it: the
 // hair or forehead (from the box's top to the eyes), the eyes or nose (to the nose line), the mouth
@@ -394,18 +455,23 @@ export function partsOn(text, box, feat) {
 }
 
 // a text box over [from, to) of the film on the faces of moments: seconds on a face and on each
-// part (the worst it lies on), and their weighed sum
+// part (the worst it lies on; the mouth or lower lip of a face marked `talks` is "talk"), their
+// weighed sum, and `hard`: the seconds on what must stay clear (the eyes or nose, a talking mouth)
 export function textOn(box, moments, from = 0, to = Infinity) {
-  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0 };
+  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0, talk: 0 };
   for (const m of moments) {
     if (m.t < from || m.t >= to) continue;
     let worst = null;
-    for (const f of m.boxes) for (const part of partsOn(box, f.box, f.feat)) if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
+    for (const f of m.boxes) for (const p of partsOn(box, f.box, f.feat)) {
+      const part = f.talks && (p === "mouth" || p === "lip") ? "talk" : p;
+      if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
+    }
     if (!worst) continue;
     r.seconds += m.step; r[worst] += m.step;
   }
   for (const k of Object.keys(r)) r[k] = r2(r[k]);
   r.cost = r2(Object.keys(WEIGHT).reduce((n, k) => n + WEIGHT[k] * r[k], 0));
+  r.hard = r2(r.nose + r.talk);
   return r;
 }
 

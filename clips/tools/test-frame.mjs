@@ -636,6 +636,25 @@ test("the faces alone, from the agent's own boxes: each box a still of its shot,
   assert.equal(r.faces.some((f) => f.t >= 10), false);
 });
 
+test("where a face looks: the faces alone carry the model's looks, between two stills that disagree as at the nearer one; none for the agent's own boxes; the framing's shots and windows as without it", () => {
+  const turn = (t, looks) => ({ ...frontal(t), faces: [{ ...frontal(t).faces[0], looks }] });
+  const ans = { version: 4, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [turn(0.1, "camera"), turn(2, "camera"), turn(3.9, "left")])] };
+  const [s] = shotsOf(ans, [{ start: 0, end: 4 }], META);
+  const r = facesOver([s], META);
+  const at = (t) => r.faces.find((f) => Math.abs(f.t - t) < 1e-6).boxes[0].looks;
+  assert.deepEqual([0, 1, 2, 2.9, 3, 3.5, 3.9].map(at), ["camera", "camera", "camera", "camera", "left", "left", "left"]);
+  // the track and what the framing writes of it know nothing of it
+  assert.ok(s.people[0].track.every((x) => x.looks === undefined));
+  assert.equal(JSON.stringify(shotsOf(ans, [{ start: 0, end: 4 }], META)).includes("looks"), false);
+  // an answer without looks (version 2): none
+  const old = { version: 2, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [0.1, 3.9].map((t) => ({ t, faces: [{ person: 0, box_2d: [200, 330, 900, 670] }] })))] };
+  assert.ok(facesOver(shotsOf(old, [{ start: 0, end: 4 }], META), META).faces.every((f) => f.boxes.every((b) => b.looks === undefined)));
+  // the agent's boxes (their stand-in answer says "camera" for each): none
+  const meta = { width: 1080, height: 1920 }, shots = [{ start: 0, end: 4 }];
+  const eye = facesOver(shotsOf(answerOf([[{ t: 1, box: [300, 570, 600, 900] }, { t: 3, box: [320, 570, 600, 900] }]], shots, meta), shots, meta), meta);
+  assert.ok(eye.faces.length && eye.faces.every((f) => f.boxes.every((b) => b.looks === undefined)));
+});
+
 test("the faces of a shot the model calls b-roll: left out, unless every shot is asked for (narrated-short's footage of a crew at work)", () => {
   const meta = { width: 1080, height: 1920 };
   const shots = [{ start: 0, end: 4 }];
