@@ -388,19 +388,24 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
       const tries = [];
       const ht = D.hookText, hc = D.hookCard, z0 = Z.wide || [C[0], S[1], C[2], S[3] / 2];
       const tw = Math.min(ht.width * W, C[2]);
-      tries.push({ kind: "text", font: ht.minFont, box: [W / 2 - tw / 2, ht.centre * H - ht.minFont * ht.heightEm / 2, tw, ht.minFont * ht.heightEm], where: "middle" });
-      tries.push({ kind: "card", font: hc.minFont, box: [z0[0], z0[1], z0[2], hc.minFont * hc.heightEm], where: "top" });
+      // (the kind the caller asked for, hook:text or hook:card, alone)
+      if (hook.kind !== "card") tries.push({ kind: "text", font: ht.minFont, box: [W / 2 - tw / 2, ht.centre * H - ht.minFont * ht.heightEm / 2, tw, ht.minFont * ht.heightEm], where: "middle" });
+      if (hook.kind !== "text") tries.push({ kind: "card", font: hc.minFont, box: [z0[0], z0[1], z0[2], hc.minFont * hc.heightEm], where: "top" });
       for (const x of tries) {
-        x.seconds = 0; x.share = 0;
+        x.seconds = 0; x.share = 0; x.features = 0;
         for (const s of list) for (const m of s.moments) {
           if (hook.spans?.length > 1 ? !hook.spans.some(([a, b]) => m.t >= a && m.t <= b) : m.t < hook.start || m.t > hook.end) continue;
           const on = m.faces.filter((f) => inter(up(f.box, lifts[s.i]), x.box) > 0);
           if (on.length) { x.seconds += m.dt; x.share = Math.max(x.share, ...on.map((f) => inter(up(f.box, lifts[s.i]), x.box) / area(f.box))); }
+          // on the eyes, nose or mouth (the features, else the head's proportions): worse than on
+          // the forehead or the hair, whatever the share (a tight close-up: a text in the middle
+          // lay on the mouth for 12 % of the face, a card at the top on the forehead for more)
+          if (on.some((f) => inter(up(featOf(f), lifts[s.i]), x.box) > 0)) x.features += m.dt;
         }
       }
-      tries.sort((a, b) => a.seconds * (1 + a.share) - b.seconds * (1 + b.share));
+      tries.sort((a, b) => a.features - b.features || a.seconds * (1 + a.share) - b.seconds * (1 + b.share));
       const x = tries[0];
-      hookOut = { kind: x.kind, box: x.box.map(r1), font: x.font, lines: 2, where: x.where, start: hook.start, until: r1(hook.end), onFace: { seconds: r1(x.seconds), share: Math.round(x.share * 100) / 100 },
+      hookOut = { kind: x.kind, box: x.box.map(r1), font: x.font, lines: 2, where: x.where, start: hook.start, until: r1(hook.end), onFace: { seconds: r1(x.seconds), share: Math.round(x.share * 100) / 100, features: r1(x.features) },
         kindWhy: x.kind === "card" ? "a card at the top: no place clear of the faces' margins, this one lies least on them" : "a text in the middle: no place clear of the faces' margins, this one lies least on them" };
       // the calm rule holds here too: white type only over a calm picture
       if (x.kind === "text" && hook.calm === false) {
@@ -483,7 +488,7 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     }
     return out;
   });
-  if (hookOut?.onFace?.seconds > 0) conflicts.push(`The hook lies on a face for ${hookOut.onFace.seconds} s (up to ${Math.round(hookOut.onFace.share * 100)} % of it) wherever it stands on the first shot: no hook (the first line carries the clip), a shorter one that ends before the face reaches it, or a start on another shot would avoid it.`);
+  if (hookOut?.onFace?.seconds > 0) conflicts.push(`The hook lies on a face for ${hookOut.onFace.seconds} s (up to ${Math.round(hookOut.onFace.share * 100)} % of it${hookOut.onFace.features > 0 ? `, on the eyes, nose or mouth for ${hookOut.onFace.features} s` : `, on the forehead or the hair, never on the eyes, nose or mouth`}) wherever it stands on the first shot: no hook (the first line carries the clip), a shorter one that ends before the face reaches it, or a start on another shot would avoid it.`);
   for (const c of changes) notes.push(`Shot ${list[c.shot].n ?? c.shot + 1} (${r1(c.start)}–${r1(c.end)} s) would keep its captions off the face with a place of its own (y ${r0(c.box[1])}–${r0(Y1(c.box))}), saving ${c.saves} s: proposed, not taken; a place that changes at a cut costs the reading the one place gives.`);
 
   const capOut = best ? {

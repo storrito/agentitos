@@ -1355,6 +1355,15 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     const r = textOverTime({ zones: Z9, shots: [shot(0, 2, [still([355, 300, 370, 500], 0, 2)]), shot(2, 6, [still([60, 250, 960, 1000], 2, 6)], null)], needs: [{ role: "hook", start: 0, end: 3.5 }] });
     ok(r.hook && r.hook.until === 2 && /ends at the cut/.test(r.hook.why), JSON.stringify(r.hook));
   });
+  t("a take filmed too close leaves the hook no place: it goes where it lies on no eyes, nose or mouth (a card on the forehead before a text on the mouth, though that covers less of the face), said; hook:text keeps the text and says it lies on them", () => {
+    // best-takes' tight stand-in, raised: the head from y 200, 1100 px tall, the eyes, nose and mouth 620–1150
+    const f = { who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [130, 200, 820, 1100], feat: [270, 620, 540, 530] })) };
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(r.hook && r.hook.kind === "card" && r.hook.where === "top" && r.hook.onFace.features === 0 && r.hook.onFace.seconds > 0, JSON.stringify(r.hook));
+    ok(r.conflicts.some((c) => /on the forehead or the hair, never on the eyes, nose or mouth/.test(c)), r.conflicts.join(" "));
+    const t2 = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", kind: "text", start: 0, end: 3 }] });
+    ok(t2.hook.kind === "text" && t2.hook.onFace.features > 0 && t2.conflicts.some((c) => /on the eyes, nose or mouth for/.test(c)), JSON.stringify(t2.hook));
+  });
   t("the command: text writes text.json and lists every shot; a --lift fixes one shot; a wrong --lift and a shots file without tracks are refused in one sentence", () => {
     const dir = fs.mkdtempSync(path.join(OUT, "text-")), file = path.join(dir, "shots.json");
     fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 8, [still([355, 850, 370, 500], 4, 8)])], hook: { start: 0, end: 2.5 } }));
