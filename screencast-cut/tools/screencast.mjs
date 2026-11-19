@@ -1094,7 +1094,7 @@ function cmdCheck(dir) {
     const sc = e.pieces.find((p) => p.keep === k && p.screen).screen;
     const bad = sc.faults.includes("text") || sc.faults.includes("bars");
     console.log(`  ${bad ? "✗" : sc.faults.length ? "!" : "✓"} keep ${k + 1}: ${sc.fit} at ${sc.scale}×, ${Math.round(sc.ground * 100)} % ground${sc.text ? `, its text ${sc.text} px → ${sc.textHeight} px${sc.readable ? ` (reads from ${sc.readable})` : ""}` : ", its text's height not given (\"text\")"}${sc.under.length ? `, the region under the bars of ${sc.under.join(", ")}` : ""}${sc.faults.filter((f) => f !== "text" && f !== "bars").length ? `; ${sc.faults.filter((f) => f !== "text" && f !== "bars").map((f) => (f === "across" ? "the region past the safe box's margins" : `the ${f} on the region`)).join(", ")}` : ""}`);
-    if (sc.faults.includes("text")) warnings.push(`keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall, under the ${sc.readable} px that read: a narrower "zoom" on what is talked about (the build's list says how wide one reads)`);
+    if (sc.faults.includes("text")) warnings.push(`keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall, under the ${sc.readable} px from which text begins to read: for it to read surely, a narrower "zoom" on what is talked about (the build's list says how wide one reads)`);
     if (sc.faults.includes("bars")) warnings.push(`keep ${k + 1}'s zoom box lies under the bars of ${sc.under.join(", ")}: name another picture with "layout" from the build's list`);
   }
 

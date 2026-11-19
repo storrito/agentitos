@@ -102,7 +102,7 @@ export function judge(pic, { zones, labels = [], text = 0, readable = 0, width, 
   const under = [...new Set((zones.covers || []).filter((c) => meets(c.box, R)).map((c) => names[c.platform] || c.platform))];
   if (under.length) faults.push({ code: "bars", said: `its region lies under the bars of ${under.join(", ")}` });
   const textHeight = text ? r1(text * pic.scale) : null;
-  if (text && readable && textHeight < readable - 0.05) faults.push({ code: "text", said: `its text (${text} px on the screen) is ${textHeight} px tall, under the ${readable} px that read` });
+  if (text && readable && textHeight < readable - 0.05) faults.push({ code: "text", said: `its text (${text} px on the screen) is ${textHeight} px tall, under the ${readable} px from which text begins to read` });
   const [x, y, w, h] = pic.window;
   const seen = Math.max(0, Math.min(x + w, width) - Math.max(x, 0)) * Math.max(0, Math.min(y + h, height) - Math.max(y, 0));
   return { faults, under, textHeight, ground: r2(1 - seen / (width * height)) };
@@ -178,7 +178,7 @@ export function textSentence(pic, { text = 0, readable = 0, narrower = null, siz
     const h = r1(text * pic.scale);
     if (!readable) return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here`;
     if (h >= readable - 0.05) return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here, it reads (from ${readable} px)`;
-    return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here, under the ${readable} px that read: give a narrower "zoom" on what is talked about${narrower ? ` (${narrower} reads)` : ""}, or split the keep where the words move on`;
+    return `${at}: its text (${text} px on the screen, "text") is ${h} px tall here, under the ${readable} px from which text begins to read: for it to read surely, give a narrower "zoom" on what is talked about${narrower ? ` (${narrower} reads)` : ""}, or split the keep where the words move on`;
   }
   // without "text" nothing is claimed about reading: the plain fact, and what to do with it
   const line = r1(LINE * pic.scale);
@@ -266,6 +266,8 @@ function placeOne({ dir, k, n, c, src, text, pip, cam, on, keep, tool, timeout, 
     lines.push(`${pic.circleOnly ? "as before" : "as before, held inside the safe box's margins"} at ${r2(pic.scale)}×, the circle moved to the ${pic.corner} (x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}): where it stood (x ${r0(before.circle[0])}, y ${r0(before.circle[1])}) it lay on the region; ${where}`);
   } else if (pic === before) {
     lines.push(`${got.named ? "as before, as the keep names it" : "as before"} at ${r2(pic.scale)}×, ${where}${j.faults.length ? `: ${faultsSaid(pic)}${got.why ? ` (it stays: ${got.why})` : ""}` : ""}`);
+    // the circle stays on the region where nothing fixes it yet: said, with what the agent can do
+    if (j.faults.some((f) => f.code === "circle") && !got.named) lines.push(`! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them ("circle": false)`);
   } else {
     lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""}), ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
   }

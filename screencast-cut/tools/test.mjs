@@ -1000,7 +1000,7 @@ test("which picture: as before where it passes; else layout's first it draws, of
 test("the sentence about the screen's text: without \"text\" the plain fact and what to do, claiming nothing; with it the height here and whether it reads", () => {
   assert.equal(textSentence({ scale: 0.375 }, { readable: 24 }), `the screen at 0.38×: a line 18 px tall on the screen is 6.8 px here, and a capital reads here from 64 px tall on the screen; where its text is smaller, zoom on what is talked about, and say how tall its smallest text is with "text" (px of a capital, off the sheet's grid) to have it checked`);
   assert.doesNotMatch(textSentence({ scale: 2 }, { readable: 24 }), /reads \(|under the/);
-  assert.equal(textSentence({ scale: 1.5 }, { text: 12, readable: 24, narrower: "at most 414×300 px of the screen" }), `the screen at 1.5×: its text (12 px on the screen, "text") is 18 px tall here, under the 24 px that read: give a narrower "zoom" on what is talked about (at most 414×300 px of the screen reads), or split the keep where the words move on`);
+  assert.equal(textSentence({ scale: 1.5 }, { text: 12, readable: 24, narrower: "at most 414×300 px of the screen" }), `the screen at 1.5×: its text (12 px on the screen, "text") is 18 px tall here, under the 24 px from which text begins to read: for it to read surely, give a narrower "zoom" on what is talked about (at most 414×300 px of the screen reads), or split the keep where the words move on`);
   assert.equal(textSentence({ scale: 2 }, { text: 12, readable: 24 }), `the screen at 2×: its text (12 px on the screen, "text") is 24 px tall here, it reads (from 24 px)`);
 });
 
@@ -1099,3 +1099,18 @@ test("a moved circle alone keeps the screen exactly as before; only the circle's
   assert.deepEqual(moved.layers[1].box, [96, 108, 216, 216]);
 });
 
+test("a zoom box under the circle with no free corner and every candidate of layout failing stays as before, and the list says so with what to do", () => {
+  const { dir, sources, piece } = screenProject();
+  try {
+    const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+    const a = areas(1920, 1080, z, { captions: true });
+    const tool = path.join(dir, "fails-all.mjs");
+    fs.writeFileSync(tool, `console.log(JSON.stringify({ screen: { readable: 42.7 }, notes: [], candidates: [{ fit: "screen-fit", scale: 2.96, left: 0, top: 0, window: [0, 0, 1920, 776], faceInFrame: [[100, 100, 800, 600]], hard: 1, unmet: [], soft: 0 }] }));`);
+    const cut = { keep: [{ zoom: [0.05, 0.1, 0.95, 0.9] }] };
+    const ps = [piece(0, "screen", cut.keep[0].zoom)];
+    const said = screenView(dir, cut, ps, sources, { width: 1920, height: 1080, zones: z, areas: a, tool }).join("\n");
+    assert.equal(ps[0].screenPic, undefined, said);
+    assert.match(said, /the webcam's circle lies on its region/);
+    assert.match(said, /! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them \("circle": false\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
