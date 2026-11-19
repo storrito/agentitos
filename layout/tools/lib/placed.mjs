@@ -90,64 +90,91 @@ export const MOUTH = +(IMPLIED[0] + (1 + OPEN) * (IMPLIED[1] - IMPLIED[0])).toFi
 // "moderate" (the name of before) is mouth.
 export const RAISE = ["head", "mouth", "full"];
 export const raiseOf = (r) => (r === "moderate" ? "mouth" : r);
-const featOf = (f) => f.feat || [f.box[0] + 0.18 * f.box[2], f.box[1] + IMPLIED[0] * f.box[3], 0.64 * f.box[2], (IMPLIED[1] - IMPLIED[0]) * f.box[3]];
+export const featOf = (f) => f.feat || [f.box[0] + 0.18 * f.box[2], f.box[1] + IMPLIED[0] * f.box[3], 0.64 * f.box[2], (IMPLIED[1] - IMPLIED[0]) * f.box[3]];
 const lineOf = (f, k) => { const e = featOf(f); return e[1] + k * e[3]; };
-const noseOf = (f) => lineOf(f, NOSE_IN_FEAT), lipOf = (f) => lineOf(f, LIP_IN_FEAT), mouthOf = (f) => lineOf(f, 1 + OPEN);
-const eyesOf = (f, D) => (f.feat ? f.feat[1] : f.box[1] + D.eyes * f.box[3]);
+export const noseOf = (f) => lineOf(f, NOSE_IN_FEAT), lipOf = (f) => lineOf(f, LIP_IN_FEAT), mouthOf = (f) => lineOf(f, 1 + OPEN);
+export const eyesOf = (f, D) => (f.feat ? f.feat[1] : f.box[1] + D.eyes * f.box[3]);
 // the part of a face (its box raised by lift) from its top down to a line
-const downTo = (f, lift, line) => [f.box[0], f.box[1] - lift, f.box[2], line - f.box[1]];
+export const downTo = (f, lift, line) => [f.box[0], f.box[1] - lift, f.box[2], line - f.box[1]];
 
 const r0 = (v) => Math.round(v);
 const r1 = (v) => Math.round(v * 10) / 10;
 
-// the moments of a shot: every face's boxes, with how long each stands (half the gap to its
-// neighbours, within the shot)
-function momentsOf(shot) {
+// the moments of a shot: every face's boxes, with how long each stands: half the gap to its
+// neighbours, within the shot. A face known at one moment is not a face there for one moment: a
+// sample is cut short only where its own track shows the face was there briefly, that is where the
+// track is dense elsewhere in the shot (its usual gap, the median) and this sample stands alone,
+// further than the larger of REACH and that usual gap from the samples (or the shot's edge) on
+// both sides; it then reaches that far either way. A dense track that stops early stands to the
+// shot's end as before. A shot with a single sample, or a track evenly sparse (one sample in two
+// seconds), counts as before (the model saw the face on the shot's still: it is most likely there).
+// (A reach fixed at REACH, the review of 2026-11-19, undercounted sparse tracks and changed
+// captions: a mouth under them for 0.4 s that a raise had cleared.)
+const REACH = 0.26;
+function usualGap(track) {
+  const gaps = track.slice(1).map((m, k) => m.t - track[k].t).filter((g) => g > 1e-6).sort((x, y) => x - y);
+  return gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+}
+export function momentsOf(shot) {
   const ts = [...new Set(shot.faces.flatMap((f) => f.track.map((m) => m.t)))].sort((a, b) => a - b);
   if (!ts.length) return [];
+  const sorted = shot.faces.map((f) => [...f.track].sort((p, q) => p.t - q.t));
+  const reach = sorted.map((tr) => { const g = usualGap(tr); return g == null ? Infinity : Math.max(REACH, g); });
   return ts.map((t, i) => {
     const a = i ? (ts[i - 1] + t) / 2 : shot.start, b = i < ts.length - 1 ? (t + ts[i + 1]) / 2 : shot.end;
-    const faces = shot.faces.map((f) => { const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t); return m?.box ? { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}) } : null; }).filter(Boolean);
-    return { t, dt: Math.max(0, b - a), faces };
+    let from = Infinity, to = -Infinity;
+    const faces = shot.faces.map((f, k) => {
+      const m = f.track.find((q) => Math.abs(q.t - t) < 1e-6) || nearest(f.track, t);
+      if (!m?.box) return null;
+      const tr = sorted[k], j = tr.indexOf(m), prev = tr[j - 1], next = tr[j + 1], r = reach[k];
+      const back = prev ? (m.t - prev.t) / 2 : m.t - shot.start, ahead = next ? (next.t - m.t) / 2 : shot.end - m.t;
+      const alone = back > r && ahead > r;
+      from = Math.min(from, alone ? m.t - r : -Infinity);
+      to = Math.max(to, alone ? m.t + r : Infinity);
+      return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}), ...(m.zoom ? { zoom: m.zoom } : {}), ...(m.eye != null ? { eye: m.eye } : {}) };
+    }).filter(Boolean);
+    return { t, dt: faces.length ? Math.max(0, Math.min(b, to) - Math.max(a, from)) : Math.max(0, b - a), faces };
   });
 }
 function nearest(track, t) {
   let best = null;
   for (const m of track) if (!best || Math.abs(m.t - t) < Math.abs(best.t - t)) best = m;
   // a face not tracked near this moment is not there
-  return best && Math.abs(best.t - t) <= 0.26 ? best : null;
+  return best && Math.abs(best.t - t) <= REACH ? best : null;
 }
-const up = (b, d) => [b[0], b[1] - d, b[2], b[3]];
-const overlapsX = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > EPS;
+export const up = (b, d) => [b[0], b[1] - d, b[2], b[3]];
+export const overlapsX = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > EPS;
 
 // how far a shot may be raised: its room, and what the zones allow: the ground stays under the
 // apps' bottom (below the safe box), and every face's eyes stay below the safe box's top
 // (most: by the rule of the raise; beyond: by the eyes alone, for a mouth the captions would cover)
-function maxLift(shot, moments, ctx) {
+export function maxLift(shot, moments, ctx) {
   const room = shot.room;
-  if (!room || room.none) return { most: 0, beyond: 0, by: "none" };
+  if (!room || room.none) return { most: 0, beyond: 0, by: "none", beyondBy: "none" };
   const free = Math.max(0, room.free || 0);
   const ground = room.ground != null ? Math.max(0, room.ground) : ctx.H - Y1(ctx.Z.safe);
   let most = free + ground, by = "room";
+  // (a moment's zoom: the picture grows after the raise there, and the lift with it)
   for (const m of moments) for (const f of m.faces) {
-    const eyes = eyesOf(f, ctx.D) - ctx.Z.safe[1];
+    const eyes = (eyesOf(f, ctx.D) - ctx.Z.safe[1]) / (f.zoom || 1);
     if (eyes < most) { most = eyes; by = "eyes"; }
   }
   // mouth: the eyes no higher than where published Shorts have them at the most (eyeLine), a
   // limit of composition; full keeps the apps' top bar as its limit
   if (ctx.raise === "mouth") for (const m of moments) for (const f of m.faces) {
-    const eyes = eyesOf(f, ctx.D) - ctx.D.eyeLine * ctx.H;
+    const eyes = (eyesOf(f, ctx.D) - ctx.D.eyeLine * ctx.H) / (f.zoom || 1);
     if (eyes < most) { most = eyes; by = "eyeLine"; }
   }
-  let beyond = Math.max(0, Math.floor(most));
+  // (what limits beyond: the head's top below does not)
+  let beyond = Math.max(0, Math.floor(most)), beyondBy = by;
   if (ctx.raise !== "full") for (const m of moments) for (const f of m.faces) {
-    const head = f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3]);
+    const head = (f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3])) / (f.zoom || 1);
     if (head < most) { most = head; by = "head"; }
   }
   most = Math.max(0, Math.floor(most));
   // head: not past the head's top for a mouth either
-  if (ctx.raise === "head") beyond = most;
-  return { most, beyond, by };
+  if (ctx.raise === "head") { beyond = most; beyondBy = by; }
+  return { most, beyond, by, beyondBy };
 }
 
 // One shot under one caption box: the least lift that clears it (within `most`), the seconds and
@@ -230,7 +257,7 @@ export const stillsText = (pairs, f = r1) => {
 // Returns of one framing (the same face, the same size, the same place in the frame: the camera
 // cut back to a close-up it showed before) stand at one height: a close-up that comes back
 // higher or lower each time reads as a camera that moves. [[shot index, …], …] of two or more.
-function returnsOf(list, W, H) {
+export function returnsOf(list, W, H) {
   const look = list.map((s) => {
     if (!s.room || s.room.none || !s.moments.length) return null;
     const boxes = s.moments.flatMap((m) => m.faces.map((f) => ({ who: f.who, box: f.box })));

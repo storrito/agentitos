@@ -374,12 +374,13 @@ function pixels(b, { width, height }, { order = "yx" } = {}) {
 }
 
 // eyes, nose and mouth (the model's features_2d) as shares of the face's box, measured from its
-// middle, and where the face points (lean: -1 left, 1 right, 0 the camera): { l, r, t, b, lean },
+// middle, and where the face points (lean: -1 left, 1 right, 0 the camera): { l, r, t, b, lean, e? },
+// e the middle of the eyes' own box (eyes_2d, the eyes with their brows) where the model gave one,
 // or null where the answer has none or one that does not lie in the face. A face the model says
 // looks at the camera with its features to one side of its box leans that way, less than halfway
 // (holdOf's rule of the window's middle is for a face the model says looks to one side)
 // (on twenty stills it called three three-quarter views "camera")
-export function partsOf(face, feat, looks) {
+export function partsOf(face, feat, looks, eyes = null) {
   if (!face || !feat) return null;
   const l = (feat.x - feat.w / 2 - face.x) / face.w, r = (feat.x + feat.w / 2 - face.x) / face.w;
   const t = (feat.y - feat.h / 2 - face.y) / face.h, b = (feat.y + feat.h / 2 - face.y) / face.h;
@@ -387,11 +388,11 @@ export function partsOf(face, feat, looks) {
   if (Math.abs((l + r) / 2) > 0.5 || Math.abs((t + b) / 2) > 0.5 || r - l < 0.08 || r - l > 1.1) return null;
   const c = (v) => +Math.min(0.6, Math.max(-0.6, v)).toFixed(3);
   const lean = looks === "left" ? -1 : looks === "right" ? 1 : Math.min(0.45, Math.max(-0.45, l + r));
-  return { l: c(l), r: c(r), t: c(t), b: c(b), lean: +lean.toFixed(2) };
+  return { l: c(l), r: c(r), t: c(t), b: c(b), lean: +lean.toFixed(2), ...(eyes ? { e: c((eyes.y - face.y) / face.h) } : {}) };
 }
 
 // Whether the model's eyes, nose and mouth hold, against each other and against the head's box:
-// { feat: the box of all three (the footage's pixels) } or { why } where they do not. Every part
+// { feat: the box of all three (the footage's pixels), eyes: the eyes' own box } or { why } where they do not. Every part
 // there, the eyes above the nose above the mouth, and from the eyes' top to the mouth's bottom at
 // least SPAN_MIN of the head's height: on the stills of three talk-show clips and a podcast whose
 // boxes were right it was 0.40 to 0.67 (the head's box from the hair to the chin); on the guest
@@ -416,7 +417,7 @@ export function featuresOf(f, meta) {
   const all = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
   if (all.h < SPAN_MIN * head.h) return { why: `eyes to mouth only ${share(all)}` };
   if (Math.abs(mouth.y - head.y) > head.h / 2 || Math.abs(mouth.x - head.x) > head.w / 2) return { why: "the mouth outside the head's box" };
-  return { feat: all };
+  return { feat: all, eyes };
 }
 // where the model's features do not hold on any still of a person: the head's own proportions
 // (on the stills whose features were right, the eyes' top at 0.38 to 0.46 of the box's height and
@@ -463,7 +464,7 @@ function partsAt(track, t) {
   if (t >= a[a.length - 1].t) return { ...a[a.length - 1].parts, stills: [a[a.length - 1].t, a[a.length - 1].t] };
   const k = a.findIndex((s) => s.t >= t), p = a[k - 1].parts, q = a[k].parts, f = (t - a[k - 1].t) / (a[k].t - a[k - 1].t);
   const mix = (key) => p[key] + (q[key] - p[key]) * f;
-  return { l: mix("l"), r: mix("r"), t: mix("t"), b: mix("b"), lean: mix("lean"), stills: [a[k - 1].t, a[k].t] };
+  return { l: mix("l"), r: mix("r"), t: mix("t"), b: mix("b"), lean: mix("lean"), ...(p.e != null && q.e != null ? { e: mix("e") } : {}), stills: [a[k - 1].t, a[k].t] };
 }
 // Features further than this from the nearest still that has them are an estimate: they ride
 // with the head's box, and a mouth that opens or a head that tips there is not seen (robe, the
@@ -477,7 +478,7 @@ const withParts = (person, f) => {
   const p = partsAt(person.track, f.t);
   if (!p) return f;
   const far = Math.min(Math.abs(f.t - p.stills[0]), Math.abs(f.t - p.stills[1])) > FEAT_EST;
-  return { ...f, feat: { x0: f.x + p.l * f.w, x1: f.x + p.r * f.w, y0: f.y + p.t * f.h, y1: f.y + p.b * f.h, lean: p.lean, ...(far ? { between: p.stills.map((x) => +x.toFixed(2)) } : {}) } };
+  return { ...f, feat: { x0: f.x + p.l * f.w, x1: f.x + p.r * f.w, y0: f.y + p.t * f.h, y1: f.y + p.b * f.h, lean: p.lean, ...(p.e != null ? { eye: f.y + p.e * f.h } : {}), ...(far ? { between: p.stills.map((x) => +x.toFixed(2)) } : {}) } };
 };
 
 // an answer of the first kind (one face per person and shot, the shots' times the model's own)
@@ -526,7 +527,7 @@ export function shotsOf(answer, shots, meta) {
         let person = persons.find((q) => q.key === key);
         if (!person) persons.push((person = { key, who: p.who, speaker: p.speaker == null ? null : String(p.speaker), track: [] }));
         const checked = featuresOf(f, meta);
-        const parts = checked.feat ? partsOf(box, checked.feat, f.looks) : null;
+        const parts = checked.feat ? partsOf(box, checked.feat, f.looks, checked.eyes) : null;
         const why = checked.why || (checked.feat && !parts ? "a box that does not lie in the face" : null);
         samples.push([person, { t: st.t, ...box, ...(parts ? { parts } : {}), ...(f.looks ? { looks: f.looks } : {}), ...(why ? { doubt: why } : {}) }]);
       }
@@ -1258,8 +1259,9 @@ async function facesOf(video, words, { aspect = [9, 16], tracks = null, every = 
 // Every face of the footage over time, in its own pixels, every `step` seconds: for a skill that
 // places the picture itself (best-takes on its own, by agentitos' layout), from footage of any
 // shape. { footage, size, step, by, cost, shots: [{ start, end, kind, note?, doubtful? }], faces:
-// [{ t, boxes: [{ who, box: [x, y, w, h], feat?: [x, y, w, h], between? }] }] }: box the head's,
-// feat the eyes, nose and mouth where the model's hold (between: the two stills they are an
+// [{ t, boxes: [{ who, box: [x, y, w, h], feat?: [x, y, w, h], eye?, between? }] }] }: box the head's,
+// feat the eyes, nose and mouth where the model's hold, eye the y of the middle of the eyes' own
+// box (the eyes with their brows) where the model gave one (between: the two stills they are an
 // estimate between), best-takes' source/faces.json for one video. Only the shots the model calls
 // people, unless `every`: footage with nobody of a conversation in it (narrated-short's B-roll of a
 // crew at work) is "broll" to the model, and its faces are what such a skill asks for.
@@ -1274,7 +1276,7 @@ export function facesOver(seen, meta, { step = 0.1, every = false } = {}) {
         if (!f) continue;
         const r = (v) => Math.round(v);
         boxes.push({ who: p.who ?? p.speaker, box: [r(f.x - f.w / 2), r(f.y - f.h / 2), r(f.w), r(f.h)],
-          ...(f.feat ? { feat: [r(f.feat.x0), r(f.feat.y0), r(f.feat.x1 - f.feat.x0), r(f.feat.y1 - f.feat.y0)] } : {}), ...(f.feat?.between ? { between: f.feat.between } : {}) });
+          ...(f.feat ? { feat: [r(f.feat.x0), r(f.feat.y0), r(f.feat.x1 - f.feat.x0), r(f.feat.y1 - f.feat.y0)] } : {}), ...(f.feat?.eye != null ? { eye: r(f.feat.eye) } : {}), ...(f.feat?.between ? { between: f.feat.between } : {}) });
       }
       if (boxes.length) faces.push({ t: +t.toFixed(3), boxes });
     }
