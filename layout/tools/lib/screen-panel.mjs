@@ -36,14 +36,20 @@
 //
 // Not offered, with one sentence in the notes and in res.screenPanel (code): in 16:9 and 1:1 (frame;
 // not decided there), with the webcam baked into the screen (webcam), without a face in the webcam's
-// picture (face), with the captions on the screen's part (captions), with a screen's part over its
-// limit (tall), with a panel or a face in it under theirs (small).
+// picture (face), with the webcam's face under faceFloor (160 px at 1080) even at 2× (webcam-face),
+// with a screen's part taller than wide (upright), with a label that leaves the screen no room
+// (label), with the captions on the screen's part (captions), with a screen's part over its limit
+// (tall), with a panel or a face in it under theirs (small), with people in the webcam's picture
+// too far apart for the panel (faces; those who fit stand in it together, placed by the box around
+// their faces), and with any hard problem of the candidate's picture (hard): offered means the
+// candidate is there and has none. A hook and a label: the screen starts under the lower of the two
+// (the hook's card is set at the top by the text's layout, which knows no label).
 //
 //   screenPanel(ctx, camSrc, ask, notes) → [candidate]
 //     ask: { width: "frame" | "screen", labelBottom: px | null, before: { scale, left, top, window? } | null }
 //     sets ctx.panelVerdict: { offered, width, code?, why? }
 
-import { X1, Y1, clipBox, clamp, r1, r2, pct } from "./boxes.mjs";
+import { X1, Y1, clipBox, clamp, hullOf, r1, r2, pct } from "./boxes.mjs";
 import { evaluate } from "./evaluate.mjs";
 import { captionTop } from "./text.mjs";
 
@@ -51,7 +57,7 @@ export const PANEL_WIDTHS = ["frame", "screen"];
 // When the stack is offered, as shares of the frame's width (px in a frame 1080 wide): the panel at
 // least `panel` high, the face in it at least `face` tall (or what 2× of the webcam's pixels give,
 // where that is less), the screen's part at most `screen` tall. ask.limits overrides them (tests).
-export const LIMITS = { panel: 440 / 1080, face: 230 / 1080, screen: 600 / 1080 };
+export const LIMITS = { panel: 440 / 1080, face: 230 / 1080, screen: 600 / 1080, faceFloor: 160 / 1080 };
 
 const r4 = (v) => +v.toFixed(4);
 const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
@@ -66,11 +72,17 @@ export function screenPanel(ctx, camSrc, ask, notes) {
   };
   if (H < 1.2 * W) return no("frame", `not offered in this frame (${W}×${H}): it was decided for 9:16 and 4:5 only; the circle stands for the webcam here`);
   if (!camSrc || camSrc.baked) return no("webcam", camSrc ? "the webcam is baked into the screen recording: the panel is built for a webcam recorded as a file of its own; the circle shows the speaker" : "there is no webcam: give it as a second --source with its --face");
-  const f = camSrc.faces[0];
-  if (!f) return no("face", "no face is known in the webcam's picture: read its box off grid and give it as --face after the webcam's --source");
+  if (!camSrc.faces[0]) return no("face", "no face is known in the webcam's picture: read its box off grid and give it as --face after the webcam's --source");
+  // several people in the webcam's picture: the panel holds them all, placed by the box around them
+  const many = camSrc.faces.length > 1, hb = many ? hullOf(camSrc.faces) : null;
+  const f = many ? [hb[0], hb[1], hb[2] - hb[0], hb[3] - hb[1]] : camSrc.faces[0];
+  const who = many ? `the ${camSrc.faces.length} faces of the webcam's picture` : "the face";
 
   const main = ctx.sources[0], R = main.faces[0], [cw, ch] = camSrc.size;
   const forb = D.weights.enlarge.forbiddenFrom, soft = D.weights.enlarge.softFrom;
+  // a face too small in the webcam's picture: even at 2× the panel would show mostly the room
+  if (forb * f[3] < L.faceFloor * W - 0.5) return no("webcam-face", `the webcam's face is ${Math.round(f[3])} px tall in its picture, ${Math.round(forb * f[3])} px at 2× of its pixels, under the ${Math.round(L.faceFloor * W)} px a face needs in a panel (a panel would show mostly the room): the circle stands for the webcam here`);
+  if (R[3] > R[2]) return no("upright", `the screen's part is taller than wide (${R[2]}×${R[3]}, an upright phone's screen): the stack is built for a landscape screen above the speaker; the circle stands for the webcam here`);
 
   // the screen: its region as wide as the safe box (or the wide stretch above the buttons, where it
   // ends above them) holds it, at most 2× of its pixels, centred in that box
@@ -85,6 +97,7 @@ export function screenPanel(ctx, camSrc, ask, notes) {
   // captions: the panel ends at the safe box's bottom
   const capTop = cap ? captionTop(ctx) : Y1(S), capBottom = cap ? (ctx.captionArea ? ctx.captionArea.bottom : Y1(S)) : Y1(S);
   const T = ry + rh + g;
+  if (capTop < T + 1 && Number.isFinite(ask.labelBottom) && ask.labelBottom + g > S[1] + 0.5 && S[1] + rh + g < capTop - 1) return no("label", `the label ends at y ${Math.round(ask.labelBottom)}, and the screen under it (${Math.round(rh)} px tall at ${r2(s)}×) would reach y ${Math.round(ry + rh)}, past the captions' top at y ${Math.round(capTop)}: the label leaves no room for the stack; the circle stands for the webcam here`);
   if (capTop < T + 1) return no("captions", `the captions (y ${Math.round(capTop)}–${Math.round(capBottom)}) stand on the screen's part, which reaches y ${Math.round(ry + rh)}: the region at ${r2(s)}× is too tall for a panel above the captions; the circle stands for the webcam`);
   const panel = width === "screen" ? [rx, T, rw, capBottom - T] : [0, T, W, capBottom - T];
   const P = panel[3];
@@ -97,14 +110,19 @@ export function screenPanel(ctx, camSrc, ask, notes) {
   const aimPx = Math.max(D.screenFace.height * H, Math.min(Math.max(panel[2] / cw, P / ch) * f[3], coverUpTo * H));
   const sAim = Math.min(aimPx / f[3], forb);
   const least = Math.min(L.face * W, forb * f[3]);
+  // the faces across: inside the safe box with its pad, and inside the panel
+  const across = Math.min(X1(S) - S[0], panel[2]) - 2 * D.facePad;
   const room = (sc) => {
     const fh = sc * f[3];
     const up = Math.max(D.free.aboveMin, D.free.above * fh), down = Math.max(D.free.belowMin, D.free.below * fh);
     // (above the head no more margin than the webcam's picture has there: its top edge then ends the panel's picture)
-    return { fh, lo: T + Math.min(up, sc * f[1]), hi: capTop - fh - down };
+    return { fh, lo: T + Math.min(up, sc * f[1]), hi: Math.min(capTop - fh - down, sc * f[2] <= across + 0.05 ? Infinity : -Infinity) };
   };
   let sc = sAim, q = room(sc);
-  while (q.lo > q.hi + 0.05 && sc * f[3] > least) { sc = Math.max(least / f[3], sc - D.zoomStep * sAim); q = room(sc); }
+  // (down to the limit and no further: a step that lands on it ends the search, whatever the rounding)
+  const sLeast = least / f[3];
+  while (q.lo > q.hi + 0.05 && sc > sLeast + 1e-9) { sc = Math.max(sLeast, sc - D.zoomStep * sAim); q = room(sc); }
+  if (q.lo > q.hi + 0.05 && many && sc * f[2] > across + 0.05) return no("faces", `${who} span ${Math.round(sc * f[2])} px across at ${r2(sc)}× (${Math.round(f[2])} px in the webcam's picture), wider than the ${Math.round(across)} px the panel holds inside the safe box with the face at least ${Math.round(least)} px tall: the circle stands for the webcam here, or crop the webcam to one person`);
   if (q.lo > q.hi + 0.05) {
     // the largest face the panel holds, for the sentence
     let m = least / f[3];
@@ -131,6 +149,9 @@ export function screenPanel(ctx, camSrc, ask, notes) {
   const cam = { src: 1, s: sc, left, top, win, own: null };
 
   const c = evaluate(ctx, { fit: "screen-panel", parts: [screen, cam], seam: null });
+  // a picture with a hard problem is no stack to offer: the circle stands
+  const hard = c.problems.filter((x) => x.level === "hard");
+  if (hard.length) return no("hard", `its picture has ${hard.length === 1 ? "a hard problem" : `${hard.length} hard problems`}: ${hard.map((x) => `${x.of} ${x.what}`).join("; ")}; the circle stands for the webcam here`);
   const face = [left + sc * f[0], top + sc * f[1], sc * f[2], fh];
   const crop = [(win[0] - left) / sc, (win[1] - top) / sc, win[2] / sc, win[3] / sc];
 
