@@ -39,10 +39,12 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
-import { counted, planWindow, framed, bandOf, onOf, inkOf, sane, looking, shownShare, talksIn, WEIGHT, TALK_FACE } from "./lib/faces.mjs";
+import { counted, planWindow, framed, bandOf, onOf, measureFault, measureSaid, inkOf, sane, looking, shownShare, talksIn, WEIGHT, TALK_FACE } from "./lib/faces.mjs";
 
 const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] [--again] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
+// how long layout's measure may take, s (it takes a tenth of a second; NARRATED_SHORT_MEASURE_LIMIT for a test)
+const MEASURE_LIMIT = Number(process.env.NARRATED_SHORT_MEASURE_LIMIT) || 120;
 const log = (s) => console.error(s);
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
@@ -704,10 +706,10 @@ function build(args) {
     // boxes: [{ name, box, start?, end? }] → true where layout measured them all (measured.get(name))
     const measure = (boxes) => {
       fs.writeFileSync(boxesFile, JSON.stringify(boxes));
-      const mr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, "--measure", boxesFile], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 120e3 });
+      const mr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, "--measure", boxesFile], { encoding: "utf8", maxBuffer: 64 << 20, timeout: MEASURE_LIMIT * 1000 });
       let got = null;
       try { got = mr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "measure.json"), "utf8")) : null; } catch { /* said below */ }
-      if (!Array.isArray(got?.boxes) || boxes.some((b) => !got.boxes.some((x) => x.name === b.name && Array.isArray(x.moments)))) { measureFailed = reason(mr); return false; }
+      if (!Array.isArray(got?.boxes) || boxes.some((b) => !got.boxes.some((x) => x.name === b.name && Array.isArray(x.moments)))) { measureFailed = measureFault(layoutTool, mr, MEASURE_LIMIT); return false; }
       for (const x of got.boxes) measured.set(x.name, x);
       return true;
     };
@@ -730,8 +732,8 @@ function build(args) {
     // a text's seconds on the faces: of the beats `ids` (seen's i) or of all
     const on = (name, ids = null) => onOf(measured.get(name), { shots: ids, talks });
     let blind = [];   // the beats whose large main face may look into the camera, the captions on its mouth
-    if (!layoutTool) warn.push(`the captions and the hook are not checked against the faces: agentitos' layout beside this skill (or LAYOUT_TOOL naming its tools/place.mjs) measures what they lie on; they stand where they stood`);
-    else if (!ok) warn.push(`agentitos' layout could not measure what the captions and the hook lie on (${measureFailed}): they stand where they stood, as without faces; build again once node ${rel(layoutTool)} text runs`);
+    if (!layoutTool) warn.push(measureSaid(measureFault(null)));
+    else if (!ok) warn.push(measureSaid(measureFailed));
     else {
       const capOn = capBox ? on("captions") : null, hookOn = on("hook");
       // a hook reaches the eyes (or lower) where it lies on the eyes, the nose or the mouth
@@ -779,7 +781,7 @@ function build(args) {
             const o = on(name), cost = r2(o.cost + price(c.font));
             if (!best || cost < best.cost) best = { c, on: o, cost };
           }
-          if (!best) warn.push(`${said}; agentitos' layout did not ${places.length ? `measure its place for them (${measureFailed})` : `place them (${reason(asked[0].lr)})`}: they stand where they stood`);
+          if (!best) warn.push(`${said}; agentitos' layout did not ${places.length ? `measure its place for them (${measureFailed.replace("agentitos' layout ", "it ")})` : `place them (${reason(asked[0].lr)})`}: they stand where they stood`);
           else if (best.cost < capOn.cost) {
             const { c, on: o0 } = best, o = { ...c.options };
             if (ink) { o.y = Math.round(o.y - ink.below * o["font-size"]); o["max-width"] = Math.floor(o["max-width"] - 2 * Math.ceil(ink.side * o["font-size"] + 1)); }
@@ -812,7 +814,7 @@ function build(args) {
               hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
               hookUntil = r2(until);
               report.push(`  the hook: ${why}, at every size; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${o.seconds ? `, on ${parts(o)}` : ", on no face"}`);
-            } else report.push(`  ! the hook: ${why}, at every size${h && gauged ? `, and agentitos' layout's place for it ${capNow && (meets(h.box, capNow) || stacked(h.box, capNow)) ? "lies on the captions or directly above them" : "reaches the eyes too"}` : h ? `; agentitos' layout did not measure its place for it (${measureFailed})` : `; agentitos' layout did not place it (${reason(lr)})`}: it stands where it stood: a shorter hook, or another first beat`);
+            } else report.push(`  ! the hook: ${why}, at every size${h && gauged ? `, and agentitos' layout's place for it ${capNow && (meets(h.box, capNow) || stacked(h.box, capNow)) ? "lies on the captions or directly above them" : "reaches the eyes too"}` : h ? `; agentitos' layout did not measure its place for it (${measureFailed.replace("agentitos' layout ", "it ")})` : `; agentitos' layout did not place it (${reason(lr)})`}: it stands where it stood: a shorter hook, or another first beat`);
           }
         }
       }

@@ -10,6 +10,7 @@
 //   planWindow({ frame, zoom, pan, zoomSet, panSet, size, people, captions, crop }) → what the beat's picture becomes
 //   mapper({ frame, zoom, pan, x, box, size }) → box of the source → box of the 1080×1920 clip
 //   framed(…) → [{ t, boxes: [{ who, box, feat? }] }] on the film's clock, as the composition plays it
+//   measureFault(tool, spawnResult, limit) → what went wrong with layout's measure, in words of the build
 //   onOf(measured, { from, to, shots, talks }) → { seconds, nose, mouth, lip, hair, chin, talk, cost, hard }:
 //       what a text lies on, weighed by this skill's rules, from agentitos' layout's measure
 //
@@ -465,6 +466,17 @@ export function onOf(measured, { from = 0, to = Infinity, shots = null, talks = 
   r.hard = r2(r.nose + r.talk);
   return r;
 }
+
+// What went wrong with layout's measure, in the build's words (never the tool's own output): not
+// found (tool null, or not on this machine), no answer in time (stopped after `limit` s), an answer
+// that could not be read (it ended badly, or its measure.json is not what the measure writes)
+export function measureFault(tool, r, limit) {
+  if (!tool || r?.error?.code === "ENOENT") return "agentitos' layout is not found beside this skill (nor named by LAYOUT_TOOL)";
+  if (r?.error?.code === "ETIMEDOUT" || r?.signal) return `agentitos' layout gave no answer within ${limit} s`;
+  return `agentitos' layout gave an answer that could not be read${r?.status ? ` (it ended with exit ${r.status})` : ""}`;
+}
+// the sentence for it: what the step needs, what failed, and that the texts stand as without faces
+export const measureSaid = (fault) => `the faces step needs agentitos' layout beside this skill to keep the captions and the hook off the faces, and ${fault}: they stand as they would without faces`;
 
 // What of a captions style's ink lies outside its line (em of the type), as clips' place takes it
 // (copied): below the lowest line half the outline and the shadow's drop, at each side half the outline

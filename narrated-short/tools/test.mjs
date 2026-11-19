@@ -638,6 +638,49 @@ test("build with faces: the hook may lie on hair or a forehead (epps2 stays at t
 // Jeanette Epps' interview (the author's epps2) lower in the picture: in the fill her eyes and nose
 // stay above the captions, her lower lip reaches into them; the model says where she looks
 const talking = (looks, dy = 140) => ["Jeanette Epps", epps(dy)[1].map((m) => ({ ...m, ...(looks ? { looks } : {}) }))];
+// layout's measure gone wrong (decided: measure-fallback): the captions and the hook stand as without
+// faces, and one sentence says that the step needs layout and what failed, in the build's words
+const SAID = /the faces step needs agentitos' layout beside this skill to keep the captions and the hook off the faces, and (.+): they stand as they would without faces/;
+test("faces: layout not found: the sentence says the step needs it and that it is not found", async () => {
+  const { measureFault, measureSaid } = await import("./lib/faces.mjs");
+  for (const said of [measureSaid(measureFault(null)), measureSaid(measureFault("/x/place.mjs", { error: { code: "ENOENT" } }, 120))])
+    assert.equal(said.match(SAID)?.[1], "agentitos' layout is not found beside this skill (nor named by LAYOUT_TOOL)");
+});
+// a build whose hook reaches the eyes (it gets smaller with the measure) with a layout whose measure misbehaves
+function withBadMeasure(mode, env = {}) {
+  const dir = tmp(), fake = path.join(dir, "fake-layout.mjs");
+  fs.writeFileSync(fake, `import { spawnSync } from "node:child_process";
+const a = process.argv.slice(2);
+if (a.includes("--measure")) { if (${JSON.stringify(mode)} === "hang") await new Promise((r) => setTimeout(r, 20000)); console.log("(nonsense)"); process.exit(1); }
+process.exit(spawnSync(process.execPath, [${JSON.stringify(layoutTool)}, ...a], { stdio: "inherit" }).status ?? 1);
+`);
+  const keep = { ...process.env };
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.hook = { text: "YEARS OF TRAINING", key: "YEARS" };
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    let r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const plain = hookTag(comp);
+    facesWith(work, src, epps(-20));
+    Object.assign(process.env, { LAYOUT_TOOL: fake, ...env });
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(hookTag(comp), plain);
+    assert.doesNotMatch(r.stdout, /nonsense/);
+    return r.stdout.match(SAID)?.[1];
+  } finally { process.env = keep; fs.rmSync(dir, { recursive: true, force: true }); }
+}
+const badSkip = { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!layoutHere && "no layout beside") };
+test("build with faces: layout's measure gives no answer in time: the hook stands as without faces (at 104 px, where the measure made it smaller), and the sentence says no answer came", badSkip, () => {
+  assert.equal(withBadMeasure("hang", { NARRATED_SHORT_MEASURE_LIMIT: "2" }), "agentitos' layout gave no answer within 2 s");
+});
+test("build with faces: layout's measure answers what cannot be read: the hook stands as without faces, and the sentence says so, never the tool's own output", badSkip, () => {
+  assert.equal(withBadMeasure("nonsense"), "agentitos' layout gave an answer that could not be read (it ended with exit 1)");
+});
+
 test("faces: a speaker who looks into the camera keeps the mouth clear: it weighs as the eyes under a text, and a fill is raised for it; one who looks aside, or whose faces say nothing of it, keeps the relaxed rule", () => {
   const size = [1280, 720], at = (looks) => counted(listWith(talking(looks)), size, 2.5);
   assert.deepEqual(looking(at("camera"), 2.5), { who: "Jeanette Epps", share: 1 });
