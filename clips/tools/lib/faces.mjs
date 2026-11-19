@@ -5,8 +5,9 @@
 // other, and a piece raised by its `lift`.
 //
 //   framedShots(framed, { outW, outH, step, height, unlifted }) → [{ shot, start, end, kind, picture, faces:
-//       [{ who, speaker, track: [{ t, box: [x, y, w, h], feat?, between? }] }], room }]  (px of the frame, feat:
-//       the box of eyes, nose and mouth where the framing has them, between: the two stills of the
+//       [{ who, speaker, track: [{ t, box: [x, y, w, h], feat?, eye?, between? }] }], room }]  (px of the frame, feat:
+//       the box of eyes, nose and mouth where the framing has them, eye: the y of the middle of the
+//       eyes' own box (with the brows) where the model gave one, between: the two stills of the
 //       framing they are an estimate between, where t is further than FEAT_EST from both;
 //       seconds of the clip; picture: the part of the frame the sharp picture fills; room: how
 //       far the shot's picture may be raised, { free, ground }: by moving the window down in
@@ -23,8 +24,10 @@ const drawn = (p, f, crop, rect, whole = false) => {
   const b = f && through(box(f), crop, rect, whole);
   if (!b) return null;
   const fb = featBox(f), ft = fb && through(fb, crop, rect, true);
-  // (between: the features are an estimate between these two stills of the framing)
-  return { who: p.who ?? p.speaker, speaker: p.speaker, box: b, ...(ft ? { feat: ft } : {}), ...(ft && f.feat.between ? { between: f.feat.between } : {}) };
+  // (eye: the middle of the eyes' own box, a y drawn the same way; between: the features are an
+  // estimate between these two stills of the framing)
+  const eye = ft && f.feat.eye != null ? +(rect[1] + (f.feat.eye - crop.y) * (rect[2] / crop.w)).toFixed(1) : null;
+  return { who: p.who ?? p.speaker, speaker: p.speaker, box: b, ...(ft ? { feat: ft } : {}), ...(eye != null ? { eye } : {}), ...(ft && f.feat.between ? { between: f.feat.between } : {}) };
 };
 
 // a face's box in the footage drawn through a crop (x, y, w, h of the footage) into a rectangle
@@ -110,7 +113,7 @@ export function framedShots(framed, { outW = 1080, outH = 1920, step = 0.1, heig
       for (const t of ts) for (const f of inFrame(w, s, t, { outW, outH })) {
         const key = `${f.speaker ?? ""}|${f.who ?? ""}`;
         if (!tracks.has(key)) tracks.set(key, { who: f.who, speaker: f.speaker, track: [] });
-        tracks.get(key).track.push({ t: +t.toFixed(3), box: f.box, ...(f.feat ? { feat: f.feat } : {}), ...(f.between ? { between: f.between } : {}) });
+        tracks.get(key).track.push({ t: +t.toFixed(3), box: f.box, ...(f.feat ? { feat: f.feat } : {}), ...(f.eye != null ? { eye: f.eye } : {}), ...(f.between ? { between: f.between } : {}) });
       }
     }
     const lift = pieces.find((w) => w.lift)?.lift;
