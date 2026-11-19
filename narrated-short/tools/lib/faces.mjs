@@ -7,7 +7,7 @@
 //   planWindow({ frame, zoom, pan, zoomSet, panSet, size, held }) → what the beat's picture becomes
 //   mapper({ frame, zoom, pan, x, size, bars }) → box of the source → box of the 1080×1920 clip
 //   framed(…) → [{ t, boxes: [{ who, box, feat? }] }] on the film's clock, as the composition plays it
-//   textOn(box, moments, from, to) → { seconds, nose, mouth, lip, chin, cost }: a text box on faces
+//   textOn(box, moments, from, to) → { seconds, nose, mouth, lip, hair, chin, cost }: a text box on faces
 //
 // A box is [x, y, w, h]. Every list of faces is { step, faces: [{ t, boxes: [{ who, box, feat? }] }] }
 // in px of the source and seconds of the stretch (0 = the beat's `at`).
@@ -205,24 +205,37 @@ export function framed({ list, place, from, seconds, speed = 1, move = [1, 1], b
 // bottom at 86 % of its height).
 const IMPLIED = [0.38, 0.86];
 const featOf = (b, feat) => feat || [b[0] + 0.18 * b[2], b[1] + IMPLIED[0] * b[3], 0.64 * b[2], (IMPLIED[1] - IMPLIED[0]) * b[3]];
-const lineOf = (b, feat, k) => { const e = featOf(b, feat); return e[1] + k * e[3]; };
 const overlaps = (a, b) => Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]) > 0 && Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]) > 0;
-// what a second on each part weighs, in the order layout weighs them (a guess, to tell two places apart)
-export const WEIGHT = { nose: 100, mouth: 20, lip: 1, chin: 0.2 };
+// what a second on each part weighs, in the order layout weighs them (a guess, to tell two places
+// apart); the hair or forehead (and the side of a head, beside the eyes, nose and mouth) is its own,
+// mild part: a text there covers no feature
+export const WEIGHT = { nose: 100, mouth: 20, lip: 1, hair: 0.5, chin: 0.2 };
+
+// The parts of a face a text box lies on, top to bottom, each only where the box overlaps it: the
+// hair or forehead (from the box's top to the eyes), the eyes or nose (to the nose line), the mouth
+// (to the lip line), the lower lip (to the mouth line), the chin (below it). The eyes, nose, mouth
+// and lip are as wide as the features; the rest of the head beside them counts as the hair.
+export function partsOn(text, box, feat) {
+  if (!overlaps(text, box)) return [];
+  const e = featOf(box, feat), y0 = text[1], y1 = text[1] + text[3];
+  const across = Math.min(text[0] + text[2], e[0] + e[2]) - Math.max(text[0], e[0]) > 0;
+  const lines = [box[1], e[1], e[1] + 0.7 * e[3], e[1] + 0.88 * e[3], e[1] + 1.15 * e[3], Math.max(box[1] + box[3], e[1] + 1.15 * e[3])];
+  const names = ["hair", "nose", "mouth", "lip", "chin"], out = new Set();
+  names.forEach((n, i) => {
+    if (!(Math.min(y1, lines[i + 1]) - Math.max(y0, lines[i]) > 0)) return;
+    out.add(across || n === "hair" || n === "chin" ? n : "hair");
+  });
+  return [...out];
+}
 
 // a text box over [from, to) of the film on the faces of moments: seconds on a face and on each
-// part (the highest it reaches), and their weighed sum
+// part (the worst it lies on), and their weighed sum
 export function textOn(box, moments, from = 0, to = Infinity) {
-  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, chin: 0 };
+  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0 };
   for (const m of moments) {
     if (m.t < from || m.t >= to) continue;
     let worst = null;
-    for (const f of m.boxes) {
-      if (!overlaps(box, f.box)) continue;
-      const reaches = (line) => box[1] < line;
-      const part = reaches(lineOf(f.box, f.feat, 0.7)) ? "nose" : reaches(lineOf(f.box, f.feat, 0.88)) ? "mouth" : reaches(lineOf(f.box, f.feat, 1.15)) ? "lip" : "chin";
-      if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
-    }
+    for (const f of m.boxes) for (const part of partsOn(box, f.box, f.feat)) if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
     if (!worst) continue;
     r.seconds += m.step; r[worst] += m.step;
   }

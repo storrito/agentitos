@@ -622,7 +622,7 @@ function build(args) {
     const capBox = area ? [area.left, area.top, area.width, area.bottom - area.top] : null;
     const hookBox = [top[0], top[1] + 66, top[2], Math.round(hookLines(hook.text.trim(), hookPx, room) * hookPx * 1.02)];
     const capOn = capBox ? textOn(capBox, moments) : null, hookOn = textOn(hookBox, moments, 0, HOOK_SECONDS);
-    const parts = (on) => [on.nose ? `the eyes or nose ${on.nose} s` : "", on.mouth ? `the mouth ${on.mouth} s` : "", on.lip ? `the lower lip ${on.lip} s` : "", on.chin ? `the chin ${on.chin} s` : ""].filter(Boolean).join(", ");
+    const parts = (on) => [on.nose ? `the eyes or nose ${on.nose} s` : "", on.mouth ? `the mouth ${on.mouth} s` : "", on.lip ? `the lower lip ${on.lip} s` : "", on.hair ? `the hair or forehead ${on.hair} s` : "", on.chin ? `the chin ${on.chin} s` : ""].filter(Boolean).join(", ");
     const whose = (box, a, z) => seen.filter((s) => textOn(box, s.moments, a, z).seconds).map((s) => s.id).join(", ");
     if (!capOn?.seconds && !hookOn.seconds) report.push(`  the captions${capBox ? "" : " (not checked: the captions skill here writes no area.json)"} and the hook lie on no face: they stand where they stood`);
     else {

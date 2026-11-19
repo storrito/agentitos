@@ -139,7 +139,7 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
 });
 
 // ---------------------------------------------------------------- faces
-import { counted, planWindow, chinZoom, framed, textOn, shown, bandOf } from "./lib/faces.mjs";
+import { counted, planWindow, chinZoom, framed, textOn, partsOn, shown, bandOf } from "./lib/faces.mjs";
 // a person over a beat: one box at every tenth of a second
 const person = (who, box, n = 30) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box }));
 const listOf = (...people) => {
@@ -228,6 +228,21 @@ test("faces: in the frame on the film's clock (the source's second through speed
   assert.equal(textOn([200, 830, 600, 100], face).lip, 0.5);
   assert.equal(textOn([200, 880, 600, 100], face).chin, 0.5);
   assert.equal(textOn([200, 950, 600, 100], face).seconds, 0);
+});
+
+test("faces: a text on the hair or forehead is not on the eyes or nose (the review: a box ending 100 px above the eyes scored as the nose, weight 100); one reaching down into the eyes is", () => {
+  // no feat: the eyes' top at 38 % of the box, y 590
+  const face = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [300, 400, 400, 500] }] }];
+  const above = textOn([200, 390, 600, 100], face);
+  assert.deepEqual([above.hair, above.nose, above.seconds], [0.5, 0, 0.5]);
+  assert.equal(above.cost, 0.25);
+  assert.equal(textOn([200, 500, 600, 120], face).nose, 0.5);
+  // the model's eyes, nose and mouth: a text from the head's top to 10 px above the eyes
+  const feat = [{ t: 0, step: 0.1, boxes: [{ who: "Jeanette Epps", box: [540, 84, 210, 272], feat: [558, 180, 165, 140] }] }];
+  assert.equal(textOn([100, 60, 900, 110], feat).hair, 0.1);
+  assert.equal(textOn([100, 60, 900, 130], feat).nose, 0.1);
+  // beside the features (an ear, the side of the head) is the hair's kind, not the eyes
+  assert.deepEqual(partsOn([730, 190, 60, 50], [540, 84, 210, 272], [558, 180, 165, 140]), ["hair"]);
 });
 
 test("build with faces: a face off the middle moves the fill to it and the hook off it, each said; --no-faces and no faces build the same short; faces of another stretch are left out and said", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
