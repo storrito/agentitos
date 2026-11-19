@@ -6,7 +6,7 @@ The band is the flexbox of `stickers/<name>/layer.html`: `left`, `top`, `right`,
 
 ```bash
 # the moments: 2 a second, the ones that look alike left out, the band and the safe zone drawn, 30 to a sheet
-ffmpeg -v error -y -i <video> -vf "fps=2,mpdecimate=hi=64*12:lo=64*5:frac=0.33,drawbox=x=<left>:y=<top>:w=<1080-left-right>:h=<1920-top-bottom>:color=red@0.9:t=8,drawbox=x=60:y=250:w=960:h=1370:color=yellow@0.8:t=3,scale=180:-1,tile=6x5" -vsync vfr uploads/<name>-moments-%d.jpg
+ffmpeg -v error -y -i <video> -vf "fps=2,mpdecimate=hi=64*12:lo=64*5:frac=0.33,drawbox=x=<left>:y=<top>:w=<1080-left-right>:h=<1920-top-bottom>:color=red@0.9:t=8,drawbox=x=60:y=250:w=960:h=1370:color=yellow@0.8:t=3,scale=180:-1,tile=6x5" -fps_mode vfr uploads/<name>-moments-%d.jpg
 # the occupancy map: everything that ever showed up, one picture (busy footage like water lights up everywhere: then trust the moments)
 ffmpeg -v error -y -i <video> -vf "fps=5,scale=540:-1,format=gray,edgedetect=low=0.2:high=0.5,lagfun=decay=1,drawbox=x=<left/2>:y=<top/2>:w=<(1080-left-right)/2>:h=<(1920-top-bottom)/2>:color=white@1:t=2" -update 1 uploads/<name>-map.png
 ```
