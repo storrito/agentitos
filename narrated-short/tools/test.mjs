@@ -269,6 +269,23 @@ test("faces: a passer-by counts by the time he is there (crew4 b5: a man seen in
   assert.doesNotMatch(q.said, /passer-by/);
 });
 
+test("faces: one who enters late and stays to the beat's end counts (the review's h1: a woman seen from a cut 1.7 s in, 43 % of the beat); a passer-by gone again, one there only for the last half second, or one who leaves before the end does not", () => {
+  const size = [3840, 2160], seconds = 2.83;
+  const from = (t0, t1, box) => Array.from({ length: Math.round((t1 - t0) / 0.1) + 1 }, (_, k) => ({ t: +(t0 + k * 0.1).toFixed(3), box }));
+  const main = ["Samantha Cristoforetti", from(0, 2.8, [1500, 500, 380, 488])];
+  const late = (who, t0, t1, h = 488) => [who, from(t0, t1, [2600, 520, 300, h])];
+  const of = (...ps) => counted(listOf(...ps), size, seconds);
+  // the review's h1 as tall as the main face: held, though seen in 43 % of the moments
+  const h1 = of(main, late("Jessica Watkins", 1.718, 2.818));
+  assert.deepEqual(h1.held.map((p) => p.who), ["Samantha Cristoforetti", "Jessica Watkins"]);
+  // as she is (62 % as tall): not held, and not for her time: beside them, too small
+  assert.deepEqual(of(main, late("Jessica Watkins", 1.718, 2.818, 304)).small.map((p) => [p.who, p.why]), [["Jessica Watkins", "side"]]);
+  // crew4 b5's passer-by (the first 0.7 s), one in the last half second, one who leaves at 2.3 s after 43 %: passers-by
+  for (const [t0, t1] of [[0, 0.7], [2.3, 2.8], [1.1, 2.3]]) assert.deepEqual(of(main, late("X", t0, t1)).small.map((p) => [p.who, p.why]), [["X", "passing"]], `${t0}–${t1}`);
+  // one who stays to the end with a break of half a second in it: from the break on, too short
+  assert.deepEqual(of(main, ["X", [...from(1.2, 1.9, [2600, 520, 300, 488]), ...from(2.4, 2.8, [2600, 520, 300, 488])]]).small.map((p) => p.why), ["passing"]);
+});
+
 test("faces: a face cut beside the ones that count is said as such, \"in the background\" only one small against the main face (the review's b9: four walking side by side, the fourth called a face in the background)", () => {
   const size = [3840, 2160];
   const b9 = counted(listOf(["woman with curly hair", person("A", [1482, 800, 270, 288], 17)], ["woman with short hair", person("B", [1858, 780, 300, 330], 17)],

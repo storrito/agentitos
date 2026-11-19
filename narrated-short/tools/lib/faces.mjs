@@ -35,7 +35,13 @@ export const SIZE = [1080, 1920];
 // widened the picture to a band at 1.1× where a crop on the two women held them larger); every
 // second person really there in the people beats of crew4, epps2 and the review's short is seen in
 // 94 % of the moments or more (the review's b2, b4, b7, b9; crew4 b5's two women).
-export const SEEN = 0.25, MAIN_SEEN = 0.5, HELD_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04;
+// Time alone misses one who enters late and stays: the review's h1, a woman seen from a cut 1.7 s
+// into the beat to its end, 43 % of the moments. A face there at the beat's last moment, without a
+// break (no gap over GAP) for STAY seconds and SEEN of the moments or more, is held as one seen in
+// half of it: the beat ends on her, the picture should show her. STAY stands on that beat (1.1 s, so
+// it must count) and on crew4 b5's passer-by (the first 0.7 s, then gone: not there at the end); a
+// face that comes in for the last half second is no presence.
+export const SEEN = 0.25, MAIN_SEEN = 0.5, HELD_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04, STAY = 1, GAP = 0.25;
 // A face that does not count is said by why: "in the background" only where it is smaller than
 // BEHIND of the main face's height (the review's b3: the woman at the laptop, 53 %, the panel far
 // behind, 25 to 32 %); one larger than that is beside the others (the review's b9: a fourth man
@@ -97,9 +103,19 @@ export function counted(list, [, h], seconds) {
   const all = [...people.values()].map((p) => ({ ...p, n: p.boxes.length, h: median(p.boxes.map((b) => b[3])) }));
   const tallest = (ps) => ps.reduce((a, p) => (!a || p.h > a.h ? p : a), null);
   const main = tallest(all.filter((p) => p.n >= MAIN_SEEN * moments)) || tallest(all.filter((p) => p.n >= SEEN * moments));
-  const held = main ? all.filter((p) => p === main || (p.n >= HELD_SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
+  // there long enough: in half of the moments, or there at the end since a real stretch (STAY)
+  const step = list?.step || 0.1, end = (moments - 1) * step;
+  const stays = (p) => {
+    const ts = [...p.ts].sort((a, b) => a - b);
+    if (!ts.length || ts.at(-1) < end - GAP) return false;
+    let k = ts.length - 1;
+    while (k > 0 && ts[k] - ts[k - 1] <= GAP) k--;
+    return ts.at(-1) - ts[k] + step >= STAY && p.n >= SEEN * moments;
+  };
+  const there = (p) => p.n >= HELD_SEEN * moments || stays(p);
+  const held = main ? all.filter((p) => p === main || (there(p) && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
   // why a face does not count: behind (small against the main face, or a speck), passing (seen too briefly), side (a little smaller than to count)
-  const why = (p) => (!main || p.h < BEHIND * main.h || p.h < MIN_FACE * h ? "behind" : p.n < HELD_SEEN * moments ? "passing" : "side");
+  const why = (p) => (!main || p.h < BEHIND * main.h || p.h < MIN_FACE * h ? "behind" : !there(p) ? "passing" : "side");
   return { main: held.length ? main : null, held, small: all.filter((p) => !held.includes(p)).map((p) => ({ ...p, why: why(p) })) };
 }
 
