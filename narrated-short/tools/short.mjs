@@ -20,10 +20,11 @@
 //        by agentitos' freeze-cutout when the beat asks for one, and <composition>/index.html:
 //        clips, voice, music (measured, 17 LU under the voice), hook text, card, credit, handle.
 //        Changed beats: build again; a clip whose beat and source did not change is kept.
-//        Where faces of a beat are known: a fill or a zoomed band that would cut them moves to
-//        them (or shows the whole picture), and where the captions or the hook lie on a face,
-//        agentitos' layout gives one place for the captions and the hook's place; each beat says
-//        what was done and why, and a doubt never makes a beat worse.
+//        Where faces of a beat are known: a fill shows their eyes, nose and mouth (moved, or
+//        raised over the ground), else a 4:5 or 1:1 crop placed high (agentitos' layout), else the
+//        whole picture as a band; where the captions lie on eyes or a nose, or the hook on a face,
+//        layout gives one place for the captions (at their size) and the hook's place; each beat
+//        says what was done and why, and a doubt never makes a beat worse.
 //   node tools/short.mjs sheet <work> <composition>
 //        stills of the composition at the moments that matter (the first frame, the hook, the
 //        freeze, each beat at its start and middle, every card, the end) on one sheet,
@@ -62,7 +63,7 @@ const END_TAIL = 0.7;       // picture after the last word, so the end is not cu
 // The peak of the frames' mean luma under which a clip shows nothing. A band over its darkened
 // copy lies lower than a full picture: 12 was measured on such clips (a near-black one 6.5, the
 // darkest good night shot 22); a full frame of video black is 16, so it needs a higher line.
-const DARK_MAX = { whole: 12, fill: 24, native: 24 };
+const DARK_MAX = { whole: 12, crop: 12, fill: 24, native: 24 };
 const SHORT_TOL = 0.15;     // seconds a clip may be shorter than its beat
 const FROZEN_PART = 0.5;    // part of a clip that stands still before it is mentioned
 const OPEN_PART = 0.5;      // the hook's first frame reaches this part of the clip's median luma
@@ -234,6 +235,11 @@ function saidOf(list) {
 }
 
 // ---------------------------------------------------------------- the clips
+// a part of the source (box.src) in a part of the frame (box.at) over the same blurred, darkened copy:
+// a crop placed high, or a fill raised over the ground
+function cropped({ src: [sx, sy, sw, sh], at: [ax, ay, aw, ah] }) {
+  return `split[a][b];[a]scale=${SIZE[0]}:${SIZE[1]}:force_original_aspect_ratio=increase,crop=${SIZE[0]}:${SIZE[1]},boxblur=40:3,eq=brightness=-0.18[bg];[b]crop=${sw}:${sh}:${sx}:${sy},scale=${aw}:${ah}:flags=lanczos[fg];[bg][fg]overlay=${ax}:${ay}`;
+}
 // the whole wide frame as a band over a blurred, darkened copy of itself
 function whole(zoom, pan) {
   const w = Math.round((SIZE[0] * zoom) / 2) * 2;
@@ -514,8 +520,26 @@ function build(args) {
     if (cr.status !== 0 || !mount) fail(`The captions could not be built: ${reason(cr)}`);
     try { area = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")); } catch { /* an older captions: no area to check */ }
   } else fs.rmSync(wordsFile, { force: true });   // no captions: no words of an earlier build for the sheet to go by
-  // a band's zoom the tool chooses keeps the chins above the captions' top
-  const captionTop = area ? area.top : null;
+  // where the captions stand in the frame: a picture the tool places keeps the eyes and noses above them
+  const capArea = area ? [area.left, area.top, area.width, area.bottom - area.top] : null;
+  const layoutTool = tool("LAYOUT_TOOL", "layout", "place.mjs");
+  // layout's place for a beat's held faces (the source's px): its best 4:5 or 1:1 crop that holds
+  // them all, with the captions below it, or null (layout not beside, or no such crop)
+  const cropFor = (b, size) => (held) => {
+    if (!layoutTool) return null;
+    const folder = path.join(work, "placement", b.id);
+    fs.mkdirSync(folder, { recursive: true });
+    const inside = (x) => { const x0 = Math.max(0, x[0]), y0 = Math.max(0, x[1]); return [x0, y0, Math.min(size[0], x[0] + x[2]) - x0, Math.min(size[1], x[1] + x[3]) - y0].map(Math.round); };
+    // (a dozen moments a face: its hull is what the placement holds)
+    const tracks = held.map((p) => p.boxes.map((x, j) => ({ t: p.ts[j], box: inside(x) })).filter((m, j, all) => m.box[2] > 0 && m.box[3] > 0 && (j % Math.ceil(all.length / 12) === 0 || j === all.length - 1)));
+    const file = path.join(folder, "faces.json");
+    fs.writeFileSync(file, JSON.stringify(tracks));
+    const r = spawnSync(process.execPath, [layoutTool, "place", folder, "--frame", SIZE.join("x"), "--source", size.join("x"), "--face-track", file,
+      ...(area ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
+    let got = null;
+    try { got = r.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "placement.json"), "utf8")) : null; } catch { /* no crop then */ }
+    return got?.candidates?.find((c) => c.fit === "crop" && ["4:5", "1:1"].includes(c.crop) && !c.speaker && !c.leftOut && !c.onGround && !c.hard && !(c.unmet || []).length) || null;
+  };
 
   // ---- the clips, one ffmpeg each
   const clipsDir = path.join(comp, "assets", "clips");
@@ -532,7 +556,7 @@ function build(args) {
     let zoom = b.zoom ?? (i === 0 && frame === "whole" ? HOOK_ZOOM : 1), pan = b.pan ?? 0.5;
     // Where faces are known: a window that would cut them goes to them (planWindow); the faces in
     // px of the source with the black bars cut away, as the clip's filter sees it
-    let bar = null, x = null, plan = null, inBars = null, size = null, people = null;
+    let bar = null, x = null, box = null, plan = null, inBars = null, size = null, people = null;
     const list = faceLists[i];
     const cropOf = (bb) => (bb ? bb.match(/crop=(\d+):(\d+):(\d+):(\d+)/).slice(1).map(Number) : null);
     if (list) {
@@ -542,8 +566,8 @@ function build(args) {
       const shift = (v) => [v[0] - c[2], v[1] - c[3], v[2], v[3]];
       inBars = { ...list, faces: list.faces.map((f) => ({ t: f.t, boxes: f.boxes.map((v) => ({ ...v, box: shift(v.box), ...(v.feat ? { feat: shift(v.feat) } : {}) })) })) };
       people = counted(inBars, size, taken);
-      plan = planWindow({ frame, zoom, pan, zoomSet: b.zoom != null, panSet: b.pan != null, size, held: people.held, chinsAbove: captionTop });
-      ({ frame, zoom, pan, x } = plan);
+      plan = planWindow({ frame, zoom, pan, zoomSet: b.zoom != null, panSet: b.pan != null, size, people, captions: capArea, crop: cropFor(b, size) });
+      ({ frame, zoom, pan, x, box } = plan);
     }
     // a fill the agent panned, where its faces are known (without them a fill is cut from the middle, as it always was)
     if (frame === "fill" && x == null && b.pan != null && list) {
@@ -553,14 +577,14 @@ function build(args) {
       size ||= [c[0], c[1]];
     }
     const out = path.join(clipsDir, `${b.id}.mp4`), note = path.join(clipsDir, `${b.id}.json`);
-    const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed, ...(x != null ? { x } : {}) });
+    const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed, ...(x != null ? { x } : {}), ...(box ? { box } : {}) });
     let kept = null;
     try { kept = JSON.parse(fs.readFileSync(note, "utf8")); } catch { /* not cut yet */ }
     let m = kept && kept.how === how && kept.measured && fs.existsSync(out) && fs.statSync(out).size ? kept.measured : null;
     if (!m) {
       fs.rmSync(note, { force: true });   // a cut that fails leaves no note of a clip that is not there
       if (bar == null) bar = bars(src.file, b.at, taken, src.size);
-      const vf = bar + (frame === "whole" ? whole(zoom, pan) : frame === "fill" && x != null ? `scale=-2:${SIZE[1]}:flags=lanczos,crop=${SIZE[0]}:${SIZE[1]}:${x}:0` : FRAMES[frame])
+      const vf = bar + (frame === "whole" ? whole(zoom, pan) : frame === "crop" ? cropped(box) : frame === "fill" && x != null ? `scale=-2:${SIZE[1]}:flags=lanczos,crop=${SIZE[0]}:${SIZE[1]}:${x}:0` : FRAMES[frame])
         + (speed !== 1 ? `,setpts=PTS/${speed}` : "") + `,fps=${FPS},format=yuv420p`;
       const part = path.join(clipsDir, `${b.id}.part.mp4`);
       // a keyframe a second: HyperFrames seeks cleanly (sparse ones froze frames)
@@ -577,11 +601,12 @@ function build(args) {
     }
     if (m.bars) report.push(`  ${b.id}: black bars in the source cut away (${m.bars})`);
     if (i === 0 && frame === "whole" && b.zoom == null && !plan?.changed) report.push(`  ${b.id}: the first beat's band is ${HOOK_ZOOM} times larger, its middle kept ("zoom": 1 shows the whole width, "pan" another part)`);
-    if (plan?.said) report.push(`  ${plan.cut.length ? "! " : ""}${b.id}: ${plan.said}${plan.cut.length ? "; leave \"pan\" (and \"zoom\") out and the window goes to the faces" : ""}`);
+    const own = plan?.cut.length && (b.pan != null || b.zoom != null);
+    if (plan?.said) report.push(`  ${own || plan.flag ? "! " : ""}${b.id}: ${plan.said}${own ? "; leave \"pan\" (and \"zoom\") out and the picture goes to the faces" : ""}`);
     else if (list && !people.held.length) report.push(`  ${b.id}: ${people.small.length ? `its faces (${people.small.map((p) => p.who).join(", ")}) are too small or seen too briefly to move the picture for` : "no face found"}: the picture stays as it is`);
     if (list) {
-      const band = frame === "whole" ? bandOf({ zoom, size }) : null;
-      seen.push({ i, id: b.id, moments: framed({ list: inBars, place: { frame, zoom, pan, x, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band }) });
+      const band = frame === "whole" || frame === "crop" ? bandOf({ frame, zoom, box, size }) : null;
+      seen.push({ i, id: b.id, moments: framed({ list: inBars, place: { frame, zoom, pan, x, box, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band }) });
     }
     // the gate: what needs no judgement
     const problems = [];
@@ -605,7 +630,7 @@ function build(args) {
       else if (fs.existsSync(pop) && fs.statSync(pop).size && fs.existsSync(popNote) && fs.readFileSync(popNote, "utf8") === popHow) popped[b.id] = true;
       else {
         fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true });
-        const cr = spawnSync(process.execPath, [cut, out, pop, "--at", String(b.freeze), "--work", path.join(work, "cutout"), ...(frame === "whole" ? ["--region", "band"] : []),
+        const cr = spawnSync(process.execPath, [cut, out, pop, "--at", String(b.freeze), "--work", path.join(work, "cutout"), ...(frame === "whole" || frame === "crop" ? ["--region", "band"] : []),
           ...(text(cfg.subject) ? ["--subject", cfg.subject.trim()] : []), ...(b.pop ? ["--style", b.pop] : [])], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 900e3 });
         if (cr.status === 0 && fs.existsSync(pop) && fs.statSync(pop).size) { fs.writeFileSync(popNote, popHow); popped[b.id] = true; }
         else { fs.rmSync(pop, { force: true }); report.push(`  ! ${b.id}: no freeze (${reason(cr)}); the plain clip is used`); }
@@ -626,11 +651,13 @@ function build(args) {
     const hookBox = [top[0], top[1] + 66, top[2], Math.round(hookLines(hook.text.trim(), hookPx, room) * hookPx * 1.02)];
     const capOn = capBox ? textOn(capBox, moments) : null, hookOn = textOn(hookBox, moments, 0, HOOK_SECONDS);
     const parts = (on) => [on.nose ? `the eyes or nose ${on.nose} s` : "", on.mouth ? `the mouth ${on.mouth} s` : "", on.lip ? `the lower lip ${on.lip} s` : "", on.hair ? `the hair or forehead ${on.hair} s` : "", on.chin ? `the chin ${on.chin} s` : ""].filter(Boolean).join(", ");
-    const whose = (box, a, z) => seen.filter((s) => textOn(box, s.moments, a, z).seconds).map((s) => s.id).join(", ");
-    if (!capOn?.seconds && !hookOn.seconds) report.push(`  the captions${capBox ? "" : " (not checked: the captions skill here writes no area.json)"} and the hook lie on no face: they stand where they stood`);
+    const whose = (box, a, z, part = "seconds") => seen.filter((s) => textOn(box, s.moments, a, z)[part]).map((s) => s.id).join(", ");
+    // (nobody shown speaks in a narrated short: captions on a mouth, a mask or a chin stay; only the eyes and nose move them)
+    const capMild = capOn?.seconds && !capOn.nose ? `; the captions lie on ${parts(capOn)} in ${whose(capBox)}, no eyes or nose: nobody shown speaks, they may` : "";
+    if (!capOn?.nose && !hookOn.seconds) report.push(`  the captions${capBox ? "" : " (not checked: the captions skill here writes no area.json)"} and the hook lie on no ${capMild ? "eyes or nose" : "face"}: they stand where they stood${capMild}`);
     else {
-      const said = [capOn?.seconds ? `the captions lie on a face in ${whose(capBox)} (${parts(capOn)})` : "", hookOn.seconds ? `the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : ""].filter(Boolean).join(", ");
-      const layoutTool = tool("LAYOUT_TOOL", "layout", "place.mjs");
+      const said = [capOn?.nose ? `the captions lie on a face in ${whose(capBox, 0, Infinity, "nose")} (${parts(capOn)})` : "", hookOn.seconds ? `the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : ""].filter(Boolean).join(", ");
+      if (capMild) report.push(`  ${capMild.slice(2)}`);
       if (!layoutTool) warn.push(`${said}: agentitos' layout beside this skill (or LAYOUT_TOOL naming its tools/place.mjs) would place them off the faces; they stand where they stood`);
       else {
         // layout's text over time: every beat one shot, its faces as tracks in px of the frame, never raised
@@ -660,7 +687,7 @@ function build(args) {
         };
         // where the captions stand once they are placed, as layout's --caption-y and --font-size take them
         let capNow = capBox, capFixed = capBox ? ["--caption-y", String(area.bottom), "--font-size", String(area.size)] : [];
-        if (capOn?.seconds) {
+        if (capOn?.nose) {
           // The captions stand in one place for the whole short, at the size captions gave them: one
           // beat never makes them smaller for all the others. Smaller type has a price, as much as the
           // longest beat spent wholly on the eyes or nose and more the smaller it gets, which only
@@ -668,7 +695,7 @@ function build(args) {
           const longest = Math.max(...beats.map((b) => b.to - b.from));
           const price = (font) => (font < area.size ? WEIGHT.nose * (longest + total * (1 - font / area.size)) : 0);
           const asked = [askLayout([...capText, "--font-size", String(area.size)])];
-          if (seen.filter((s) => textOn(capBox, s.moments).seconds).length > 1) asked.push(askLayout(capText));
+          if (seen.filter((s) => textOn(capBox, s.moments).nose).length > 1) asked.push(askLayout(capText));
           let best = null;
           for (const { placed } of asked) {
             const c = placed?.caption;
@@ -686,9 +713,9 @@ function build(args) {
             else {
               capNow = c.box;
               capFixed = ["--caption-y", String(c.options.y), "--font-size", String(c.font)];
-              report.push(`  the captions: they lay on a face in ${whose(capBox)} (${parts(capOn)}) where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px${c.font < area.size ? ` (${area.size} px before: the faces of several beats pay for smaller type)` : ", their size"}, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${on.seconds ? `, on a face still: ${parts(on)}` : ", on no face"}`);
+              report.push(`  the captions: they lay on a face in ${whose(capBox, 0, Infinity, "nose")} (${parts(capOn)}) where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px${c.font < area.size ? ` (${area.size} px before: the faces of several beats pay for smaller type)` : ", their size"}, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${on.seconds ? `, on a face still: ${parts(on)}` : ", on no face"}`);
             }
-          } else report.push(`  ! the captions lie on a face in ${whose(capBox)} (${parts(capOn)}): agentitos' layout found no place at their size that lies on them less; they stand where they stood`);
+          } else report.push(`  ! the captions lie on a face in ${whose(capBox, 0, Infinity, "nose")} (${parts(capOn)}): agentitos' layout found no place at their size that lies on them less; they stand where they stood`);
         }
         // the hook: off a face, and off the captions where they moved to its place (they are given to layout where they stand now)
         const meets = (a, z) => Math.min(a[0] + a[2], z[0] + z[2]) > Math.max(a[0], z[0]) && Math.min(a[1] + a[3], z[1] + z[3]) > Math.max(a[1], z[1]);

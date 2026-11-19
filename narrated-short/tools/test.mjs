@@ -139,7 +139,7 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
 });
 
 // ---------------------------------------------------------------- faces
-import { counted, planWindow, chinZoom, framed, textOn, partsOn, shown, bandOf, sane } from "./lib/faces.mjs";
+import { counted, planWindow, noseZoom, framed, textOn, partsOn, shown, bandOf, sane } from "./lib/faces.mjs";
 // a person over a beat: one box at every tenth of a second
 const person = (who, box, n = 30) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box }));
 const listOf = (...people) => {
@@ -148,62 +148,118 @@ const listOf = (...people) => {
   return { step: 0.1, faces: [...by.entries()].sort((a, b) => a[0] - b[0]).map(([t, boxes]) => ({ t, boxes })) };
 };
 
-test("faces: who the window holds: not a face seen in under a quarter of the beat, not one under half the largest or a speck", () => {
-  const l = listOf(["A", person("A", [2400, 400, 600, 800])], ["B", person("B", [600, 500, 260, 340])], ["C", person("C", [100, 400, 600, 800], 6)], ["D", person("D", [3000, 1500, 60, 80])]);
-  const { held, small } = counted(l, [3840, 2160], 3);
-  assert.deepEqual(held.map((p) => p.who), ["A"]);
+test("faces: who the picture shows: not a face seen in under a quarter of the beat, not one of another size than the main face's or a speck", () => {
+  const l = listOf(["A", person("A", [2400, 400, 600, 800])], ["B", person("B", [600, 500, 260, 340])], ["C", person("C", [100, 400, 600, 800], 6)], ["D", person("D", [3000, 1500, 60, 80])], ["E", person("E", [1200, 400, 450, 600])]);
+  const { main, held, small } = counted(l, [3840, 2160], 3);
+  assert.equal(main.who, "A");
+  assert.deepEqual(held.map((p) => p.who), ["A", "E"]);
   assert.deepEqual(small.map((p) => p.who).sort(), ["B", "C", "D"]);
 });
 
 test("faces: a fill from the middle that cuts a face off the middle moves to it; one that holds it stays; the agent's pan stands and is said", () => {
   const size = [3840, 2160];
-  const a = counted(listOf(["A", person("A", [2700, 400, 500, 650])]), size, 3).held;
-  const p = planWindow({ frame: "fill", size, held: a });
+  const a = counted(listOf(["A", person("A", [2700, 400, 500, 650])]), size, 3);
+  const p = planWindow({ frame: "fill", size, people: a });
   assert.equal(p.changed, true);
   assert.match(p.said, /the crop moved to the faces \(A\)/);
   const win = shown({ frame: "fill", x: p.x, size });
   assert.ok(win[0] <= 2700 - 60 && win[1] >= 3200 + 60, `the window ${win} holds the face`);
   // in the middle: nothing changes
-  const mid = planWindow({ frame: "fill", size, held: counted(listOf(["A", person("A", [1700, 400, 440, 600])]), size, 3).held });
+  const mid = planWindow({ frame: "fill", size, people: counted(listOf(["A", person("A", [1700, 400, 440, 600])]), size, 3) });
   assert.equal(mid.changed, false);
   assert.match(mid.said, /in the picture as it is/);
   // the agent's pan: kept, and said that it cuts
-  const own = planWindow({ frame: "fill", pan: 0, panSet: true, size, held: a });
+  const own = planWindow({ frame: "fill", pan: 0, panSet: true, size, people: a });
   assert.equal(own.changed, false);
   assert.deepEqual(own.cut, ["A"]);
 });
 
-const cw = (held) => Math.floor((3840 / (Math.max(...held.flatMap((p) => p.boxes.map((b) => b[0] + 1.12 * b[2]))) - Math.min(...held.flatMap((p) => p.boxes.map((b) => b[0] - 0.12 * b[2]))))) * 100) / 100;
-test("faces: two people wider apart than a fill's window: the whole picture as a band, as large as holds both; never larger than keeps their chins above the captions", () => {
+test("faces: two people wider apart than a fill's window and than a crop: the whole picture as a band, as large as holds both; never larger than keeps their eyes and noses above the captions", () => {
   const size = [3840, 2160];
-  const two = counted(listOf(["A", person("A", [500, 600, 500, 650])], ["B", person("B", [2600, 600, 500, 650])]), size, 3).held;
-  const p = planWindow({ frame: "fill", size, held: two });
+  const two = counted(listOf(["A", person("A", [500, 600, 500, 650])], ["B", person("B", [2600, 600, 500, 650])]), size, 3);
+  const p = planWindow({ frame: "fill", size, people: two });
   assert.equal(p.frame, "whole");
   assert.ok(p.zoom > 1 && p.zoom < 1.8, `zoom ${p.zoom}`);
   const win = shown({ frame: "whole", zoom: p.zoom, pan: p.pan, size });
   assert.ok(win[0] <= 440 && win[1] >= 3160, `the band's window ${win} holds both`);
-  // a close face, its chin low: the band stays whole-width, the chin above y 1238
-  const close = counted(listOf(["M", person("M", [800, 300, 1400, 1450])]), size, 3).held;
-  const c = planWindow({ frame: "fill", size, held: close, chinsAbove: 1238 });
+  // the same two, low in the picture: the band only as large as keeps their noses (and 24 px) above y 1238
+  const low = counted(listOf(["A", person("A", [500, 1300, 500, 650])], ["B", person("B", [2600, 1300, 500, 650])]), size, 3);
+  const c = planWindow({ frame: "fill", size, people: low, captions: [180, 1238, 720, 202] });
   assert.equal(c.frame, "whole");
-  assert.ok(c.zoom < cw(close), `zoom ${c.zoom}: smaller than the width alone allows`);
-  // its chin and a twelfth of the face below it, in the band at that zoom, above the captions' top
-  near(960 + (1750 - 1080) * (1080 * c.zoom / 3840) + 0.08 * 1450 * (1080 * c.zoom / 3840), 1238 - 24, 4);
-  assert.equal(chinZoom(close, size, null), Infinity);
+  assert.ok(c.zoom < p.zoom, `zoom ${c.zoom}: smaller than the width alone allows`);
+  const nose = 1300 + (0.38 + 0.7 * 0.48) * 650;
+  near(960 + (nose - 1080) * (1080 * c.zoom / 3840) * 1.04 + 24, 1238, 4);
+  assert.equal(noseZoom(low.held, size, null), Infinity);
 });
 
 test("faces: the first beat's own 1.6x band moves to a face at its side, and becomes smaller where the face needs it; an agent's zoom stays", () => {
   const size = [1920, 1080];
-  const side = counted(listOf(["A", person("A", [1500, 200, 250, 320])]), size, 3).held;
-  const p = planWindow({ frame: "whole", zoom: 1.6, size, held: side });
+  const side = counted(listOf(["A", person("A", [1500, 200, 250, 320])]), size, 3);
+  const p = planWindow({ frame: "whole", zoom: 1.6, size, people: side });
   assert.equal(p.zoom, 1.6);
   assert.ok(p.pan > 0.9, `pan ${p.pan}`);
-  const wide = counted(listOf(["A", person("A", [100, 200, 250, 320])], ["B", person("B", [1550, 200, 250, 320])]), size, 3).held;
-  const q = planWindow({ frame: "whole", zoom: 1.6, size, held: wide });
+  const wide = counted(listOf(["A", person("A", [100, 200, 250, 320])], ["B", person("B", [1550, 200, 250, 320])]), size, 3);
+  const q = planWindow({ frame: "whole", zoom: 1.6, size, people: wide });
   assert.ok(q.zoom < 1.6, `zoom ${q.zoom}`);
-  const r = planWindow({ frame: "whole", zoom: 1.6, zoomSet: true, size, held: wide });
+  const r = planWindow({ frame: "whole", zoom: 1.6, zoomSet: true, size, people: wide });
   assert.equal(r.zoom, 1.6);
   assert.deepEqual(r.cut.length > 0, true);
+});
+
+// the review's and the author's beats, their faces as `faces` found them (medians, px of the source)
+const moving = (from, to, n = 28) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box: from.box.map((v, j) => Math.round(v + ((to.box[j] - v) * k) / (n - 1))), feat: from.feat.map((v, j) => Math.round(v + ((to.feat[j] - v) * k) / (n - 1))) }));
+const listWith = (...people) => {
+  const by = new Map();
+  for (const [who, moments] of people) for (const m of moments) { if (!by.has(m.t)) by.set(m.t, []); by.get(m.t).push({ who, box: m.box, ...(m.feat ? { feat: m.feat } : {}) }); }
+  return { step: 0.1, faces: [...by.entries()].sort((a, b) => a[0] - b[0]).map(([t, boxes]) => ({ t, boxes })) };
+};
+const CAPTIONS = [180, 1238, 720, 202];   // captions' area for TikTok, hormozi, two lines of 96 px
+test("faces: the picture gives way in its order: a fill on the main face's eyes, nose and mouth (the review's b3, the author's crew4 b3), a crop placed high (the review's b7), a band last (crew4 b5)", () => {
+  // the review's b3, a panel (1280×720): the speaker, and a blurred woman at a laptop 53 % as tall behind him
+  const b3 = counted(listOf(["grey-haired man", person("M", [610, 143, 234, 240], 14)], ["woman at laptop", person("W", [274, 14, 96, 127], 14)]), [1280, 720], 1.44);
+  assert.deepEqual(b3.held.map((p) => p.who), ["grey-haired man"]);
+  const p3 = planWindow({ frame: "fill", size: [1280, 720], people: b3, captions: CAPTIONS, crop: () => assert.fail("no crop where the fill shows him") });
+  assert.deepEqual([p3.frame, p3.changed], ["fill", false]);
+  assert.match(p3.said, /the faces \(grey-haired man\) are in the picture as it is; an ear cut; a face in the background cut \(woman at laptop\)/);
+  // the author's crew4 b3: a masked man in close-up, 34 % of the width, moving left: the fill on his eyes, nose and mouth
+  const masked = counted(listWith(["man in black polo wearing mask", moving({ box: [1124, 386, 1264, 1296], feat: [1350, 880, 808, 622] }, { box: [862, 392, 1354, 1476], feat: [1106, 954, 868, 708] })]), [3840, 2160], 2.76);
+  // (his nose, low in the picture, would lie under the captions: the fill is raised a little, at its size)
+  const pm = planWindow({ frame: "fill", size: [3840, 2160], people: masked, captions: CAPTIONS });
+  assert.match(pm.said, /the crop moved to the faces \(man in black polo wearing mask\): from the middle it cut it; close-up kept, an ear cut; raised \d+ px/);
+  assert.equal(pm.frame, "crop");
+  near(pm.box.at[2] / pm.box.src[2], 1920 / 2160, 0.01);
+  assert.ok(1920 - pm.box.at[3] < 200, `raised ${1920 - pm.box.at[3]} px`);
+  const wm = shown({ ...pm, size: [3840, 2160] });
+  assert.ok(wm[0] <= 1106 && wm[1] >= 2158, `the fill ${wm} shows his eyes, nose and mouth`);
+  // without captions it stays a fill
+  assert.equal(planWindow({ frame: "fill", size: [3840, 2160], people: masked }).frame, "fill");
+  // the review's b7, a video call: two faces far apart; layout's 1:1 crop (its candidate as place gave it)
+  const b7 = counted(listOf(["Man with beard and glasses", person("M", [1009, 70, 139, 171], 17)], ["CM S Ingram", person("I", [564, 420, 135, 165], 17)]), [1280, 720], 1.73);
+  const square = { fit: "crop", crop: "1:1", scale: 1.5, left: -804, top: 101.9, window: [0, 101.9, 1080, 1080] };
+  const p7 = planWindow({ frame: "fill", size: [1280, 720], people: b7, captions: CAPTIONS, crop: () => square });
+  assert.equal(p7.frame, "crop");
+  assert.deepEqual(p7.box, { src: [536, 0, 720, 720], at: [0, 102, 1080, 1080] });
+  assert.match(p7.said, /a 1:1 crop placed high instead/);
+  // without layout: the band
+  assert.equal(planWindow({ frame: "fill", size: [1280, 720], people: b7, captions: CAPTIONS }).frame, "whole");
+  // the author's crew4 b5: two women side by side, the smaller 78 % as tall: both count; no crop holds them: the band
+  const b5 = counted(listOf(["woman with short grey hair", person("G", [800, 990, 1022, 970], 32)], ["woman with short curly hair", person("C", [2300, 394, 856, 756], 32)]), [3840, 2160], 3.17);
+  assert.equal(b5.held.length, 2);
+  const p5 = planWindow({ frame: "fill", size: [3840, 2160], people: b5, captions: CAPTIONS, crop: () => null });
+  assert.equal(p5.frame, "whole");
+  assert.equal(p5.flag, true);
+  assert.match(p5.said, /close-up became a small band \(the face \d+ % of the frame's height\): another stretch\?/);
+});
+
+test("faces: a fill whose eyes would lie under the captions is raised over the ground, at the same size (the review's b7, CM S Ingram alone)", () => {
+  const low = counted(listOf(["CM S Ingram", person("I", [564, 420, 135, 165], 17)]), [1280, 720], 1.73);
+  const p = planWindow({ frame: "fill", size: [1280, 720], people: low, captions: CAPTIONS });
+  assert.equal(p.frame, "crop");
+  const [, , , h] = p.box.at;
+  near(p.box.at[2] / p.box.src[2], 1920 / 720, 0.02);   // the fill's scale
+  assert.match(p.said, /raised (\d+) px, so that the captions lie on no eyes or nose/);
+  const lift = 1920 - h, nose = 420 + (0.38 + 0.7 * 0.48) * 165;
+  assert.ok(960 + (nose * 1920 / 720 - lift - 960) * 1.04 + 24 <= 1238 + 2, `lifted ${lift}`);
 });
 
 test("faces: in the frame on the film's clock (the source's second through speed, the slow move, a band cut to its height), and a text box on them by the part it reaches", () => {
@@ -348,6 +404,9 @@ test("build with faces: a first build and a rebuild are the same byte for byte, 
       faces: listOf(["Man with beard and glasses", person("M", [1009, 70, 139, 171], 25)], ["CM S Ingram", person("I", [564, 420, 135, 165], 25)]).faces }));
     r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
+    // (since the picture gives way in its order: a 1:1 crop placed high, by layout's place)
+    assert.match(r.stdout, /a: a fill would cut .*: a 1:1 crop placed high instead/);
+    assert.match(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", "a.json"), "utf8")).how, /"frame":"crop"/);
     const first = filesOf(comp), said = r.stdout.split("\n").filter((l) => /^ {2}(a|the captions|the hook)\b/.test(l));
     r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -390,8 +449,11 @@ test("build with faces: the captions never get smaller for one beat's face, and 
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /a: the face box of "giant" cannot be a face at 25 moment\(s\)/);
     assert.deepEqual(filesOf(comp), plain);
-    // the review's b7, the face of CM S Ingram, low in the picture: in the fill its eyes lie where the captions stand
-    facesFile(work, src, ["CM S Ingram", person("I", [564, 420, 135, 165], 25)]);
+    // the review's b7, the face of CM S Ingram, lower in the picture, in a band whose zoom the agent
+    // set (so that the picture does not give way): its eyes lie where the captions stand
+    cfg.beats[0].frame = "whole"; cfg.beats[0].zoom = 1.6;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    facesFile(work, src, ["CM S Ingram", person("I", [564, 560, 135, 150], 25)]);
     r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s\) where they stood; .* of 96 px, their size/);

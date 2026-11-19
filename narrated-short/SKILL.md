@@ -67,7 +67,7 @@ node <skill>/tools/short.mjs faces short/<name>      # the faces of the beats ma
 node <skill>/tools/short.mjs build short/<name> artifacts/<name>/composition --platform tiktok
 ```
 
-`faces` costs at most 2 cents and half a minute a marked beat and is kept while the beat's stretch stays; where it finds none or fails, the beat is built as without faces. `build` cuts a clip per beat, checks them, builds the captions and writes the composition; the preview beside the chat shows it at once. A crop that would cut a face goes to it, and captions or a hook that lie on a face move: each beat says what was done. Fix what it reports (`✗` must go, `?` and `!` are yours to look at) by changing the beats, and build again. Never edit the built `index.html`.
+`faces` costs at most 2 cents and half a minute a marked beat and is kept while the beat's stretch stays; where it finds none or fails, the beat is built as without faces. `build` cuts a clip per beat, checks them, builds the captions and writes the composition; the preview beside the chat shows it at once. A `fill` that would cut a face goes to it, or becomes a crop placed high or a band where it cannot show them, and captions or a hook that lie on eyes move (never smaller for one beat): each beat says what was done; `! … close-up became a small band` asks for another stretch. Fix what it reports (`✗` must go, `?` and `!` are yours to look at) by changing the beats, and build again. Never edit the built `index.html`.
 
 ### 5. The music
 
