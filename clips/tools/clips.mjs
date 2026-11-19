@@ -27,6 +27,11 @@
 //        best-takes (the captions' options, the hook's box) and takes/source/faces.json (the faces
 //        it keeps its punch-ins and its check by). prepare runs it once; run it again after the
 //        cut's start moved or to change what it chose, it builds again when the edit is built
+//   node tools/clips.mjs shots <framed.json> <shots.json>
+//        every shot of a framing (frame.mjs's json beside its video) with every face in the frame over
+//        time, ten times a second, as the framing draws it unraised: the shots.json agentitos' layout
+//        (place.mjs text) takes, for a skill that frames footage with frame.mjs and lays out its own
+//        text (kinetic-lyrics). No cost
 //   node tools/clips.mjs names <clip> [--episode <dir>]
 //        the episode's names list on the clip's words again (cut.json "fixes"), after
 //        episode.mjs names --take or --leave changed it; prepare does it once. No cost
@@ -312,6 +317,21 @@ function reframe(dir, opts) {
   console.log(`Next: node ${rel(path.join(HERE, "clips.mjs"))} place ${rel(dir)} (the shots may now stand otherwise under the captions), then node ${takes ? rel(takes) : "<best-takes>/tools/takes.mjs"} build ${rel(path.join(dir, "takes"))} (the cut, the captions and the hook stay), then check.`);
 }
 
+// ------------------------------------------------------------------------------------ shots
+// a framing's shots with their faces in the frame, for layout's text (clips' own place builds the
+// same from the cut's span: shotsInput)
+function shots(file, out) {
+  if (!file || !out) fail("clips.mjs shots <framed.json> <shots.json>: the framing frame.mjs wrote beside its video, and where the shots go.");
+  let framed;
+  try { framed = read(file); } catch (e) { fail(`${file} cannot be read (${e.code || e.message}): it is the .json frame.mjs writes beside the framed video.`); }
+  if (!framed.size || !Array.isArray(framed.windows)) fail(`${file} is not a framing of frame.mjs (no size or windows): frame the footage again with frame.mjs.`);
+  const [aw, ah] = framed.aspect || [9, 16], outW = 1080, outH = Math.round((outW * ah) / aw / 2) * 2;
+  const list = framedShots(framed, { outW, outH, unlifted: true }).map((s, k) => ({ n: k + 1, start: s.start, end: s.end, weight: +(s.end - s.start).toFixed(3), kind: s.kind, picture: s.picture, faces: s.faces, room: s.room?.none ? null : { free: s.room?.free || 0 } }));
+  fs.writeFileSync(out, JSON.stringify({ size: [outW, outH], shots: list }));
+  const faces = list.filter((s) => s.faces.length).length;
+  console.log(`${rel(out)}: ${list.length} shot(s) of ${outW}×${outH}, ${faces} with a face; for layout: place.mjs text <folder> --frame ${outW}x${outH} --shots ${rel(out)} --text …`);
+}
+
 // ------------------------------------------------------------------------------------ place
 // agentitos' layout: LAYOUT_TOOL, else beside this skill, else in the machine's clone
 function layoutTool() {
@@ -562,6 +582,7 @@ else if (command === "reframe") reframe(pos[0], opts);
 else if (command === "render") render(pos[0], pos[1]);
 else if (command === "place") place(pos[0], opts);
 else if (command === "names") names(pos[0], opts);
+else if (command === "shots") shots(pos[0], pos[1]);
 else if (command === "prepare-all") await prepareAll(pos[0], pos[1], opts);
 else if (command === "render-all") await renderAll(pos[0], pos[1], opts);
-else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] [--drop <sentences>] [--payoff <sentence>] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise head|mouth|full] [--caption-y <px>] [--font-size <px>] [--lines 1|2] [--lift <s>:<px>] [--hook text|card] | names <clip> [--episode <dir>] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
+else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] [--drop <sentences>] [--payoff <sentence>] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise head|mouth|full] [--caption-y <px>] [--font-size <px>] [--lines 1|2] [--lift <s>:<px>] [--hook text|card] | names <clip> [--episode <dir>] | shots <framed.json> <shots.json> | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");

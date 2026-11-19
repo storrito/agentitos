@@ -15,16 +15,32 @@ export function footageLayer(plan, { media = "video", canvas = "#world-canvas" }
   const vEnd = Math.min(D, V.duration);
   const stop = (f, o) => `rgba(0,0,0,${(o * d).toFixed(3)}) ${pct(a + (b - a) * f)}`;
   // eased ramp (no visible edge), plus a light veil at the very top for the HUD
-  const shade = `linear-gradient(to bottom, rgba(0,0,0,.42) 0%, rgba(0,0,0,0) 15%, rgba(0,0,0,0) ${pct(a)}, ${stop(0.25, 0.1)}, ${stop(0.5, 0.36)}, ${stop(0.75, 0.74)}, ${stop(1, 1)}, rgba(0,0,0,${d}) 100%)`;
+  // a picture raised by the build (V.lifts) ends above the frame's bottom, over a black ground: the
+  // band goes fully dark just above where the highest raise (grown by the push-in and a punch) ends
+  // it, so that no edge shows through the band
+  const liftEnd = V.lifts?.length ? 1 - (Math.max(...V.lifts.map((l) => l.px)) * 1.06 * 1.025) / plan.height : null;
+  const tail = liftEnd != null && liftEnd > b ? `rgba(0,0,0,${d}) ${pct(Math.max(b, liftEnd - 0.04))}, #000 ${pct(liftEnd)}, #000 100%` : `rgba(0,0,0,${d}) 100%`;
+  const shade = `linear-gradient(to bottom, rgba(0,0,0,.42) 0%, rgba(0,0,0,0) 15%, rgba(0,0,0,0) ${pct(a)}, ${stop(0.25, 0.1)}, ${stop(0.5, 0.36)}, ${stop(0.75, 0.74)}, ${stop(1, 1)}, ${tail})`;
   // the world's light stays faint over the face and comes up where the band is dark
   const fadeMask = `linear-gradient(to bottom, rgba(0,0,0,.1) 0%, rgba(0,0,0,.12) ${pct(a)}, #000 ${pct(b)})`;
   const heroes = plan.phrases.filter((p) => p.layout === "hero").map((p) => +p.tIn.toFixed(3));
-  const tag = media === "video"
+  const tag0 = media === "video"
     ? `<video id="bg-video" class="clip" src="${V.src}" muted playsinline data-start="0" data-duration="${vEnd.toFixed(3)}" data-track-index="0"></video>`
     : `<img id="bg-video" alt="" />`;
+  // a shot's picture raised (short.mjs place, footage shown as it is): inside the push-in, so the
+  // raise grows with it as a framing's does; a black ground follows the picture's bottom, under
+  // the band's dark part (place keeps it below the apps' bottom)
+  const lifts = V.lifts || [];
+  const tag = lifts.length ? `<div id="bg-lift">${tag0}<div id="bg-ground"></div></div>` : tag0;
+  const liftCss = lifts.length ? `
+        #bg-lift { position: absolute; inset: 0; }
+        #bg-ground { position: absolute; left: 0; right: 0; top: 98%; height: 100%; background: linear-gradient(to bottom, rgba(0,0,0,0), #000 2%); }` : "";
+  const liftJs = lifts.map((l) => `
+          tl.set("#bg-lift", { y: ${-l.px} }, ${l.start.toFixed(3)});
+          tl.set("#bg-lift", { y: 0 }, ${l.end.toFixed(3)});`).join("");
   return {
     css: `
-        #bg-push, #bg-punch { position: absolute; inset: 0; transform-origin: 50% 28%; }
+        #bg-push, #bg-punch { position: absolute; inset: 0; transform-origin: 50% 28%; }${liftCss}
         #bg-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
         #bg-shade { position: absolute; inset: 0; background: ${shade}; }
         ${canvas} { mix-blend-mode: screen; -webkit-mask-image: ${fadeMask}; mask-image: ${fadeMask}; }`,
@@ -40,7 +56,7 @@ export function footageLayer(plan, { media = "video", canvas = "#world-canvas" }
             tl.to("#bg-punch", { scale: 1.025, duration: 0.22, ease: "power2.out" }, t);
             tl.to("#bg-punch", { scale: 1, duration: 1.1, ease: "power2.inOut" }, t + 0.22);
           });
-          tl.to("#bg-push", { opacity: 0, duration: 0.5, ease: "power1.in" }, ${Math.max(0, vEnd - 0.5).toFixed(3)});`,
+          tl.to("#bg-push", { opacity: 0, duration: 0.5, ease: "power1.in" }, ${Math.max(0, vEnd - 0.5).toFixed(3)});${liftJs}`,
   };
 }
 

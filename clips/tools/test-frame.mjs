@@ -552,6 +552,19 @@ test("eyes, nose and mouth that do not hold (the mouth left out, above the nose,
   assert.ok((h.feat.y1 - top) / h.h >= 0.85, `the mouth's bottom at ${((h.feat.y1 - top) / h.h).toFixed(2)} of the head`);
 });
 
+test("the eyes' own height: the middle of the model's eyes box (with the brows) rides with the face as eye, between the stills too, and the faces alone carry it; one box for all three (version 3) has none", () => {
+  const ans = { version: 4, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [frontal(0.1), frontal(3.9, { eyes: [400, 400, 480, 600] })])] };
+  const [s] = shotsOf(ans, [{ start: 0, end: 4 }], META);
+  // the eyes box 380–460 of 1000 at the first still, 400–480 at the last: its middle at 42 % and 44 % of the height
+  near(faceAt(s.people[0], 0.1).feat.eye, 0.42 * META.height, 2);
+  near(faceAt(s.people[0], 2).feat.eye, 0.43 * META.height, 3);
+  const r = facesOver([s], META);
+  near(r.faces.find((f) => Math.abs(f.t - 2) < 1e-6).boxes[0].eye, 0.43 * META.height, 3);
+  const v3 = { version: 3, shots: [shotAnswer(0, 4, "people", [{ who: "guest", speaker: "A" }], [0.1, 3.9].map((t) => ({ t, faces: [{ person: 0, box_2d: [200, 330, 900, 670], features_2d: [380, 400, 700, 600], looks: "camera" }] })))] };
+  const [g] = shotsOf(v3, [{ start: 0, end: 4 }], META);
+  assert.equal(faceAt(g.people[0], 2).feat.eye, undefined);
+});
+
 test("a features box that jumps against its neighbours (the ear taken for the eyes) is left out and listed, and the window does not swing for it", () => {
   const stills = [0.1, 3, 6, 9, 11.9].map((t) => frontal(t));
   const ok = { version: 4, shots: [shotAnswer(0, 12, "people", [{ who: "guest", speaker: "A" }], stills)] };
