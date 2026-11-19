@@ -64,6 +64,22 @@ test("the faces of the framed clip in the frame: a close-up low, a shot shown wh
   assert.ok(file.faces.length >= 55 && file.faces.every((x) => x.boxes.length === 1), `${file.faces.length} moments`);
 });
 
+test("shots: a framing's shots with their faces in the frame, unraised, as layout's text takes them (for a skill that lays out its own text); a framing raised gives the same faces, a shot shown whole has no room", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-shots-"));
+  const fr = framing([answer(0, 3, "people", CLOSE), answer(3, 6, "broll", HIGH)], [{ t: 1, px: 150 }]);
+  fs.writeFileSync(path.join(dir, "framed.json"), JSON.stringify({ ...fr, aspect: [9, 16] }));
+  const r = spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "shots", path.join(dir, "framed.json"), path.join(dir, "shots.json")], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /2 shot\(s\) of 1080×1920, 2 with a face; for layout: place\.mjs text/);
+  const out = JSON.parse(fs.readFileSync(path.join(dir, "shots.json"), "utf8"));
+  assert.deepEqual(out.size, [1080, 1920]);
+  const plain = framedShots(framing([answer(0, 3, "people", CLOSE), answer(3, 6, "broll", HIGH)]));
+  assert.deepEqual(out.shots[0].faces[0].track.map((m) => m.box), plain[0].faces[0].track.map((m) => m.box), "the faces as unraised");
+  assert.deepEqual(out.shots.map((s) => [s.n, s.kind, s.room]), [[1, "people", { free: 0 }], [2, "whole", null]]);
+  const bad = spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "shots", path.join(dir, "shots.json"), path.join(dir, "x.json")], { encoding: "utf8" });
+  assert.ok(bad.status !== 0 && /is not a framing of frame\.mjs/.test(bad.stdout), bad.stdout);
+});
+
 test("a hook text needs a calm picture behind it: only close-ups under all of its time are calm, a wide shot or a picture shown whole is not", () => {
   const close = { start: 0, end: 3, kind: "people", faces: [{ track: [{ t: 1, box: [200, 300, 600, 700] }] }] };
   const wide = { start: 3, end: 6, kind: "people", faces: [{ track: [{ t: 4, box: [450, 400, 180, 300] }] }] };
