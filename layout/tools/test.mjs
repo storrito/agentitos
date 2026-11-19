@@ -869,9 +869,9 @@ console.log("\nThe screen above, the speaker in a panel down to the caption line
   });
 
   t("--screen-panel and two people in the webcam's picture (an independent review: the panel was centred on the first face, the second 65 % outside the frame and under the buttons, and still offered): two faces that fit whole stand in the panel together and it is offered without a hard problem; two too far apart are not offered (code faces); and never is a stack offered whose picture has a hard problem. A face under 160 px at 2× of the webcam's pixels is no panel (code webcam-face), an upright phone's screen and a label that leaves no room say so (upright, label), not 'captions'", () => {
-    const two = (faces, z = R916, band = L916) => panelOf(z, WHOLE, band, {}, { size: [1280, 720], faces });
+    const two = (faces, z = Z916, band = LD) => panelOf(z, WHOLE, band, {}, { size: [1280, 720], faces });
     const near = two([[200, 160, 220, 300], [860, 160, 220, 300]]), c = theOne(near);
-    ok(c && near.screenPanel.offered && !c.hard && c.faceInFrame.slice(1).every((b) => inside(R916.safe, b) && inside(c.stack.panel.box, b)), `two near: ${JSON.stringify(near.screenPanel)} ${c && JSON.stringify(c.problems)}`);
+    ok(c && near.screenPanel.offered && !c.hard && c.faceInFrame.slice(1).every((b) => inside(Z916.safe, b) && inside(c.stack.panel.box, b)), `two near: ${JSON.stringify(near.screenPanel)} ${c && JSON.stringify(c.problems)}`);
     const far = two([[40, 160, 220, 300], [1020, 160, 220, 300]]);
     ok(!theOne(far) && far.screenPanel.code === "faces" && /2 faces .* wider than/.test(far.screenPanel.why), JSON.stringify(far.screenPanel));
     for (const r of [near, far, panelOf(R916, WHOLE, L916), panelOf(F45, WHOLE, L45)]) { const k = theOne(r); ok(!k || !k.hard, `offered with a hard problem: ${JSON.stringify(k?.problems)}`); ok(!!k === !!r.screenPanel.offered, "offered and the candidate disagree"); }
