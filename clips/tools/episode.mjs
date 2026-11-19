@@ -376,7 +376,7 @@ function namesReport(dir, { j, raw, lost = [], moments: picked, changed }) {
   if (lost.length) console.log(`Not in the new list, so not carried over: ${lost.map((x) => `"${x.from}" → "${x.to}" (${x.taken})`).join(", ")}; take it again from the list above if it is there under another number.`);
   const proposed = j.entries.filter((e) => e.status === "proposed").length;
   console.log(`${path.join(dir, "names.json")} lists them with every place ($${(j.cost || 0).toFixed(4)}); the words as written are in ${path.join(dir, "words.raw.json")}. `
-    + (proposed ? `Take a proposed one only where the sentence shows the name was said: episode.mjs names ${dir} --take <n>,…; ` : "")
+    + (proposed ? `Each entry is one place. The proposed ones are not applied and never will be by themselves: take one only where its sentence shows that name was said there (episode.mjs names ${dir} --take <n>,…), leave the rest; ` : "")
     + `--leave <n> takes an applied one back; --also "Name, …" adds names the person gives (asks the model again). `
     + (picked ? `moments.json was picked from the words before: run moments again so that its titles, hooks and reasons carry the names. ` : `Next: episode.mjs moments ${dir}. `)
     + (changed ? `A clip prepared before keeps the old spelling until clips.mjs names <clip> puts the list on its words again (then build it again).` : ""));

@@ -298,6 +298,7 @@ test("names: applies what is sure, writes the list and the words as written, tak
   assert.equal(r.status, 0, r.out + r.err);
   assert.match(r.out, /1 correction applied, 2 proposed, 1 refused/);
   assert.match(r.out, /Next: episode\.mjs moments/);
+  assert.match(r.out, /Each entry is one place\. The proposed ones are not applied and never will be by themselves: take one only where its sentence shows that name was said there/);
   const read = (f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
   assert.deepEqual(read("words.raw.json"), TALK.words);
   assert.match(fs.readFileSync(path.join(dir, "sentences.txt"), "utf8"), /Walker Reade, a fictionalized/);
