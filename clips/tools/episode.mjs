@@ -4,7 +4,8 @@
 //   node tools/episode.mjs fetch <url|file> <dir> [--no-names]
 //        the episode's facts, its sound, and every word with its time and who speaks it:
 //        <dir>/episode.json, <dir>/words.json, <dir>/sentences.json and <dir>/sentences.txt,
-//        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from
+//        one numbered sentence a line, `12 [66:44–66:51] A: …`, to read and pick from; then the
+//        names (below), unless --no-names: the words keep the speech model's spellings then
 //   node tools/episode.mjs moments <dir> [--count N] [--max-seconds N]
 //        the candidates for shorts, picked by Gemini through OpenRouter from sentences.txt (five to
 //        nine cents an hour), in the order of the episode, each a whole passage: <dir>/moments.json and a short list
