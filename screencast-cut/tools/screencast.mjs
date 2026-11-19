@@ -66,7 +66,7 @@ import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
-import { layoutTool, placeFace, faceMoments, rankPictures, nameOf, markOf, coverOf } from "./lib/placement.mjs";
+import { layoutTool, placeFace, faceMoments, nameOf, markOf, coverOf } from "./lib/placement.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
@@ -966,50 +966,52 @@ async function cmdBuild(dir, opts) {
 // The face view of every keep that shows it: the layout skill's candidates for the webcam's picture
 // in this frame (lib/placement.mjs), around the captions' band as captions built it (they stay at
 // the safe box's bottom), for the face the model found on three frames (all three held: a head
-// that moves). A keep takes the candidate it names ("layout": a name of the list, or "cover" for
-// the frame covered from the face as before), else the rule best-takes uses for a person's take:
-// of those that pass (never enlarged past 2×, the captions clear of the face), the face nearest
-// the usual size, up to 34 % of the frame's height. Without a known face the frame is covered as
-// before, and said. Sets each face piece's picture; returns the lines to print.
+// that moves). layout orders them
+// for a picture of a speaker: the frame covered as before (cover) where it passes (the captions
+// clear of the eyes, nose and mouth, at most 2×), else the pictures across the frame's width, the
+// face nearest the usual size, then narrower ones. A keep takes the candidate it names ("layout"),
+// else the first. Without a known face the frame is covered as before, and said. Sets each face
+// piece's picture; returns the lines to print.
 function faceView(dir, cut, pieces, sources, { width, height, platforms, area }) {
   const cam = sources.webcam;
   const faced = [...new Set(pieces.filter((p) => p.view === "face").map((p) => p.keep))];
   if (!faced.length || !cam?.video) return [];
   const span = (k) => { const ps = pieces.filter((p) => p.keep === k); return `${clock(ps[0].start)}–${clock(ps.at(-1).start + ps.at(-1).duration)}`; };
-  const moments = faceMoments(cam);
-  if (!moments.length) {
+  const three = faceMoments(cam);
+  if (!three.length) {
     for (const p of pieces) if (p.view === "face") p.picture = { ...coverOf(cam, width, height), mark: "?", why: "the webcam's face is not known" };
     return [`Face view: the webcam's face is not known (no OpenRouter when new ran), so it covers the frame from the middle as before; ${faced.length === 1 ? "its keep" : `its ${faced.length} keeps`} at ${faced.map(span).join(", ")}.`];
   }
   const tool = layoutTool();
   if (!tool) fail("✗ The face view needs agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
-  let res;
-  try { res = placeFace({ tool, folder: path.join(dir, "placement", "face"), cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms }); } catch (e) { fail(`✗ ${e.message}`); }
-  const hs = moments.map((m) => m.box[3]).sort((a, b) => a - b), usual = hs[hs.length >> 1];
-  const ranked = rankPictures(res.candidates, usual, height);
-  // the frame covered as before, judged by its enlargement only (layout's limits: soft over 1.5×,
-  // too soft over 2×); where it puts the captions on the face is not judged
-  const old = { ...coverOf(cam, width, height), hard: 0, unmet: [], soft: 0, problems: [] };
-  old.face = (usual * old.scale) / height;
-  if (old.scale > 1.5) Object.assign(old, old.scale > 2 ? { hard: 1 } : { soft: 1 }, { problems: [{ level: old.scale > 2 ? "hard" : "soft", of: "picture", what: `the source's pixels are enlarged ${old.scale.toFixed(2)}× (over ${old.scale > 2 ? "2×: too soft to publish" : "1.5×: soft"})` }] });
-  old.problems.push({ level: "info", of: "captions", what: "on the face or not: not judged" });
   const pct = (v) => `${Math.round(v * 100)} %`;
-  const reason = (x) => [...(x.problems || []).filter((q) => q.level !== "info" || x === old).map((q) => `${q.of} ${q.what}`), ...(x.unmet || []).filter((u) => !(x.problems || []).some((q) => q.of === u)).map((u) => `no place for the ${u}`)].join("; ");
-  const line = (x, taken) => `${markOf(x)} ${nameOf(x)} at ${x.scale}×, the face ${pct(x.face)} of the height${x.ground ? `, ${pct(x.ground)} ground` : ""}${reason(x) ? `: ${reason(x)}` : ""}${taken ? "  ← taken" : ""}`;
-  const said = [`Face view (the layout skill, ${res.captionArea ? "around the captions as built" : "no captions"}; the face on ${moments.length} frame${moments.length > 1 ? "s" : ""} of the webcam, all held): of what passes, the face nearest the usual size (up to ${pct(0.34)} of the height) unless a keep names another with "layout":`];
+  const ground = (x) => (x.ground ? `, ${pct(x.ground)} ground` : "");
+  const said = [`Face view (the layout skill, ${area ? "around the captions as built" : "no captions"}; the face held where the model's ${three.length} frame${three.length > 1 ? "s" : ""} saw it): the frame covered as before where it passes, else the picture across the frame's width with the face nearest the usual size, unless a keep names another with "layout":`];
+  let lastAlso = null, lastKeep = null;
   for (const k of faced) {
+    const ps = pieces.filter((p) => p.keep === k && p.view === "face");
+    const moments = three;
+    let res;
+    try { res = placeFace({ tool, folder: path.join(dir, "placement", `face-${k + 1}`), moments, cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms }); } catch (e) { fail(`✗ ${e.message}`); }
+    const list = res.candidates.filter((x) => !x.parts && Number.isFinite(x.scale));
     const want = cut.keep[k].layout?.trim();
-    let chosen = ranked[0];
-    if (want === "cover") chosen = old;
-    else if (want) {
-      chosen = ranked.find((x) => nameOf(x) === want);
-      if (!chosen) fail(`✗ keep ${k + 1}: "layout": "${want}" is not among the face view's candidates in this frame: ${[...ranked.map(nameOf), "cover"].map((n) => `"${n}"`).join(", ")}.`);
+    let chosen = list[0];
+    if (want) {
+      chosen = list.find((x) => nameOf(x) === want);
+      if (!chosen) fail(`✗ keep ${k + 1}: "layout": "${want}" is not among the face view's candidates in this frame: ${list.map(nameOf).map((n) => `"${n}"`).join(", ")}.`);
     }
-    const pic = { fit: nameOf(chosen), scale: chosen.scale, left: chosen.left, top: chosen.top, window: chosen.window || [0, 0, width, height], mark: markOf(chosen), face: +chosen.face.toFixed(3), ...(want ? { named: true } : {}) };
-    for (const p of pieces) if (p.keep === k && p.view === "face") p.picture = pic;
-    said.push(`  keep ${k + 1} (${span(k)}): ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.face)} of the height${want ? " (as the keep names it)" : chosen === ranked[0] && markOf(chosen) !== "✗" && markOf(chosen) !== "–" ? "" : ": nothing passes"}`);
+    const pic = { fit: nameOf(chosen), scale: chosen.scale, left: chosen.left, top: chosen.top, window: chosen.window || [0, 0, width, height], mark: markOf(chosen), face: chosen.pick.face, ...(want ? { named: true } : {}) };
+    for (const p of ps) p.picture = pic;
+    said.push(`  keep ${k + 1} (${span(k)}): ${markOf(chosen)} ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.pick.face)} of the height${ground(chosen)}${want ? " (as the keep names it)" : ""}${chosen.pick.passes ? "" : ": nothing passes"}`);
+    if (res.pick?.note) said.push(`    note: ${res.pick.note.replace(/^for a speaker: /, "")}`);
+    // the others in short, a failing one with what fails; said once where a keep has the list of the keep before
+    const short = (x) => [...(x.hard ? x.problems.filter((q) => q.level === "hard").map((q) => (q.code === "enlarged" ? `enlarged ${x.scale}×` : q.kind === "face" ? "the face under the apps' buttons" : q.what)) : []),
+      ...(!x.pick.passes && /mouth, the nose or the eyes/.test(x.pick.why) ? ["the captions on the mouth"] : [])].filter((v, i, a) => a.indexOf(v) === i).join(", ");
+    const also = list.filter((y) => y !== chosen).slice(0, 4).map((x) => `${markOf(x)} ${nameOf(x)} at ${x.scale}× (${x.pick.passes ? `the face ${pct(x.pick.face)}${ground(x)}` : short(x) || "fails"})`).join("; ");
+    said.push(`    also: ${also === lastAlso ? `as keep ${lastKeep + 1}` : also}`);
+    if (also !== lastAlso) { lastAlso = also; lastKeep = k; }
   }
-  said.push(`  the candidates (${path.relative(process.cwd(), path.join(dir, "placement", "face", "placement.json"))}):`, ...[...ranked.slice(0, 5), old].map((x) => `    ${line(x, false)}`));
+  said.push(`  (every candidate with its reasons: ${path.relative(process.cwd(), path.join(dir, "placement"))}/face-<keep>/placement.json)`);
   return said;
 }
 

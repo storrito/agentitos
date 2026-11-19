@@ -218,24 +218,12 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 });
 
 // ------------------------------------------------------------------------------ the face view
-// The face view placed by the layout skill (lib/placement.mjs): the candidates, the rule that
-// chooses among them (best-takes' own), the element's geometry, and the old cover where no face
-// is known. The layout skill runs as a program, beside this one.
-import { rankPictures, nameOf, faceMoments, placeFace, coverOf, geometry, layoutTool } from "./lib/placement.mjs";
+// The face view placed by the layout skill (lib/placement.mjs): its order for a picture of a
+// speaker (place --pick speaker, the old cover among the candidates), the element's geometry, and
+// the old cover where no face is known. The layout skill runs as a program, beside this one.
+import { nameOf, markOf, faceMoments, placeFace, coverOf, geometry, layoutTool } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
-
-test("the rule that chooses the face view is best-takes': of what passes, the face nearest the usual size up to 34 % of the height, layout's order among equals (best-takes' own case: the 4:5 crop at 1.875× before the square at 1.5×)", () => {
-  const c = (fit, crop, scale, extra = {}) => ({ fit, crop, scale, left: 0, top: 0, hard: 0, unmet: [], soft: 0, problems: [], text: [], ...extra });
-  const list = [c("crop", "1:1", 1.5), c("crop", "1:1", 1.5, { onGround: true }), c("crop", "4:5", 1.875, { soft: 1 }), c("inset", null, 0.8438), c("full", null, 2.6667, { hard: 1 })];
-  const r = rankPictures(list, 309, 1920);
-  assert.deepEqual(r.map((x) => x.n), [3, 1, 2, 4, 5]);
-  assert.ok(Math.abs(r[0].face - 0.302) < 0.001);
-  assert.equal(rankPictures([c("crop", "4:5", 1.875), c("crop", "1:1", 1.5)], 400, 1920)[0].crop, "1:1");
-  // a candidate whose captions found no place (on the face) never comes before one that passes
-  assert.equal(rankPictures([c("full", null, 1.2, { unmet: ["caption"] }), c("inset", null, 0.8)], 309, 1920)[0].fit, "inset");
-  assert.deepEqual(r.map(nameOf), ["crop 4:5", "crop 1:1", "crop 1:1, text on the ground", "inset", "full"]);
-});
 
 test("the webcam's face in px: the three moments the model saw, else the one box of the circle", () => {
   const cam = { width: 1280, height: 720, face: [0.4, 0.2, 0.6, 0.7], faceAt: [{ t: 9, box: [0.4, 0.2, 0.6, 0.7] }, { t: 22.5, box: [0.45, 0.3, 0.65, 0.8] }] };
@@ -244,23 +232,35 @@ test("the webcam's face in px: the three moments the model saw, else the one box
   assert.deepEqual(faceMoments({ ...cam, face: null, faceAt: undefined }), []);
 });
 
+// the public test's webcam (a close 720p picture) and the captions' bands captions built in each frame
+const CAM = { width: 1280, height: 720, face: [0.388, 0.202, 0.614, 0.685], faceAt: [{ t: 9, box: [0.388, 0.204, 0.614, 0.692] }, { t: 22.51, box: [0.388, 0.202, 0.614, 0.685] }, { t: 36.01, box: [0.388, 0.204, 0.614, 0.69] }] };
+const BANDS = { "1080x1920": { left: 192, width: 696, top: 1282, bottom: 1440, size: 52, lines: 2 }, "1080x1350": { left: 54, width: 972, top: 1072, bottom: 1230, size: 52, lines: 2 }, "1920x1080": { left: 96, width: 1728, top: 772, bottom: 930, size: 52, lines: 2 } };
 const LAYOUT = layoutTool();
-test("a 720p webcam into 9:16 around clean captions at the safe box's bottom: the frame covered (2.67×, the chin in the captions) fails, the rule takes the 4:5 crop at 1.875× with the chin above the captions", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+const placed = (dir, size, moments = faceMoments(CAM)) => {
+  const [width, height] = size.split("x").map(Number), area = path.join(dir, `area-${size}.json`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(area, JSON.stringify(BANDS[size]));
+  return placeFace({ tool: LAYOUT, folder: path.join(dir, size), moments, cam: CAM, width, height, area });
+};
+
+test("the face view is in the layout skill's order for a speaker: the frame covered as before where it passes (16:9 and 4:5, the build as main's), else the picture across the frame's width with the face nearest the usual size (9:16: the 4:5 crop at 1.875×, the chin above the captions), the old 2.67× cover last", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-view-"));
   try {
-    const cam = { width: 1280, height: 720, face: [0.388, 0.202, 0.614, 0.685] };
-    const area = { left: 192, width: 696, top: 1282, bottom: 1440, size: 52, lines: 2 };
-    fs.writeFileSync(path.join(dir, "area.json"), JSON.stringify(area));
-    const res = placeFace({ tool: LAYOUT, folder: path.join(dir, "p"), cam, width: 1080, height: 1920, area: path.join(dir, "area.json") });
-    const usual = 0.483 * 720, ranked = rankPictures(res.candidates, usual, 1920), first = ranked[0];
+    for (const size of ["1920x1080", "1080x1350"]) {
+      const res = placed(dir, size), first = res.candidates[0], old = coverOf(CAM, ...size.split("x").map(Number));
+      assert.equal(nameOf(first), "cover", size);
+      assert.deepEqual([first.scale, first.left, first.top], [old.scale, old.left, old.top], size);
+      assert.ok(first.pick.passes && markOf(first) !== "–" && markOf(first) !== "✗", `${size}: ${first.pick.why}`);
+    }
+    const res = placed(dir, "1080x1920"), first = res.candidates[0];
     assert.equal(nameOf(first), "crop 4:5");
     assert.equal(first.scale, 1.875);
-    assert.ok(first.faceInFrame[0][1] + first.faceInFrame[0][3] < area.top, `the chin at ${first.faceInFrame[0][1] + first.faceInFrame[0][3]}`);
-    const full = ranked.find((x) => x.fit === "full");
-    assert.ok(full.hard && full.unmet.includes("caption"));
-    // what the old cover did for this webcam: the same 2.67×, its chin in the captions' band
-    const old = coverOf(cam, 1080, 1920);
-    assert.ok(old.scale > 2.6 && old.top + 0.685 * 720 * old.scale > area.top);
+    assert.ok(first.faceInFrame[0][1] + first.faceInFrame[0][3] < BANDS["1080x1920"].top, `the chin at ${first.faceInFrame[0][1] + first.faceInFrame[0][3]}`);
+    const last = res.candidates.at(-1);
+    assert.ok(nameOf(last) === "cover" && last.hard && markOf(last) === "✗" && last.scale > 2.6, JSON.stringify(last.pick));
+    // the inset (the whole webcam at 0.84×) stands behind every picture across the width that passes
+    const inset = res.candidates.findIndex((x) => x.fit === "inset");
+    assert.ok(res.candidates.slice(0, inset).every((x) => x.pick.passes && x.pick.across));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

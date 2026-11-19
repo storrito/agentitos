@@ -1217,6 +1217,109 @@ if (!QUICK) t("in Chrome: the first passing candidate around a fixed band is wha
   return `${c.fit} ${c.crop || ""} at ${c.scale}×`;
 });
 
+console.log("\nThe order for a picture of a speaker (--pick speaker, --cover)");
+// screencast-cut's public webcam (1280×720, the face at three moments as its model gave them) and
+// the picture screencast-cut drew before it asked layout (its cover: the frame covered around the
+// face), against captions built at the safe box's bottom of each frame
+const CAM = [{ t: 9, box: [496.6, 146.9, 289.3, 351.4] }, { t: 22.51, box: [496.6, 145.4, 289.3, 347.8] }, { t: 36.01, box: [496.6, 146.9, 289.3, 349.9] }];
+const SPEAK = {
+  "9:16": { band: BAND916, cover: { scale: 2.6667, left: -1170.1, top: 0 } },
+  "4:5": { band: { left: 54, width: 972, top: 1072, bottom: 1230, size: 52, lines: 2 }, cover: { scale: 1.875, left: -662.4, top: 0 } },
+  "16:9": { band: { left: 96, width: 1728, top: 772, bottom: 930, size: 52, lines: 2 }, cover: { scale: 1.5, left: 0, top: 0 } },
+};
+const speak = (frame, extra = {}) => solve({ zones: askZones(frame), source: [1280, 720], faces: [CAM], needs: [], captionArea: SPEAK[frame].band, pick: "speaker", cover: SPEAK[frame].cover, ...extra });
+const pname = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.onGround ? ", text on the ground" : ""}`;
+
+t("for a speaker: the picture the caller draws today stays where it passes (16:9 and 4:5: the captions clear of the mouth, at most 2×), also where layout's own margin below the chin refuses the band", () => {
+  const out = [];
+  for (const frame of ["16:9", "4:5"]) {
+    const res = speak(frame), first = res.candidates[0];
+    ok(first.fit === "cover" && first.pick.cover && first.pick.passes && first.pick.place === 1 && first.pick.layout === 0, `${frame}: ${JSON.stringify(first.pick)}`);
+    ok(first.scale === SPEAK[frame].cover.scale && first.left === SPEAK[frame].cover.left && first.top === 0, `${frame}: the cover moved: ${first.scale}, ${first.left}, ${first.top}`);
+    ok(res.pick.for === "speaker" && res.pick.first === "cover" && !res.pick.note, JSON.stringify(res.pick));
+    out.push(`${frame} cover at ${first.scale}×${first.unmet.length ? " (layout: –, the band in its margin below the chin)" : ""}`);
+  }
+  // 16:9: layout's own full picture leaves the band no place (its margin below the chin), the speaker's order passes it
+  const full = speak("16:9").candidates.find((c) => c.fit === "full");
+  ok(full.unmet.includes("caption") && full.pick.passes && /clear of the mouth/.test(full.pick.why), JSON.stringify(full.pick));
+  return out.join(", ");
+});
+
+t("for a speaker: where the cover fails (9:16 at 2.67×), the pictures across the frame's width come first, the face nearest the usual size; the inset after them, the failing cover last", () => {
+  const res = speak("9:16"), c = res.candidates;
+  ok(c[0].fit === "crop" && c[0].crop === "4:5" && c[0].scale === 1.875 && c[0].pick.across, `${pname(c[0])} at ${c[0].scale}×`);
+  ok(c.at(-1).fit === "cover" && !c.at(-1).pick.passes && /enlarged 2\.67×/.test(c.at(-1).pick.why), c.at(-1).pick.why);
+  const inset = c.findIndex((x) => x.fit === "inset"), lastWide = c.findLastIndex((x) => x.pick.passes && x.pick.across);
+  ok(inset > lastWide, `the inset at ${inset + 1}, a picture across the width at ${lastWide + 1}`);
+  c.forEach((x, i) => ok(x.pick.place === i + 1 && !("behind" in x), `${pname(x)}: ${JSON.stringify(x.pick)}`));
+  return c.map((x) => `${pname(x)} ${x.scale}×${x.pick.passes ? "" : " ✗"}`).join(", ");
+});
+
+t("for a speaker: a larger face is no reason to drop a picture across the width (4:5 without its cover: the square at 1.5×, face 39 %, before the whole picture at 0.84×, face 22 %, which best-takes' rule took)", () => {
+  const res = solve({ zones: askZones("4:5"), source: [1280, 720], faces: [CAM], needs: [], captionArea: SPEAK["4:5"].band, pick: "speaker" });
+  const c = res.candidates;
+  ok(pname(c[0]) === "crop 1:1" && c[0].scale === 1.5 && Math.abs(c[0].pick.face - 0.39) < 0.01, `${pname(c[0])} at ${c[0].scale}×, face ${c[0].pick.face}`);
+  ok(c.find((x) => x.fit === "inset").pick.place > c.findIndex((x) => x.fit === "full") + 1, c.map(pname).join(", "));
+  ok(!res.pick.cover && !c.some((x) => x.fit === "cover"), "a cover without --cover");
+});
+
+t("for a speaker: the captions' band on the mouth does not pass, on the chin it does; with nothing across the width the narrower picture comes first and a note says what to do", () => {
+  // the face held low in a 16:9 frame: the band lies on its mouth in every picture across the width
+  const low = [[540, 330, 200, 300]], band = { left: 96, width: 1728, top: 772, bottom: 930, size: 52, lines: 2 };
+  const res = solve({ zones: askZones("16:9"), source: [1280, 720], faces: low, needs: [], captionArea: band, pick: "speaker", cover: { scale: 1.5, left: 0, top: 0 } });
+  const cov = res.candidates.find((c) => c.fit === "cover");
+  ok(!cov.pick.passes && /on the mouth, the nose or the eyes/.test(cov.pick.why), cov.pick.why);
+  const first = res.candidates[0];
+  ok(first.pick.passes && !first.pick.across && /no picture across the frame's full width passes/.test(res.pick.note) && /look at its page/.test(res.pick.note), `${pname(first)}: ${JSON.stringify(first.pick)}; ${res.pick.note}`);
+  // the same face a little higher: the band on its chin, clear of the mouth, and the cover passes
+  const chin = solve({ zones: askZones("16:9"), source: [1280, 720], faces: [[540, 230, 200, 300]], needs: [], captionArea: band, pick: "speaker", cover: { scale: 1.5, left: 0, top: 0 } });
+  ok(chin.candidates[0].fit === "cover" && /on the chin, clear of the mouth/.test(chin.candidates[0].pick.why), chin.candidates[0].pick.why);
+  return `low: ${pname(first)} at ${first.scale}×; note: ${res.pick.note}`;
+});
+
+t("for a speaker, best-takes' own case: the 720p interview into 9:16 with layout's own captions takes the 4:5 crop at 1.875× before the square at 1.5× (the review: the square left the face at 14 %)", () => {
+  const res = solve({ zones: askZones("9:16"), source: [1280, 720], faces: [[555, 145, 180, 195]], needs: [{ role: "caption", lines: 2 }], pick: "speaker" });
+  const c = res.candidates[0];
+  ok(pname(c) === "crop 4:5" && c.scale === 1.875 && c.pick.across && c.pick.passes, `${pname(c)} at ${c.scale}×: ${JSON.stringify(c.pick)}`);
+});
+
+t("for a speaker: a phone's own take covering 9:16 stays covered though the apps' bars lie over its head (best-takes' upright take: its caller raises it under the text); layout's own full picture, judged as always, fails", () => {
+  const res = solve({ zones: askZones("9:16"), source: [1080, 1920], faces: [[257, 139, 598, 823]], needs: [{ role: "caption", lines: 1 }], pick: "speaker", cover: { scale: 1, left: 0, top: 0 } });
+  const [first] = res.candidates, full = res.candidates.find((c) => c.fit === "full");
+  ok(first.fit === "cover" && first.pick.passes && first.hard && /the apps' bars lie over the face/.test(first.pick.why), first.pick.why);
+  ok(full && !full.pick.passes && full.problems.some((q) => q.code === "covered"), JSON.stringify(full?.pick));
+  // without the caller's cover the narrower pictures come first, and the note says so
+  const bare = solve({ zones: askZones("9:16"), source: [1080, 1920], faces: [[257, 139, 598, 823]], needs: [{ role: "caption", lines: 1 }], pick: "speaker" });
+  ok(bare.candidates[0].fit === "inset" && /no picture across the frame's full width passes/.test(bare.pick.note), bare.pick.note);
+});
+
+t("place --pick speaker --cover prints the order and writes it; a wrong value, --cover alone, a cover that does not cover and a screen each get one sentence; without --pick no key of it", () => {
+  const dir = path.join(OUT, "pick"), track = path.join(OUT, "pick-track.json");
+  fs.writeFileSync(track, JSON.stringify(CAM));
+  const base = ["--frame", "16:9", "--source", "1280x720", "--face-track", track, "--caption-area", "96,1728,772,930,52,2"];
+  const r = cli("place", dir, ...base, "--pick", "speaker", "--cover", "1.5,0,0");
+  ok(r.status === 0 && /ordered for a speaker/.test(r.stdout) && /1\. [✓!–] cover/.test(r.stdout) && /for a speaker: passes, the frame covered as the caller draws it/.test(r.stdout), r.stderr || r.stdout.slice(0, 1500));
+  const j = JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8"));
+  ok(j.pick.first === "cover" && j.candidates[0].pick.place === 1, JSON.stringify(j.pick));
+  for (const [args, re] of [[["--pick", "face"], /--pick takes speaker/], [["--cover", "1.5,0,0"], /give --pick speaker/], [["--pick", "speaker", "--cover", "1.2,0,0"], /does not cover the frame/], [["--pick", "speaker", "--cover", "1.5,0"], /--cover is scale,left,top/]]) {
+    const e = cli("place", dir, ...base, ...args);
+    sentence(e, args.join(" ")); ok(re.test(e.stderr), e.stderr);
+  }
+  const s = cli("place", dir, "--frame", "9:16", "--source", "1920x1080", "--region", "700,300,480,300", "--min-text-height", "14", "--pick", "speaker");
+  sentence(s, "a screen"); ok(/leave it out for a screen/.test(s.stderr), s.stderr);
+  const plain = JSON.parse(cli("place", dir, ...base, "--json").stdout);
+  ok(!("pick" in plain) && plain.candidates.every((c) => !("pick" in c)) && !plain.candidates.some((c) => c.fit === "cover"), "a key of the order without --pick");
+});
+
+if (!QUICK) t("in Chrome: the cover the speaker's order keeps in 16:9 is a page platform-zones' checker passes, the face where the solver has it", () => {
+  const res = speak("16:9"), c = res.candidates[0];
+  const v = verify(c, res, "speaker-cover-169");
+  ok(v.r.ok, `the checker fails it: ${(v.r.hard || []).map((f) => f.what)}`);
+  const face = v.r.boxes.find((b) => b.kind === "face");
+  ok(face && Math.abs(face.box[1] - c.faceInFrame[0][1]) <= 2 && Math.abs(face.box[3] - c.faceInFrame[0][3]) <= 2, JSON.stringify([face?.box, c.faceInFrame[0]]));
+  return `${c.fit} at ${c.scale}×`;
+});
+
 console.log("\nText over a placed picture, for a whole clip (text): faces over time");
 {
   const Z9 = askZones("9:16");

@@ -8,7 +8,7 @@ For a moment the person names, `node <skill>/tools/screencast.mjs at screencast/
 | "… is cut off" / "too fast at the end" | `"hold": 1.5` on that keep, or end it a word later |
 | "Faster" / "slower" / "as I spoke" | `build … --speed 1.3` / `--speed 1.1` / `--speed 1` (by default the build speeds a slow speaker up to 1.2× by itself and says so; the voice keeps its pitch) |
 | "Show the phone" / "show my face" | `"view": "phone-screen"` / `"face"` on that keep |
-| "My face is too small" / "too large" / "the subtitles are on my mouth" (a face keep) | another of the build's face-view candidates on that keep, `"layout": "crop 1:1"` (a ✓ or !), from the list the build printed; check it with `frame` |
+| "My face is too small" / "too large" / "the subtitles are on my mouth" (a face keep) | another of that keep's face-view candidates, `"layout": "crop 1:1"` (a ✓ or !), from the list the build printed; check it with `frame` |
 | "Hide my face here" | `"circle": false` on that keep: the screen takes its room too |
 | "No background" / "plain background" | `"background": "plain"` in cut.json (the brand's colours) |
 | "Other captions" / "no captions" | `screencast.mjs captions screencast/<name> --style hormozi` (karaoke, wipe, clean; on a busy screen `outline` or `fill` stand out, `bold` and `subtitle` have nothing behind the words) / `--off` |
