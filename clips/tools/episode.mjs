@@ -45,7 +45,7 @@ import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcri
 import { duration } from "./lib/media.mjs";
 import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing } from "./lib/moments.mjs";
-import { NAMES_MODEL, NAMES_SCHEMA, pageOf, pageSources, ownTokens, entriesOf, applyNames, namesPrompt, namesListing } from "./lib/names.mjs";
+import { NAMES_MODEL, NAMES_SCHEMA, LOOK_SCHEMA, pageOf, pageSources, ownTokens, entriesOf, applyNames, namesPrompt, namesListing, lookItems, lookPrompt, applyLook } from "./lib/names.mjs";
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const log = (...a) => console.error(...a);
@@ -354,6 +354,17 @@ async function correctNames(dir, opts = {}) {
     const { answer, cost, usage } = await ask(or, namesPrompt(page, sentences), "names", NAMES_SCHEMA, { model: NAMES_MODEL, isAnswer: isNames, what: "list of names", reasoning: NAMES_REASONING });
     const sources = pageSources(page);
     const entries = entriesOf(answer, raw, sentences, sources, { lang: episode.lang });
+    // the second look: is the one spoken of at each place the page's? Only a clear yes stays applied
+    const items = lookItems(entries, raw, sentences);
+    let looked = 0;
+    if (items.length) {
+      log(`episode: a second look at the ${items.length} place${items.length === 1 ? "" : "s"} to apply …`);
+      let seen = null;
+      try { const r = await ask(or, lookPrompt(page, items), "look", LOOK_SCHEMA, { model: NAMES_MODEL, isAnswer: (x) => (x && Array.isArray(x.places) ? x : null), what: "look at the places", reasoning: NAMES_REASONING }); seen = r.answer; looked = r.cost; } catch (e) {
+        log(`episode: the second look failed (${e.message}); its places stay proposals …`);
+      }
+      applyLook(entries, seen);
+    }
     // what the agent decided on the list before stays decided where the same correction of the
     // same place comes again; a decision the new list has no place for is said
     const same = (x, e) => x.from === e.from && x.to === e.to && x.places?.[0]?.first === e.places?.[0]?.first;
@@ -363,7 +374,7 @@ async function correctNames(dir, opts = {}) {
       else lost.push(x);
     }
     // the model's own answer stays beside the list: what it found, before the rules decided
-    j = { model: NAMES_MODEL, cost: +cost.toFixed(4), usage, names: answer.names, entries, found: answer.fixes };
+    j = { model: NAMES_MODEL, cost: +(cost + looked).toFixed(4), usage, names: answer.names, entries, found: answer.fixes };
   }
   if (!fs.existsSync(rawFile)) fs.writeFileSync(rawFile, JSON.stringify(raw));
   writeWords(dir, applyNames(raw, j.entries));

@@ -267,14 +267,26 @@ test("the prompt holds the page without links and the numbered sentences", () =>
 });
 
 // ---------------------------------------------------------------- the command
-async function namesWith(dir, answer, args = []) {
+// the second look's answer for a request: every place asked about, "yes" unless `look` says else
+// (look: id → "no" | "unsure"), by the numbers in its prompt
+const LOOKS = [];
+function lookAnswer(body, look = {}) {
+  const prompt = JSON.parse(body).messages[0].content;
+  LOOKS.push(prompt);
+  const ids = [...prompt.matchAll(/^(\d+)\. NAME: /gm)].map((m) => Number(m[1]));
+  return { places: ids.map((id) => ({ id, who: "the one on the page", same: look[id] || "yes", why: "w" })) };
+}
+const isLook = (body) => JSON.parse(body).response_format?.json_schema?.name === "look";
+
+async function namesWith(dir, answer, args = [], look = {}) {
   let calls = 0;
   const server = http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => (body += c)); req.on("end", () => {
       res.setHeader("Content-Type", "application/json");
       if (req.url.endsWith("/key")) return res.end("{}");
       calls++;
-      res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) }, finish_reason: "stop" }], usage: { cost: 0.012, prompt_tokens: 10, completion_tokens: 5 } }));
+      const content = isLook(body) ? (look === null ? {} : lookAnswer(body, typeof look === "function" ? look(body) : look)) : answer;
+      res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) }, finish_reason: "stop" }], usage: { cost: 0.012, prompt_tokens: 10, completion_tokens: 5 } }));
     });
   });
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
@@ -318,7 +330,7 @@ test("names: applies what is sure, writes the list and the words as written, tak
   assert.match(no.out, /^Correction \d+ is refused \(.*\): it is never applied; a name the tool cannot reach is fixed in the clip's cut\.json "fixes"\.\n$/);
   // asked again, what was taken stays taken
   const again = await namesWith(dir, answer);
-  assert.equal(again.calls, 1);
+  assert.equal(again.calls, 2, "the names and their second look");
   assert.match(fs.readFileSync(path.join(dir, "sentences.txt"), "utf8"), /Why, mother\?/);
   fs.rmSync(dir, { recursive: true });
 });
@@ -369,7 +381,8 @@ async function fetchWith({ info, names }, args = []) {
       if (req.url.endsWith("/key")) return res.end("{}");
       if (req.url.endsWith("/audio/transcriptions")) return res.end(JSON.stringify({ words: HEARD.map(([word, start, end]) => ({ word, start, end, type: "word", speaker: "0" })), usage: { cost: 0.0011 } }));
       chats++;
-      res.end(JSON.stringify({ choices: [{ message: { content: typeof names === "string" ? names : JSON.stringify(names) }, finish_reason: "stop" }], usage: { cost: 0.002 } }));
+      const content = isLook(body) ? JSON.stringify(lookAnswer(body)) : typeof names === "string" ? names : JSON.stringify(names);
+      res.end(JSON.stringify({ choices: [{ message: { content }, finish_reason: "stop" }], usage: { cost: 0.002 } }));
     });
   });
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
@@ -399,7 +412,7 @@ test("fetch: a page without a description still gives the names their page (the 
   assert.match(r.calls, /--write-subs --sub-langs en /, "the video's own captions, not the automatic ones");
   assert.match(r.out, /\(\$0\.00\d+ for the words\)/);
   assert.match(r.out, /1 correction applied, 0 proposed, 0 refused/);
-  assert.match(r.out, /\(\$0\.0020\)/);
+  assert.match(r.out, /\(\$0\.0040\)/, "the names and their second look");
   assert.equal(r.words.find((w) => w.was).text, "Reade,");
   assert.equal(r.raw.find((w) => w.text === "Reed,").start, r.words.find((w) => w.was).start);
 });
@@ -517,5 +530,45 @@ test("names --take with --also: the numbers mean the list the agent read, and a 
   const both = await namesWith(dir, second, ["--take", "1", "--leave", "1"]);
   assert.equal(both.status, 1);
   assert.match(both.out, /^Correction 1 is in both --take and --leave: name each in one of them\.\n$/);
+  fs.rmSync(dir, { recursive: true });
+});
+
+// ---------------------------------------------------------------- the second look
+test("the second look: a place the first call pointed to wrongly (another Lars, a cousin Damian) becomes a proposal, a right one stays applied", async () => {
+  // the review's trap sentences (runs3), added to real passages of tE_bV1XJ4do and d13OiuxIdFM
+  const ep = episodeOf([
+    ["A", "Also Lars hat Ey Mama geschrieben, das war der erste Song."],
+    ["J", "Der Lars aus meiner alten Klasse spielt heute Cello im Orchester."],
+    ["B", "My cousin Damian came to the wedding too."],
+    ["B", "And then Damian sang the whole Eurovision song with us."],
+  ]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-names-look-"));
+  fs.writeFileSync(path.join(dir, "episode.json"), JSON.stringify({ title: "t", channel: "c", lang: "de" }));
+  fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(ep.words));
+  fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf({ title: "Laas über Ey Mama | Talk", tags: ["Laas", "Damiano David", "Damiano"] })));
+  const answer = { names: [], fixes: [fix(0, "Lars", "Laas"), fix(1, "Lars", "Laas"), fix(2, "Damian", "Damiano"), fix(3, "Damian", "Damiano")] };
+  // the second look says no where the passage speaks of someone else
+  const look = (body) => {
+    const prompt = JSON.parse(body).messages[0].content, out = {};
+    for (const m of prompt.matchAll(/^(\d+)\. NAME: [^\n]*\n {3}([^\n]*)/gm)) if (/\[\[Lars\]\] aus meiner alten Klasse|cousin \[\[Damian\]\]/.test(m[2])) out[m[1]] = "no";
+    return out;
+  };
+  LOOKS.length = 0;
+  const r = await namesWith(dir, answer, [], look);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(r.calls, 2, "one call for the names, one for the second look of all places");
+  const text = fs.readFileSync(path.join(dir, "sentences.txt"), "utf8");
+  assert.match(text, /Also Laas hat Ey Mama/);
+  assert.match(text, /Der Lars aus meiner alten Klasse/);
+  assert.match(text, /My cousin Damian came/);
+  assert.match(text, /And then Damiano sang/);
+  assert.match(r.out, /"Lars" → "Laas" \([^)]*the second look: someone or something else \(w; Laas: the one on the page\)/);
+  assert.match(r.out, /\(the title; sure; Laas: the one on the page\)/, "an applied place says who the name is");
+  // the second look sees the page and the passage with the words marked, not the whole transcript
+  assert.match(LOOKS[0], /Tags:\n"""\nLaas, Damiano David, Damiano/);
+  assert.match(LOOKS[0], /\d\. NAME: Laas \(written: Lars\)\n {3}Also Laas hat|\d\. NAME: Laas \(written: Lars\)\n {3}Also \[\[Lars\]\] hat Ey Mama/);
+  // no answer from the second look: nothing applied by itself
+  const none = await namesWith(dir, answer, [], null);
+  assert.match(none.out, /0 corrections applied/);
   fs.rmSync(dir, { recursive: true });
 });

@@ -503,6 +503,60 @@ ${sentences.map((s, k) => `${k}: ${s.text}`).join("\n")}
 - why: a few words.`;
 }
 
+// ---------------------------------------------------------------- the second look
+// The first call points to places; no rule on spellings can tell the page's rapper Laas from "der
+// Lars aus meiner alten Klasse", only the sentence can. So every place the rules would apply is
+// asked about once more, in a call of its own that sees only the page and the passage: who the
+// page says the name is, and whether the one spoken of there is that one. Only a clear yes keeps a
+// place applied; anything else makes it a proposal, with the reason.
+export const LOOK_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["places"],
+  properties: { places: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "who", "same", "why"],
+    properties: { id: { type: "integer" }, who: { type: "string" }, same: { type: "string", enum: ["yes", "no", "unsure"] }, why: { type: "string" } } } } },
+};
+
+// the places to look at: the applied entries, each with the sentence before, its own (the
+// written words marked) and the one after
+export function lookItems(entries, words, sentences) {
+  const text = (a, b) => words.slice(a, b + 1).map((w) => w.text).join(" ");
+  return entries.filter((e) => e.status === "applied").map((e) => {
+    const p = e.places[0], k = p.sentence, s = sentences[k];
+    const own = `${text(s.first, p.first - 1)} [[${text(p.first, p.last)}]] ${text(p.last + 1, s.last)}`.replace(/\s+/g, " ").trim();
+    const before = sentences[k - 1] ? sentences[k - 1].text : "", after = sentences[k + 1] ? sentences[k + 1].text : "";
+    return { id: e.n, name: e.to, written: e.from, passage: [before, own, after].filter(Boolean).join(" ") };
+  });
+}
+
+export function lookPrompt(page, items) {
+  const p = page || {};
+  const block = (label, text) => (String(text || "").trim() ? `${label}:\n"""\n${String(text).trim().slice(0, 6000)}\n"""\n` : "");
+  return `A video's page:
+${block("Title", p.title)}${block("Channel", p.channel)}${block("Description", p.description)}${block("Chapters", (p.chapters || []).join("\n"))}${block("Tags", (p.tags || []).join(", "))}${block("Words the video's own uploaded captions write", (p.own || []).join(", "))}${block("Names the person gave", (p.also || []).join("\n"))}
+A speech-to-text model wrote down the video. It writes what it hears, so a name of the page may stand there misspelt. At each place below it wrote the words in [[double brackets]], and a correction would write NAME there instead, the name as the page spells it.
+
+${items.map((it) => `${it.id}. NAME: ${it.name} (written: ${it.written})\n   ${it.passage}`).join("\n")}
+
+For each place:
+- who: who or what NAME is on this page, in a few words ("the guest", "a film by Robert Eggers", "a rapper among the tags", "a character in Gonzo Girl, which the description names"); from the page, and where the page only lists the name, from what the page and the passage say together.
+- same: "yes" when the passage speaks of that person or thing: the page's guest, work, brand or person, also by a part of the name, a nickname or a role; "no" when the passage shows it is someone or something else (another person of a like name: a classmate, a neighbour, a relative; a brand or a historical figure that only sounds alike) or an ordinary word; "unsure" when the passage gives nothing either way.
+- why: a few words.`;
+}
+
+// the answer onto the entries: a clear yes keeps a place applied, anything else (no, unsure, no
+// answer for it) makes it a proposal with the reason; every entry looked at keeps what was said
+export function applyLook(entries, answer) {
+  const by = new Map((answer?.places || []).map((x) => [x.id, x]));
+  for (const e of entries) {
+    if (e.status !== "applied") continue;
+    const a = by.get(e.n);
+    e.look = a ? { same: a.same, who: a.who, why: a.why } : { same: "none" };
+    if (a?.same === "yes") continue;
+    Object.assign(e, { status: "proposed", sure: "likely",
+      because: a ? `the second look: ${a.same === "no" ? "someone or something else" : "not clear"} (${a.why}; ${e.to}: ${a.who})` : "the second look gave no answer for this place" });
+  }
+  return entries;
+}
+
 // ---------------------------------------------------------------- what the tool prints
 function contextOf(words, p, to, span = 7) {
   const a = Math.max(0, p.first - span), b = Math.min(words.length - 1, p.last + span);
@@ -517,12 +571,13 @@ export function namesListing(j, raw) {
   // every place an entry changes, each with its sentence (an entry is one place: --take applies
   // exactly what is shown)
   const line = (e) => {
-    const where = e.status === "refused" ? `refused: ${e.refused}` : `${e.where}; ${e.sure}${e.because ? `: ${e.because}` : ""}${e.taken ? `; ${e.taken}` : ""}`;
+    const who = e.look?.same === "yes" && e.look.who ? `; ${e.to}: ${e.look.who}` : "";
+    const where = e.status === "refused" ? `refused: ${e.refused}` : `${e.where}; ${e.sure}${who}${e.because ? `: ${e.because}` : ""}${e.taken ? `; ${e.taken}` : ""}`;
     const at = e.places.map((p) => `${mmss(p.start)}, sentence ${p.sentence}: “${contextOf(raw, p, e.to)}”`);
     return `  ${String(e.n).padStart(2)}. "${e.from}" → "${e.to}" (${where})${at.length === 1 ? `, at ${at[0]}` : at.length ? `, at ${at.length} places:${at.map((a) => `\n        ${a}`).join("")}` : ""}`;
   };
   const out = [`Names: ${j.names.length} on the video's page${j.names.length ? ` (${j.names.slice(0, 12).map((n) => n.name).join(", ")}${j.names.length > 12 ? ", …" : ""})` : ""}; ${applied.length} correction${applied.length === 1 ? "" : "s"} applied, ${proposed.length} proposed, ${refused.length} refused.`];
-  if (applied.length) out.push("Applied (the page writes the name, only the spelling differs):", ...applied.map(line));
+  if (applied.length) out.push("Applied (the model pointed here, the page writes the name, only the spelling differs, and a second look says the one spoken of is the page's; read each: --leave one that names someone else):", ...applied.map(line));
   if (proposed.length) out.push("Proposed, not applied (read the sentence: take only a name that was said):", ...proposed.map(line));
   if (refused.length) out.push("Refused (never applied: they would change what was said):", ...refused.map(line));
   return out.join("\n");
