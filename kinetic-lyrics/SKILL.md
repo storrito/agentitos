@@ -24,7 +24,7 @@ metadata:
 cd <skill> && npm install                     # node 20+, ffmpeg on the PATH
 ```
 
-Beside this skill must be agentitos' `clips` (`tools/episode.mjs` and `tools/frame.mjs` run its tools: the episode, its moments, the framing on whoever speaks), `platform-zones` (the type keeps clear of what the apps lay over the video) and `transcribe`. To publish also `publish-video` (with its `video-descriptions`) and Storrito reachable from its tool: on a Sprite the gateway's Storrito connection, elsewhere `STORRITO_API_URL` and `STORRITO_CREDENTIAL`; without them say so and hand over the videos. What you place yourself (the hook, the call to action, names, footage with a face) follows "Laying out a frame" in `<skill>/../platform-zones/SKILL.md`: text centred on the frame, the hook above the buttons, never text on a face.
+Beside this skill must be agentitos' `clips` (`tools/episode.mjs` and `tools/frame.mjs` run its tools: the episode, its moments, the framing on whoever speaks), `layout` (`short.mjs place`: where the type goes against the faces), `platform-zones` (the type keeps clear of what the apps lay over the video) and `transcribe`. To publish also `publish-video` (with its `video-descriptions`) and Storrito reachable from its tool: on a Sprite the gateway's Storrito connection, elsewhere `STORRITO_API_URL` and `STORRITO_CREDENTIAL`; without them say so and hand over the videos. What you place yourself (the hook, the call to action, names, footage with a face) follows "Laying out a frame" in `<skill>/../platform-zones/SKILL.md`: text centred on the frame, the hook above the buttons, never text on a face.
 
 The words and who speaks them come from ElevenLabs Scribe through OpenRouter, run by `transcribe`: `OPENROUTER_API_KEY`, or on a Sprite the gateway's OpenRouter connection (the tools find it at `http://sprite.internal`; an rragent agent there often has no key of its own). No model runs on this machine. yt-dlp is taken from the PATH or downloaded once by `tools/episode.mjs`. When OpenRouter or `transcribe` is missing the tools say so in one sentence: pass it on, never install anything yourself.
 
@@ -93,6 +93,7 @@ node <skill>/tools/short.mjs brief work/<k>
 # read work/<k>/source/brief.md, write work/<k>/source/staging.json (see "Directing a short")
 node <skill>/tools/short.mjs build work/<k> --out artifacts/shorts/composition/<k>-<slug> \
   --world … --title "…" --names "A=…,B=…" --colors "A=#…,B=#…" --cta "…" --handle @… --platform <the chosen platforms>
+node <skill>/tools/short.mjs place work/<k>
 node <skill>/tools/short.mjs check work/<k>
 ```
 
@@ -183,7 +184,8 @@ One video or adapted, none ticked:
 2. `short.mjs brief <dir>` writes `<dir>/source/brief.md`: the engine's vocabulary, the rules and the numbered words. Read all of it.
 3. Write the staging it asks for into `<dir>/source/staging.json`, all words, one JSON file: the hook (a short headline in the clip's language), the phrases, the words with an effect, the marks. Respell clearly misheard words under `fixes`, and give a word heard from the wrong voice its speaker there (`{"i": 40, "speaker": "B"}`). Phrases follow the sentences; at fast speech (four words a second and more) longer ones, 5–8 words in two lines, each on screen 1.5 s or more. Where two voices talk at once, list the interjecting voice's words under `drop` (still heard, not shown).
 4. `short.mjs build <dir> [--out …]` builds the HyperFrames project; a staging mistake names its field: fix it and build again. Footage wider than the short (a podcast's wide shot) is cut to the frame on whoever speaks; the first build asks Gemini once who sits where (half a minute, a cent).
-5. `short.mjs check <dir> [4,15]` lists what a viewer would notice; fix the errors (✗); the warnings (⚠) are mostly words read quickly. A `crosstalk` warning means a run of flashes: drop the interjections there. The seconds named become pictures in `<dir>/stills/<t>.png`.
+5. `short.mjs place <dir>` (footage with people, after the first build): where the type goes, from every face of every shot over time. Never on the eyes, the nose or the mouth: the type goes a little lower, then a shot's picture goes up; it builds again and lists per shot what the type lies on and for how long, a `✗` where it is still on a mouth, and writes `<dir>/source/place.sheet.jpg`: look at it. Read `<skill>/references/place.md` before you change what it chose (`--type-top`, `--raise`, `--lift`) or answer a `✗`. Run it again after the clip or the staging changed.
+6. `short.mjs check <dir> [4,15]` lists what a viewer would notice; fix the errors (✗); the warnings (⚠) are mostly words read quickly. A `crosstalk` warning means a run of flashes: drop the interjections there. The seconds named become pictures in `<dir>/stills/<t>.png`.
 
 Settings stay with the short: `--title`, `--subtitle`, `--hook`, `--world`, `--names "A=Anna,B=Ben"`, `--colors "A=#ff5a36"`, `--aspect 9:16` (or `1:1`, `4:5`, `16:9`), `--cta "…" --handle @name`, `--out`. When a wish needs an effect the brief does not offer, say so in one sentence. The fonts are the engine's own (League Gothic, Instrument Serif).
 

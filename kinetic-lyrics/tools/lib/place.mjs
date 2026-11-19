@@ -5,9 +5,9 @@
 // on each hero phrase), where its type and its name tag stand, and how a top for the type becomes
 // the darkened band of the build (tools/build.mjs --type-top).
 //
+//   topOfShade([a, b]) → the type's top (a share of the height) in the band [a, b]
 //   usualTop(plan) → the type's top in px as the build sets it from the footage alone
 //   chipRoom(plan) → px of the speaker's name tag above the type (0 where it shows none)
-//   shadeFor(top) → the band [a, b] (frame shares) whose type starts at top (a share)
 //   pushed(input, plan) → the shots with every face as the push-in and the punches show it
 //   liftsFor(text, shots) → [{ t, px }] for the framing (frame.mjs --lift), one per raised shot
 //   placeArgs(plan, opts) → the arguments of layout's text for this short
@@ -26,10 +26,9 @@ export function layoutTool() {
 }
 
 // The band's geometry (tools/build.mjs): transparent at a, dark from b, the type's top at a + 0.55 of
-// the way (engine/type.js); the build sets b 0.12 below a.
-const RAMP = 0.12, TYPE_IN = 0.55;
+// the way (engine/type.js).
+const TYPE_IN = 0.55;
 export const topOfShade = ([a, b]) => a + (b - a) * TYPE_IN;
-export const shadeFor = (top) => [+(top - RAMP * TYPE_IN).toFixed(4), +(top + RAMP * (1 - TYPE_IN)).toFixed(4)];
 // the band as the footage alone set it (a build with --type-top keeps it in shadeFound)
 export const usualTop = (plan) => Math.round(topOfShade(plan.video.shadeFound || plan.video.shade) * plan.height);
 

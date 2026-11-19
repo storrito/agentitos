@@ -26,6 +26,7 @@ node tools/short.mjs new shorts/ep12 upload.mp4                 # source/: audio
 node tools/short.mjs brief shorts/ep12                          # who speaks when; writes source/brief.md
 # the agent reads brief.md and writes source/staging.json
 node tools/short.mjs build shorts/ep12 --names "A=Anna,B=Ben"    # HyperFrames project in composition/
+node tools/short.mjs place shorts/ep12                          # footage with people: the type off the faces, built again
 node tools/short.mjs check shorts/ep12 4,15                     # QA; stills/4.png, stills/15.png
 node tools/short.mjs render shorts/ep12 ep12.mp4                # the video
 ```
@@ -131,12 +132,27 @@ node tools/build.mjs examples/my-clip/transcript.json --video examples/my-clip/v
 - **The world** is laid over the video with `screen` blending, so only its light is visible (stars, sparks, rings). Over the face it is barely visible, in the dark area it is at full strength, and the type is light.
 - **Light worlds** (`editorial`, `geometry`, `linen`, `mist`) frame the video instead: it sits as a picture with rounded corners on the paper or in the studio (on top in portrait and square, on the left in landscape, cut to fit, `plan.video.frame`), the dark type below or beside it, the world drawn as without footage.
 - **Motion:** The image slowly zooms in by 6 % and gives a small push (2.5 %) on hero lockups.
+- **Faces** (`short.mjs place`, [references/place.md](references/place.md)): the band's place above is set from the footage alone, and a close-up's mouth reaches into it (a face half the frame tall, as a talk show's guest close-ups are: on Dafoe's Hot Ones close-ups the mouth line stood at 57–84 % of the height and the type at 53–75 %). `place` takes every face of every shot of the framing over time (agentitos' clips: `clips.mjs shots`), draws them through the push-in and the punches, and has agentitos' layout (`place.mjs text --text area`) put one area for the type and the name tag below every mouth line: the type a little lower first (never under 15 % of the height), then a shot's picture raised over a dark ground (`--raise full` here: as far as the eyes stay below the apps' top bar), what is left said per shot. The build then moves the band with the type (`build.mjs --type-top`, the footage's own band kept in `plan.video.shadeFound`). Where nothing reaches the type (a medium shot, no face, no framing) the build stays as without `place`, byte for byte. Measured on three shorts from public talk-show and podcast footage, rendered and checked the way the clips skill's captions were: see "The type and the faces, measured" below.
 - **Burned-in captions** are found automatically by `tools/burnin.mjs`. It looks for bright, sharp-edged text that changes every few tenths of a second and sits in a fixed band. Temporary overlays such as name tags or title cards are detected as well. The gradient is fully dark just above them, never higher than 50 % (the face stays clear) and never lower than 60 % (the type needs room). Without burned-in text it is a little lighter (`dim` 0.85). Result on 7 shorts: 6 caption bands and 4 overlays found, and correctly none for the clip without captions.
 - **`--video-shade a:b` / `--video-dim x`** override the detection: at frame height `a` the gradient is still transparent, from `b` on it is dark, and `x` sets how dark. The values are stored in `plan.json` under `video`.
 - **Short-form layout:** The type stays inside the platforms' safe box, free of their UI (title, channel, buttons; see below). The name tag sits directly above the type, and the audio waveform is dropped. Speakers without names only get their colour, no "A"/"B" tag.
 - **Worlds over video:** `cosmos`, `aurora` (keeps colour veils at half strength), `bokeh`, `neon`, `noir`, and the calm `slate`, `dusk`, `canopy` and `chalk` (dusk and canopy keep their ground at half strength). With `--llm` Claude only picks from these. Light worlds are replaced: `editorial` by `bokeh`, `geometry` by `neon`. Centred motifs (rings, network, chart, pulse rings, sun) move into the dark zone and get smaller.
 - **Sound:** Without `--audio` the audio track is read from the video, and the video itself plays muted.
 - **QA** (`tools/qa.mjs`) measures contrast and collisions on real video frames (ffmpeg, 8 fps).
+
+### The type and the faces, measured
+
+Three shorts made as SKILL.md says (`new`, `brief`, a staging, `build`, then `place`), from public footage: a tight close-up (Willem Dafoe on Hot Ones, 15 s, one shot, the face about half the frame tall and nodding), a medium shot (the Finanzfluss podcast, 23 s, two shots) and two shots that disagree (Hot Ones: Sean Evans in a medium shot, then Dafoe in a close-up whose head tips down, 15 s). Rendered before (main) and after, and measured independently of the tools: the type's ink rendered alone in Chrome every 0.5 s against the eyes, nose, mouth and chin Gemini 4 Carbon found on the rendered frames (25 px of ink in a part's box count).
+
+| short | eyes or nose | mouth | chin only | ink outside the safe box |
+| --- | --- | --- | --- | --- |
+| close-up, before | 1.0 s | 4.0 s | 5.0 s | 0.5 s |
+| close-up, after | 0 s | 0 s | 2.0 s | 0.5 s |
+| medium, before and after | 0 s | 0 s | 0 s | 0 s |
+| two shots, before | 2.0 s | 2.5 s | 3.0 s | 1.5 s |
+| two shots, after | 0 s | 0.5 s | 2.0 s | 1.5 s |
+
+After: the type 120 and 127 px lower in the two shorts with a close-up (a quarter smaller), the close-up raised 264 and 318 px (the eyes then at 13 % of the height, the top of the head cut), the medium short 10 px lower for 0.2 s of a chin. What stays: in the two shots, half a second on Dafoe's mouth while his head tips down at 10.8 s, which `place` lists as a `✗` (0.6 s on the mouth, 1.7 s on the lower lip by its own reckoning). The ink outside the safe box is the exits that fly letters out (zoom, scatter), the same frames before and after.
 
 ### Word effects for footage
 
@@ -385,6 +401,8 @@ Everything is deterministic: the world is a pure function `(plan, t)`, particle 
 - `tools/highlight.mjs`, `tools/gaps.mjs`: highlight finder, voiced-gap detection (QA)
 - `tools/footage.mjs`: video background (gradient, push-in, world via `screen`), shared by render and QA
 - `tools/qa.mjs`: automatic quality check
+- `tools/lib/place.mjs`: the faces as the short shows them, the type's area asked of agentitos' layout, the sheet of `short.mjs place`
+- `tools/test.mjs`: `node --test tools/test.mjs`, the place step on made-up footage and faces (no model, no network; needs `npm install`, ffmpeg and agentitos' layout beside)
 
 ## Examples
 
@@ -399,4 +417,4 @@ Only use footage and audio you have the rights to. Build output (`videos/`, `ren
 
 ## Requirements
 
-Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers, through agentitos' [transcribe](../transcribe/) beside this skill: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). No local speech or speaker model, nothing to install for them. Optional: Claude Code or an Anthropic API key (`--llm`).
+Beside this skill: agentitos' clips (the episode, the framing, the faces), layout (`short.mjs place`), platform-zones and transcribe. Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers, through agentitos' [transcribe](../transcribe/) beside this skill: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). No local speech or speaker model, nothing to install for them. Optional: Claude Code or an Anthropic API key (`--llm`).
