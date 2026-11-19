@@ -265,10 +265,11 @@ export function writeComposition(out, o) {
         data-track-index="8" data-has-audio="true" data-automation="${attr(auto)}"></audio>`;
   }
 
-  // the sound of a video a keep shows (show.mjs): a quarter of its level under the first words,
-  // rising to its level by the last word, held, out at its end
+  // the sound of a video a keep shows (show.mjs), levelled to the voice when it was cut: a quarter
+  // of its level under the first words, rising to its level by the last word, held, out at its
+  // end; through the voice's bus, so under the same ceiling
   const insertHtml = inserts.filter((i) => i.audio).map((i, k) => `      <audio id="show-sound-${k + 1}" class="clip" src="assets/${i.audio}" ${timing(i.start, i.duration)} data-media-start="0"
-        data-track-index="9" data-has-audio="true" data-automation="${attr({ version: 1, lanes: [{ target: "volume", points: soundPoints(i) }] })}"></audio>`);
+        data-track-index="9" data-has-audio="true" data-audio-group="voice" data-automation="${attr({ version: 1, lanes: [{ target: "volume", points: soundPoints(i) }] })}"></audio>`);
 
   const doc = `<!doctype html>
 <html lang="${esc(lang || "en")}">

@@ -67,7 +67,7 @@ import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
-import { showOf, showProblem, placeShows } from "./lib/show.mjs";
+import { showOf, showProblem, placeShows, cutShownSound } from "./lib/show.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
@@ -957,13 +957,16 @@ async function cmdBuild(dir, opts) {
       r.pieces, path.join(out, "assets", "backdrop.mp4"), { fps: s.fps, parts: source(dir, "backdrop.parts") });
     backdrop = "backdrop.mp4";
   }
-  // a shown video's sound ("sound"): its stretch cut out beside the composition, the file's
-  // metadata left behind; where ffmpeg cannot, the video plays muted and the build says so
+  // a shown video's sound ("sound"): its stretch measured (ebur128, as finish does) and cut out
+  // beside the composition at the voice's level before the bus (TAKE_LEVEL), a limiter under
+  // 0 dBFS, the file's metadata left behind; it plays through the voice's bus and its ceiling.
+  // Where ffmpeg cannot, the video plays muted and the build says so
   for (const i of shown.inserts) {
     const audio = `${i.key}.m4a`;
-    const a = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(i.from), "-t", i.duration.toFixed(3), "-i", i.file, "-vn", "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", path.join(out, "assets", audio)], { encoding: "utf8" });
-    if (a.status === 0) i.audio = audio;
-    else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${(a.stderr || "").trim().split("\n").pop() || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
+    const a = cutShownSound(i.file, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
+    i.lufs = a.lufs; i.gain = a.gain;
+    if (a.ok) { i.audio = audio; shown.notes.push(`keep ${i.k + 1}: the sound of ${i.file} measured ${i.lufs ?? "too quiet to measure"}${i.lufs != null ? " LUFS" : ""}, brought ${i.gain >= 0 ? "+" : ""}${i.gain} dB to the voice's ${TAKE_LEVEL} LUFS ("sound": 1 is the voice's level), through the voice's bus.`); }
+    else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
   }
   const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
   // a phone's screen (or a tall video shown) whole, under the apps' headers: said per keep, once
@@ -985,7 +988,8 @@ async function cmdBuild(dir, opts) {
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
-    removed: r.removed, ...(Object.keys(limits).length ? { motion: limits } : {}), warnings: r.warnings, words: r.words,
+    removed: r.removed, ...(Object.keys(limits).length ? { motion: limits } : {}),
+    ...(shown.inserts.length ? { sounds: shown.inserts.map((i) => ({ keep: i.k + 1, file: i.file, sound: i.sound, lufs: i.lufs, gain: i.gain, playing: !!i.audio })) } : {}), warnings: r.warnings, words: r.words,
   });
   const views = {};
   for (const p of r.pieces) { const v = p.show ? "another video (show)" : p.view; views[v] = (views[v] || 0) + p.duration; }

@@ -857,3 +857,37 @@ test("a whole phone under the apps' headers: the build's sentence names the px p
   const [wide] = shots([phonePiece()], { "phone-screen": PHONE }, w, h, a16);
   assert.deepEqual(underHeaders(wide.layers[0].box, { ...z16, covers: [{ platform: "app-a", box: [0, 900, 1920, 180] }] }), []);
 });
+
+test("show's sound is levelled when it is cut: a loud and a quiet clip both come to the voice's −14 LUFS before the curve, under 0 dBFS, and play through the voice's bus and its ceiling", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, async () => {
+  const { cutShownSound, levelGain } = await import("./lib/show.mjs");
+  assert.equal(levelGain(-8, -14), -6);
+  assert.equal(levelGain(-30, -14), 16);
+  assert.equal(levelGain(-70, -14), 0, "silence is left as it is");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "show-sound-"));
+  const measure = (file) => {
+    const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", file, "-af", "ebur128=peak=true", "-f", "null", "-"], { encoding: "utf8" });
+    const sum = r.stderr.slice(r.stderr.lastIndexOf("Summary:"));
+    return { lufs: Number(sum.match(/I:\s*(-?[\d.]+) LUFS/)[1]), peak: Number(sum.match(/Peak:\s*(-?[\d.]+) dBFS/)[1]) };
+  };
+  try {
+    for (const [name, amp] of [["loud", 0.9], ["quiet", 0.03]]) {
+      const src = path.join(dir, `${name}.mp4`), out = path.join(dir, `${name}.m4a`);
+      assert.equal(spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=64x64:d=6:r=30", "-f", "lavfi", "-i", `anoisesrc=d=6:c=pink:a=${amp}`, "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", src]).status, 0);
+      const before = measure(src);
+      const r = cutShownSound(src, 1, 4, out, -14);
+      assert.ok(r.ok, r.why);
+      assert.ok(Math.abs(r.lufs - before.lufs) < 1.5, `${name}: measured ${r.lufs}, the file ${before.lufs}`);
+      const after = measure(out);
+      assert.ok(Math.abs(after.lufs + 14) < 1, `${name}: ${before.lufs} → ${after.lufs} LUFS`);
+      assert.ok(after.peak < 0, `${name}: peak ${after.peak} dBFS`);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  // the composition plays it through the voice's bus (high-pass, compressor, the −2 dB true-peak ceiling)
+  const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "show-bus-"));
+  try {
+    const [w, h, z] = ZONES["9:16"];
+    writeComposition(path.join(d2, "c"), { title: "t", width: w, height: h, fps: 30, pieces: [{ view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop: [0, 0, 1, 1], rate: 1 }], sources: { screen: { file: "s.mp4", width: 1920, height: 1080, offset: 0, path: fileURLToPath(import.meta.url) } }, dir: d2, voice: "voice.cut.m4a", inserts: [{ start: 0, duration: 4, sound: 0.8, spoken: 3, audio: "show-1.m4a" }], areas: areas(w, h, z) });
+    const html = fs.readFileSync(path.join(d2, "c", "index.html"), "utf8");
+    assert.match(html, /<audio id="show-sound-1"[^>]*data-audio-group="voice"/);
+  } finally { fs.rmSync(d2, { recursive: true, force: true }); }
+});

@@ -20,6 +20,7 @@
 //   soundPoints({ sound, duration, spoken }) → the volume's points of a shown video's sound
 
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 export const RISE = 1.5, FADE = 0.25;
 
@@ -94,4 +95,24 @@ export function soundPoints({ sound, duration, spoken }) {
   return (s > 0.3 ? [{ t: 0, v: low }, { t: n(Math.max(0, s - RISE)), v: low }, { t: n(s), v: top }] : [{ t: 0, v: 0 }, { t: n(Math.min(0.2, out)), v: top }])
     .concat([{ t: n(out), v: top }, { t: n(d), v: 0 }])
     .filter((x, j, all) => j === 0 || x.t > all.slice(0, j).reduce((m, y) => Math.max(m, y.t), -1));
+}
+
+// The gain in dB that brings a shown video's sound (its stretch's integrated loudness, ebur128 as
+// finish measures) to the voice's level before the bus (TAKE_LEVEL), so that "sound" means the
+// same for a quiet clip and a loud one: 1 is the voice's loudness, 0.8 about 2 dB under it. A
+// stretch too quiet to measure (silence) is left as it is.
+export function levelGain(lufs, target) {
+  return Number.isFinite(lufs) && lufs > -60 ? +(target - lufs).toFixed(2) : 0;
+}
+
+// A shown video's stretch of sound (from, duration) cut out to `out` (AAC, 48 kHz, no file tags),
+// measured once (ebur128's integrated loudness) and brought to `target` LUFS, a limiter under
+// 0 dBFS. Returns { ok, lufs, gain } or { ok: false, why }.
+export function cutShownSound(file, from, duration, out, target) {
+  const m = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-ss", String(from), "-t", duration.toFixed(3), "-i", file, "-vn", "-af", "ebur128", "-f", "null", "-"], { encoding: "utf8" });
+  const measured = Number((m.stderr || "").slice((m.stderr || "").lastIndexOf("Summary:")).match(/I:\s*(-?[\d.]+) LUFS/)?.[1]);
+  const lufs = Number.isFinite(measured) && measured > -60 ? measured : null, gain = levelGain(measured, target);
+  const a = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(from), "-t", duration.toFixed(3), "-i", file, "-vn", "-map_metadata", "-1",
+    "-af", `volume=${gain}dB,alimiter=limit=0.89:level=false`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", out], { encoding: "utf8" });
+  return a.status === 0 ? { ok: true, lufs, gain } : { ok: false, why: (a.stderr || "").trim().split("\n").pop() };
 }
