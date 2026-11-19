@@ -22,17 +22,17 @@
 //                chin (free.below) stays above the captions: the skill's own keep-out of a face,
 //                so that the captions lie on the chest, never on eyes, nose or mouth. Where the
 //                panel holds no such face at the size, the face is made smaller, down to its limit
-//   the limits   (as shares of the frame's width; 2026-11-19, in place of the 500 px of panel and
-//                250 px of face first set, which lost the stack in 4:5 under a label's room of 105 px
-//                and told the tight zoom apart by 10 px of panel in 9:16) the panel at
-//                least 440 px high in a frame 1080 wide (41 %: a picture of a person, not a strip),
-//                the face in it at least 230 px (21 %, or what 2× of the webcam's pixels give where
-//                that is less), and the screen's part at most 600 px tall (56 %). The last one is
-//                what sets a tight zoom apart: the pairs' zoom at 2× is 736 px tall and leaves 490 px
-//                of panel in 9:16, more than the whole screen leaves in 4:5 under a label's room of
-//                160 px (445 px), so no floor on the panel or the face alone tells them apart. The
-//                whole screen (540–547 px) keeps the stack up to a label's room of 246 px in 9:16
-//                and 165 px in 4:5; the tight zoom is 118–136 px over the screen's limit
+//   the limits   (as shares of the frame's width, in px of a frame 1080 wide) the screen's part
+//                from 400 px tall (37 %: under it a strip, a tab bar's sliver over a panel of
+//                1,100 px, decided 2026-11-19, stack-strip; a whole 21:9 screen is 402–412 px) to
+//                640 px (59 %: a whole 16:10 screen is 600–615 px, the pairs' tight zoom at 2×
+//                718–736 px); the panel at least 420 px high (39 %: a picture of a person, not a
+//                strip); the face in it at least 230 px (21 %, or what 2× of the webcam's pixels
+//                give where that is less, but never under faceFloor, 160 px). The screen's upper
+//                limit is what sets a tight zoom apart: at 2× it leaves 490 px of panel in 9:16, more
+//                than the whole screen leaves in 4:5 under a label's room of 160 px (445 px), so no
+//                floor on the panel or the face alone tells them apart (the 500 px of panel and
+//                250 px of face first set lost the stack in 4:5 under a label's room of 105 px)
 //
 // Not offered, with one sentence in the notes and in res.screenPanel (code): in 16:9 and 1:1 (frame;
 // not decided there), with the webcam baked into the screen (webcam), without a face in the webcam's
@@ -57,7 +57,7 @@ export const PANEL_WIDTHS = ["frame", "screen"];
 // When the stack is offered, as shares of the frame's width (px in a frame 1080 wide): the panel at
 // least `panel` high, the face in it at least `face` tall (or what 2× of the webcam's pixels give,
 // where that is less), the screen's part at most `screen` tall. ask.limits overrides them (tests).
-export const LIMITS = { panel: 440 / 1080, face: 230 / 1080, screen: 600 / 1080, faceFloor: 160 / 1080 };
+export const LIMITS = { panel: 420 / 1080, face: 230 / 1080, screen: 640 / 1080, screenLeast: 400 / 1080, faceFloor: 160 / 1080 };
 
 const r4 = (v) => +v.toFixed(4);
 const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
@@ -101,6 +101,7 @@ export function screenPanel(ctx, camSrc, ask, notes) {
   if (capTop < T + 1) return no("captions", `the captions (y ${Math.round(capTop)}–${Math.round(capBottom)}) stand on the screen's part, which reaches y ${Math.round(ry + rh)}: the region at ${r2(s)}× is too tall for a panel above the captions; the circle stands for the webcam`);
   const panel = width === "screen" ? [rx, T, rw, capBottom - T] : [0, T, W, capBottom - T];
   const P = panel[3];
+  if (rh < L.screenLeast * W - 0.5) return no("strip", `the region's picture is ${Math.round(rh)} px tall at ${r2(s)}× (${R[2]}×${R[3]} of the screen), under the ${Math.round(L.screenLeast * W)} px a screen above the speaker needs: a strip over a panel of ${Math.round(P)} px; the circle stands for the webcam here (a region that shows the window around it reads as a screen)`);
   if (rh > L.screen * W + 0.5) return no("tall", `the region at ${r2(s)}× is ${Math.round(rh)} px tall, over the ${Math.round(L.screen * W)} px a screen above the speaker may take, and leaves the panel ${Math.round(P)} px (y ${Math.round(T)}–${Math.round(capBottom)}); the stack needs the screen's part at most ${Math.round(L.screen * W)} px tall and a panel of at least ${Math.round(L.panel * W)} px with the face in it at least ${Math.round(Math.min(L.face * W, forb * f[3]))} px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)`);
   if (P < L.panel * W - 0.5) return no("small", `the panel below the screen is ${Math.round(P)} px high (y ${Math.round(T)}–${Math.round(capBottom)}), under the ${Math.round(L.panel * W)} px a picture of a person needs: the region at ${r2(s)}× takes the frame down to y ${Math.round(ry + rh)}${top0 > S[1] + 0.5 ? ` from y ${Math.round(top0)}` : ""}; the circle stands for the webcam here (a region less tall, or a label less tall, leaves the panel its room)`);
 

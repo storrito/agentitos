@@ -190,7 +190,7 @@
   }
  },
  "notes": [
-  "no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× is 720 px tall, over the 600 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 600 px tall and a panel of at least 440 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)"
+  "no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× is 720 px tall, over the 640 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 640 px tall and a panel of at least 420 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)"
  ],
  "candidates": [
   {
@@ -569,7 +569,7 @@
   "offered": false,
   "width": "frame",
   "code": "tall",
-  "why": "the region at 2× is 720 px tall, over the 600 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 600 px tall and a panel of at least 440 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)"
+  "why": "the region at 2× is 720 px tall, over the 640 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 640 px tall and a panel of at least 420 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)"
  },
  "asked": {
   "frame": "9:16",
