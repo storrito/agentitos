@@ -183,7 +183,7 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
       out.said = `close-up kept on ${main.who}: ${names(featsCut(now, others))} ${out.cut.length > 1 ? "stand" : "stands"} too far from it for one fill and ${out.cut.length > 1 ? "are" : "is"} cut (a smaller picture to show them all: "frame": "whole")`;
       return lifted(out, now);
     }
-    const share = Math.round(((hullOf(held)[1] - hullOf(held)[0]) / cw) * 100);
+    const share = Math.min(100, Math.round(((hullOf(held)[1] - hullOf(held)[0]) / cw) * 100));
     const band = bandPlan(held, [cw, ch], captions, 3);
     const c = crop ? crop(held) : null;
     if (c && ["4:5", "1:1"].includes(c.crop) && c.scale >= (SIZE[0] * band.zoom) / cw - 1e-6) {
