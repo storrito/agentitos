@@ -1,0 +1,111 @@
+# Every skill's tests on every push and pull request: .github/run-tests.mjs finds them
+# (<skill>/tools/test*.mjs), so a new skill's tests run without a change here. The layout skill's
+# tests start Chrome and take the longest: they run in a job of their own, beside the others.
+# No secret is used and none is needed: no test may call a model or the network.
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: "How many times the layout skill's tests run one after the other (to catch one that fails now and then)"
+        type: number
+        default: 1
+
+permissions:
+  contents: read
+
+concurrency:
+  # (a manual run is a group of its own: a push does not cancel it)
+  group: tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  skills:
+    name: skills (all but layout)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # captions' tests build the version of an older commit to compare with
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: "*/package-lock.json"
+      # Ubuntu's ffmpeg (6.1.1) and Noto Sans (the font the layout skill's pages measure with), as
+      # packages kept in GitHub's cache for this runner image: Ubuntu's mirrors took from one to
+      # more than eight minutes to send them, a static ffmpeg counted other frames than Ubuntu's
+      - id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/debs
+          key: debs-ffmpeg-noto-${{ steps.image.outputs.version }}
+      - name: ffmpeg and fonts
+        timeout-minutes: 15
+        run: |
+          if ! ls ~/debs/*.deb >/dev/null 2>&1; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --download-only --no-install-recommends ffmpeg fonts-noto-core < /dev/null
+            mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
+          fi
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo DEBIAN_FRONTEND=noninteractive dpkg -i ~/debs/*.deb > /dev/null
+          ffmpeg -hide_banner -version | head -1
+          fc-match "Noto Sans"
+      - name: tests
+        run: node .github/run-tests.mjs --install --except layout --jobs 3
+
+  layout:
+    name: layout (with Chrome)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # Ubuntu's ffmpeg (6.1.1) and Noto Sans (the font the layout skill's pages measure with), as
+      # packages kept in GitHub's cache for this runner image: Ubuntu's mirrors took from one to
+      # more than eight minutes to send them, a static ffmpeg counted other frames than Ubuntu's
+      - id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/debs
+          key: debs-ffmpeg-noto-${{ steps.image.outputs.version }}
+      - name: ffmpeg and fonts
+        timeout-minutes: 15
+        run: |
+          if ! ls ~/debs/*.deb >/dev/null 2>&1; then
+            sudo apt-get update -o Acquire::Retries=3
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --download-only --no-install-recommends ffmpeg fonts-noto-core < /dev/null
+            mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
+          fi
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo DEBIAN_FRONTEND=noninteractive dpkg -i ~/debs/*.deb > /dev/null
+          ffmpeg -hide_banner -version | head -1
+          fc-match "Noto Sans"
+      - name: tests
+        env:
+          REPEAT: ${{ inputs.repeat || 1 }}
+        run: |
+          # the runner's own Chrome, as layout/tools/lib/zones.mjs reads it
+          export CHROME="$(command -v google-chrome || command -v chromium)"
+          case "$REPEAT" in ''|*[!0-9]*) echo "repeat is a whole number"; exit 1;; esac
+          failed=0
+          for i in $(seq "$REPEAT"); do
+            [ "$REPEAT" -gt 1 ] && echo "::notice::layout run $i of $REPEAT"
+            node .github/run-tests.mjs layout || failed=$((failed + 1))
+          done
+          [ "$REPEAT" -gt 1 ] && echo "::notice::$failed of $REPEAT runs failed"
+          exit $(( failed > 0 ))
