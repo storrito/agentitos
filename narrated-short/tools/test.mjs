@@ -316,11 +316,11 @@ test("build with faces: a face off the middle moves the fill to it and the hook 
     fs.mkdirSync(path.join(work, "faces"), { recursive: true });
     const key = JSON.stringify({ file: src, stamp: `${st.size}:${Math.round(st.mtimeMs)}`, at: 0.5, taken });
     const faces = (k) => ({ key: k, source: [1280, 720], step: 0.1, taken, faces: listOf(["A", person("A", [1000, 40, 200, 260], 25)]).faces });
-    fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify(faces(key)));
+    fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify({ ...faces(key), faces: listOf(["A", person("A", [1000, 0, 200, 260], 25)]).faces }));
     r = build();
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /a: the crop moved to the faces \(A\)/);
-    assert.match(r.stdout, /the hook: it lay on a face in a/);
+    assert.match(r.stdout, /the hook: it reached the eyes in a \(the eyes or nose [\d.]+ s.*\), at every size; below the chin instead/);
     assert.match(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", "a.json"), "utf8")).how, /"x":\d+/);
     assert.match(fs.readFileSync(path.join(comp, "index.html"), "utf8"), /<div id="hook-in" class="hook" style="font-size: \d+px; left: \d+px; width: \d+px; top: \d+px;">/);
     // skipped: the short as without faces, byte for byte
@@ -458,5 +458,48 @@ test("build with faces: the captions never get smaller for one beat's face, and 
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s\) where they stood; .* of 96 px, their size/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).size, size, "the captions keep their size");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// the author's epps2: the first beat a fill on Jeanette Epps (1280×720), her face as `faces` found it
+const epps = (dy = 0) => ["Jeanette Epps", Array.from({ length: 25 }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box: [544, 84 + dy, 205, 272], feat: [563, 177 + dy, 159, 142] }))];
+const facesWith = (work, src, ...people) => {
+  const st = fs.statSync(src), taken = 2.5;
+  fs.mkdirSync(path.join(work, "faces"), { recursive: true });
+  fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify({ key: JSON.stringify({ file: src, stamp: `${st.size}:${Math.round(st.mtimeMs)}`, at: 0.5, taken }), source: [1280, 720], step: 0.1, taken, faces: listWith(...people).faces }));
+};
+const hookTag = (comp) => fs.readFileSync(path.join(comp, "index.html"), "utf8").match(/<div id="hook-in"[^>]*>/)[0];
+test("build with faces: the hook may lie on hair or a forehead (epps2 stays at the top); where it reaches the eyes it gets smaller first; where no size and no place clear of the faces is left beside the captions, it stays and a ! says so", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.hook = { text: "YEARS OF TRAINING", key: "YEARS" };
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    let r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const plain = hookTag(comp);
+    assert.match(plain, /style="font-size: 104px;"/);
+    // epps2: the two lines end on her forehead, above the eyes: they stay
+    facesWith(work, src, epps());
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /the hook lies on the hair or forehead [\d.]+ s in a, not the eyes: it may/);
+    assert.equal(hookTag(comp), plain);
+    // her face 20 px higher in the picture: at 104 and 96 px the lines reach the eyes, smaller ones do not
+    facesWith(work, src, epps(-20));
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const px = Number(r.stdout.match(/the hook: it reached the eyes in a \(the eyes or nose [\d.]+ s[^)]*\) at 104 px; (\d+) px instead, at the top/)?.[1]);
+    assert.ok(px >= 60 && px <= 88, r.stdout);
+    assert.equal(hookTag(comp), plain.replace("104px", `${px}px`));
+    // a close face from the top of the picture: the hook reaches its eyes at every size, and below its
+    // chin it would stand on the captions
+    facesWith(work, src, ["close", Array.from({ length: 25 }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box: [500, 0, 280, 380], feat: [530, 20, 220, 280] }))]);
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /! the hook: it reached the eyes in a \(the eyes or nose [\d.]+ s\), at every size, and agentitos' layout's place for it lies on the captions or directly above them: it stands where it stood: a shorter hook, or another first beat/);
+    assert.equal(hookTag(comp), plain);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
