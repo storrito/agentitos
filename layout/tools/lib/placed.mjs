@@ -125,7 +125,7 @@ export const overlapsX = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0])
 // (most: by the rule of the raise; beyond: by the eyes alone, for a mouth the captions would cover)
 export function maxLift(shot, moments, ctx) {
   const room = shot.room;
-  if (!room || room.none) return { most: 0, beyond: 0, by: "none" };
+  if (!room || room.none) return { most: 0, beyond: 0, by: "none", beyondBy: "none" };
   const free = Math.max(0, room.free || 0);
   const ground = room.ground != null ? Math.max(0, room.ground) : ctx.H - Y1(ctx.Z.safe);
   let most = free + ground, by = "room";
@@ -139,15 +139,16 @@ export function maxLift(shot, moments, ctx) {
     const eyes = eyesOf(f, ctx.D) - ctx.D.eyeLine * ctx.H;
     if (eyes < most) { most = eyes; by = "eyeLine"; }
   }
-  let beyond = Math.max(0, Math.floor(most));
+  // (what limits beyond: the head's top below does not)
+  let beyond = Math.max(0, Math.floor(most)), beyondBy = by;
   if (ctx.raise !== "full") for (const m of moments) for (const f of m.faces) {
     const head = f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3]);
     if (head < most) { most = head; by = "head"; }
   }
   most = Math.max(0, Math.floor(most));
   // head: not past the head's top for a mouth either
-  if (ctx.raise === "head") beyond = most;
-  return { most, beyond, by };
+  if (ctx.raise === "head") { beyond = most; beyondBy = by; }
+  return { most, beyond, by, beyondBy };
 }
 
 // One shot under one caption box: the least lift that clears it (within `most`), the seconds and

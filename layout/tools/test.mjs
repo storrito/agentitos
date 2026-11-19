@@ -1443,6 +1443,17 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     ok(mouth.shots[0].fault && mouth.conflicts.some((c) => /Shot 1 .*lies on A's (mouth|lower lip).* --raise full/.test(c)), mouth.conflicts.join(" | "));
     return `raised ${full.shots[0].lift} px (full), ${mouth.shots[0].lift} px (mouth)`;
   });
+  t("raise mouth names the limit it applied: a head cut by the frame's top already stops no raise for the mouth, the eye line at 27 % does (the review's 4 px said as \"the head kept whole\")", () => {
+    // the head's top above the frame, the eyes' top 3 px below the eye line, the mouth line at 1212 (below the smallest area's top)
+    const feat = [380, 522, 320, 600];
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([250, 100, 580, 1100], feat, 0, 4)])], area: { top: usual } });
+    const s = r.shots[0];
+    ok(s.lift === Math.floor(feat[1] - DEFAULTS.eyeLine * H) && s.limit === "eyeLine", JSON.stringify(s));
+    ok(r.conflicts.some((c) => /as far as the eyes at 27 % of the height allow/.test(c)) && !r.conflicts.some((c) => /head kept whole/.test(c)), r.conflicts.join(" | "));
+    const head = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([250, 100, 580, 1100], feat, 0, 4)])], area: { top: usual }, raise: "head" });
+    ok(head.shots[0].lift === 0 && head.shots[0].limit === "head", JSON.stringify(head.shots[0]));
+    return `raised ${s.lift} px, limit ${s.limit}`;
+  });
   t("two shots that disagree: one area for both, only the close-up raised; a wide shot shown whole is never raised and its face under the area is a ✗", () => {
     const close = still([250, 380, 580, 960], [380, 700, 320, 420], 4, 9, "B");
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 4)]), shot(4, 9, [close])], area: { top: usual }, raise: "full" });

@@ -69,7 +69,8 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
     const ml = maxLift(s, moments, ctx);
     // the area's purpose of a raise is always the mouth: past the head's top where the rule allows (mouth, full)
     const most = fixed.lifts?.[i] != null ? Math.max(0, fixed.lifts[i]) : raise === "head" ? ml.most : ml.beyond;
-    return { ...s, i, weight: s.weight ?? s.end - s.start, moments, most, by: fixed.lifts?.[i] != null ? "fixed" : ml.by, forced: fixed.lifts?.[i] != null };
+    // the limit of the lift used: beyond's (the eyes, the eye line, the room) unless head
+    return { ...s, i, weight: s.weight ?? s.end - s.start, moments, most, by: fixed.lifts?.[i] != null ? "fixed" : raise === "head" ? ml.by : ml.beyondBy, forced: fixed.lifts?.[i] != null };
   });
   const returns = returnsOf(list, W, H);
   const total = list.reduce((n, s) => n + s.weight, 0) || 1;
