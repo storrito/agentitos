@@ -26,11 +26,17 @@ const PHONE_UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (K
 const DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-// the HyperFrames CLI: one on the PATH, else the version agentitos pins
-function hyperframes() {
+// the HyperFrames CLI: one on the PATH, else the version this skill was last tried with (its
+// `browser path` gave the same Chrome picture under 0.8.221 and 0.9.70 on 2026-11-19)
+export const HYPERFRAMES_TESTED = "0.9.70";
+export function hyperframes() {
   const r = spawnSync("hyperframes", ["--version"], { stdio: "ignore" });
-  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.221"];
+  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", `hyperframes@${HYPERFRAMES_TESTED}`];
 }
+
+// what HyperFrames said when it gave no Chrome: from 0.9.61 on it refuses a cache folder another
+// account can write to (a group-writable ~/.cache) and says what to do
+let cliSaid = "";
 
 export function chromePath() {
   if (process.env.CHROME && fs.existsSync(process.env.CHROME)) return process.env.CHROME;
@@ -43,7 +49,9 @@ export function chromePath() {
   const [cmd, ...pre] = hyperframes();
   const r = spawnSync(cmd, [...pre, "browser", "path"], { encoding: "utf8" });
   const found = (r.stdout || "").trim().split("\n").pop();
-  return r.status === 0 && found && fs.existsSync(found) ? found : null;
+  if (r.status === 0 && found && fs.existsSync(found)) return found;
+  cliSaid = (r.error?.message || `${r.stderr || ""}\n${r.stdout || ""}`).split("\n").map((l) => l.trim()).filter(Boolean).pop() || "";
+  return null;
 }
 
 export function postOf(url) {
@@ -222,7 +230,8 @@ const sizeOf = (file) => {
 
 export async function shot({ url, out, width, height, scale = 2, mobile = true, transparent = false, from = 0, label = url }) {
   const chrome = chromePath();
-  if (!chrome) throw new Error("No Chrome found: set CHROME=/path/to/chrome, or let HyperFrames fetch its own (`hyperframes browser ensure`).");
+  if (!chrome) throw new Error(cliSaid ? `No Chrome found, and HyperFrames gave none: ${cliSaid.replace(/\.$/, "")}. Or set CHROME=/path/to/chrome.`
+    : "No Chrome found: set CHROME=/path/to/chrome, or let HyperFrames fetch its own (`hyperframes browser ensure`).");
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.rmSync(out, { force: true });
   const plain = typeof WebSocket !== "function";

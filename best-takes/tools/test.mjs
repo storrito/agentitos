@@ -851,3 +851,16 @@ test("sound alone: build writes the cut's voice at −14 LUFS with its words tim
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("without a HyperFrames CLI on the PATH, the version this skill was last tried with is fetched", async () => {
+  const { hyperframes, HYPERFRAMES_TESTED } = await import("./lib/media.mjs");
+  const before = process.env.PATH, none = fs.mkdtempSync(path.join(os.tmpdir(), "no-hyperframes-"));
+  process.env.PATH = none;
+  try {
+    assert.deepEqual(hyperframes(), ["npx", "--yes", `hyperframes@${HYPERFRAMES_TESTED}`]);
+    assert.match(HYPERFRAMES_TESTED, /^\d+\.\d+\.\d+$/);
+  } finally {
+    process.env.PATH = before;
+    fs.rmSync(none, { recursive: true, force: true });
+  }
+});

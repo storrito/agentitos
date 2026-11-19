@@ -4,10 +4,10 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "npx --yes hyperframes@0.8.141 preview",
-    "check": "npx --yes hyperframes@0.8.141 check",
-    "render": "npx --yes hyperframes@0.8.141 render",
-    "publish": "npx --yes hyperframes@0.8.141 publish",
+    "dev": "npx --yes hyperframes@0.9.70 preview",
+    "check": "npx --yes hyperframes@0.9.70 check",
+    "render": "npx --yes hyperframes@0.9.70 render",
+    "publish": "npx --yes hyperframes@0.9.70 publish",
     "build": "node tools/build.mjs",
     "qa": "node tools/qa.mjs",
     "gallery": "node tools/gallery.mjs"
