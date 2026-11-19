@@ -1,17 +1,17 @@
 ---
 name: best-takes
-description: Cut one or several raw talking-to-camera recordings to the best takes (no slips, repeats, ähs or recording talk), loudness evened, agreed as a HyperFrames preview, then rendered with subtitles.
+description: Cut one or several raw talking-to-camera recordings, or a voice recorded alone, to the best takes (no slips, repeats, ähs or recording talk), loudness evened; a video agreed as a HyperFrames preview, then rendered with subtitles, a voice as the clean narration with every word's time.
 license: MIT
 metadata:
   title: "Best takes"
   title-de: "Beste Takes"
-  summary: "Your recordings cut to the best takes: slips, repeats and ums out, every part equally loud; a preview first, then the video."
-  summary-de: "Deine Aufnahmen auf die besten Takes geschnitten: Versprecher, Wiederholungen und Ähs raus, alles gleich laut; erst eine Vorschau, dann das Video."
-  ask: "Upload your video, or several recordings of the same thing. I cut it to the best takes, take out slips, ums and repeated sentences and even out the loudness. You see a preview first and tell me whether it is right."
-  ask-de: "Lade dein Video hoch, oder mehrere Aufnahmen zum selben Thema. Ich schneide es auf die besten Takes, nehme Versprecher, Ähs und wiederholte Sätze raus und gleiche die Lautstärke an. Du siehst zuerst eine Vorschau und sagst mir, ob es so passt."
-  placeholder: "Upload a video"
-  placeholder-de: "Video hochladen"
-  inputs: "video"
+  summary: "Your recordings cut to the best takes: slips, repeats and ums out, every part equally loud; a preview first, then the video, or the clean voice."
+  summary-de: "Deine Aufnahmen auf die besten Takes geschnitten: Versprecher, Wiederholungen und Ähs raus, alles gleich laut; erst eine Vorschau, dann das Video oder die saubere Sprachaufnahme."
+  ask: "Upload your video or your voice recording, or several recordings of the same thing. I cut it to the best takes, take out slips, ums and repeated sentences and even out the loudness. You see or hear it first and tell me whether it is right."
+  ask-de: "Lade dein Video oder deine Sprachaufnahme hoch, oder mehrere Aufnahmen zum selben Thema. Ich schneide sie auf die besten Takes, nehme Versprecher, Ähs und wiederholte Sätze raus und gleiche die Lautstärke an. Du siehst oder hörst es zuerst und sagst mir, ob es so passt."
+  placeholder: "Upload a video or a voice recording"
+  placeholder-de: "Video oder Sprachaufnahme hochladen"
+  inputs: "video, audio"
   templates: [hyperframes]
 ---
 
@@ -21,7 +21,7 @@ You run in rragent: chat left, artifacts beside it. `<skill>` is this file's fol
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `transcribe` skill beside this one, for the faces its `clips` and `layout` skills, for b-roll its `b-roll` skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (found at `http://sprite.internal`; an rragent agent there often has no key). Words from ElevenLabs Scribe ("äh" included), the cut proposed by Gemini watching the videos: about two cents a minute of recording. Nothing to `npm install`; when something is missing, say so in one sentence, never install it.
+Node 20+, ffmpeg, the HyperFrames CLI (not for a voice alone), agentitos' `transcribe` skill beside this one, for the faces its `clips` and `layout` skills, for b-roll its `b-roll` skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (found at `http://sprite.internal`; an rragent agent there often has no key). Words from ElevenLabs Scribe ("äh" included), the cut proposed by Gemini watching the videos: about two cents a minute of recording. Nothing to `npm install`; when something is missing, say so in one sentence, never install it.
 
 ## From the recordings to the video, all in the chat
 
@@ -39,15 +39,19 @@ node <skill>/tools/takes.mjs new takes/<name> uploads/<file> [uploads/<file2> �
 
 orders the videos by recording time (`--order given` keeps yours), transcribes every word with its time ("äh"s and noises included), measures loudness and writes `takes/<name>/source/brief.md`: the rules of a good cut and every word, numbered. A few seconds per minute of video. `--target` (seconds) when they asked for a length, `--aspect` (`9:16`, `1:1`, `4:5`, `16:9`; else the video's own) when they asked for a format.
 
+A voice recorded alone (`audio: uploads/<file>`: MP3, M4A, WAV, or a video file without a picture) goes the same way: all recordings of one cut are videos, or all are sound alone. It has no picture, so a pause over a second inside a keep is cut and the tool lays the room's own quiet between the stretches instead (0.42 s after a sentence, 0.2 s inside one).
+
+`(speech not written down, 1.7 s)` in the words is voice the speech model wrote no words for, even when heard again: nearly always an attempt it skipped. It is never a pause; the brief's rule 2 says what to do with it.
+
 ### 2. The cut
 
 ```bash
 node <skill>/tools/takes.mjs propose takes/<name>
 ```
 
-Gemini watches the videos and the numbered words and proposes the keeps, every retry left out and why, and where something is shown in silence: `takes/<name>/proposal.json` (the format of `cut.json`), printed. Half a minute, a few cents.
+Gemini watches the videos (or listens to the voice) and the numbered words and proposes the keeps, every retry left out and why, and where something is shown in silence: `takes/<name>/proposal.json` (the format of `cut.json`), printed. Half a minute, a few cents.
 
-Then read all of `takes/<name>/source/brief.md` and write `takes/<name>/cut.json`: the proposal where it keeps to the brief's rules, changed where not. The model judges the delivery; you check the content against the words: nothing lost (facts, names, numbers), no talk about the recording kept, whole sentences, a keep starting or ending on a stray "und," moved to the next word.
+Then read all of `takes/<name>/source/brief.md` and write `takes/<name>/cut.json`: the proposal where it keeps to the brief's rules, changed where not. The model judges the delivery; you check the content against the words: nothing lost (facts, names, numbers), no talk about the recording kept, whole sentences, a keep starting or ending on a stray "und," moved to the next word, no keep across speech not written down unless it holds the start of the kept attempt (`"unwritten": "keep"`). For a voice alone, give a keep that begins a new part `"breath": 1` (a second of the room's quiet before it).
 
 ### 3. The preview
 
@@ -71,9 +75,18 @@ node <skill>/tools/takes.mjs place takes/<name>
 
 `faces` finds every face of each video over time (a model on stills of it, followed between them): 2 to 4 cents and 40 to 100 s for a take of a minute, once per recording. `place` (free, a few seconds; it builds again) keeps an upright video as it is, crops a wide one around the speaker, sets the captions in one place clear of the face, raises the picture where a chin would reach into them, puts the hook on no face, and writes `takes/<name>/placed.sheet.jpg` with layout's first three pictures: look at it and choose. Run `place` again after a change of the cut, the caption style or the hook (build and check say so). Where the person does not want their video seen by a model, or `faces` finds no face in a take of a person: the faces by your own eyes (`faces --grid`, then `--eye`), as `<skill>/references/place.md` says. Skipped, the captions stand on the safe box's bottom and the hook at the top whatever is there, unchecked against the face: say so. Read `<skill>/references/place.md` before you change what `place` chose or answer a ✗ it prints.
 
+**A voice alone** has no project and no render: no `project` tool, and
+
+```bash
+node <skill>/tools/takes.mjs build takes/<name> --out artifacts/<name>.m4a
+node <skill>/tools/takes.mjs check takes/<name>
+```
+
+writes the cut's voice at −14 LUFS (`takes/<name>/voice.cut.m4a`, copied to `artifacts/<name>.m4a` with its subtitles `artifacts/<name>.srt`) and every kept word with its time in that voice in `takes/<name>/edit.json`. That file is the preview and the result: in step 4 the person hears it (`[:audio {:src "artifacts/<name>.m4a" :controls true}]` in place of the preview button), and after their yes you give the download links of the voice and the subtitles; there is nothing to render, and captions in the picture and b-roll need a picture. The voice with edit.json's words is what another skill lays its pictures under.
+
 ### 4. Ask whether it is right
 
-One message: length before and now, what you left out in plain words (each retry and why, the talk about the recording, the ähs, pauses cut, stretches played faster), what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**: "Looks good" (primary), "Show the preview ↗", and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
+One message: length before and now, what you left out in plain words (each retry and why, the talk about the recording, the ähs, pauses cut, stretches played faster), what the levels did ("the second video was 11 dB quieter, now both sound the same"), then **ask whether it is right**: "Looks good" (primary), "Show the preview ↗" (a voice alone: its player), and a line that they can type what to change. Mention a ⚠ you left on purpose (a take raised a lot, whose room noise rises with it).
 
 When `check` says the length is no longer a matter of cutting (the target would leave out more than half of the cut), do not cut it shorter on your own: ask instead, the two lengths and two buttons, as in "Too long to cut" below. After "a script to record": write it in the chat, in their own words and language, one sentence a line, within the words `check` named, and say in one sentence that a new recording of it goes through this skill again; no tool is needed. After "the strongest parts": cut by the brief's rule 8, build, check, and ask as above, naming in plain words what was left out.
 

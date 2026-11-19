@@ -11,6 +11,8 @@
 //   islands(env, thr, a, b)     → [{ start, end, weight }]: the voice in [a, b], and how much of it
 //   check(words, env, thr)      → { speech, squeezed, stretched, silent, inVoice, off: [i, …] }
 //   repair(words, env, thr)     → { moved, guessed: [[i, j], …] }; a moved word gets by: "sound"
+//   unwritten(words, env, thr)  → [{ from, to, voiced, after }]: voice between two words that no word
+//                                  covers, as loud as speech, for UNWRITTEN seconds at least
 //
 // Words are { text, start, end, kind } in seconds, in the order they were said.
 
@@ -255,4 +257,55 @@ export function repair(words, env, thr) {
   });
   guessed.sort((a, b) => a[0] - b[0]);
   return { moved, guessed };
+}
+
+// Speech the recognizer wrote no words for. Read aloud with retries ("the new app, the new app
+// opens, the new, the new app opens faster"), Scribe now and then
+// writes only some of the attempts, and the time of the others lies between its words as if it
+// were a pause: 18, 27 and 132 of the 641 words of a six-minute narration in three of seven
+// transcriptions (2026-11-18). Between two words (and before the first, after the last; a noise
+// covers its own time), the voice there: frames above the threshold and twice the ground of the sound (its 10th
+// percentile, for noise under the speech), stretches under 150 ms apart joined, each as loud as
+// speech (LEVEL times the median word's level: a breath or a click is not). Where it lasts
+// UNWRITTEN seconds at least, the stretch is speech not written down. On that narration the
+// stretches with missing words held 0.33 to 7 s of such voice, those of the complete
+// transcriptions 0.10 s at most.
+// → [{ from, to, voiced, after }]: its first and last voice, how many seconds of voice, and the
+// index of the word before it (−1 before the first)
+export const UNWRITTEN = 0.25;
+const LEVEL = 0.3;
+export function unwritten(words, env, thr) {
+  const out = [];
+  if (!env.length || !words.length) return out;
+  const sorted = Float32Array.from(env).sort();
+  const on = Math.max(thr, 2 * sorted[Math.floor(0.1 * (sorted.length - 1))]);
+  const mean = (a, b) => {
+    const f0 = frame(env, a), f1 = Math.max(f0 + 1, frame(env, b));
+    let s = 0;
+    for (let f = f0; f < f1; f++) s += env[f];
+    return s / (f1 - f0);
+  };
+  const levels = words.filter((w) => w.kind === "word" || w.kind === undefined).map((w) => mean(w.start, w.end)).sort((a, b) => a - b);
+  if (!levels.length) return out;
+  const loud = LEVEL * levels[Math.floor(levels.length / 2)];
+  const total = env.length * HOP;
+  // what lies between `a` and `b`, after the word `after`
+  const look = (a, b, after) => {
+    if (b - a < UNWRITTEN + 0.06) return;
+    const isl = [];
+    for (const [s, e] of voiced(env, on, a + 0.03, b - 0.03)) {
+      const last = isl.at(-1);
+      if (last && s - last[1] < 0.15) last[1] = e; else isl.push([s, e]);
+    }
+    const heard = isl.filter(([s, e]) => mean(s, e) >= loud);
+    const time = heard.reduce((t, [s, e]) => t + e - s, 0);
+    if (time >= UNWRITTEN) out.push({ from: +heard[0][0].toFixed(2), to: +heard.at(-1)[1].toFixed(2), voiced: +time.toFixed(2), after });
+  };
+  let end = 0;
+  words.forEach((w, i) => {
+    look(end, w.start, i - 1);
+    end = Math.max(end, w.end);
+  });
+  look(end, total, words.length - 1);
+  return out;
 }

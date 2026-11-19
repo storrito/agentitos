@@ -11,7 +11,10 @@
 //                where the voice is (by: "sound"), a stretch that stays doubtful is heard again
 //                alone (lib/again.mjs, by: "second hearing"); then the edges of all words are set
 //                where their sound begins and ends (lib/edges.mjs): Scribe starts a word a little
-//                late and ends it a little early.
+//                late and ends it a little early. Last, voice that no word covers (an attempt
+//                of a sentence Scribe left out, which would pass for a pause) is heard again
+//                alone and its words put in (by: "second hearing", added: true); what stays
+//                without words goes into "unwritten" (lib/timing.mjs, lib/again.mjs).
 //                Scribe names the voice of every word within a request. Where that makes the
 //                speakers without another request, the words carry speaker "A", "B", … in the
 //                order they first speak: a recording of one piece, or one whose pieces name two
@@ -31,12 +34,13 @@
 //                word is A, no further request; from three on the long requests at once
 //   --lang de    the language spoken (default: the model hears it)
 //
-// Writes { engine, model, duration, cost, speakers, timing, edges, words } to --out (times in
+// Writes { engine, model, duration, cost, speakers, timing, edges, unwritten, words } to --out (times in
 // seconds of the file; speakers: { by, people, … } when the words carry them, with `unlinked`
 // [{ from, to }] where long requests shared no words and the people may be too many; timing: how many
 // words the sound confirmed, moved and still contradicts, and how many
 // had an edge set by it; edges: "sound" says the words' edges lie on the sound, so that a skill
-// taking them corrects nothing a second time) and prints one
+// taking them corrects nothing a second time; unwritten: [{ from, to, voiced }], voice without
+// words, speech and never a pause to whoever cuts by the words) and prints one
 // line: what it wrote and what to do next. Progress goes to stderr. An error is one
 // sentence on stdout, exit 1.
 
@@ -46,8 +50,8 @@ import { spawnSync } from "node:child_process";
 import { scribe, SCRIBE_MODEL, BEFORE } from "./lib/scribe.mjs";
 import { gemini, atMost, STT_MODEL } from "./lib/gemini.mjs";
 import { framesOf, fingerprints, bySound, byWords, byTime, named } from "./lib/voices.mjs";
-import { envelopeOf, threshold, bare, check, repair } from "./lib/timing.mjs";
-import { hearAgain } from "./lib/again.mjs";
+import { envelopeOf, threshold, bare, check, repair, unwritten } from "./lib/timing.mjs";
+import { hearAgain, fillIn } from "./lib/again.mjs";
 import { edged } from "./lib/edges.mjs";
 
 const USAGE = "Usage: transcribe.mjs <audio|video> --out <words.json> [--speakers [gemini]] [--speakers-n N] [--lang de]";
@@ -206,7 +210,7 @@ try {
 
 // Scribe's words against the sound (their speakers stay with them). Gemini's tenths of a second
 // are for finding moments, not for cutting between words: they stay as they came.
-let timing = null;
+let timing = null, left = [];
 if (engine === "scribe" && r.words.length) {
   const b = bare(r.words);
   if (b.speech >= 20 && b.bare / b.speech > 0.3) fail(`${model} gave ${b.bare} of its ${b.speech} words no length (start = end): nothing can be cut or captioned by such times; try again in a while.`);
@@ -222,14 +226,25 @@ if (engine === "scribe" && r.words.length) {
     return x.words;
   }, log);
   // the gross errors are out: now every word's edges, outward to where its sound begins and ends
-  const edges = edged(r.words, env);
+  const was = new Map(r.words.map((w) => [w, [w.start, w.end]]));
+  edged(r.words, env);
+  // voice that no word covers (a false start the recognizer skipped, passing for a pause): heard
+  // again alone, its words put in; what stays without words is kept as "unwritten"
+  const fill = await fillIn(file, r.words, unwritten(r.words, env, thr), async (piece, seconds) => {
+    const x = await scribe(piece, seconds, { lang: opts.lang });
+    r.cost += x.cost;
+    return x.words;
+  }, log, was);
+  if (fill.added) edged(r.words, env);
+  const edges = r.words.filter((w) => was.has(w) && (Math.abs(w.start - was.get(w)[0]) > 0.004 || Math.abs(w.end - was.get(w)[1]) > 0.004)).length;
+  left = unwritten(r.words, env, thr).map(({ after, ...g }) => g);
   const after = check(r.words, env, thr);
-  timing = { checked: after.speech, inVoice: after.inVoice, moved, heardAgain: again.heard, edged: edges, doubtful: after.off };
+  timing = { checked: after.speech, inVoice: after.inVoice, moved, heardAgain: again.heard, added: fill.added, unwritten: left.length, edged: edges, doubtful: after.off };
 }
 
 const out = path.resolve(opts.out);
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, JSON.stringify({ engine, model, duration: +duration.toFixed(3), cost: +r.cost.toFixed(4), ...(r.speakers ? { speakers: r.speakers } : {}), ...(timing ? { timing, edges: "sound" } : {}), words: r.words }, null, 1));
+fs.writeFileSync(out, JSON.stringify({ engine, model, duration: +duration.toFixed(3), cost: +r.cost.toFixed(4), ...(r.speakers ? { speakers: r.speakers } : {}), ...(timing ? { timing, edges: "sound", unwritten: left } : {}), words: r.words }, null, 1));
 
 const n = (kind) => r.words.filter((w) => w.kind === kind).length;
 const said = engine === "gemini" ? `${r.words.length} words` : `${n("word")} words, ${n("filler")} fillers, ${n("event")} noises`;
@@ -249,7 +264,9 @@ const at = (i) => `"${r.words[i].text}" at ${clock(r.words[i].start)}`;
 const timed = !timing ? "" : ` Timings checked against the sound: ${(timing.inVoice * 100).toFixed(1)} % of the words lie where the voice is`
   + (timing.moved ? `, ${timing.moved} moved there` : "")
   + (timing.heardAgain ? `, ${timing.heardAgain} taken from a second hearing` : "")
+  + (timing.added ? `, ${timing.added} written in from a second hearing of voice no word covered` : "")
   + (timing.edged ? `, the edges of ${timing.edged} set where their sound begins and ends` : "")
+  + (timing.unwritten ? `; ${timing.unwritten} stretch${timing.unwritten > 1 ? "es" : ""} of voice without words (a false start or a word the model left out, not a pause): "unwritten" in the JSON, first at ${clock(left[0].from)}` : "")
   + (timing.doubtful.length ? `; still doubtful: ${timing.doubtful.slice(0, 5).map(at).join(", ")}${timing.doubtful.length > 5 ? ` and ${timing.doubtful.length - 5} more` : ""} (timing.mjs sheet shows a spot)` : "") + ".";
 console.log(`${rel(out)}: ${said}${who.length ? `, voices ${who.join(" ")}` : ""} in ${clock(duration)} (${model}, $${r.cost.toFixed(4)}).${unnamed}${timed}`
   + (r.words.length ? ` Next: read its words (${shape}, seconds) and fix names the model misheard, keeping their times.` : " No speech heard: is there any in it?"));
