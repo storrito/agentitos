@@ -139,7 +139,7 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
 });
 
 // ---------------------------------------------------------------- faces
-import { counted, planWindow, chinZoom, framed, textOn, partsOn, shown, bandOf } from "./lib/faces.mjs";
+import { counted, planWindow, chinZoom, framed, textOn, partsOn, shown, bandOf, sane } from "./lib/faces.mjs";
 // a person over a beat: one box at every tenth of a second
 const person = (who, box, n = 30) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box }));
 const listOf = (...people) => {
@@ -357,5 +357,44 @@ test("build with faces: a first build and a rebuild are the same byte for byte, 
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const a = filesOf(old);
     for (const f of Object.keys(first)) if (!f.startsWith("assets/voice")) assert.equal(a[f], first[f], `${f}: as the first build wrote it`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("faces: a box that cannot be a face is left out (the review's stand-in answers: no size, turned inside out, larger than the picture); a face partly past the edge stays", () => {
+  const list = { faces: [0, 0.1].map((t) => ({ t, boxes: [{ who: "zero", box: [100, 100, 0, 0] }, { who: "neg", box: [900, 300, -200, -100] }, { who: "giant", box: [-5000, -5000, 99999, 99999] },
+    { who: "whole", box: [0, 0, 1280, 720] }, { who: "edge", box: [1180, 100, 160, 200] }, { who: "A", box: [500, 100, 200, 260] }] })) };
+  const { list: kept, dropped } = sane(list, [1280, 720]);
+  assert.deepEqual(kept.faces[0].boxes.map((b) => b.who), ["edge", "A"]);
+  assert.deepEqual([...dropped.entries()], [["zero", 2], ["neg", 2], ["giant", 2], ["whole", 2]]);
+});
+
+// the faces file `faces` writes for beat a of the test short (1280×720, a stretch of 2.5 s)
+const facesFile = (work, src, ...people) => {
+  const st = fs.statSync(src), taken = 2.5;
+  fs.mkdirSync(path.join(work, "faces"), { recursive: true });
+  fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify({ key: JSON.stringify({ file: src, stamp: `${st.size}:${Math.round(st.mtimeMs)}`, at: 0.5, taken }), source: [1280, 720], step: 0.1, taken, faces: listOf(...people).faces }));
+};
+test("build with faces: the captions never get smaller for one beat's face, and a box that cannot be a face moves nothing (the review: 96 px became 77 and 62 for b7 alone, and a stand-in's giant box moved them too)", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    let r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const plain = filesOf(comp), size = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).size;
+    // the review's giant box: left out and said, the short as without faces
+    facesFile(work, src, ["giant", person("giant", [-5000, -5000, 99999, 99999], 25)]);
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /a: the face box of "giant" cannot be a face at 25 moment\(s\)/);
+    assert.deepEqual(filesOf(comp), plain);
+    // the review's b7, the face of CM S Ingram, low in the picture: in the fill its eyes lie where the captions stand
+    facesFile(work, src, ["CM S Ingram", person("I", [564, 420, 135, 165], 25)]);
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s\) where they stood; .* of 96 px, their size/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).size, size, "the captions keep their size");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

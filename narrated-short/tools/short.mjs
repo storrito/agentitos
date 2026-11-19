@@ -37,7 +37,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
-import { counted, planWindow, framed, bandOf, textOn, inkOf } from "./lib/faces.mjs";
+import { counted, planWindow, framed, bandOf, textOn, inkOf, sane, WEIGHT } from "./lib/faces.mjs";
 
 const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] [--again] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
@@ -475,7 +475,10 @@ function build(args) {
     let list = null;
     try { list = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* said below */ }
     if (!list || list.key !== facesKey(sources[i], b, takenOf(b))) { warn.push(`the faces of ${b.id} are of another stretch of its source: node ${self()} faces ${rel(work)} again; built as without them`); return null; }
-    return list;
+    // a box that cannot be a face (none, or past the picture, or the whole picture) is left out
+    const kept = sane(list, list.source);
+    for (const [who, n] of kept.dropped) warn.push(`${b.id}: the face box of "${who}" cannot be a face at ${n} moment(s) (no size, mostly outside the picture, or the whole picture): left out`);
+    return kept.list.faces.length ? kept.list : null;
   });
 
   // ---- the captions: agentitos' captions, paused under the card, the key words and the boxes marked
@@ -628,8 +631,8 @@ function build(args) {
     else {
       const said = [capOn?.seconds ? `the captions lie on a face in ${whose(capBox)} (${parts(capOn)})` : "", hookOn.seconds ? `the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : ""].filter(Boolean).join(", ");
       const layoutTool = tool("LAYOUT_TOOL", "layout", "place.mjs");
-      let placed = null, lr = null;
-      if (layoutTool) {
+      if (!layoutTool) warn.push(`${said}: agentitos' layout beside this skill (or LAYOUT_TOOL naming its tools/place.mjs) would place them off the faces; they stand where they stood`);
+      else {
         // layout's text over time: every beat one shot, its faces as tracks in px of the frame, never raised
         const shots = beats.map((b, i) => {
           const tracks = new Map();
@@ -647,45 +650,63 @@ function build(args) {
         let look = null;
         try { look = JSON.parse(fs.readFileSync(path.join(comp, "captions", "index.html"), "utf8").match(/var DATA = (\{[\s\S]*?\});\n/)[1]).look; } catch { /* the layout's own band */ }
         const ink = inkOf(look);
-        // (captions that lie on no face stay: the hook is placed around them where they are)
-        const stay = capBox && !capOn.seconds ? ["--caption-y", String(area.bottom), "--font-size", String(area.size)] : [];
-        lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...(capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), "--text", "hook", ...stay,
-          ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
-        try { placed = lr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8")) : null; } catch { /* said below */ }
-        if (placed) placed.ink = ink;
-      }
-      if (!layoutTool) warn.push(`${said}: agentitos' layout beside this skill (or LAYOUT_TOOL naming its tools/place.mjs) would place them off the faces; they stand where they stood`);
-      else if (!placed) warn.push(`${said}; agentitos' layout did not place them (${reason(lr)}): they stand where they stood`);
-      else {
-        let capNow = capBox;
-        const c = placed.caption;
-        if (capOn?.seconds && c) {
-          const on = textOn(c.box, moments);
-          if (on.cost < capOn.cost) {
-            const o = { ...c.options }, ink = placed.ink;
+        const capText = capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : [];
+        const askLayout = (args) => {
+          const lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...args,
+            ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
+          let placed = null;
+          try { placed = lr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8")) : null; } catch { /* said by the caller */ }
+          return { placed, lr };
+        };
+        // where the captions stand once they are placed, as layout's --caption-y and --font-size take them
+        let capNow = capBox, capFixed = capBox ? ["--caption-y", String(area.bottom), "--font-size", String(area.size)] : [];
+        if (capOn?.seconds) {
+          // The captions stand in one place for the whole short, at the size captions gave them: one
+          // beat never makes them smaller for all the others. Smaller type has a price, as much as the
+          // longest beat spent wholly on the eyes or nose and more the smaller it gets, which only
+          // faces in several beats can pay; layout is asked at their own size first.
+          const longest = Math.max(...beats.map((b) => b.to - b.from));
+          const price = (font) => (font < area.size ? WEIGHT.nose * (longest + total * (1 - font / area.size)) : 0);
+          const asked = [askLayout([...capText, "--font-size", String(area.size)])];
+          if (seen.filter((s) => textOn(capBox, s.moments).seconds).length > 1) asked.push(askLayout(capText));
+          let best = null;
+          for (const { placed } of asked) {
+            const c = placed?.caption;
+            if (!c) continue;
+            const on = textOn(c.box, moments), cost = r2(on.cost + price(c.font));
+            if (!best || cost < best.cost) best = { c, on, cost };
+          }
+          if (!best) warn.push(`${said}; agentitos' layout did not place them (${reason(asked[0].lr)}): they stand where they stood`);
+          else if (best.cost < capOn.cost) {
+            const { c, on } = best, o = { ...c.options };
             if (ink) { o.y = Math.round(o.y - ink.below * o["font-size"]); o["max-width"] = Math.floor(o["max-width"] - 2 * Math.ceil(ink.side * o["font-size"] + 1)); }
             const cr = spawnSync(process.execPath, [...capArgs, ...Object.entries(o).flatMap(([k, v]) => [`--${k}`, String(v)])], { encoding: "utf8" });
             if (cr.status !== 0) fail(`The captions could not be built: ${reason(cr)}`);
             if (!/Placed where asked/.test(cr.stdout || "")) warn.push(`${said}: the captions skill here does not take a place, so they stand on the safe box's bottom`);
             else {
               capNow = c.box;
-              report.push(`  the captions: ${said.split(", the hook")[0].replace("the captions lie", "they lay")} where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${on.seconds ? `, on a face still: ${parts(on)}` : ", on no face"}`);
+              capFixed = ["--caption-y", String(c.options.y), "--font-size", String(c.font)];
+              report.push(`  the captions: they lay on a face in ${whose(capBox)} (${parts(capOn)}) where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px${c.font < area.size ? ` (${area.size} px before: the faces of several beats pay for smaller type)` : ", their size"}, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${on.seconds ? `, on a face still: ${parts(on)}` : ", on no face"}`);
             }
-          } else report.push(`  ! the captions lie on a face in ${whose(capBox)} (${parts(capOn)}): agentitos' layout found no place that lies on them less; they stand where they stood`);
+          } else report.push(`  ! the captions lie on a face in ${whose(capBox)} (${parts(capOn)}): agentitos' layout found no place at their size that lies on them less; they stand where they stood`);
         }
-        // the hook: off a face, and off the captions where they moved to its place
-        const h = placed.hook;
+        // the hook: off a face, and off the captions where they moved to its place (they are given to layout where they stand now)
         const meets = (a, z) => Math.min(a[0] + a[2], z[0] + z[2]) > Math.max(a[0], z[0]) && Math.min(a[1] + a[3], z[1] + z[3]) > Math.max(a[1], z[1]);
         const clash = capNow && capNow !== capBox && meets(capNow, hookBox);
-        if (h && (hookOn.seconds || clash)) {
-          const until = Math.max(1.2, Math.min(HOOK_SECONDS, h.until ?? HOOK_SECONDS));
-          const on = textOn(h.box, moments, 0, until);
-          if (capNow && meets(h.box, capNow)) report.push(`  ! the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}): agentitos' layout's place for it lies on the captions; it stands where it stood: a shorter hook, or a first beat whose face stands lower`);
-          else if (on.cost < hookOn.cost || clash) {
-            hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
-            hookUntil = r2(until);
-            report.push(`  the hook: ${hookOn.seconds ? `it lay on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : "the captions moved to its place"}; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${on.seconds ? `; on a face still: ${parts(on)}` : ", on no face"}`);
-          } else report.push(`  ! the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}): agentitos' layout found no place that lies on it less; it stands where it stood: a shorter hook, or a first beat whose face stands lower`);
+        if (hookOn.seconds || clash) {
+          const { placed, lr } = askLayout([...capText, "--text", "hook", ...capFixed]);
+          const h = placed?.hook;
+          if (!h) warn.push(`the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}); agentitos' layout did not place it (${reason(lr)}): it stands where it stood`);
+          else {
+            const until = Math.max(1.2, Math.min(HOOK_SECONDS, h.until ?? HOOK_SECONDS));
+            const on = textOn(h.box, moments, 0, until);
+            if (capNow && meets(h.box, capNow)) report.push(`  ! the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}): agentitos' layout's place for it lies on the captions; it stands where it stood: a shorter hook, or a first beat whose face stands lower`);
+            else if (on.cost < hookOn.cost || clash) {
+              hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
+              hookUntil = r2(until);
+              report.push(`  the hook: ${hookOn.seconds ? `it lay on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : "the captions moved to its place"}; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${on.seconds ? `; on a face still: ${parts(on)}` : ", on no face"}`);
+            } else report.push(`  ! the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}): agentitos' layout found no place that lies on it less; it stands where it stood: a shorter hook, or a first beat whose face stands lower`);
+          }
         }
       }
     }

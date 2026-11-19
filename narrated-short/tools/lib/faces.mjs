@@ -3,6 +3,7 @@
 // zoomed `whole` moved so that it holds the faces that matter, and the faces in the frame over the
 // film's time, to keep the captions and the hook off them. Pure geometry, no programs run here.
 //
+//   sane(list, [w, h]) → { list, dropped: Map who → moments }: the boxes that can be faces
 //   counted(list, [w, h], seconds) → { held: [person], small: [person] }: who the window must hold
 //   planWindow({ frame, zoom, pan, zoomSet, panSet, size, held }) → what the beat's picture becomes
 //   mapper({ frame, zoom, pan, x, size, bars }) → box of the source → box of the 1080×1920 clip
@@ -22,6 +23,24 @@ export const SEEN = 0.25, AS_TALL = 0.5, MIN_FACE = 0.04;
 export const SIDE = 0.12;
 // the frame's faces a text is checked against: at least this share of the frame's height
 export const TEXT_FACE = 0.03;
+
+// A box that cannot be a face, as best-takes refuses them (copied: a skill never imports another's
+// code): no size, less than half of it inside the picture; and one as large as the whole picture
+// (a model's answer that names the frame itself). Such boxes are left out, each person's counted.
+export function sane(list, [w, h]) {
+  const dropped = new Map();
+  const ok = (b) => {
+    if (!(Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] > 0 && b[3] > 0)) return false;
+    const inside = Math.max(0, Math.min(w, b[0] + b[2]) - Math.max(0, b[0])) * Math.max(0, Math.min(h, b[1] + b[3]) - Math.max(0, b[1]));
+    return inside >= 0.5 * b[2] * b[3] && !(b[2] >= 0.9 * w && b[3] >= 0.9 * h);
+  };
+  const faces = [];
+  for (const f of list?.faces || []) {
+    const boxes = (f.boxes || []).filter((x) => ok(x.box) || (dropped.set(x.who ?? "a face", (dropped.get(x.who ?? "a face") || 0) + 1), false));
+    if (boxes.length) faces.push({ ...f, boxes });
+  }
+  return { list: { ...list, faces }, dropped };
+}
 
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : 0; };
 
