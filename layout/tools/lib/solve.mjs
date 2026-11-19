@@ -10,6 +10,9 @@
 //       source    [w, h]; faces: [[x, y, w, h] | [{ t, box }, …], …] in px of the source; two
 //                 people as two files, or a screen and its webcam: sources
 //       speaker   the face (from 1) a crop on one of several people is made for (none: one each)
+//       captionArea  a band the captions stand in already ({ left, width, top, bottom, size, lines }
+//                 in px of the frame, captions' area.json): the captions go there or have no
+//                 place, and the picture is placed around them; none: the solver finds their place
 //       set       { "dotted.key": value } over the defaults; weights: readWeights(file)
 //   trackFace(moments) → a moving face's hull and usual box
 //   alike(a, b, px, ds) → whether two candidates show the same frame to the eye (DEFAULTS.same)
@@ -117,7 +120,7 @@ export function solve(args) {
   return res;
 }
 
-function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null, merge = true }) {
+function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null, merge = true, captionArea = null }) {
   const [W, H] = Z.size;
   const D = scaled(merged(weights ? { ...DEFAULTS, weights } : DEFAULTS, set), Z.size);
   let count = 0;
@@ -137,6 +140,8 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
     W, H, Z, D, sw, sh, s0, merge: merge && !all, faces: main.faces, fb: main.faces.length ? hullOf(main.faces) : null, sources: srcs, tall: W <= H, speakerNamed: speaker != null, speakerFace: speaker != null ? speaker - 1 : null,
     cap: needs.find((n) => n.role === "caption") || null, hook: needs.find((n) => n.role === "hook") || null,
   };
+  // a fixed band holds the captions in its own lines
+  if (captionArea) Object.assign(ctx, { captionArea, cap: { role: "caption", lines: captionArea.lines } });
   const rs = sw / sh, rf = W / H, same = Math.abs(rs / rf - 1) < 0.02;
   const out = [], notes = [];
   ctx.readable = D.readable.height * W / D.readable.per;
@@ -187,7 +192,7 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
       } else if (main.faces.length > 2) notes.push(`stacked parts are built for two people, not for ${main.faces.length}`);
     }
   }
-  return ranked(ctx, out, notes, { needs, srcs });
+  return ranked(ctx, out, notes, { needs: captionArea ? [...needs.filter((n) => n.role !== "caption"), ctx.cap] : needs, srcs });
 }
 
 // rank, and say why
@@ -216,7 +221,7 @@ function ranked(ctx, out, notes, { needs, srcs }) {
     ...(main.screen ? { screen: { region: main.faces[0], minTextHeight: main.minText, readable: r1(ctx.readable) } } : {}),
     // the sources in the order given; a screen's webcam is the second (baked: the screen's own file)
     ...(ctx.sources.length > 1 ? { sources: ctx.sources.map((q) => ({ size: q.size, faces: q.faces, ...(q.screen ? { screen: true } : {}), ...(q.baked ? { baked: true } : {}) })) } : {}),
-    needs, defaults: D, notes, candidates: cands,
+    needs, ...(ctx.captionArea ? { captionArea: ctx.captionArea } : {}), defaults: D, notes, candidates: cands,
   };
 }
 

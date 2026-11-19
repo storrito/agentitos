@@ -1161,6 +1161,62 @@ if (!QUICK) t("the picture of a candidate is the frame down to its last row with
   return seen.join(", ");
 });
 
+console.log("\nCaptions built already: place around a fixed band (--caption-area)");
+// screencast-cut builds its captions first (at the safe box's bottom) and places a webcam's
+// picture around them: the band is captions' area.json, here the clean style's in 9:16
+const BAND916 = { left: 192, width: 696, top: 1282, bottom: 1440, size: 52, lines: 2, from: "test" };
+t("a fixed band: the captions stand in it or nowhere, every candidate says so, and the result names the band; the 720p take's chin stays above it", () => {
+  const res = solve({ zones: askZones("9:16"), source: [1280, 720], faces: [[555, 145, 180, 195]], needs: [], captionArea: BAND916 });
+  ok(res.captionArea === BAND916 && res.needs.some((n) => n.role === "caption" && n.lines === 2), JSON.stringify([res.captionArea, res.needs]));
+  for (const c of res.candidates) {
+    const cap = c.text.find((x) => x.role === "caption");
+    if (!cap) { ok(c.unmet.includes("caption"), `${c.fit}: no caption and none missing`); continue; }
+    ok(JSON.stringify(cap.box) === JSON.stringify([192, 1282, 696, 158]) && JSON.stringify(cap.ink) === JSON.stringify(cap.box) && cap.font === 52 && cap.lines === 2 && cap.band === "test" && cap.lineBox, `${c.fit}: ${JSON.stringify(cap)}`);
+  }
+  const first = res.candidates.find((c) => !c.hard && !c.unmet.length);
+  ok(first && Math.max(...first.faceInFrame.map((f) => f[1] + f[3])) < BAND916.top, JSON.stringify(first?.faceInFrame));
+  ok(res.candidates.find((c) => c.fit === "full").hard, "the 720p take covering 9:16 (2.67×) passes");
+  return `${res.candidates.length} candidates, the first passing ${first.fit} ${first.crop || ""} at ${first.scale}×`;
+});
+
+t("a fixed band on the face: a picture whose face reaches into it leaves the captions without a place; the solver holds the chin above the band where the fit allows (a close 720p take)", () => {
+  const close = [[500, 170, 260, 330]];
+  const res = solve({ zones: askZones("9:16"), source: [1280, 720], faces: close, needs: [], captionArea: BAND916, merge: false });
+  const full = res.candidates.find((c) => c.fit === "full");
+  ok(full.unmet.includes("caption") && full.faceInFrame[0][1] + full.faceInFrame[0][3] > BAND916.top, JSON.stringify([full.unmet, full.faceInFrame]));
+  for (const c of res.candidates.filter((k) => !k.unmet.length)) ok(c.faceInFrame[0][1] + c.faceInFrame[0][3] < BAND916.top, `${c.fit} ${c.crop || ""}: the chin at ${c.faceInFrame[0][1] + c.faceInFrame[0][3]}`);
+  // the solver's own place for the same captions (no band) lies elsewhere for some fit: the band is no suggestion
+  const own = solve({ zones: askZones("9:16"), source: [1280, 720], faces: close, needs: [{ role: "caption", lines: 2 }], merge: false });
+  ok(own.candidates.some((c) => c.text.some((x) => x.role === "caption" && Math.round(x.box[1]) !== BAND916.top)), "the solver's own captions all stand where the band is");
+  return res.candidates.map((c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""} ${c.hard ? "✗" : c.unmet.length ? "–" : "✓"}`).join(", ");
+});
+
+t("place --caption-area takes captions' area.json or its six values, prints the band, and refuses another input in one sentence; without it place's output is what it was", () => {
+  const dir = path.join(OUT, "place-band"), area = path.join(OUT, "band-area.json");
+  fs.writeFileSync(area, JSON.stringify({ left: 192, width: 696, top: 1282, bottom: 1440, size: 52, lines: 2 }));
+  const base = ["--frame", "9:16", "--source", "1280x720", "--face", "555,145,180,195"];
+  const read = () => JSON.parse(fs.readFileSync(path.join(dir, "placement.json"), "utf8"));
+  let r = cli("place", dir, ...base, "--caption-area", area);
+  ok(r.status === 0 && /captions: fixed in x 192–888, y 1282–1440 \(band-area\.json \(captions' area\.json\), 2 lines at 52 px\)/.test(r.stdout), r.stderr || r.stdout.split("\n").slice(0, 4).join("\n"));
+  ok(read().candidates[0].text.find((x) => x.role === "caption").box[1] === 1282, JSON.stringify(read().candidates[0].text));
+  r = cli("place", dir, ...base, "--text", "caption", "--caption-area", "192,696,1282,1440,52,2");
+  ok(r.status === 0 && read().needs.filter((n) => n.role === "caption").length === 1 && read().needs[0].lines === 2 && /six values/.test(read().captionArea.from), r.stderr || JSON.stringify(read().needs));
+  const e = cli("place", dir, ...base, "--caption-area", "1,2,3");
+  sentence(e, "--caption-area 1,2,3"); ok(/no caption area|cannot be read/.test(e.stderr), e.stderr);
+  // without the option: no key of the band in the file, the captions the solver's own
+  r = cli("place", dir, ...base, "--text", "caption:2", "--json");
+  const j = JSON.parse(r.stdout);
+  ok(!("captionArea" in j) && j.candidates.every((c) => c.text.every((x) => !("band" in x) && !("lineBox" in x))), "a key of the band without --caption-area");
+});
+
+if (!QUICK) t("in Chrome: the first passing candidate around a fixed band is what platform-zones' checker measures, the captions in the band", () => {
+  const res = solve({ zones: askZones("9:16"), source: [1280, 720], faces: [[555, 145, 180, 195]], needs: [], captionArea: BAND916 });
+  const c = res.candidates.find((k) => !k.hard && !k.unmet.length);
+  const v = verify(c, res, "band-916-first");
+  ok(v.r.ok, `the checker fails it: ${v.r.hard.map((f) => f.what)}`); ok(v.cmp.agree, `solver and checker differ: ${JSON.stringify(v.cmp)}`);
+  return `${c.fit} ${c.crop || ""} at ${c.scale}×`;
+});
+
 console.log("\nText over a placed picture, for a whole clip (text): faces over time");
 {
   const Z9 = askZones("9:16");

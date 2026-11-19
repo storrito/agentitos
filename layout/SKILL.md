@@ -64,6 +64,7 @@ node <skill>/tools/place.mjs place placement/<name> --frame 9:16 --source 1080x1
 | a face that moves | `--face-at 0:300,570,600,900 --face-at 2.5:300,640,600,900 …`, or `--face-track file.json` |
 | a screen, with or without a webcam | `--source 1920x1080 --region 700,300,480,300 --min-text-height 14 [--source 1280x720 --face …]` |
 | a screen with the webcam baked in | `--source 1920x1080 --region 500,40,1340,310 --min-text-height 20 --face 130,555,70,85` |
+| captions your skill built already | `--caption-area <captions>/area.json`: they stand there or have no place (`–`), the picture is placed around them |
 
 Every `--face`, `--face-at` and `--region` belongs to the `--source` before it. `--frame` is `9:16`, `4:5`, `1:1`, `16:9` or a size as `720x1280`: type and margins are in proportion to the frame.
 
