@@ -1454,12 +1454,14 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     ok(head.shots[0].lift === 0 && head.shots[0].limit === "head", JSON.stringify(head.shots[0]));
     return `raised ${s.lift} px, limit ${s.limit}`;
   });
-  t("two shots that disagree: one area for both, only the close-up raised; a wide shot shown whole is never raised and its face under the area is a ✗", () => {
+  t("two shots that disagree: one area for both, only the close-up raised; a wide shot shown whole is never raised and its face under the area is a ✗ that offers no \"shown whole\" (room null, as clips writes it), a shot that can be shown whole is offered it", () => {
     const close = still([250, 380, 580, 960], [380, 700, 320, 420], 4, 9, "B");
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 4)]), shot(4, 9, [close])], area: { top: usual }, raise: "full" });
     ok(r.shots[0].lift === 0 && r.shots[1].lift > 0 && !r.conflicts.length, JSON.stringify(r.shots.map((s) => [s.lift, s.on])));
     const whole = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual }, raise: "full" });
     ok(whole.shots[0].lift === 0 && whole.conflicts.length === 1 && !/--raise/.test(whole.conflicts[0]), whole.conflicts.join(" | "));
+    // (room null, as clips' shots writes a shot shown whole: never "the shot shown whole" as a fix)
+    ok(!/shown whole/.test(whole.conflicts[0]) && /shown whole/.test(areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], { free: 0, ground: 0 })], area: { top: usual }, raise: "full" }).conflicts[0] || ""), whole.conflicts.join(" | "));
     const asMouth = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual } });
     ok(asMouth.conflicts.length === 1 && !/--raise/.test(asMouth.conflicts[0]), `a shot that cannot be raised names no raise: ${asMouth.conflicts.join(" | ")}`);
     return `top ${r.area.top}, raised ${r.shots[1].lift} px`;
