@@ -59,7 +59,7 @@ import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from ".
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
 import { plan, range, timeRange } from "./lib/cut.mjs";
-import { FRAMES, areas, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
+import { FRAMES, areas, areasOnShot, captionsOnShot, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { findFace } from "./lib/face.mjs";
@@ -137,7 +137,10 @@ function layoutOf(s, cut = {}) {
   const [width, height] = FRAMES[s.frame];
   let z;
   try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ ${e.message}`); }
-  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!captionsOf(cut), labels: (cut.keep || []).some((k) => k.label) }) };
+  const labels = (cut.keep || []).some((k) => k.label);
+  // PROTOTYPE: "captions": { "on": "shot" | "shot-moved" } lays the captions on the shot (areasOnShot)
+  if (/^shot/.test(captionsOf(cut)?.on || "")) return { width, height, zones: z, areas: areasOnShot(width, height, z, { labels }) };
+  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!captionsOf(cut), labels }) };
 }
 
 // Where the face is in the webcam's picture (face.mjs), once, kept in sources.json; null when
@@ -933,10 +936,33 @@ async function cmdBuild(dir, opts) {
   const showKeeps = new Set((cut.keep || []).flatMap((keep, k) => (keep.show !== undefined ? [k] : [])));
   const faceCut = showKeeps.size ? { ...cut, keep: cut.keep.map((keep, k) => { if (!showKeeps.has(k)) return keep; const { layout, ...rest } = keep; return rest; }) } : cut;
   const screenKeeps = new Set(r.pieces.filter((p) => isScreenPiece(p, sources) && !showKeeps.has(p.keep)).map((p) => p.keep));
-  const faceSaid = faceView(dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, screens: screenKeeps });
+  const onShot = !!layout.areas.onShot;
+  const faceArgs = () => [dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, screens: screenKeeps }];
+  const faceSaid = onShot ? [] : faceView(...faceArgs());
   // a screen keep (the screen whole or a zoom box): the picture as before where it passes the layout
   // skill's checks, else layout's (lib/screenview.mjs); a keep that shows another video is none
-  const screenSaid = screenView(dir, faceCut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, zones: layout.zones, areas: layout.areas, labels });
+  // (PROTOTYPE: with the captions on the shot, layout places the screen as without captions)
+  const screenSaid = screenView(dir, faceCut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: caps && !onShot ? path.join(out, "captions", "area.json") : null, zones: layout.zones, areas: layout.areas, labels });
+  if (onShot && caps.on === "shot-moved") {
+    // PROTOTYPE: the captions moved off every screen keep's region and circle (captionsOnShot),
+    // built again at that y; the face keeps are then placed around them
+    const area = JSON.parse(fs.readFileSync(path.join(out, "captions", "area.json"), "utf8"));
+    const obstacles = r.pieces.filter((p) => p.screen && !showKeeps.has(p.keep)).flatMap((p) => {
+      const circle = sources.webcam?.video && p.pip !== false ? (p.screenPic?.circle || p.segments?.[0]?.screenPic?.circle || layout.areas.pip) : null;
+      return [{ box: p.screen.region, seconds: p.duration }, ...(circle ? [{ box: [circle[0], circle[1], circle[2], circle[2]], seconds: p.duration }] : [])];
+    });
+    const got = captionsOnShot(area, obstacles, layout.zones);
+    screenSaid.push(`Captions on the shot (prototype): their lowest line at y ${got.y} (the safe box's bottom ${got.at}), on a region or the circle for ${+got.covered.toFixed(2)} s (at the bottom ${+got.coveredAt.toFixed(2)} s)`);
+    if (got.y !== got.at) {
+      fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
+      const file = captionWords(dir, r.words, caps, { width, height, duration: r.duration });
+      const said = runCaptions(["build", file, path.join(out, "captions"), "--style", caps.style || "hormozi", "--y", String(got.y),
+        ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []),
+        ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
+      captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
+    }
+  } else if (onShot) screenSaid.push("Captions on the shot (prototype): at the safe box's bottom, as built");
+  if (onShot) faceSaid.push(...faceView(...faceArgs()));
   let music = null;
   if (cut.music?.file) {
     if (!fs.existsSync(cut.music.file)) fail(`✗ cut.json "music": there is no ${cut.music.file}`);

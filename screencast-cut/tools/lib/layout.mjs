@@ -77,6 +77,32 @@ export function areas(width, height, zones, { captions = true, labels = false } 
   return { content, solo: content, bleed, whole, wholeLabelled, tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
 }
 
+// PROTOTYPE (step 3's pairs, 2026-11-19; cut.json "captions": { "on": "shot" | "shot-moved" }):
+// the areas with the captions lying on the shot. What must be read may take the captions' band
+// (the rooms run down to the safe box's bottom), the rest of a screen runs to the frame's edges
+// (bleed: the whole frame), the circle stays at main's place (decision circle-still) and a moved
+// circle's bottom corners end where main's did (floor). Without "on" nothing here is used.
+export function areasOnShot(width, height, zones, { labels = false } = {}) {
+  const a = areas(width, height, zones, { captions: true, labels }), b = areas(width, height, zones, { captions: false, labels });
+  // 9:16: the screen's rooms above the circle stay where main has them (the circle does not move)
+  const upright = height >= width * 1.5;
+  return { ...b, pip: a.pip, content: upright ? a.content : b.content, bleed: [0, 0, width, height], floor: a.bleed[3], onShot: true };
+}
+
+// PROTOTYPE (same): one place for the cut's captions over the shot, by a plain rule, not the layout
+// skill's (its "text" knows faces only): the captions' box as built (area.json) moved up from the
+// safe box's bottom, in steps of 4 px, to the lowest place where it lies on the fewest seconds of a
+// screen keep's region or circle. obstacles: [{ box: [x, y, w, h], seconds }]. Returns the y at
+// which the lowest line ends (captions' --y) and the seconds still covered.
+export function captionsOnShot(area, obstacles, zones) {
+  const h = area.bottom - area.top, top = zones.safe[1];
+  const meets = (a, b) => Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]) > 0.5 && Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]) > 0.5;
+  const cost = (y) => obstacles.reduce((t, o) => t + (meets([area.left, y - h, area.width, h], o.box) ? o.seconds : 0), 0);
+  let best = { y: area.bottom, covered: cost(area.bottom) };
+  for (let y = area.bottom - 4; y - h >= top; y -= 4) { const c = cost(y); if (c < best.covered - 1e-9) best = { y, covered: c }; }
+  return { ...best, at: area.bottom, coveredAt: cost(area.bottom) };
+}
+
 // the largest box of `aspect` (width / height) inside `area`, centred; of several areas, the one
 // that holds the largest
 export function fit(area, aspect) {

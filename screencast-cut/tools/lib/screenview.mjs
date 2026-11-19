@@ -72,7 +72,7 @@ export function freeCorner(pic, { zones, areas, labels = [], width, height, band
   if (!pic.circle) return null;
   const gap = Math.round(Math.min(width, height) * 0.022);
   const [sx, sy, sw] = zones.safe, d = pic.circle[2];
-  const bottom = Math.min(areas.bleed ? areas.bleed[3] : sy + zones.safe[3], Number.isFinite(band) ? band - gap : Infinity);
+  const bottom = Math.min(areas.floor ?? (areas.bleed ? areas.bleed[3] : sy + zones.safe[3]), Number.isFinite(band) ? band - gap : Infinity);
   const near = labels.map((l) => [l[0] - gap, l[1] - gap, l[2] + 2 * gap, l[3] + 2 * gap]);
   const order = height >= width * 1.5 ? ["bottom left", "bottom right", "top left", "top right"] : ["top right", "top left", "bottom right", "bottom left"];
   for (const corner of order) {
