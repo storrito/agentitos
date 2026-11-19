@@ -462,7 +462,7 @@ function place(dir, opts, { build = true } = {}) {
   // the mouth may open lower there, onto the captions)
   const stillsOf = (pairs) => { const two = pairs.filter(([a, b]) => a !== b), one = pairs.filter(([a, b]) => a === b); return [two.length ? `between the stills at ${two.map(([a, b]) => `${sec(a)} and ${sec(b)} s`).join(", ")}` : "", one.length ? `from the still at ${one.map(([a]) => `${sec(a)} s`).join(", ")} alone` : ""].filter(Boolean).join(" and "); };
   const estOf = (x) => { const w = x.touches.filter((t) => t.lipEst); return w.length ? ` (${sec(w.reduce((n, t) => n + t.lipEst, 0))} s of it ${stillsOf(w.flatMap((t) => t.stills))}: there the mouth's place is an estimate, look whether it opens onto the captions)` : ""; };
-  const partsOf = (on, x) => [on.nose ? `the nose or eyes ${sec(on.nose)} s` : "", on.hair ? `the hair or forehead ${sec(on.hair)} s` : "", on.mouth ? `the mouth ${sec(on.mouth)} s` : "", on.lip ? `the lower lip ${sec(on.lip)} s${x ? estOf(x) : ""}` : "", on.chin ? `the chin ${sec(on.chin)} s` : ""].filter(Boolean).join(", ");
+  const partsOf = (on, x) => [on.nose ? `the nose or eyes ${sec(on.nose)} s` : "", on.hair ? `the hair or forehead ${sec(on.hair)} s${on.maybe ? ` (${sec(on.maybe)} s of it where the eyes may begin: not known)` : ""}` : "", on.mouth ? `the mouth ${sec(on.mouth)} s` : "", on.lip ? `the lower lip ${sec(on.lip)} s${x ? estOf(x) : ""}` : "", on.chin ? `the chin ${sec(on.chin)} s` : ""].filter(Boolean).join(", ");
   const rows = text.shots.map((x, i) => {
     // (the framing again found its shots anew: the one at this shot's middle)
     const k = index[i], mid = (x.start + x.end) / 2, sh = lifted.find((q) => mid >= q.start && mid < q.end) || lifted[k] || { faces: [] };
