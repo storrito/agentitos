@@ -956,12 +956,13 @@ async function cmdBuild(dir, opts) {
       r.pieces, path.join(out, "assets", "backdrop.mp4"), { fps: s.fps, parts: source(dir, "backdrop.parts") });
     backdrop = "backdrop.mp4";
   }
-  // a shown video's sound ("sound"): its stretch cut out beside the composition, the words' metadata
-  // left behind
+  // a shown video's sound ("sound"): its stretch cut out beside the composition, the file's
+  // metadata left behind; where ffmpeg cannot, the video plays muted and the build says so
   for (const i of shown.inserts) {
-    i.audio = `${i.key}.m4a`;
-    const a = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(i.from), "-t", i.duration.toFixed(3), "-i", i.file, "-vn", "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", path.join(out, "assets", i.audio)], { encoding: "utf8" });
-    if (a.status !== 0) fail(`✗ keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${(a.stderr || "").trim().split("\n").pop()}); give the video as MP4 with AAC sound, or leave "sound" out.`);
+    const audio = `${i.key}.m4a`;
+    const a = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(i.from), "-t", i.duration.toFixed(3), "-i", i.file, "-vn", "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", path.join(out, "assets", audio)], { encoding: "utf8" });
+    if (a.status === 0) i.audio = audio;
+    else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${(a.stderr || "").trim().split("\n").pop() || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
   }
   writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
 
