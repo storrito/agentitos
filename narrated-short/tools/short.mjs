@@ -7,7 +7,12 @@
 //   node tools/short.mjs clock <work> [--gap 0.3]
 //        <work>/voice.json (launch-video's `voice`: a line a sentence) → the film's clock: where
 //        each line plays, every sentence and word with its time; <work>/clock.json
-//   node tools/short.mjs build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17]
+//   node tools/short.mjs faces <work> [--all] [--again]
+//        the faces of the beats marked "people": true (every beat with --all): each beat's stretch
+//        of its source to agentitos' clips (frame.mjs --faces: a model's stills with the eyes,
+//        nose and mouth, a tracker between them), <work>/faces/<id>.json; about 2 cents and half a
+//        minute a beat. build reads them; without them build is what it was.
+//   node tools/short.mjs build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces]
 //        <work>/beats.json and the clock → one clip per beat cut into <composition>/assets/clips/
 //        and checked (dark, cut short, standing still, a dark first frame, a cut of the source
 //        inside), the captions built by agentitos' captions (paused under the comparison card,
@@ -15,6 +20,10 @@
 //        by agentitos' freeze-cutout when the beat asks for one, and <composition>/index.html:
 //        clips, voice, music (measured, 17 LU under the voice), hook text, card, credit, handle.
 //        Changed beats: build again; a clip whose beat and source did not change is kept.
+//        Where faces of a beat are known: a fill or a zoomed band that would cut them moves to
+//        them (or shows the whole picture), and where the captions or the hook lie on a face,
+//        agentitos' layout gives one place for the captions and the hook's place; each beat says
+//        what was done and why, and a doubt never makes a beat worse.
 //   node tools/short.mjs sheet <work> <composition>
 //        stills of the composition at the moments that matter (the first frame, the hook, the
 //        freeze, each beat at its start and middle, every card, the end) on one sheet,
@@ -28,8 +37,9 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
+import { counted, planWindow, framed, bandOf, textOn, inkOf } from "./lib/faces.mjs";
 
-const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] | sheet <work> <composition>";
+const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] [--again] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
 const log = (s) => console.error(s);
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -132,6 +142,87 @@ function clock(args) {
   for (const l of lines) console.log(`  ${String(l.id).padEnd(6)} ${l.start.toFixed(2).padStart(6)}-${l.end.toFixed(2).padStart(6)}  ${l.text}`);
   console.log(words.map((w) => `${w.text}@${w.start.toFixed(2)}`).join(" "));
   console.log(`→ ${rel(path.join(work, "clock.json"))}. These times are the film's: write ${rel(path.join(work, "beats.json"))} by them (a beat changes between sentences, in the pause), then node ${self()} build ${rel(work)} <composition>.`);
+}
+
+// ---------------------------------------------------------------- faces
+// The picture's size as it is shown: a phone stores an upright take as a wide one turned a quarter
+function shownSize(file, size) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream_side_data=rotation:stream_tags=rotate", "-of", "json", file], { encoding: "utf8" });
+  let turn = 0;
+  try { const st = JSON.parse(r.stdout || "{}").streams?.[0]; turn = Number(st?.side_data_list?.find((d) => d.rotation != null)?.rotation ?? st?.tags?.rotate ?? 0); } catch { /* as stored */ }
+  return Math.abs(turn) % 180 === 90 ? [size.height, size.width] : [size.width, size.height];
+}
+// what a beat's faces were found for: the stretch of the source its clip takes
+const facesKey = (src, b, taken) => JSON.stringify({ file: src.file, stamp: src.stamp, at: b.at, taken });
+const takenOf = (b) => Math.round(r2(b.to - b.from) * (b.speed ?? 1) * 1000) / 1000;
+
+// Each beat's stretch of its source (as its clip takes it, at most 1080 lines, without sound and the
+// file's tags) to agentitos' clips: frame.mjs --faces finds every face over time, the model's stills
+// with the eyes, nose and mouth, a tracker between them. Kept per beat while its stretch is the same.
+function faces(args) {
+  const { pos, opts } = parse(args, [], ["all", "again"]);
+  if (!pos[0]) fail(`Name the work folder: faces short/<name>. ${USAGE}`);
+  const work = path.resolve(pos[0]);
+  const beatsFile = path.join(work, "beats.json");
+  const cfg = readJson(beatsFile, "write the beats first (SKILL.md, \"The beats\").");
+  if (!cfg || !Array.isArray(cfg.beats) || !cfg.beats.length) fail(`${rel(beatsFile)} needs "beats": a list of them.`);
+  for (const t of ["ffmpeg", "ffprobe"]) if (!onPath(t)) fail(`This needs ${t} on the machine; it is not there.`);
+  const beats = cfg.beats.map((b, i) => {
+    if (!b || typeof b !== "object" || typeof b.id !== "string" || !isNum(b.from) || !isNum(b.to) || !isNum(b.at) || !(b.to > b.from)) fail(`Beat ${i + 1} is not a beat build can read: {"id", "from", "to", "source", "at"}; build first.`);
+    return { ...b };
+  });
+  const asked = beats.filter((b) => opts.all || b.people === true);
+  const dir = path.join(work, "faces");
+  fs.mkdirSync(dir, { recursive: true });
+  // a beat no longer asked for: its faces go, so that build places it as before
+  for (const f of fs.readdirSync(dir)) {
+    const id = f.replace(/(\.people|\.tmp)?\.(mp4|json)$/, "");
+    if (f !== "none.json" && !asked.some((b) => b.id === id)) fs.rmSync(path.join(dir, f), { force: true });
+  }
+  if (!asked.length) { console.log(`No beat is marked "people": true in ${rel(beatsFile)}: nothing sent, build places every beat as before. --all sends every beat.`); return; }
+  const frameTool = tool("FRAME_TOOL", "clips", "frame.mjs");
+  if (!frameTool) fail("Finding the faces needs agentitos' clips skill beside this one (or FRAME_TOOL naming its tools/frame.mjs); without them build places every beat as before.");
+  const sources = sourcesOf(cfg, asked, beatsFile);
+  const none = path.join(dir, "none.json");
+  fs.writeFileSync(none, "[]\n");   // nobody speaks in a narrated short's footage
+  let cost = 0, sent = 0;
+  const started = Date.now();
+  asked.forEach((b, k) => {
+    const src = sources[k], taken = takenOf(b), key = facesKey(src, b, taken);
+    const out = path.join(dir, `${b.id}.json`), stretch = path.join(dir, `${b.id}.mp4`);
+    let kept = null;
+    try { kept = JSON.parse(fs.readFileSync(out, "utf8")); } catch { /* not found yet */ }
+    if (kept && kept.key === key && !opts.again) { console.log(`  ${b.id}: ${saidOf(kept)} (kept from before, nothing spent)`); return; }
+    for (const f of [out, stretch, path.join(dir, `${b.id}.people.json`)]) fs.rmSync(f, { force: true });
+    const t0 = Date.now();
+    const shown = shownSize(src.file, src.size);
+    const c = ff(["-v", "error", "-y", "-ss", String(b.at), "-t", String(taken), "-i", src.file, "-map_metadata", "-1", "-an", "-vf", shown[1] > 1080 ? "scale=-2:1080" : "null",
+      "-c:v", "libx264", "-crf", "20", "-preset", "veryfast", stretch]);
+    if (c.status !== 0 || !fs.existsSync(stretch)) { fs.rmSync(stretch, { force: true }); console.log(`  ! ${b.id}: its stretch could not be cut (${reason({ ...c, stdout: "" })}); built as without faces`); return; }
+    const tmp = path.join(dir, `${b.id}.tmp.json`);
+    const r = spawnSync(process.execPath, [frameTool, stretch, none, "--aspect", "9:16", "--faces", tmp, "--every-shot"], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 600e3 });
+    sent++;
+    if (r.status !== 0 || !fs.existsSync(tmp)) { fs.rmSync(tmp, { force: true }); console.log(`  ! ${b.id}: no faces (${reason(r)}); built as without faces`); return; }
+    const got = JSON.parse(fs.readFileSync(tmp, "utf8"));
+    fs.rmSync(tmp, { force: true });
+    // the stretch's px back to the source's, as shown
+    const kx = shown[0] / got.size[0], ky = shown[1] / got.size[1];
+    const back = (x) => [Math.round(x[0] * kx), Math.round(x[1] * ky), Math.round(x[2] * kx), Math.round(x[3] * ky)];
+    const list = { key, source: shown, step: got.step, by: got.by, model: got.model || null, cost: got.cost || 0, seconds: Math.round((Date.now() - t0) / 100) / 10, taken,
+      shots: got.shots, faces: got.faces.map((f) => ({ t: f.t, boxes: f.boxes.map((x) => ({ who: x.who, box: back(x.box), ...(x.feat ? { feat: back(x.feat) } : {}) })) })) };
+    fs.writeFileSync(out, JSON.stringify(list) + "\n");
+    cost += list.cost;
+    console.log(`  ${b.id}: ${saidOf(list)}; $${list.cost.toFixed(3)}, ${list.seconds.toFixed(0)} s`);
+  });
+  console.log(`${sent ? `${sent} beat(s) sent, $${cost.toFixed(3)} in all, ${((Date.now() - started) / 1000).toFixed(0)} s` : "Nothing sent"}; the faces in ${rel(dir)}. Next: node ${self()} build ${rel(work)} <composition>: it moves a crop that would cut a face and keeps the captions and the hook off them, and says per beat what it did.`);
+}
+// a beat's faces in a line: who, how large, how often
+function saidOf(list) {
+  const { held, small } = counted(list, list.source, list.taken || 1);
+  const all = [...held, ...small];
+  if (!all.length) return "no face found: the beat stays as it is";
+  const tallest = Math.max(...all.map((p) => p.h));
+  return `${all.length} ${all.length > 1 ? "people" : "person"} (${all.map((p) => p.who).join(", ")}), the largest face ${Math.round((tallest / list.source[1]) * 100)} % of the picture's height${small.length ? `; ${small.length} too small or too briefly seen to move the picture for` : ""}`;
 }
 
 // ---------------------------------------------------------------- the clips
@@ -239,6 +330,17 @@ function hookSize(text, room) {
   return 56;
 }
 
+// the lines the hook takes at px in room px, as hookSize wraps it
+function hookLines(text, px, room) {
+  const width = (s) => s.length * 0.64 * px * 1.03;
+  let n = 1, cur = "";
+  for (const w of text.split(/\s+/)) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (cur && width(next) > room) { n++; cur = w; } else cur = next;
+  }
+  return n;
+}
+
 // the brand's primary colour from its DESIGN.md (brand-kit), when the working directory has one
 function brandAccent() {
   const file = path.resolve("brand", "DESIGN.md");
@@ -248,12 +350,39 @@ function brandAccent() {
   return colors.match(/^[ \t]+primary:\s*["']?(#[0-9a-fA-F]{3,8})["']?/m)?.[1] || null;
 }
 
+// every beat's source: a file, or a stem of the footage folder with the source's own cuts
+function sourcesOf(cfg, beats, beatsFile) {
+  const text = (v) => typeof v === "string" && v.trim() !== "";
+  const footage = text(cfg.footage) ? path.resolve(cfg.footage) : null;
+  let known = [];
+  if (footage && fs.existsSync(path.join(footage, "sources.json"))) {
+    try { known = JSON.parse(fs.readFileSync(path.join(footage, "sources.json"), "utf8")); } catch { /* no facts of the sources */ }
+    if (!Array.isArray(known)) known = [];
+  }
+  return beats.map((b) => {
+    const direct = path.resolve(b.source);
+    let file = null, cuts;
+    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) file = direct;
+    else {
+      if (!footage) fail(`Beat ${b.id}: "${b.source}" is no file, and ${rel(beatsFile)} names no "footage" folder to find it in.`);
+      const stem = String(b.source).replace(/\.mp4$/i, "");
+      file = path.join(footage, `${stem}.mp4`);
+      if (!fs.existsSync(file)) fail(`Beat ${b.id}: there is no ${rel(file)}.`);
+      cuts = known.find((s) => s?.stem === stem)?.cuts;
+    }
+    const size = probe(file);
+    if (!size) fail(`Beat ${b.id}: ${rel(file)} is no video.`);
+    const st = fs.statSync(file);
+    return { file, cuts: Array.isArray(cuts) ? cuts : null, size, stamp: `${st.size}:${Math.round(st.mtimeMs)}` };
+  });
+}
+
 // the film's length: a little past the last word, or the last beat's end when that is later
 const totalOf = (beats, ck) => r2(Math.max(ck.end + END_TAIL, beats.at(-1).to));
 
 // ---------------------------------------------------------------- build
 function build(args) {
-  const { pos, opts } = parse(args, ["platform", "style", "under"], ["no-captions"]);
+  const { pos, opts } = parse(args, ["platform", "style", "under"], ["no-captions", "no-faces"]);
   const [workArg, compArg] = pos;
   if (!workArg || !compArg) fail(`Name the work folder and the composition: build short/<name> artifacts/<name>/composition. ${USAGE}`);
   const musicUnder = opts.under != null ? Number(opts.under) : UNDER;
@@ -297,7 +426,7 @@ function build(args) {
     if (b.frame != null && !["whole", "fill", "native"].includes(b.frame)) fail(`Beat ${b.id}: "frame" is whole (the wide frame as a band over a blurred copy, the default), fill (a 9:16 crop from the middle) or native (the source is vertical).`);
     if (b.speed != null && !(isNum(b.speed) && b.speed >= 0.5 && b.speed <= 1)) fail(`Beat ${b.id}: "speed" slows the source down, a number from 0.5 to 1.`);
     if (b.zoom != null && !(isNum(b.zoom) && b.zoom >= 1 && b.zoom <= 3)) fail(`Beat ${b.id}: "zoom" makes the band larger, a number from 1 to 3.`);
-    if (b.pan != null && !(isNum(b.pan) && b.pan >= 0 && b.pan <= 1)) fail(`Beat ${b.id}: "pan" is the part of the width that stays, a number from 0 (the left) to 1 (the right).`);
+    if (b.pan != null && !(isNum(b.pan) && b.pan >= 0 && b.pan <= 1)) fail(`Beat ${b.id}: "pan" is the part of the width that stays (of a zoomed band or a fill), a number from 0 (the left) to 1 (the right).`);
     if (b.freeze != null && (i !== 0 || !isNum(b.freeze) || b.freeze < 0)) fail(`Beat ${b.id}: "freeze" is the second into the first beat where its picture freezes; only the first beat has one.`);
     if (b.pop != null && !["strong", "soft"].includes(b.pop)) fail(`Beat ${b.id}: "pop" is strong or soft.`);
   });
@@ -330,28 +459,48 @@ function build(args) {
   const capTool = opts["no-captions"] ? null : tool("CAPTIONS_TOOL", "captions", "captions.mjs");
   if (!opts["no-captions"] && !capTool) fail("The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs); without captions: --no-captions.");
 
-  const footage = text(cfg.footage) ? path.resolve(cfg.footage) : null;
-  let known = [];
-  if (footage && fs.existsSync(path.join(footage, "sources.json"))) {
-    try { known = JSON.parse(fs.readFileSync(path.join(footage, "sources.json"), "utf8")); } catch { /* no facts of the sources */ }
-    if (!Array.isArray(known)) known = [];
-  }
-  const sources = beats.map((b) => {
-    const direct = path.resolve(b.source);
-    let file = null, cuts;
-    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) file = direct;
-    else {
-      if (!footage) fail(`Beat ${b.id}: "${b.source}" is no file, and ${rel(beatsFile)} names no "footage" folder to find it in.`);
-      const stem = String(b.source).replace(/\.mp4$/i, "");
-      file = path.join(footage, `${stem}.mp4`);
-      if (!fs.existsSync(file)) fail(`Beat ${b.id}: there is no ${rel(file)}.`);
-      cuts = known.find((s) => s?.stem === stem)?.cuts;
-    }
-    const size = probe(file);
-    if (!size) fail(`Beat ${b.id}: ${rel(file)} is no video.`);
-    const st = fs.statSync(file);
-    return { file, cuts: Array.isArray(cuts) ? cuts : null, size, stamp: `${st.size}:${Math.round(st.mtimeMs)}` };
+  const sources = sourcesOf(cfg, beats, beatsFile);
+  // where the captions stand (captions' area.json, written above): a band's zoom the tool chooses keeps the chins above it
+  let captionTop = null;
+  if (capTool) try { captionTop = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).top; } catch { /* an older captions */ }
+  // the faces `faces` found in a beat's stretch, where they are of the stretch the beat takes now
+  const faceLists = beats.map((b, i) => {
+    const file = path.join(work, "faces", `${b.id}.json`);
+    if (opts["no-faces"] || !fs.existsSync(file)) return null;
+    let list = null;
+    try { list = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* said below */ }
+    if (!list || list.key !== facesKey(sources[i], b, takenOf(b))) { warn.push(`the faces of ${b.id} are of another stretch of its source: node ${self()} faces ${rel(work)} again; built as without them`); return null; }
+    return list;
   });
+
+  // ---- the captions: agentitos' captions, paused under the card, the key words and the boxes marked
+  const words = ck.words.map((w) => ({ text: w.text, start: w.start, end: w.end }));
+  const cardEnd = card ? r2(card.at + card.for) : 0;
+  const under = (w) => card && w.start >= card.at - 0.05 && w.start < cardEnd - 0.02;   // (the card ends where the next sentence starts)
+  const shown = words.filter((w) => !under(w));
+  const whyNot = (phrase) => (card && places(words, phraseOf(phrase).want).length ? "it is said under the comparison card, where the captions pause" : "it is not said like that");
+  for (const k of markKeys(shown, cfg.keys || [])) warn.push(`the key "${k}" marks nothing: ${whyNot(k)}`);
+  const boxes = markBoxes(shown, cfg.boxes || []);
+  for (const k of boxes.missed) warn.push(`no card for the box "${k}": ${whyNot(k)}, or its words are in another box`);
+  let mount = "";
+  const wordsFile = path.join(work, "words.json");
+  const brand = fs.existsSync(path.resolve("brand", "DESIGN.md")) ? ["--brand", path.resolve("brand", "DESIGN.md")] : [];
+  const capArgs = [capTool, "build", wordsFile, path.join(comp, "captions"), "--style", String(opts.style || cfg.captions || "hormozi"),
+    ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...brand, "--duration", String(total)];
+  if (capTool) {
+    const write = () => fs.writeFileSync(wordsFile, JSON.stringify({ width: SIZE[0], height: SIZE[1], duration: total, words: shown }, null, 1));
+    write();
+    // an older captions knows no boxes and would show the phrases as plain captions without a word
+    if (boxes.n && spawnSync(process.execPath, [capTool, "box", wordsFile], { encoding: "utf8" }).status !== 0) {
+      warn.push(`the captions skill here knows no boxes yet: the ${boxes.n} phrase(s) show as plain captions`);
+      for (const w of shown) { delete w.box; delete w.icon; }
+      boxes.n = 0;
+      write();
+    }
+    const cr = spawnSync(process.execPath, capArgs, { encoding: "utf8" });
+    mount = String(cr.stdout || "").split("\n").find((l) => /<div[^>]+data-composition-src=/.test(l))?.trim() || "";
+    if (cr.status !== 0 || !mount) fail(`The captions could not be built: ${reason(cr)}`);
+  } else fs.rmSync(wordsFile, { force: true });   // no captions: no words of an earlier build for the sheet to go by
 
   // ---- the clips, one ffmpeg each
   const clipsDir = path.join(comp, "assets", "clips");
@@ -360,19 +509,44 @@ function build(args) {
   const report = [];
   let failed = 0, cutAnew = 0;
   const popped = {};   // beat id → the clip with the freeze, when it was made
+  const seen = [];     // the faces in the frame, beat by beat, on the film's clock
   beats.forEach((b, i) => {
-    const src = sources[i], frame = b.frame || "whole", speed = b.speed ?? 1;
+    const src = sources[i], speed = b.speed ?? 1;
+    let frame = b.frame || "whole";
     const seconds = r2(b.to - b.from), taken = Math.round(seconds * speed * 1000) / 1000;
-    const zoom = b.zoom ?? (i === 0 && frame === "whole" ? HOOK_ZOOM : 1), pan = b.pan ?? 0.5;
+    let zoom = b.zoom ?? (i === 0 && frame === "whole" ? HOOK_ZOOM : 1), pan = b.pan ?? 0.5;
+    // Where faces are known: a window that would cut them goes to them (planWindow); the faces in
+    // px of the source with the black bars cut away, as the clip's filter sees it
+    let bar = null, x = null, plan = null, inBars = null, size = null, people = null;
+    const list = faceLists[i];
+    const cropOf = (bb) => (bb ? bb.match(/crop=(\d+):(\d+):(\d+):(\d+)/).slice(1).map(Number) : null);
+    if (list) {
+      bar = bars(src.file, b.at, taken, src.size);
+      const c = cropOf(bar) || [list.source[0], list.source[1], 0, 0];
+      size = [c[0], c[1]];
+      const shift = (v) => [v[0] - c[2], v[1] - c[3], v[2], v[3]];
+      inBars = { ...list, faces: list.faces.map((f) => ({ t: f.t, boxes: f.boxes.map((v) => ({ ...v, box: shift(v.box), ...(v.feat ? { feat: shift(v.feat) } : {}) })) })) };
+      people = counted(inBars, size, taken);
+      plan = planWindow({ frame, zoom, pan, zoomSet: b.zoom != null, panSet: b.pan != null, size, held: people.held, chinsAbove: captionTop });
+      ({ frame, zoom, pan, x } = plan);
+    }
+    // a fill the agent panned: its crop where the pan says
+    if (frame === "fill" && x == null && b.pan != null) {
+      if (bar == null) bar = bars(src.file, b.at, taken, src.size);
+      const c = cropOf(bar) || [src.size.width, src.size.height];
+      x = Math.round(pan * (2 * Math.round((c[0] * (SIZE[1] / c[1])) / 2) - SIZE[0]));
+      size ||= [c[0], c[1]];
+    }
     const out = path.join(clipsDir, `${b.id}.mp4`), note = path.join(clipsDir, `${b.id}.json`);
-    const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed });
+    const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed, ...(x != null ? { x } : {}) });
     let kept = null;
     try { kept = JSON.parse(fs.readFileSync(note, "utf8")); } catch { /* not cut yet */ }
     let m = kept && kept.how === how && kept.measured && fs.existsSync(out) && fs.statSync(out).size ? kept.measured : null;
     if (!m) {
       fs.rmSync(note, { force: true });   // a cut that fails leaves no note of a clip that is not there
-      const bar = bars(src.file, b.at, taken, src.size);
-      const vf = bar + (frame === "whole" ? whole(zoom, pan) : FRAMES[frame]) + (speed !== 1 ? `,setpts=PTS/${speed}` : "") + `,fps=${FPS},format=yuv420p`;
+      if (bar == null) bar = bars(src.file, b.at, taken, src.size);
+      const vf = bar + (frame === "whole" ? whole(zoom, pan) : frame === "fill" && x != null ? `scale=-2:${SIZE[1]}:flags=lanczos,crop=${SIZE[0]}:${SIZE[1]}:${x}:0` : FRAMES[frame])
+        + (speed !== 1 ? `,setpts=PTS/${speed}` : "") + `,fps=${FPS},format=yuv420p`;
       const part = path.join(clipsDir, `${b.id}.part.mp4`);
       // a keyframe a second: HyperFrames seeks cleanly (sparse ones froze frames)
       const r = ff(["-v", "error", "-y", "-ss", String(b.at), "-t", String(taken), "-i", src.file, "-an", "-vf", vf, "-t", String(seconds),
@@ -387,7 +561,13 @@ function build(args) {
       cutAnew++;
     }
     if (m.bars) report.push(`  ${b.id}: black bars in the source cut away (${m.bars})`);
-    if (i === 0 && frame === "whole" && b.zoom == null) report.push(`  ${b.id}: the first beat's band is ${HOOK_ZOOM} times larger, its middle kept ("zoom": 1 shows the whole width, "pan" another part)`);
+    if (i === 0 && frame === "whole" && b.zoom == null && !plan?.changed) report.push(`  ${b.id}: the first beat's band is ${HOOK_ZOOM} times larger, its middle kept ("zoom": 1 shows the whole width, "pan" another part)`);
+    if (plan?.said) report.push(`  ${plan.cut.length ? "! " : ""}${b.id}: ${plan.said}${plan.cut.length ? "; leave \"pan\" (and \"zoom\") out and the window goes to the faces" : ""}`);
+    else if (list && !people.held.length) report.push(`  ${b.id}: ${people.small.length ? `its faces (${people.small.map((p) => p.who).join(", ")}) are too small or seen too briefly to move the picture for` : "no face found"}: the picture stays as it is`);
+    if (list) {
+      const band = frame === "whole" ? bandOf({ zoom, size }) : null;
+      seen.push({ i, id: b.id, moments: framed({ list: inBars, place: { frame, zoom, pan, x, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band }) });
+    }
     // the gate: what needs no judgement
     const problems = [];
     if (m.peak < DARK_MAX[frame]) problems.push("DARK: the clip is near black; another stretch");
@@ -419,37 +599,87 @@ function build(args) {
     }
   });
 
-  // ---- the captions: agentitos' captions, paused under the card, the key words and the boxes marked
-  const words = ck.words.map((w) => ({ text: w.text, start: w.start, end: w.end }));
-  const cardEnd = card ? r2(card.at + card.for) : 0;
-  const under = (w) => card && w.start >= card.at - 0.05 && w.start < cardEnd - 0.02;   // (the card ends where the next sentence starts)
-  const shown = words.filter((w) => !under(w));
-  const whyNot = (phrase) => (card && places(words, phraseOf(phrase).want).length ? "it is said under the comparison card, where the captions pause" : "it is not said like that");
-  for (const k of markKeys(shown, cfg.keys || [])) warn.push(`the key "${k}" marks nothing: ${whyNot(k)}`);
-  const boxes = markBoxes(shown, cfg.boxes || []);
-  for (const k of boxes.missed) warn.push(`no card for the box "${k}": ${whyNot(k)}, or its words are in another box`);
-  let mount = "";
-  const wordsFile = path.join(work, "words.json");
-  if (capTool) {
-    const write = () => fs.writeFileSync(wordsFile, JSON.stringify({ width: SIZE[0], height: SIZE[1], duration: total, words: shown }, null, 1));
-    write();
-    // an older captions knows no boxes and would show the phrases as plain captions without a word
-    if (boxes.n && spawnSync(process.execPath, [capTool, "box", wordsFile], { encoding: "utf8" }).status !== 0) {
-      warn.push(`the captions skill here knows no boxes yet: the ${boxes.n} phrase(s) show as plain captions`);
-      for (const w of shown) { delete w.box; delete w.icon; }
-      boxes.n = 0;
-      write();
+  // ---- the captions and the hook off the faces: where they lie on a face of a beat at the place
+  // they have without faces, agentitos' layout gives one place for the captions of the whole short
+  // and the hook's on the first seconds, from every face of every beat over time; each is taken only
+  // where it lies on the faces less than the place it had (a doubt never makes it worse)
+  const room = top[2], hookPx = hookSize(hook.text.trim(), room);
+  let hookAt = null, hookUntil = HOOK_SECONDS;   // layout's place for the hook, where it took one
+  const moments = seen.flatMap((s) => s.moments);
+  if (moments.length) {
+    let area = null;
+    if (capTool) try { area = JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")); } catch { /* an older captions: no area to check */ }
+    const capBox = area ? [area.left, area.top, area.width, area.bottom - area.top] : null;
+    const hookBox = [top[0], top[1] + 66, top[2], Math.round(hookLines(hook.text.trim(), hookPx, room) * hookPx * 1.02)];
+    const capOn = capBox ? textOn(capBox, moments) : null, hookOn = textOn(hookBox, moments, 0, HOOK_SECONDS);
+    const parts = (on) => [on.nose ? `the eyes or nose ${on.nose} s` : "", on.mouth ? `the mouth ${on.mouth} s` : "", on.lip ? `the lower lip ${on.lip} s` : "", on.chin ? `the chin ${on.chin} s` : ""].filter(Boolean).join(", ");
+    const whose = (box, a, z) => seen.filter((s) => textOn(box, s.moments, a, z).seconds).map((s) => s.id).join(", ");
+    if (!capOn?.seconds && !hookOn.seconds) report.push(`  the captions${capBox ? "" : " (not checked: the captions skill here writes no area.json)"} and the hook lie on no face: they stand where they stood`);
+    else {
+      const said = [capOn?.seconds ? `the captions lie on a face in ${whose(capBox)} (${parts(capOn)})` : "", hookOn.seconds ? `the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : ""].filter(Boolean).join(", ");
+      const layoutTool = tool("LAYOUT_TOOL", "layout", "place.mjs");
+      let placed = null, lr = null;
+      if (layoutTool) {
+        // layout's text over time: every beat one shot, its faces as tracks in px of the frame, never raised
+        const shots = beats.map((b, i) => {
+          const tracks = new Map();
+          for (const m of seen.find((s) => s.i === i)?.moments || []) for (const f of m.boxes) {
+            if (!tracks.has(f.who)) tracks.set(f.who, { who: f.who, track: [] });
+            tracks.get(f.who).track.push({ t: m.t, box: f.box, ...(f.feat ? { feat: f.feat } : {}) });
+          }
+          return { start: b.from, end: b.to, weight: r2(b.to - b.from), faces: [...tracks.values()], room: null };
+        });
+        const folder = path.join(work, "placement");
+        fs.mkdirSync(folder, { recursive: true });
+        const shotsFile = path.join(folder, "shots.json");
+        // (the hook is a heavy outlined text, read on a busy picture too: calm, a text before a card)
+        fs.writeFileSync(shotsFile, JSON.stringify({ shots, hook: { start: 0, end: HOOK_SECONDS, calm: true } }));
+        let look = null;
+        try { look = JSON.parse(fs.readFileSync(path.join(comp, "captions", "index.html"), "utf8").match(/var DATA = (\{[\s\S]*?\});\n/)[1]).look; } catch { /* the layout's own band */ }
+        const ink = inkOf(look);
+        lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...(capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), "--text", "hook",
+          ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
+        try { placed = lr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8")) : null; } catch { /* said below */ }
+        if (placed) placed.ink = ink;
+      }
+      if (!layoutTool) warn.push(`${said}: agentitos' layout beside this skill (or LAYOUT_TOOL naming its tools/place.mjs) would place them off the faces; they stand where they stood`);
+      else if (!placed) warn.push(`${said}; agentitos' layout did not place them (${reason(lr)}): they stand where they stood`);
+      else {
+        let capNow = capBox;
+        const c = placed.caption;
+        if (capOn?.seconds && c) {
+          const on = textOn(c.box, moments);
+          if (on.cost < capOn.cost) {
+            const o = { ...c.options }, ink = placed.ink;
+            if (ink) { o.y = Math.round(o.y - ink.below * o["font-size"]); o["max-width"] = Math.floor(o["max-width"] - 2 * Math.ceil(ink.side * o["font-size"] + 1)); }
+            const cr = spawnSync(process.execPath, [...capArgs, ...Object.entries(o).flatMap(([k, v]) => [`--${k}`, String(v)])], { encoding: "utf8" });
+            if (cr.status !== 0) fail(`The captions could not be built: ${reason(cr)}`);
+            if (!/Placed where asked/.test(cr.stdout || "")) warn.push(`${said}: the captions skill here does not take a place, so they stand on the safe box's bottom`);
+            else {
+              capNow = c.box;
+              report.push(`  the captions: ${said.split(", the hook")[0].replace("the captions lie", "they lay")} where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${on.seconds ? `, on a face still: ${parts(on)}` : ", on no face"}`);
+            }
+          } else report.push(`  ! the captions lie on a face in ${whose(capBox)} (${parts(capOn)}): agentitos' layout found no place that lies on them less; they stand where they stood`);
+        }
+        // the hook: off a face, and off the captions where they moved to its place
+        const h = placed.hook;
+        const meets = (a, z) => Math.min(a[0] + a[2], z[0] + z[2]) > Math.max(a[0], z[0]) && Math.min(a[1] + a[3], z[1] + z[3]) > Math.max(a[1], z[1]);
+        const clash = capNow && capNow !== capBox && meets(capNow, hookBox);
+        if (h && (hookOn.seconds || clash)) {
+          const until = Math.max(1.2, Math.min(HOOK_SECONDS, h.until ?? HOOK_SECONDS));
+          const on = textOn(h.box, moments, 0, until);
+          if (on.cost < hookOn.cost || clash) {
+            hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
+            hookUntil = r2(until);
+            report.push(`  the hook: ${hookOn.seconds ? `it lay on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : "the captions moved to its place"}; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${on.seconds ? `; on a face still: ${parts(on)}` : ", on no face"}`);
+          } else report.push(`  ! the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}): agentitos' layout found no place that lies on it less; it stands where it stood: a shorter hook, or a first beat whose face stands lower`);
+        }
+      }
     }
-    const brand = fs.existsSync(path.resolve("brand", "DESIGN.md")) ? ["--brand", path.resolve("brand", "DESIGN.md")] : [];
-    const cr = spawnSync(process.execPath, [capTool, "build", wordsFile, path.join(comp, "captions"), "--style", String(opts.style || cfg.captions || "hormozi"),
-      ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...brand, "--duration", String(total)], { encoding: "utf8" });
-    mount = String(cr.stdout || "").split("\n").find((l) => /<div[^>]+data-composition-src=/.test(l))?.trim() || "";
-    if (cr.status !== 0 || !mount) fail(`The captions could not be built: ${reason(cr)}`);
-  } else fs.rmSync(wordsFile, { force: true });   // no captions: no words of an earlier build for the sheet to go by
+  }
 
   // ---- the composition
   const accent = brandAccent() || "#ffd166";
-  const room = top[2], hookPx = hookSize(hook.text.trim(), room);
   let keyDone = false;   // the key once, where it stands first
   const hookHtml = hookWords.map((w) => (!keyDone && bare(w) === bare(hook.key) ? ((keyDone = true), `<span class="em">${esc(w)}</span>`) : esc(w))).join(" ");
   let videos = "", tweens = "";
@@ -459,8 +689,9 @@ function build(args) {
     const [from, to] = i % 2 ? [1.04, 1] : [1, 1.04];   // a slow move in every clip, in and out in turn
     tweens += `      tl.fromTo("#z-${b.id}", { scale: ${from} }, { scale: ${to}, duration: ${d}, ease: "none" }, ${b.from});\n`;
   });
-  let overlays = `      <div id="hook" class="clip layer" data-start="0" data-duration="${HOOK_SECONDS}" data-track-index="10">\n        <div id="hook-in" class="hook" style="font-size: ${hookPx}px;">${hookHtml}</div>\n      </div>\n`;
-  tweens += `      tl.fromTo("#hook-in", { scale: 1.04 }, { scale: 1, duration: 0.5, ease: "power2.out" }, 0);\n      tl.to("#hook-in", { autoAlpha: 0, duration: 0.25 }, ${r2(HOOK_SECONDS - 0.25)});\n`;
+  const hookStyle = hookAt ? `font-size: ${hookAt.font}px; left: ${hookAt.box[0]}px; width: ${hookAt.box[2]}px; top: ${hookAt.box[1]}px;` : `font-size: ${hookPx}px;`;
+  let overlays = `      <div id="hook" class="clip layer" data-start="0" data-duration="${hookUntil}" data-track-index="10">\n        <div id="hook-in" class="hook" style="${hookStyle}">${hookHtml}</div>\n      </div>\n`;
+  tweens += `      tl.fromTo("#hook-in", { scale: 1.04 }, { scale: 1, duration: 0.5, ease: "power2.out" }, 0);\n      tl.to("#hook-in", { autoAlpha: 0, duration: 0.25 }, ${r2(hookUntil - 0.25)});\n`;
   if (card) {
     const vmax = Math.max(...card.rows.map((r) => Number(r[1])));
     const rows = card.rows.map((r, k) => {
@@ -623,6 +854,7 @@ function sheet(args) {
 const [command, ...rest] = process.argv.slice(2);
 try {
   if (command === "clock") clock(rest);
+  else if (command === "faces") faces(rest);
   else if (command === "build") build(rest);
   else if (command === "sheet") sheet(rest);
   else fail(USAGE);

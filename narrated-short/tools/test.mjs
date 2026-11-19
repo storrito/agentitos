@@ -1,5 +1,7 @@
 // The music's volume under the voice, on made-up sounds (tones and noise at different levels) and a
-// made-up short built without captions. No request, no key; build needs platform-zones beside.
+// made-up short built without captions; the faces: who a window holds, where it goes, the faces in
+// the frame and a text on them, and a made-up short built with a faces file as `faces` writes it
+// (captions and layout beside). No request, no key; build needs platform-zones beside.
 //
 //   node --test tools/test.mjs
 
@@ -124,5 +126,143 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
     r = build("--under", "40");
     assert.equal(r.status, 1);
     assert.match(r.stdout, /--under is how many LU/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------- faces
+import { counted, planWindow, chinZoom, framed, textOn, shown, bandOf } from "./lib/faces.mjs";
+// a person over a beat: one box at every tenth of a second
+const person = (who, box, n = 30) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box }));
+const listOf = (...people) => {
+  const by = new Map();
+  for (const [who, moments] of people) for (const m of moments) { if (!by.has(m.t)) by.set(m.t, []); by.get(m.t).push({ who, box: m.box }); }
+  return { step: 0.1, faces: [...by.entries()].sort((a, b) => a[0] - b[0]).map(([t, boxes]) => ({ t, boxes })) };
+};
+
+test("faces: who the window holds: not a face seen in under a quarter of the beat, not one under half the largest or a speck", () => {
+  const l = listOf(["A", person("A", [2400, 400, 600, 800])], ["B", person("B", [600, 500, 260, 340])], ["C", person("C", [100, 400, 600, 800], 6)], ["D", person("D", [3000, 1500, 60, 80])]);
+  const { held, small } = counted(l, [3840, 2160], 3);
+  assert.deepEqual(held.map((p) => p.who), ["A"]);
+  assert.deepEqual(small.map((p) => p.who).sort(), ["B", "C", "D"]);
+});
+
+test("faces: a fill from the middle that cuts a face off the middle moves to it; one that holds it stays; the agent's pan stands and is said", () => {
+  const size = [3840, 2160];
+  const a = counted(listOf(["A", person("A", [2700, 400, 500, 650])]), size, 3).held;
+  const p = planWindow({ frame: "fill", size, held: a });
+  assert.equal(p.changed, true);
+  assert.match(p.said, /the crop moved to the faces \(A\)/);
+  const win = shown({ frame: "fill", x: p.x, size });
+  assert.ok(win[0] <= 2700 - 60 && win[1] >= 3200 + 60, `the window ${win} holds the face`);
+  // in the middle: nothing changes
+  const mid = planWindow({ frame: "fill", size, held: counted(listOf(["A", person("A", [1700, 400, 440, 600])]), size, 3).held });
+  assert.equal(mid.changed, false);
+  assert.match(mid.said, /in the picture as it is/);
+  // the agent's pan: kept, and said that it cuts
+  const own = planWindow({ frame: "fill", pan: 0, panSet: true, size, held: a });
+  assert.equal(own.changed, false);
+  assert.deepEqual(own.cut, ["A"]);
+});
+
+const cw = (held) => Math.floor((3840 / (Math.max(...held.flatMap((p) => p.boxes.map((b) => b[0] + 1.12 * b[2]))) - Math.min(...held.flatMap((p) => p.boxes.map((b) => b[0] - 0.12 * b[2]))))) * 100) / 100;
+test("faces: two people wider apart than a fill's window: the whole picture as a band, as large as holds both; never larger than keeps their chins above the captions", () => {
+  const size = [3840, 2160];
+  const two = counted(listOf(["A", person("A", [500, 600, 500, 650])], ["B", person("B", [2600, 600, 500, 650])]), size, 3).held;
+  const p = planWindow({ frame: "fill", size, held: two });
+  assert.equal(p.frame, "whole");
+  assert.ok(p.zoom > 1 && p.zoom < 1.8, `zoom ${p.zoom}`);
+  const win = shown({ frame: "whole", zoom: p.zoom, pan: p.pan, size });
+  assert.ok(win[0] <= 440 && win[1] >= 3160, `the band's window ${win} holds both`);
+  // a close face, its chin low: the band stays whole-width, the chin above y 1238
+  const close = counted(listOf(["M", person("M", [800, 300, 1400, 1450])]), size, 3).held;
+  const c = planWindow({ frame: "fill", size, held: close, chinsAbove: 1238 });
+  assert.equal(c.frame, "whole");
+  assert.ok(c.zoom < cw(close), `zoom ${c.zoom}: smaller than the width alone allows`);
+  // its chin and a twelfth of the face below it, in the band at that zoom, above the captions' top
+  near(960 + (1750 - 1080) * (1080 * c.zoom / 3840) + 0.08 * 1450 * (1080 * c.zoom / 3840), 1238 - 24, 4);
+  assert.equal(chinZoom(close, size, null), Infinity);
+});
+
+test("faces: the first beat's own 1.6x band moves to a face at its side, and becomes smaller where the face needs it; an agent's zoom stays", () => {
+  const size = [1920, 1080];
+  const side = counted(listOf(["A", person("A", [1500, 200, 250, 320])]), size, 3).held;
+  const p = planWindow({ frame: "whole", zoom: 1.6, size, held: side });
+  assert.equal(p.zoom, 1.6);
+  assert.ok(p.pan > 0.9, `pan ${p.pan}`);
+  const wide = counted(listOf(["A", person("A", [100, 200, 250, 320])], ["B", person("B", [1550, 200, 250, 320])]), size, 3).held;
+  const q = planWindow({ frame: "whole", zoom: 1.6, size, held: wide });
+  assert.ok(q.zoom < 1.6, `zoom ${q.zoom}`);
+  const r = planWindow({ frame: "whole", zoom: 1.6, zoomSet: true, size, held: wide });
+  assert.equal(r.zoom, 1.6);
+  assert.deepEqual(r.cut.length > 0, true);
+});
+
+test("faces: in the frame on the film's clock (the source's second through speed, the slow move, a band cut to its height), and a text box on them by the part it reaches", () => {
+  const size = [1280, 720];
+  const l = listOf(["A", person("A", [540, 100, 200, 260], 20)]);
+  // fill from the middle: k = 1920/720, the crop's left (3414 − 1080) / 2
+  const m = framed({ list: l, place: { frame: "fill", size }, from: 4, seconds: 2, speed: 0.5 });
+  assert.equal(m[0].t, 4);
+  assert.equal(m.length, 10);   // the clip's two seconds take one of the source
+  assert.equal(m[5].t, 5);
+  near(m[0].step, 0.2, 1e-9);
+  near(m[0].boxes[0].box[0], 540 * (1920 / 720) - (3414 - 1080) / 2, 1);
+  near(m[0].boxes[0].box[1], 100 * (1920 / 720), 1);
+  // a band at 1×: 1080 × 608 in the middle of the frame
+  assert.deepEqual(bandOf({ zoom: 1, size }), [656, 1264]);
+  const w = framed({ list: l, place: { frame: "whole", zoom: 1, size }, from: 0, seconds: 2, band: bandOf({ zoom: 1, size }) });
+  near(w[0].boxes[0].box[1], 656 + 100 * 1080 / 1280, 1);
+  // a text over the eyes, over the mouth, under the chin
+  const face = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [300, 400, 400, 500] }] }];
+  assert.equal(textOn([200, 500, 600, 100], face).nose, 0.5);
+  assert.equal(textOn([200, 780, 600, 100], face).mouth, 0.5);
+  assert.equal(textOn([200, 830, 600, 100], face).lip, 0.5);
+  assert.equal(textOn([200, 880, 600, 100], face).chin, 0.5);
+  assert.equal(textOn([200, 950, 600, 100], face).seconds, 0);
+});
+
+test("build with faces: a face off the middle moves the fill to it and the hook off it, each said; --no-faces and no faces build the same short; faces of another stretch are left out and said", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, build } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    let r = build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const plain = fs.readFileSync(path.join(comp, "index.html"), "utf8"), clip = fs.readFileSync(path.join(comp, "assets", "clips", "a.mp4"));
+    // the faces as `faces` writes them: a face high up and at the right of the 1280×720 source
+    const src = cfg.beats[0].source, st = fs.statSync(src), taken = 2.5;
+    fs.mkdirSync(path.join(work, "faces"), { recursive: true });
+    const key = JSON.stringify({ file: src, stamp: `${st.size}:${Math.round(st.mtimeMs)}`, at: 0.5, taken });
+    const faces = (k) => ({ key: k, source: [1280, 720], step: 0.1, taken, faces: listOf(["A", person("A", [1000, 40, 200, 260], 25)]).faces });
+    fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify(faces(key)));
+    r = build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /a: the crop moved to the faces \(A\)/);
+    assert.match(r.stdout, /the hook: it lay on a face in a/);
+    assert.match(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", "a.json"), "utf8")).how, /"x":\d+/);
+    assert.match(fs.readFileSync(path.join(comp, "index.html"), "utf8"), /<div id="hook-in" class="hook" style="font-size: \d+px; left: \d+px; width: \d+px; top: \d+px;">/);
+    // skipped: the short as without faces, byte for byte
+    r = build("--no-faces");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(fs.readFileSync(path.join(comp, "index.html"), "utf8"), plain);
+    assert.ok(fs.readFileSync(path.join(comp, "assets", "clips", "a.mp4")).equals(clip));
+    // faces of another stretch: left out, said
+    fs.writeFileSync(path.join(work, "faces", "a.json"), JSON.stringify(faces(key.replace('"at":0.5', '"at":1'))));
+    r = build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /the faces of a are of another stretch/);
+    assert.equal(fs.readFileSync(path.join(comp, "index.html"), "utf8"), plain);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("faces: no beat marked people sends nothing and says so", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const { work } = short(dir);
+    const r = spawnSync(process.execPath, [path.join(here, "short.mjs"), "faces", work], { encoding: "utf8", cwd: dir });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /No beat is marked "people": true .*nothing sent/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
