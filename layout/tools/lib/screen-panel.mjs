@@ -12,7 +12,7 @@
 //                screen's pixels, from the safe box's top (under the hook's card or a label's
 //                bottom, --label-bottom, where there is one); only the region is drawn
 //   the panel    from a gap under the screen down to the caption line's lower edge, across the
-//                whole frame (width "frame", the default) or as wide as the screen above it
+//                whole frame (width "frame", the default, decided 2026-11-19: stack-panel) or as wide as the screen above it
 //                (width "screen": the edges aligned); the captions lie on its lower part
 //   the face     towards 18 % of the frame's height (screenFace.height), more where the webcam's
 //                picture covers the panel (its width and height) with the face up to weights.subject.to (34 %),
@@ -21,15 +21,23 @@
 //                head (free.above) stays inside the panel and the face with the margin kept below a
 //                chin (free.below) stays above the captions: the skill's own keep-out of a face,
 //                so that the captions lie on the chest, never on eyes, nose or mouth. Where the
-//                panel holds no such face at the size, the face is made smaller, down to the limit
-//   the limit    the face at 18 % of the frame's height (or what 2× of the webcam's pixels give,
-//                where that is less): under it the region is too tall for a panel below it and the
-//                candidate is not offered (the pairs' tight zoom, a region at 2× whose text reads,
-//                left the panel a face of 15 % in 9:16 and 17 % in 4:5; there the circle stays)
+//                panel holds no such face at the size, the face is made smaller, down to its limit
+//   the limits   (as shares of the frame's width; 2026-11-19, in place of the 500 px of panel and
+//                250 px of face first set, which lost the stack in 4:5 under a label's room of 105 px
+//                and told the tight zoom apart by 10 px of panel in 9:16) the panel at
+//                least 440 px high in a frame 1080 wide (41 %: a picture of a person, not a strip),
+//                the face in it at least 230 px (21 %, or what 2× of the webcam's pixels give where
+//                that is less), and the screen's part at most 600 px tall (56 %). The last one is
+//                what sets a tight zoom apart: the pairs' zoom at 2× is 736 px tall and leaves 490 px
+//                of panel in 9:16, more than the whole screen leaves in 4:5 under a label's room of
+//                160 px (445 px), so no floor on the panel or the face alone tells them apart. The
+//                whole screen (540–547 px) keeps the stack up to a label's room of 246 px in 9:16
+//                and 165 px in 4:5; the tight zoom is 118–136 px over the screen's limit
 //
-// Not offered, with one sentence in the notes and in res.screenPanel: in 16:9 and 1:1 (not decided
-// there), without a face in the webcam's picture, with the webcam baked into the screen, with the
-// captions on the screen's part, with a panel whose face stays under the limit.
+// Not offered, with one sentence in the notes and in res.screenPanel (code): in 16:9 and 1:1 (frame;
+// not decided there), with the webcam baked into the screen (webcam), without a face in the webcam's
+// picture (face), with the captions on the screen's part (captions), with a screen's part over its
+// limit (tall), with a panel or a face in it under theirs (small).
 //
 //   screenPanel(ctx, camSrc, ask, notes) → [candidate]
 //     ask: { width: "frame" | "screen", labelBottom: px | null, before: { scale, left, top, window? } | null }
@@ -40,13 +48,17 @@ import { evaluate } from "./evaluate.mjs";
 import { captionTop } from "./text.mjs";
 
 export const PANEL_WIDTHS = ["frame", "screen"];
+// When the stack is offered, as shares of the frame's width (px in a frame 1080 wide): the panel at
+// least `panel` high, the face in it at least `face` tall (or what 2× of the webcam's pixels give,
+// where that is less), the screen's part at most `screen` tall. ask.limits overrides them (tests).
+export const LIMITS = { panel: 440 / 1080, face: 230 / 1080, screen: 600 / 1080 };
 
 const r4 = (v) => +v.toFixed(4);
 const mid = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
 
 export function screenPanel(ctx, camSrc, ask, notes) {
   const { W, H, Z, D, hook, cap } = ctx, S = Z.safe, g = D.gap;
-  const width = ask.width || "frame";
+  const width = ask.width || "frame", L = { ...LIMITS, ...(ask.limits || {}) };
   const no = (code, why) => {
     notes.push(`no screen-panel (the screen above, the speaker in a panel down to the caption line): ${why}`);
     ctx.panelVerdict = { offered: false, width, code, why };
@@ -76,13 +88,15 @@ export function screenPanel(ctx, camSrc, ask, notes) {
   if (capTop < T + 1) return no("captions", `the captions (y ${Math.round(capTop)}–${Math.round(capBottom)}) stand on the screen's part, which reaches y ${Math.round(ry + rh)}: the region at ${r2(s)}× is too tall for a panel above the captions; the circle stands for the webcam`);
   const panel = width === "screen" ? [rx, T, rw, capBottom - T] : [0, T, W, capBottom - T];
   const P = panel[3];
+  if (rh > L.screen * W + 0.5) return no("tall", `the region at ${r2(s)}× is ${Math.round(rh)} px tall, over the ${Math.round(L.screen * W)} px a screen above the speaker may take, and leaves the panel ${Math.round(P)} px (y ${Math.round(T)}–${Math.round(capBottom)}); the stack needs the screen's part at most ${Math.round(L.screen * W)} px tall and a panel of at least ${Math.round(L.panel * W)} px with the face in it at least ${Math.round(Math.min(L.face * W, forb * f[3]))} px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)`);
+  if (P < L.panel * W - 0.5) return no("small", `the panel below the screen is ${Math.round(P)} px high (y ${Math.round(T)}–${Math.round(capBottom)}), under the ${Math.round(L.panel * W)} px a picture of a person needs: the region at ${r2(s)}× takes the frame down to y ${Math.round(ry + rh)}${top0 > S[1] + 0.5 ? ` from y ${Math.round(top0)}` : ""}; the circle stands for the webcam here (a region less tall, or a label less tall, leaves the panel its room)`);
 
   // the face: its aim, then smaller where the panel does not hold it, down to the limit
   const coverUpTo = D.weights.subject.to / 100;
   // (the scale at which the webcam's picture covers the panel: its width and its height)
   const aimPx = Math.max(D.screenFace.height * H, Math.min(Math.max(panel[2] / cw, P / ch) * f[3], coverUpTo * H));
   const sAim = Math.min(aimPx / f[3], forb);
-  const least = Math.min(D.screenFace.height * H, forb * f[3]);
+  const least = Math.min(L.face * W, forb * f[3]);
   const room = (sc) => {
     const fh = sc * f[3];
     const up = Math.max(D.free.aboveMin, D.free.above * fh), down = Math.max(D.free.belowMin, D.free.below * fh);
@@ -96,8 +110,8 @@ export function screenPanel(ctx, camSrc, ask, notes) {
     let m = least / f[3];
     while (m > D.zoomStep * sAim && room(m).lo > room(m).hi + 0.05) m -= D.zoomStep * sAim;
     const most = Math.max(0, m * f[3]);
-    const because = least < D.screenFace.height * H - 0.5 ? `the ${Math.round(least)} px that 2× of the webcam's pixels give` : `the ${r1(100 * D.screenFace.height)} % of the frame's height (${Math.round(least)} px) the face has under a screen in published Shorts`;
-    return no("small", `the region at ${r2(s)}× takes the frame down to y ${Math.round(ry + rh)}, and the panel from there to the captions' top (${Math.round(capTop - T)} px) holds the face at most ${Math.round(most)} px tall (${pct(most / H)} of the frame) with its head inside the panel and its chin above the captions, under ${because}; the circle stands for the webcam here (a region less tall leaves the panel its room)`);
+    const because = least < L.face * W - 0.5 ? `the ${Math.round(least)} px that 2× of the webcam's pixels give` : `the ${Math.round(least)} px a face in the panel needs`;
+    return no("small", `the panel below the screen is ${Math.round(P)} px high (y ${Math.round(T)}–${Math.round(capBottom)}) and holds the face at most ${Math.round(most)} px tall with its head inside it and its chin above the captions (${Math.round(capTop - T)} px above them), under ${because}; the circle stands for the webcam here (a region or a label less tall leaves the panel its room)`);
   }
   const fh = q.fh;
   // the eyes a third down the panel, held between the head's margin and the captions

@@ -2,7 +2,7 @@ $ place.mjs place out --frame 9:16 --platform reels --source 1920x1080 --region 
 9:16 1080×1920 for Instagram Reels
 screen 1920×1080, region x 700–1150, y 250–610 (450×360), smallest text 12 px (reads from 24 px in this frame); text: 1 caption line
 captions: fixed in x 120–960, y 1410–1500 (the six values given, 1 line at 52 px): there or nowhere, the picture placed around them
-note: no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× takes the frame down to y 970, and the panel from there to the captions' top (416 px) holds the face at most 290 px tall (15 % of the frame) with its head inside the panel and its chin above the captions, under the 18 % of the frame's height (346 px) the face has under a screen in published Shorts; the circle stands for the webcam here (a region less tall leaves the panel its room)
+note: no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× is 720 px tall, over the 600 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 600 px tall and a panel of at least 440 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)
 
 1. ! screen-zoom  scale 2 (1.13× of covering) at left -1340, top -173  score 94.22
    picture x 0–1080, y 0–1386, 28 % ground

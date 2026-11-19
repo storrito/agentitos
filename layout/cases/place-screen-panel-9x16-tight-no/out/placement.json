@@ -190,7 +190,7 @@
   }
  },
  "notes": [
-  "no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× takes the frame down to y 970, and the panel from there to the captions' top (416 px) holds the face at most 290 px tall (15 % of the frame) with its head inside the panel and its chin above the captions, under the 18 % of the frame's height (346 px) the face has under a screen in published Shorts; the circle stands for the webcam here (a region less tall leaves the panel its room)"
+  "no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× is 720 px tall, over the 600 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 600 px tall and a panel of at least 440 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)"
  ],
  "candidates": [
   {
@@ -568,8 +568,8 @@
  "screenPanel": {
   "offered": false,
   "width": "frame",
-  "code": "small",
-  "why": "the region at 2× takes the frame down to y 970, and the panel from there to the captions' top (416 px) holds the face at most 290 px tall (15 % of the frame) with its head inside the panel and its chin above the captions, under the 18 % of the frame's height (346 px) the face has under a screen in published Shorts; the circle stands for the webcam here (a region less tall leaves the panel its room)"
+  "code": "tall",
+  "why": "the region at 2× is 720 px tall, over the 600 px a screen above the speaker may take, and leaves the panel 506 px (y 994–1500); the stack needs the screen's part at most 600 px tall and a panel of at least 440 px with the face in it at least 230 px: the circle stands for the webcam here (a zoom less tall leaves the panel its room)"
  },
  "asked": {
   "frame": "9:16",

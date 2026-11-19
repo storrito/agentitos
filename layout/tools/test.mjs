@@ -836,16 +836,24 @@ console.log("\nThe screen above, the speaker in a panel down to the caption line
     return out.join("; ");
   });
 
-  t("--screen-panel says no where the region is too tall: a tight zoom at 2× takes the frame down so far that the panel holds a face under 18 % of the frame's height (in 9:16 and in 4:5): no candidate, a note and screenPanel.why with the numbers; the whole screen in 4:5 is offered, its face over a fifth of the frame", () => {
-    const n916 = panelOf(R916, TIGHT, L916), n45 = panelOf(F45, TIGHT, L45), y45 = panelOf(F45, WHOLE, L45);
-    for (const [res, name] of [[n916, "9:16"], [n45, "4:5"]]) {
-      ok(!theOne(res) && res.screenPanel.offered === false && res.screenPanel.code === "small", `${name}: ${JSON.stringify(res.screenPanel)}`);
-      ok(/holds the face at most \d+ px tall \(\d+ % of the frame\)/.test(res.screenPanel.why) && /circle stands for the webcam/.test(res.screenPanel.why) && res.notes.some((x) => /^no screen-panel/.test(x)), res.screenPanel.why);
+  t("--screen-panel says no where the region is too tall: a tight zoom at 2× is a screen's part over 600 px (of a frame 1080 wide) and leaves the panel too little, in 9:16 and in 4:5, with or without a label: no candidate, a note and screenPanel.why that names the screen's height, the panel's and what the stack needs; the whole screen keeps the stack under a label's room of 60, 90 and 120 px in both frames and loses it only where the panel falls under 440 px (in 4:5 past a room of about 165 px), said with the panel's height", () => {
+    const room = (Z, R) => (R ? Z.safe[1] + R - DEFAULTS.gap : null);
+    const out = [];
+    for (const [Z, band, name] of [[R916, L916, "9:16"], [F45, L45, "4:5"]]) {
+      for (const R of [0, 60, 90, 120]) {
+        const no = panelOf(Z, TIGHT, band, { labelBottom: room(Z, R) });
+        ok(!theOne(no) && no.screenPanel.code === "tall" && /is \d+ px tall, over the 600 px/.test(no.screenPanel.why) && /leaves the panel \d+ px/.test(no.screenPanel.why) && /panel of at least 440 px/.test(no.screenPanel.why) && no.notes.some((x) => /^no screen-panel/.test(x)), `${name} tight, room ${R}: ${JSON.stringify(no.screenPanel)}`);
+        const yes = panelOf(Z, WHOLE, band, { labelBottom: room(Z, R) }), c = theOne(yes);
+        ok(c && !c.hard && c.unmet.join() === "readable" && c.stack.panel.box[3] >= 440 && c.stack.face.height >= 230, `${name} whole, room ${R}: ${yes.screenPanel.why || JSON.stringify(c.stack.face)}`);
+        if (R === 120) out.push(`${name} under 120 px: panel ${Math.round(c.stack.panel.box[3])}, face ${c.stack.face.height}`);
+      }
     }
-    const c = theOne(y45);
-    ok(c && !c.hard && c.unmet.join() === "readable" && c.stack.face.pct > 20 && Math.abs(Y1(c.stack.panel.box) - 1230) < 0.5, `4:5 whole: ${y45.screenPanel.why || JSON.stringify(c.stack.face)}`);
+    const lost = panelOf(F45, WHOLE, L45, { labelBottom: room(F45, 200) });
+    ok(lost.screenPanel.code === "small" && /the panel below the screen is \d+ px high .*under the 440 px/.test(lost.screenPanel.why), JSON.stringify(lost.screenPanel));
+    const y45 = panelOf(F45, WHOLE, L45), c = theOne(y45);
+    ok(c && c.stack.face.pct > 20 && Math.abs(Y1(c.stack.panel.box) - 1230) < 0.5, JSON.stringify(c?.stack.face));
     agree(c, y45, "screen-panel-45");
-    return `9:16: ${n916.screenPanel.why.match(/at most \d+ px/)[0]}; 4:5: ${n45.screenPanel.why.match(/at most \d+ px/)[0]}; 4:5 whole: face ${c.stack.face.height} px`;
+    return out.join("; ");
   });
 
   t("--screen-panel is not offered in 16:9 and 1:1, without a face in the webcam's picture, with the webcam baked into the screen, or with the captions on the screen's part: each a sentence; not asked, the result is as before (no screenPanel, no such candidate)", () => {
