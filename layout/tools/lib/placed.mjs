@@ -119,7 +119,7 @@ export function momentsOf(shot) {
       const tr = sorted[k], j = tr.indexOf(m), prev = tr[j - 1], next = tr[j + 1];
       from = Math.min(from, m.t - (prev ? Math.min(REACH, (m.t - prev.t) / 2) : REACH));
       to = Math.max(to, m.t + (next ? Math.min(REACH, (next.t - m.t) / 2) : REACH));
-      return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}), ...(m.zoom ? { zoom: m.zoom } : {}) };
+      return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}), ...(m.zoom ? { zoom: m.zoom } : {}), ...(m.eye != null ? { eye: m.eye } : {}) };
     }).filter(Boolean);
     return { t, dt: faces.length ? Math.max(0, Math.min(b, to) - Math.max(a, from)) : Math.max(0, b - a), faces };
   });

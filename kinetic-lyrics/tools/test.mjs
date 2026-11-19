@@ -39,12 +39,13 @@ test("the push-in: a face is drawn as the short shows it, larger and away from t
   near(scaleAt(4.5, plan), (1 + PUSH * 0.45) * PUNCH, 1e-9, "under a hero");
   near(scaleAt(6, plan), 1 + PUSH * 0.6, 1e-9, "after the punch");
   const box = [340, 300, 400, 600], feat = [400, 500, 280, 300];
-  const out = pushed({ shots: [{ start: 0, end: 10, faces: [{ who: "A", track: [{ t: 0, box, feat }, { t: 10, box, feat }] }] }] }, plan).shots[0].faces[0].track;
+  const out = pushed({ shots: [{ start: 0, end: 10, faces: [{ who: "A", track: [{ t: 0, box, feat, eye: 560 }, { t: 10, box, feat, eye: 560 }] }] }] }, plan).shots[0].faces[0].track;
   assert.deepEqual(out[0].box, box, "unchanged at 0 s");
   const k = 1 + PUSH, oy = 0.28 * H;
   near(out[1].box[1], oy + (box[1] - oy) * k, 0.1, "top");
   near(out[1].box[3], box[3] * k, 0.1, "height");
   near(out[1].feat[1] + out[1].feat[3], oy + (feat[1] + feat[3] - oy) * k, 0.1, "the mouth's bottom moves down");
+  near(out[1].eye, oy + (560 - oy) * k, 0.1, "the eyes' own line with it");
   // the framing raises the picture before it grows: layout is told how a lift shows at each moment
   assert.deepEqual([out[0].zoom, out[1].zoom], [1, +k.toFixed(4)], "each moment's zoom");
 });

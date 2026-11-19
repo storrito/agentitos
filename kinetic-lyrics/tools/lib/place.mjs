@@ -58,7 +58,7 @@ export function pushed(input, plan) {
     ...input,
     shots: input.shots.map((s) => ({
       ...s,
-      faces: s.faces.map((f) => ({ ...f, track: f.track.map((m) => { const k = scaleAt(m.t, plan); return { ...m, box: through(m.box, k, ox, oy), ...(m.feat ? { feat: through(m.feat, k, ox, oy) } : {}), zoom: +k.toFixed(4) }; }) })),
+      faces: s.faces.map((f) => ({ ...f, track: f.track.map((m) => { const k = scaleAt(m.t, plan); return { ...m, box: through(m.box, k, ox, oy), ...(m.feat ? { feat: through(m.feat, k, ox, oy) } : {}), ...(m.eye != null ? { eye: +(oy + (m.eye - oy) * k).toFixed(1) } : {}), zoom: +k.toFixed(4) }; }) })),
     })),
   };
 }

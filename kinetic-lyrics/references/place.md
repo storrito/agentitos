@@ -18,7 +18,7 @@
 
 ## What the list says, and what is left
 
-- Per shot: raised or not (with how high the eyes then stand and how much more of the head the frame cuts), and what the type lies on with its seconds: no face; the chin or neck; `✗` the lower lip, the mouth, the nose or eyes.
+- Per shot: raised or not (with how high the eyes then stand at their highest, the middle of the model's box of the eyes where the framing has it, else the top of the brows, said as such; and how much more of the head the frame cuts), and what the type lies on with its seconds: no face; the chin or neck; `✗` the lower lip, the mouth, the nose or eyes.
 - A `✗` is what neither a lower type nor a raise could clear, mostly a tight close-up whose head nods down (Dafoe on Hot Ones, 2026-11-19: the head moves by a sixth of the frame's height within one shot; the list said 0.6 s on the mouth and 1.7 s on the lower lip of 11 s, a model on the rendered frames found the type on the mouth for 0.5 s). What avoids it: another stretch of the episode without that shot, or a lower `--type-top` where the type is not at its smallest. Say it to the person when it is longer than a second or two.
 - A shot raised far cuts the top of the head; the sheet shows it. If the person minds, `--raise mouth` or `--raise head` (the list then shows the seconds on the mouth that it costs).
 

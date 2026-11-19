@@ -1495,6 +1495,18 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     near(grown.shots[0].headCut.byLift, flat.shots[0].headCut.byLift, 3, "the head cut as without the zoom, for the same picture on screen");
     return `raised ${grown.shots[0].lift} px (${flat.shots[0].lift} px without the zoom), the eyes at ${Math.round(grown.shots[0].eyes * 1000) / 10} %`;
   });
+  t("the eyes at their highest are the eyes' own (the middle of their box, a moment's eye) where the faces have it, else said as the brows' top, the top of the box of eyes, nose and mouth (the review: \"the eyes at 13 %\" where the eye centres stood at 19–25 %); the raise's limits keep that top", () => {
+    const feat = [380, 560, 320, 600], box = [250, 300, 580, 1000];
+    const track = (eye) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box, feat, ...(eye ? { eye } : {}) })) });
+    const own = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(640)])], area: { top: usual }, raise: "full" });
+    const brows = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(0)])], area: { top: usual }, raise: "full" });
+    ok(own.shots[0].lift === brows.shots[0].lift && own.shots[0].lift > 0, "the same raise");
+    ok(own.shots[0].eyesAre === "eyes" && Math.abs(own.shots[0].eyes * H - (640 - own.shots[0].lift)) < 2, JSON.stringify(own.shots[0]));
+    ok(brows.shots[0].eyesAre === "brows" && Math.abs(brows.shots[0].eyes * H - (560 - brows.shots[0].lift)) < 2, JSON.stringify(brows.shots[0]));
+    const r = cli("text", path.join(OUT, "area-eyes"), "--frame", "9:16", "--shots", (fs.writeFileSync(path.join(OUT, "area-eyes.json"), JSON.stringify({ shots: [shot(0, 4, [track(0)])] })), path.join(OUT, "area-eyes.json")), "--text", "area", "--area-top", String(usual), "--raise", "full");
+    ok(/the brows' top from \d+ % of the height \(the eyes a little lower\)/.test(r.stdout), r.stdout);
+    return `the eyes at ${Math.round(own.shots[0].eyes * 100)} %, the brows' top at ${Math.round(brows.shots[0].eyes * 100)} %`;
+  });
   t("a clip without a face: the usual top, said as no-face", () => {
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [])], area: { top: usual } });
     ok(r.area.top === usual && r.area.where === "no-face" && !r.notes.length, JSON.stringify(r.area));

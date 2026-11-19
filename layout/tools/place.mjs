@@ -63,7 +63,7 @@ import { renderPage } from "./lib/page.mjs";
 import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
 import { textOverTime, stillsText } from "./lib/placed.mjs";
-import { areaOverTime } from "./lib/area.mjs";
+import { areaOverTime, eyesText } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
 import { besideSolve, printBeside } from "./lib/beside.mjs";
 import { areaFile, areaOfStyle } from "./lib/caption-area.mjs";
@@ -617,7 +617,7 @@ function textArea(o, folder, shots, needs) {
   for (const s of res.shots) {
     const on = s.touches.map((t) => `${t.who} ${t.from}–${t.to} s (${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")})`).join("; ");
     const cut = s.headCut?.byLift ? `; the head cut at the top ${s.headCut.byLift} px more by the raise` : "";
-    console.log(`  shot ${s.n ?? s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${s.eyes != null ? `, the eyes from ${Math.round(s.eyes * 100)} % of the height` : ""}${cut}  ${on ? `${s.fault ? "✗ " : ""}on ${on}` : "on no face"}`);
+    console.log(`  shot ${s.n ?? s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${s.eyes != null ? `, ${s.eyesAre ? eyesText(s.eyesAre, s.eyes).replace(" at ", " from ") : `the eyes from ${Math.round(s.eyes * 100)} % of the height`}` : ""}${cut}  ${on ? `${s.fault ? "✗ " : ""}on ${on}` : "on no face"}`);
   }
   for (const x of res.conflicts) console.log(`✗ ${x}`);
   for (const n of res.notes) console.log(`note: ${n}`);

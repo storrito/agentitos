@@ -11,7 +11,8 @@
 // stands unraised, feat: the eyes, nose and mouth; zoom on a moment: how much larger the picture
 // shows there than as it is raised, where it grows after the raise, as a push-in: a lift of L px
 // moves that moment's faces L × zoom up, and every lift here is in px of the picture before it
-// grows). area.top: the usual top, where the caller sets
+// grows; eye on a moment: the y of the middle of the eyes' own box, for what the list says of
+// the eyes). area.top: the usual top, where the caller sets
 // its type without faces (the area is never taller); area.bottom: its bottom (default the safe
 // box's). fixed.top: a top the caller chose; fixed.lifts: { <shot index>: px }.
 //
@@ -55,6 +56,12 @@ function shotUnder(box, moments, most, D, exact = false) {
   }
   return { lift, need: Math.ceil(need), nose, mouth, lip, chin, who: [...who.values()] };
 }
+
+// what the eyes' figure is, in words: "the eyes at 21 %", "the brows' top at 13 %" (the box of
+// eyes, nose and mouth begins there), "the eyes at about 18 % (by the head's proportions)"
+export const eyesText = (are, share) => are === "eyes" ? `the eyes at ${Math.round(share * 100)} % of the height`
+  : are === "brows" ? `the brows' top at ${Math.round(share * 100)} % of the height (the eyes a little lower)`
+  : `the eyes at about ${Math.round(share * 100)} % of the height (by the head's proportions)`;
 
 export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixed = {}, costs = COSTS, raise: r = "mouth" }) {
   const raise = raiseOf(r);
@@ -113,21 +120,26 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
   const shotsOut = list.map((s, i) => {
     const q = best.per[i];
     const headCut = { seconds: 0, px: 0, byLift: 0 };
-    let eyesTop = Infinity;
+    // the eyes at their highest as the list says them: the middle of the eyes' own box where the
+    // faces have it, else the top of the box of eyes (with the brows), nose and mouth, else where
+    // the head's proportions put the eyes (eyesAre says which); the limits of a raise keep the
+    // top of that box, as before
+    let eyesTop = Infinity, eyesAre = null;
     for (const m of s.moments) {
       let cut = 0, before = 0;
       for (const f of m.faces) {
         const top = f.box[1] - Math.max(D.free.aboveMin, D.free.above * f.box[3]);
         const by = q.lift * (f.zoom || 1);
         cut = Math.max(cut, by - top); before = Math.max(before, -top);
-        eyesTop = Math.min(eyesTop, eyesOf(f, D) - by);
+        const y = (f.eye != null ? f.eye : eyesOf(f, D)) - by;
+        if (y < eyesTop) { eyesTop = y; eyesAre = f.eye != null ? "eyes" : f.feat ? "brows" : "head"; }
       }
       if (cut > 0.5) { headCut.seconds += m.dt; headCut.px = Math.max(headCut.px, cut); headCut.byLift = Math.max(headCut.byLift, cut - Math.max(0, before)); }
     }
     headCut.seconds = r1(headCut.seconds); headCut.px = r0(headCut.px); headCut.byLift = r0(headCut.byLift);
     const on = { nose: r1(q.nose), mouth: r1(q.mouth), lip: r1(q.lip), chin: r1(q.chin) };
     const out = { shot: i, ...(s.n != null ? { n: s.n } : {}), start: s.start, end: s.end, lift: q.lift, free: q.free, ground: q.ground, most: s.most, limit: s.by, headCut,
-      ...(Number.isFinite(eyesTop) ? { eyes: Math.round((eyesTop / H) * 1000) / 1000 } : {}), ...(s.forced ? { fixed: true } : {}), ...(q.returned ? { returned: true } : {}), on,
+      ...(Number.isFinite(eyesTop) ? { eyes: Math.round((eyesTop / H) * 1000) / 1000, eyesAre } : {}), ...(s.forced ? { fixed: true } : {}), ...(q.returned ? { returned: true } : {}), on,
       touches: q.who.map((w) => ({ who: w.who, from: r1(w.from), to: r1(w.to), seconds: r1(w.seconds), nose: r1(w.nose), mouth: r1(w.mouth), lip: r1(w.lip), chin: r1(w.chin) })) };
     const span = `Shot ${s.n ?? i + 1} (${r1(s.start)}–${r1(s.end)} s)`;
     const who = [...new Set(q.who.map((w) => w.who))].join(" and ");
@@ -140,7 +152,7 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
         !atFloor ? "a lower top for the type (smaller type)" : "", "a cut to another shot here, or a moment without this stretch", !s.room || s.room.none ? "" : "the shot shown whole (smaller, its face clear of the type)"].filter(Boolean).join(", ");
       conflicts.push(`${span}: the type lies on ${who}'s ${what}${q.lift ? ` (raised ${q.lift} px, as far as ${s.by === "fixed" ? "fixed" : s.by === "eyeLine" ? `the eyes at ${Math.round(D.eyeLine * 100)} % of the height allow` : s.by === "eyes" ? "the eyes below the apps' top bar allow" : s.by === "head" ? "the head kept whole allows" : "the framing and the apps' bottom allow"})` : ""}${atFloor ? `, with the type at its smallest (${Math.round(D.area.least * 100)} % of the height)` : ""}. What would avoid it: ${avoid}.`);
     } else if (q.chin > 0.05) notes.push(`${span}: the type lies on ${who}'s chin or neck for ${r1(q.chin)} s, below the mouth.`);
-    if (headCut.byLift > 0) notes.push(`${span}: raised ${q.lift} px for the type, the frame cuts ${who ? `${who}'s` : "the"} head at the top by up to ${headCut.byLift} px more${Number.isFinite(eyesTop) ? `, the eyes at ${Math.round((eyesTop / H) * 100)} % of the height at their highest` : ""}.`);
+    if (headCut.byLift > 0) notes.push(`${span}: raised ${q.lift} px for the type, the frame cuts ${who ? `${who}'s` : "the"} head at the top by up to ${headCut.byLift} px more${Number.isFinite(eyesTop) ? `, ${eyesText(eyesAre, eyesTop / H)} at their highest` : ""}.`);
     return out;
   });
   if (best.lower > 0.25) notes.push(`The type's area starts at y ${r0(best.top)}, ${r0(best.top - usual)} px below its usual top (${r0(usual)}): its type is ${Math.round((1 - (bottom - best.top) / (bottom - usual)) * 100)} % smaller at most, so that it keeps off the faces' mouths.`);

@@ -184,6 +184,11 @@ function build(dir, opts) {
   console.log(`${path.relative(process.cwd(), out) || out} is built. short.mjs check ${dir} finds what a viewer would notice.`);
 }
 
+// what layout's eyes figure is (text.json's eyesAre), in words
+const eyesSaid = (x) => x.eyesAre === "eyes" ? `the eyes at ${Math.round(x.eyes * 100)} % of the height`
+  : x.eyesAre === "brows" ? `the brows' top at ${Math.round(x.eyes * 100)} % of the height, the eyes a little lower`
+  : `the eyes at about ${Math.round(x.eyes * 100)} % of the height`;
+
 // Where the type goes over footage with people: the framing's faces of every shot over time
 // (agentitos' clips: clips.mjs shots), as the short's push-in and punches show them, handed to
 // agentitos' layout (place.mjs text --text area): one top for the type of the whole short, each
@@ -259,7 +264,7 @@ function place(dir, opts) {
   console.log(`\nThe type: one place for the short, from y ${at} to ${Math.round(a.bottom)} (${Math.round(((a.bottom - at) / H) * 100)} % of the height${chip ? `, the name tag in the ${chip} px above it` : ""})${a.lower > 0 ? `, ${Math.round(a.lower)} px lower than the footage alone sets it (y ${usual}): the type is up to ${Math.round((a.lower / (a.bottom - usual + chip)) * 100)} % smaller, so that it keeps off the mouths` : ", where the footage alone sets it"}.`);
   for (const x of text.shots) {
     const on = x.touches.map((t) => `${t.who}: ${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")} (${t.from}–${t.to} s)`).join("; ");
-    console.log(`  ${x.fault ? "✗" : "·"} shot ${x.shot + 1}  ${x.start.toFixed(1)}–${x.end.toFixed(1)} s  ${x.lift ? `raised ${x.lift} px${x.eyes != null ? ` (the eyes at ${Math.round(x.eyes * 100)} % of the height at their highest)` : ""}` : "as framed"}: the type on ${on || "no face"}`);
+    console.log(`  ${x.fault ? "✗" : "·"} shot ${x.shot + 1}  ${x.start.toFixed(1)}–${x.end.toFixed(1)} s  ${x.lift ? `raised ${x.lift} px${x.eyes != null ? ` (${eyesSaid(x)} at their highest)` : ""}` : "as framed"}: the type on ${on || "no face"}`);
   }
   // what is left on a mouth, nose or eyes, and what would avoid it; the notes of layout but its own
   // sentence on the area (said above)
