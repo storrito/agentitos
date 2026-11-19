@@ -65,7 +65,7 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
-import { pieceSpan, clockOf, covering, inFrame, faceTrack, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
+import { pieceSpan, clockOf, covering, inFrame, faceTrack, facesFault, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
@@ -593,7 +593,13 @@ function cmdPlace(dir, opts) {
   const [W, H] = size(s, clips[pieces[0].clip]);
   const shown = Object.values(clips).filter((c) => pieces.some((p) => p.clip === c.n)).sort((a, b) => a.n - b.n);
   const faces = {};
-  for (const c of shown) { const f = source(dir, `${kOf(c)}.faces.json`); if (fs.existsSync(f)) faces[c.file] = read(f); }
+  for (const c of shown) {
+    const f = source(dir, `${kOf(c)}.faces.json`);
+    if (!fs.existsSync(f)) continue;
+    faces[c.file] = read(f);
+    const fault = facesFault(faces[c.file], [c.width, c.height]);
+    if (fault) fail(`✗ ${c.file}: ${fault}: find them again, node ${self()} faces ${rel(dir)} --again${faces[c.file].by === "eye" ? ` --eye … (read off its grid pictures: faces ${rel(dir)} --grid)` : ""}.`);
+  }
   if (!Object.keys(faces).length) fail(`No faces known yet: node ${self()} faces ${rel(dir)} first (or --grid and --eye, where no model may see the videos).`);
   const folder = path.join(dir, "placement");
   fs.mkdirSync(folder, { recursive: true });

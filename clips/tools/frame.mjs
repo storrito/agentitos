@@ -142,10 +142,16 @@ export const PANEL = 0.36, SEAM = 6;
 const PANEL_FACE_Y = 0.42, BANTER = 5, BANTER_TURNS = 3;
 export const KINDS = ["people", "split", "broll"];
 
+// The size as shown: a phone stores an upright picture as a wide one with a rotation of 90 or −90
+// (most Android takes, an iPhone's "Most Compatible" ones), and ffmpeg turns its frames upright when
+// it reads them (the stills the model sees, the tracker's frames, the render), so every box of the
+// footage is in px of the upright picture
+export const turned = (stream) => Math.abs(Number(stream?.side_data_list?.find((d) => d.rotation != null)?.rotation ?? stream?.tags?.rotate ?? 0)) % 180 === 90;
 export const probe = (file) => {
-  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,start_time:format=duration,start_time", "-of", "json", file], { encoding: "utf8" }));
+  const j = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,start_time:stream_side_data=rotation:stream_tags=rotate:format=duration,start_time", "-of", "json", file], { encoding: "utf8" }));
   const [a, b] = String(j.streams[0].r_frame_rate || "25/1").split("/").map(Number);
-  return { width: j.streams[0].width, height: j.streams[0].height, fps: b ? a / b : 25, duration: Number(j.format.duration),
+  const v = j.streams[0], t = turned(v);
+  return { width: t ? v.height : v.width, height: t ? v.width : v.height, fps: b ? a / b : 25, duration: Number(j.format.duration),
     // the picture's start after the file's own (ffmpeg's filters count from the file's start)
     start: Math.max(0, (Number(j.streams[0].start_time) || 0) - (Number(j.format.start_time) || 0)) };
 };

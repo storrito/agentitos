@@ -13,7 +13,8 @@
 //   clockOf(clips, pieces) → { off, at }: every video a section of one clock, its kept stretches end to end
 //   covering([sw, sh], [W, H]) → { scale, left, top }: the picture covering the frame, centred
 //   inFrame(box, pic) → the box in px of the frame, the picture drawn at pic (scale, left, top − lift)
-//   faceTrack(list, pieces, n, every) → [{ t, box }]: the face over the seconds the cut keeps of video n
+//   faceTrack(list, pieces, n, every) → [{ t, box }]: the face over the seconds the cut keeps of video n, inside its picture
+//   facesFault(list, [w, h]) → a sentence where a video's faces cannot be of its picture, else null
 //   shotsInput(…) → { shots, hook }: layout text's shots.json, one shot per video the cut shows
 //   hookSpan(pieces, until, clock) → { start, end, spans? } on the one clock
 //   calmBehind(shots, hook, H) → whether the picture behind the hook is a close-up
@@ -82,7 +83,9 @@ export const roomBelow = (pic, [sw, sh], H) => Math.max(0, Math.floor(pic.top + 
 
 // the face of video n over the seconds the cut keeps of it, one moment every `every` seconds:
 // layout place's --face-track (its hull decides the placement)
-export function faceTrack(list, pieces, n, every = 0.5) {
+// (a box the tracker carried a little past the picture's edge is taken to that edge: layout refuses
+// a face that is not there)
+export function faceTrack(list, pieces, n, every = 0.5, size = list?.size) {
   const kept = pieces.filter((p) => p.clip === n);
   const out = [];
   let last = -Infinity;
@@ -91,7 +94,14 @@ export function faceTrack(list, pieces, n, every = 0.5) {
     if (f.t - last < every - 1e-6) continue;
     // the largest face: a take is one person
     const b = [...f.boxes].sort((x, y) => y.box[2] * y.box[3] - x.box[2] * x.box[3])[0];
-    if (b) { out.push({ t: f.t, box: b.box }); last = f.t; }
+    if (!b) continue;
+    let box = b.box;
+    if (size) {
+      const x0 = Math.max(0, box[0]), y0 = Math.max(0, box[1]), x1 = Math.min(size[0], box[0] + box[2]), y1 = Math.min(size[1], box[1] + box[3]);
+      if (x1 - x0 < 1 || y1 - y0 < 1) continue;
+      box = [x0, y0, x1 - x0, y1 - y0];
+    }
+    out.push({ t: f.t, box }); last = f.t;
   }
   return out;
 }
@@ -148,6 +158,22 @@ export function toCut(t, pieces, clock) {
   let best = -1;
   pieces.forEach((q, i) => { const e = clock.at[i] + q.out - q.in; if (e <= t + 1e-3 && (best < 0 || e > clock.at[best] + pieces[best].out - pieces[best].in)) best = i; });
   return best >= 0 ? pieces[best].start + pieces[best].duration : pieces[0].start;
+}
+
+// Faces that cannot be of this video's picture: found on a picture of another size (a phone's take
+// stored on its side, read before the framing knew the rotation), or boxes mostly outside it. The
+// faces are the tool's own (the model's, followed) or the agent's (--eye): the sentence says whose.
+export function facesFault(list, [w, h]) {
+  if (!list?.faces?.length) return null;
+  const whose = list.by === "eye" ? "your boxes (--eye)" : "the faces the tool found (not boxes of yours)";
+  if (list.size && (Math.abs(list.size[0] - w) > 1 || Math.abs(list.size[1] - h) > 1)) return `${whose} are of a picture of ${list.size[0]}×${list.size[1]}, the video shows ${w}×${h} (a phone's take stored on its side)`;
+  let out = 0, all = 0;
+  for (const f of list.faces) for (const b of f.boxes) {
+    all++;
+    const inside = Math.max(0, Math.min(w, b.box[0] + b.box[2]) - Math.max(0, b.box[0])) * Math.max(0, Math.min(h, b.box[1] + b.box[3]) - Math.max(0, b.box[1]));
+    if (!(b.box[2] > 0 && b.box[3] > 0) || inside < 0.5 * b.box[2] * b.box[3]) out++;
+  }
+  return out > 0.05 * all ? `${whose} lie mostly outside the ${w}×${h} picture at ${out} of ${all} moments` : null;
 }
 
 // Whether the picture behind a hook text is calm (copied from clips' place: a skill never imports

@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { smallFrames, findCuts, confirmed, shotsBetween } from "./lib/cuts.mjs";
-import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA, answerOf, facesOver } from "./frame.mjs";
+import { shotsOf, windowsOf, windowAt, edgesOf, faceAt, stillsOf, render, speakerTimeline, sheet, holdOf, extraStills, EXTRA, answerOf, facesOver, probe } from "./frame.mjs";
 import { greyFrames, fillTrack, uncross } from "./lib/track.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -621,4 +621,30 @@ test("the faces alone, from the agent's own boxes: each box a still of its shot,
   assert.equal(at(5).feat, undefined);
   // the second shot has no box of the agent: no face there
   assert.equal(r.faces.some((f) => f.t >= 10), false);
+});
+
+test("a phone's upright take stored on its side (rotation 90, −90) or upside down (180): the size as shown everywhere a frame is read and a box is scaled: the probe, the tracker's frames, the faces written", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  const up = path.join(dir, "up.mp4"), side = path.join(dir, "side.mp4");
+  let r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=180x320:r=10,format=yuv420p", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", up], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  // stored as 320×180, the picture turned a quarter, as a phone writes it
+  r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", up, "-vf", "transpose=2", "-c:v", "libx264", "-preset", "ultrafast", side], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const words = path.join(dir, "words.json");
+  fs.writeFileSync(words, JSON.stringify([{ text: "hallo", start: 0.2, end: 0.6, speaker: "A" }]));
+  for (const [deg, shown] of [[90, [180, 320]], [270, [180, 320]], [180, [320, 180]]]) {
+    const v = path.join(dir, `rot${deg}.mp4`);
+    r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", side, "-c", "copy", "-metadata:s:v:0", `rotate=${deg}`, v], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const p = probe(v);
+    assert.deepEqual([p.width, p.height], shown, `rotation ${deg}: the probe`);
+    const g = greyFrames(v);
+    assert.ok(Math.abs(g.h / g.w - shown[1] / shown[0]) < 0.02, `rotation ${deg}: the tracker's frames ${g.w}×${g.h}`);
+    // the faces alone from the agent's boxes: in px of the picture as shown, a box inside it accepted
+    const out = path.join(dir, `rot${deg}.faces.json`);
+    r = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "frame.mjs"), v, words, "--faces", out, "--face-at", `0.5:${Math.round(shown[0] * 0.3)},${Math.round(shown[1] * 0.2)},${Math.round(shown[0] * 0.4)},${Math.round(shown[1] * 0.25)}`], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(out, "utf8")).size, shown, `rotation ${deg}: faces.json's size`);
+  }
 });

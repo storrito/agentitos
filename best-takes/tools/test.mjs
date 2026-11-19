@@ -415,7 +415,7 @@ test("a face that fills the frame already (its box half the frame's height or mo
 });
 
 // ------------------------------------------------------------------- on its own: faces, picture, text
-import { covering, inFrame, faceTrack, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { covering, inFrame, faceTrack, facesFault, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
 import { pieceStyle } from "./lib/composition.mjs";
 
 test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
@@ -494,4 +494,17 @@ test("on its own: a piece is drawn where its picture stands, and a punch-in grow
   assert.match(pieceStyle({ scale: 1, pic: wide }, 1080, 1920), /clip-path: inset\(0px 735\.6px 0px 784\.4px\)$/);
   // covering the frame: nothing to cut out
   assert.doesNotMatch(pieceStyle({ scale: 1.12, origin: 700, pic: { left: 0, top: -100, width: 1080, height: 2100 } }, 1080, 1920), /clip-path/);
+});
+
+test("on its own: faces of a phone's take stored on its side, found before the framing knew the rotation, are refused with whose they are; a box the tracker carried past the edge is taken to it", () => {
+  // the review's take: an upright 1080×1920 picture stored as 1920×1080 with a rotation of −90
+  const model = { by: "model", size: [1920, 1080], faces: [{ t: 1, boxes: [{ who: "A", box: [473, 82, 1048, 459] }] }] };
+  assert.match(facesFault(model, [1080, 1920]), /^the faces the tool found \(not boxes of yours\) are of a picture of 1920×1080, the video shows 1080×1920/);
+  const eye = { by: "eye", size: [1080, 1920], faces: Array.from({ length: 10 }, (_, i) => ({ t: i, boxes: [{ who: "A", box: [900, 1700, 600, 900] }] })) };
+  assert.match(facesFault(eye, [1080, 1920]), /^your boxes \(--eye\) lie mostly outside the 1080×1920 picture at 10 of 10 moments/);
+  const fine = { by: "model", size: [1080, 1920], faces: [{ t: 0, boxes: [{ who: "A", box: [300, 570, 600, 900] }] }] };
+  assert.equal(facesFault(fine, [1080, 1920]), null);
+  // a box a little past the bottom edge: taken to the edge for layout, which refuses faces not there
+  const list = { size: [1080, 1920], faces: [{ t: 0, boxes: [{ who: "A", box: [300, 1200, 600, 800] }] }] };
+  assert.deepEqual(faceTrack(list, [{ clip: 1, in: 0, out: 1 }], 1)[0].box, [300, 1200, 600, 720]);
 });
