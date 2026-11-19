@@ -1,0 +1,29 @@
+{
+ "guards": "a wide zoom of a 1080p screen with a 720p webcam into 4:5 under a label, the speaker's panel as wide as the screen (--screen-panel screen)",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "4:5",
+   "--platform",
+   "instagram-feed",
+   "--source",
+   "1920x1080",
+   "--region",
+   "400,40,1400,790",
+   "--min-text-height",
+   "14",
+   "--source",
+   "1280x720",
+   "--face",
+   "500,140,280,350",
+   "--caption-area",
+   "120,840,1140,1230,52,1",
+   "--screen-panel",
+   "screen",
+   "--label-bottom",
+   "120"
+  ]
+ ]
+}

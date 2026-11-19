@@ -1,0 +1,26 @@
+{
+ "guards": "a tight zoom of a 1080p screen at 2× into 9:16 with --screen-panel: not offered, the panel would hold the face under 18 % of the frame's height, said in a note",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--platform",
+   "reels",
+   "--source",
+   "1920x1080",
+   "--region",
+   "700,250,450,360",
+   "--min-text-height",
+   "12",
+   "--source",
+   "1280x720",
+   "--face",
+   "500,140,280,350",
+   "--caption-area",
+   "120,840,1410,1500,52,1",
+   "--screen-panel"
+  ]
+ ]
+}

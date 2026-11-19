@@ -1,0 +1,37 @@
+$ place.mjs place out --frame 9:16 --platform reels --source 1920x1080 --region 700,250,450,360 --min-text-height 12 --source 1280x720 --face 500,140,280,350 --caption-area 120,840,1410,1500,52,1 --screen-panel
+9:16 1080×1920 for Instagram Reels
+screen 1920×1080, region x 700–1150, y 250–610 (450×360), smallest text 12 px (reads from 24 px in this frame); text: 1 caption line
+captions: fixed in x 120–960, y 1410–1500 (the six values given, 1 line at 52 px): there or nowhere, the picture placed around them
+note: no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× takes the frame down to y 970, and the panel from there to the captions' top (416 px) holds the face at most 290 px tall (15 % of the frame) with its head inside the panel and its chin above the captions, under the 18 % of the frame's height (346 px) the face has under a screen in published Shorts; the circle stands for the webcam here (a region less tall leaves the panel its room)
+
+1. ! screen-zoom  scale 2 (1.13× of covering) at left -1340, top -173  score 94.22
+   picture x 0–1080, y 0–1386, 28 % ground
+   region  x 60–960, y 327–1047 (900×720), smallest text 24 px
+   webcam  circle 238 px bottom-left, x 60–298, y 1148–1386; shows x 280–1000, y 0–720 of the webcam's picture at 0.33×, the face 116 px tall
+   caption band-below, x 120–960, y 1410–1500, 1 line at 52 px
+   ! picture: the source's pixels are enlarged 2× (over 1.5×: soft)
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are enlarged 2×; the region is 900×720 px, its smallest text 24 px tall; the webcam's circle (238 px) bottom-left; 28 % of the frame is ground; cost 5.78 (enlargement +3, ground +2.78)
+
+2. – screen-stacked  score 0
+   part 1  x 0–1080, y 0–1063: source 1 at scale 2, left -1340, top -226
+   part 2  x 47–1033, y 1099–1653: source 2 at scale 0.7702, left 47.1, top 1098.6
+   18 % ground
+   region  x 60–960, y 274–994 (900×720), smallest text 24 px
+   webcam  x 432–648, y 1206–1476 (216×270)
+   ! region: 1 % cut where the Instagram feed shows 4:5
+   ! picture: the source's pixels are enlarged 2× (over 1.5×: soft)
+   – caption: no free place for the 1 caption line
+   why: no hard problem; text without a place: caption; the source's pixels are enlarged 2×; the region is 900×720 px, its smallest text 24 px tall; 18 % of the frame is ground; soft: region 1 % cut where the Instagram feed shows 4:5; cost 6.518 (enlargement +3, ground +1.83, subject +1.188, soft problems +0.5); behind the first because it leaves a need unmet
+
+3. – screen-whole  scale 0.5625 (0.32× of covering) at left 0, top 389.3  score 0
+   picture x 0–1080, y 389–997, 68 % ground
+   region  x 394–647, y 530–732 (253×203), smallest text 6.8 px
+   webcam  circle 238 px bottom-left, x 60–298, y 1148–1386; shows x 280–1000, y 0–720 of the webcam's picture at 0.33×, the face 116 px tall
+   caption band-below, x 120–960, y 1410–1500, 1 line at 52 px
+   – screen text: the smallest text is 6.8 px tall in the frame, under the 24 px that read
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the screen's smallest text does not read; the source's pixels are not enlarged (0.56×); the region is 253×203 px, its smallest text 6.8 px tall; the webcam's circle (238 px) bottom-left; 68 % of the frame is ground; cost 14.809 (ground +6.84, subject +7.969); behind the first because it leaves a need unmet
+
+out/placement.json: 3 candidates, 1 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

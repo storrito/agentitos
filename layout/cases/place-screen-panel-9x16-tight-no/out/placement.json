@@ -1,0 +1,580 @@
+{
+ "frame": "9:16",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels"
+ ],
+ "fallback": false,
+ "source": [
+  1920,
+  1080
+ ],
+ "faces": [
+  [
+   700,
+   250,
+   450,
+   360
+  ]
+ ],
+ "screen": {
+  "region": [
+   700,
+   250,
+   450,
+   360
+  ],
+  "minTextHeight": 12,
+  "readable": 24
+ },
+ "sources": [
+  {
+   "size": [
+    1920,
+    1080
+   ],
+   "faces": [
+    [
+     700,
+     250,
+     450,
+     360
+    ]
+   ],
+   "screen": true
+  },
+  {
+   "size": [
+    1280,
+    720
+   ],
+   "faces": [
+    [
+     500,
+     140,
+     280,
+     350
+    ]
+   ]
+  }
+ ],
+ "needs": [
+  {
+   "role": "caption",
+   "lines": 1
+  }
+ ],
+ "captionArea": {
+  "left": 120,
+  "width": 840,
+  "top": 1410,
+  "bottom": 1500,
+  "size": 52,
+  "lines": 1,
+  "from": "the six values given"
+ },
+ "defaults": {
+  "caption": {
+   "font": {
+    "tall": 77,
+    "wide": 50,
+    "least": 61
+   },
+   "line": 1.3,
+   "padEm": 0.44,
+   "minWidth": {
+    "tall": 540,
+    "wide": 600
+   },
+   "maxEm": 24,
+   "longWord": 9
+  },
+  "hookText": {
+   "font": 96,
+   "minFont": 72,
+   "heightEm": 2.48,
+   "line": 1.14,
+   "width": 0.72,
+   "centre": 0.53
+  },
+  "hookCard": {
+   "font": 76,
+   "minFont": 64,
+   "heightEm": 3.1,
+   "line": 1.14
+  },
+  "hookBig": {
+   "font": 112,
+   "minFont": 72,
+   "widthEm": 10,
+   "heightEm": 2.25,
+   "line": 1.08
+  },
+  "gap": 24,
+  "edgePad": 16,
+  "free": {
+   "above": 0.35,
+   "aboveMin": 16,
+   "below": 0.08,
+   "belowMin": 24,
+   "beside": 0.25,
+   "besideMin": 24
+  },
+  "facePad": 20,
+  "eyes": 0.42,
+  "eyeLine": 0.27,
+  "area": {
+   "least": 0.15,
+   "chin": 1,
+   "smaller": 3.6
+  },
+  "zoomStep": 0.01,
+  "zoomMax": 1.6,
+  "insetStep": 0.01,
+  "insetMin": 0.5,
+  "panelMin": 0.6,
+  "insetFace": 19,
+  "bands": [
+   "4:5",
+   "1:1"
+  ],
+  "track": {
+   "far": 2
+  },
+  "together": 2,
+  "togetherSize": 0.67,
+  "same": {
+   "px": 0.02,
+   "scale": 0.02
+  },
+  "readable": {
+   "height": 24,
+   "per": 1080
+  },
+  "circle": {
+   "tall": 0.22,
+   "square": 0.16,
+   "wide": 0.2,
+   "min": 0.12
+  },
+  "screenFace": {
+   "height": 0.18,
+   "panel": 0.5
+  },
+  "weights": {
+   "enlarge": {
+    "softFrom": 1.5,
+    "forbiddenFrom": 2,
+    "costAtForbidden": 3
+   },
+   "subject": {
+    "from": 23,
+    "to": 34,
+    "smaller": 0.3,
+    "larger": 0.05,
+    "regionEnough": 50
+   },
+   "ground": {
+    "cost": 0.1
+   },
+   "soft": {
+    "cost": 0.5
+   },
+   "text": {
+    "away": 0.05,
+    "hookSmaller": 0.02
+   }
+  }
+ },
+ "notes": [
+  "no screen-panel (the screen above, the speaker in a panel down to the caption line): the region at 2× takes the frame down to y 970, and the panel from there to the captions' top (416 px) holds the face at most 290 px tall (15 % of the frame) with its head inside the panel and its chin above the captions, under the 18 % of the frame's height (346 px) the face has under a screen in published Shorts; the circle stands for the webcam here (a region less tall leaves the panel its room)"
+ ],
+ "candidates": [
+  {
+   "fit": "screen-zoom",
+   "scale": 2,
+   "left": -1340,
+   "top": -173,
+   "zoom": 1.13,
+   "enlargement": 2,
+   "window": [
+    0,
+    0,
+    1080,
+    1386
+   ],
+   "faceInFrame": [
+    [
+     60,
+     327,
+     900,
+     720
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "ink": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "lines": 1,
+     "font": 52,
+     "style": "cap",
+     "align": "center",
+     "band": "the six values given",
+     "lineBox": true
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "enlarged",
+     "kind": "picture",
+     "of": "picture",
+     "what": "the source's pixels are enlarged 2× (over 1.5×: soft)"
+    }
+   ],
+   "hard": 0,
+   "soft": 1,
+   "unmet": [],
+   "fullSize": true,
+   "textHeight": 24,
+   "circle": {
+    "box": [
+     60,
+     1148,
+     238,
+     238
+    ],
+    "d": 238,
+    "corner": "bottom-left",
+    "covers": 0,
+    "crop": [
+     280,
+     0,
+     720,
+     720
+    ],
+    "enlargement": 0.33,
+    "faceHeight": 116,
+    "of": "webcam",
+    "first": "bottom-left",
+    "size": 238
+   },
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 2.08× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.278,
+   "faceHeight": 720,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 3,
+    "ground": 2.78,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 5.78,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    5780,
+    0,
+    0
+   ],
+   "score": 94.22,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are enlarged 2×",
+    "the region is 900×720 px, its smallest text 24 px tall",
+    "the webcam's circle (238 px) bottom-left",
+    "28 % of the frame is ground",
+    "cost 5.78 (enlargement +3, ground +2.78)"
+   ]
+  },
+  {
+   "fit": "screen-stacked",
+   "scale": 2,
+   "left": -1340,
+   "top": -226,
+   "zoom": 1.12,
+   "enlargement": 2,
+   "window": [
+    0,
+    0,
+    1080,
+    1920
+   ],
+   "faceInFrame": [
+    [
+     60,
+     274,
+     900,
+     720
+    ],
+    [
+     432.2,
+     1206.4,
+     215.7,
+     269.6
+    ]
+   ],
+   "parts": [
+    {
+     "source": 1,
+     "scale": 2,
+     "left": -1340,
+     "top": -226,
+     "window": [
+      0,
+      0,
+      1080,
+      1063
+     ]
+    },
+    {
+     "source": 2,
+     "scale": 0.7702,
+     "left": 47.1,
+     "top": 1098.6,
+     "window": [
+      47.1,
+      1098.6,
+      985.8,
+      554.5
+     ]
+    }
+   ],
+   "seam": 1062.9999992799999,
+   "text": [],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "region",
+     "what": "1 % cut where the Instagram feed shows 4:5"
+    },
+    {
+     "level": "soft",
+     "code": "enlarged",
+     "kind": "picture",
+     "of": "picture",
+     "what": "the source's pixels are enlarged 2× (over 1.5×: soft)"
+    },
+    {
+     "level": "unmet",
+     "code": "no-room",
+     "kind": "text",
+     "of": "caption",
+     "what": "no free place for the 1 caption line"
+    }
+   ],
+   "hard": 0,
+   "soft": 2,
+   "unmet": [
+    "caption"
+   ],
+   "fullSize": true,
+   "textHeight": 24,
+   "ground": 0.183,
+   "faceHeight": 270,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 3,
+    "ground": 1.83,
+    "subject": 1.188,
+    "soft": 0.5,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 6.518,
+   "rank": [
+    0,
+    1,
+    0,
+    0,
+    6518,
+    0,
+    0
+   ],
+   "score": 0,
+   "why": [
+    "no hard problem",
+    "text without a place: caption",
+    "the source's pixels are enlarged 2×",
+    "the region is 900×720 px, its smallest text 24 px tall",
+    "18 % of the frame is ground",
+    "soft: region 1 % cut where the Instagram feed shows 4:5",
+    "cost 6.518 (enlargement +3, ground +1.83, subject +1.188, soft problems +0.5)"
+   ],
+   "behind": "behind the first because it leaves a need unmet"
+  },
+  {
+   "fit": "screen-whole",
+   "scale": 0.5625,
+   "left": 0,
+   "top": 389.3,
+   "zoom": 0.32,
+   "enlargement": 0.56,
+   "window": [
+    0,
+    389.3,
+    1080,
+    607.5
+   ],
+   "faceInFrame": [
+    [
+     393.8,
+     529.9,
+     253.1,
+     202.5
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "ink": [
+      120,
+      1410,
+      840,
+      90
+     ],
+     "lines": 1,
+     "font": 52,
+     "style": "cap",
+     "align": "center",
+     "band": "the six values given",
+     "lineBox": true
+    }
+   ],
+   "problems": [
+    {
+     "level": "unmet",
+     "code": "small",
+     "kind": "picture",
+     "of": "screen text",
+     "what": "the smallest text is 6.8 px tall in the frame, under the 24 px that read"
+    }
+   ],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [
+    "readable"
+   ],
+   "fullSize": true,
+   "textHeight": 6.8,
+   "circle": {
+    "box": [
+     60,
+     1148,
+     238,
+     238
+    ],
+    "d": 238,
+    "corner": "bottom-left",
+    "covers": 0,
+    "crop": [
+     280,
+     0,
+     720,
+     720
+    ],
+    "enlargement": 0.33,
+    "faceHeight": 116,
+    "of": "webcam",
+    "first": "bottom-left",
+    "size": 238
+   },
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 2.08× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.684,
+   "faceHeight": 203,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 6.84,
+    "subject": 7.969,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 14.809,
+   "rank": [
+    0,
+    1,
+    0,
+    0,
+    14809,
+    0,
+    0
+   ],
+   "score": 0,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the screen's smallest text does not read",
+    "the source's pixels are not enlarged (0.56×)",
+    "the region is 253×203 px, its smallest text 6.8 px tall",
+    "the webcam's circle (238 px) bottom-left",
+    "68 % of the frame is ground",
+    "cost 14.809 (ground +6.84, subject +7.969)"
+   ],
+   "behind": "behind the first because it leaves a need unmet"
+  }
+ ],
+ "screenPanel": {
+  "offered": false,
+  "width": "frame",
+  "code": "small",
+  "why": "the region at 2× takes the frame down to y 970, and the panel from there to the captions' top (416 px) holds the face at most 290 px tall (15 % of the frame) with its head inside the panel and its chin above the captions, under the 18 % of the frame's height (346 px) the face has under a screen in published Shorts; the circle stands for the webcam here (a region less tall leaves the panel its room)"
+ },
+ "asked": {
+  "frame": "9:16",
+  "platforms": [
+   "reels"
+  ]
+ }
+}
