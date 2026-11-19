@@ -9,6 +9,11 @@
 //                                             direction to read before writing source/staging.json
 //   node tools/short.mjs build <dir>          the HyperFrames project in <dir>/composition/; footage
 //                                             wider than the frame follows who speaks (tools/frame.mjs)
+//   node tools/short.mjs place <dir> [--raise head|mouth|full] [--type-top <px>] [--lift <s>:<px>]
+//                                             footage with people: where the type goes, from every
+//                                             face of every shot over time (agentitos' clips and
+//                                             layout); a list per shot and source/place.sheet.jpg,
+//                                             then the framing and the build again
 //   node tools/short.mjs check <dir> [t,…]    plays it and lists what a viewer would notice;
 //                                             pictures at the seconds named go to <dir>/stills/<t>.png
 //   node tools/short.mjs render <dir> <file.mp4>   the video, with HyperFrames
@@ -30,9 +35,13 @@ import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readVariables } from "./variables.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
+import { clipsTools } from "./lib/clips.mjs";
+import { layoutTool, pushed, liftsFor, placeArgs, chipRoom, usualTop, sheet } from "./lib/place.mjs";
 
 const TOOLS = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "platform", "out"];
+const VALUED = ["names", "colors", "title", "subtitle", "hook", "world", "aspect", "cta", "handle", "platform", "out", "raise", "type-top", "lift"];
+// the options of place, kept in source/place.json rather than with the settings of every step
+const PLACE = ["raise", "type-top", "lift"];
 
 function fail(message) {
   console.log(message);
@@ -54,6 +63,7 @@ function parse(args) {
 const source = (dir, file = "") => path.join(dir, "source", file);
 
 function settings(dir, opts) {
+  for (const k of PLACE) if (k in opts) fail(`--${k} belongs to short.mjs place.`);
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
   // shorts from before: the text mode is gone, every word is big
@@ -80,14 +90,20 @@ function footage(dir) {
 }
 
 // the footage cut to the short's frame, following who speaks (tools/frame.mjs): made when the
-// clip is wider than the frame, again when the clip or its words changed
+// clip is wider than the frame, again when the clip or its words changed, or when place raised
+// other shots than the framing has raised (source/place.json's lifts)
 const framedOf = (dir, s) => source(dir, `framed-${s.aspect.replace(":", "x")}.mp4`);
+const placed = (dir) => { try { return JSON.parse(fs.readFileSync(source(dir, "place.json"), "utf8")); } catch { return null; } };
+// the lifts a framing has, as [{ shot, px }]
+const framedLifts = (json) => { try { const f = JSON.parse(fs.readFileSync(json, "utf8")); const seen = new Map(); for (const w of f.windows || []) if (w.lift?.px) seen.set(w.shot, w.lift.px); return [...seen].map(([shot, px]) => ({ shot, px })); } catch { return []; } };
+const sameLifts = (a, b) => a.length === b.length && a.every((x) => b.some((y) => y.shot === x.shot && y.px === x.px));
 function frameFootage(dir, s) {
   const video = footage(dir), out = framedOf(dir, s), words = source(dir, "transcript.json");
   if (!video) return;
   const newer = (a, b) => fs.existsSync(a) && fs.statSync(a).mtimeMs >= fs.statSync(b).mtimeMs;
-  if (newer(out, video) && newer(out, words)) return;
-  node("frame.mjs", video, words, "--aspect", s.aspect, "--out", out);
+  const lifts = placed(dir)?.lifts || [];
+  if (newer(out, video) && newer(out, words) && sameLifts(lifts, framedLifts(out.replace(/\.mp4$/, ".json")))) return;
+  node("frame.mjs", video, words, "--aspect", s.aspect, "--out", out, ...(lifts.length ? ["--lift", lifts.map((l) => `${l.t}:${l.px}`).join(",")] : []));
 }
 
 function buildArgs(dir, s) {
@@ -97,6 +113,9 @@ function buildArgs(dir, s) {
   if (video) args.push("--video", video);
   for (const [k, flag] of [["names", "--speakers"], ["colors", "--colors"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
     ["world", "--world"], ["cta", "--cta"], ["handle", "--handle"], ["platform", "--platform"]]) if (s[k]) args.push(flag, s[k]);
+  // the type's top from the faces (short.mjs place); without it the band the footage gives
+  const p = placed(dir);
+  if (p?.top != null && video) args.push("--type-top", String(p.top));
   // no title: none on screen (build.mjs takes a bare --title as none, else the file's name)
   if (!s.title) args.push("--title");
   return args;
@@ -165,6 +184,97 @@ function build(dir, opts) {
   console.log(`${path.relative(process.cwd(), out) || out} is built. short.mjs check ${dir} finds what a viewer would notice.`);
 }
 
+// Where the type goes over footage with people: the framing's faces of every shot over time
+// (agentitos' clips: clips.mjs shots), as the short's push-in and punches show them, handed to
+// agentitos' layout (place.mjs text --text area): one top for the type of the whole short, each
+// shot's lift; the framing and the build again with them, a list per shot and a sheet.
+function place(dir, opts) {
+  project(dir);
+  const s = settings(dir, {});
+  const comp = compositionOf(dir, s), planFile = path.join(comp, "plan.json");
+  if (!fs.existsSync(planFile)) fail(`Nothing built yet: short.mjs build ${dir} first (place needs its framing and its phrases).`);
+  const file = source(dir, "place.json"), prev = placed(dir) || {};
+  const framedJson = framedOf(dir, s).replace(/\.mp4$/, ".json");
+  let plan = JSON.parse(fs.readFileSync(planFile, "utf8"));
+  if (!plan.video || plan.video.frame || !fs.existsSync(framedJson)) {
+    fs.rmSync(file, { force: true });
+    // a place of before no longer holds: built again without it
+    if (prev.top != null) build(dir, {});
+    console.log(!plan.video ? "This short has no footage: the type has the frame to itself, nothing to place."
+      : plan.video.frame ? "In a light world the footage stands in a frame above the type: no face reaches it, nothing to place."
+      : "No framing, so no faces are known (the footage has the frame's shape already, or there was no OpenRouter when it was framed): the type stays where the build set it. Look at the preview whether it lies on a face.");
+    return;
+  }
+  const clips = clipsTools(), layout = layoutTool();
+  if (!clips) fail("Placing the type needs agentitos' clips skill beside this one (or CLIPS_TOOLS naming its tools/ folder).");
+  if (!layout) fail("Placing the type needs agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
+  // what the agent fixed, given now or kept from before ("" gives one back)
+  const fixed = { ...(prev.fixed || {}) };
+  if (opts.raise !== undefined) { if (!["head", "mouth", "full", ""].includes(opts.raise)) fail("--raise is full (the default here: a shot goes up as far as the eyes stay below the apps' top bar), mouth (the eyes no higher than 27 % of the height) or head (never a head cut by the frame); \"\" gives back the default."); fixed.raise = opts.raise || undefined; }
+  if (opts["type-top"] !== undefined) { const v = Number(opts["type-top"]); if (opts["type-top"] !== "" && !(v > 0)) fail("--type-top is the y in px of the frame where the type starts, as 1150; \"\" lets place choose."); fixed.top = opts["type-top"] === "" ? undefined : v; }
+  if (opts.lift !== undefined) for (const v of String(opts.lift).split(",").filter(Boolean)) {
+    const m = v.match(/^(\d+(?:\.\d+)?):(\d+)$/);
+    if (!m) fail("--lift is <second>:<px>, a second of the short in the shot and how far its picture goes up (0: not at all), as 6.5:180.");
+    fixed.lifts = { ...(fixed.lifts || {}), [m[1]]: Number(m[2]) };
+  }
+  for (const k of Object.keys(fixed)) if (fixed[k] === undefined) delete fixed[k];
+  // the type keeps 15 % of the height above the safe box's bottom at least (layout's area.least)
+  const bottom = Math.round((plan.zones?.centred?.[3] ?? 1) * plan.height), lowest = Math.floor(bottom - 0.15 * plan.height);
+  if (fixed.top != null && (fixed.top > lowest || fixed.top < chipRoom(plan) + (plan.zones?.centred?.[1] ?? 0) * plan.height)) fail(`--type-top ${fixed.top} leaves the type no room: give a y from ${Math.ceil(chipRoom(plan) + (plan.zones?.centred?.[1] ?? 0) * plan.height)} to ${lowest} (the type keeps 15 % of the height above the apps' bottom at y ${bottom}).`);
+  const folder = source(dir, "place");
+  fs.mkdirSync(folder, { recursive: true });
+  const raw = path.join(folder, "framed-shots.json"), shotsFile = path.join(folder, "shots.json");
+  const r0 = spawnSync(process.execPath, [path.join(clips, "clips.mjs"), "shots", framedJson, raw], { encoding: "utf8" });
+  if (r0.status !== 0 || !fs.existsSync(raw)) fail(`✗ clips: ${(r0.stdout || r0.stderr).trim()}`);
+  const input = pushed(JSON.parse(fs.readFileSync(raw, "utf8")), plan);
+  fs.writeFileSync(shotsFile, JSON.stringify(input));
+  const shots = input.shots;
+  const lifts = Object.entries(fixed.lifts || {}).map(([t, px]) => {
+    const k = shots.findIndex((x) => Number(t) >= x.start && Number(t) < x.end);
+    if (k < 0) fail(`No shot at ${t} s: --lift takes a second of the short as source/place.sheet.jpg lists the shots.`);
+    return { shot: k, px };
+  });
+  const raise = fixed.raise || "full";
+  const args = placeArgs(plan, { folder, shots: shotsFile, raise, top: fixed.top, lifts, platforms: plan.zones?.platforms || [] });
+  const r = spawnSync(process.execPath, [layout, ...args], { encoding: "utf8" });
+  if (r.status !== 0) fail(`✗ layout: ${(r.stdout || r.stderr).trim()}`);
+  const text = JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8"));
+  const chip = chipRoom(plan), H = plan.height;
+  const want = liftsFor(text, shots).map((l, i) => ({ ...l, shot: text.shots.filter((x) => x.lift > 0)[i].shot }));
+  // where the faces leave the type where the footage alone sets it (no face, or none near it),
+  // nothing changes: the build stays the one without place, byte for byte
+  const top = text.area.lower > 0 || want.length || fixed.top != null ? +((text.area.top + chip) / H).toFixed(4) : null;
+  fs.writeFileSync(file, JSON.stringify({ by: "short.mjs place", top, area: text.area, raise, lifts: want, fixed }, null, 1) + "\n");
+  // the framing (where a lift changed) and the build again
+  if (top != null || prev.top != null) {
+    console.log(`Placing: the type from y ${Math.round((top ?? text.area.top / H + chip / H) * H)}${want.length ? `, ${want.map((l) => `shot ${l.shot + 1} raised ${l.px} px`).join(", ")}` : ""}; framing and building again …`);
+    build(dir, {});
+  }
+  plan = JSON.parse(fs.readFileSync(planFile, "utf8"));
+
+  // the list
+  const sec = (x) => Math.round(x * 10) / 10;
+  const a = text.area, usual = usualTop(plan);
+  const at = Math.round(a.top + chip);
+  console.log(`\nThe type: one place for the short, from y ${at} to ${Math.round(a.bottom)} (${Math.round(((a.bottom - at) / H) * 100)} % of the height${chip ? `, the name tag in the ${chip} px above it` : ""})${a.lower > 0 ? `, ${Math.round(a.lower)} px lower than the footage alone sets it (y ${usual}): the type is up to ${Math.round((a.lower / (a.bottom - usual + chip)) * 100)} % smaller, so that it keeps off the mouths` : ", where the footage alone sets it"}.`);
+  for (const x of text.shots) {
+    const on = x.touches.map((t) => `${t.who}: ${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")} (${t.from}–${t.to} s)`).join("; ");
+    console.log(`  ${x.fault ? "✗" : "·"} shot ${x.shot + 1}  ${x.start.toFixed(1)}–${x.end.toFixed(1)} s  ${x.lift ? `raised ${x.lift} px${x.eyes != null ? ` (the eyes at ${Math.round(x.eyes * 100)} % of the height at their highest)` : ""}` : "as framed"}: the type on ${on || "no face"}`);
+  }
+  // what is left on a mouth, nose or eyes, and what would avoid it; the notes of layout but its own
+  // sentence on the area (said above)
+  const floor = text.area.top >= text.area.least - 3;
+  for (const x of text.shots.filter((q) => q.fault)) {
+    const parts = [x.on.nose ? `nose or eyes for ${x.on.nose} s` : "", x.on.mouth ? `mouth for ${x.on.mouth} s` : "", x.on.lip ? `lower lip for ${x.on.lip} s` : ""].filter(Boolean).join(", ");
+    const who = [...new Set(x.touches.map((t) => t.who))].join(" and ");
+    const why = x.limit === "fixed" ? "as far as --lift fixed it" : x.limit === "eyes" ? "as far as the eyes stay below the apps' top bar" : x.limit === "eyeLine" ? "as far as the eyes stay below 27 % of the height (--raise mouth)" : x.limit === "head" ? "as far as the head stays whole (--raise head)" : "as far as the framing and the apps' bottom allow";
+    console.log(`✗ Shot ${x.shot + 1} (${x.start.toFixed(1)}–${x.end.toFixed(1)} s): the type lies on ${who}'s ${parts}${x.lift ? `, raised ${x.lift} px ${why}` : ""}${floor ? ", the type at its smallest" : ""}. What would avoid it: ${[raise !== "full" ? "--raise full" : "", fixed.top != null || !floor ? "a lower --type-top (smaller type)" : "", "a stretch of the episode without this shot"].filter(Boolean).join(", ")}.`);
+  }
+  for (const n of text.notes.filter((n) => !/^The type's area starts/.test(n))) console.log(`note: ${n}`);
+  const files = sheet(framedOf(dir, s), plan, text, shots, source(dir, "place.sheet.jpg"), { chip });
+  console.log(`${files.length ? `Look at ${files.join(", ")}: per shot its first, middle and last frame as the short shows it, the type's area in yellow (the name tag above the thin line), the faces in red, the mouth line in orange. ` : ""}Then short.mjs check ${dir}. To change it: --type-top <px> (where the type starts), --raise mouth|head (less of a head cut), --lift <second>:<px>; each is kept, "" gives it back.`);
+}
+
 function check(dir, times) {
   project(dir);
   const comp = compositionOf(dir, settings(dir, {}));
@@ -212,7 +322,8 @@ switch (step) {
   case "new": create(dir, arg, opts); break;
   case "brief": brief(dir, opts); break;
   case "build": build(dir, opts); break;
+  case "place": place(dir, opts); break;
   case "check": check(dir, arg); break;
   case "render": render(dir, arg); break;
-  default: fail("short.mjs new <dir> <clip> | brief <dir> | build <dir> | check <dir> [seconds,…] | render <dir> <file.mp4>");
+  default: fail("short.mjs new <dir> <clip> | brief <dir> | build <dir> | place <dir> [--raise …] [--type-top <px>] [--lift <s>:<px>] | check <dir> [seconds,…] | render <dir> <file.mp4>");
 }

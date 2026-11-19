@@ -30,6 +30,9 @@
 //                    from the footage (tools/burnin.mjs) – dark just above burned-in captions and
 //                    name tags, never above mid-frame (the face) nor below 60 % (room for the type)
 //   --video-dim x    darkness of the band, 0..1 (default 1 with burned-in text, else 0.85)
+//   --type-top f     where the type's top stands, a share of the frame's height (short.mjs place
+//                    decides it from the faces): the band goes with it; the band the footage alone
+//                    gives is kept in plan.video.shadeFound
 //   --llm-backend    claude-code (default: headless `claude -p` on your Claude subscription)
 //                    | api (Anthropic API key / `ant auth login`, billed per token)
 //   --staging-brief f   the agent running this build directs instead: write what it needs to read
@@ -220,11 +223,21 @@ if (VIDEO) {
   const burn = pair("video-shade") ? null : detectBurnIn(VIDEO);
   const textTop = Math.min(burn?.band?.[0] ?? 1, burn?.overlay ?? 1);
   const b = Math.min(0.6, Math.max(0.5, Math.min(0.6, textTop) - 0.012));
-  const shade = pair("video-shade") || [+(b - 0.12).toFixed(3), +b.toFixed(3)];
+  const found = pair("video-shade") || [+(b - 0.12).toFixed(3), +b.toFixed(3)];
   const burned = !!(burn?.band || burn?.overlay);
-  if (burn) console.error(`footage: ${burn.band ? `captions at ${Math.round(burn.band[0] * 100)}–${Math.round(burn.band[1] * 100)} %` : "no burned-in captions"}${burn.overlay ? `, graphics from ${Math.round(burn.overlay * 100)} %` : ""} → dark from ${Math.round(shade[1] * 100)} %`);
+  if (burn) console.error(`footage: ${burn.band ? `captions at ${Math.round(burn.band[0] * 100)}–${Math.round(burn.band[1] * 100)} %` : "no burned-in captions"}${burn.overlay ? `, graphics from ${Math.round(burn.overlay * 100)} %` : ""} → dark from ${Math.round(found[1] * 100)} %`);
+  // a top for the type from the faces (short.mjs place): the band moves with it, transparent 0.066
+  // of the height above the type and dark 0.054 below its top, as the footage's own band stands
+  // to its type (engine/type.js sets the type's top 0.55 of the way down the ramp)
+  const typeTop = typeof opt["type-top"] === "string" ? Number(opt["type-top"]) : null;
+  if (typeTop != null && !(typeTop > 0.1 && typeTop < 0.9)) { console.error(`--type-top is the type's top as a share of the frame's height, between 0.1 and 0.9, not ${opt["type-top"]}.`); process.exit(1); }
+  const shade = typeTop != null && !LIGHT_WORLDS.has(plan.world) ? [+(typeTop - 0.066).toFixed(4), +(typeTop + 0.054).toFixed(4)] : found;
+  if (shade !== found) {
+    console.error(`footage: the type from ${(typeTop * 100).toFixed(1)} % of the height (placed by the faces), dark from ${Math.round(shade[1] * 100)} %`);
+    if (burn?.band && shade[1] > burn.band[0] - 0.012) console.error(`footage: ⚠ the band now begins below the top of the burned-in captions (${Math.round(burn.band[0] * 100)} %): they show above the type`);
+  }
   plan.video = {
-    src: `assets/${path.basename(dst)}`, width: v.width, height: v.height, duration: +v.duration.toFixed(3), shade,
+    src: `assets/${path.basename(dst)}`, width: v.width, height: v.height, duration: +v.duration.toFixed(3), shade, ...(shade !== found ? { shadeFound: found, typeTop } : {}),
     dim: opt["video-dim"] != null ? Number(opt["video-dim"]) : burned || !burn ? 1 : 0.85,
     burnin: burn ? { captions: burn.band, graphics: burn.overlay ?? null } : undefined,
   };
