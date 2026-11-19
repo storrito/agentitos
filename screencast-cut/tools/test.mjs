@@ -589,3 +589,237 @@ test("without a HyperFrames CLI on the PATH, the version this skill was last tri
     fs.rmSync(none, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------------------------- another video over a keep
+// "show" (lib/show.mjs): another video plays instead of the recording over a keep's words, pauses
+// and hold; its long pauses cut; with "sound" its sound rises to its level by the last word. On
+// the made-up words above (a pause of 3.6 s after word 13) and a made-up video's ffprobe answer.
+import { showOf, showProblem, placeShows, soundPoints, RISE, FADE } from "./lib/show.mjs";
+import { writeComposition } from "./lib/composition.mjs";
+import { areas, fit } from "./lib/layout.mjs";
+
+const VIDEO_INFO = (duration, audio = true) => ({ duration, width: 1080, height: 1920, video: true, audio });
+// the screen moves all through the pause, so that without "show" it stays as a muted piece
+const movingPause = (_c, from, to) => (to > PAUSE[0] && from < PAUSE[1] ? [{ from: Math.max(from, PAUSE[0]), to: Math.min(to, PAUSE[1]) }] : []);
+const twoKeeps = (first = {}) => ({ keep: [{ words: "0-20", ...first }, { words: "21-25" }] });
+const keepEnd = (r, k) => { const ps = r.pieces.filter((p) => p.keep === k); return ps.at(-1).start + ps.at(-1).duration; };
+
+test("show: a keep's long pause is cut where the recording would have kept it moving; what follows starts where the keep ends", () => {
+  const without = plan(words, twoKeeps(), settings, voices, movingPause);
+  const withShow = plan(words, twoKeeps({ show: "result.mp4" }), settings, voices, movingPause);
+  assert.deepEqual(withShow.errors, []);
+  // without "show" the moving pause plays, muted; with it there is nothing of the recording to see
+  const muted = (r) => r.pieces.filter((p) => p.keep === 0 && p.mute && !p.hold && p.in < PAUSE[1] && p.out > PAUSE[0]);
+  assert.equal(muted(without).length, 1);
+  assert.equal(muted(withShow).length, 0);
+  assert.ok(withShow.removed.some((x) => x.kind === "pause" && x.from === words[13].end && x.to === words[14].start && x.moving.length === 0));
+  // the next keep starts where the show keep ends, earlier by exactly the pause it no longer plays
+  const shift = keepEnd(without, 0) - keepEnd(withShow, 0);
+  const next = (r) => r.pieces.filter((p) => p.keep === 1);
+  assert.ok(shift > 1, `the pause cut: ${shift}`);
+  next(withShow).forEach((p, i) => assert.ok(Math.abs(p.start + shift - next(without)[i].start) < 1e-9));
+  // where nothing moves in the pause, "show" changes no time at all: the same pieces, the same times
+  const still = plan(words, twoKeeps(), settings, voices), shown = plan(words, twoKeeps({ show: "result.mp4" }), settings, voices);
+  assert.deepEqual(shown.pieces.map((p) => [p.keep, +p.start.toFixed(6), +p.duration.toFixed(6), p.in, p.out]), still.pieces.map((p) => [p.keep, +p.start.toFixed(6), +p.duration.toFixed(6), p.in, p.out]));
+});
+
+test("show: the video plays over the keep's words, pauses and hold, from \"from\" on; a video shorter than the keep ends early and says what to do; a longer one is cut at the keep's end", () => {
+  const r = plan(words, twoKeeps({ show: { file: "result.mp4", from: 2 }, hold: 2 }), settings, voices, movingPause);
+  const ps = r.pieces.filter((p) => p.keep === 0), start = ps[0].start, end = keepEnd(r, 0);
+  assert.ok(ps.some((p) => p.hold), "the hold is a piece of the keep");
+  const long = placeShows(twoKeeps({ show: { file: "result.mp4", from: 2 }, hold: 2 }), r.pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(long.warnings, []);
+  assert.deepEqual(long.inserts, [], "no \"sound\": no track of its sound");
+  assert.equal(long.sources["show-1"].path, path.resolve("result.mp4"));
+  assert.equal(long.sources["show-1"].file, "show-1.mp4");
+  for (const p of ps) {
+    assert.equal(p.show.source, "show-1");
+    assert.ok(Math.abs(p.show.in - (2 + p.start - start)) < 1e-9, "its own time: from + the time into the keep");
+    assert.ok(Math.abs(p.show.until - end) < 1e-9, "up to the keep's end, its hold included");
+  }
+  assert.equal(r.pieces.filter((p) => p.keep === 1 && p.show).length, 0, "the next keep shows the recording");
+  // a video of 5 s from 2 s on has 3 s: it ends before the keep does, said with what to change
+  const ps2 = plan(words, twoKeeps({ show: { file: "result.mp4", from: 2 } }), settings, voices).pieces;
+  const short = placeShows(twoKeeps({ show: { file: "result.mp4", from: 2 } }), ps2, r.words, () => VIDEO_INFO(5));
+  assert.equal(short.warnings.length, 1);
+  assert.match(short.warnings[0], /^keep 1: result\.mp4 ends [\d.]+ s before the keep does \(from 2 s it has 3\.0 s\), .*: an earlier "from", a shorter "hold", or end the keep a word earlier$/);
+  assert.ok(ps2.filter((p) => p.keep === 0).every((p) => Math.abs(p.show.until - (ps2[0].start + 3)) < 1e-9));
+});
+
+test("show with sound: a track of its own whose level is a quarter under the first words, rises over the last 1.5 s of them to its level at the last word, holds, and goes out at its end (the composition's numbers)", () => {
+  const cut = twoKeeps({ show: { file: "result.mp4", sound: 0.8 }, hold: 2 });
+  const r = plan(words, cut, settings, voices, movingPause);
+  const shown = placeShows(cut, r.pieces, r.words, () => VIDEO_INFO(60));
+  assert.equal(shown.inserts.length, 1);
+  const i = shown.inserts[0], ps = r.pieces.filter((p) => p.keep === 0);
+  const last = r.words.filter((w) => w.start >= i.start - 0.01 && w.end <= i.start + i.duration + 0.01).at(-1);
+  assert.ok(Math.abs(i.spoken - (last.end - i.start)) < 1e-9, "the last word's end from the insert's start");
+  assert.ok(Math.abs(i.duration - (keepEnd(r, 0) - ps[0].start)) < 1e-9);
+  const n3 = (x) => +x.toFixed(3);
+  assert.deepEqual(soundPoints(i), [{ t: 0, v: 0.2 }, { t: n3(i.spoken - RISE), v: 0.2 }, { t: n3(i.spoken), v: 0.8 }, { t: n3(i.duration - FADE), v: 0.8 }, { t: n3(i.duration), v: 0 }]);
+  // in the composition: the sound's element over the keep, its volume's lane as above; the shown
+  // video plays at its own speed (no playback rate, no timelapse badge) while the recording runs faster
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "show-")), out = path.join(dir, "comp");
+  try {
+    fs.writeFileSync(path.join(dir, "result.mp4"), "made-up");
+    const sources = { screen: { file: "screen.mp4", width: 1920, height: 1080, offset: 0 }, webcam: { file: "webcam.mp4", width: 1280, height: 720, offset: 0 },
+      "show-1": { ...shown.sources["show-1"], path: path.join(dir, "result.mp4") } };
+    fs.mkdirSync(path.join(dir, "source"));
+    fs.writeFileSync(path.join(dir, "source", "screen.mp4"), "made-up");
+    const pieces = r.pieces.map((p) => ({ ...p, view: "screen", source: "screen", crop: [0, 0, 1, 1], rate: 1.16, lapse: 3 }));
+    const zone = { safe: [50, 200, 880, 1300], margins: { top: 200, bottom: 420, left: 50, right: 150 }, wide: [50, 200, 980, 700] };
+    writeComposition(out, { title: "t", width: 1080, height: 1920, fps: 30, pieces, sources, dir, voice: "voice.cut.m4a", camera: "camera.mp4", inserts: [{ ...i, audio: "show-1.m4a" }], areas: areas(1080, 1920, zone) });
+    const html = fs.readFileSync(path.join(out, "index.html"), "utf8");
+    const el = html.match(/<audio id="show-sound-1"[^>]*data-start="([\d.]+)" data-duration="([\d.]+)"[^>]*data-automation="([^"]+)"/);
+    assert.ok(el, "the sound's element");
+    assert.equal(+el[1], +i.start.toFixed(4));
+    assert.ok(Math.abs(+el[2] - i.duration) < 0.0002);
+    assert.deepEqual(JSON.parse(el[3].replace(/&quot;/g, '"').replace(/&amp;/g, "&")).lanes[0].points, soundPoints(i));
+    const videos = [...html.matchAll(/<video id="v\d+" class="clip" src="assets\/show-1\.mp4"[^>]*>/g)].map((m) => m[0]);
+    assert.equal(videos.length, ps.length);
+    assert.ok(videos.every((v) => !/data-playback-rate/.test(v)), "at its own speed");
+    assert.match(videos[0], /data-media-start="0"/);
+    assert.equal([...html.matchAll(/class="clip badge"/g)].length, pieces.filter((p) => p.keep !== 0).length, "a timelapse's badge, never over another video");
+    assert.ok(fs.existsSync(path.join(out, "assets", "show-1.mp4")), "the video linked into assets");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("show's sound: a keep without words has it up at once; a video that ends before the last word has risen by its fade-out", () => {
+  assert.deepEqual(soundPoints({ sound: 0.6, duration: 4, spoken: 0 }), [{ t: 0, v: 0 }, { t: 0.2, v: 0.6 }, { t: 3.75, v: 0.6 }, { t: 4, v: 0 }]);
+  assert.deepEqual(soundPoints({ sound: 0.8, duration: 3, spoken: 5 }), [{ t: 0, v: 0.2 }, { t: 1.25, v: 0.2 }, { t: 2.75, v: 0.8 }, { t: 3, v: 0 }]);
+  // every point after the one before it, so the lane never runs back
+  for (const x of [{ sound: 1, duration: 0.4, spoken: 0.35 }, { sound: 1, duration: 1, spoken: 0.9 }, { sound: 0.5, duration: 10, spoken: 1 }]) {
+    const pts = soundPoints(x);
+    assert.ok(pts.every((q, j) => j === 0 || q.t > pts[j - 1].t), JSON.stringify(pts));
+    assert.equal(pts.at(-1).v, 0);
+  }
+});
+
+test("show: a missing file, a file that is no video, a sound asked of a video without one, and a \"from\" or \"sound\" out of range each stop the build with one sentence that says what to do", () => {
+  const keep = (show) => ({ words: "0-5", show });
+  const say = (show, info) => showProblem(keep(show), 2, info);
+  assert.equal(say(undefined), null);
+  assert.equal(showProblem({ words: "0-5" }, 0, null), null, "a keep without show");
+  assert.equal(say({ file: "a.mp4", from: 1, sound: 0.8 }, VIDEO_INFO(10)), null);
+  const cases = [
+    [say({ from: 2 }), /names the video to play over the keep's words instead of the recording: "show": "uploads\/result\.mp4"/],
+    [say("uploads/gone.mp4", { missing: true }), /there is no uploads\/gone\.mp4; give the video's path from the working directory/],
+    [say("notes.txt", { error: "Invalid data found when processing input" }), /notes\.txt is no video ffprobe can read \(Invalid data found when processing input\); give a video file/],
+    [say("song.mp3", { duration: 30, video: false, audio: true }), /song\.mp3 has no picture \(a sound or a still\); give a video file/],
+    [say({ file: "a.mp4", from: 12 }, VIDEO_INFO(10)), /"from" is the second of a\.mp4 to start at, 0–10\.0; set it within that or leave it out/],
+    [say({ file: "a.mp4", sound: 2 }, VIDEO_INFO(10)), /"sound" is the level of its sound, 0–1 .*; leave it out for none/],
+    [say({ file: "story.mp4", sound: 0.8 }, VIDEO_INFO(10, false)), /story\.mp4 has no sound; leave "sound" out, or ask the person for the file with the sound/],
+  ];
+  for (const [said, re] of cases) {
+    assert.match(said, /^✗ keep 3: "show"/);
+    assert.match(said, re);
+    assert.equal(said.split(/[.;:]\s+(?=[A-Z])/).length, 1, `one sentence: ${said}`);
+  }
+  assert.deepEqual(showOf({ show: "x.mp4" }), { file: "x.mp4" });
+});
+
+test("show on a keep that names a face view, a zoom or a layout: the shown video wins, those are left out, said in a sentence; the circle stays unless \"circle\": false", () => {
+  const cut = { keep: [{ words: "0-20", view: "face", layout: "crop 4:5", show: "result.mp4" }, { words: "21-25", zoom: [0.1, 0.1, 0.5, 0.5], show: "clip.mp4" }] };
+  const r = plan(words, cut, settings, voices);
+  const shown = placeShows(cut, r.pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(shown.notes, [
+    `! keep 1: "show" plays result.mp4 over the whole keep, so its "view": "face" and "layout" are left out (the shown video is the keep's picture); to see the face too, give it a keep of its own without "show".`,
+    `! keep 2: "show" plays clip.mp4 over the whole keep, so its "zoom" is left out (the shown video is the keep's picture); to see the zoom too, give it a keep of its own without "show".`,
+  ]);
+  // drawn: the shown video whole, never the webcam's face picture or the zoom's crop; the circle beside it
+  const sources = { webcam: { width: 1280, height: 720, offset: 0, face: [0.388, 0.202, 0.614, 0.685] }, screen: { width: 1920, height: 1080, offset: 0 }, ...shown.sources };
+  const zone = { safe: [50, 200, 880, 1300], margins: { top: 200, bottom: 420, left: 50, right: 150 }, wide: [50, 200, 980, 700] };
+  const a = areas(1080, 1920, zone);
+  const face = { ...r.pieces[0], view: "face", source: "webcam", picture: { fit: "crop 4:5", scale: 1.875, left: -669.4, top: 270, window: [0, 285, 1080, 1350] } };
+  const zoomed = { ...r.pieces.find((p) => p.keep === 1), view: "screen", source: "screen", crop: [0.1, 0.1, 0.5, 0.5] };
+  for (const p of [face, zoomed]) {
+    const [s] = shots([p], sources, 1080, 1920, a);
+    assert.equal(s.layers[0].source, p.keep === 0 ? "show-1" : "show-2");
+    assert.deepEqual(s.layers[0].crop, [0, 0, 1, 1]);
+    assert.deepEqual(s.layers[0].box, fit(a.tall, 1080 / 1920), "a tall video beside the circle, as a phone's screen");
+    assert.ok(s.layers.some((l) => l.pip), "the circle");
+    const [solo] = shots([{ ...p, pip: false }], sources, 1080, 1920, a);
+    assert.ok(!solo.layers.some((l) => l.pip));
+    assert.deepEqual(solo.layers[0].box, fit(a.whole, 1080 / 1920), "without the circle: the frame's height above the captions");
+  }
+});
+
+// --------------------------------------------------------------------- the whole phone, the label
+// A phone's screen shown whole without the circle takes the frame's height above the captions,
+// under the apps' bar and buttons too. Made-up zones per frame (the skill takes the real ones from
+// platform-zones); main's areas for them, pinned, so that every other shot keeps its numbers.
+const ZONES = {
+  "9:16": [1080, 1920, { safe: [50, 200, 880, 1300], margins: { top: 200, bottom: 420, left: 50, right: 150 }, wide: [50, 200, 980, 700] }],
+  "4:5": [1080, 1350, { safe: [50, 50, 980, 1200], margins: { top: 50, bottom: 100, left: 50, right: 50 } }],
+  "1:1": [1080, 1080, { safe: [50, 50, 980, 930], margins: { top: 50, bottom: 100, left: 50, right: 50 } }],
+  "16:9": [1920, 1080, { safe: [100, 100, 1720, 830], margins: { top: 100, bottom: 150, left: 100, right: 100 } }],
+};
+const MAIN_AREAS = {"9:16":{"content":[[50,200,880,798],[0,200,1080,700]],"beside":[[312,200,618,1060]],"solo":[[50,200,880,1060],[0,200,1080,700]],"bleed":[0,0,1080,1260],"tall":[312,200,618,1060],"pip":[50,1022,238],"label":[50,200]},"9:16 labels":{"content":[[50,294,880,704],[0,294,1080,606]],"beside":[[312,294,618,966]],"solo":[[50,294,880,966],[0,294,1080,606]],"bleed":[0,0,1080,1260],"tall":[312,294,618,966],"pip":[50,1022,238],"label":[50,200]},"4:5":{"content":[[0,247,1080,763]],"solo":[[0,50,1080,960]],"bleed":[0,0,1080,1010],"tall":[50,247,980,763],"pip":[857,50,173],"label":[50,50]},"4:5 labels":{"content":[[0,247,1080,763]],"solo":[[0,144,1080,866]],"bleed":[0,0,1080,1010],"tall":[50,247,980,763],"pip":[857,50,173],"label":[50,50]},"1:1":{"content":[[0,247,1080,493]],"solo":[[0,50,1080,690]],"bleed":[0,0,1080,740],"tall":[50,247,980,493],"pip":[857,50,173],"label":[50,50]},"1:1 labels":{"content":[[0,247,1080,493]],"solo":[[0,144,1080,596]],"bleed":[0,0,1080,740],"tall":[50,247,980,493],"pip":[857,50,173],"label":[50,50]},"16:9":{"content":[[0,100,1920,676]],"solo":[[0,100,1920,676]],"bleed":[0,0,1920,776],"tall":[100,100,1480,676],"pip":[1604,100,216],"label":[100,100]},"16:9 labels":{"content":[[0,100,1920,676]],"solo":[[0,100,1920,676]],"bleed":[0,0,1920,776],"tall":[100,194,1480,582],"pip":[1604,100,216],"label":[100,100]}};
+const PHONE = { width: 1170, height: 2532, offset: 0 };
+const phonePiece = (extra = {}) => ({ view: "phone-screen", source: "phone-screen", start: 0, duration: 3, in: 0, out: 3, crop: [0, 0, 1, 1], pip: false, ...extra });
+const round1 = (b) => b.map((v) => Math.round(v));
+
+test("the whole phone without the circle takes the frame's height above the captions in 9:16, 4:5, 1:1 and 16:9 (gap to gap), centred, larger than in the safe box; every other area is main's", () => {
+  // main's in the safe box's areas: 9:16 490 × 1060, 4:5 444 × 960, 1:1 319 × 690, 16:9 312 × 676
+  const want = { "9:16": [254, 24, 571, 1236], "4:5": [312, 24, 456, 986], "1:1": [375, 24, 331, 716], "16:9": [786, 24, 347, 752] };
+  for (const [f, [w, h, z]] of Object.entries(ZONES)) {
+    const short = Math.min(w, h), gap = Math.round(short * 0.022);
+    for (const labels of [false, true]) {
+      const a = areas(w, h, z, { captions: true, labels });
+      const { whole, wholeLabelled, ...rest } = a;
+      assert.deepEqual(rest, MAIN_AREAS[`${f}${labels ? " labels" : ""}`], `${f}${labels ? " with labels" : ""}: main's areas`);
+      assert.deepEqual(whole, [0, gap, w, a.bleed[3] - gap], `${f}: from a gap below the frame's top to a gap above the captions' band`);
+      const top = z.safe[1] + Math.round(short * 0.065) + gap;
+      assert.deepEqual(wholeLabelled, labels ? [0, top, w, a.bleed[3] - top] : whole, `${f}: below the label`);
+    }
+    const a = areas(w, h, z, { captions: true });
+    const [s] = shots([phonePiece()], { "phone-screen": PHONE }, w, h, a);
+    const box = round1(s.layers[0].box);
+    assert.deepEqual(box, want[f], `${f}: the whole phone`);
+    assert.ok(Math.abs(box[0] + box[2] / 2 - w / 2) <= 1, "centred across");
+    const mainBox = fit([a.tall, ...a.solo], PHONE.width / PHONE.height);
+    assert.ok(box[3] > mainBox[3], `${f}: ${box[3]} > ${mainBox[3]}`);
+  }
+});
+
+test("every other shot keeps main's numbers: a screen with and without the circle, the whole screen, a phone with the circle, a zoomed phone, the face, in each frame with and without labels", () => {
+  const MAIN = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "test-shots.main.json"), "utf8"));
+  const sources = { "phone-screen": PHONE, webcam: { width: 1280, height: 720, offset: 0, face: [0.388, 0.202, 0.614, 0.685] }, screen: { width: 1920, height: 1080, offset: 0 } };
+  const base = { start: 0, duration: 3, in: 0, out: 3 };
+  const pieces = [
+    { ...base, view: "screen", source: "screen", crop: [0.2, 0.2, 0.6, 0.5] },
+    { ...base, view: "screen", source: "screen", crop: [0.2, 0.2, 0.6, 0.5], pip: false },
+    { ...base, view: "screen", source: "screen", crop: [0, 0, 1, 1] },
+    { ...base, view: "phone-screen", source: "phone-screen", crop: [0, 0, 1, 1] },
+    { ...base, view: "phone-screen", source: "phone-screen", crop: [0, 0.1, 1, 0.9], pip: false },
+    { ...base, view: "face", source: "webcam" },
+  ];
+  for (const [f, [w, h, z]] of Object.entries(ZONES)) for (const labels of [false, true]) {
+    const key = `${f}${labels ? " labels" : ""}`;
+    const got = shots(pieces, sources, w, h, areas(w, h, z, { captions: true, labels }), labels ? [{ text: "01 · A long step title", start: 0, duration: 3 }] : []).map((s) => s.layers);
+    assert.deepEqual(JSON.parse(JSON.stringify(got)), MAIN[key], key);
+  }
+});
+
+test("a label over the whole phone: where it would lie on the phone's screen the phone starts below it, as large as in the safe box (never smaller than main's); where it does not meet the phone (16:9), or no label is on, the phone keeps the frame's height", () => {
+  for (const [f, [w, h, z]] of Object.entries(ZONES)) {
+    const a = areas(w, h, z, { captions: true, labels: true });
+    const label = { text: "01 · Upload", start: 0, duration: 3 };
+    const [s] = shots([phonePiece()], { "phone-screen": PHONE }, w, h, a, [label]);
+    const box = s.layers[0].box, size = Math.round(Math.min(w, h) * 0.036);
+    const [lx, ly] = a.label, lw = label.text.length * size * 0.75 + 44, lh = size * 1.25 + 24;
+    const meets = (b) => lx < b[0] + b[2] && b[0] < lx + lw && ly < b[1] + b[3] && b[1] < ly + lh;
+    assert.ok(!meets(box), `${f}: the label clear of the phone (${round1(box)})`);
+    // main's phone in a cut with labels: the safe box's areas, below the label
+    const mainBox = fit([a.tall, ...a.solo], PHONE.width / PHONE.height);
+    assert.ok(box[3] >= mainBox[3] - 0.01, `${f}: ${box[3]} ≥ main's ${mainBox[3]}`);
+    const [free] = shots([phonePiece()], { "phone-screen": PHONE }, w, h, a, [{ ...label, start: 3, duration: 2 }]);
+    assert.deepEqual(free.layers[0].box, fit(a.whole, PHONE.width / PHONE.height), `${f}: no label on: the frame's height`);
+    if (f === "16:9") assert.deepEqual(box, free.layers[0].box, "16:9: the label in the corner does not meet the phone in the middle");
+    else assert.ok(box[1] >= ly + lh, `${f}: below the label`);
+  }
+  // the same for another video shown whole without the circle ("show"), a tall one
+  const [w, h, z] = ZONES["9:16"], a = areas(w, h, z, { captions: true, labels: true });
+  const [s] = shots([{ ...phonePiece({ view: "screen", source: "screen" }), show: { source: "show-1", in: 0, until: 3 } }], { "show-1": PHONE, screen: { width: 1920, height: 1080, offset: 0 } }, w, h, a, [{ text: "01 · Upload", start: 0, duration: 3 }]);
+  assert.deepEqual(s.layers[0].box, fit([a.tall, ...a.solo, a.wholeLabelled], PHONE.width / PHONE.height));
+});
