@@ -21,6 +21,7 @@ import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { alike, solve as solveAny } from "./lib/solve.mjs";
 import { textOverTime, MOUTH } from "./lib/placed.mjs";
+import { areaOverTime } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 import { besideSolve } from "./lib/beside.mjs";
 import { renderBeside } from "./lib/beside-page.mjs";
@@ -1404,6 +1405,74 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     fs.writeFileSync(file, JSON.stringify({ shots: [{ start: 0, end: 2, faces: [{ who: "A" }] }] }));
     r = cli("text", dir, "--frame", "9:16", "--shots", file);
     ok(r.status === 1 && /"track"/.test(r.stderr), r.stderr);
+  });
+}
+
+console.log("\nLarge type in one area over a placed picture (text --text area): faces over time");
+{
+  const Z9 = askZones("9:16"), C = Z9.centred, bottom = C[1] + C[3], H = 1920, least = bottom - DEFAULTS.area.least * H;
+  // a face held still for a shot: its box and its eyes, nose and mouth (feat)
+  const still = (box, feat, a, b, who = "A") => ({ who, track: Array.from({ length: Math.round((b - a) * 10) + 1 }, (_, i) => ({ t: +(a + i / 10).toFixed(2), box, feat })) });
+  const shot = (a, b, faces, room = { free: 0 }) => ({ start: a, end: b, faces, room });
+  const mouthLine = (feat) => feat[1] + feat[3] * 1.15;
+  const usual = 1025;
+  t("a face high above it: the area stands at the caller's usual top, nothing raised, on no face", () => {
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 5)])], area: { top: usual } });
+    ok(r.area.top === usual && r.area.lower === 0 && r.area.bottom === bottom, JSON.stringify(r.area));
+    ok(r.shots[0].lift === 0 && !r.shots[0].touches.length && !r.conflicts.length, JSON.stringify(r.shots[0]));
+    return `y ${r.area.top}–${r.area.bottom}`;
+  });
+  t("a close-up whose mouth reaches into the usual area: the area goes lower, just below the mouth line (an open mouth's room included), before any shot is raised; the chin under it is said, not a fault", () => {
+    const feat = [380, 560, 320, 420];
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [still([250, 250, 580, 900], feat, 0, 5)])], area: { top: usual } });
+    ok(r.area.top >= mouthLine(feat) && r.area.top < mouthLine(feat) + 0.006 * H, `top ${r.area.top}, the mouth line ${mouthLine(feat)}`);
+    ok(r.shots[0].lift === 0 && !r.conflicts.length && r.shots[0].on.chin > 4.9, JSON.stringify(r.shots[0]));
+    ok(r.notes.some((n) => /chin or neck for 5 s, below the mouth/.test(n)) && r.notes.some((n) => /px below its usual top/.test(n)), r.notes.join(" | "));
+    return `lowered ${r.area.lower} px`;
+  });
+  t("a mouth below the smallest area's top: the area at its least (area.least of the height), the shot raised once by its lowest moment as far as the mouth needs (raise full); with raise mouth the eyes stop it at the eye line and what is left is a ✗ that names --raise full", () => {
+    // the eyes at 29 % of the height, the mouth line (an open mouth's room in it) at 65 % and 68 %
+    const feat = (dy) => [380, 560 + dy, 320, 600], box = (dy) => [250, 300 + dy, 580, 1000];
+    const moving = { who: "A", track: Array.from({ length: 41 }, (_, i) => { const dy = i % 10 < 5 ? 0 : 60; return { t: i / 10, box: box(dy), feat: feat(dy) }; }) };
+    const full = areaOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], area: { top: usual }, raise: "full" });
+    near(full.area.top, least, 0.5, "the area's top");
+    near(full.shots[0].lift, Math.ceil(mouthLine(feat(60)) - full.area.top), 1, "lift by the lowest moment");
+    ok(!full.conflicts.length && full.shots[0].on.mouth === 0 && full.shots[0].on.lip === 0, JSON.stringify(full));
+    const mouth = areaOverTime({ zones: Z9, shots: [shot(0, 4, [moving])], area: { top: usual } });
+    near(mouth.shots[0].lift, Math.floor(560 - DEFAULTS.eyeLine * H), 1, "lift as far as the eye line");
+    ok(mouth.shots[0].fault && mouth.conflicts.some((c) => /Shot 1 .*lies on A's (mouth|lower lip).* --raise full/.test(c)), mouth.conflicts.join(" | "));
+    return `raised ${full.shots[0].lift} px (full), ${mouth.shots[0].lift} px (mouth)`;
+  });
+  t("two shots that disagree: one area for both, only the close-up raised; a wide shot shown whole is never raised and its face under the area is a ✗", () => {
+    const close = still([250, 380, 580, 960], [380, 700, 320, 420], 4, 9, "B");
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([390, 250, 300, 380], [450, 390, 180, 180], 0, 4)]), shot(4, 9, [close])], area: { top: usual }, raise: "full" });
+    ok(r.shots[0].lift === 0 && r.shots[1].lift > 0 && !r.conflicts.length, JSON.stringify(r.shots.map((s) => [s.lift, s.on])));
+    const whole = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual }, raise: "full" });
+    ok(whole.shots[0].lift === 0 && whole.conflicts.length === 1 && !/--raise/.test(whole.conflicts[0]), whole.conflicts.join(" | "));
+    return `top ${r.area.top}, raised ${r.shots[1].lift} px`;
+  });
+  t("returns of one close-up stand at one height, that of the one that needs most", () => {
+    const a = still([250, 380, 580, 960], [380, 700, 320, 420], 0, 3), b = still([250, 400, 580, 960], [380, 720, 320, 420], 6, 9);
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 3, [a]), shot(3, 6, [still([390, 250, 300, 380], [450, 390, 180, 180], 3, 6, "B")]), shot(6, 9, [b])], area: { top: usual }, raise: "full" });
+    ok(r.shots[0].lift === r.shots[2].lift && r.shots[0].lift > 0, JSON.stringify(r.shots.map((s) => s.lift)));
+  });
+  t("a clip without a face: the usual top, said as no-face", () => {
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [])], area: { top: usual } });
+    ok(r.area.top === usual && r.area.where === "no-face" && !r.notes.length, JSON.stringify(r.area));
+  });
+  t("the command: --text area writes text.json and a list; it stands alone, its top inside what the area may be, its bottom above the apps' text", () => {
+    const dir = path.join(OUT, "area"), shots = path.join(OUT, "area-shots.json");
+    fs.writeFileSync(shots, JSON.stringify({ shots: [shot(0, 4, [still([250, 380, 580, 960], [380, 700, 320, 420], 0, 4)])] }));
+    const r = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--area-top", "1025", "--raise", "full");
+    ok(r.status === 0 && /the type: one area for the clip, x \d+–\d+, y \d+–1440/.test(r.stdout) && /shot 1 .*raised \d+ px/.test(r.stdout) && fs.existsSync(path.join(dir, "text.json")), r.stdout + r.stderr);
+    const both = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--text", "caption");
+    ok(both.status !== 0 && /--text area stands alone/.test(both.stdout + both.stderr), both.stdout + both.stderr);
+    const top = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--top", "1300");
+    ok(top.status !== 0 && /a top of 1300 is outside what the area may be/.test(top.stdout + top.stderr), top.stdout + top.stderr);
+    const low = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "area", "--area-bottom", "1600");
+    ok(low.status !== 0 && /--area-bottom 1600 is below the safe box's bottom/.test(low.stdout + low.stderr), low.stdout + low.stderr);
+    const capt = cli("text", dir, "--frame", "9:16", "--shots", shots, "--text", "caption", "--top", "1100");
+    ok(capt.status !== 0 && /--top belongs to --text area/.test(capt.stdout + capt.stderr), capt.stdout + capt.stderr);
   });
 }
 

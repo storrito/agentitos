@@ -41,6 +41,12 @@
 //        given every face over time; one place for the captions of the whole clip, how far each
 //        shot's picture is to be raised to clear it, the hook's place over its first seconds,
 //        and what still lies on a face, into <folder>/text.json (lib/placed.mjs)
+//   node place.mjs text <folder> --frame 9:16 --shots <shots.json> --text area [--area-top <px>] [--area-bottom <px>]
+//                  [--top <px>] [--lift <shot>:<px>]… [--raise head|mouth|full] [--platform …] [--json]
+//        large type (kinetic type, phrase after phrase across the safe box's width) instead of
+//        captions: one area for the clip from the safe box's bottom (or --area-bottom) up, never
+//        higher than --area-top (where the caller sets its type without faces), its top below the
+//        faces' mouths, the shots raised where that is not enough (lib/area.mjs)
 //
 // Boxes are x,y,w,h in px of the source: a face from the hairline to the chin and from cheek to
 // cheek. Every --face, --face-at, --face-track and --region belongs to the --source before it.
@@ -57,6 +63,7 @@ import { renderPage } from "./lib/page.mjs";
 import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
 import { textOverTime, stillsText } from "./lib/placed.mjs";
+import { areaOverTime } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
 import { besideSolve, printBeside } from "./lib/beside.mjs";
 import { areaFile, areaOfStyle } from "./lib/caption-area.mjs";
@@ -80,7 +87,7 @@ const OPTIONS = {
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
   captions: ["candidate", "json"],
-  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "set", "json"],
+  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "area-top", "area-bottom", "top", "set", "json"],
 };
 function parseArgs(cmd, argv) {
   const o = { _: [], order: [] };
@@ -150,7 +157,8 @@ function parseNeeds(list) {
     const [role, n] = String(t).split(":");
     if (role === "caption" || role === "captions") return { role: "caption", lines: Math.max(1, Number(n) || 1) };
     if (role === "hook" && (n === undefined || n === "text" || n === "card")) return { role: "hook", ...(n ? { kind: n } : {}) };
-    fail(`--text is caption (one line of captions), caption:2 (two), hook (a short text in the middle, else a card at the top), hook:text or hook:card, not "${t}".`);
+    if (role === "area" && n === undefined) return { role: "area" };
+    fail(`--text is caption (one line of captions), caption:2 (two), hook (a short text in the middle, else a card at the top), hook:text or hook:card, or (text over a clip) area (large type in one area from the safe box's bottom up), not "${t}".`);
   });
 }
 const num = (v) => (v === "true" ? true : v === "false" ? false : Number.isFinite(Number(v)) ? Number(v) : v);
@@ -514,6 +522,7 @@ function cmdCaptions(o) {
 
 function cmdText(o) {
   const usage = `${self()} text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] [--platform reels,tiktok] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>] [--raise head|mouth|full] [--json]
+  large type instead of captions: --text area [--area-top <px>] [--area-bottom <px>] [--top <px>] [--lift <shot>:<px>] [--raise …]
   shots.json: {"shots": [{"start": 0, "end": 4.2, "faces": [{"who": "A", "track": [{"t": 0, "box": [x, y, w, h]}, …]}], "room": {"free": 0}}, …], "hook": {"start": 0, "end": 3}}
   (boxes in px of the frame as the picture stands; room: how far a shot's picture may be raised, null where not at all)`;
   const [folder] = o._;
@@ -525,7 +534,10 @@ function cmdText(o) {
   const goodBox = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] > 0 && b[3] > 0;
   if (!Array.isArray(shots) || !shots.length || shots.some((s) => !Number.isFinite(s.start) || !(s.end > s.start) || !Array.isArray(s.faces) || s.faces.some((f) => !Array.isArray(f.track) || f.track.some((m) => !Number.isFinite(m.t) || !goodBox(m.box)))))
     fail(`--shots ${o.shots}: every shot needs "start" < "end" in seconds and "faces", each a "track" of {"t": seconds, "box": [x, y, w, h]} in px of the frame (no face: an empty list).`);
-  const needs = parseNeeds(o.text.length ? o.text : ["caption"]).map((n) => {
+  const asked = parseNeeds(o.text.length ? o.text : ["caption"]);
+  if (asked.some((n) => n.role === "area")) return textArea(o, folder, shots, asked);
+  for (const k of ["area-top", "area-bottom", "top"]) if (o[k] !== undefined) fail(`--${k} belongs to --text area (large type in one area).`);
+  const needs = asked.map((n) => {
     if (n.role !== "hook") return n;
     const h = input.hook;
     if (!h || !Number.isFinite(h.start) || !(h.end > h.start)) fail(`--text hook needs "hook": {"start": seconds, "end": seconds} in ${o.shots}: when the hook is shown, on the shots' clock.`);
@@ -573,6 +585,45 @@ function cmdText(o) {
   console.log(`${file}: for agentitos' captions ${c ? Object.entries(c.options).map(([k, v]) => `--${k} ${v}`).join(" ") : "(no captions)"}; each shot's lift for the framing. The choice is yours: --caption-y, --font-size and --lift <shot>:<px> fix one, and the rest is placed around it.`);
 }
 
+// --text area: large type in one area for the whole clip (lib/area.mjs), with its own list
+function textArea(o, folder, shots, needs) {
+  if (needs.length > 1) fail(`--text area stands alone: large type takes the area that captions or a hook would take; place those with another run.`);
+  if (o["caption-y"] !== undefined || o["font-size"] !== undefined) fail(`--caption-y and --font-size are the captions'; for --text area fix the area's top with --top <px>.`);
+  const px = (k) => { if (o[k] === undefined) return undefined; const v = Number(o[k]); if (!(v > 0)) fail(`--${k} is a y in px of the frame, as 1025.`); return v; };
+  const lifts = {};
+  for (const v of o.lift) {
+    const m = String(v).match(/^(\d+):(\d+)$/);
+    if (!m || +m[1] < 1 || +m[1] > shots.length) fail(`--lift is <shot>:<px>, the shot counted from 1 (of ${shots.length}) and how far its picture is raised, as 3:120 (3:0 not at all).`);
+    lifts[+m[1] - 1] = +m[2];
+  }
+  if (o.raise !== undefined && !["head", "mouth", "full", "moderate"].includes(o.raise)) fail(`--raise is head (never a head cut by the frame), mouth (the default: past the head's top for a mouth, the eyes no higher than 27 % of the height) or full (as far as the eyes stay below the apps' top bar).`);
+  const platforms = platformList(o.platform);
+  let res;
+  try {
+    const Z = askZones(o.frame, platforms);
+    const bottom = px("area-bottom");
+    if (bottom !== undefined && bottom > Z.safe[1] + Z.safe[3] + 0.5) fail(`--area-bottom ${bottom} is below the safe box's bottom (y ${Z.safe[1] + Z.safe[3]}), where the apps lay their own text: give ${Z.safe[1] + Z.safe[3]} or less.`);
+    res = areaOverTime({ zones: Z, shots, area: { top: px("area-top"), bottom }, fixed: { top: px("top"), lifts }, raise: o.raise || "mouth",
+      set: Object.fromEntries(o.set.map((x) => { const i = x.indexOf("="); if (i < 1) fail(`--set is key=value, as area.least=0.12.`); return [x.slice(0, i), num(x.slice(i + 1))]; })) });
+  } catch (e) { fail(e.message); }
+  res.asked = { frame: o.frame, platforms, raise: o.raise || "mouth", ...(o.top !== undefined ? { top: Number(o.top) } : {}), lifts };
+  const file = path.join(folder, "text.json");
+  try { fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(file, JSON.stringify(res, null, 1)); } catch (e) { fail(`${file} cannot be written (${e.code || e.message}): name a folder of yours.`); }
+  if (o.json) return console.log(JSON.stringify(res, null, 1));
+  const a = res.area, s1 = (v) => Math.round(v * 10) / 10;
+  console.log(`${res.frame} for ${res.platforms.join(", ")}, ${plural(shots.length, "shot")}`);
+  console.log(`the type: one area for the clip, ${boxText(a.box)} (${Math.round(a.share * 100)} % of the height${a.lower > 0 ? `, its top ${Math.round(a.lower)} px below the usual ${Math.round(a.usual)}` : ", its usual top"}); on a mouth, nose or eyes ${s1(a.seconds.nose + a.seconds.mouth + a.seconds.lip)} s, on a chin or neck ${a.seconds.chin} s${a.lifted ? `, ${plural(a.lifted, "shot")} raised for it` : ""}`);
+  for (const s of res.shots) {
+    const on = s.touches.map((t) => `${t.who} ${t.from}–${t.to} s (${[t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : "", t.chin ? `the chin or neck ${t.chin} s` : ""].filter(Boolean).join(", ")})`).join("; ");
+    const cut = s.headCut?.byLift ? `; the head cut at the top ${s.headCut.byLift} px more by the raise` : "";
+    console.log(`  shot ${s.n ?? s.shot + 1}  ${s.start.toFixed(2)}–${s.end.toFixed(2)} s  ${s.lift ? `raised ${s.lift} px${s.ground ? ` (a band of ${s.ground} px at the bottom)` : ""}${s.fixed ? ", as given" : s.returned ? ", as the other returns of this framing" : ""}` : "as it stands"}${s.eyes != null ? `, the eyes from ${Math.round(s.eyes * 100)} % of the height` : ""}${cut}  ${on ? `${s.fault ? "✗ " : ""}on ${on}` : "on no face"}`);
+  }
+  for (const x of res.conflicts) console.log(`✗ ${x}`);
+  for (const n of res.notes) console.log(`note: ${n}`);
+  console.log(`Other tops it weighed: ${res.candidates.slice(1).map((k) => `y ${Math.round(k.top)} (${Math.round(k.share * 100)} %; on a mouth, nose or eyes ${k.mouth} s, ${k.lifted} raised, cost ${k.cost})`).join("; ") || "none"}.`);
+  console.log(`${file}: the area's top for the type, each shot's lift for the framing. The choice is yours: --top <px> and --lift <shot>:<px> fix one, --raise how far a picture may go up, and the rest is placed around it.`);
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "beside") cmdBeside(parseArgs(cmd, rest));
 else if (cmd === "grid") cmdGrid(parseArgs(cmd, rest));
@@ -580,4 +631,4 @@ else if (cmd === "place") cmdPlace(parseArgs(cmd, rest));
 else if (cmd === "page") cmdPage(parseArgs(cmd, rest));
 else if (cmd === "captions") cmdCaptions(parseArgs(cmd, rest));
 else if (cmd === "text") cmdText(parseArgs(cmd, rest));
-else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1] | beside <folder> --frame 9:16 --source WxH --face x,y,w,h --material-min WxH [--text caption] | text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook]`);
+else fail(`${self()} grid <video|image> <out.jpg> [--at <s>] | place <folder> --frame 9:16 --source WxH --face x,y,w,h [--text caption] [--text hook] [--platform …] [--json] | page <folder> [--candidate 1,2,3] [--still <video|image>] | captions <folder> [--candidate 1] | beside <folder> --frame 9:16 --source WxH --face x,y,w,h --material-min WxH [--text caption] | text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] | [--text area]`);

@@ -87,6 +87,13 @@ export const DEFAULTS = {
   // "Augenlinie … Median 32 % bei p1, 33 % bei g1, mittlere Hälfte 27–38 %". Above it the frame
   // starts at the brows (deaths, 2026-11-18: the eyes at 12–20 % for 37 s of 71 s).
   eyeLine: 0.27,
+  // large type set in one area (text --text area, kinetic-lyrics' phrases): the area runs from the
+  // safe box's bottom up. `least` is the smallest it may be, a share of the frame's height:
+  // kinetic-lyrics' engine sets a block of four lines at its smallest words (5.2 % of the frame's
+  // width) in about 14 % of the height, and lets a lockup grow by 4 % while it shows. `chin` is
+  // what a second of the area on a chin or a neck costs (a face's keep-out below its mouth line):
+  // little, so that the area goes a little lower to clear a chin, never far.
+  area: { least: 0.15, chin: 1 },
   // (from where enlarging the source's pixels is soft and from where forbidden: weights.json)
   // zoom and inset are searched on a grid of 1 % of the covering scale
   zoomStep: 0.01, zoomMax: 1.6, insetStep: 0.01, insetMin: 0.5, panelMin: 0.6,

@@ -90,19 +90,19 @@ export const MOUTH = +(IMPLIED[0] + (1 + OPEN) * (IMPLIED[1] - IMPLIED[0])).toFi
 // "moderate" (the name of before) is mouth.
 export const RAISE = ["head", "mouth", "full"];
 export const raiseOf = (r) => (r === "moderate" ? "mouth" : r);
-const featOf = (f) => f.feat || [f.box[0] + 0.18 * f.box[2], f.box[1] + IMPLIED[0] * f.box[3], 0.64 * f.box[2], (IMPLIED[1] - IMPLIED[0]) * f.box[3]];
+export const featOf = (f) => f.feat || [f.box[0] + 0.18 * f.box[2], f.box[1] + IMPLIED[0] * f.box[3], 0.64 * f.box[2], (IMPLIED[1] - IMPLIED[0]) * f.box[3]];
 const lineOf = (f, k) => { const e = featOf(f); return e[1] + k * e[3]; };
-const noseOf = (f) => lineOf(f, NOSE_IN_FEAT), lipOf = (f) => lineOf(f, LIP_IN_FEAT), mouthOf = (f) => lineOf(f, 1 + OPEN);
-const eyesOf = (f, D) => (f.feat ? f.feat[1] : f.box[1] + D.eyes * f.box[3]);
+export const noseOf = (f) => lineOf(f, NOSE_IN_FEAT), lipOf = (f) => lineOf(f, LIP_IN_FEAT), mouthOf = (f) => lineOf(f, 1 + OPEN);
+export const eyesOf = (f, D) => (f.feat ? f.feat[1] : f.box[1] + D.eyes * f.box[3]);
 // the part of a face (its box raised by lift) from its top down to a line
-const downTo = (f, lift, line) => [f.box[0], f.box[1] - lift, f.box[2], line - f.box[1]];
+export const downTo = (f, lift, line) => [f.box[0], f.box[1] - lift, f.box[2], line - f.box[1]];
 
 const r0 = (v) => Math.round(v);
 const r1 = (v) => Math.round(v * 10) / 10;
 
 // the moments of a shot: every face's boxes, with how long each stands (half the gap to its
 // neighbours, within the shot)
-function momentsOf(shot) {
+export function momentsOf(shot) {
   const ts = [...new Set(shot.faces.flatMap((f) => f.track.map((m) => m.t)))].sort((a, b) => a - b);
   if (!ts.length) return [];
   return ts.map((t, i) => {
@@ -117,13 +117,13 @@ function nearest(track, t) {
   // a face not tracked near this moment is not there
   return best && Math.abs(best.t - t) <= 0.26 ? best : null;
 }
-const up = (b, d) => [b[0], b[1] - d, b[2], b[3]];
-const overlapsX = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > EPS;
+export const up = (b, d) => [b[0], b[1] - d, b[2], b[3]];
+export const overlapsX = (a, b) => Math.min(X1(a), X1(b)) - Math.max(a[0], b[0]) > EPS;
 
 // how far a shot may be raised: its room, and what the zones allow: the ground stays under the
 // apps' bottom (below the safe box), and every face's eyes stay below the safe box's top
 // (most: by the rule of the raise; beyond: by the eyes alone, for a mouth the captions would cover)
-function maxLift(shot, moments, ctx) {
+export function maxLift(shot, moments, ctx) {
   const room = shot.room;
   if (!room || room.none) return { most: 0, beyond: 0, by: "none" };
   const free = Math.max(0, room.free || 0);
@@ -230,7 +230,7 @@ export const stillsText = (pairs, f = r1) => {
 // Returns of one framing (the same face, the same size, the same place in the frame: the camera
 // cut back to a close-up it showed before) stand at one height: a close-up that comes back
 // higher or lower each time reads as a camera that moves. [[shot index, …], …] of two or more.
-function returnsOf(list, W, H) {
+export function returnsOf(list, W, H) {
   const look = list.map((s) => {
     if (!s.room || s.room.none || !s.moments.length) return null;
     const boxes = s.moments.flatMap((m) => m.faces.map((f) => ({ who: f.who, box: f.box })));
