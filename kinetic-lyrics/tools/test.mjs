@@ -32,7 +32,7 @@ test("the name tag: room above the type only where it shows (named speakers, foo
   assert.equal(chipRoom(planOf({ preset: "social" })), 0, "the social preset has no tag");
 });
 
-test("the push-in: a face is drawn as the short shows it, larger and away from the point at 50 % across and 28 % down, by 6 % at the end and 2.5 % more under a hero phrase", () => {
+test("the push-in: a face is drawn as the short shows it, larger and away from the point at 50 % across and 28 % down, by 6 % at the end and 2.5 % more under a hero phrase; each moment says how much the picture has grown there (a lift before the push-in grows with it)", () => {
   const plan = planOf({ phrases: [{ layout: "hero", tIn: 4 }] });
   near(scaleAt(0, plan), 1, 1e-9, "start");
   near(scaleAt(10, plan), 1 + PUSH, 1e-9, "end");
@@ -45,6 +45,8 @@ test("the push-in: a face is drawn as the short shows it, larger and away from t
   near(out[1].box[1], oy + (box[1] - oy) * k, 0.1, "top");
   near(out[1].box[3], box[3] * k, 0.1, "height");
   near(out[1].feat[1] + out[1].feat[3], oy + (feat[1] + feat[3] - oy) * k, 0.1, "the mouth's bottom moves down");
+  // the framing raises the picture before it grows: layout is told how a lift shows at each moment
+  assert.deepEqual([out[0].zoom, out[1].zoom], [1, +k.toFixed(4)], "each moment's zoom");
 });
 
 test("what layout is asked: one area for the type and the name tag above it, never higher than the build sets it, layout's least for the type alone; a fixed top is the type's, given as the area's", () => {

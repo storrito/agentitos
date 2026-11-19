@@ -1483,6 +1483,18 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     near(dense.shots[0].touches[0].seconds, 4, 0.01, "ten times a second, the whole shot");
     return `one moment: ${Math.round((at.chin + at.lip + at.mouth + at.nose) * 100) / 100} s`;
   });
+  t("a picture that grows after it is raised (a push-in, each moment's zoom): the lift is in px of the picture before it grows, enough for the mouth at the zoom, and the eyes and the head's cut said as the picture shows them (the review: the list said 8.7 % less head cut than the short had)", () => {
+    const feat = (dy) => [380, 560 + dy, 320, 600], box = (dy) => [250, 300 + dy, 580, 1000];
+    const track = (zoom) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: box(0), feat: feat(0), ...(zoom ? { zoom } : {}) })) });
+    const flat = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(0)])], area: { top: usual }, raise: "full" });
+    const grown = areaOverTime({ zones: Z9, shots: [shot(0, 4, [track(1.087)])], area: { top: usual }, raise: "full" });
+    near(flat.area.top, grown.area.top, 0.5, "the same area");
+    near(grown.shots[0].lift, Math.ceil(flat.shots[0].lift / 1.087), 1, "the lift before the push-in");
+    ok(!grown.conflicts.length && grown.shots[0].on.mouth === 0 && grown.shots[0].on.lip === 0, JSON.stringify(grown.shots[0]));
+    near(grown.shots[0].eyes * H, 560 - grown.shots[0].lift * 1.087, 2, "the eyes as the picture shows them");
+    near(grown.shots[0].headCut.byLift, flat.shots[0].headCut.byLift, 3, "the head cut as without the zoom, for the same picture on screen");
+    return `raised ${grown.shots[0].lift} px (${flat.shots[0].lift} px without the zoom), the eyes at ${Math.round(grown.shots[0].eyes * 1000) / 10} %`;
+  });
   t("a clip without a face: the usual top, said as no-face", () => {
     const r = areaOverTime({ zones: Z9, shots: [shot(0, 5, [])], area: { top: usual } });
     ok(r.area.top === usual && r.area.where === "no-face" && !r.notes.length, JSON.stringify(r.area));

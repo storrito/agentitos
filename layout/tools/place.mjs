@@ -524,7 +524,8 @@ function cmdText(o) {
   const usage = `${self()} text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] [--platform reels,tiktok] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>] [--raise head|mouth|full] [--json]
   large type instead of captions: --text area [--area-top <px>] [--area-bottom <px>] [--top <px>] [--lift <shot>:<px>] [--raise …]
   shots.json: {"shots": [{"start": 0, "end": 4.2, "faces": [{"who": "A", "track": [{"t": 0, "box": [x, y, w, h]}, …]}], "room": {"free": 0}}, …], "hook": {"start": 0, "end": 3}}
-  (boxes in px of the frame as the picture stands; room: how far a shot's picture may be raised, null where not at all)`;
+  (boxes in px of the frame as the picture stands; room: how far a shot's picture may be raised, null where not at all;
+  for --text area a moment's "zoom": how much larger the picture shows there than as it is raised, as a push-in after the raise)`;
   const [folder] = o._;
   if (!folder || o._.length > 1 || !o.frame || !o.shots) fail(usage);
   if (!/^\d+(\.\d+)?:\d+(\.\d+)?$|^\d+x\d+$/.test(o.frame)) fail(`--frame is a ratio or a size, as 9:16 or 1080x1920.`);
@@ -532,7 +533,7 @@ function cmdText(o) {
   try { input = JSON.parse(fs.readFileSync(o.shots, "utf8")); } catch (e) { fail(`--shots ${o.shots} cannot be read (${e.message}): it is JSON, {"shots": [{"start", "end", "faces": [{"who", "track": [{"t", "box"}]}]}]}.`); }
   const shots = Array.isArray(input) ? input : input.shots;
   const goodBox = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] > 0 && b[3] > 0;
-  if (!Array.isArray(shots) || !shots.length || shots.some((s) => !Number.isFinite(s.start) || !(s.end > s.start) || !Array.isArray(s.faces) || s.faces.some((f) => !Array.isArray(f.track) || f.track.some((m) => !Number.isFinite(m.t) || !goodBox(m.box)))))
+  if (!Array.isArray(shots) || !shots.length || shots.some((s) => !Number.isFinite(s.start) || !(s.end > s.start) || !Array.isArray(s.faces) || s.faces.some((f) => !Array.isArray(f.track) || f.track.some((m) => !Number.isFinite(m.t) || !goodBox(m.box) || (m.zoom !== undefined && !(m.zoom > 0))))))
     fail(`--shots ${o.shots}: every shot needs "start" < "end" in seconds and "faces", each a "track" of {"t": seconds, "box": [x, y, w, h]} in px of the frame (no face: an empty list).`);
   const asked = parseNeeds(o.text.length ? o.text : ["caption"]);
   if (asked.some((n) => n.role === "area")) return textArea(o, folder, shots, asked);

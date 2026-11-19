@@ -119,7 +119,7 @@ export function momentsOf(shot) {
       const tr = sorted[k], j = tr.indexOf(m), prev = tr[j - 1], next = tr[j + 1];
       from = Math.min(from, m.t - (prev ? Math.min(REACH, (m.t - prev.t) / 2) : REACH));
       to = Math.max(to, m.t + (next ? Math.min(REACH, (next.t - m.t) / 2) : REACH));
-      return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}) };
+      return { who: f.who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.feat && m.between ? { between: m.between } : {}), ...(m.zoom ? { zoom: m.zoom } : {}) };
     }).filter(Boolean);
     return { t, dt: faces.length ? Math.max(0, Math.min(b, to) - Math.max(a, from)) : Math.max(0, b - a), faces };
   });
@@ -142,20 +142,21 @@ export function maxLift(shot, moments, ctx) {
   const free = Math.max(0, room.free || 0);
   const ground = room.ground != null ? Math.max(0, room.ground) : ctx.H - Y1(ctx.Z.safe);
   let most = free + ground, by = "room";
+  // (a moment's zoom: the picture grows after the raise there, and the lift with it)
   for (const m of moments) for (const f of m.faces) {
-    const eyes = eyesOf(f, ctx.D) - ctx.Z.safe[1];
+    const eyes = (eyesOf(f, ctx.D) - ctx.Z.safe[1]) / (f.zoom || 1);
     if (eyes < most) { most = eyes; by = "eyes"; }
   }
   // mouth: the eyes no higher than where published Shorts have them at the most (eyeLine), a
   // limit of composition; full keeps the apps' top bar as its limit
   if (ctx.raise === "mouth") for (const m of moments) for (const f of m.faces) {
-    const eyes = eyesOf(f, ctx.D) - ctx.D.eyeLine * ctx.H;
+    const eyes = (eyesOf(f, ctx.D) - ctx.D.eyeLine * ctx.H) / (f.zoom || 1);
     if (eyes < most) { most = eyes; by = "eyeLine"; }
   }
   // (what limits beyond: the head's top below does not)
   let beyond = Math.max(0, Math.floor(most)), beyondBy = by;
   if (ctx.raise !== "full") for (const m of moments) for (const f of m.faces) {
-    const head = f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3]);
+    const head = (f.box[1] - Math.max(ctx.D.free.aboveMin, ctx.D.free.above * f.box[3])) / (f.zoom || 1);
     if (head < most) { most = head; by = "head"; }
   }
   most = Math.max(0, Math.floor(most));

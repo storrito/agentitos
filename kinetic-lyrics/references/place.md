@@ -13,7 +13,7 @@
 
 - The order: the type a little lower first (smaller, never below 15 % of the frame's height for the type alone: the engine sets four lines at its smallest words in about 14 %), then the shot's picture raised over a dark ground at the bottom, which lies under the band the type sits in.
 - How far a picture may go up, `--raise`: **`full`** (the default here) as far as the eyes stay below the apps' top bar. In this look the picture ends where the darkened band begins, a little above the middle of the frame, so a face high in the frame is what a close-up of that picture looks like; the frame cuts the top of the head. `mouth` keeps the eyes below 27 % of the height (where published Shorts have them at the highest), `head` never cuts a head.
-- The footage's own motion is in the faces: the push-in of 6 % over the short and the punch of 2.5 % on each hero phrase.
+- The footage's own motion is in the faces: the push-in of 6 % over the short and the punch of 2.5 % on each hero phrase. The framing raises a shot's picture before it grows, so a raise grows with it (by up to 8.7 %): the list's px are the framing's, its eyes and the head's cut as the short shows them.
 - Where the faces leave the type where the footage alone sets it (a medium shot, footage without a face), nothing changes: the short is built as without `place`, byte for byte.
 
 ## What the list says, and what is left

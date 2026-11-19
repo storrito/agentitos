@@ -8,7 +8,9 @@
 //   topOfShade([a, b]) → the type's top (a share of the height) in the band [a, b]
 //   usualTop(plan) → the type's top in px as the build sets it from the footage alone
 //   chipRoom(plan) → px of the speaker's name tag above the type (0 where it shows none)
-//   pushed(input, plan) → the shots with every face as the push-in and the punches show it
+//   pushed(input, plan) → the shots with every face as the push-in and the punches show it, each
+//       moment's zoom with it (the framing raises the picture before it grows: a lift of L px
+//       shows as L × zoom, and layout reckons with it)
 //   liftsFor(text, shots) → [{ t, px }] for the framing (frame.mjs --lift), one per raised shot
 //   placeArgs(plan, opts) → the arguments of layout's text for this short
 //   sheet(framed, plan, text, shots, file) → a picture: per shot its first, middle and last frame
@@ -56,7 +58,7 @@ export function pushed(input, plan) {
     ...input,
     shots: input.shots.map((s) => ({
       ...s,
-      faces: s.faces.map((f) => ({ ...f, track: f.track.map((m) => { const k = scaleAt(m.t, plan); return { ...m, box: through(m.box, k, ox, oy), ...(m.feat ? { feat: through(m.feat, k, ox, oy) } : {}) }; }) })),
+      faces: s.faces.map((f) => ({ ...f, track: f.track.map((m) => { const k = scaleAt(m.t, plan); return { ...m, box: through(m.box, k, ox, oy), ...(m.feat ? { feat: through(m.feat, k, ox, oy) } : {}), zoom: +k.toFixed(4) }; }) })),
     })),
   };
 }
@@ -105,8 +107,10 @@ export function sheet(framed, plan, text, shots, file, { chip = 0 } = {}) {
         for (const f of s.faces) {
           const m = f.track.reduce((x, q) => (Math.abs(q.t - t) < Math.abs(x.t - t) ? q : x), f.track[0]);
           if (!m || Math.abs(m.t - t) > 0.3) continue;
-          boxes.push(draw([m.box[0], m.box[1] - r.lift, m.box[2], m.box[3]], "red@0.9", 2));
-          if (m.feat) boxes.push(draw([m.box[0], m.feat[1] + 1.15 * m.feat[3] - r.lift, m.box[2], 2], "orange", 2));
+          // raised before the push-in: the lift grows with the picture
+          const by = r.lift * (m.zoom || 1);
+          boxes.push(draw([m.box[0], m.box[1] - by, m.box[2], m.box[3]], "red@0.9", 2));
+          if (m.feat) boxes.push(draw([m.box[0], m.feat[1] + 1.15 * m.feat[3] - by, m.box[2], 2], "orange", 2));
         }
         const label = j === 1 ? `${r.shot + 1}  ${s.start.toFixed(1)}-${s.end.toFixed(1)} s${r.lift ? `  raised ${r.lift} px` : ""}${r.fault ? "  ON THE MOUTH" : ""}` : ["first", "", "last"][j];
         chains.push(`[${n}:v]${grow},scale=${w}:${h},setsar=1,${boxes.join(",")},drawtext=text='${label.replace(/[\\':,%;\[\]]/g, " ")} ${t.toFixed(2)}':x=6:y=h-24:fontsize=14:fontcolor=white:box=1:boxcolor=${r.fault ? "red" : "black"}@0.8:boxborderw=3[c${i}_${j}]`);

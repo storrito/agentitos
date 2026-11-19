@@ -8,7 +8,10 @@
 //     → { area, shots, candidates, conflicts, notes }
 //
 // shots: as textOverTime takes them (times in seconds, boxes in px of the frame as the picture
-// stands unraised, feat: the eyes, nose and mouth). area.top: the usual top, where the caller sets
+// stands unraised, feat: the eyes, nose and mouth; zoom on a moment: how much larger the picture
+// shows there than as it is raised, where it grows after the raise, as a push-in: a lift of L px
+// moves that moment's faces L × zoom up, and every lift here is in px of the picture before it
+// grows). area.top: the usual top, where the caller sets
 // its type without faces (the area is never taller); area.bottom: its bottom (default the safe
 // box's). fixed.top: a top the caller chose; fixed.lifts: { <shot index>: px }.
 //
@@ -32,15 +35,16 @@ const r1 = (v) => Math.round(v * 10) / 10;
 // lips), 1 the lower lip, 0 the chin, the neck or beside the face (its keep-out)
 function shotUnder(box, moments, most, D, exact = false) {
   let need = 0;
-  for (const m of moments) for (const f of m.faces) if (overlapsX(f.box, box) && f.box[1] < Y1(box)) need = Math.max(need, mouthOf(f) - box[1]);
+  for (const m of moments) for (const f of m.faces) if (overlapsX(f.box, box) && f.box[1] < Y1(box)) need = Math.max(need, (mouthOf(f) - box[1]) / (f.zoom || 1));
   const lift = Math.max(0, exact ? most : Math.min(most, Math.ceil(need)));
   let nose = 0, mouth = 0, lip = 0, chin = 0;
   const who = new Map();
   for (const m of moments) {
     let part = -1;
     for (const f of m.faces) {
-      if (inter(keepOut(up(f.box, lift), D), box) <= 0) continue;
-      const p = inter(downTo(f, lift, noseOf(f)), box) > 0 ? 3 : inter(downTo(f, lift, lipOf(f)), box) > 0 ? 2 : inter(downTo(f, lift, mouthOf(f)), box) > 0 ? 1 : 0;
+      const by = lift * (f.zoom || 1);
+      if (inter(keepOut(up(f.box, by), D), box) <= 0) continue;
+      const p = inter(downTo(f, by, noseOf(f)), box) > 0 ? 3 : inter(downTo(f, by, lipOf(f)), box) > 0 ? 2 : inter(downTo(f, by, mouthOf(f)), box) > 0 ? 1 : 0;
       part = Math.max(part, p);
       const w = who.get(f.who) || { who: f.who, from: m.t, to: m.t, seconds: 0, nose: 0, mouth: 0, lip: 0, chin: 0 };
       w.seconds += m.dt; w.from = Math.min(w.from, m.t); w.to = Math.max(w.to, m.t);
@@ -114,8 +118,9 @@ export function areaOverTime({ zones: Z, shots, area: asked = {}, set = {}, fixe
       let cut = 0, before = 0;
       for (const f of m.faces) {
         const top = f.box[1] - Math.max(D.free.aboveMin, D.free.above * f.box[3]);
-        cut = Math.max(cut, q.lift - top); before = Math.max(before, -top);
-        eyesTop = Math.min(eyesTop, eyesOf(f, D) - q.lift);
+        const by = q.lift * (f.zoom || 1);
+        cut = Math.max(cut, by - top); before = Math.max(before, -top);
+        eyesTop = Math.min(eyesTop, eyesOf(f, D) - by);
       }
       if (cut > 0.5) { headCut.seconds += m.dt; headCut.px = Math.max(headCut.px, cut); headCut.byLift = Math.max(headCut.byLift, cut - Math.max(0, before)); }
     }
