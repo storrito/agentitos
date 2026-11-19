@@ -1222,7 +1222,7 @@ export function answerOf(tracks, shots, { width, height }) {
 // The shots of the footage and every face in them followed between the stills: { meta, shots,
 // seen, people } (seen: shotsOf's shots with each person's track filled in by the tracker), or
 // null without an answer. `tracks`: the agent's own boxes instead of the model's (answerOf).
-async function facesOf(video, words, { aspect = [9, 16], tracks = null, log = () => {} }) {
+async function facesOf(video, words, { aspect = [9, 16], tracks = null, every = false, log = () => {} }) {
   const meta = probe(video);
   log("frame: the cuts, frame by frame …");
   const found = cutsOf(video, meta);
@@ -1235,7 +1235,7 @@ async function facesOf(video, words, { aspect = [9, 16], tracks = null, log = ()
   const grey = greyFrames(video, { start: meta.start });
   const follow = (answer) => {
     const seen = shotsOf(answer, shots, meta);
-    for (const s of seen) if (s.kind === "people") {
+    for (const s of seen) if (s.kind === "people" || every) {
       for (const p of s.people) {
         p.track = fillTrack(grey, p.track, s.start, s.end);
         for (const d of p.track.doubtful) (s.doubtful ||= []).push({ who: p.who || p.speaker, t: d.t, off: d.off });
@@ -1287,7 +1287,7 @@ export function facesOver(seen, meta, { step = 0.1, every = false } = {}) {
 }
 
 export async function faces(video, words, { aspect = [9, 16], tracks = null, every = false, log = () => {} } = {}) {
-  const r = await facesOf(video, words, { aspect, tracks, log });
+  const r = await facesOf(video, words, { aspect, tracks, every, log });
   if (!r) return null;
   // what was spent now: nothing where the answer of before was read again
   return { footage: path.basename(video), by: r.people.by || "model", model: r.people.model, cost: r.people.cached ? 0 : +((r.people.cost || 0)).toFixed(4), ...(r.people.cached ? { cached: true } : {}), ...facesOver(r.seen, r.meta, { every }) };
