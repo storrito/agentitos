@@ -88,6 +88,12 @@ function read(r) {
   // a file that fails before its tests run (a missing package, a syntax error): its error's line
   const crash = lines.find((l) => /^(\w*Error\b|Error \[)/.test(l));
   if (r.code !== 0 && crash && !failing.includes(crash)) failing.unshift(crash);
+  // a file that runs no test at all passes nothing: a test renamed away, a filter that matches
+  // none (tests that are skipped on purpose, where a package is missing, still count)
+  // (Node's runner counts a file without a test as one test, named after the file itself)
+  const esc = r.file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tests = r.nodeTest ? (n(/^ℹ tests (\d+)/m) === 1 && new RegExp(`^✔ ${esc} \\(`, "m").test(r.text) ? 0 : n(/^ℹ tests (\d+)/m)) : own ? pass + fail : null;
+  if (r.code === 0 && tests === 0) return { ...r, pass, fail, skip, failing: ["The file reports no test at all (0 tests found): a file named test*.mjs must run at least one."], ok: false };
   return { ...r, pass, fail, skip, failing: failing.slice(0, 40), ok: r.code === 0 };
 }
 

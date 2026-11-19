@@ -81,13 +81,13 @@ node <skill>/tools/screencast.mjs build screencast/<name> --out artifacts/<name>
 node <skill>/tools/screencast.mjs check screencast/<name>
 ```
 
-Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable? Before you ask (step 5), once, in `artifacts/<name>/composition`, with its long output filtered:
+Fix every ✗, and each ⚠ unless you have a reason. Look at two or three screen moments with `frame` (step 6): is what the words are about large and readable? Before you ask (step 5), once, HyperFrames' check of `artifacts/<name>/composition`, with its long output filtered:
 
 ```bash
-npx hyperframes check --json 2>/dev/null | jq -c '{ok, problems: [.. | objects | select(.severity? == "error" or .severity? == "warning") | {code, severity, message, time}] | unique_by(.code, .time)}'
+node <skill>/../platform-zones/tools/hyperframes-check.mjs artifacts/<name>/composition 2>/dev/null | jq -c '{ok, problems: [.. | objects | select(.severity? == "error" or .severity? == "warning") | {code, severity, message, time}] | unique_by(.code, .time)}'
 ```
 
-Fix its errors (text hidden under the face circle, a label off the frame). No `hyperframes snapshot --review` and no rounds of snapshots: `frame` and the check are the review.
+It is HyperFrames' check without HyperFrames' own safe zones (the apps' ad templates, `outside_safe_zone` from 0.9.44 on): platform-zones' zones are the ones that count. Fix its errors (text hidden under the face circle, a label off the frame). No `hyperframes snapshot --review` and no rounds of snapshots: `frame` and the check are the review.
 
 The cut lives in `cut.json`: no notes files (SPEC.md, REVIEW.md, a README) in the project or beside it.
 
