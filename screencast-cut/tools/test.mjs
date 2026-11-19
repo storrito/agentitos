@@ -1428,3 +1428,24 @@ test("review of screencast-clear, 2: the room of one line never puts the circle 
     assert.match(one.said, /as with two caption lines at 1\.55×[^:]*: in the room of one line the circle would lie on the region and no corner is free of it/);
   }
 });
+
+import { captionsFor, captionArea } from "./lib/layout.mjs";
+test("review of screencast-clear, 3: \"captions\": { \"lines\": 2 } alone keeps main's clean subtitles (not hormozi) and main's numbers; a style the cut names stays; a broken area.json is not handed on", () => {
+  assert.deepEqual(captionsFor({}), { style: "clean", highlight: [] });
+  assert.deepEqual(captionsFor({ captions: { lines: 2 } }), { style: "clean", highlight: [], lines: 2 });
+  assert.deepEqual(captionsFor({ captions: { style: "hormozi", highlight: [3] } }), { style: "hormozi", highlight: [3] });
+  assert.deepEqual(captionsFor({ captions: { style: "clean", highlight: [], lines: 2 } }), { style: "clean", highlight: [], lines: 2 });
+  assert.equal(captionsFor({ captions: false }), null);
+  assert.equal(captionsFor({}, false), null);
+  // with { lines: 2 } the areas are main's, in every frame
+  for (const [w, h] of [[1080, 1920], [1080, 1350], [1080, 1080], [1920, 1080]]) {
+    const z = realZones(w, h, []), caps = captionsFor({ captions: { lines: 2 } });
+    assert.equal(linesOf(caps), 2);
+    assert.deepEqual(areas(w, h, z, { captions: !!caps, line: linesOf(caps) === 1 ? LINE[`${w}x${h}`] : null }), areas(w, h, z, { captions: true }), `${w}x${h}`);
+  }
+  const one = captionsFor({}), two = captionsFor({ captions: { lines: 2 } });
+  assert.equal(captionArea(one, { top: 1350, bottom: 1440 }, "a.json"), "a.json");
+  assert.equal(captionArea(one, null, "a.json"), null, "one line whose file could not be read: none");
+  assert.equal(captionArea(two, null, "a.json"), "a.json", "two lines: as main");
+  assert.equal(captionArea(null, null, "a.json"), null);
+});

@@ -93,6 +93,22 @@ export function areas(width, height, zones, { captions = true, labels = false, l
 // captions-clear), or two with "captions": { "lines": 2 }, which builds as before
 export const linesOf = (caps) => (caps?.lines === 2 ? 2 : 1);
 
+// The captions of a cut: clean subtitles unless cut.json says otherwise ("captions": false: none;
+// an object: the style the captions command wrote, and "lines"); an object without a style keeps the
+// default's clean subtitles, so that { "lines": 2 } alone builds as main (review of
+// screencast-clear, 3: it fell back to "hormozi"); none by default when the captions skill is
+// missing (tool: whether it is beside this one)
+export function captionsFor(cut = {}, tool = true) {
+  if (cut.captions === false) return null;
+  if (cut.captions && typeof cut.captions === "object") return cut.captions.style ? cut.captions : { style: "clean", highlight: [], ...cut.captions };
+  if (cut.captions) return cut.captions;
+  return tool ? { style: "clean", highlight: [] } : null;
+}
+
+// The captions' area.json handed to the layout skill and the face view: the file as built, except
+// with one line whose file could not be read (captionLine null): then none, never a broken file
+export const captionArea = (caps, line, file) => (!caps ? null : linesOf(caps) === 1 && !line ? null : file);
+
 // the captions' line as the captions skill built it (its area.json: top, bottom), or null where it
 // cannot be read (the areas then keep the band for two lines, as before)
 export function captionLine(file) {

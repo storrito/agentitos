@@ -59,7 +59,7 @@ import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from ".
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
 import { plan, range, timeRange } from "./lib/cut.mjs";
-import { FRAMES, areas, linesOf, captionLine, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
+import { FRAMES, areas, linesOf, captionLine, captionsFor, captionArea, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { findFace } from "./lib/face.mjs";
@@ -125,11 +125,7 @@ function settings(dir, opts) {
 
 // The captions of a cut: clean subtitles unless cut.json says otherwise ("captions": false: none,
 // or the style the captions command wrote); none by default when the captions skill is missing
-function captionsOf(cut = {}) {
-  if (cut.captions === false) return null;
-  if (cut.captions) return cut.captions;
-  return captionsTool() ? { style: "clean", highlight: [] } : null;
-}
+const captionsOf = (cut = {}) => captionsFor(cut, !!captionsTool());
 
 // what the build and check say of the captions' line: where it stands and what ends above it
 function lineSaid(line, lines) {
@@ -946,10 +942,10 @@ async function cmdBuild(dir, opts) {
   const showKeeps = new Set((cut.keep || []).flatMap((keep, k) => (keep.show !== undefined ? [k] : [])));
   const faceCut = showKeeps.size ? { ...cut, keep: cut.keep.map((keep, k) => { if (!showKeeps.has(k)) return keep; const { layout, ...rest } = keep; return rest; }) } : cut;
   const screenKeeps = new Set(r.pieces.filter((p) => isScreenPiece(p, sources) && !showKeeps.has(p.keep)).map((p) => p.keep));
-  const faceSaid = faceView(dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, screens: screenKeeps });
+  const faceSaid = faceView(dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: captionArea(caps, line, path.join(out, "captions", "area.json")), screens: screenKeeps });
   // a screen keep (the screen whole or a zoom box): the picture as before where it passes the layout
   // skill's checks, else layout's (lib/screenview.mjs); a keep that shows another video is none
-  const screenSaid = screenView(dir, faceCut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null, zones: layout.zones, areas: layout.areas, labels });
+  const screenSaid = screenView(dir, faceCut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: captionArea(caps, line, path.join(out, "captions", "area.json")), zones: layout.zones, areas: layout.areas, labels });
   let music = null;
   if (cut.music?.file) {
     if (!fs.existsSync(cut.music.file)) fail(`✗ cut.json "music": there is no ${cut.music.file}`);
