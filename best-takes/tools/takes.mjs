@@ -835,8 +835,10 @@ function cmdCheck(dir) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
     console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; finish brings the rendered video to ${s.final} LUFS.`);
   }
-  // text on a face, where the faces are known (source/faces.json, from the skill that framed the videos)
+  // text on a face, where the faces are known (source/faces.json, from the skill that framed the videos, or this skill's place)
   const faces = readFaces(dir);
+  const placeNow = fs.existsSync(path.join(dir, "place.json")) ? read(path.join(dir, "place.json")) : null, placedBy = placeNow?.by;
+  if (placedBy === "takes place" && placeNow.for !== placedFor(cut, s)) warnings.push(`the cut, the captions' style, the hook or the frame changed since place laid them out: node ${self()} place ${rel(dir)} again, so that the text keeps clear of the faces`);
   if (faces && e.text) {
     const texts = [...(e.text.caption ? e.text.caption.groups.map(([a, b]) => ({ role: "captions", box: e.text.caption.box, from: a, to: b })) : []),
       ...(e.text.hook ? [{ role: "hook", box: e.text.hook.box, from: 0, to: e.text.hook.until }] : [])];
@@ -848,7 +850,7 @@ function cmdCheck(dir) {
     for (const x of on.filter((q) => q.seconds >= 0.3)) {
       const fault = x.nose >= 0.3 || x.mouth >= 0.3;
       if (x.role !== "hook" && !fault) { said.push(`${x.who ?? "a face"}: ${parts(x)}`); continue; }
-      const line = `the ${x.role === "hook" ? "hook" : "captions"} lie${x.role === "hook" ? "s" : ""} on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)} (${parts(x)}): ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : "place them again where the skill that laid the frame out can (clips: place: a smaller type by hand, --font-size), or cut to another shot there"}`;
+      const line = `the ${x.role === "hook" ? "hook" : "captions"} lie${x.role === "hook" ? "s" : ""} on ${x.who ?? "a face"} for ${x.seconds} s between ${clock(x.from)} and ${clock(x.to)} (${parts(x)}): ${x.role === "hook" ? "a shorter hook, another kind (a card at the top, a text in the middle), or none" : (placedBy === "takes place" ? `place them again: ${self()} place ${rel(dir)} --font-size <px> (a smaller type), --raise full, or --caption-y <px>; or cut that stretch otherwise` : "place them again where the skill that laid the frame out can (clips: place: a smaller type by hand, --font-size), or cut to another shot there")}`;
       if (x.role !== "hook") errors.push(line); else warnings.push(line);
     }
     if (said.length) console.log(`\nText and faces: the captions lie on ${said.join("; ")}${on.some((q) => q.role !== "hook" && (q.nose || q.mouth)) ? "" : "; never on the nose, the eyes or the mouth"} (the skill that framed the video says where that is not avoidable at a readable size).`);

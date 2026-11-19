@@ -21,4 +21,6 @@
 
 ## When no model may see the videos
 
+Five careful boxes are enough, spread over the take with the head at its highest and its lowest among them: on a conference take (the review, 2026-11-19) five boxes came within 7 px (the median) of the model's face; one box alone 44 px; five read 30 px carelessly 35 px; five at the wrong moments 32 px. All four kept the same crop, captions and hook, so the boxes need care, not more of them.
+
 `faces --grid` writes five grid pictures of each video (spread over what the cut keeps; `--grid-at <second>` for one more where the head is clearly higher or lower). Open each and read the face's box off it, as layout's SKILL.md step 2 says: from the hairline to the chin and from cheek to cheek, in px of the video (a bald head: where the hairline would be, as far above the brows as the bottom of the nose is below them). Then `faces --eye <second>:x,y,w,h --eye …` with every box. The tracker follows the face between them in the frames; the eyes, nose and mouth come from the head's proportions. `propose` sends the videos to a model too: then write `cut.json` from the brief yourself.
