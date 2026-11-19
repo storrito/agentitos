@@ -534,6 +534,8 @@ test("on its own: footage with cuts in it, two people, or slides is told apart f
   assert.deepEqual(takeKind(one, pieces, 1), { shots: 1, people: 1, material: 0 });
   const cuts = { ...one, shots: [{ start: 0, end: 4, kind: "people" }, { start: 4, end: 8, kind: "people" }, { start: 8, end: 20, kind: "people" }] };
   assert.equal(takeKind(cuts, pieces, 1).shots, 3);
+  // a flash of 0.7 s of the shot before at the take's start (the review's conference take) is no cut in it
+  assert.equal(takeKind({ ...one, shots: [{ start: 0, end: 0.76, kind: "people" }, { start: 0.76, end: 20, kind: "people" }] }, pieces, 1).shots, 1);
   // a cut in a stretch the cut leaves out does not count
   assert.equal(takeKind(cuts, [{ clip: 1, in: 9, out: 12 }], 1).shots, 1);
   const two = { ...one, faces: one.faces.map((f, i) => (i % 3 ? f : { ...f, boxes: [...f.boxes, { box: [50, 0, 10, 10] }] })) };

@@ -78,12 +78,13 @@ export function whole([sw, sh], [W, H]) {
 }
 
 // What a video is, over the seconds the cut keeps of it, as its faces file knows: how many shots
-// (cut in the footage), how many people at once (two or more in a fifth of its moments), and how many
+// the cut keeps 1.5 s of at least (cut in the footage), how many people at once (two or more in a fifth of its moments), and how many
 // seconds of material (slides, a screen, a photo: a shot the framing called other than people)
 export function takeKind(list, pieces, n) {
   const kept = pieces.filter((p) => p.clip === n);
   const over = (s) => kept.reduce((t, p) => t + Math.max(0, Math.min(p.out, s.end) - Math.max(p.in, s.start)), 0);
-  const shots = (list?.shots || []).filter((s) => over(s) > 0.3);
+  // (a shot counts where the cut keeps 1.5 s of it: a flash of the shot before at a take's start is no cut in it)
+  const shots = (list?.shots || []).filter((s) => over(s) >= 1.5);
   const moments = (list?.faces || []).filter((f) => kept.some((p) => f.t >= p.in && f.t <= p.out));
   const two = moments.filter((f) => f.boxes.length > 1).length;
   return { shots: shots.length, people: moments.length && two >= 0.2 * moments.length ? Math.max(...moments.map((f) => f.boxes.length)) : 1, material: shots.filter((s) => s.kind && s.kind !== "people").reduce((t, s) => t + over(s), 0) };
