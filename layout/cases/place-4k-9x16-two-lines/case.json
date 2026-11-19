@@ -1,0 +1,19 @@
+{
+ "guards": "a 4K source with one face into 9:16 with two caption lines on the clips platforms",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "3840x2160",
+   "--face",
+   "1700,400,560,700",
+   "--text",
+   "caption:2",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

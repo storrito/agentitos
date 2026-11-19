@@ -1,0 +1,7 @@
+$ place.mjs text out --frame 1080x1920 --shots shots.json --text caption --text hook
+1080x1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels, 1 shot
+captions: one place for the clip, 1 line of 77 px, x 192–888, y 1306–1440 (its middle at 71.5 % of the height, below-chin); on no face
+  shot 1  0.00–38.03 s  as it stands; the head cut at the top 158 px for 38 s
+hook: a text at 96 px, below-chin, x 192–888, y 1030–1268, 0–5 s (a text: behind it the picture is calm)
+Other places it weighed: 69 px with its middle at 71.9 % (on faces 0 s, 0 raised, cost 30.4); 62 px with its middle at 72.2 % (on faces 0 s, 0 raised, cost 57.1); 77 px with its middle at 19.4 % (on faces 38 s, 0 raised, cost 1903156.5); 69 px with its middle at 19.8 % (on faces 38 s, 0 raised, cost 1903166.4).
+out/text.json: for agentitos' captions --y 1440 --max-width 696 --font-size 77 --lines 1; each shot's lift for the framing. The choice is yours: --caption-y, --font-size and --lift <shot>:<px> fix one, and the rest is placed around it.

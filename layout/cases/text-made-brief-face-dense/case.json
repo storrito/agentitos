@@ -1,0 +1,23 @@
+{
+ "guards": "a second face seen for 0.8 s at caption height in a dense track of a first: what the captions lie on, and for how long",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

@@ -1,0 +1,3 @@
+$ place.mjs place out --frame 9:16 --source 1280x720 --face 540,-30,220,260 --text caption
+The box 540,-30,220,260 reaches past the source of 1280×720: a face or region the picture's edge cuts ends at that edge, read it again off the grid.
+(exit 1)

@@ -1,0 +1,17 @@
+{
+ "guards": "a 1080p source with one face right of the middle into 1:1 with one caption line",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "1:1",
+   "--source",
+   "1920x1080",
+   "--face",
+   "900,250,260,300",
+   "--text",
+   "caption"
+  ]
+ ]
+}

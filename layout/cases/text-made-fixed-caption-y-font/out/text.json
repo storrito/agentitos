@@ -1,0 +1,118 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "TikTok",
+  "YouTube Shorts"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   1293.9,
+   696,
+   86.1
+  ],
+  "font": 70,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 69.6,
+  "where": "below-chin",
+  "options": {
+   "y": 1380,
+   "max-width": 696,
+   "font-size": 70,
+   "lines": 1
+  },
+  "seconds": 6,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 6,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.524,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": [
+    {
+     "role": "caption",
+     "who": "A",
+     "from": 0,
+     "to": 6,
+     "seconds": 6,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 6,
+     "lip": 0,
+     "share": 0.26
+    }
+   ],
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 6,
+    "lip": 0,
+    "chin": 0
+   },
+   "fault": "mouth"
+  }
+ ],
+ "hook": null,
+ "changes": [],
+ "conflicts": [
+  "Shot 1 (0–6 s): the captions cover A's mouth for 6 s at 70 px, the type that leaves the least on the faces of the whole clip. What would avoid it: a cut to another shot here, or a smaller type by hand (--font-size)."
+ ],
+ "notes": [],
+ "candidates": [
+  {
+   "box": [
+    192,
+    1293.9,
+    696,
+    86.1
+   ],
+   "font": 70,
+   "cost": 120110.9,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 69.6
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [
+   "reels",
+   "tiktok",
+   "shorts"
+  ],
+  "fixed": {
+   "y": 1380,
+   "font": 70,
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

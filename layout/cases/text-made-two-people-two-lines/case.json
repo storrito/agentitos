@@ -1,0 +1,25 @@
+{
+ "guards": "two people, one in each shot at a different height, with two caption lines and a hook: one caption place for both, each shot's lift",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption:2",
+   "--text",
+   "hook",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

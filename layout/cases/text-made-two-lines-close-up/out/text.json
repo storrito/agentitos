@@ -1,0 +1,172 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "TikTok",
+  "YouTube Shorts"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "full",
+ "caption": {
+  "box": [
+   192,
+   454.4,
+   696,
+   175.6
+  ],
+  "font": 77,
+  "lines": 2,
+  "align": "center",
+  "least": 61,
+  "middle": 28.2,
+  "where": "above-head",
+  "options": {
+   "y": 630,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 2
+  },
+  "seconds": 6,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 6,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.47,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": [
+    {
+     "role": "caption",
+     "who": "A",
+     "from": 0,
+     "to": 6,
+     "seconds": 6,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "share": 0
+    }
+   ],
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 6
+   },
+   "hair": true
+  }
+ ],
+ "hook": null,
+ "changes": [],
+ "conflicts": [],
+ "notes": [
+  "Shot 1 (0–6 s): the captions stand above A's face, on the hair, for 6 s."
+ ],
+ "candidates": [
+  {
+   "box": [
+    192,
+    454.4,
+    696,
+    175.6
+   ],
+   "font": 77,
+   "cost": 79.1,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 28.2
+  },
+  {
+   "box": [
+    192,
+    472.7,
+    696,
+    157.3
+   ],
+   "font": 69,
+   "cost": 83.6,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 28.7
+  },
+  {
+   "box": [
+    192,
+    488.6,
+    696,
+    141.4
+   ],
+   "font": 62,
+   "cost": 87.5,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 29.1
+  },
+  {
+   "box": [
+    192,
+    1298.6,
+    696,
+    141.4
+   ],
+   "font": 62,
+   "cost": 120124.8,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 71.3
+  },
+  {
+   "box": [
+    192,
+    1282.7,
+    696,
+    157.3
+   ],
+   "font": 69,
+   "cost": 216123.6,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 70.9
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [
+   "reels",
+   "tiktok",
+   "shorts"
+  ],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "full"
+ }
+}

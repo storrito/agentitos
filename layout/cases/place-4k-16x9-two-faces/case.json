@@ -1,0 +1,21 @@
+{
+ "guards": "a 4K source with two people into 16:9 with a caption line and a hook",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "16:9",
+   "--source",
+   "3840x2160",
+   "--face",
+   "900,500,520,640",
+   "--face",
+   "2500,560,500,620",
+   "--text",
+   "caption",
+   "--text",
+   "hook"
+  ]
+ ]
+}

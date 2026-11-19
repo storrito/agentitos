@@ -1,0 +1,25 @@
+{
+ "guards": "a face in the middle of the frame where the hook as a text would stand: where the hook goes, its kind, and what it lies on, said",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

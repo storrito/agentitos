@@ -1,0 +1,21 @@
+{
+ "guards": "two faces in a 1080p source into 4:5 with the first named speaker",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "4:5",
+   "--source",
+   "1920x1080",
+   "--face",
+   "400,200,220,260",
+   "--face",
+   "1200,220,230,270",
+   "--speaker",
+   "1",
+   "--text",
+   "caption"
+  ]
+ ]
+}

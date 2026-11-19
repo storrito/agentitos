@@ -1,0 +1,506 @@
+{
+ "frame": "4:5",
+ "size": [
+  1080,
+  1350
+ ],
+ "platforms": [
+  "Instagram feed post",
+  "Facebook feed post",
+  "LinkedIn video"
+ ],
+ "fallback": true,
+ "source": [
+  3840,
+  2160
+ ],
+ "faces": [
+  [
+   1600,
+   1350,
+   520,
+   640
+  ]
+ ],
+ "needs": [
+  {
+   "role": "caption",
+   "lines": 1
+  }
+ ],
+ "defaults": {
+  "caption": {
+   "font": {
+    "tall": 77,
+    "wide": 50,
+    "least": 61
+   },
+   "line": 1.3,
+   "padEm": 0.44,
+   "minWidth": {
+    "tall": 540,
+    "wide": 600
+   },
+   "maxEm": 24,
+   "longWord": 9
+  },
+  "hookText": {
+   "font": 96,
+   "minFont": 72,
+   "heightEm": 2.48,
+   "line": 1.14,
+   "width": 0.72,
+   "centre": 0.53
+  },
+  "hookCard": {
+   "font": 76,
+   "minFont": 64,
+   "heightEm": 3.1,
+   "line": 1.14
+  },
+  "hookBig": {
+   "font": 112,
+   "minFont": 72,
+   "widthEm": 10,
+   "heightEm": 2.25,
+   "line": 1.08
+  },
+  "gap": 24,
+  "edgePad": 16,
+  "free": {
+   "above": 0.35,
+   "aboveMin": 16,
+   "below": 0.08,
+   "belowMin": 24,
+   "beside": 0.25,
+   "besideMin": 24
+  },
+  "facePad": 20,
+  "eyes": 0.42,
+  "eyeLine": 0.27,
+  "area": {
+   "least": 0.15,
+   "chin": 1,
+   "smaller": 3.6
+  },
+  "zoomStep": 0.01,
+  "zoomMax": 1.6,
+  "insetStep": 0.01,
+  "insetMin": 0.5,
+  "panelMin": 0.6,
+  "insetFace": 19,
+  "bands": [
+   "4:5",
+   "1:1"
+  ],
+  "track": {
+   "far": 2
+  },
+  "together": 2,
+  "togetherSize": 0.67,
+  "same": {
+   "px": 0.02,
+   "scale": 0.02
+  },
+  "readable": {
+   "height": 24,
+   "per": 1080
+  },
+  "circle": {
+   "tall": 0.22,
+   "square": 0.16,
+   "wide": 0.2,
+   "min": 0.12
+  },
+  "screenFace": {
+   "height": 0.18,
+   "panel": 0.5
+  },
+  "weights": {
+   "enlarge": {
+    "softFrom": 1.5,
+    "forbiddenFrom": 2,
+    "costAtForbidden": 3
+   },
+   "subject": {
+    "from": 23,
+    "to": 34,
+    "smaller": 0.3,
+    "larger": 0.05,
+    "regionEnough": 50
+   },
+   "ground": {
+    "cost": 0.1
+   },
+   "soft": {
+    "cost": 0.5
+   },
+   "text": {
+    "away": 0.05,
+    "hookSmaller": 0.02
+   }
+  }
+ },
+ "notes": [],
+ "candidates": [
+  {
+   "fit": "crop",
+   "scale": 0.7063,
+   "left": -773.6,
+   "top": -175.5,
+   "zoom": 1.13,
+   "enlargement": 0.71,
+   "crop": "4:5",
+   "window": [
+    0,
+    0,
+    1080,
+    1350
+   ],
+   "faceInFrame": [
+    [
+     356.4,
+     777.9,
+     367.3,
+     452
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "above-head",
+     "on": "picture",
+     "box": [
+      54,
+      485.8,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      524.1,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "ground": 0,
+   "faceHeight": 452,
+   "textPenalty": 3,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 0,
+    "subject": 0,
+    "soft": 0,
+    "text": 0.15,
+    "hook": 0
+   },
+   "cost": 0.15,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    150,
+    0,
+    0
+   ],
+   "score": 99.85,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line above-head",
+    "the source's pixels are not enlarged (0.71×)",
+    "the face is 452 px tall (33 % of the frame's height)",
+    "the picture fills the frame",
+    "cost 0.15 (text away +0.15)"
+   ]
+  },
+  {
+   "fit": "crop",
+   "scale": 0.5,
+   "left": -390,
+   "top": 0,
+   "zoom": 0.8,
+   "enlargement": 0.5,
+   "crop": "1:1",
+   "window": [
+    0,
+    0,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     410,
+     675,
+     260,
+     320
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 0.73× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "the blur of the face (39 % of the text's box)"
+     }
+    ]
+   },
+   "ground": 0.2,
+   "faceHeight": 320,
+   "textPenalty": 0,
+   "variant": 135,
+   "terms": {
+    "enlargement": 0,
+    "ground": 2,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 2,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    2000,
+    0,
+    135
+   ],
+   "score": 98,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are not enlarged (0.5×)",
+    "the face is 320 px tall (24 % of the frame's height)",
+    "20 % of the frame is ground",
+    "cost 2 (ground +2)"
+   ],
+   "behind": "behind the first by 1.85 points (ground +2)"
+  },
+  {
+   "fit": "inset",
+   "scale": 0.2813,
+   "left": 0,
+   "top": 371.3,
+   "zoom": 0.45,
+   "enlargement": 0.28,
+   "window": [
+    0,
+    371.3,
+    1080,
+    607.5
+   ],
+   "faceInFrame": [
+    [
+     450,
+     750.9,
+     146.3,
+     180
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 0.73× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "the blur of the face (39 % of the text's box)"
+     }
+    ]
+   },
+   "ground": 0.55,
+   "faceHeight": 180,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 5.5,
+    "subject": 2.9,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 8.4,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    8400,
+    0,
+    0
+   ],
+   "score": 91.6,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are not enlarged (0.28×)",
+    "the face is 180 px tall (13 % of the frame's height)",
+    "55 % of the frame is ground",
+    "cost 8.4 (ground +5.5, subject +2.9)"
+   ],
+   "behind": "behind the first by 8.25 points (ground +5.5, subject +2.9)"
+  },
+  {
+   "fit": "full",
+   "scale": 0.625,
+   "left": -660,
+   "top": 0,
+   "zoom": 1,
+   "enlargement": 0.63,
+   "window": [
+    0,
+    0,
+    1080,
+    1350
+   ],
+   "faceInFrame": [
+    [
+     340,
+     843.8,
+     325,
+     400
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "above-head",
+     "on": "picture",
+     "box": [
+      54,
+      569.8,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      608.1,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "hard",
+     "code": "covered",
+     "kind": "face",
+     "of": "face",
+     "what": "under the app's controls and caption (facebook-feed); the app's controls and caption (linkedin)"
+    }
+   ],
+   "hard": 1,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "ground": 0,
+   "faceHeight": 400,
+   "textPenalty": 3,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 0,
+    "subject": 0,
+    "soft": 0,
+    "text": 0.15,
+    "hook": 0
+   },
+   "cost": 0.15,
+   "rank": [
+    1,
+    0,
+    0,
+    0,
+    150,
+    0,
+    0
+   ],
+   "score": 0,
+   "why": [
+    "fails: face under the app's controls and caption (facebook-feed); the app's controls and caption (linkedin)",
+    "every text need met: 1 caption line above-head",
+    "the source's pixels are not enlarged (0.63×)",
+    "the face is 400 px tall (30 % of the frame's height)",
+    "the picture fills the frame",
+    "cost 0.15 (text away +0.15)"
+   ],
+   "behind": "behind the first because it has a hard problem"
+  }
+ ],
+ "asked": {
+  "frame": "4:5",
+  "platforms": []
+ }
+}

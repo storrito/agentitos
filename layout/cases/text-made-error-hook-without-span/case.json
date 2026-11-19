@@ -1,0 +1,17 @@
+{
+ "guards": "--text hook on shots without a hook span is one sentence that says what is missing, exit 1",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook"
+  ]
+ ]
+}

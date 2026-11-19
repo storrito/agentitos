@@ -1,0 +1,22 @@
+{
+ "guards": "a place followed by captions --candidate 1: the options that set captions into the first candidate's area",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face",
+   "540,150,200,240",
+   "--text",
+   "caption"
+  ],
+  [
+   "captions",
+   "--candidate",
+   "1"
+  ]
+ ]
+}

@@ -1,0 +1,26 @@
+$ place.mjs beside out --frame 16:9 --source 1920x1080 --face 1150,220,260,320 --material-min 800x450 --material 1920x1080
+16:9 1920×1080 for YouTube video, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+speaker 1920×1080, face x 1150–1410, y 220–540; material: a picture of 1920×1080, at least 800×450 px; text: none
+note: nothing in 16:9 was measured: the column is the catalogue's sketch, the panel below the material is offered only where the material keeps its smallest field
+note: no --before: the speaker full-frame before is taken as the source covering the frame (1× at 0, 0); give the placement you used, as --before scale,left,top, for the change's numbers
+
+1. ✓ beside-pip  score 100
+   material  field x 109–1571, y 108–930 (1461×822, 58 % of the frame) at 0.7611×; its ground x 0–1920, y 0–1080
+   speaker   circle 216 px top-right x 1608–1824, y 108–324: the footage at 0.3375× (left 1284, top 79.1), shows x 960–1600, y 86–726 of it; face x 1672–1760, y 153–261 (108 px, 10 %)
+   change    from full-frame (1× at 0, 0, assumed): the face moves 436 px to the right and 173 px up, and becomes 0.34× as large
+   why: no hard problem; the material over the frame, the speaker as a circle in its corner (a small picture in or at the screen: the rarer form in published Shorts); the material's field is 1461×822 px (58 % of the frame), at least the 800×450 it needs; the speaker's face is 108 px (10 % of the frame's height); cost 0 (no term)
+
+2. ✓ beside-column right  score 100
+   material  field x 96–1256, y 193–845 (1160×653, 37 % of the frame) at 0.6042×; its ground x 0–1280, y 0–1080
+   speaker   field x 1280–1920, y 0–1080: the footage at 1× (left 320, top 0), shows x 960–1600, y 0–1080 of it; face x 1470–1730, y 220–540 (320 px, 30 %)
+   change    from full-frame (1× at 0, 0, assumed): the face moves 320 px to the right and not up or down, at the same scale: the picture is only cut to the field and moved
+   why: no hard problem; the speaker as a column at one side, the material beside it (the face sits off the source's middle, so the speaker likely looks left, towards the material; unmeasured); the material's field is 1160×653 px (37 % of the frame), at least the 800×450 it needs; the speaker's face is 320 px (30 % of the frame's height; 18 % is the usual below a screen, the panel's target, taken by the column too); the speaker keeps the scale it had full-frame; cost 0 (no term); behind the first because it shows the picture under two thirds as large
+
+3. ✓ beside-above  score 98.414
+   material  field x 505–1415, y 108–620 (910×512, 22 % of the frame) at 0.4737×; its ground x 0–1920, y 0–644
+   speaker   field x 0–1920, y 644–1080: the footage at 0.6075× (left 376.8, top 578), shows x 0–1920, y 108–826 of it; face x 1075–1233, y 712–906 (194 px, 18 %); 16 % of the frame ground beside it
+   change    from full-frame (1× at 0, 0, assumed): the face moves 126 px to the left and 429 px down, and becomes 0.61× as large
+   why: no hard problem; the material above, the speaker as a panel below it (what published Shorts do most where a screen and a face show together: usual, not shown to work); the material's field is 909×512 px (22 % of the frame), at least the 800×450 it needs; the speaker's face is 194 px (18 % of the frame's height; 18 % is the usual below a screen); 16 % of the frame is ground beside the speaker's picture; cost 1.586 (ground +1.586); behind the first because it shows the picture under two thirds as large
+
+out/placement.json: 3 candidates, 3 without a hard problem and with every need met.
+The order is a suggestion. Look before you choose: place.mjs page out --still <speaker's video|image> [--still <the material as a picture>] writes the first three as pictures and has platform-zones check them; place.mjs captions out --candidate N gives the captions' options.

@@ -1,0 +1,23 @@
+{
+ "guards": "two caption lines over a close-up (the head half the height), raise full: where two lines find room and what they lie on",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption:2",
+   "--raise",
+   "full",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

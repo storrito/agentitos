@@ -1,0 +1,147 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   886,
+   696,
+   134
+  ],
+  "font": 77,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 49.6,
+  "where": "above-head",
+  "options": {
+   "y": 1020,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 1
+  },
+  "seconds": 0,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 6,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.749,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 480,
+   "limit": "room",
+   "touches": []
+  }
+ ],
+ "hook": null,
+ "changes": [],
+ "conflicts": [],
+ "notes": [],
+ "candidates": [
+  {
+   "box": [
+    192,
+    886,
+    696,
+    134
+   ],
+   "font": 77,
+   "cost": 6.2,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 49.6
+  },
+  {
+   "box": [
+    192,
+    899.9,
+    696,
+    120.1
+   ],
+   "font": 69,
+   "cost": 10.8,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 50
+  },
+  {
+   "box": [
+    192,
+    912.1,
+    696,
+    107.9
+   ],
+   "font": 62,
+   "cost": 14.8,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 50.3
+  },
+  {
+   "box": [
+    192,
+    1116,
+    696,
+    134
+   ],
+   "font": 77,
+   "cost": 60,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 61.6
+  },
+  {
+   "box": [
+    192,
+    1129.9,
+    696,
+    120.1
+   ],
+   "font": 69,
+   "cost": 64.8,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 62
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

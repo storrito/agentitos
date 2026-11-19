@@ -1,0 +1,31 @@
+$ place.mjs place out --frame 4:5 --source 3840x2160 --face 1600,1350,520,640 --text caption
+4:5 1080×1350 for Instagram feed post, Facebook feed post, LinkedIn video (no platform named: the usual ones of this frame)
+source 3840×2160, 1 face (x 1600–2120, y 1350–1990); text: 1 caption line
+
+1. ✓ crop 4:5  scale 0.7063 (1.13× of covering) at left -773.6, top -175.5  score 99.85
+   face    x 356–724, y 778–1230 (367×452)
+   caption above-head, x 54–1026, y 486–620, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line above-head; the source's pixels are not enlarged (0.71×); the face is 452 px tall (33 % of the frame's height); the picture fills the frame; cost 0.15 (text away +0.15)
+
+2. ✓ crop 1:1  scale 0.5 (0.8× of covering) at left -390, top 0  score 98
+   picture x 0–1080, y 0–1080, 20 % ground
+   face    x 410–670, y 675–995 (260×320)
+   caption band-below, x 54–1026, y 1096–1230, 1 line at 77 px
+   ground  behind the caption: the blur of the face (39 % of the text's box) (the ground is a blurred, darker copy of the picture, 0.73× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.5×); the face is 320 px tall (24 % of the frame's height); 20 % of the frame is ground; cost 2 (ground +2); behind the first by 1.85 points (ground +2)
+
+3. ✓ inset  scale 0.2813 (0.45× of covering) at left 0, top 371.3  score 91.6
+   picture x 0–1080, y 371–979, 55 % ground
+   face    x 450–596, y 751–931 (146×180)
+   caption band-below, x 54–1026, y 1096–1230, 1 line at 77 px
+   ground  behind the caption: the blur of the face (39 % of the text's box) (the ground is a blurred, darker copy of the picture, 0.73× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.28×); the face is 180 px tall (13 % of the frame's height); 55 % of the frame is ground; cost 8.4 (ground +5.5, subject +2.9); behind the first by 8.25 points (ground +5.5, subject +2.9)
+
+4. ✗ full  scale 0.625 (1× of covering) at left -660, top 0  score 0
+   face    x 340–665, y 844–1244 (325×400)
+   caption above-head, x 54–1026, y 570–704, 1 line at 77 px
+   ✗ face: under the app's controls and caption (facebook-feed); the app's controls and caption (linkedin)
+   why: fails: face under the app's controls and caption (facebook-feed); the app's controls and caption (linkedin); every text need met: 1 caption line above-head; the source's pixels are not enlarged (0.63×); the face is 400 px tall (30 % of the frame's height); the picture fills the frame; cost 0.15 (text away +0.15); behind the first because it has a hard problem
+
+out/placement.json: 4 candidates, 3 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

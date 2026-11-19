@@ -1,0 +1,143 @@
+$ place.mjs place out --frame 1080x1920 --source 1920x1080 --face-track faces.json --text caption
+9:16 1080×1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels (no platform named: the usual ones of this frame)
+source 1920×1080, 2 faces (x 420–786, y 260–656; x 1206–1530, y 300–650); text: 1 caption line
+note: no crop that fills the frame holds the faces in the safe box: filling the frame with the faces inside the box takes the source at 1.78× or more (1× of what covers the frame), and there they span 1973×704 px, more than the safe box's 828×1190; they fit the box only up to 0.75×, where the picture no longer fills the frame
+note: no speaker named: the crops on one person are listed for each of the 2, behind every candidate that shows them all: whom to leave out is yours to say (--speaker N lists only that person's crops, ranked with the rest)
+note: faces 1 and 2 stand close together: about the same size (the smaller 88 % of the larger; same distance from the camera from 67 %), their boxes 420 px apart across (1.22 of their mean width; close up to 2) and 0 px up or down (close up to one face's height). One picture holds both, so stacked, which would split them into two halves of the same shot, is listed behind every candidate that shows both in one picture. Stacking is for people far apart, at different distances, or filmed apart
+note: face 1 moves (12 moments, 0–5.5 s): placed for the hull of its boxes, 1.22× as wide and 1.04× as tall as its usual box (1.27× the area)
+note: face 2 moves (12 moments, 0–5.5 s): placed for the hull of its boxes, 1.16× as wide and 1× as tall as its usual box (1.16× the area)
+face 1: usual box x 453–753, y 268–648, hull x 420–786, y 260–656; its edges come from: top 0 s, bottom 1 s, left 0 s, right 5.5 s
+   decides: the box at 0 s, which gives the hull its top and left edge. Placed without it, the first candidate stays crop band but moves by less than a px.
+face 2: usual box x 1228–1508, y 300–650, hull x 1206–1530, y 300–650; its edges come from: top 0 s, bottom 0 s, left 5.5 s, right 0 s
+   decides: the box at 0 s, which gives the hull its top and bottom and right edge. Placed without it, the first candidate stays crop band but the picture 3 px further right.
+
+1. ✓ crop band  scale 0.7467 (0.42× of covering) at left -254, top 475.6  score 91.378
+   picture x 0–1080, y 476–1282, 58 % ground
+   face    x 60–333, y 670–966 (273×296)
+   face    x 647–888, y 700–961 (242×261)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.75×); the smallest face is 261 px tall (14 % of the frame's height); 58 % of the frame is ground; cost 8.622 (ground +5.8, subject +2.822)
+
+2. ✓ inset  scale 0.5625 (0.32× of covering) at left 0, top 656.3  score 89.338
+   picture x 0–1080, y 656–1264, 68 % ground
+   face    x 236–442, y 803–1025 (206×223)
+   face    x 678–861, y 825–1022 (182×197)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.56×); the smallest face is 197 px tall (10 % of the frame's height); 68 % of the frame is ground; cost 10.662 (ground +6.84, subject +3.822); behind the first by 2.04 points (ground +1.04, subject +1)
+
+3. ! crop 9:16 on face 2  scale 1.7778 (1× of covering) at left -1892, top 0  score 98.333
+   face    x 252–828, y 533–1156 (576×622)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ! picture: the source's pixels are enlarged 1.78× (over 1.5×: soft)
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.78×; the face is 622 px tall (32 % of the frame's height); the picture fills the frame; cost 1.667 (enlargement +1.667); behind the first because it leaves a person out and no speaker is named
+
+4. ! crop 9:16 on face 1  scale 1.7778 (1× of covering) at left -532, top 0  score 98.273
+   face    x 215–865, y 462–1166 (651×704)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ! picture: the source's pixels are enlarged 1.78× (over 1.5×: soft)
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.78×; the face is 676 px tall (35 % of the frame's height); the picture fills the frame; cost 1.727 (enlargement +1.667, subject +0.06); behind the first because it leaves a person out and no speaker is named
+
+5. ✓ crop 4:5 on face 1  scale 1.25 (0.7× of covering) at left -213.7, top 285  score 97.03
+   picture x 0–1080, y 285–1635, 30 % ground
+   face    x 311–769, y 610–1105 (458×495)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the face is 475 px tall (25 % of the frame's height); 30 % of the frame is ground; cost 2.97 (ground +2.97); behind the first because it leaves a person out and no speaker is named
+
+6. ✓ crop 4:5 on face 2  scale 1.25 (0.7× of covering) at left -1170, top 285  score 96.974
+   picture x 0–1080, y 285–1635, 30 % ground
+   face    x 338–743, y 660–1098 (405×438)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the face is 438 px tall (23 % of the frame's height); 30 % of the frame is ground; cost 3.026 (ground +2.97, subject +0.056); behind the first because it leaves a person out and no speaker is named
+
+7. ✓ crop 4:5, text on the ground on face 1  scale 1.25 (0.7× of covering) at left -213.7, top 446.4  score 96.83
+   picture x 0–1080, y 446–1796, 30 % ground
+   face    x 311–769, y 771–1266 (458×495)
+   caption band-above, x 192–888, y 288–422, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-above; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the face is 475 px tall (25 % of the frame's height); 30 % of the frame is ground; cost 3.17 (ground +2.97, text away +0.2); behind the first because it leaves a person out and no speaker is named
+
+8. ✓ crop 4:5, text on the ground on face 2  scale 1.25 (0.7× of covering) at left -1170, top 458.5  score 96.774
+   picture x 0–1080, y 459–1809, 30 % ground
+   face    x 338–743, y 834–1271 (405×438)
+   caption band-above, x 192–888, y 301–435, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-above; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the face is 438 px tall (23 % of the frame's height); 30 % of the frame is ground; cost 3.226 (ground +2.97, subject +0.056, text away +0.2); behind the first because it leaves a person out and no speaker is named
+
+9. ✓ crop 1:1 on face 1  scale 1 (0.56× of covering) at left -63, top 420  score 94.658
+   picture x 0–1080, y 420–1500, 44 % ground
+   face    x 357–723, y 680–1076 (366×396)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are not enlarged (1×); the face is 380 px tall (20 % of the frame's height); 44 % of the frame is ground; cost 5.342 (ground +4.38, subject +0.962); behind the first because it leaves a person out and no speaker is named
+
+10. ✓ crop 1:1, text on the ground on face 1  scale 1 (0.56× of covering) at left -63, top 202  score 94.658
+   picture x 0–1080, y 202–1282, 44 % ground
+   face    x 357–723, y 462–858 (366×396)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (1×); the face is 380 px tall (20 % of the frame's height); 44 % of the frame is ground; cost 5.342 (ground +4.38, subject +0.962); behind the first because it leaves a person out and no speaker is named
+
+11. ✓ crop 1:1 on face 2  scale 1 (0.56× of covering) at left -828, top 420  score 94.189
+   picture x 0–1080, y 420–1500, 44 % ground
+   face    x 378–702, y 720–1070 (324×350)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are not enlarged (1×); the face is 350 px tall (18 % of the frame's height); 44 % of the frame is ground; cost 5.811 (ground +4.38, subject +1.431); behind the first because it leaves a person out and no speaker is named
+
+12. ✓ crop 1:1, text on the ground on face 2  scale 1 (0.56× of covering) at left -828, top 202  score 94.189
+   picture x 0–1080, y 202–1282, 44 % ground
+   face    x 378–702, y 502–852 (324×350)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (1×); the face is 350 px tall (18 % of the frame's height); 44 % of the frame is ground; cost 5.811 (ground +4.38, subject +1.431); behind the first because it leaves a person out and no speaker is named
+
+13. ✗ full  scale 1.7778 (1× of covering) at left -1166.7, top 0  score 0
+   face    x -420–231, y 462–1166 (651×704)
+   face    x 977–1553, y 533–1156 (576×622)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ✗ face 1: 65 % outside the frame
+   ✗ face 2: 82 % outside the frame
+   ✗ face 2: under like, comment, share, save and the audio's cover (instagram-reels); the profile, like, comment, save, share and the sound's disc (tiktok); like, dislike, comment, share, remix and the sound (youtube-shorts); like, comment, share and more (facebook-reels)
+   ! picture: the source's pixels are enlarged 1.78× (over 1.5×: soft)
+   why: fails: face 1 65 % outside the frame; face 2 82 % outside the frame; face 2 under like, comment, share, save and the audio's cover (instagram-reels); the profile, like, comment, save, share and the sound's disc (tiktok); like, dislike, comment, share, remix and the sound (youtube-shorts); like, comment, share and more (facebook-reels); every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.78×; the smallest face is 622 px tall (32 % of the frame's height); the picture fills the frame; cost 1.667 (enlargement +1.667); behind the first because it has a hard problem
+
+14. ✗ crop 4:5  scale 1.25 (0.7× of covering) at left -744.7, top 285  score 0
+   picture x 0–1080, y 285–1635, 30 % ground
+   face    x -220–238, y 610–1105 (458×495)
+   face    x 763–1168, y 660–1098 (405×438)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ✗ face 1: 48 % outside the frame
+   ✗ face 2: 21 % outside the frame
+   ✗ face 2: under like, comment, share, save and the audio's cover (instagram-reels); the profile, like, comment, save, share and the sound's disc (tiktok); like, dislike, comment, share, remix and the sound (youtube-shorts); like, comment, share and more (facebook-reels)
+   why: fails: face 1 48 % outside the frame; face 2 21 % outside the frame; face 2 under like, comment, share, save and the audio's cover (instagram-reels); the profile, like, comment, save, share and the sound's disc (tiktok); like, dislike, comment, share, remix and the sound (youtube-shorts); like, comment, share and more (facebook-reels); every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the smallest face is 438 px tall (23 % of the frame's height); 30 % of the frame is ground; cost 3.026 (ground +2.97, subject +0.056); behind the first because it has a hard problem
+
+15. ✗ crop 1:1  scale 1 (0.56× of covering) at left -501, top 420  score 0
+   picture x 0–1080, y 420–1500, 44 % ground
+   face    x -81–285, y 680–1076 (366×396)
+   face    x 705–1029, y 720–1070 (324×350)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ✗ face 1: 22 % outside the frame
+   ✗ face 2: under like, comment, share, save and the audio's cover (instagram-reels); the profile, like, comment, save, share and the sound's disc (tiktok); like, dislike, comment, share, remix and the sound (youtube-shorts); like, comment, share and more (facebook-reels)
+   why: fails: face 1 22 % outside the frame; face 2 under like, comment, share, save and the audio's cover (instagram-reels); the profile, like, comment, save, share and the sound's disc (tiktok); like, dislike, comment, share, remix and the sound (youtube-shorts); like, comment, share and more (facebook-reels); every text need met: 1 caption line below-chin; the source's pixels are not enlarged (1×); the smallest face is 350 px tall (18 % of the frame's height); 44 % of the frame is ground; cost 5.811 (ground +4.38, subject +1.431); behind the first because it has a hard problem
+
+16. ✗ stacked  score 0
+   part 1  x 0–1080, y 0–960: source 1 at scale 0.8889, left 0, top 0
+   part 2  x 0–1080, y 960–1920: source 1 at scale 0.8889, left -626.7, top 960
+   face    x 373–699, y 231–583 (325×352)
+   face    x 445–733, y 1227–1538 (288×311)
+   (face 2, not held: x 1072–1080, y 267–578, 3 % of it shows)
+   (face 1, not held: x 0–72, y 1191–1543, 22 % of it shows)
+   caption seam, x 192–888, y 893–1027, 1 line at 77 px
+   ! face 1: in the safe box's margin (17 px past the top)
+   ! face 1: 15 % cut where the Instagram feed shows 4:5
+   ! face 1: 2 % cut where the profile grid shows 3:4
+   ✗ face 2: under the username, follow, caption and audio (instagram-reels); the username, caption and sound (tiktok); the title, channel, subscribe, sound and the progress bar (youtube-shorts); the page, follow, caption and audio (facebook-reels)
+   ! face 2: in the safe box's margin (190 px past the right)
+   ! face 2: 5 % cut where the Instagram feed shows 4:5
+   ✗ face 1: under the username, follow, caption and audio (instagram-reels); the username, caption and sound (tiktok); the title, channel, subscribe, sound and the progress bar (youtube-shorts); the page, follow, caption and audio (facebook-reels)
+   ! face 2: shows in the other person's part (3 % of it)
+   ! face 1: shows in the other person's part (22 % of it)
+   why: fails: face 2 under the username, follow, caption and audio (instagram-reels); the username, caption and sound (tiktok); the title, channel, subscribe, sound and the progress bar (youtube-shorts); the page, follow, caption and audio (facebook-reels); face 1 under the username, follow, caption and audio (instagram-reels); the username, caption and sound (tiktok); the title, channel, subscribe, sound and the progress bar (youtube-shorts); the page, follow, caption and audio (facebook-reels); every text need met: 1 caption line seam; the source's pixels are not enlarged (0.89×); the smallest face is 311 px tall (16 % of the frame's height); the picture fills the frame; soft: face 1 in the safe box's margin (17 px past the top); face 1 15 % cut where the Instagram feed shows 4:5; face 1 2 % cut where the profile grid shows 3:4; face 2 in the safe box's margin (190 px past the right); face 2 5 % cut where the Instagram feed shows 4:5; face 2 shows in the other person's part (3 % of it); face 1 shows in the other person's part (22 % of it); cost 5.541 (subject +2.041, soft problems +3.5); behind the first because it has a hard problem
+
+out/placement.json: 16 candidates, 12 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

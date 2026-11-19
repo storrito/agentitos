@@ -1,0 +1,17 @@
+{
+ "guards": "a face filling the frame known only by its box: captions at the mouth limit",
+ "from": "made-up geometry from a layout review (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--raise",
+   "mouth"
+  ]
+ ]
+}

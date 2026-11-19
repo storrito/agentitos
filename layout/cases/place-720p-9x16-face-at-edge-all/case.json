@@ -1,0 +1,18 @@
+{
+ "guards": "a 720p face near the left edge and the top into 9:16, every fit listed (--all)",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face",
+   "100,120,180,220",
+   "--text",
+   "caption",
+   "--all"
+  ]
+ ]
+}

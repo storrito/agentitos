@@ -1,0 +1,23 @@
+{
+ "guards": "a 1080p screen region with a 720p webcam file into 9:16 with a caption line",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1920x1080",
+   "--region",
+   "700,300,480,300",
+   "--min-text-height",
+   "14",
+   "--source",
+   "1280x720",
+   "--face",
+   "540,150,200,240",
+   "--text",
+   "caption"
+  ]
+ ]
+}

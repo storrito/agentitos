@@ -1,0 +1,21 @@
+{
+ "guards": "the moving 720p face with the hook as a card and a weight changed by --set (softFrom 1.4)",
+ "from": "made-up geometry (made up): a 1280x720 face track",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face-track",
+   "track.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook:card",
+   "--set",
+   "weights.enlarge.softFrom=1.4"
+  ]
+ ]
+}
