@@ -1,5 +1,6 @@
-// The check of word times against the sound, on made-up loudness and on a made-up recording; and
-// who speaks, on made-up voices. No request to OpenRouter: the second hearing gets a recognizer
+// The check of word times against the sound, on made-up loudness and on a made-up recording;
+// voice no word covers, found, heard again and written in or kept as unwritten; and who speaks,
+// on made-up voices. No request to OpenRouter: the second hearing gets a recognizer
 // that answers from a list, the tool itself a stand-in for the gateway on this machine.
 //
 //   node --test tools/test.mjs
@@ -12,8 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { envelopeOf, smooth, threshold, voiced, islands, bare, check, repair, HOP } from "./lib/timing.mjs";
-import { stretches, adopt, hearAgain } from "./lib/again.mjs";
+import { envelopeOf, smooth, threshold, voiced, islands, bare, check, repair, unwritten, HOP } from "./lib/timing.mjs";
+import { stretches, adopt, hearAgain, written, fillIn } from "./lib/again.mjs";
 import { quietLevels, edged } from "./lib/edges.mjs";
 import { cut, scribe, LONG, BEFORE } from "./lib/scribe.mjs";
 import { listen, framesOf, fingerprints, bySound, shared, byWords, byTime, named, key, SR, APART, MARGIN } from "./lib/voices.mjs";
@@ -256,6 +257,90 @@ test("a doubtful stretch is cut out, heard again and its times put on the record
     const r2 = await hearAgain(file, words, [[2, 3]], async () => { throw new Error("OpenRouter 503"); });
     assert.deepEqual(r2, { heard: 0, stretches: 1 });
     assert.equal(JSON.stringify(words), before);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------- speech not written down
+
+// "one two … four" with an attempt the recognizer did not write between two and three
+const RETRY = [2.7, 3.1];
+const retried = () => [word("one", 1.0, 1.4), word("two", 2.0, 2.5), word("three", 3.6, 4.0), word("four", 4.4, 4.9)];
+
+test("voice between two words that no word covers is speech not written down; a breath, a click or a noise is not", () => {
+  const env = sound(6, [[1.0, 1.4], [2.0, 2.5], [...RETRY], [3.6, 4.0], [4.4, 4.9]]);
+  const [gap, ...more] = unwritten(retried(), env, threshold(env));
+  assert.deepEqual(more, []);
+  assert.equal(gap.after, 1);
+  near(gap.from, RETRY[0], 0.011); near(gap.to, RETRY[1], 0.011); near(gap.voiced, 0.4, 0.02);
+  // the same pause with a breath (a tenth of the speech's level), a click (80 ms) or nothing: none
+  for (const parts of [[[2.7, 3.1, 0.02]], [[2.9, 2.98]], []]) {
+    const quiet = sound(6, [[1.0, 1.4], [2.0, 2.5], ...parts, [3.6, 4.0], [4.4, 4.9]]);
+    assert.deepEqual(unwritten(retried(), quiet, threshold(quiet)), [], JSON.stringify(parts));
+  }
+  // noise under everything, as loud as a fifth of the speech: the pauses are noise, not voice
+  const noisy = sound(6, [[0, 6, 0.04], [1.0, 1.4], [2.0, 2.5], [3.6, 4.0], [4.4, 4.9]]);
+  assert.deepEqual(unwritten(retried(), noisy, threshold(noisy)), []);
+  // before the first word and after the last, too; a noise covers its own time
+  const ends = sound(6, [[0.2, 0.7], [1.0, 1.4], [2.0, 2.5], [2.7, 3.1], [3.6, 4.0], [4.4, 4.9], [5.2, 5.7]]);
+  const noise = [...retried().slice(0, 2), word("[laughs]", 2.6, 3.2, "event"), ...retried().slice(2)];
+  assert.deepEqual(unwritten(noise, ends, threshold(ends)).map((g) => [g.after, g.from, g.to]), [[-1, 0.2, 0.7], [4, 5.2, 5.7]]);
+});
+
+test("a second hearing's words go into the stretch when its clock agrees around it", () => {
+  const words = retried(), gap = { after: 1, from: 2.7, to: 3.1 };
+  // the attempt it heard, and the words around it where they are
+  const heard = [word("one", 1.02, 1.4), word("two", 2.0, 2.5), word("two,", 2.7, 3.08), word("three", 3.6, 4.0), word("four", 4.42, 4.9)];
+  assert.deepEqual(written(words, gap, heard), [{ text: "two,", start: 2.7, end: 3.08, kind: "word" }]);
+  // its clock off by half a second: nothing
+  assert.deepEqual(written(words, gap, heard.map((w) => ({ ...w, start: w.start + 0.5, end: w.end + 0.5 }))), []);
+  // it wrote nothing new there, or only words without a length: nothing
+  assert.deepEqual(written(words, gap, [heard[1], heard[3]]), []);
+  assert.deepEqual(written(words, gap, [heard[1], word("two", 2.8, 2.82), heard[3]]), []);
+});
+
+test("a second hearing keeps the first and last word of a skipped attempt that the edges drew the words around it over", () => {
+  // "The" and "new" as Scribe timed them, then their edges drawn out over the attempt between them
+  const words = [word("The", 1.0, 1.5), word("new", 2.72, 3.3), word("app", 3.4, 3.7)];
+  const was = new Map([[words[0], [1.0, 1.2]], [words[1], [3.0, 3.3]]]);
+  const heard = [word("The", 1.0, 1.2), word("new", 1.2, 1.5), word("app", 1.56, 1.9), word("opens,", 1.95, 2.3), word("the", 2.72, 2.98), word("new", 3.0, 3.3), word("app", 3.4, 3.7)];
+  const gap = { after: 0, from: 1.56, to: 2.3 };
+  assert.deepEqual(written(words, gap, heard, 2, was).map((w) => w.text), ["new", "app", "opens,", "the"]);
+  // without the times before the edges, the two at the ends would be lost
+  assert.deepEqual(written(words, gap, heard).map((w) => w.text), ["app", "opens,"]);
+});
+
+test("speech not written down is heard again alone and its words put in, marked; what stays without words is said", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  try {
+    const file = path.join(dir, "retry.wav");
+    const on = [[1.0, 1.4], [2.0, 2.5], RETRY, [3.6, 4.0], [4.4, 4.9]].map(([a, b]) => `between(t\\,${a}\\,${b})`).join("+");
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `aevalsrc=0.4*sin(2*PI*220*t)*(${on}):s=16000:d=6`, file], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const env = await envelopeOf(file), thr = threshold(env);
+    const words = retried().map((w) => ({ ...w, speaker: "A" }));
+    const gaps = unwritten(words, env, thr);
+    assert.equal(gaps.length, 1);
+    const sent = [];
+    // the recognizer of the snippet: everything said in it, on the snippet's clock
+    const hear = async (piece, seconds) => {
+      sent.push(seconds);
+      const from = Math.max(0, 1.0 - 0.35);
+      return [word("one", 1.0, 1.4), word("two", 2.0, 2.5), word("two", 2.7, 3.1), word("three", 3.6, 4.0), word("four", 4.4, 4.9)]
+        .map((w) => ({ ...w, start: w.start - from, end: w.end - from })).filter((w) => w.end <= seconds);
+    };
+    const f = await fillIn(file, words, gaps, hear);
+    assert.deepEqual(f, { added: 1, stretches: 1, left: 0 });
+    assert.equal(sent.length, 1);
+    assert.deepEqual(words.map((w) => w.text), ["one", "two", "two", "three", "four"]);
+    assert.deepEqual({ ...words[2], start: +words[2].start.toFixed(1), end: +words[2].end.toFixed(1) }, { text: "two", start: 2.7, end: 3.1, kind: "word", speaker: "A", by: "second hearing", added: true });
+    assert.deepEqual(unwritten(words, env, thr), []);
+    // a second hearing that writes nothing there, or fails: the words stay, the stretch stays unwritten
+    for (const deaf of [async () => [], async () => { throw new Error("OpenRouter 503"); }]) {
+      const again = retried();
+      assert.deepEqual(await fillIn(file, again, unwritten(again, env, thr), deaf), { added: 0, stretches: 1, left: 0 });
+      assert.deepEqual(again, retried());
+      assert.equal(unwritten(again, env, thr).length, 1);
+    }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -641,6 +726,8 @@ test("two voices: the words carry their speakers at once, linked across the piec
       // the check against the sound ran on the same words
       assert.equal(r.json.edges, "sound");
       assert.equal(r.json.timing.checked, said.length - 1);
+      // every voice has its words: nothing heard again, nothing unwritten
+      assert.deepEqual([r.json.unwritten, r.json.timing.added, r.json.timing.unwritten], [[], 0, 0]);
       assert.match(r.line, /, voices A B in 7:30 .*\{text, start, end, kind, speaker\}/);
       // the line says what the speakers take on trust, and what to do where more speak
       assert.match(r.line, /Who speaks is told across the 2 pieces by the sound, taking the recording to be of two people at most: where more speak, --speakers --speakers-n N/);
@@ -758,6 +845,31 @@ test("one request: a voice that only makes noise is nobody, its people are those
     assert.equal(music.speaker, undefined);
     r.json.words.filter((w) => w !== music).forEach((w, i) => assert.equal(w.speaker, said.filter((s) => s.who !== "band")[i].who === "ann" ? "A" : "B"));
     assert.match(r.line, /, voices A B in 1:00 /);
+  } finally {
+    await gate.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the tool: voice the recognizer wrote no words for is heard again and, where nothing comes back, written down as unwritten", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
+  const { samples, said } = talk(60, [["ann", 0, 60]]);
+  // the recognizer leaves out three words in a row; their voice is in the file
+  const heard = said.filter((_, i) => i < 40 || i > 42);
+  const gate = await gateway(heard, [[0, 60]], () => ({ ann: 0 }));
+  try {
+    const file = path.join(dir, "talk.wav");
+    wav(file, samples);
+    const r = await run(dir, "gap", [file], gate.url);
+    assert.equal(r.code, 0, r.line);
+    // the recording, then the stretch alone (a piece of no known length, which this stand-in refuses)
+    assert.equal(gate.asked.length, 2);
+    assert.equal(r.json.words.length, heard.length);
+    assert.equal(r.json.unwritten.length, 1);
+    near(r.json.unwritten[0].from, said[40].start, 0.05); near(r.json.unwritten[0].to, said[42].end, 0.05);
+    assert.deepEqual([r.json.timing.added, r.json.timing.unwritten], [0, 1]);
+    assert.match(r.line, /1 stretch of voice without words \(a false start or a word the model left out, not a pause\): "unwritten" in the JSON, first at 0:1[56]\.$|"unwritten" in the JSON, first at 0:1[56]\. Next/);
+    assert.match(r.log, /speech at 16\.0 s was not heard again \(OpenRouter 400/);
   } finally {
     await gate.close();
     fs.rmSync(dir, { recursive: true, force: true });
