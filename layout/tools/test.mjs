@@ -1364,6 +1364,18 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     const t2 = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", kind: "text", start: 0, end: 3 }] });
     ok(t2.hook.kind === "text" && t2.hook.onFace.features > 0 && t2.conflicts.some((c) => /on the eyes, nose or mouth for/.test(c)), JSON.stringify(t2.hook));
   });
+  t("captions above a head that fills the frame leave the hook only their own place: they give way to the next place that leaves it better off and lies on the faces no longer (best-takes' own phone take: the captions above the head, the hook's card over them), said; a --caption-y the caller fixed stays", () => {
+    // the phone take as read off its grid: the face from y 690 to the chin at 1470, the head's top at 570
+    const f = { who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [330, 690, 540, 780] })) };
+    const alone = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: cap });
+    const r = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }] });
+    ok(alone.caption.where === "above-head", `without a hook the captions stand ${alone.caption.where}`);
+    ok(r.caption.where === "below-chin" && r.shots[0].lift > 0 && r.caption.seconds === 0, JSON.stringify(r.caption));
+    ok(r.hook && !(inter(r.hook.box, r.caption.box) > 0) && !(r.hook.onFace?.seconds > 0), JSON.stringify(r.hook));
+    ok(r.notes.some((n) => /The captions stand with their middle at [\d.]+ % of the height, not at [\d.]+ %/.test(n)), r.notes.join(" "));
+    const kept = textOverTime({ zones: Z9, shots: [shot(0, 5, [f])], needs: [...cap, { role: "hook", start: 0, end: 3 }], fixed: { y: alone.caption.options.y } });
+    ok(kept.caption.options.y === alone.caption.options.y, JSON.stringify(kept.caption.options));
+  });
   t("the command: text writes text.json and lists every shot; a --lift fixes one shot; a wrong --lift and a shots file without tracks are refused in one sentence", () => {
     const dir = fs.mkdtempSync(path.join(OUT, "text-")), file = path.join(dir, "shots.json");
     fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 8, [still([355, 850, 370, 500], 4, 8)])], hook: { start: 0, end: 2.5 } }));
