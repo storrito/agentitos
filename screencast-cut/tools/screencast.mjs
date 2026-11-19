@@ -66,7 +66,7 @@ import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
-import { layoutTool, framingTool, followFace, keepMoments, placeFace, faceMoments, nameOf, markOf, coverOf } from "./lib/placement.mjs";
+import { layoutTool, framingTool, followFace, keepMoments, placeFace, speakerMoments, nameOf, markOf, coverOf } from "./lib/placement.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal"];
@@ -147,6 +147,7 @@ async function faceOfWebcam(dir, meta) {
     const found = await findFace(source(dir, cam.file), cam.duration, { log: console.log });
     cam.face = found?.face ?? null;
     if (found?.at) cam.faceAt = found.at;
+    if (found?.atWhy) cam.faceAtWhy = found.atWhy;
   } catch (e) {
     console.log(`webcam: the face was not found (${e.message.split("\n")[0]}): the circle shows the picture's middle`);
     cam.face = null;
@@ -315,7 +316,7 @@ function joinRecordings(dir, parts) {
     execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", source(dir, `${k}.list.txt`), "-an", "-c", "copy", "-movflags", "+faststart", source(dir, `${k}.mp4`)], { stdio: ["ignore", "ignore", "inherit"] });
     const p = probe(source(dir, `${k}.mp4`));
     sources[k] = { file: `${k}.mp4`, from: having.map((h) => h.src.from).join(" + "), offset: +begins[0].toFixed(3), duration: p.duration, width: first.width, height: first.height,
-      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), ...(first.faceAt ? { faceAt: first.faceAt } : {}), sessions: having.map((h) => h.n) };
+      video: true, audio: false, ...(first.face !== undefined ? { face: first.face } : {}), ...(first.faceAt ? { faceAt: first.faceAt } : {}), ...(first.faceAtWhy ? { faceAtWhy: first.faceAtWhy } : {}), sessions: having.map((h) => h.n) };
     // a recording scaled into the first one's size sits in bars: its boxes moved into them, its
     // grid cells (on its own frame) left out
     const into = (src) => {
@@ -978,11 +979,17 @@ function faceView(dir, cut, pieces, sources, { width, height, platforms, area })
   const faced = [...new Set(pieces.filter((p) => p.view === "face").map((p) => p.keep))];
   if (!faced.length || !cam?.video) return [];
   const span = (k) => { const ps = pieces.filter((p) => p.keep === k); return `${clock(ps[0].start)}–${clock(ps.at(-1).start + ps.at(-1).duration)}`; };
-  const three = faceMoments(cam);
-  if (!three.length) {
+  if (!cam.face) {
     for (const p of pieces) if (p.view === "face") p.picture = { ...coverOf(cam, width, height), mark: "?", why: "the webcam's face is not known" };
     return [`Face view: the webcam's face is not known (no OpenRouter when new ran), so it covers the frame from the middle as before; ${faced.length === 1 ? "its keep" : `its ${faced.length} keeps`} at ${faced.map(span).join(", ")}.`];
   }
+  // the face of one person, the circle's, at each of the model's frames; else as before
+  const one = speakerMoments(cam);
+  if (one.why) {
+    for (const p of pieces) if (p.view === "face") p.picture = { ...coverOf(cam, width, height), mark: "?", why: one.why };
+    return [`Face view: ${one.why}, so it covers the frame from the face as before; ${faced.length === 1 ? "its keep" : `its ${faced.length} keeps`} at ${faced.map(span).join(", ")}.`];
+  }
+  const three = one.moments;
   const tool = layoutTool();
   if (!tool) {
     for (const p of pieces) if (p.view === "face") p.picture = { ...coverOf(cam, width, height), mark: "?", why: "no layout skill" };

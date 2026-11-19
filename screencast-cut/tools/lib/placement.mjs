@@ -10,6 +10,8 @@
 //
 //   layoutTool(), framingTool()          → the path of layout's place.mjs / clips' frame.mjs, or null
 //   faceMoments(cam)                     → [{ t, box: [x, y, w, h] }] in px of the webcam's picture
+//   speakerMoments(cam)                  → { moments } of the circle's face at the model's frames, or
+//                                          { why } where they are not of one person
 //   followFace({ tool, file, cam, out }) → { moments: [{ t, box }] } every tenth of a second, followed
 //                                          from the model's boxes, or { why } where it was not
 //   keepMoments(followed, from, to, fallback) → the moments of one keep (webcam seconds), else fallback
@@ -39,6 +41,21 @@ export function faceMoments(cam) {
   const px = ([x0, y0, x1, y1]) => [x0 * cam.width, y0 * cam.height, (x1 - x0) * cam.width, (y1 - y0) * cam.height].map((v) => +v.toFixed(1));
   if (Array.isArray(cam.faceAt) && cam.faceAt.length) return cam.faceAt.map((m) => ({ t: m.t, box: px(m.box) }));
   return cam.face ? [{ t: 0, box: px(cam.face) }] : [];
+}
+
+// The face the tracker follows is one person's: the circle's (face.mjs, the middle of the model's
+// answers by where they lie across). Each of the model's boxes must lie within a face's width and
+// height of it (centre to centre); one further off is another person, or a head that moved further
+// than the face view follows, and then the keeps are covered as before. So are answers that gave
+// no box per frame (two people in a frame, a frame without a face, or a project from before
+// face.mjs kept them).
+export function speakerMoments(cam) {
+  if (!cam.face) return { why: "the webcam's face is not known" };
+  if (!Array.isArray(cam.faceAt) || !cam.faceAt.length) return { why: cam.faceAtWhy || "the model gave no face for each of the frames it saw (two people, a frame without a face, or a webcam found before the face view followed one)" };
+  const [x0, y0, x1, y1] = cam.face, w = x1 - x0, h = y1 - y0;
+  const off = cam.faceAt.filter(({ box: b }) => Math.abs((b[0] + b[2]) / 2 - (x0 + x1) / 2) > w || Math.abs((b[1] + b[3]) / 2 - (y0 + y1) / 2) > h);
+  if (off.length) return { why: `the model's ${off.length === 1 ? "face" : "faces"} at ${off.map((m) => `${m.t} s`).join(" and ")} ${off.length === 1 ? "lies" : "lie"} further than a face's width or height from the one the circle shows (another person, or a head that moved far), and the face view follows one person` };
+  return { moments: faceMoments(cam) };
 }
 
 // The face between the model's frames, followed in the webcam's picture by clips' tracker (a

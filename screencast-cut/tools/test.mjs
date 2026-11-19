@@ -222,7 +222,8 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 // speaker (place --pick speaker, the old cover among the candidates), the face followed between
 // the model's three boxes by clips' tracker, the element's geometry, and the old cover where no
 // face is known. The layout skill and clips run as programs, beside this one.
-import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
+import { readFaces } from "./lib/face.mjs";
+import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
 
@@ -370,4 +371,42 @@ test("where layout's place stops on a keep, placeFace gives the reason instead o
     assert.match(placeFace({ tool, folder: path.join(dir, "face-3"), moments: TOP_EDGE, cam: SIDE_CAM, width: 1080, height: 1920 }).why, /stopped/);
     assert.ok(placeFace({ tool: path.join(dir, "missing.mjs"), folder: path.join(dir, "face-4"), moments: TOP_EDGE, cam: SIDE_CAM, width: 1080, height: 1920 }).why);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The review's webcam of two people (1280×720, one at the left and one at the right): where the
+// model's three answers name the left one twice and the right one once, the tracker blended
+// between them (at 30 s its box on the seam, 599,96,147,262). The boxes are the review's, in
+// thousandths of the frame as the model answers.
+const LEFT = { left: 198, top: 111, right: 334, bottom: 463 }, RIGHT = { left: 625, top: 111, right: 729, bottom: 482 };
+const MOMENTS = [15.01, 37.53, 60.05];
+const answer = (...faces) => JSON.stringify({ faces });
+
+test("the model's answers are matched to its frames by the frame each names, by count only where each frame has one; two faces in a frame give no moments, and say why", () => {
+  const mixed = readFaces(answer(LEFT, RIGHT, LEFT), MOMENTS);
+  assert.deepEqual(mixed.face, [0.198, 0.111, 0.334, 0.463], "the circle: the middle answer across, as before");
+  assert.equal(mixed.at.length, 3);
+  const both = readFaces(answer(...[1, 2, 3].flatMap((frame) => [{ frame, ...LEFT }, { frame, ...RIGHT }])), MOMENTS);
+  assert.equal(both.at, null);
+  assert.match(both.atWhy, /2 faces in one of its frames/);
+  const six = readFaces(answer(LEFT, RIGHT, LEFT, RIGHT, LEFT, RIGHT), MOMENTS);
+  assert.equal(six.at, null);
+  assert.match(six.atWhy, /6 faces for its 3 frames/);
+  // a frame without a face: the two others at their own moments
+  const two = readFaces(answer({ frame: 1, ...LEFT }, { frame: 3, ...LEFT }), MOMENTS);
+  assert.deepEqual(two.at.map((m) => m.t), [15.01, 60.05]);
+  assert.equal(readFaces("no face here", MOMENTS), null);
+});
+
+test("the face view follows one person, the circle's: the review's answers that name two people are covered as before with the reason, a head that drifts sideways is followed", () => {
+  const cam = (found) => ({ width: 1280, height: 720, face: found.face, ...(found.at ? { faceAt: found.at } : {}), ...(found.atWhy ? { faceAtWhy: found.atWhy } : {}) });
+  const mixed = speakerMoments(cam(readFaces(answer(LEFT, RIGHT, LEFT), MOMENTS)));
+  assert.ok(!mixed.moments);
+  assert.match(mixed.why, /at 37\.53 s lies further than a face's width or height from the one the circle shows/);
+  assert.match(speakerMoments(cam(readFaces(answer(LEFT, RIGHT, LEFT, RIGHT, LEFT, RIGHT), MOMENTS))).why, /6 faces for its 3 frames/);
+  // a webcam from before face.mjs kept its moments: as before, said
+  assert.match(speakerMoments({ width: 1280, height: 720, face: [0.174, 0.126, 0.339, 0.498] }).why, /no face for each of the frames/);
+  // the review's drifting head (one person, 0.18 to 0.39 of the width over 45 s): followed
+  const side = { width: 1280, height: 720, face: [0.241, 0.014, 0.474, 0.495], faceAt: [{ t: 15.01, box: [0.184, 0.025, 0.412, 0.509] }, { t: 37.53, box: [0.241, 0.014, 0.474, 0.495] }, { t: 60.05, box: [0.391, 0.014, 0.623, 0.489] }] };
+  assert.equal(speakerMoments(side).moments.length, 3);
+  assert.deepEqual(speakerMoments(CAM).moments, faceMoments(CAM));
 });
