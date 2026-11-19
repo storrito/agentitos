@@ -18,8 +18,12 @@ else
   if ls "$dir"/*.deb >/dev/null 2>&1; then echo "::warning::The cached packages did not install on this runner: from Ubuntu's mirrors, and the cache made anew."; fi
   ok=""
   for try in 1 2 3; do
+    # (what a failed install of the cache left half done is mended first, with no package named:
+    # apt mends nothing while packages are named)
+    apt=(-y --no-install-recommends -o Acquire::Retries=5 -o APT::Keep-Downloaded-Packages=true)
     if sudo apt-get update -o Acquire::Retries=5 \
-      && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -f --no-install-recommends -o Acquire::Retries=5 -o APT::Keep-Downloaded-Packages=true $DEBS < /dev/null; then ok=1; break; fi
+      && sudo DEBIAN_FRONTEND=noninteractive apt-get -f install "${apt[@]}" < /dev/null \
+      && sudo DEBIAN_FRONTEND=noninteractive apt-get install "${apt[@]}" $DEBS < /dev/null; then ok=1; break; fi
     [ "$try" -lt 3 ] && { echo "::warning::Ubuntu's mirrors failed (try $try of 3): again in 30 s."; sleep 30; }
   done
   [ -n "$ok" ] || { echo "::error::$DEBS could not be installed: Ubuntu's mirrors failed three times."; exit 1; }
