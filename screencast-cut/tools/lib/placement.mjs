@@ -249,12 +249,13 @@ function namedFails(x, list) {
 // else the first. Without a known face the frame is covered as before, and said; so is a keep whose
 // placement goes wrong (the tracker, layout, a refusal): the build never stops for it. Sets each
 // face piece's picture; returns the lines to print.
-export function faceView(dir, cut, pieces, sources, { width, height, words = [], platforms, area }) {
+export function faceView(dir, cut, pieces, sources, { width, height, words = [], platforms, area, screens = new Set() }) {
   const cam = sources.webcam;
   const faced = [...new Set(pieces.filter((p) => p.view === "face").map((p) => p.keep))];
-  // "layout" names a picture of the face view: on a keep that does not show it, it is left out, said
-  const unused = (cut.keep || []).flatMap((keep, k) => (keep.layout !== undefined && !(faced.includes(k) && cam?.video) ? [k] : []));
-  const left = unused.map((k) => `! keep ${k + 1}: "layout" holds only for a face keep ("view": "face" with a webcam); this keep shows ${pieces.find((p) => p.keep === k)?.view || "no piece"}, so "${cut.keep[k].layout}" is left out.`);
+  // "layout" names a picture of the face view or of a screen keep (screenview.mjs, `screens`): on a
+  // keep that shows neither (a phone's screen), it is left out, said
+  const unused = (cut.keep || []).flatMap((keep, k) => (keep.layout !== undefined && !(faced.includes(k) && cam?.video) && !screens.has(k) ? [k] : []));
+  const left = unused.map((k) => `! keep ${k + 1}: "layout" holds only for a face keep ("view": "face" with a webcam) or a screen keep; this keep shows ${pieces.find((p) => p.keep === k)?.view || "no piece"}, so "${cut.keep[k].layout}" is left out.`);
   const out = faceViewOf(dir, cut, pieces, sources, faced, { width, height, words, platforms, area });
   return [...out, ...left];
 }

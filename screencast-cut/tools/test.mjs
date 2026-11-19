@@ -542,8 +542,11 @@ test("a \"layout\" on a keep without the face view is said to hold only for a fa
     // the review's cut-bad: "crop 1:1" on the screen keep 4, and the review's cutA: "crop 1:1" on the face keep 5
     const cut = { keep: [{ view: "face" }, {}, {}, { layout: "crop 1:1" }, { view: "face", layout: "crop 1:1" }] };
     const pieces = [piece(0, "face", 43.8, 44.2), piece(3, "screen", 50, 52), piece(4, "face", 57.69, 62.49)];
-    const tall = faceView(dir, cut, pieces, sources, { width: 1080, height: 1920 }).join("\n");
-    assert.match(tall, /! keep 4: "layout" holds only for a face keep \("view": "face" with a webcam\); this keep shows screen, so "crop 1:1" is left out\./);
+    // a screen keep's "layout" is the screen's (screenview.mjs): not warned here; on a keep that is neither, it is
+    const tall = faceView(dir, cut, pieces, sources, { width: 1080, height: 1920, screens: new Set([3]) }).join("\n");
+    assert.doesNotMatch(tall, /keep 4: "layout" holds only/);
+    const phone = faceView(dir, cut, pieces, sources, { width: 1080, height: 1920 }).join("\n");
+    assert.match(phone, /! keep 4: "layout" holds only for a face keep \("view": "face" with a webcam\) or a screen keep; this keep shows screen, so "crop 1:1" is left out\./);
     const named = pieces[2].picture;
     assert.ok(named.named && named.fit === "crop 1:1" && named.mark === "✗", JSON.stringify(named));
     assert.match(tall, /keep 5 \([^)]*\): ✗ crop 1:1 at 1\.5×.*\(as the keep names it\).*: it does not pass \(face 11 % outside the frame; face under .*\); these pass: "crop band", "inset"/);
@@ -931,4 +934,372 @@ test("the shown file is converted as the recordings are at new: an HEVC clip wit
     assert.match(said.why, /^ffmpeg cannot convert .*broken\.mp4 into a video the preview plays \(.+\); give it as MP4 \(H\.264\), the result as it was posted or rendered\.$/);
     if (!hevc) console.log("# this machine's ffmpeg has no HEVC encoder: tried with an H.264 clip of a varying rate");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ------------------------------------------------------------------------- the screen's picture
+// A screen keep (whole, or a "zoom" box) asks the layout skill (lib/screenview.mjs): the picture as
+// before stays where it passes (its region inside the safe box across, the circle and the label off
+// it, its text read where "text" says how tall), else layout's first; the build never stops for it.
+import { beforePicture, judge, choose, textSentence, placeScreen, screenView, regionPx, freeCorner, shiftedInside, BEFORE } from "./lib/screenview.mjs";
+
+const SZ = { safe: [60, 250, 828, 1190], wide: [60, 250, 960, 590], margins: { top: 250, bottom: 480, left: 60, right: 192 },
+  covers: [{ platform: "tiktok", box: [0, 0, 1080, 150] }, { platform: "tiktok", box: [900, 840, 180, 1080] }], platforms: [{ id: "tiktok", name: "TikTok" }] };
+const DESK = { width: 2560, height: 1440, offset: 0, video: true };
+const judged = (pic, o = {}) => Object.assign(pic, { j: judge(pic, { zones: SZ, width: 1080, height: 1920, ...o }) });
+
+test("a screen's picture as before is judged: its region past the safe box's margins across, the circle or a label on it, under an app's bar, its text under the height that reads", () => {
+  const a = areas(1080, 1920, SZ, { captions: true });
+  // a wide zoom box fills the frame's width as before (x 0–1080): past the margins
+  const flat = beforePicture([0.05, 0.04, 0.95, 0.08], DESK, a, true);
+  assert.deepEqual(flat.region.map(Math.round).filter((_, i) => i % 2 === 0), [0, 1080]);
+  assert.deepEqual(judge(flat, { zones: SZ, width: 1080, height: 1920 }).faults.map((f) => f.code), ["across"]);
+  // the card (474 × 254 of 2560 × 1440) inside the safe box at 2×: nothing at fault but a text of 10 px (20 px here, under 24)
+  const card = beforePicture([0.536, 0.398, 0.722, 0.575], DESK, a, true);
+  assert.equal(card.scale, 2);
+  const j = judge(card, { zones: SZ, width: 1080, height: 1920, text: 10, readable: 24 });
+  assert.deepEqual(j.faults.map((f) => f.code), ["text"]);
+  assert.equal(j.textHeight, 20);
+  assert.ok(j.ground > 0 && j.ground < 1);
+  // the circle and a label on the region, the region under a bar
+  const pic = { scale: 1, window: [0, 0, 1080, 900], region: [100, 100, 780, 800], circle: [80, 700, 238] };
+  assert.deepEqual(judge(pic, { zones: SZ, labels: [[60, 250, 300, 70]], width: 1080, height: 1920 }).faults.map((f) => f.code), ["circle", "label", "bars"]);
+  assert.deepEqual(judge(pic, { zones: SZ, width: 1080, height: 1920 }).under, ["TikTok"]);
+  // inside the wide stretch above the buttons (x 60–1020) passes across
+  assert.deepEqual(judge({ scale: 1, window: [0, 0, 1080, 900], region: [60, 300, 960, 400] }, { zones: SZ, width: 1080, height: 1920 }).faults, []);
+  assert.deepEqual(regionPx([0.3, 0.1, 0.9, 0.6], { width: 1920, height: 1080 }), [576, 108, 1152, 540]);
+});
+
+test("which picture: as before where it passes; else layout's first it draws, off the label; as before where only its text is too small and layout's is no larger, or where layout's all have the label on them; a name the keep gives", () => {
+  const before = judged({ fit: BEFORE, scale: 0.8, window: [0, 300, 1080, 600], region: [0, 300, 1080, 120] });
+  const fit = judged({ fit: "screen-fit", scale: 0.71, window: [0, 300, 1080, 600], region: [60, 300, 960, 110], mark: "!", hard: 0 });
+  const whole = judged({ fit: "screen-whole", scale: 0.4, window: [0, 400, 1080, 600], region: [100, 400, 500, 60], mark: "✓", hard: 0 });
+  const bad = judged({ fit: "screen-zoom", scale: 2, window: [0, 0, 1080, 900], region: [100, 100, 800, 800], mark: "✗", hard: 1 });
+  // as before at fault (across): the first that is not ✗; the whole screen never answers a zoom box
+  assert.equal(choose(before, [bad, fit, whole], { zoomed: true }).pic, fit);
+  assert.equal(choose(before, [whole], { zoomed: true }).pic, before);
+  assert.equal(choose(before, [whole], { zoomed: false }).pic, whole);
+  // as before passes: it stays
+  const good = judged({ fit: BEFORE, scale: 1.2, window: [0, 300, 1080, 600], region: [100, 300, 800, 300] });
+  assert.equal(choose(good, [fit, whole]).pic, good);
+  // only its text too small, layout's no larger: it stays, said why
+  const small = judged({ fit: BEFORE, scale: 1.2, window: [0, 300, 1080, 600], region: [100, 300, 800, 300] }, { text: 12, readable: 24 });
+  const got = choose(small, [judged({ ...fit, scale: 1.1 }, { text: 12, readable: 24 })], { text: 12, zoomed: true });
+  assert.equal(got.pic, small); assert.match(got.why, /no other picture removes a fault without adding one \(screen-fit at 1\.1×: text 13\.2 px\)/);
+  // layout's picture with the label on its region: as before stays when only its margins are at fault
+  const onLabel = judged({ ...fit }, { labels: [[60, 300, 300, 70]] });
+  assert.match(choose(before, [onLabel], { zoomed: true }).why, /label on the region/);
+  // a picture that removes one fault but adds another is not taken either (it was, until the
+  // first review: the circle off the region bought with the label on it)
+  const circled = judged({ ...before, circle: [100, 300, 238] });
+  assert.equal(choose(circled, [onLabel], { zoomed: true }).pic, circled);
+  // a name: layout's candidate, "as before", or one this frame lacks (the rule's, said)
+  assert.equal(choose(before, [fit, whole], { asked: "screen-whole", zoomed: true }).pic, whole);
+  assert.equal(choose(before, [fit], { asked: BEFORE }).pic, before);
+  const missing = choose(before, [fit], { asked: "screen-stacked", zoomed: true });
+  assert.equal(missing.pic, fit); assert.equal(missing.missing, "screen-stacked");
+});
+
+test("the sentence about the screen's text: without \"text\" the plain fact and what to do, claiming nothing; with it the height here and whether it reads", () => {
+  assert.equal(textSentence({ scale: 0.375 }, { readable: 24 }), `the screen at 0.38×: a line 18 px tall on the screen is 6.8 px here, and a capital reads here from 64 px tall on the screen; where its text is smaller, zoom on what is talked about, and say how tall its smallest text is with "text" (px of a capital, off the sheet's grid) to have it checked`);
+  assert.doesNotMatch(textSentence({ scale: 2 }, { readable: 24 }), /reads \(|under the/);
+  assert.equal(textSentence({ scale: 1.5 }, { text: 12, readable: 24, narrower: "at most 414×300 px of the screen" }), `the screen at 1.5×: its text (12 px on the screen, "text") is 18 px tall here, under the 24 px from which text begins to read: for it to read surely, give a narrower "zoom" on what is talked about (at most 414×300 px of the screen reads), or split the keep where the words move on`);
+  assert.equal(textSentence({ scale: 2 }, { text: 12, readable: 24 }), `the screen at 2×: its text (12 px on the screen, "text") is 24 px tall here, it reads (from 24 px)`);
+});
+
+// a project for screenView: the 2560 desktop's keeps, the webcam's circle
+const screenProject = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "screen-view-"));
+  const sources = { screen: { ...DESK, file: "screen.mp4" }, webcam: { width: 1280, height: 720, offset: 0, video: true, face: [0.388, 0.202, 0.614, 0.685] }, "phone-screen": { ...PHONE, video: true } };
+  const piece = (keep, view, crop, extra = {}) => ({ keep, view, source: view === "face" ? "webcam" : view, start: keep * 3, duration: 3, in: keep * 3, out: keep * 3 + 3, crop, ...extra });
+  return { dir, sources, piece };
+};
+
+test("a screen keep whose layout skill is missing, fails, runs over its time or answers nonsense is drawn as before, with one sentence; the build goes on", () => {
+  const { dir, sources, piece } = screenProject();
+  try {
+    const a = areas(1080, 1920, SZ, { captions: true });
+    const cut = { keep: [{ zoom: [0.05, 0.04, 0.95, 0.08] }] };
+    const fails = path.join(dir, "fails.mjs"), hangs = path.join(dir, "hangs.mjs"), junk = path.join(dir, "junk.mjs"), empty = path.join(dir, "empty.mjs");
+    fs.writeFileSync(fails, "console.error('The box reaches past the source.'); process.exit(1);");
+    fs.writeFileSync(hangs, "setTimeout(() => {}, 60000);");
+    fs.writeFileSync(junk, "console.log('not json');");
+    fs.writeFileSync(empty, "console.log(JSON.stringify({ candidates: [{ fit: 'screen-stacked', parts: [] }] }));");
+    for (const [tool, want] of [[null, /as before, because the layout skill is missing/], [fails, /as before, because layout's place gave no candidates for it \(its words in .*place\.log\)/],
+      [hangs, /as before, because layout's place ran over 1 s for it and was stopped/], [junk, /as before, because the placement stopped/], [empty, /as before, because layout's place gave no picture to draw for it/]]) {
+      const ps = [piece(0, "screen", [0.05, 0.04, 0.95, 0.08])];
+      const said = screenView(dir, cut, ps, sources, { width: 1080, height: 1920, zones: SZ, areas: a, tool, timeout: 1 }).join("\n");
+      assert.match(said, want, String(tool));
+      assert.equal(ps[0].screenPic, undefined, "drawn as before");
+      assert.equal(ps[0].screen.fit, BEFORE);
+      assert.match(said, /a line 18 px tall on the screen is \d/);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("with the layout skill: a zoom box that fills the width as before is drawn as layout places it (inside the margins, the circle off it); a card that passes stays as before; \"text\" asks layout and is said; face, phone and \"show\" pieces are left alone", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const { dir, sources, piece } = screenProject();
+  try {
+    const z = SZ, a = areas(1080, 1920, z, { captions: true });
+    fs.writeFileSync(path.join(dir, "area.json"), JSON.stringify(BANDS["1080x1920"]));
+    const cut = { keep: [{ zoom: [0.05, 0.04, 0.95, 0.08] }, { zoom: [0.536, 0.398, 0.722, 0.575] }, { zoom: [0.536, 0.398, 0.722, 0.575], text: 12 }, { view: "face" }, { view: "phone-screen" }, { show: {} }, { zoom: [0.05, 0.04, 0.95, 0.08], layout: "as before" }] };
+    const ps = [piece(0, "screen", cut.keep[0].zoom), piece(1, "screen", cut.keep[1].zoom), piece(2, "screen", cut.keep[2].zoom), piece(3, "face", null), piece(4, "phone-screen", [0, 0, 1, 1]), piece(5, "screen", [0, 0, 1, 1], { show: { source: "x" } }), piece(6, "screen", cut.keep[6].zoom)];
+    const said = screenView(dir, cut, ps, sources, { width: 1080, height: 1920, zones: z, areas: a, area: path.join(dir, "area.json") }).join("\n");
+    // keep 1: layout's, its region inside x 60–1020, the circle off it; the line says what was wrong as before
+    const p0 = ps[0].screenPic;
+    assert.ok(p0 && /^screen-(fit|zoom)$/.test(p0.fit), said);
+    assert.ok(p0.region[0] >= 59.5 && p0.region[0] + p0.region[2] <= 1020.5, JSON.stringify(p0.region));
+    assert.match(said, /keep 1 \([^)]*\): [✓!] screen-(fit|zoom) at [\d.]+× \(the layout skill's\).*; as before \([\d.]+×\) its region runs x 0–1080, past the safe box's margins/);
+    // keep 2 passes as before; keep 3 says its text's height and asks layout with --min-text-height
+    assert.equal(ps[1].screenPic, undefined); assert.equal(ps[1].screen.fit, BEFORE);
+    assert.match(said, /keep 3 [^\n]*\n[^\n]*\n?.*its text \(12 px on the screen, "text"\) is [\d.]+ px tall here/);
+    assert.equal(ps[2].screen.text, 12); assert.equal(ps[2].screen.readable, 24);
+    const asked = JSON.parse(fs.readFileSync(path.join(dir, "placement", "screen-3", "placement.json"), "utf8"));
+    assert.equal(asked.screen.minTextHeight, 12);
+    // the keep that names "as before" keeps it, at fault and said
+    assert.equal(ps[6].screenPic, undefined); assert.match(said, /keep 7 \([^)]*\): as before, as the keep names it/);
+    // face, phone and shown pieces: nothing set
+    for (const p of ps.slice(3, 6)) assert.ok(p.screen === undefined && p.screenPic === undefined, JSON.stringify(p));
+    // drawn: the screen at layout's scale, clipped to its window; the circle at layout's place
+    const [s0] = shots([ps[0]], sources, 1080, 1920, a);
+    assert.deepEqual(s0.layers[0].at, { ...geometry(p0, sources.screen), box: p0.window });
+    assert.deepEqual(s0.layers[1].box, [p0.circle[0], p0.circle[1], p0.circle[2], p0.circle[2]]);
+    // as before: exactly main's layers
+    const [s1] = shots([ps[1]], sources, 1080, 1920, a), [m1] = shots([{ ...ps[1], screen: undefined }], sources, 1080, 1920, a);
+    assert.deepEqual(s1.layers, m1.layers);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the circle moves before the picture does (pair screen-circle-169): the picture as before, moved across by as little as brings its region inside the margins, the circle in the first free corner; none free (or a label there): not moved", () => {
+  // the public test's slide in 16:9 (keep 4 of pub-lean-169): the right column at 1.21×, the circle top right on its links
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+  const a = areas(1920, 1080, z, { captions: true, labels: true }), src = { width: 1920, height: 1080 };
+  const b = beforePicture([0.6, 0.15, 0.97, 0.66], src, a, true), opts = { zones: z, width: 1920, height: 1080 };
+  assert.deepEqual(judge(b, opts).faults.map((f) => f.code), ["across", "circle"]);
+  const i = shiftedInside(b, src, z, a, 1920);
+  assert.equal(i.scale, b.scale);
+  assert.ok(i.region[0] + i.region[2] <= 1824.5 && Math.abs(i.left - b.left) < 30, JSON.stringify(i));
+  assert.deepEqual(judge(i, opts).faults.map((f) => f.code), ["circle"]);
+  assert.deepEqual(freeCorner(i, { zones: z, areas: a, width: 1920, height: 1080 }), { circle: [96, 108, 216], corner: "top left" });
+  // a label in the top left corner and the region over the bottom ones: no corner is free
+  const wide = { ...i, region: [96, 300, 1728, 600] };
+  assert.equal(freeCorner(wide, { zones: z, areas: a, labels: [[96, 108, 300, 70]], width: 1920, height: 1080 }), null);
+  // choose takes the moved picture before layout's
+  const moved = Object.assign({ ...i, fit: "as before, inside the margins, the circle top left", circle: [96, 108, 216] }, {}); moved.j = judge(moved, opts);
+  const before = Object.assign(b, { j: judge(b, opts) }), fit = { fit: "screen-fit", scale: 1.16, window: [0, 0, 1319, 748], region: [427, 108, 826, 640], circle: [1608, 108, 216], mark: "✓", hard: 0 };
+  fit.j = judge(fit, opts);
+  assert.equal(choose(before, [fit], { zoomed: true, own: [moved] }).pic, moved);
+  assert.equal(choose(before, [fit], { zoomed: true }).pic, fit);
+  assert.equal(choose(before, [fit], { zoomed: true, own: [moved], asked: "screen-fit" }).pic, fit);
+});
+
+test("a moved circle alone keeps the screen exactly as before; only the circle's place changes", () => {
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+  const a = areas(1920, 1080, z, { captions: true }), sources = { screen: { width: 1920, height: 1080, offset: 0 }, webcam: { width: 1280, height: 720, offset: 0, face: [0.388, 0.202, 0.614, 0.685] } };
+  const p = { view: "screen", source: "screen", start: 0, duration: 2, in: 0, out: 2, crop: [0.3, 0.2, 0.7, 0.6] };
+  const b = beforePicture(p.crop, sources.screen, a, true);
+  const [main] = shots([p], sources, 1920, 1080, a), [moved] = shots([{ ...p, screenPic: { ...b, fit: "as before, the circle top left", circle: [96, 108, 216], circleOnly: true } }], sources, 1920, 1080, a);
+  assert.deepEqual(moved.layers[0], main.layers[0]);
+  assert.deepEqual(moved.layers[1].box, [96, 108, 216, 216]);
+});
+
+test("a zoom box under the circle with no free corner and every candidate of layout failing stays as before, and the list says so with what to do", () => {
+  const { dir, sources, piece } = screenProject();
+  try {
+    const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+    const a = areas(1920, 1080, z, { captions: true });
+    const tool = path.join(dir, "fails-all.mjs");
+    fs.writeFileSync(tool, `console.log(JSON.stringify({ screen: { readable: 42.7 }, notes: [], candidates: [{ fit: "screen-fit", scale: 2.96, left: 0, top: 0, window: [0, 0, 1920, 776], faceInFrame: [[100, 100, 800, 600]], hard: 1, unmet: [], soft: 0 }] }));`);
+    const cut = { keep: [{ zoom: [0.05, 0.1, 0.95, 0.9] }] };
+    const ps = [piece(0, "screen", cut.keep[0].zoom)];
+    const said = screenView(dir, cut, ps, sources, { width: 1920, height: 1080, zones: z, areas: a, tool }).join("\n");
+    assert.equal(ps[0].screenPic, undefined, said);
+    assert.match(said, /the webcam's circle lies on its region/);
+    assert.match(said, /! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them \("circle": false\)/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ------------------------------------------------------- the first review of the screen's picture
+// Its inputs, as numbers (/tmp/screen-review of 2026-11-19): what the build does with each.
+import { zones as realZones } from "./lib/zones.mjs";
+const frameOf = (width, height, { labels = false } = {}) => {
+  const z = realZones(width, height, []), [sx, sy, sw, sh] = z.safe;
+  return { z, a: areas(width, height, z, { captions: true, labels }), band: { left: sx, width: sw, top: sy + sh - 158, bottom: sy + sh, size: 52, lines: 2 } };
+};
+const CAM16 = { width: 1280, height: 720, offset: 0, video: true, face: [0.388, 0.202, 0.614, 0.685] };
+// one screen keep through screenView with the layout skill beside: its piece, what it said, its circle as drawn
+function oneKeep({ width, height, screen, crop, text = 0, label = null, segments = null, pip = true, tool }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "screen-review-"));
+  try {
+    const { z, a, band } = frameOf(width, height, { labels: !!label });
+    const area = path.join(dir, "area.json");
+    fs.writeFileSync(area, JSON.stringify(band));
+    const sources = { screen: { width: screen[0], height: screen[1], offset: 0, video: true }, ...(pip ? { webcam: CAM16 } : {}) };
+    const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop, ...(segments ? { segments } : {}) };
+    const labels = label ? [{ text: label, start: 0, duration: 4 }] : [];
+    const said = screenView(dir, { keep: [{ zoom: crop, ...(text ? { text } : {}) }] }, [p], sources, { width, height, zones: z, areas: a, labels, area, ...(tool !== undefined ? { tool } : {}) }).join("\n");
+    const [shot] = shots([p], sources, width, height, a, labels);
+    return { p, said, a, shot, circles: shot.layers.filter((l) => l.pip), main: shot.layers.filter((l) => l.main) };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+test("review 1: a keep split at a scene change draws each part's circle where its list says, over its part's time (16:9, 1920×1080, the parts [0.75,0.05,0.98,0.3] and [0.02,0.05,0.25,0.3], either order); one circle where the parts agree", () => {
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+  const a = areas(1920, 1080, z, { captions: true }), sources = { screen: { width: 1920, height: 1080, offset: 0 }, webcam: CAM16 };
+  const A = [0.75, 0.05, 0.98, 0.3], B = [0.02, 0.05, 0.25, 0.3];
+  // what screenView sets on the parts: the first part's circle moved to the top left, the second as before
+  const moved = { ...beforePicture(A, sources.screen, a, true), fit: "as before, the circle top left", circle: [96, 108, 216], circleOnly: true };
+  for (const [one, two] of [[A, B], [B, A]]) {
+    const segments = [{ in: 0, out: 2, crop: one, ...(one === A ? { screenPic: moved } : {}) }, { in: 2, out: 4, crop: two, ...(two === A ? { screenPic: moved } : {}) }];
+    const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, rate: 1, crop: one, segments };
+    const [s] = shots([p], sources, 1920, 1080, a);
+    const circles = s.layers.filter((l) => l.pip).map((l) => [l.box[0], l.start, l.duration, l.in]);
+    assert.deepEqual(circles, one === A ? [[96, 0, 2, 0], [1608, 2, 2, 2]] : [[1608, 0, 2, 0], [96, 2, 2, 2]]);
+  }
+  // parts whose circles agree: one circle for the piece, untimed, as on main
+  const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop: B, segments: [{ in: 0, out: 2, crop: B }, { in: 2, out: 4, crop: [0.02, 0.4, 0.25, 0.65] }] };
+  const [s] = shots([p], sources, 1920, 1080, a);
+  assert.deepEqual(s.layers.filter((l) => l.pip).map((l) => [l.box, l.start]), [[[1608, 108, 216, 216], undefined]]);
+});
+
+test("review 1, with the layout skill: the split keep's list and its drawing agree on each part's circle", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const A = [0.75, 0.05, 0.98, 0.3], B = [0.02, 0.05, 0.25, 0.3];
+  for (const [one, two] of [[A, B], [B, A]]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen: [1920, 1080], crop: one, segments: [{ in: 0, out: 2, crop: one }, { in: 2, out: 4, crop: two }] });
+    const want = r.p.segments.map((g) => (g.screenPic?.circle || r.a.pip)[0]);
+    assert.deepEqual(r.circles.map((l) => l.box[0]), want, r.said);
+    assert.deepEqual(want, one === A ? [96, 1608] : [1608, 96]);
+    // no circle lies on its part's region
+    r.p.segments.forEach((g, i) => { const reg = (g.screenPic || beforePicture(g.crop, { width: 1920, height: 1080 }, r.a, true)).region, c = r.circles[i].box;
+      assert.ok(!(c[0] < reg[0] + reg[2] && reg[0] < c[0] + c[2] && c[1] < reg[1] + reg[3] && reg[1] < c[1] + c[3]), `part ${i + 1}: ${JSON.stringify([c, reg])}`); });
+  }
+});
+
+test("review 2: a picture of the layout skill's that removes no fault, or adds one, is not taken: 16:9, zoom [0.3,0.3,0.7,0.7] with a label, the screen 1920×1080 (1.55× against 1.48×) and 3440×1440 (1.16× against 1.11×) stay as before, said", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [screen, scale] of [[[1920, 1080], 1.55], [[3440, 1440], 1.16]]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen, crop: [0.3, 0.3, 0.7, 0.7], label: "Settings page" });
+    assert.equal(r.p.screenPic, undefined, r.said);
+    assert.equal(r.p.screen.fit, BEFORE); assert.equal(r.p.screen.scale, scale);
+    assert.match(r.said, /the label lies on its region \(it stays: no other picture removes a fault without adding one \(screen-fit at [\d.]+×: [^)]*the label on the region\)\)/);
+  }
+  // and in numbers: before has the label on its region; layout's has it too and is smaller
+  const before = judged({ fit: BEFORE, scale: 1.55, window: [0, 0, 1080, 900], region: [100, 300, 800, 300] }, { labels: [[60, 250, 400, 80]] });
+  const fit = judged({ fit: "screen-fit", scale: 1.48, window: [0, 0, 1080, 900], region: [100, 300, 760, 290], mark: "✓", hard: 0 }, { labels: [[60, 250, 400, 80]] });
+  assert.equal(choose(before, [fit], { zoomed: true }).pic, before);
+});
+
+test("review 3: nonsense from the layout skill (null, a candidate with circle {}, a negative scale, a window of strings) draws the keep as before with one sentence, never stops the build", () => {
+  const { dir, sources, piece } = screenProject();
+  try {
+    const a = areas(1080, 1920, SZ, { captions: true });
+    const tools = { null: "console.log('null');", array: "console.log('[1,2]');",
+      circle: "console.log(JSON.stringify({ candidates: [{ fit: 'screen-fit', scale: 1, left: 0, top: 0, window: [0, 0, 1080, 900], faceInFrame: [[100, 100, 500, 300]], circle: {} }] }));",
+      negative: "console.log(JSON.stringify({ candidates: [{ fit: 'screen-fit', scale: -3, left: 0, top: 0, window: [0, 0, 1080, 900], faceInFrame: [[100, 100, 500, 300]] }] }));",
+      strings: "console.log(JSON.stringify({ screen: { readable: 'x' }, notes: 'x', candidates: [{ fit: 'screen-fit', scale: 1, left: 0, top: 0, window: ['a', 0, 1080, 900], faceInFrame: [[100, 100, 500, 300]] }] }));" };
+    for (const [name, code] of Object.entries(tools)) {
+      const tool = path.join(dir, `${name}.mjs`);
+      fs.writeFileSync(tool, code);
+      const ps = [piece(0, "screen", [0.02, 0.45, 0.98, 0.5])];
+      const said = screenView(dir, { keep: [{ zoom: ps[0].crop }] }, ps, sources, { width: 1080, height: 1920, zones: SZ, areas: a, tool });
+      const line = said[1];
+      assert.match(line, name === "circle" ? /^  keep 1 \([^)]*\): as before( at 0\.44×|, because layout's place gave no picture to draw for it)/ : /^  keep 1 \([^)]*\): as before, because layout's place (answered no placement|gave no picture to draw) for it/, `${name}: ${line}`);
+      assert.equal(ps[0].screenPic, undefined, name);
+      shots(ps, sources, 1080, 1920, a);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+import { seat } from "./lib/screenview.mjs";
+test("review 4 (circle-still): the circle keeps main's place and size in every keep where that place is off the region; layout's picture is drawn with it there (9:16: y 962, not layout's 1020); it moves only off the region, at main's size, and the list names only a move", () => {
+  const z = SZ, a = areas(1080, 1920, z, { captions: true });
+  const env = { zones: z, areas: a, width: 1080, height: 1920 };
+  // layout's screen-fit for the wide strip, its own circle 58 px lower: drawn with main's circle
+  const fit = { fit: "screen-fit", scale: 0.55, left: -6, top: 334, window: [0, 334, 1080, 600], region: [60, 363, 960, 35], circle: [60, 1020, 238] };
+  assert.deepEqual(seat(fit, a.pip, env).circle, [60, 962, 238]);
+  assert.equal(seat(fit, a.pip, env).corner, undefined);
+  // 16:9: layout's smaller circle (172 px) is not taken; where main's lies on the region it moves at 216 px
+  const z16 = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] }, a16 = areas(1920, 1080, z16, { captions: true });
+  const on = seat({ region: [1100, 150, 700, 400], circle: [1652, 108, 172] }, a16.pip, { ...env, zones: z16, areas: a16, width: 1920, height: 1080 });
+  assert.deepEqual([on.circle, on.corner], [[96, 108, 216], "top left"]);
+  // the circle on a label moves too; without the circle there is none
+  const lab = seat({ region: [100, 500, 600, 200] }, a16.pip, { ...env, zones: z16, areas: a16, width: 1920, height: 1080, labels: [[96, 108, 1600, 70]] });
+  assert.equal(lab.corner, "bottom right");
+  assert.equal(seat(fit, null, env).circle, null);
+});
+
+test("review 4, with the layout skill: 9:16, 16:9, 4:5 and 1:1 keeps drawn with layout's picture keep main's circle (place where it is off the region, size always), the list names the circle only where it moved", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [width, height, screen, crop] of [[1080, 1920, [1920, 1080], [0.046, 0.052, 0.954, 0.111]], [1080, 1920, [3440, 1440], [0.395, 0.395, 0.541, 0.579]], [1920, 1080, [2560, 1440], [0.046, 0.038, 0.954, 0.085]], [1080, 1350, [2560, 1440], [0, 0, 1, 1]], [1080, 1080, [2560, 1440], [0.046, 0.038, 0.954, 0.085]]]) {
+    const r = oneKeep({ width, height, screen, crop, text: crop[0] === 0.395 ? 12 : 0 });
+    const c = r.circles[0].box, pic = r.p.screenPic;
+    assert.ok(pic && /^screen-/.test(pic.fit), `${width}×${height} ${crop}: ${r.said}`);
+    assert.equal(c[2], r.a.pip[2], "main's size");
+    if (pic.corner) assert.match(r.said, new RegExp(`the circle moved to the ${pic.corner} \\(x ${Math.round(c[0])}, y ${Math.round(c[1])}\\)`));
+    else { assert.deepEqual(c.slice(0, 2), r.a.pip.slice(0, 2), "main's place"); assert.doesNotMatch(r.said.split("\n")[1], /circle/); }
+  }
+});
+
+test("review 5: a shift before a shrink: 1280×720 corner zooms in 16:9, past the margins at 2×, are drawn as before at 2× moved inside them (the circle off the region); a region wider than the safe box is not shifted", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [zn, crop, dx] of [["tl", [0, 0, 0.3, 0.3], 96], ["tr", [0.7, 0, 1, 0.3], -96], ["bl", [0, 0.7, 0.3, 1], 96], ["br", [0.7, 0.7, 1, 1], -96]]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen: [1280, 720], crop });
+    const pic = r.p.screenPic;
+    assert.ok(pic && pic.fit.startsWith("as before, inside the margins"), `${zn}: ${r.said}`);
+    assert.equal(pic.scale, 2); assert.equal(pic.shift, dx);
+    assert.ok(pic.region[0] >= 95.5 && pic.region[0] + pic.region[2] <= 1824.5, JSON.stringify(pic.region));
+    assert.match(r.said, new RegExp(`as before, moved 96 px ${dx < 0 ? "left" : "right"} to hold the region inside the safe box's margins, at 2×`));
+    assert.deepEqual(r.main[0].at, { ...geometry(pic, { width: 1280, height: 720 }), box: pic.window });
+  }
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] }, a = areas(1920, 1080, z, { captions: true });
+  assert.equal(shiftedInside({ region: [0, 100, 1800, 100], left: 0, top: 0, scale: 1, window: [0, 0, 1920, 776] }, { width: 1920, height: 1080 }, z, a, 1920), null);
+  assert.equal(shiftedInside({ region: [200, 100, 800, 100], left: 0, top: 0, scale: 1, window: [0, 0, 1920, 776] }, { width: 1920, height: 1080 }, z, a, 1920), null);
+});
+
+test("review 6: a \"text\" fault does not keep the circle on the region (16:9, zoom [0.75,0.05,0.98,0.3], text 12: the circle top left, as without text); without the layout skill the text's height is given, not null; the placement's folder is named by the keep", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const text of [0, 12]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen: [1920, 1080], crop: [0.75, 0.05, 0.98, 0.3], text });
+    assert.deepEqual(r.circles[0].box, [96, 108, 216, 216], `text ${text}: ${r.said}`);
+    assert.ok(!r.p.screen.faults.includes("circle"));
+  }
+  const none = oneKeep({ width: 1920, height: 1080, screen: [1920, 1080], crop: [0.75, 0.05, 0.98, 0.3], text: 12, tool: null });
+  assert.equal(none.p.screen.textHeight, 24); assert.equal(none.p.screen.readable, undefined);
+  // keep 2 (the only screen keep) asks layout in placement/screen-2, its second picture in screen-2-2
+  const { dir, sources, piece } = screenProject();
+  try {
+    const a = areas(1080, 1920, SZ, { captions: true });
+    const ps = [{ ...piece(1, "screen", [0.05, 0.04, 0.95, 0.08]), segments: [{ in: 3, out: 4, crop: [0.05, 0.04, 0.95, 0.08] }, { in: 4, out: 6, crop: [0.536, 0.398, 0.722, 0.575] }] }];
+    const said = screenView(dir, { keep: [{ view: "face" }, {}] }, ps, sources, { width: 1080, height: 1920, zones: SZ, areas: a }).join("\n");
+    assert.ok(fs.existsSync(path.join(dir, "placement", "screen-2", "placement.json")) && fs.existsSync(path.join(dir, "placement", "screen-2-2", "placement.json")), said);
+    assert.match(said, /screen-<keep>\/placement\.json/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ------------------------------------------------------ the second review of the screen's picture
+test("second review 1: the smallest shift that puts the region where it passes: 9:16, a 1280×720 screen's top and bottom right corners at 2× move 60 px into the wide stretch above the buttons, not 192 px into the safe box; a region that reaches down to the buttons still moves 192 px", () => {
+  const { z, a } = frameOf(1080, 1920), src = { width: 1280, height: 720 };
+  for (const crop of [[0.7, 0, 1, 0.3], [0.7, 0.7, 1, 1]]) {
+    const b = beforePicture(crop, src, a, true);
+    const s = shiftedInside(b, src, z, a, 1080);
+    assert.equal(s.shift, -60, JSON.stringify(crop));
+    assert.deepEqual(s.region, [252, 329, 768, 432]);
+    assert.deepEqual(judge(s, { zones: z, width: 1080, height: 1920 }).faults, []);
+  }
+  // reaching below the wide stretch (to y 1000): only the safe box holds it, 192 px
+  const low = { fit: BEFORE, scale: 2, left: -1408, top: 0, window: [0, 0, 1080, 1200], region: [312, 600, 768, 400] };
+  assert.equal(shiftedInside(low, src, z, a, 1080).shift, -192);
+});
+
+test("second review 2: a circle moved to a bottom corner ends the skill's gap above the captions' band as built (16:9: band at y 772, the circle's bottom at 748, not 776) and keeps that gap from a label; without room at the bottom the top corners are tried as before", () => {
+  const { z, a } = frameOf(1920, 1080);
+  const gap = Math.round(1080 * 0.022);
+  const pic = { circle: a.pip, region: [96, 108, 1300, 300] };
+  const free = freeCorner(pic, { zones: z, areas: a, width: 1920, height: 1080, band: 772 });
+  assert.deepEqual(free, { circle: [1608, 772 - gap - 216, 216], corner: "bottom right" });
+  assert.equal(freeCorner(pic, { zones: z, areas: a, width: 1920, height: 1080 }).circle[1] + 216, a.bleed[3], "without the band: the areas' bottom, as before");
+  // a label 10 px beside the top left corner's circle: nearer than the gap, so that corner is not taken
+  const right = { circle: [1608, 108, 216], region: [400, 108, 1424, 300] }, o = { zones: z, areas: a, width: 1920, height: 1080, band: 772 };
+  assert.equal(freeCorner(right, o).corner, "top left");
+  assert.equal(freeCorner(right, { ...o, labels: [[96 + 216 + 10, 108, 200, 70]] }).corner, "bottom right");
+  // the band so high that no bottom corner has room: a top corner
+  const t = freeCorner({ circle: [1608, 600, 216], region: [400, 500, 1000, 300] }, { zones: z, areas: a, width: 1920, height: 1080, band: 300 });
+  assert.match(t.corner, /^top/);
+  // seat passes the band on (top left has the label, bottom right meets the region: bottom left)
+  assert.deepEqual(seat({ region: [1100, 150, 700, 400] }, a.pip, { zones: z, areas: a, width: 1920, height: 1080, band: 772, labels: [[96, 108, 300, 70]] }).circle, [96, 772 - gap - 216, 216]);
 });

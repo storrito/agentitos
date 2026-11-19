@@ -176,6 +176,16 @@ export function spread(area, bleed, c, source, { maxScale = Infinity } = {}) {
     inset: [y0 - top, left + w - x1, top + h - y1, x0 - left].map((v) => r(Math.max(0, v))) };
 }
 
+// a label's type (px) in a frame, and the most of it a letter takes across (800 Inter's widest
+// capitals and digits, with the letter spacing; most are narrower); its box in the frame, at the
+// safe box's corner (areas().label): x, y, w, h
+export const labelSize = (width, height) => Math.round(Math.min(width, height) * 0.036);
+export const LABEL_EM = 0.75;
+export function labelBox(text, a, width, height) {
+  const size = labelSize(width, height), [lx, ly] = a.label;
+  return [lx, ly, String(text).length * size * LABEL_EM + 44, size * 1.25 + 24];
+}
+
 // a face box (0–1 of the webcam's picture, from sources.json) or the webcam's middle, a little high
 const faceOf = (source) => source.face || [0.35, 0.2, 0.65, 0.65];
 
