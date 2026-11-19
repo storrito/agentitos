@@ -2,8 +2,8 @@
 // over time (agentitos' clips frames them: its frame.mjs --faces, the model's stills with the
 // eyes, nose and mouth and its tracker between them; or the agent's own boxes off a grid picture,
 // followed by the same tracker), each video placed in the frame by agentitos' layout (`place`:
-// covering the frame where the video has the frame's shape, else layout's first candidate that
-// passes, or the one the agent names), and the captions and the hook over the whole cut by
+// covering the frame where the video has the frame's shape, else the first in layout's order for
+// a speaker, or the one the agent names), and the captions and the hook over the whole cut by
 // layout's `text`, as clips' place does it for a framed clip: one place for the captions, how far
 // each video's picture is raised so that its chins clear them (over a ground), the hook. What it
 // writes is what clips hands over (place.json, source/faces.json), so that the build, the punch-ins
@@ -18,6 +18,7 @@
 //   takeKind(list, pieces, n) → { kept, shots, cuts, people, material }: what a video is over the seconds the cut keeps
 //   shotChange(list, before, after) → "same" | "other" | "unknown": a cut the detector found, by the faces around it
 //   pictureRule(kind, faced) → { use: whole | none | fallback | place, other, same, unsure, material }
+//   speakerPictures(res, usual, H) → { list, older }: layout place's candidates in its order for a speaker
 //   shotsInput(…) → { shots, hook }: layout text's shots.json, one shot per video the cut shows
 //   hookSpan(pieces, until, clock) → { start, end, spans? } on the one clock
 //   calmBehind(shots, hook, H) → whether the picture behind the hook is a close-up
@@ -249,19 +250,19 @@ export function knownSeconds(pieces, clips, faces) {
   return n;
 }
 
-// layout place's candidates of one picture, best-takes' order: those that pass (no hard problem: the
-// enlargement under layout's hard limit; every text placed) by the face nearest the usual size of a
-// person's own take, as large as it comes up to FACE_UP of the frame's height (the box as given; the
-// upper end of the middle half of faces in published Shorts, layout-data: 23–34 %), layout's order
-// among equals; then the rest in layout's order. Sharpness alone never makes the face smaller (the
-// review: a 720p interview came out as a square band at 1.5×, the face 14 % of the height, where
-// the 4:5 crop at 1.875× fills the frame plainly better). → [{ …candidate, n, face }]
-export const FACE_UP = 0.34;
-export function rankPictures(candidates, usual, H) {
-  const list = candidates.map((x, i) => ({ ...x, n: i + 1, face: (usual * x.scale) / H })).filter((x) => !x.parts && Number.isFinite(x.scale));
-  const passes = (x) => !x.hard && !x.unmet.length;
-  const off = (x) => (x.face <= FACE_UP ? FACE_UP - x.face : 10 * (x.face - FACE_UP));
-  return [...list.filter(passes).sort((a, b) => off(a) - off(b) || a.n - b.n), ...list.filter((x) => !passes(x))];
+// layout place's candidates of one picture, in the order layout gives for a picture of one speaker
+// (`place --pick speaker --cover …`: the picture covering the frame, centred, kept where it is
+// enlarged 2× at most with the eyes, nose and mouth inside the frame at every moment; else the
+// pictures across the frame's width at 1× or more, the face nearest the usual size; narrower or
+// shrunk ones last; layout's README). Each keeps layout's own number (n, as without the order, so
+// that --picture <number> names the same picture), "cover" being 0, and its face as a share of the
+// frame's height. A layout without that order (an older clone): its own order, the ones that pass
+// first, and `older` says so. → { list: [{ …candidate, n, face, passes }], older }
+export function speakerPictures(res, usual, H) {
+  const older = !res.pick;
+  const list = res.candidates.map((x, i) => ({ ...x, n: x.pick ? (x.pick.cover ? 0 : x.pick.layout) : i + 1, face: x.pick ? x.pick.face : (usual * x.scale) / H, passes: x.pick ? x.pick.passes : !x.hard && !x.unmet.length }))
+    .filter((x) => !x.parts && Number.isFinite(x.scale));
+  return { list: older ? [...list.filter((x) => x.passes), ...list.filter((x) => !x.passes)] : list, older };
 }
 
 // Faces that cannot be of this video's picture: found on a picture of another size (a phone's take

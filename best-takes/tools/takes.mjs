@@ -68,7 +68,7 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
-import { pieceSpan, clockOf, covering, whole, takeKind, pictureRule, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
+import { pieceSpan, clockOf, covering, whole, takeKind, pictureRule, inFrame, faceTrack, facesFault, speakerPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
@@ -718,29 +718,36 @@ function cmdPlace(dir, opts) {
       ...(rule.unsure.length ? [`${c.file}: ⚠ the picture changes at ${at(rule.unsure)} and the faces cannot tell whether it is cut there (none on one side, or the same face back only after a long gap): placed as one person's take all the same; where the sheet shows another shot there, clips frames such footage shot by shot (clips' SKILL.md)`] : [])];
     const pf = path.join(folder, `${kOf(c)}.track.json`);
     fs.writeFileSync(pf, JSON.stringify(track));
-    const r = spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+    // layout's order for a picture of one speaker, the covering picture among its candidates (its
+    // README: kept where it is at most 2× with the eyes, nose and mouth in the frame); a layout too
+    // old for that order is asked without it, and said
+    const ask = (speaker) => spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform,
+      ...(speaker ? ["--pick", "speaker", "--cover", `${cover.scale},${cover.left},${cover.top}`] : []), "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+    let r = ask(true);
+    if (r.status && /has no option --(pick|cover)/.test(r.stderr || r.stdout)) r = ask(false);
     if (r.status) fail(`✗ layout place for ${c.file}: ${(r.stderr || r.stdout).trim()}`);
     const res = JSON.parse(r.stdout);
     // the face's usual height (the median of the track) as each candidate shows it
     const hs = track.map((m) => m.box[3]).sort((a, b) => a - b), usual = hs[hs.length >> 1];
-    const ranked = rankPictures(res.candidates, usual, H), list = ranked;
-    const passes = (x) => !x.hard && !x.unmet.length;
+    const { list, older } = speakerPictures(res, usual, H);
+    if (!list.length) fail(`✗ layout place for ${c.file} gave no picture of one recording: place it with --picture cover.`);
     const name = (x) => `${x.fit}${x.crop ? ` ${x.crop}` : ""}${x.closer ? " closer" : ""}${x.onGround ? ", text on the ground" : ""}`;
-    const asPic = (x) => ({ scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) });
+    const asPic = (x) => (x.n === 0 ? cover : { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) });
     let chosen;
     if (want === "cover") chosen = cover;
     else if (Number.isInteger(want)) {
       const x = list.find((y) => y.n === want);
-      if (!x) fail(`--picture ${c.file}:${want}: layout gives ${c.file} ${list.length} candidate(s) of one picture (${list.map((y) => y.n).join(", ")}); name one of them, or cover.`);
+      if (!x) fail(`--picture ${c.file}:${want}: layout gives ${c.file} ${list.length} candidate(s) of one picture (${list.map((y) => y.n || "cover").join(", ")}); name one of them, or cover.`);
       chosen = asPic(x);
     } else if (sameShape) chosen = cover;
-    else chosen = asPic(ranked[0]);
+    else chosen = asPic(list[0]);
     pictures[c.file] = chosen;
-    const mark = (x) => (x.hard ? "✗" : x.unmet.length ? "–" : x.soft ? "!" : "✓");
+    const mark = (x) => (x.passes ? (x.soft ? "!" : "✓") : x.hard ? "✗" : "–");
     const reason = (x) => [...x.problems.filter((q) => q.level !== "info").map((q) => `${q.of}: ${q.what}`), ...x.unmet.map((u) => `no place for the ${u}`)].join("; ");
-    const line = (x) => `${x.n}. ${mark(x)} ${name(x)} at ${x.scale}× (the video's pixels ${x.scale > 1 ? `enlarged ${x.scale}×` : `at ${x.scale}×`}), the face ${Math.round(x.face * 100)} % of the height${reason(x) ? `: ${reason(x)}` : ""}${chosen.n === x.n ? "  ← taken" : ""}`;
-    choices[c.file] = { list: ranked, cover: sameShape || want === "cover" ? cover : null, usual, mark, name };
-    said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}, the face ${Math.round(((usual * cover.scale) / H) * 100)} % of the height` : `${chosen.fit} at ${chosen.scale}×${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates, the best for a person's take first:\n    ${ranked.slice(0, 5).map(line).join("\n    ")}`);
+    const taken = (x) => (x.n === 0 ? chosen === cover : chosen.n === x.n);
+    const line = (x) => `${x.n === 0 ? "cover" : x.n}. ${mark(x)} ${x.n === 0 ? "cover, centred" : name(x)} at ${x.scale}× (the video's pixels ${x.scale > 1 ? `enlarged ${x.scale}×` : `at ${x.scale}×`}), the face ${Math.round(x.face * 100)} % of the height${reason(x) ? `: ${reason(x)}` : ""}${taken(x) ? "  ← taken" : ""}`;
+    choices[c.file] = { list, mark, name, taken };
+    said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}, the face ${Math.round(((usual * cover.scale) / H) * 100)} % of the height` : `${chosen.fit} at ${chosen.scale}×${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates, ${older ? "in its own order, those that pass first (⚠ the layout skill beside this one is older and has no order for a speaker: update it)" : "in its order for a speaker"}:\n    ${list.slice(0, 5).map(line).join("\n    ")}`);
     said.push(...doubt);
   }
 
@@ -841,7 +848,7 @@ function cmdPlace(dir, opts) {
       const pic = { scale: x.scale, left: x.left, top: x.top, ...(x.window ? { window: x.window } : {}), w: cl.width, h: cl.height };
       const t = (role) => x.text.find((q) => q.role === role)?.box;
       return { t: m.t, what: "", hook: true, pic, ground: fs.existsSync(g) ? g : null, faces: near.boxes.map((b) => inFrame(b.box, pic)), text: { caption: t("caption"), hook: t("hook") },
-        label: `${pictures[cl.file].n === x.n ? "TAKEN " : ""}${x.n} ${ch.mark(x)} ${x.fit}${x.crop ? ` ${x.crop.replace(":", "x")}` : ""} ${x.scale.toFixed(2)}x face ${Math.round(x.face * 100)}` };
+        label: `${ch.taken(x) ? "TAKEN " : ""}${x.n === 0 ? "cover" : x.n} ${ch.mark(x)} ${x.fit}${x.crop ? ` ${x.crop.replace(":", "x")}` : ""} ${x.scale.toFixed(2)}x face ${Math.round(x.face * 100)}` };
     });
     if (cells.length) candRows.push({ ...row, label: `${cl.file} candidates`, moments: cells });
   }
