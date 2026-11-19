@@ -251,6 +251,24 @@ test("faces: the picture gives way in its order: a fill on the main face's eyes,
   assert.match(p5.said, /close-up became a small band \(the face \d+ % of the frame's height\): another stretch\?/);
 });
 
+test("faces: a passer-by counts by the time he is there (crew4 b5: a man seen in a quarter of the beat widened the band of two women); a second person there for most of the beat still counts", () => {
+  const size = [3840, 2160];
+  const women = [["woman with short grey hair", person("G", [480, 962, 1428, 1004], 32)], ["woman with short curly hair", person("C", [1620, 302, 1752, 1016], 32)]];
+  const passer = (n) => ["man in black jacket", person("P", [2700, 300, 1100, 1142], n)];
+  const b5 = counted(listOf(...women, passer(8)), size, 3.17);
+  assert.deepEqual(b5.held.map((p) => p.who), women.map((w) => w[0]));
+  assert.deepEqual(b5.small.map((p) => [p.who, p.why]), [["man in black jacket", "passing"]]);
+  const p = planWindow({ frame: "fill", size, people: b5, captions: CAPTIONS, crop: () => null });
+  assert.equal(p.frame, "whole");
+  assert.match(p.said, /a fill would cut woman with short grey hair, woman with short curly hair .*; a passer-by not held \(man in black jacket\)$/);
+  // the same man there for most of the beat counts, and the band must hold him: smaller
+  const stays = counted(listOf(...women, passer(30)), size, 3.17);
+  assert.equal(stays.held.length, 3);
+  const q = planWindow({ frame: "fill", size, people: stays, captions: CAPTIONS, crop: () => null });
+  assert.ok(q.zoom < p.zoom, `${q.zoom} with him, ${p.zoom} without`);
+  assert.doesNotMatch(q.said, /passer-by/);
+});
+
 test("faces: a fill whose eyes would lie under the captions is raised over the ground, at the same size (the review's b7, CM S Ingram alone)", () => {
   const low = counted(listOf(["CM S Ingram", person("I", [564, 420, 135, 165], 17)]), [1280, 720], 1.73);
   const p = planWindow({ frame: "fill", size: [1280, 720], people: low, captions: CAPTIONS });

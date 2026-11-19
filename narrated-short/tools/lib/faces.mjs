@@ -21,14 +21,19 @@
 
 export const SIZE = [1080, 1920];
 // Who the picture must show. The main face: the tallest of those seen in half of the beat's moments
-// or more (else of those seen in a quarter). Another face counts only where it is seen in a quarter
+// or more (else of those seen in a quarter). Another face counts only where it is seen in HELD_SEEN
 // of the moments and is of a size like the main one's, SIMILAR of its height or more, and MIN_FACE of
 // the source's height (people walking far off, a face in a crowd: no reason to change a picture).
 // SIMILAR stands on two beats (2026-11-19): the review's b3, a blurred woman at a laptop behind a
 // panel's speaker, 53 % as tall as him, must not count (she made a band of a fill that showed him
 // whole and large); the author's crew4 b5, two women side by side, the smaller 78 % as tall as the
 // other, must both be shown. A face the model saw on one still only moves nothing either.
-export const SEEN = 0.25, MAIN_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04;
+// HELD_SEEN, a face that enters, leaves or passes counting by the time it is there, stands on the
+// same beats: crew4 b5's passer-by, seen in 25 % of its moments (its first 0.7 s), must not count (he
+// widened the picture to a band at 1.1× where a crop on the two women held them larger); every
+// second person really there in the people beats of crew4, epps2 and the review's short is seen in
+// 94 % of the moments or more (the review's b2, b4, b7, b9; crew4 b5's two women).
+export const SEEN = 0.25, MAIN_SEEN = 0.5, HELD_SEEN = 0.5, SIMILAR = 0.7, MIN_FACE = 0.04;
 // room kept beside a face in a band's window: a share of its width each side (an ear, hair)
 export const SIDE = 0.12;
 // the frame's faces a text is checked against: at least this share of the frame's height
@@ -78,8 +83,10 @@ export function counted(list, [, h], seconds) {
   const all = [...people.values()].map((p) => ({ ...p, n: p.boxes.length, h: median(p.boxes.map((b) => b[3])) }));
   const tallest = (ps) => ps.reduce((a, p) => (!a || p.h > a.h ? p : a), null);
   const main = tallest(all.filter((p) => p.n >= MAIN_SEEN * moments)) || tallest(all.filter((p) => p.n >= SEEN * moments));
-  const held = main ? all.filter((p) => p === main || (p.n >= SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
-  return { main: held.length ? main : null, held, small: all.filter((p) => !held.includes(p)) };
+  const held = main ? all.filter((p) => p === main || (p.n >= HELD_SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h)) : [];
+  // why a face does not count: passing (of the size to count, seen too briefly), else behind (smaller, or a speck)
+  const why = (p) => (main && p.n < HELD_SEEN * moments && p.h >= SIMILAR * main.h && p.h >= MIN_FACE * h ? "passing" : "behind");
+  return { main: held.length ? main : null, held, small: all.filter((p) => !held.includes(p)).map((p) => ({ ...p, why: why(p) })) };
 }
 
 // the stretch of the source's width the held faces need: [x0, x1], each face with SIDE of its width beside it
@@ -149,10 +156,12 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   const within = (win, hull) => hull[0] >= win[0] - 1 && hull[1] <= win[1] + 1;
   const featsCut = (win, ps) => ps.filter((p) => !within(win, featHull([p])));
   const boxCut = (win, ps) => ps.some((p) => p.boxes.some((b) => b[0] < win[0] - 1 || b[0] + b[2] > win[1] + 1));
-  // the smaller faces seen in a quarter of the beat whose features a window cuts: "in the background"
-  const behind = (win) => (people.small || []).filter((p) => p.n >= 0.25 * Math.max(...held.map((q) => q.n)) && !within(win, featHull([p])));
+  // the faces that do not count, seen a quarter as often as those that do, whose features a window
+  // cuts, by why: the smaller ones "in the background", the ones seen too briefly passers-by
+  const cutOf = (win, why) => (people.small || []).filter((p) => (p.why || "behind") === why && p.n >= 0.25 * Math.max(...held.map((q) => q.n)) && !within(win, featHull([p])));
   const few = (ps) => (ps.length > 2 ? `${names(ps.slice(0, 2))} and ${ps.length - 2} more` : names(ps));
-  const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", behind(win).length ? `${behind(win).length > 1 ? "faces" : "a face"} in the background cut (${few(behind(win))})` : ""].filter(Boolean);
+  const passing = (win) => { const ps = cutOf(win, "passing"); return ps.length ? [`${ps.length > 1 ? "passers-by" : "a passer-by"} not held (${few(ps)})`] : []; };
+  const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", cutOf(win, "behind").length ? `${cutOf(win, "behind").length > 1 ? "faces" : "a face"} in the background cut (${few(cutOf(win, "behind"))})` : "", ...passing(win)].filter(Boolean);
   const now = shown({ frame, zoom, pan, size: [cw, ch] });
   if (panSet || (frame === "whole" && zoomSet)) {
     const cut = featsCut(now, held);
@@ -191,6 +200,7 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
       if (cropHolds(box, held, captions)) {
         out.frame = "crop"; out.box = box; out.changed = true;
         out.said = `a fill would cut ${names(featsCut(now, held))} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): a ${c.crop} crop placed high instead, the ${held.length > 1 ? "largest face" : "face"} ${Math.round((main.h * (box.at[3] / box.src[3]) / SIZE[1]) * 100)} % of the frame's height`;
+        out.said = [out.said, ...passing([box.src[0], box.src[0] + box.src[2]])].join("; ");
         return out;
       }
     }
@@ -198,7 +208,9 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
     const small = main.h >= CLOSE * ch ? Math.round(((main.h * SIZE[0] * band.zoom) / cw / SIZE[1]) * 100) : null;
     out.flag = small != null;
     out.said = `a fill would cut ${names(featsCut(now, held))} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): the whole picture as a band${out.zoom > 1 ? `, ${out.zoom} times larger` : ""}${band.limited ? `, ${held.length > 1 ? "their eyes" : "the eyes"} above the captions` : ""}${small != null ? `; close-up became a small band (the face ${small} % of the frame's height): another stretch?` : ""}`;
-    return placePan(out, hullOf(held), cw);
+    const banded = placePan(out, hullOf(held), cw);
+    banded.said = [banded.said, ...passing(shown({ frame: "whole", zoom: banded.zoom, pan: banded.pan, size: [cw, ch] }))].join("; ");
+    return banded;
   }
   // a zoomed band (the first beat's own): as large as it was where that holds them, else less
   const h = hullOf(held), hull = [Math.max(0, h[0]), Math.min(cw, h[1])];
