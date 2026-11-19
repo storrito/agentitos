@@ -868,6 +868,23 @@ console.log("\nThe screen above, the speaker in a panel down to the caption line
     ok(!("screenPanel" in plain) && !theOne(plain), "asked for nothing, the result changed");
   });
 
+  t("--screen-panel and two people in the webcam's picture (an independent review: the panel was centred on the first face, the second 65 % outside the frame and under the buttons, and still offered): two faces that fit whole stand in the panel together and it is offered without a hard problem; two too far apart are not offered (code faces); and never is a stack offered whose picture has a hard problem. A face under 160 px at 2× of the webcam's pixels is no panel (code webcam-face), an upright phone's screen and a label that leaves no room say so (upright, label), not 'captions'", () => {
+    const two = (faces, z = R916, band = L916) => panelOf(z, WHOLE, band, {}, { size: [1280, 720], faces });
+    const near = two([[200, 160, 220, 300], [860, 160, 220, 300]]), c = theOne(near);
+    ok(c && near.screenPanel.offered && !c.hard && c.faceInFrame.slice(1).every((b) => inside(R916.safe, b) && inside(c.stack.panel.box, b)), `two near: ${JSON.stringify(near.screenPanel)} ${c && JSON.stringify(c.problems)}`);
+    const far = two([[40, 160, 220, 300], [1020, 160, 220, 300]]);
+    ok(!theOne(far) && far.screenPanel.code === "faces" && /2 faces .* wider than/.test(far.screenPanel.why), JSON.stringify(far.screenPanel));
+    for (const r of [near, far, panelOf(R916, WHOLE, L916), panelOf(F45, WHOLE, L45)]) { const k = theOne(r); ok(!k || !k.hard, `offered with a hard problem: ${JSON.stringify(k?.problems)}`); ok(!!k === !!r.screenPanel.offered, "offered and the candidate disagree"); }
+    const tiny = panelOf(R916, WHOLE, L916, {}, { size: [1280, 720], faces: [[620, 300, 60, 70]] });
+    ok(tiny.screenPanel.code === "webcam-face" && /140 px at 2× .*under the 160 px/.test(tiny.screenPanel.why), JSON.stringify(tiny.screenPanel));
+    const phone = solve({ zones: R916, sources: [{ size: [1170, 2532], region: [0, 0, 1170, 2532], minTextHeight: 30 }, CAM], needs: [], captionArea: L916, screenPanel: { width: "frame" } });
+    ok(phone.screenPanel.code === "upright" && /taller than wide/.test(phone.screenPanel.why), JSON.stringify(phone.screenPanel));
+    const label = panelOf(R916, WHOLE, L916, { labelBottom: 1000 });
+    ok(label.screenPanel.code === "label" && /the label leaves no room/.test(label.screenPanel.why), JSON.stringify(label.screenPanel));
+    agree(c, near, "screen-panel-two");
+    return `two near: the faces ${c.stack.face.height} px at ${c.stack.camera.scale}×`;
+  });
+
   t("--screen-panel screen: the panel as wide as the screen above it, the edges aligned; a label's bottom moves the screen under it; a webcam whose face needs over 2× stays at 2×, said as soft, and the limit is what 2× gives", () => {
     const wide = theOne(panelOf(R916, WHOLE, L916, { width: "screen" })), k = wide.stack;
     ok(k.panel.box[0] === k.screen.box[0] && k.panel.box[2] === k.screen.box[2] && k.width === "screen", `panel ${k.panel.box}, screen ${k.screen.box}`);
