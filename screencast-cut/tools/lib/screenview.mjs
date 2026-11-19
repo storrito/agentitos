@@ -54,7 +54,7 @@ const span = (b) => `x ${r0(b[0])}–${r0(b[0] + b[2])}`;
 // the frame's edges above the captions; the circle at the areas' place
 export function beforePicture(c, src, a, pip) {
   const rooms = pip ? [...a.content, ...(a.beside || [])] : a.solo || a.content;
-  const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
+  const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });
   const scale = at.width / src.width;
   return { fit: BEFORE, scale: +scale.toFixed(4), left: at.left, top: at.top, window: at.box.map(r1),
     region: [at.left + c[0] * at.width, at.top + c[1] * at.height, (c[2] - c[0]) * at.width, (c[3] - c[1]) * at.height].map(r1),
@@ -67,12 +67,13 @@ export function beforePicture(c, src, a, pip) {
 // the region and off the labels; over the rest of the screen is allowed. null where none is free.
 // The bottom corners end the skill's gap above the captions' band as built (band: its top, from
 // captions/area.json, which can lie above the areas' estimate: 772 against 800 in 16:9), and a
-// corner keeps that gap from a label too.
+// corner keeps that gap from a label too. With one caption line (areas().line) they end where the
+// band for two lines ended (areas.floor), so a moved circle stands as on main.
 export function freeCorner(pic, { zones, areas, labels = [], width, height, band = null }) {
   if (!pic.circle) return null;
   const gap = Math.round(Math.min(width, height) * 0.022);
   const [sx, sy, sw] = zones.safe, d = pic.circle[2];
-  const bottom = Math.min(areas.bleed ? areas.bleed[3] : sy + zones.safe[3], Number.isFinite(band) ? band - gap : Infinity);
+  const bottom = Math.min(areas.floor ?? (areas.bleed ? areas.bleed[3] : sy + zones.safe[3]), Number.isFinite(band) ? band - gap : Infinity);
   const near = labels.map((l) => [l[0] - gap, l[1] - gap, l[2] + 2 * gap, l[3] + 2 * gap]);
   const order = height >= width * 1.5 ? ["bottom left", "bottom right", "top left", "top right"] : ["top right", "top left", "bottom right", "bottom left"];
   for (const corner of order) {
@@ -195,7 +196,10 @@ export const shortFault = (x, f) => (f.code === "text" ? `text ${x.j.textHeight}
 // as before may come out under the height that reads (decided 2026-11-19, screen-text: what must
 // be read stays inside the safe box across, even at a tenth less size). Where none does, the
 // picture as before stays, with what remains wrong. before and every item carry their judgement (j).
-export function choose(before, list, { asked = null, zoomed = false, own = [] } = {}) {
+// keepOff: main's picture for this keep has the circle off its region (one caption line, where the
+// room grew: review of 2026-11-19, the 3440 corners): a picture with the circle on the region
+// counts as adding that fault even where the picture as before has it too
+export function choose(before, list, { asked = null, zoomed = false, own = [], keepOff = false } = {}) {
   if (asked === BEFORE) return { pic: before, named: true };
   const named = asked ? list.find((x) => x.fit === asked) : null;
   if (named) return { pic: named, named: true };
@@ -204,7 +208,7 @@ export function choose(before, list, { asked = null, zoomed = false, own = [] } 
   if (!had.length) return { pic: before, missing };
   const usable = [...own, ...list.filter((x) => !x.hard && !(zoomed && x.fit === "screen-whole"))];
   const codes = (x) => x.j.faults.map((f) => f.code);
-  const added = (x) => codes(x).filter((c) => !had.includes(c) && !(c === "text" && had.includes("across") && !codes(x).includes("across") && x.scale >= before.scale * 0.9 - 1e-4));
+  const added = (x) => codes(x).filter((c) => (!had.includes(c) || (keepOff && c === "circle")) && !(c === "text" && had.includes("across") && !codes(x).includes("across") && x.scale >= before.scale * 0.9 - 1e-4));
   const removes = (x) => had.some((c) => !codes(x).includes(c));
   const better = usable.filter((x) => !added(x).length && removes(x));
   const pick = better.reduce((b, x) => (b && b.j.faults.length <= x.j.faults.length ? b : x), null);
@@ -309,7 +313,24 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, band,
   const shifted = before.j.faults.some((f) => f.code === "across") ? shiftedInside(before, src, zones, areas, width) : null;
   if (shifted) { const s = seat(shifted, main, env); own.push(asJudged({ ...s, fit: `${s.fit}${s.corner ? `, the circle ${s.corner}` : ""}`, mark: "✓" })); }
   for (const x of own) if (x.j.faults.length) x.mark = "!";
-  const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own });
+  // one caption line (areas.main: the areas with the band for two lines): main's picture for this
+  // keep as main's own rule draws it (as before, its circle moved off the region, or shifted inside
+  // the margins); where that has the circle off the region, no picture here may have it on the
+  // region; where none has it off, the keep keeps main's picture (its scale, its band)
+  let atMain = null;
+  if (areas.main && main) {
+    const envM = { ...env, areas: areas.main, band: null };
+    const b0 = asJudged(beforePicture(c, src, areas.main, pip));
+    const m0 = [b0, asJudged(seat(b0, main, envM))];
+    const sh0 = b0.j.faults.some((f) => f.code === "across") ? shiftedInside(b0, src, zones, areas.main, width) : null;
+    if (sh0) m0.push(asJudged(seat(sh0, main, envM)));
+    atMain = m0.filter((x) => !x.j.faults.some((f) => f.code === "circle")).sort((a, b) => a.j.faults.length - b.j.faults.length)[0] || null;
+  }
+  const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own, keepOff: !!atMain });
+  if (atMain && !got.named && got.pic.j.faults.some((f) => f.code === "circle")) {
+    got.pic = asJudged({ ...atMain, fit: `${BEFORE} at main's scale`, circleOnly: false, atMain: true, mark: atMain.j.faults.length ? "!" : "✓" });
+    own.push(got.pic);
+  }
   const pic = got.pic, j = pic.j;
   const narrower = (Array.isArray(res.notes) ? res.notes : []).find((x) => /A narrower region reads/.test(x))?.match(/at most \d+×\d+ px of the source/)?.[0]?.replace(" of the source", " of the screen") || null;
   const lines = [];
@@ -317,7 +338,9 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, band,
   // the list names the circle only where it moved
   const circleSaid = pic.corner ? `, the circle moved to the ${pic.corner} (x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])}): where it stands as before (x ${r0(main[0])}, y ${r0(main[1])}) it would lie on the region${on.some((l) => meets(l, [main[0], main[1], main[2], main[2]])) ? " or the label" : ""}` : "";
   const faultsSaid = (x) => x.j.faults.map((f) => f.said).join("; ");
-  if (own.includes(pic)) {
+  if (pic.atMain) {
+    lines.push(`as with two caption lines at ${r2(pic.scale)}×${pic.corner ? `, the circle moved to the ${pic.corner} (x ${r0(pic.circle[0])}, y ${r0(pic.circle[1])})` : ""}: in the room of one line the circle would lie on the region and no corner is free of it; ${where}${j.faults.length ? `; ${faultsSaid(pic)}` : ""}`);
+  } else if (own.includes(pic)) {
     lines.push(`${pic.circleOnly ? "as before" : `as before, moved ${Math.abs(pic.shift)} px ${pic.shift < 0 ? "left" : "right"} to hold the region inside the safe box's margins,`} at ${r2(pic.scale)}×${circleSaid}; ${where}${j.faults.length ? `; ${faultsSaid(pic)}` : ""}; as before ${faultsSaid(before)}`);
   } else if (pic === before) {
     lines.push(`${got.named ? "as before, as the keep names it" : "as before"} at ${r2(pic.scale)}×, ${where}${j.faults.length ? `: ${faultsSaid(pic)}${got.why ? ` (it stays: ${got.why})` : ""}` : ""}`);
