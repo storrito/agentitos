@@ -22,6 +22,8 @@
 //   node tools/launch.mjs voices [--model <id>]           the speech models, their price and voices
 //   node tools/launch.mjs sample <work> --text "…" --voices a,b [--model <id>] [--out <folder>]
 //                                                         one line in a few voices, to choose by ear
+//   (voice and music take --plain when another skill's tool runs them as a step: what was made
+//   and measured, without launch-video's own next steps)
 //   node tools/launch.mjs voice <work> <script.json> <composition>   every line spoken → <composition>/
 //                                                         assets/voice/<id>.mp3, its words timed → <work>/voice.json
 //   node tools/launch.mjs narration <work> <voice> <words.json> <composition> [--id narration]
@@ -32,7 +34,7 @@
 //   node tools/launch.mjs words <work> <composition>      the voice's words at their times in the film,
 //                                                         as the film's <audio> places the lines → <work>/words.json
 //   node tools/launch.mjs captions <work> <composition> --style <a style of captions> [--mark]
-//        [--pause <from>-<to>,…] [--follow]               the captions (agentitos' captions skill) in
+//        [--pause <from>-<to>,…] [--follow] [--edge]      the captions (agentitos' captions skill) in
 //                                                         <composition>/captions, and the line that mounts them;
 //                                                         none in the stretches the picture carries the words
 //   node tools/launch.mjs music <work> <composition> --prompt "…" --seconds 30 [--under 17]   music
@@ -82,7 +84,7 @@ const IMAGE_MODEL = "google/gemini-3.1-flash-image";
 const UNDER = 17;
 
 // options that take no value
-const FLAGS = ["mark", "vocals", "json", "follow"];
+const FLAGS = ["mark", "vocals", "json", "follow", "plain", "edge"];
 
 function parse(args) {
   const pos = [], opts = {};
@@ -289,7 +291,7 @@ function cmdCheck(work, composition) {
     const why = () => (r.error?.code === "ETIMEDOUT" ? "it ran for 15 minutes" : (r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" "));
     let j;
     try { j = JSON.parse(r.stdout); } catch { fail(`✗ HyperFrames' check did not finish: ${why()}`); }
-    if (j.browserSkipped) fail(`✗ HyperFrames' check found errors before it could look at the film: run \`${cliCommand()} lint ${rel(composition)}\` and fix them, then check again.`);
+    if (j.browserSkipped) fail(skippedLine(j, `${cliCommand()} lint ${rel(composition)}`, `${cliCommand()} doctor`));
     // a check that failed still answers in JSON, without its layout: never a ✓ from it
     if (j.error || !j.layout) fail(`✗ HyperFrames' check failed: ${j.error || why()}. Nothing was checked.`);
     for (const f of j.layout.findings || []) {
@@ -348,6 +350,15 @@ const lu = (x) => (Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : 
 // how far under the voice the music sits, as the root places both (each <audio> at its
 // data-volume): measured, so a music bed laid before the voice, or a voice or music changed since,
 // shows here. Nothing when the film has no music.
+// What to say when HyperFrames' check never looked at the film: it skips its browser phase when a
+// lint error leaves nothing to load, and also when its browser session did not run at all (the
+// machine busy, another run holding the browser). Only the first is fixed by lint.
+export function skippedLine(j, lint, doctor) {
+  const errors = j.lint?.errorCount || 0;
+  if (errors) return `✗ HyperFrames' check found ${errors} error${errors > 1 ? "s" : ""} in the composition before it could look at the film: run \`${lint}\` and fix ${errors > 1 ? "them" : "it"}, then check again.`;
+  return `✗ HyperFrames did not open the film in its browser, though its lint finds no error: nothing was looked at. Another HyperFrames run may hold the browser, or the machine is busy: run check again; if it stays, \`${doctor}\` says what is missing.`;
+}
+
 export function soundLine(composition, work) {
   try { return soundOf(composition, work); } catch (e) { return `! Sound: not measured (${e.message}).`; }
 }
@@ -372,7 +383,7 @@ function soundOf(composition, work) {
   const numbers = `the voice at ${lufs(v)} LUFS as placed (${placed.length} line${placed.length > 1 ? "s" : ""}), the music at ${lufs(m)} as made, at data-volume ${music.volume}${lane ? ` × ${share} while the voice speaks (its volume lane)` : ""}`;
   if (Math.abs(d - want) <= 1) return `Sound: the music sits ${lu(d)} LU under the voice (${numbers}). Measured, not heard: say so.`;
   if (!lane && fit.bound && Math.abs(music.volume - fit.volume) < 0.0005) return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): ${fit.volume} is the ${fit.bound} volume here; for ${want} LU, music ${fit.bound === "highest" ? "louder" : "quieter"} of its own (\`music\` again).`;
-  if (lane) return `! Sound: the music sits ${lu(d)} LU under the voice while it speaks, not ${want} (${numbers}): the voice or the music changed since its lane was laid. Run \`level\` again, then check again.`;
+  if (lane) return `! Sound: the music sits ${lu(d)} LU under the voice while it speaks, not ${want} (${numbers}): the voice or the music changed since its lane was laid, or the lane and data-volume both carry the level (HyperFrames multiplies them). Lay it again (launch-video's \`level\`, or the build of the skill that wrote this film), then check again.`;
   return `! Sound: the music sits ${lu(d)} LU under the voice, not ${want} (${numbers}): its volume was set before the voice, or the voice or the music changed since. Set data-volume="${fit.volume}" on <audio id="music">${fit.bound ? ` (the ${fit.bound} volume here: it then sits ${lu(fit.under)} LU under)` : ""} and run check again. Another distance on purpose: data-under-voice="<LU>" on it.`;
 }
 
@@ -709,6 +720,8 @@ async function cmdVoice(work, scriptFile, composition, opts) {
   for (const f of failed) console.log(`  ✗ ${f}`);
   if (failed.length) process.exitCode = 1;
   console.log(`  ${"".padEnd(12)} ${total.toFixed(2).padStart(6)} s spoken in all${chars ? `; ${chars} characters, about $${(price + scribeCost).toFixed(3)}` : ""}`);
+  // --plain: another skill's tool ran this as a step and places the lines itself
+  if (opts.plain) return console.log(`→ ${rel(dir)}/<id>.mp3, the words with their times in ${rel(metaFile)}.`);
   console.log(`→ ${rel(dir)}/<id>.mp3, the words with their times in ${rel(metaFile)}.
 Listen for a word said wrong (a name, a number): write it in "text" as it is said ("Storrito" → "Store-ritto" only if it keeps going wrong) and run voice again; only that line is spoken again.
 Place each line in the root as <audio id="vo-<id>" src="assets/voice/<id>.mp3" data-start="<s>" data-duration="<its seconds>" data-track-index="<n>">, the beat that shows it starting on the word that says it (voice.json has every word's time in its line). Then ${cmd(`captions ${rel(work)} ${rel(composition)} --style <style>`)} when the film has captions.`);
@@ -1037,7 +1050,7 @@ export function captionWords(words, spans = []) {
 }
 
 function cmdCaptions(work, composition, opts) {
-  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md] [--pause <from>-<to>,…] [--follow]")}`);
+  if (!work || !composition) fail(`Usage: ${cmd("captions <work> <composition> --style <a style of captions: hormozi, bold, karaoke, clean, …> [--mark] [--product <name>] [--brand brand/DESIGN.md] [--pause <from>-<to>,…] [--follow] [--edge]")}`);
   const tool = captionsTool();
   if (!tool) fail("✗ The captions need agentitos' captions skill beside this one (or CAPTIONS_TOOL naming its tools/captions.mjs).");
   let spans;
@@ -1063,7 +1076,7 @@ function cmdCaptions(work, composition, opts) {
     writeJson(shown, { ...all, words: kept });
     console.log(`The captions pause in ${pauses.map(([a, b]) => `${a}–${b} s`).join(", ")}: ${all.words.length - kept.length} word${all.words.length - kept.length === 1 ? "" : "s"} the picture carries are left out (${rel(shown)}).`);
   }
-  run(["build", shown, path.join(composition, "captions"), "--style", String(opts.style || "hormozi"), ...(ids.length ? ["--platform", ids.join(",")] : []), ...(brand ? ["--brand", brand] : []), ...(opts.follow ? ["--follow"] : [])]);
+  run(["build", shown, path.join(composition, "captions"), "--style", String(opts.style || "hormozi"), ...(ids.length ? ["--platform", ids.join(",")] : []), ...(brand ? ["--brand", brand] : []), ...(opts.follow ? ["--follow"] : []), ...(opts.edge ? ["--edge"] : [])]);
   console.log(`Mount it once, as the root's last child; build captions again after moving a line of the voice (it reads where the root places them).`);
 }
 
@@ -1082,15 +1095,18 @@ function kindOf(bytes) {
 
 // the <audio> of the music and a sentence on its volume: measured against the voice's lines when
 // the film has a voice (launch-video's `voice` wrote them), else the guide's level without one
-export function musicElement(work, composition, out, len, under) {
+// (`plain`: the numbers alone, for another skill's tool that writes the element itself)
+export function musicElement(work, composition, out, len, under, plain = false) {
   const element = (volume, tail = "") => `<audio id="music" src="assets/music.mp3" data-start="0" data-duration="${len.toFixed(2)}" data-volume="${volume}"${tail} data-track-index="<n>">`;
   const without = `In the root: ${element(0.6)} (about 0.6 without a voice; a voice made later: \`check\` says the volume that lays the music ${under} LU under it).`;
   const lines = (readJson(path.join(work, "voice.json"), {}).lines || []).map((l) => path.join(composition, l.file)).filter((f) => fs.existsSync(f));
-  if (!lines.length) return without;
+  if (!lines.length) return plain ? "No voice to measure its volume by: about 0.6 without one." : without;
   const v = loudness(lines), m = loudness([out]);
-  if (v == null || m == null) return `${without}\n  ! The ${v == null ? "voice" : "music"} is silent: nothing to measure the music's volume by.`;
+  const silent = `! The ${v == null ? "voice" : "music"} is silent: nothing to measure the music's volume by.`;
+  if (v == null || m == null) return plain ? silent : `${without}\n  ${silent}`;
   const fit = musicVolume(v, m, under);
   const bound = fit.bound ? `, the ${fit.bound} volume here, it sits ${lu(fit.under)} LU under it, not ${under} (that would need ${fit.need.toFixed(3)})` : ` it sits ${under} LU under it`;
+  if (plain) return `The voice is at ${lufs(v)} LUFS, the music at ${lufs(m)}: at volume ${fit.volume}${bound}.`;
   return `In the root: ${element(fit.volume, ` data-under-voice="${under}"`)}. The voice is at ${lufs(v)} LUFS, the music at ${lufs(m)}: at ${fit.volume}${bound}. Moved, changed or another volume: \`check\` measures it as the film places it.`;
 }
 
@@ -1117,7 +1133,7 @@ async function cmdMusic(work, composition, opts) {
   const len = Math.min(long, seconds), fade = Math.min(1.5, len / 4);
   ffmpeg(["-i", raw, "-t", String(len), "-af", `afade=t=out:st=${(len - fade).toFixed(3)}:d=${fade.toFixed(3)}`, "-codec:a", "libmp3lame", "-b:a", "192k", out]);
   console.log(`${rel(out)}: ${len.toFixed(1)} s of ${long.toFixed(1)} s made${r.cost ? `, $${r.cost.toFixed(3)}` : ""}${long < seconds - 0.5 ? ` — shorter than the film by ${(seconds - long).toFixed(1)} s: loop it, end the film with it, or make it again` : ""}${r.text ? `\n  the model: "${r.text.slice(0, 200).replace(/\s+/g, " ")}"` : ""}
-The whole take is ${rel(raw)}. ${musicElement(work, composition, out, len, under)} Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`);
+The whole take is ${rel(raw)}. ${musicElement(work, composition, out, len, under, Boolean(opts.plain))}${opts.plain ? "" : ` Once it is there, its beats: \`${cliCommand()} beats ${rel(composition)}\`; land the payoff and the mark on strong ones.`}`);
 }
 
 // ------------------------------------------------------------------------------- pictures
