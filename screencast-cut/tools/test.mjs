@@ -1114,3 +1114,45 @@ test("a zoom box under the circle with no free corner and every candidate of lay
     assert.match(said, /! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them \("circle": false\)/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+// ------------------------------------------------------- the first review of the screen's picture
+// Its inputs, as numbers (/tmp/screen-review of 2026-11-19): what the build does with each.
+import { zones as realZones } from "./lib/zones.mjs";
+const frameOf = (width, height, { labels = false } = {}) => {
+  const z = realZones(width, height, []), [sx, sy, sw, sh] = z.safe;
+  return { z, a: areas(width, height, z, { captions: true, labels }), band: { left: sx, width: sw, top: sy + sh - 158, bottom: sy + sh, size: 52, lines: 2 } };
+};
+const CAM16 = { width: 1280, height: 720, offset: 0, video: true, face: [0.388, 0.202, 0.614, 0.685] };
+// one screen keep through screenView with the layout skill beside: its piece, what it said, its circle as drawn
+function oneKeep({ width, height, screen, crop, text = 0, label = null, segments = null, pip = true, tool }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "screen-review-"));
+  try {
+    const { z, a, band } = frameOf(width, height, { labels: !!label });
+    const area = path.join(dir, "area.json");
+    fs.writeFileSync(area, JSON.stringify(band));
+    const sources = { screen: { width: screen[0], height: screen[1], offset: 0, video: true }, ...(pip ? { webcam: CAM16 } : {}) };
+    const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop, ...(segments ? { segments } : {}) };
+    const labels = label ? [{ text: label, start: 0, duration: 4 }] : [];
+    const said = screenView(dir, { keep: [{ zoom: crop, ...(text ? { text } : {}) }] }, [p], sources, { width, height, zones: z, areas: a, labels, area, ...(tool !== undefined ? { tool } : {}) }).join("\n");
+    const [shot] = shots([p], sources, width, height, a, labels);
+    return { p, said, a, shot, circles: shot.layers.filter((l) => l.pip), main: shot.layers.filter((l) => l.main) };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+test("review 1: a keep split at a scene change draws each part's circle where its list says, over its part's time (16:9, 1920×1080, the parts [0.75,0.05,0.98,0.3] and [0.02,0.05,0.25,0.3], either order); one circle where the parts agree", () => {
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+  const a = areas(1920, 1080, z, { captions: true }), sources = { screen: { width: 1920, height: 1080, offset: 0 }, webcam: CAM16 };
+  const A = [0.75, 0.05, 0.98, 0.3], B = [0.02, 0.05, 0.25, 0.3];
+  // what screenView sets on the parts: the first part's circle moved to the top left, the second as before
+  const moved = { ...beforePicture(A, sources.screen, a, true), fit: "as before, the circle top left", circle: [96, 108, 216], circleOnly: true };
+  for (const [one, two] of [[A, B], [B, A]]) {
+    const segments = [{ in: 0, out: 2, crop: one, ...(one === A ? { screenPic: moved } : {}) }, { in: 2, out: 4, crop: two, ...(two === A ? { screenPic: moved } : {}) }];
+    const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, rate: 1, crop: one, segments };
+    const [s] = shots([p], sources, 1920, 1080, a);
+    const circles = s.layers.filter((l) => l.pip).map((l) => [l.box[0], l.start, l.duration, l.in]);
+    assert.deepEqual(circles, one === A ? [[96, 0, 2, 0], [1608, 2, 2, 2]] : [[1608, 0, 2, 0], [96, 2, 2, 2]]);
+  }
+  // parts whose circles agree: one circle for the piece, untimed, as on main
+  const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop: B, segments: [{ in: 0, out: 2, crop: B }, { in: 2, out: 4, crop: [0.02, 0.4, 0.25, 0.65] }] };
+  const [s] = shots([p], sources, 1920, 1080, a);
+  assert.deepEqual(s.layers.filter((l) => l.pip).map((l) => [l.box, l.start]), [[[1608, 108, 216, 216], undefined]]);
+});
