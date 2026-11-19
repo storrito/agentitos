@@ -146,6 +146,26 @@ test("the same spelling where the model did not point is never applied: Lou Reed
   assert.match(applyNames(rap.words, g).map((w) => w.text).join(" "), /den Flair so/);
 });
 
+test("a word that is part of a longer name is not that name by itself: no Tinashe Mongeau", () => {
+  // the review's input (gYEAdTt5-j8): the speech model wrote the guest Tinashe as "Tana Mongeau"
+  const ep = episodeOf([
+    ["B", "Tana Mongeau, welcome to Call Her Daddy."],
+    ["B", "And when Tana Mongeau came out, the pregame was never the same."],
+    ["C", "We're all like, what is Tana doing and whose car is that?"],
+  ]);
+  const page = pageSources(pageOf({ title: "Tinashe | Call Her Daddy" }));
+  const fixes = [fix(0, "Tana Mongeau", "Tinashe"), fix(1, "Tana Mongeau", "Tinashe"), fix(2, "Tana", "Tinashe")];
+  const e = entriesOf({ names: [], fixes }, ep.words, ep.sentences, page, { lang: "en" });
+  const taken = applyNames(ep.words, e.map((x) => (x.status === "proposed" ? { ...x, status: "applied" } : x))).map((w) => w.text).join(" ");
+  assert.doesNotMatch(taken, /Tinashe Mongeau/, "every proposal taken: still no Tinashe Mongeau");
+  assert.match(taken, /what is Tinashe doing/);
+  assert.equal(e.filter((x) => /part of the longer name "Tana Mongeau"/.test(x.refused || "")).length, 2);
+  // the same for a spelling elsewhere beside another first name or inside a title
+  const lou = episodeOf([["B", "You play Walker Reed, right?"], ["A", "I grew up on Lou Reed records."]]);
+  const l = entriesOf({ names: [], fixes: [fix(0, "Reed", "Reade")] }, lou.words, lou.sentences, pageSources(pageOf({ title: "x" }, ["Reade"])), { lang: "en" });
+  assert.match(l.find((x) => x.status === "refused").refused, /"Lou Reed"/);
+});
+
 test("refused: what would change what was said, and a name already right", () => {
   const why = (f) => { const e = one([f]); assert.equal(e.status, "refused", JSON.stringify(e)); return e.refused; };
   assert.match(why(fix(6, "First We Feast I'm", "First We Feast")), /leaves out words/);

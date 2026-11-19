@@ -180,6 +180,17 @@ function samePhrase(words, first, last, to, sources) {
   return !!((before && writes([...before, ...want], sources)) || (after && writes([...want, ...after], sources)));
 }
 
+// The capitalised words right beside first..last that would make it part of a longer name: the same
+// voice, nothing between (no comma, no full stop), not "I", and not the first word of a sentence
+// unless `opening` (a sentence's first word has its capital anyway: counted only where a place is
+// held against another, never to let one be applied). → { prev, next } (their cores, or null)
+function beside(words, first, last, firsts, opening = false) {
+  const cap = (i) => i >= 0 && i < words.length && words[i].speaker === words[first].speaker && /^\p{Lu}/u.test(core(words[i])) && !/^I(['’]|$)/.test(core(words[i]));
+  const prev = first > 0 && !firsts.has(first) && !parts(words[first - 1].text).trail && cap(first - 1) && (opening || !firsts.has(first - 1)) ? core(words[first - 1]) : null;
+  const next = !parts(words[last].text).trail && cap(last + 1) ? core(words[last + 1]) : null;
+  return { prev, next };
+}
+
 // how often the words write these tokens in a row, spelled so
 function written(words, want) {
   let n = 0;
@@ -291,12 +302,32 @@ export function entriesOf(answer, words, sentences, sources, { lang = null } = {
     const [a, b] = e.at[0];
     for (const r of repeats(words, a, b)) {
       if (pointed.has(r[0]) || byKey.has(`${r[0]}:${e.to.join(" ")}`)) continue;
-      byKey.set(`${r[0]}:${e.to.join(" ")}`, { ...e, at: [r], unpointed: true, sentence: sentenceAt(sentences, r[0]) });
+      byKey.set(`${r[0]}:${e.to.join(" ")}`, { ...e, at: [r], unpointed: true, origin: e.at[0], sentence: sentenceAt(sentences, r[0]) });
       if (nouns) e.shared = sentenceAt(sentences, r[0]);
     }
   }
+  // A word that is part of a longer name is not that name by itself: a place beside another
+  // capitalised word than where the model pointed ("Lou Reed" against "Walker Reed", "Tana Mongeau"
+  // against "what is Tana doing"), or beside the word the model wrote together with it elsewhere
+  const firsts = new Set(sentences.map((x) => x.first));
+  const wrote = (answer.fixes || []).map((f) => tokens(f.written).map(fold).join(" "));
+  const longer = (e) => {
+    const [a, b] = e.at[0], from = e.from.map(fold).join(" ");
+    if (e.unpointed) {
+      // a sentence's capitalised first word counts as a first name only where the pointed place has one
+      const there = beside(words, e.origin[0], e.origin[1], firsts, true), here = beside(words, a, b, firsts, !!there.prev);
+      for (const k of ["prev", "next"]) if (here[k] && here[k] !== there[k]) return k === "prev" ? `${here.prev} ${e.from.join(" ")}` : `${e.from.join(" ")} ${here.next}`;
+      return null;
+    }
+    const here = beside(words, a, b, firsts);
+    if (here.next && wrote.some((w) => ` ${w} `.includes(` ${from} ${fold(here.next)} `)) && !e.written.includes(here.next)) return `${e.from.join(" ")} ${here.next}`;
+    if (here.prev && wrote.some((w) => ` ${w} `.includes(` ${fold(here.prev)} ${from} `)) && !e.written.includes(here.prev)) return `${here.prev} ${e.from.join(" ")}`;
+    return null;
+  };
   for (const e of byKey.values()) {
     const [a, b] = e.at[0];
+    const run = longer(e);
+    if (run) { refuse({ ...e, written: e.from.join(" "), right: e.to.join(" ") }, `part of the longer name "${run}": another name, not this one misspelt`); continue; }
     const out = { from: e.from.join(" "), to: e.to.join(" "), kind: e.kind || "name", why: e.why || "", sound: sounds(e.from.join(" "), e.to.join(" ")) };
     if (words.slice(a, b + 1).some((w) => w.speaker !== words[a].speaker)) { refuse(e, "two voices say these words"); continue; }
     if (capital(out.from) && onPage(out.from, sources) && !onPage(out.to, sources)) { refuse(e, "the page writes it so already"); continue; }
