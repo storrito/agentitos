@@ -44,6 +44,7 @@ import { BROWS, MOUTH, featOf, noseOf } from "./placed.mjs";
 import { pictureFits } from "./fits.mjs";
 import { splitFits } from "./parts.mjs";
 import { screenFits, screenStacked } from "./screen.mjs";
+import { screenPanel as panelBelow } from "./screen-panel.mjs";
 
 // A face as it is given: a box [x, y, w, h], or its box at several moments [{ t, box }, …] (a
 // face that moves). A moving face is held by the hull of its boxes, so that the placement and the
@@ -125,7 +126,7 @@ export function solve(args) {
   return res;
 }
 
-function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null, merge = true, captionArea = null, pick = null, cover = null }) {
+function solveOnce({ zones: Z, source = null, faces = [], sources = null, region = null, minTextHeight = 0, needs = [], set = {}, all = false, weights = null, speaker = null, merge = true, captionArea = null, pick = null, cover = null, screenPanel = null }) {
   const [W, H] = Z.size;
   const D = scaled(merged(weights ? { ...DEFAULTS, weights } : DEFAULTS, set), Z.size);
   let count = 0;
@@ -161,6 +162,8 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
     ctx.sources = camSrc ? [main, camSrc] : [main];
     out.push(...screenFits(ctx, cam, notes));
     if (camSrc?.faces[0]) out.push(...screenStacked(ctx, camSrc, notes));
+    // asked for only (--screen-panel): the screen above, the speaker's panel down to the caption line
+    if (screenPanel) out.push(...panelBelow(ctx, camSrc, screenPanel, notes));
     if (!main.minText) notes.push("no --min-text-height given: whether the screen's text reads is not judged");
   } else if (srcs.length === 2) {
     // two people as two files: stacked in an upright frame, side by side in a wide one, both tried between
@@ -197,7 +200,9 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
       } else if (main.faces.length > 2) notes.push(`stacked parts are built for two people, not for ${main.faces.length}`);
     }
   }
+  if (screenPanel && !main.screen) notes.push("no screen-panel: it is built for a screen with a --region and its webcam as a second --source");
   const res = ranked(ctx, out, notes, { needs: captionArea ? [...needs.filter((n) => n.role !== "caption"), ctx.cap] : needs, srcs });
+  if (screenPanel) res.screenPanel = ctx.panelVerdict || { offered: false, width: screenPanel.width || "frame", code: "screen", why: "it is built for a screen with a --region and its webcam as a second --source" };
   return pick ? pickSpeaker(ctx, res, cover) : res;
 }
 
@@ -388,6 +393,7 @@ function ranked(ctx, out, notes, { needs, srcs }) {
   cands.forEach((c, i) => {
     c.score = c.hard || c.unmet.length ? 0 : +(100 - c.cost).toFixed(3);
     c.why = why(c, ctx);
+    if (c.stack) c.why.splice(c.why.length - 1, 0, ...c.stack.says);
     if (i) c.behind = behind(c, cands[0]);
   });
   return {

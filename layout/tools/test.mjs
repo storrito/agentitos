@@ -796,6 +796,108 @@ t("screen-stacked where its first try failed (an independent review's inputs): a
 });
 
 // =============================================================================================
+console.log("\nThe screen above, the speaker in a panel down to the caption line (--screen-panel)");
+// =============================================================================================
+{
+  // made-up numbers: a 1080p screen, a 720p webcam, a caption line fixed where a screencast's
+  // captions stand (9:16: y 1410–1500 for Reels; 4:5: 1140–1230)
+  const SCR = [1920, 1080], WHOLE = [0, 0, 1920, 1080], WIDE = [400, 40, 1400, 790], TIGHT = [700, 250, 450, 360];
+  const CAM = { size: [1280, 720], faces: [[500, 140, 280, 350]] };
+  const R916 = askZones("9:16", ["instagram-reels"]), F45 = askZones("4:5", ["instagram-feed"]);
+  const L916 = { left: 120, width: 840, top: 1410, bottom: 1500, size: 52, lines: 1, from: "test" }, L45 = { ...L916, top: 1140, bottom: 1230 };
+  // with the apps the page check knows by default (all five upright ones): the caption line inside their safe box
+  const LD = { ...L916, width: 708, top: 1350, bottom: 1440 };
+  const panelOf = (zones, region, band, ask = {}, cam = CAM, minTextHeight = 12) => solve({ zones, sources: [{ size: SCR, region, minTextHeight }, cam], needs: [], captionArea: band, screenPanel: { width: "frame", labelBottom: null, before: null, ...ask } });
+  const theOne = (res) => res.candidates.find((c) => c.fit === "screen-panel");
+
+  t("--screen-panel in 9:16: the whole screen and a wide zoom stand inside the safe box's wide stretch from its top, the speaker's panel across the frame from a gap under them down to the caption line's foot, the face 18 % of the frame's height or more with its head inside the panel and its chin above the captions, which stay where they were fixed; the screen's text is said as unread, nothing else is unmet; about 40 % ground; the change from the face keep given straight down at about half the size", () => {
+    const out = [];
+    for (const region of [WHOLE, WIDE]) {
+      const res = panelOf(Z916, region, LD, { before: { scale: 2.667, left: -1167, top: 0 } }), c = theOne(res), k = c?.stack;
+      ok(c && res.screenPanel.offered, `not offered: ${res.screenPanel.why}`);
+      ok(!c.hard && c.unmet.join() === "readable", `${c.unmet} ${JSON.stringify(c.problems)}`);
+      near(k.screen.box[0], 60, 0.5, "the screen's left"); near(k.screen.box[2], 960, 0.5, "the screen's width"); near(k.screen.box[1], Z916.safe[1], 0.5, "the screen's top");
+      ok(inside(Z916.wide, k.screen.box) && k.screen.in === "wide", `the screen ${k.screen.box} in ${k.screen.in}`);
+      near(k.panel.box[1], Y1(k.screen.box) + DEFAULTS.gap, 0.5, "the panel's top"); near(Y1(k.panel.box), 1440, 0.5, "the panel's foot"); ok(k.panel.box[0] === 0 && k.panel.box[2] === 1080, `the panel ${k.panel.box}`);
+      ok(k.face.height >= 0.18 * 1920 - 1 && k.face.pct >= 17.9, `the face ${k.face.height} px`);
+      const f = k.face.box, keep = keepOut(f, DEFAULTS);
+      ok(f[1] - Math.min(DEFAULTS.free.above * f[3], k.camera.scale * 140) >= k.panel.box[1] - 0.5 && Y1(keep) <= 1350 + 0.5, `the face ${f} in the panel ${k.panel.box}`);
+      const eyes = (f[1] + DEFAULTS.eyes * f[3] - k.panel.box[1]) / k.panel.box[3];
+      ok(eyes > 0.25 && eyes < 0.45, `the eyes ${r2(eyes)} down the panel`);
+      const capt = c.text.find((x) => x.role === "caption");
+      ok(capt && capt.box[1] === 1350 && !overlap(capt.box, [f[0], f[1], f[2], 0.85 * f[3]]), `the captions ${capt && capt.box}`);
+      ok(k.ground > 0.3 && k.ground < 0.45, `ground ${k.ground}`);
+      ok(k.camera.enlargement <= 1 && inside([0, 0, 1280, 720], k.camera.crop), `the camera ${JSON.stringify(k.camera)}`);
+      ok(Math.abs(k.change.face.dx) < 30 && k.change.face.dy > 0 && k.change.face.zoom > 0.3 && k.change.face.zoom < 0.5, `the change ${JSON.stringify(k.change.face)}`);
+      ok(c.why.some((w) => /the speaker's panel across the frame/.test(w)), c.why.join(" | "));
+      agree(c, res, `screen-panel-${region === WHOLE ? "whole" : "wide"}`);
+      out.push(`${region === WHOLE ? "whole" : "wide"}: face ${k.face.height} px, ground ${k.ground}, down ${k.change.face.dy}`);
+    }
+    return out.join("; ");
+  });
+
+  t("--screen-panel says no where the region is too tall: a tight zoom at 2× is a screen's part over 600 px (of a frame 1080 wide) and leaves the panel too little, in 9:16 and in 4:5, with or without a label: no candidate, a note and screenPanel.why that names the screen's height, the panel's and what the stack needs; the whole screen keeps the stack under a label's room of 60, 90 and 120 px in both frames and loses it only where the panel falls under 440 px (in 4:5 past a room of about 165 px), said with the panel's height", () => {
+    const room = (Z, R) => (R ? Z.safe[1] + R - DEFAULTS.gap : null);
+    const out = [];
+    for (const [Z, band, name] of [[R916, L916, "9:16"], [F45, L45, "4:5"]]) {
+      for (const R of [0, 60, 90, 120]) {
+        const no = panelOf(Z, TIGHT, band, { labelBottom: room(Z, R) });
+        ok(!theOne(no) && no.screenPanel.code === "tall" && /is \d+ px tall, over the 600 px/.test(no.screenPanel.why) && /leaves the panel \d+ px/.test(no.screenPanel.why) && /panel of at least 440 px/.test(no.screenPanel.why) && no.notes.some((x) => /^no screen-panel/.test(x)), `${name} tight, room ${R}: ${JSON.stringify(no.screenPanel)}`);
+        const yes = panelOf(Z, WHOLE, band, { labelBottom: room(Z, R) }), c = theOne(yes);
+        ok(c && !c.hard && c.unmet.join() === "readable" && c.stack.panel.box[3] >= 440 && c.stack.face.height >= 230, `${name} whole, room ${R}: ${yes.screenPanel.why || JSON.stringify(c.stack.face)}`);
+        if (R === 120) out.push(`${name} under 120 px: panel ${Math.round(c.stack.panel.box[3])}, face ${c.stack.face.height}`);
+      }
+    }
+    const lost = panelOf(F45, WHOLE, L45, { labelBottom: room(F45, 200) });
+    ok(lost.screenPanel.code === "small" && /the panel below the screen is \d+ px high .*under the 440 px/.test(lost.screenPanel.why), JSON.stringify(lost.screenPanel));
+    const y45 = panelOf(F45, WHOLE, L45), c = theOne(y45);
+    ok(c && c.stack.face.pct > 20 && Math.abs(Y1(c.stack.panel.box) - 1230) < 0.5, JSON.stringify(c?.stack.face));
+    agree(c, y45, "screen-panel-45");
+    return out.join("; ");
+  });
+
+  t("--screen-panel is not offered in 16:9 and 1:1, without a face in the webcam's picture, with the webcam baked into the screen, or with the captions on the screen's part: each a sentence; not asked, the result is as before (no screenPanel, no such candidate)", () => {
+    for (const z of [Z169, Z11]) { const r = panelOf(z, WHOLE, null); ok(r.screenPanel.code === "frame" && /not offered in this frame/.test(r.screenPanel.why), JSON.stringify(r.screenPanel)); }
+    const noFace = panelOf(R916, WHOLE, L916, {}, { size: [1280, 720], faces: [] });
+    ok(noFace.screenPanel.code === "face" && /no face is known/.test(noFace.screenPanel.why), JSON.stringify(noFace.screenPanel));
+    const baked = solve({ zones: R916, sources: [{ size: SCR, region: [600, 200, 900, 500], minTextHeight: 12, faces: [[100, 700, 150, 190]] }], needs: [], captionArea: L916, screenPanel: { width: "frame" } });
+    ok(baked.screenPanel.code === "webcam" && !theOne(baked), JSON.stringify(baked.screenPanel));
+    const high = panelOf(R916, WHOLE, { ...L916, top: 700, bottom: 790 });
+    ok(high.screenPanel.code === "captions" && /stand on the screen's part/.test(high.screenPanel.why), JSON.stringify(high.screenPanel));
+    const plain = solve({ zones: R916, sources: [{ size: SCR, region: WHOLE, minTextHeight: 12 }, CAM], needs: [], captionArea: L916 });
+    ok(!("screenPanel" in plain) && !theOne(plain), "asked for nothing, the result changed");
+  });
+
+  t("--screen-panel screen: the panel as wide as the screen above it, the edges aligned; a label's bottom moves the screen under it; a webcam whose face needs over 2× stays at 2×, said as soft, and the limit is what 2× gives", () => {
+    const wide = theOne(panelOf(R916, WHOLE, L916, { width: "screen" })), k = wide.stack;
+    ok(k.panel.box[0] === k.screen.box[0] && k.panel.box[2] === k.screen.box[2] && k.width === "screen", `panel ${k.panel.box}, screen ${k.screen.box}`);
+    ok(inside(k.panel.box, k.camera.window), `the webcam's picture ${k.camera.window} past the panel ${k.panel.box}`);
+    const label = theOne(panelOf(R916, WHOLE, L916, { labelBottom: 320 }));
+    near(label.stack.screen.box[1], 320 + DEFAULTS.gap, 0.5, "the screen's top under the label");
+    const small = theOne(panelOf(R916, WHOLE, L916, {}, { size: [1280, 720], faces: [[600, 260, 90, 110]] }));
+    ok(small && small.stack.camera.enlargement === 2 && small.stack.camera.soft && small.stack.face.height === 220 && small.problems.some((q) => q.code === "enlarged" && q.level === "soft"), small && JSON.stringify(small.stack.camera));
+    return `as wide as the screen: ground ${k.ground}; the small face ${small.stack.face.height} px at 2×`;
+  });
+
+  t("place --screen-panel on the command line: alone it is the frame's width, 'screen' the screen's; --before gives the change; --before or --label-bottom without it, or a label's bottom that is no number, is one sentence", () => {
+    const TOOLP = path.join(HERE, "place.mjs"), dir = path.join(OUT, "cli-panel");
+    const base = ["place", dir, "--frame", "9:16", "--platform", "reels", "--source", "1920x1080", "--region", "0,0,1920,1080", "--min-text-height", "12", "--source", "1280x720", "--face", "500,140,280,350", "--caption-area", "120,840,1410,1500,52,1"];
+    const run = (...a) => spawnSync(process.execPath, [TOOLP, ...base, ...a], { encoding: "utf8", timeout: 120e3 });
+    let r = run("--screen-panel", "--json");
+    ok(r.status === 0 && JSON.parse(r.stdout).screenPanel.width === "frame", r.stderr);
+    r = run("--screen-panel", "screen", "--before", "2.667,-800,0", "--json");
+    const c = JSON.parse(r.stdout).candidates.find((x) => x.fit === "screen-panel");
+    ok(c && c.stack.width === "screen" && c.stack.change.before.scale === 2.667 && !c.stack.change.before.assumed, r.stderr || JSON.stringify(c?.stack.change));
+    r = run("--screen-panel");
+    ok(/screen-panel/.test(r.stdout) && /panel +x 0–1080/.test(r.stdout) && /change +from full-frame/.test(r.stdout), r.stdout);
+    for (const bad of [["--before", "2,0,0"], ["--label-bottom", "300"], ["--screen-panel", "--label-bottom", "high"]]) {
+      const e = run(...bad);
+      ok(e.status === 1 && e.stderr.trim().split("\n").length === 1, `${bad.join(" ")}: ${e.status} ${e.stderr}`);
+    }
+  });
+}
+
+// =============================================================================================
 console.log("\nFrames 4:5 (1080×1350) and 1:1 (1080×1080)");
 // =============================================================================================
 

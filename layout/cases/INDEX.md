@@ -23,6 +23,9 @@ Each folder: `case.json` (what it guards, where its input came from, the steps),
 | place-made-error-box-past-top | made up | a face box that begins above the frame's top (a webcam read off a grid): place refuses it in one sentence |
 | place-narrated-two-tracks | made up | two moving faces as narrated-short hands them over (a dozen moments each) from a 1080p source into 1080x1920 |
 | place-portrait-16x9-hook | made up | an upright 1080x1920 source into 16:9 with a caption line and a hook |
+| place-screen-panel-4x5-wide-screen-width | made up | a wide zoom of a 1080p screen with a 720p webcam into 4:5 under a label, the speaker's panel as wide as the screen (--screen-panel screen) |
+| place-screen-panel-9x16-tight-no | made up | a tight zoom of a 1080p screen at 2× into 9:16 with --screen-panel: not offered, the screen's part over 600 px tall, said in a note with the panel's height |
+| place-screen-panel-9x16-whole | made up | a whole 1080p screen with a 720p webcam into 9:16 for Reels, the captions fixed at the safe box's bottom, the screen above and the speaker's panel across the frame (--screen-panel) with the face keep before (--before) |
 | place-screen-region-no-face-16x9 | made up | a 1080p screen region without a face into 16:9 with a caption line |
 | place-screen-region-webcam-9x16 | made up | a 1080p screen region with a 720p webcam file into 9:16 with a caption line |
 | place-then-captions | made up | a place followed by captions --candidate 1: the options that set captions into the first candidate's area |
