@@ -200,7 +200,7 @@ test("the commands: measure prints its lines; targets answers the master, the li
   const out = lines(clean);
   assert.match(out[0], /voice\.wav: 0:28 of sound, 48 kHz mono, speech \d+ % of the time\./);
   assert.match(out.join("\n"), /Nothing stands out\./);
-  assert.match(out.at(-1), /^Next: clean it with node .*voice\.mjs clean /);
+  assert.match(out.at(-1), /^Next: node .*voice\.mjs clean .*voice\.wav <out> brings it to the platforms' loudness; nothing else needs mending/);
   assert.ok(out.join("\n").includes("−"), "minus signs as the collection writes them");
   // (the table itself is test-targets.mjs's; here only that the command reaches it)
   const none = cli("targets");
