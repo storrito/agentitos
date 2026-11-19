@@ -39,10 +39,12 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
-import { counted, planWindow, framed, bandOf, textOn, inkOf, sane, looking, shownShare, talksIn, WEIGHT, TALK_FACE } from "./lib/faces.mjs";
+import { counted, planWindow, framed, bandOf, onOf, measureFault, measureSaid, inkOf, sane, looking, shownShare, talksIn, WEIGHT, TALK_FACE } from "./lib/faces.mjs";
 
 const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] [--again] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
+// how long layout's measure may take, s (it takes a tenth of a second; NARRATED_SHORT_MEASURE_LIMIT for a test)
+const MEASURE_LIMIT = Number(process.env.NARRATED_SHORT_MEASURE_LIMIT) || 120;
 const log = (s) => console.error(s);
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
@@ -645,7 +647,7 @@ function build(args) {
     else if (looks) report.push(`  ${b.id}: ${looks}`);
     if (list) {
       const band = frame === "whole" || frame === "crop" ? bandOf({ frame, zoom, box, size }) : null;
-      seen.push({ i, id: b.id, moments: framed({ list: inBars, place: { frame, zoom, pan, x, box, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band, talks: talk }) });
+      seen.push({ i, id: b.id, talk, moments: framed({ list: inBars, place: { frame, zoom, pan, x, box, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band, talks: talk }) });
     }
     // the gate: what needs no judgement
     const problems = [];
@@ -692,102 +694,128 @@ function build(args) {
     const capBox = area ? [area.left, area.top, area.width, area.bottom - area.top] : null;
     const hookAs = (px) => [top[0], top[1] + 66, top[2], Math.round(hookLines(hook.text.trim(), px, room) * px * 1.02)];
     const hookBox = hookAs(hookPx);
-    const capOn = capBox ? textOn(capBox, moments) : null, hookOn = textOn(hookBox, moments, 0, HOOK_SECONDS);
-    // a hook reaches the eyes (or lower) where it lies on the eyes, the nose or the mouth
-    const reaches = (on) => on.nose > 0 || on.mouth > 0 || on.talk > 0;
-    const parts = (on) => [on.nose ? `the eyes or nose ${on.nose} s` : "", on.talk ? `the mouth of one who looks into the camera ${on.talk} s` : "", on.mouth ? `the mouth ${on.mouth} s` : "", on.lip ? `the lower lip ${on.lip} s` : "", on.hair ? `the hair or forehead ${on.hair} s` : "", on.chin ? `the chin ${on.chin} s` : ""].filter(Boolean).join(", ");
-    const whose = (box, a, z, part = "seconds") => seen.filter((s) => textOn(box, s.moments, a, z)[part]).map((s) => s.id).join(", ");
-    const meets = (x, z) => Math.min(x[0] + x[2], z[0] + z[2]) > Math.max(x[0], z[0]) && Math.min(x[1] + x[3], z[1] + z[3]) > Math.max(x[1], z[1]);
-    // two blocks of text one directly above the other read as one: a hook closer to the captions than its own height (200 px at least)
-    const stacked = (h, c) => !!c && Math.min(h[0] + h[2], c[0] + c[2]) > Math.max(h[0], c[0]) && Math.max(c[1] - (h[1] + h[3]), h[1] - (c[1] + c[3])) < Math.max(h[3], 200);
-    const mild = [capOn?.seconds && !capOn.hard ? `the captions lie on ${parts(capOn)} in ${whose(capBox)}, no eyes or nose: nobody shown speaks, they may` : "",
-      hookOn.seconds && !reaches(hookOn) ? `the hook lies on ${parts(hookOn)} in ${whose(hookBox, 0, HOOK_SECONDS)}, not the eyes: it may` : ""].filter(Boolean);
-    // captions on the mouth of a large face whose faces say nothing of where it looks: said, not taken as fine
-    const blind = capBox ? unknown.filter((u) => { const on = textOn(capBox, seen.find((x) => x.id === u.id).moments); return on.mouth || on.lip; }) : [];
-    if (!capOn?.hard && !reaches(hookOn)) report.push(`  the captions${capBox ? "" : " (not checked: the captions skill here writes no area.json)"} and the hook lie on no ${mild.length ? "eyes or nose" : "face"}: they stand where they stood${mild.length ? `; ${mild.join("; ")}` : ""}`);
+    // the smaller sizes the hook takes in its place: on two lines (three under 80 px), down to 60
+    const sizes = [104, 96, 88, 80, 76, 68, 60].filter((v) => v < hookPx && hookLines(hook.text.trim(), v, room) <= (v >= 80 ? 2 : 3));
+    // What a text lies on is agentitos' layout's measure (place.mjs text --measure), every beat one
+    // shot with its faces as tracks in px of the frame, never raised; who talks into the camera in
+    // a beat (its mouth weighs as the eyes) is this skill's (onOf)
+    const folder = path.join(work, "placement"), shotsFile = path.join(folder, "shots.json"), boxesFile = path.join(folder, "measure-boxes.json");
+    const talks = Object.fromEntries(seen.filter((s) => s.talk != null).map((s) => [s.i, s.talk]));
+    const measured = new Map();
+    let measureFailed = null;
+    // boxes: [{ name, box, start?, end? }] → true where layout measured them all (measured.get(name))
+    const measure = (boxes) => {
+      fs.writeFileSync(boxesFile, JSON.stringify(boxes));
+      const mr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, "--measure", boxesFile], { encoding: "utf8", maxBuffer: 64 << 20, timeout: MEASURE_LIMIT * 1000 });
+      let got = null;
+      try { got = mr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "measure.json"), "utf8")) : null; } catch { /* said below */ }
+      if (!Array.isArray(got?.boxes) || boxes.some((b) => !got.boxes.some((x) => x.name === b.name && Array.isArray(x.moments)))) { measureFailed = measureFault(layoutTool, mr, MEASURE_LIMIT); return false; }
+      for (const x of got.boxes) measured.set(x.name, x);
+      return true;
+    };
+    // (the hook is a heavy outlined text, read on a busy picture too: calm, a text before a card)
+    const shots = beats.map((b, i) => {
+      const tracks = new Map();
+      for (const m of seen.find((s) => s.i === i)?.moments || []) for (const f of m.boxes) {
+        if (!tracks.has(f.who)) tracks.set(f.who, { who: f.who, track: [] });
+        tracks.get(f.who).track.push({ t: m.t, box: f.box, ...(f.feat ? { feat: f.feat } : {}) });
+      }
+      return { start: b.from, end: b.to, weight: r2(b.to - b.from), faces: [...tracks.values()], room: null };
+    });
+    let ok = false;
+    if (layoutTool) {
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(shotsFile, JSON.stringify({ shots, hook: { start: 0, end: HOOK_SECONDS, calm: true } }));
+      ok = measure([...(capBox ? [{ name: "captions", box: capBox }] : []), { name: "hook", box: hookBox, start: 0, end: HOOK_SECONDS },
+        ...sizes.map((v) => ({ name: `hook-${v}`, box: hookAs(v), start: 0, end: HOOK_SECONDS }))]);
+    }
+    // a text's seconds on the faces: of the beats `ids` (seen's i) or of all
+    const on = (name, ids = null) => onOf(measured.get(name), { shots: ids, talks });
+    let blind = [];   // the beats whose large main face may look into the camera, the captions on its mouth
+    if (!layoutTool) warn.push(measureSaid(measureFault(null)));
+    else if (!ok) warn.push(measureSaid(measureFailed));
     else {
-      for (const m of mild) report.push(`  ${m}`);
-      const folder = path.join(work, "placement"), shotsFile = path.join(folder, "shots.json");
-      let ink = null;
-      if (layoutTool) {
-        // layout's text over time: every beat one shot, its faces as tracks in px of the frame, never raised
-        const shots = beats.map((b, i) => {
-          const tracks = new Map();
-          for (const m of seen.find((s) => s.i === i)?.moments || []) for (const f of m.boxes) {
-            if (!tracks.has(f.who)) tracks.set(f.who, { who: f.who, track: [] });
-            tracks.get(f.who).track.push({ t: m.t, box: f.box, ...(f.feat ? { feat: f.feat } : {}) });
-          }
-          return { start: b.from, end: b.to, weight: r2(b.to - b.from), faces: [...tracks.values()], room: null };
-        });
-        fs.mkdirSync(folder, { recursive: true });
-        // (the hook is a heavy outlined text, read on a busy picture too: calm, a text before a card)
-        fs.writeFileSync(shotsFile, JSON.stringify({ shots, hook: { start: 0, end: HOOK_SECONDS, calm: true } }));
+      const capOn = capBox ? on("captions") : null, hookOn = on("hook");
+      // a hook reaches the eyes (or lower) where it lies on the eyes, the nose or the mouth
+      const reaches = (o) => o.nose > 0 || o.mouth > 0 || o.talk > 0;
+      const parts = (o) => [o.nose ? `the eyes or nose ${o.nose} s${o.unknown ? `, of it ${o.unknown} s on a head known by its box alone, whose eyes are not known and taken to begin 15 % down it` : ""}` : "", o.talk ? `the mouth of one who looks into the camera ${o.talk} s` : "", o.mouth ? `the mouth ${o.mouth} s` : "", o.lip ? `the lower lip ${o.lip} s` : "", o.hair ? `the hair or forehead ${o.hair} s${o.maybe ? ` (${o.maybe} s of it where the eyes may begin: not known)` : ""}` : "", o.chin ? `the chin ${o.chin} s` : ""].filter(Boolean).join(", ");
+      const whose = (name, part = "seconds") => seen.filter((s) => on(name, [s.i])[part]).map((s) => s.id).join(", ");
+      const meets = (x, z) => Math.min(x[0] + x[2], z[0] + z[2]) > Math.max(x[0], z[0]) && Math.min(x[1] + x[3], z[1] + z[3]) > Math.max(x[1], z[1]);
+      // two blocks of text one directly above the other read as one: a hook closer to the captions than its own height (200 px at least)
+      const stacked = (h, c) => !!c && Math.min(h[0] + h[2], c[0] + c[2]) > Math.max(h[0], c[0]) && Math.max(c[1] - (h[1] + h[3]), h[1] - (c[1] + c[3])) < Math.max(h[3], 200);
+      const mild = [capOn?.seconds && !capOn.hard ? `the captions lie on ${parts(capOn)} in ${whose("captions")}, no eyes or nose: nobody shown speaks, they may` : "",
+        hookOn.seconds && !reaches(hookOn) ? `the hook lies on ${parts(hookOn)} in ${whose("hook")}, not the eyes: it may` : ""].filter(Boolean);
+      // captions on the mouth of a large face whose faces say nothing of where it looks: said, not taken as fine
+      blind = capBox ? unknown.filter((u) => { const o = on("captions", [seen.find((x) => x.id === u.id).i]); return o.mouth || o.lip; }) : [];
+      if (!capOn?.hard && !reaches(hookOn)) report.push(`  the captions${capBox ? "" : " (not checked: the captions skill here writes no area.json)"} and the hook lie on no ${mild.length ? "eyes or nose" : "face"}: they stand where they stood${mild.length ? `; ${mild.join("; ")}` : ""}`);
+      else {
+        for (const m of mild) report.push(`  ${m}`);
         let look = null;
         try { look = JSON.parse(fs.readFileSync(path.join(comp, "captions", "index.html"), "utf8").match(/var DATA = (\{[\s\S]*?\});\n/)[1]).look; } catch { /* the layout's own band */ }
-        ink = inkOf(look);
-      }
-      const capText = capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : [];
-      const askLayout = (args) => {
-        const lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...args,
-          ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
-        let placed = null;
-        try { placed = lr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8")) : null; } catch { /* said by the caller */ }
-        return { placed, lr };
-      };
-      // where the captions stand once they are placed, as layout's --caption-y and --font-size take them
-      let capNow = capBox, capFixed = capBox ? ["--caption-y", String(area.bottom), "--font-size", String(area.size)] : [];
-      if (capOn?.hard && !layoutTool) warn.push(`the captions lie on a face in ${whose(capBox, 0, Infinity, "hard")} (${parts(capOn)}): agentitos' layout beside this skill (or LAYOUT_TOOL naming its tools/place.mjs) would place them off the faces; they stand where they stood`);
-      else if (capOn?.hard) {
-        const said = `the captions lie on a face in ${whose(capBox, 0, Infinity, "hard")} (${parts(capOn)})`;
-        // The captions stand in one place for the whole short, at the size captions gave them: one
-        // beat never makes them smaller for all the others. Smaller type has a price, as much as the
-        // longest beat spent wholly on the eyes or nose and more the smaller it gets, which only
-        // faces in several beats can pay; layout is asked at their own size first.
-        const longest = Math.max(...beats.map((b) => b.to - b.from));
-        const price = (font) => (font < area.size ? WEIGHT.nose * (longest + total * (1 - font / area.size)) : 0);
-        const asked = [askLayout([...capText, "--font-size", String(area.size)])];
-        if (seen.filter((s) => textOn(capBox, s.moments).hard).length > 1) asked.push(askLayout(capText));
-        let best = null;
-        for (const { placed } of asked) {
-          const c = placed?.caption;
-          if (!c) continue;
-          const on = textOn(c.box, moments), cost = r2(on.cost + price(c.font));
-          if (!best || cost < best.cost) best = { c, on, cost };
-        }
-        if (!best) warn.push(`${said}; agentitos' layout did not place them (${reason(asked[0].lr)}): they stand where they stood`);
-        else if (best.cost < capOn.cost) {
-          const { c, on } = best, o = { ...c.options };
-          if (ink) { o.y = Math.round(o.y - ink.below * o["font-size"]); o["max-width"] = Math.floor(o["max-width"] - 2 * Math.ceil(ink.side * o["font-size"] + 1)); }
-          const cr = spawnSync(process.execPath, [...capArgs, ...Object.entries(o).flatMap(([k, v]) => [`--${k}`, String(v)])], { encoding: "utf8" });
-          if (cr.status !== 0) fail(`The captions could not be built: ${reason(cr)}`);
-          if (!/Placed where asked/.test(cr.stdout || "")) warn.push(`${said}: the captions skill here does not take a place, so they stand on the safe box's bottom`);
-          else {
-            capNow = c.box;
-            capFixed = ["--caption-y", String(c.options.y), "--font-size", String(c.font)];
-            report.push(`  the captions: they lay on a face in ${whose(capBox, 0, Infinity, "hard")} (${parts(capOn)}) where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px${c.font < area.size ? ` (${area.size} px before: the faces of several beats pay for smaller type)` : ", their size"}, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${on.seconds ? `, on a face still: ${parts(on)}` : ", on no face"}`);
+        const ink = inkOf(look);
+        const capText = capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : [];
+        const askLayout = (args) => {
+          const lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...args,
+            ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
+          let placed = null;
+          try { placed = lr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8")) : null; } catch { /* said by the caller */ }
+          return { placed, lr };
+        };
+        // where the captions stand once they are placed, as layout's --caption-y and --font-size take them
+        let capNow = capBox, capFixed = capBox ? ["--caption-y", String(area.bottom), "--font-size", String(area.size)] : [];
+        if (capOn?.hard) {
+          const said = `the captions lie on a face in ${whose("captions", "hard")} (${parts(capOn)})`;
+          // The captions stand in one place for the whole short, at the size captions gave them: one
+          // beat never makes them smaller for all the others. Smaller type has a price, as much as the
+          // longest beat spent wholly on the eyes or nose and more the smaller it gets, which only
+          // faces in several beats can pay; layout is asked at their own size first.
+          const longest = Math.max(...beats.map((b) => b.to - b.from));
+          const price = (font) => (font < area.size ? WEIGHT.nose * (longest + total * (1 - font / area.size)) : 0);
+          const asked = [askLayout([...capText, "--font-size", String(area.size)])];
+          if (seen.filter((s) => on("captions", [s.i]).hard).length > 1) asked.push(askLayout(capText));
+          // layout's places, measured where they stand (one call for both)
+          const places = asked.map(({ placed }, k) => (placed?.caption ? { c: placed.caption, name: `caption-${k}` } : null)).filter(Boolean);
+          const gauged = places.length ? measure(places.map((x) => ({ name: x.name, box: x.c.box }))) : false;
+          let best = null;
+          if (gauged) for (const { c, name } of places) {
+            const o = on(name), cost = r2(o.cost + price(c.font));
+            if (!best || cost < best.cost) best = { c, on: o, cost };
           }
-        } else report.push(`  ! ${said}: agentitos' layout found no place at their size that lies on them less; they stand where they stood`);
-      }
-      // the hook: where it reaches the eyes, or the captions moved to its place
-      const clash = capNow && capNow !== capBox && meets(capNow, hookBox);
-      if (reaches(hookOn) || clash) {
-        const why = reaches(hookOn) ? `it reached ${hookOn.nose || hookOn.mouth ? "the eyes" : "the mouth of one who looks into the camera"} in ${whose(hookBox, 0, HOOK_SECONDS, hookOn.nose ? "nose" : hookOn.mouth ? "mouth" : "talk")} (${parts(hookOn)})` : "the captions moved to its place";
-        const free = (box, until = HOOK_SECONDS) => { const on = textOn(box, moments, 0, until); return !reaches(on) && !(capNow && (meets(box, capNow) || stacked(box, capNow))) ? on : null; };
-        // smaller first, in its place: the sizes it takes on two lines (three under 80 px), down to 60
-        const px = [104, 96, 88, 80, 76, 68, 60].filter((v) => v < hookPx && hookLines(hook.text.trim(), v, room) <= (v >= 80 ? 2 : 3)).find((v) => free(hookAs(v)));
-        if (px) {
-          const on = free(hookAs(px));
-          hookAt = { box: hookAs(px), font: px, top: true };
-          report.push(`  the hook: ${why} at ${hookPx} px; ${px} px instead, at the top${on.seconds ? `, on ${parts(on)}` : ", on no face"}`);
-        } else if (!layoutTool) report.push(`  ! the hook: ${why}, at every size; agentitos' layout beside this skill would look for another place: it stands where it stood: a shorter hook, or another first beat`);
-        else {
-          const { placed, lr } = askLayout([...capText, "--text", "hook", ...capFixed]);
-          const h = placed?.hook, until = Math.max(1.2, Math.min(HOOK_SECONDS, h?.until ?? HOOK_SECONDS)), on = h ? free(h.box, until) : null;
-          if (h && on) {
-            hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
-            hookUntil = r2(until);
-            report.push(`  the hook: ${why}, at every size; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${on.seconds ? `, on ${parts(on)}` : ", on no face"}`);
-          } else report.push(`  ! the hook: ${why}, at every size${h ? `, and agentitos' layout's place for it ${capNow && (meets(h.box, capNow) || stacked(h.box, capNow)) ? "lies on the captions or directly above them" : "reaches the eyes too"}` : `; agentitos' layout did not place it (${reason(lr)})`}: it stands where it stood: a shorter hook, or another first beat`);
+          if (!best) warn.push(`${said}; agentitos' layout did not ${places.length ? `measure its place for them (${measureFailed.replace("agentitos' layout ", "it ")})` : `place them (${reason(asked[0].lr)})`}: they stand where they stood`);
+          else if (best.cost < capOn.cost) {
+            const { c, on: o0 } = best, o = { ...c.options };
+            if (ink) { o.y = Math.round(o.y - ink.below * o["font-size"]); o["max-width"] = Math.floor(o["max-width"] - 2 * Math.ceil(ink.side * o["font-size"] + 1)); }
+            const cr = spawnSync(process.execPath, [...capArgs, ...Object.entries(o).flatMap(([k, v]) => [`--${k}`, String(v)])], { encoding: "utf8" });
+            if (cr.status !== 0) fail(`The captions could not be built: ${reason(cr)}`);
+            if (!/Placed where asked/.test(cr.stdout || "")) warn.push(`${said}: the captions skill here does not take a place, so they stand on the safe box's bottom`);
+            else {
+              capNow = c.box;
+              capFixed = ["--caption-y", String(c.options.y), "--font-size", String(c.font)];
+              report.push(`  the captions: they lay on a face in ${whose("captions", "hard")} (${parts(capOn)}) where they stood; one place for the whole short by agentitos' layout instead: ${c.lines > 1 ? "up to two lines" : "one line"} of ${o["font-size"]} px${c.font < area.size ? ` (${area.size} px before: the faces of several beats pay for smaller type)` : ", their size"}, the lowest line at y ${o.y} (${c.where === "above-head" ? "above the heads" : c.where === "no-face" ? "where no face is" : "below the chins"})${o0.seconds ? `, on a face still: ${parts(o0)}` : ", on no face"}`);
+            }
+          } else report.push(`  ! ${said}: agentitos' layout found no place at their size that lies on them less; they stand where they stood`);
+        }
+        // the hook: where it reaches the eyes, or the captions moved to its place
+        const clash = capNow && capNow !== capBox && meets(capNow, hookBox);
+        if (reaches(hookOn) || clash) {
+          const why = reaches(hookOn) ? `it reached ${hookOn.nose || hookOn.mouth ? "the eyes" : "the mouth of one who looks into the camera"} in ${whose("hook", hookOn.nose ? "nose" : hookOn.mouth ? "mouth" : "talk")} (${parts(hookOn)})` : "the captions moved to its place";
+          const free = (name, box) => { const o = on(name); return !reaches(o) && !(capNow && (meets(box, capNow) || stacked(box, capNow))) ? o : null; };
+          // smaller first, in its place
+          const px = sizes.find((v) => free(`hook-${v}`, hookAs(v)));
+          if (px) {
+            const o = free(`hook-${px}`, hookAs(px));
+            hookAt = { box: hookAs(px), font: px, top: true };
+            report.push(`  the hook: ${why} at ${hookPx} px; ${px} px instead, at the top${o.seconds ? `, on ${parts(o)}` : ", on no face"}`);
+          } else {
+            const { placed, lr } = askLayout([...capText, "--text", "hook", ...capFixed]);
+            const h = placed?.hook, until = Math.max(1.2, Math.min(HOOK_SECONDS, h?.until ?? HOOK_SECONDS));
+            const gauged = h ? measure([{ name: "hook-layout", box: h.box, start: 0, end: until }]) : false, o = gauged ? free("hook-layout", h.box) : null;
+            if (h && o) {
+              hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
+              hookUntil = r2(until);
+              report.push(`  the hook: ${why}, at every size; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${o.seconds ? `, on ${parts(o)}` : ", on no face"}`);
+            } else report.push(`  ! the hook: ${why}, at every size${h && gauged ? `, and agentitos' layout's place for it ${capNow && (meets(h.box, capNow) || stacked(h.box, capNow)) ? "lies on the captions or directly above them" : "reaches the eyes too"}` : h ? `; agentitos' layout did not measure its place for it (${measureFailed.replace("agentitos' layout ", "it ")})` : `; agentitos' layout did not place it (${reason(lr)})`}: it stands where it stood: a shorter hook, or another first beat`);
+          }
         }
       }
     }

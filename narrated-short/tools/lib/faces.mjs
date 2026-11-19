@@ -10,7 +10,9 @@
 //   planWindow({ frame, zoom, pan, zoomSet, panSet, size, people, captions, crop }) → what the beat's picture becomes
 //   mapper({ frame, zoom, pan, x, box, size }) → box of the source → box of the 1080×1920 clip
 //   framed(…) → [{ t, boxes: [{ who, box, feat? }] }] on the film's clock, as the composition plays it
-//   textOn(box, moments, from, to) → { seconds, nose, mouth, lip, hair, chin, talk, cost, hard }: a text box on faces
+//   measureFault(tool, spawnResult, limit) → what went wrong with layout's measure, in words of the build
+//   onOf(measured, { from, to, shots, talks }) → { seconds, nose, mouth, lip, hair, chin, talk, cost, hard }:
+//       what a text lies on, weighed by this skill's rules, from agentitos' layout's measure
 //
 // A box is [x, y, w, h]. Every list of faces is { step, faces: [{ t, boxes: [{ who, box, feat? }] }] }
 // in px of the source and seconds of the stretch (0 = the beat's `at`).
@@ -426,54 +428,55 @@ export function framed({ list, place, from, seconds, speed = 1, move = [1, 1], b
   return out;
 }
 
-// A face's lines, as agentitos' layout takes them (copied: a skill never imports another's code):
-// from its eyes, nose and mouth (feat) the nose line 70 % down it, the lip line 88 %, the mouth
-// line its bottom and 15 % more; without feat, from the box (the eyes' top at 38 %, the mouth's
-// bottom at 86 % of its height).
-const overlaps = (a, b) => Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]) > 0 && Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]) > 0;
-// what a second on each part weighs (a guess, to tell two places apart): the eyes or nose most;
+// What a second on each part weighs (a guess, to tell two places apart): the eyes or nose most;
 // the mouth little, since nobody shown is heard (above), but the mouth and lower lip of one who
-// talks into the camera (talk) as much as the eyes; the hair or forehead (and the side of a head,
-// beside the eyes, nose and mouth) is a part of its own and mild: a text there covers no feature
+// talks into the camera (talk) as much as the eyes; the hair or forehead is a part of its own and
+// mild: a text there covers no feature
 export const WEIGHT = { nose: 100, mouth: 2, lip: 1, hair: 0.5, chin: 0.2, talk: 100 };
 
-// The parts of a face a text box lies on, top to bottom, each only where the box overlaps it: the
-// hair or forehead (from the box's top to the eyes), the eyes or nose (to the nose line), the mouth
-// (to the lip line), the lower lip (to the mouth line), the chin (below it). The eyes, nose, mouth
-// and lip are as wide as the features; the rest of the head beside them counts as the hair.
-export function partsOn(text, box, feat) {
-  if (!overlaps(text, box)) return [];
-  const e = featOf(box, feat), y0 = text[1], y1 = text[1] + text[3];
-  const across = Math.min(text[0] + text[2], e[0] + e[2]) - Math.max(text[0], e[0]) > 0;
-  const lines = [box[1], e[1], e[1] + 0.7 * e[3], e[1] + 0.88 * e[3], e[1] + 1.15 * e[3], Math.max(box[1] + box[3], e[1] + 1.15 * e[3])];
-  const names = ["hair", "nose", "mouth", "lip", "chin"], out = new Set();
-  names.forEach((n, i) => {
-    if (!(Math.min(y1, lines[i + 1]) - Math.max(y0, lines[i]) > 0)) return;
-    out.add(across || n === "hair" || n === "chin" ? n : "hair");
-  });
-  return [...out];
-}
-
-// a text box over [from, to) of the film on the faces of moments: seconds on a face and on each
-// part (the worst it lies on; the mouth or lower lip of a face marked `talks` is "talk"), their
-// weighed sum, and `hard`: the seconds on what must stay clear (the eyes or nose, a talking mouth)
-export function textOn(box, moments, from = 0, to = Infinity) {
-  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0, talk: 0 };
-  for (const m of moments) {
-    if (m.t < from || m.t >= to) continue;
-    let worst = null;
-    for (const f of m.boxes) for (const p of partsOn(box, f.box, f.feat)) {
-      const part = f.talks && (p === "mouth" || p === "lip") ? "talk" : p;
-      if (!worst || WEIGHT[part] > WEIGHT[worst]) worst = part;
+// What a text lies on, from agentitos' layout's measure of it (its tools/place.mjs text --measure,
+// run by the caller: per moment the faces the text overlaps, each with the worst part of it the
+// text reaches, the parts as layout draws them; text beside the features' width counts here as
+// the hair, as an ear or the side of the head), over [from, to) of the film and the shots given
+// (their index; all where null): seconds on a face and on each part (the worst it lies on at a
+// moment, by WEIGHT; the mouth or lower lip of the face that talks into the camera in its shot,
+// talks[shot], is "talk"), their weighed sum, and `hard`: the seconds on what must stay clear (the
+// eyes or nose, a talking mouth)
+export function onOf(measured, { from = 0, to = Infinity, shots = null, talks = {} } = {}) {
+  // (maybe: of the hair, the seconds where a head known by its box alone may have its eyes; unknown:
+  // of the eyes or nose, the seconds on such a head, whose eyes layout takes to begin 15 % down it)
+  const r = { seconds: 0, nose: 0, mouth: 0, lip: 0, hair: 0, chin: 0, talk: 0, maybe: 0, unknown: 0 };
+  for (const m of measured?.moments || []) {
+    if (m.t < from || m.t >= to || (shots && !shots.includes(m.shot))) continue;
+    let worst = null, by = null;
+    for (const f of m.on) {
+      // beside the eyes, nose and mouth (an ear, the side of the head) is the hair's kind, mild
+      const seen = f.beside && (f.part === "nose" || f.part === "mouth" || f.part === "lip") ? "hair" : f.part;
+      const part = talks[m.shot] != null && f.who === talks[m.shot] && (seen === "mouth" || seen === "lip") ? "talk" : seen;
+      if (WEIGHT[part] == null) continue;
+      if (!worst || WEIGHT[part] > WEIGHT[worst]) { worst = part; by = f; }
     }
     if (!worst) continue;
-    r.seconds += m.step; r[worst] += m.step;
+    r.seconds += m.dt; r[worst] += m.dt;
+    if (worst === "hair" && by.maybe) r.maybe += m.dt;
+    if (worst === "nose" && by.boxOnly) r.unknown += m.dt;
   }
   for (const k of Object.keys(r)) r[k] = r2(r[k]);
   r.cost = r2(Object.keys(WEIGHT).reduce((n, k) => n + WEIGHT[k] * r[k], 0));
   r.hard = r2(r.nose + r.talk);
   return r;
 }
+
+// What went wrong with layout's measure, in the build's words (never the tool's own output): not
+// found (tool null, or not on this machine), no answer in time (stopped after `limit` s), an answer
+// that could not be read (it ended badly, or its measure.json is not what the measure writes)
+export function measureFault(tool, r, limit) {
+  if (!tool || r?.error?.code === "ENOENT") return "agentitos' layout is not found beside this skill (nor named by LAYOUT_TOOL)";
+  if (r?.error?.code === "ETIMEDOUT" || r?.signal) return `agentitos' layout gave no answer within ${limit} s`;
+  return `agentitos' layout gave an answer that could not be read${r?.status ? ` (it ended with exit ${r.status})` : ""}`;
+}
+// the sentence for it: what the step needs, what failed, and that the texts stand as without faces
+export const measureSaid = (fault) => `the faces step needs agentitos' layout beside this skill to keep the captions and the hook off the faces, and ${fault}: they stand as they would without faces`;
 
 // What of a captions style's ink lies outside its line (em of the type), as clips' place takes it
 // (copied): below the lowest line half the outline and the shadow's drop, at each side half the outline

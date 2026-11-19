@@ -50,6 +50,10 @@
 //        captions: one area for the clip from the safe box's bottom (or --area-bottom) up, never
 //        higher than --area-top (where the caller sets its type without faces), its top below the
 //        faces' mouths, the shots raised where that is not enough (lib/area.mjs)
+//   node place.mjs text <folder> --frame 9:16 --shots <shots.json> --measure <boxes.json> [--json]
+//        texts that stand where the caller put them ([{"name", "box": [x, y, w, h], "start"?, "end"?}]):
+//        what each lies on, per moment, per face and over all (the parts as the captions' list
+//        counts them), into <folder>/measure.json; nothing is placed or raised (lib/placed.mjs)
 //
 // Boxes are x,y,w,h in px of the source: a face from the hairline to the chin and from cheek to
 // cheek. Every --face, --face-at, --face-track and --region belongs to the --source before it.
@@ -65,7 +69,7 @@ import { compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { cutPng } from "./lib/png.mjs";
 import { solve } from "./lib/solve.mjs";
-import { textOverTime, stillsText } from "./lib/placed.mjs";
+import { textOverTime, stillsText, measureOver } from "./lib/placed.mjs";
 import { areaOverTime, eyesText } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, platformList } from "./lib/zones.mjs";
 import { besideSolve, printBeside } from "./lib/beside.mjs";
@@ -90,7 +94,7 @@ const OPTIONS = {
   place: ["frame", "source", "face", "face-at", "face-track", "region", "min-text-height", "readable", "speaker", "text", "caption-area", "pick", "cover", "platform", "weights", "set", "all", "json"],
   page: ["candidate", "still", "at"],
   captions: ["candidate", "json"],
-  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "area-top", "area-bottom", "top", "set", "json"],
+  text: ["frame", "shots", "text", "platform", "caption-y", "font-size", "lift", "raise", "area-top", "area-bottom", "top", "set", "measure", "json"],
 };
 function parseArgs(cmd, argv) {
   const o = { _: [], order: [] };
@@ -541,6 +545,7 @@ function cmdCaptions(o) {
 function cmdText(o) {
   const usage = `${self()} text <folder> --frame 9:16 --shots <shots.json> [--text caption] [--text hook] [--platform reels,tiktok] [--caption-y <px>] [--font-size <px>] [--lift <shot>:<px>] [--raise head|mouth|full] [--json]
   large type instead of captions: --text area [--area-top <px>] [--area-bottom <px>] [--top <px>] [--lift <shot>:<px>] [--raise …]
+  texts placed already, measured where they stand: --measure <boxes.json> ([{"name", "box": [x, y, w, h], "start"?, "end"?}])
   shots.json: {"shots": [{"start": 0, "end": 4.2, "faces": [{"who": "A", "track": [{"t": 0, "box": [x, y, w, h]}, …]}], "room": {"free": 0}}, …], "hook": {"start": 0, "end": 3}}
   (boxes in px of the frame as the picture stands; room: how far a shot's picture may be raised, null where not at all;
   for --text area a moment's "zoom": how much larger the picture shows there than as it is raised, as a push-in after the raise)`;
@@ -553,6 +558,7 @@ function cmdText(o) {
   const goodBox = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] > 0 && b[3] > 0;
   if (!Array.isArray(shots) || !shots.length || shots.some((s) => !Number.isFinite(s.start) || !(s.end > s.start) || !Array.isArray(s.faces) || s.faces.some((f) => !Array.isArray(f.track) || f.track.some((m) => !Number.isFinite(m.t) || !goodBox(m.box) || (m.zoom !== undefined && !(m.zoom > 0))))))
     fail(`--shots ${o.shots}: every shot needs "start" < "end" in seconds and "faces", each a "track" of {"t": seconds, "box": [x, y, w, h]} in px of the frame (no face: an empty list).`);
+  if (o.measure !== undefined) return textMeasure(o, folder, shots);
   const asked = parseNeeds(o.text.length ? o.text : ["caption"]);
   if (asked.some((n) => n.role === "area")) return textArea(o, folder, shots, asked);
   for (const k of ["area-top", "area-bottom", "top"]) if (o[k] !== undefined) fail(`--${k} belongs to --text area (large type in one area).`);
@@ -602,6 +608,24 @@ function cmdText(o) {
   for (const n of res.notes) console.log(`note: ${n}`);
   console.log(`Other places it weighed: ${res.candidates.slice(1).map((k) => `${k.font} px with its middle at ${k.middle} % (on faces ${k.seconds} s, ${k.lifted} raised, cost ${k.cost})`).join("; ") || "none"}.`);
   console.log(`${file}: for agentitos' captions ${c ? Object.entries(c.options).map(([k, v]) => `--${k} ${v}`).join(" ") : "(no captions)"}; each shot's lift for the framing. The choice is yours: --caption-y, --font-size and --lift <shot>:<px> fix one, and the rest is placed around it.`);
+}
+
+// --measure: what texts the caller placed lie on, nothing placed (lib/placed.mjs measureOver)
+function textMeasure(o, folder, shots) {
+  for (const k of ["caption-y", "font-size", "raise", "area-top", "area-bottom", "top"]) if (o[k] !== undefined) fail(`--measure stands alone: it measures the boxes given where they stand; --${k} belongs to placing them.`);
+  if (o.text.length || o.lift.length || o.set.length) fail(`--measure stands alone: it measures the boxes given where they stand; --${o.text.length ? "text" : o.lift.length ? "lift" : "set"} belongs to placing them.`);
+  let boxes;
+  try { boxes = JSON.parse(fs.readFileSync(o.measure, "utf8")); } catch (e) { fail(`--measure ${o.measure} cannot be read (${e.message}): it is JSON, [{"name": "captions", "box": [x, y, w, h], "start": seconds, "end": seconds}].`); }
+  const goodBox = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] > 0 && b[3] > 0;
+  if (!Array.isArray(boxes) || !boxes.length || boxes.some((b) => !b || typeof b.name !== "string" || !goodBox(b.box) || (b.start !== undefined && !Number.isFinite(b.start)) || (b.end !== undefined && !Number.isFinite(b.end))))
+    fail(`--measure ${o.measure}: a list of {"name": a word, "box": [x, y, w, h] in px of the frame, "start" and "end" in seconds where only part of the clip}.`);
+  const res = { frame: o.frame, boxes: measureOver({ shots, boxes }) };
+  const file = path.join(folder, "measure.json");
+  try { fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(file, JSON.stringify(res)); } catch (e) { fail(`${file} cannot be written (${e.code || e.message}): name a folder of yours.`); }
+  if (o.json) return console.log(JSON.stringify(res, null, 1));
+  const parts = (b) => ["nose", "hair", "mouth", "lip", "chin"].filter((k) => b[k]).map((k) => `${({ nose: "the nose or eyes", hair: "the hair or forehead", mouth: "the mouth", lip: "the lower lip", chin: "the chin" })[k]} ${b[k]} s${k === "hair" && b.maybe ? ` (${b.maybe} s of it where the eyes may begin: not known)` : ""}`).join(", ");
+  for (const b of res.boxes) console.log(`${b.name} ${boxText(b.box)}${b.start !== undefined || b.end !== undefined ? ` ${b.start ?? 0}–${b.end ?? "end"} s` : ""}: ${b.seconds ? `on a face ${b.seconds} s, ${parts(b)}${b.faces.length > 1 ? `; ${b.faces.map((f) => `${f.who} ${f.seconds} s`).join(", ")}` : ""}` : "on no face"}`);
+  console.log(`${file}: per box the seconds on each part, per face, and per moment the faces it lies on with the part (moments); nothing was placed.`);
 }
 
 // --text area: large type in one area for the whole clip (lib/area.mjs), with its own list

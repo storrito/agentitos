@@ -576,3 +576,16 @@ test("a face too small to be the webcam's speaker (the review's slide video: a p
   // the review's loose webcam, the smallest real speaker measured (37 %), is followed
   assert.ok(speakerMoments({ width: 1280, height: 720, face: [0.427, 0.128, 0.587, 0.5], faceAt: [{ t: 15, box: [0.427, 0.128, 0.587, 0.5] }] }).moments);
 });
+
+test("without a HyperFrames CLI on the PATH, the version this skill was last tried with is fetched", async () => {
+  const { hyperframes, HYPERFRAMES_TESTED } = await import("./lib/media.mjs");
+  const before = process.env.PATH, none = fs.mkdtempSync(path.join(os.tmpdir(), "no-hyperframes-"));
+  process.env.PATH = none;
+  try {
+    assert.deepEqual(hyperframes(), ["npx", "--yes", `hyperframes@${HYPERFRAMES_TESTED}`]);
+    assert.match(HYPERFRAMES_TESTED, /^\d+\.\d+\.\d+$/);
+  } finally {
+    process.env.PATH = before;
+    fs.rmSync(none, { recursive: true, force: true });
+  }
+});

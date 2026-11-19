@@ -73,10 +73,13 @@ export function samples(file) {
   return new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
 }
 
-// the HyperFrames CLI: one on the PATH, else the version this skill pins
+// the HyperFrames CLI: one on the PATH, else the version this skill was last tried with (its
+// project's lint, render and sound the same under 0.8.221 and 0.9.70 on 2026-11-19; the frames
+// too, but where 0.8.221 showed a piece one source frame early: 0.9.70 shows the frame computed)
+export const HYPERFRAMES_TESTED = "0.9.70";
 export function hyperframes() {
   const r = spawnSync("hyperframes", ["--version"], { stdio: "ignore" });
-  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", "hyperframes@0.8.221"];
+  return r.status === 0 ? ["hyperframes"] : ["npx", "--yes", `hyperframes@${HYPERFRAMES_TESTED}`];
 }
 
 export const clock = (s, tenths = true) => {

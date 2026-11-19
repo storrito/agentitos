@@ -199,11 +199,12 @@ test("footage without a face, and a face far above the type: place changes nothi
 // `node tools/short.mjs build <dir>` of that checkout; sha256 of each file, its first 16 hex digits;
 // the media in assets/ are left out, they are this machine's ffmpeg's, and the engine's copies with
 // them). Skipping place, and place where no face reaches the type, must build these bytes. Made
-// anew only where main's build changes on purpose.
+// anew only where main's build changes on purpose: package.json's scripts pin hyperframes@0.9.70
+// since 2026-11-19 (0.8.141 before; the project's frames the same under 0.8.221 and 0.9.70).
 const MAIN = {
   "index.html": "5f5231b30619843d", "plan.json": "675233fe3ef07b01", "compositions/lyrics.html": "b9a1190465fccbbb",
   "compositions/overlay.html": "97b75939cb7780cb", "compositions/world.html": "d9be6ac7ca8e5cb3", "meta.json": "d6106e864582c2bb",
-  "hyperframes.json": "ad5dadeef78a5208", "package.json": "61002b2faf9a7446",
+  "hyperframes.json": "ad5dadeef78a5208", "package.json": "96a473dbdc6ea2ba",
 };
 const asMain = (comp) => Object.fromEntries(Object.keys(MAIN).map((f) => [f, crypto.createHash("sha256").update(fs.readFileSync(path.join(comp, f))).digest("hex").slice(0, 16)]));
 
@@ -287,4 +288,31 @@ test("footage of the frame's shape with its faces: --faces model finds them once
   r = run(env, "place", dir, "--eye", "1:10,10,4000,20");
   assert.ok(r.status === 1 && /--eye 1:10,10,4000,20: that is no face's box in the footage \(1080×1920\)/.test(r.stdout), r.stdout);
   assert.equal(run(env, "build", dir, "--faces", "model").status, 1, "--faces belongs to place");
+});
+
+test("render: the values the person set go to the render as JSON on the command line (HyperFrames 0.8.221 cannot read --variables-file), none without them", { skip: process.platform === "win32" && "a shell script stands in for the CLI" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-render-"));
+  try {
+    const short = path.join(dir, "short"), bin = path.join(dir, "bin"), said = path.join(dir, "args.json");
+    fs.mkdirSync(path.join(short, "source"), { recursive: true });
+    fs.mkdirSync(path.join(short, "composition"), { recursive: true });
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(short, "source", "transcript.json"), "[]");
+    fs.writeFileSync(path.join(short, "composition", "index.html"), "<!doctype html>");
+    // a stand-in for the CLI: keeps its arguments, writes the video it is asked for
+    fs.writeFileSync(path.join(bin, "hyperframes"), `#!${process.execPath}\nconst fs = require("node:fs"), a = process.argv.slice(2);\nfs.writeFileSync(${JSON.stringify(said)}, JSON.stringify(a));\nfs.writeFileSync(a[a.indexOf("--output") + 1], "video");\n`, { mode: 0o755 });
+    const env = { PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+    let r = run(env, "render", short, path.join(dir, "plain.mp4"));
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    let a = JSON.parse(fs.readFileSync(said, "utf8"));
+    assert.deepEqual(a.slice(0, 6), ["render", ".", "--output", path.join(dir, "plain.mp4"), "--quiet", "--video-bitrate"]);
+    assert.ok(!a.some((x) => /^--variables/.test(x)), a.join(" "));
+    const values = { world: "neon", title: "Ein \"Titel\" mit Ümlaut" };
+    fs.writeFileSync(path.join(short, "variables.json"), JSON.stringify(values));
+    r = run(env, "render", short, path.join(dir, "set.mp4"));
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    a = JSON.parse(fs.readFileSync(said, "utf8"));
+    assert.ok(!a.includes("--variables-file"), a.join(" "));
+    assert.deepEqual(JSON.parse(a[a.indexOf("--variables") + 1]), values);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
