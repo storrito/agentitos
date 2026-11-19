@@ -139,7 +139,7 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
 });
 
 // ---------------------------------------------------------------- faces
-import { counted, planWindow, noseZoom, framed, textOn, partsOn, shown, bandOf, sane } from "./lib/faces.mjs";
+import { counted, planWindow, noseZoom, framed, textOn, partsOn, shown, bandOf, sane, looking, talksIn } from "./lib/faces.mjs";
 // a person over a beat: one box at every tenth of a second
 const person = (who, box, n = 30) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box }));
 const listOf = (...people) => {
@@ -210,7 +210,7 @@ test("faces: the first beat's own 1.6x band moves to a face at its side, and bec
 const moving = (from, to, n = 28) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box: from.box.map((v, j) => Math.round(v + ((to.box[j] - v) * k) / (n - 1))), feat: from.feat.map((v, j) => Math.round(v + ((to.feat[j] - v) * k) / (n - 1))) }));
 const listWith = (...people) => {
   const by = new Map();
-  for (const [who, moments] of people) for (const m of moments) { if (!by.has(m.t)) by.set(m.t, []); by.get(m.t).push({ who, box: m.box, ...(m.feat ? { feat: m.feat } : {}) }); }
+  for (const [who, moments] of people) for (const m of moments) { if (!by.has(m.t)) by.set(m.t, []); by.get(m.t).push({ who, box: m.box, ...(m.feat ? { feat: m.feat } : {}), ...(m.looks ? { looks: m.looks } : {}) }); }
   return { step: 0.1, faces: [...by.entries()].sort((a, b) => a[0] - b[0]).map(([t, boxes]) => ({ t, boxes })) };
 };
 const CAPTIONS = [180, 1238, 720, 202];   // captions' area for TikTok, hormozi, two lines of 96 px
@@ -561,6 +561,63 @@ test("build with faces: the hook may lie on hair or a forehead (epps2 stays at t
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /! the hook: it reached the eyes in a \(the eyes or nose [\d.]+ s\), at every size, and agentitos' layout's place for it lies on the captions or directly above them: it stands where it stood: a shorter hook, or another first beat/);
     assert.equal(hookTag(comp), plain);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Jeanette Epps' interview (the author's epps2) lower in the picture: in the fill her eyes and nose
+// stay above the captions, her lower lip reaches into them; the model says where she looks
+const talking = (looks, dy = 140) => ["Jeanette Epps", epps(dy)[1].map((m) => ({ ...m, ...(looks ? { looks } : {}) }))];
+test("faces: a speaker who looks into the camera keeps the mouth clear: it weighs as the eyes under a text, and a fill is raised for it; one who looks aside, or whose faces say nothing of it, keeps the relaxed rule", () => {
+  const size = [1280, 720], at = (looks) => counted(listWith(talking(looks)), size, 2.5);
+  assert.deepEqual(looking(at("camera"), 2.5), { who: "Jeanette Epps", share: 1 });
+  assert.equal(looking(at("left"), 2.5), null);
+  assert.deepEqual(looking(at(null), 2.5), { who: "Jeanette Epps", unknown: true });
+  // looking aside for most of the beat: no
+  const half = counted(listWith(["A", epps(140)[1].map((m, k) => ({ ...m, looks: k < 10 ? "camera" : "right" }))]), size, 2.5);
+  assert.equal(looking(half, 2.5), null);
+  // the fill as it is lays the captions on her lower lip, not her eyes or nose: the same fill
+  const plain = planWindow({ frame: "fill", size, people: at("camera"), captions: CAPTIONS });
+  assert.deepEqual([plain.frame, plain.changed], ["fill", false]);
+  // talking, it is raised until her mouth is clear of them, at the same size
+  const raised = planWindow({ frame: "fill", size, people: talksIn(at("camera")), captions: CAPTIONS });
+  assert.equal(raised.frame, "crop");
+  assert.match(raised.said, /raised (\d+) px, so that the captions lie on no eyes or nose or the mouth of who talks/);
+  const lift = 1920 - raised.box.at[3], mouth = (177 + 140 + 1.15 * 142) * 1920 / 720;
+  assert.ok(960 + (mouth - lift - 960) * 1.04 + 24 <= 1238 + 2, `raised ${lift}`);
+  // a text on her lower lip: "lip" (weight 1) for a face that does not talk, "talk" (as the eyes) for one that does
+  const m = (talks) => framed({ list: listWith(talking("camera")), place: { frame: "fill", size }, from: 0, seconds: 2.5, talks });
+  const quiet = textOn(CAPTIONS, m(null)), loud = textOn(CAPTIONS, m("Jeanette Epps"));
+  assert.ok(quiet.lip > 0 && quiet.hard === 0 && quiet.cost < 10, JSON.stringify(quiet));
+  assert.ok(loud.talk > 0 && loud.hard === loud.talk && loud.cost >= 100 * loud.talk, JSON.stringify(loud));
+});
+
+test("build with faces: an interview's speaker to the camera, large in a fill, is raised clear of the captions and the line says why; faces of before (no looks) build as before and, where the captions lie on her mouth, say that where she looks is not known; one who looks aside builds as before", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    facesWith(work, src, talking("left"));
+    let r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const aside = filesOf(comp);
+    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is\n/);
+    assert.match(r.stdout, /the captions lie on the lower lip [\d.]+ s in a, no eyes or nose: nobody shown speaks, they may/);
+    // faces of before: the same short, and the line says what is not known
+    facesWith(work, src, talking(null));
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(filesOf(comp), aside);
+    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is\n/);
+    assert.match(r.stdout, /the captions lie on the mouth of Jeanette Epps in a: whether it looks into the camera is not known \(faces found before they said so; node \S+ faces \S+ --again asks anew, and the mouth of one who does is kept clear like the eyes\)/);
+    // she looks into the camera: raised, said, and the captions lie on no mouth
+    facesWith(work, src, talking("camera"));
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is; raised \d+ px, so that the captions lie on no eyes or nose or the mouth of who talks \(the ground below it\); Jeanette Epps looks into the camera \(100 % of the beat, the face 38 % of the frame's height\): the captions and the hook keep off the mouth as off the eyes/);
+    assert.doesNotMatch(r.stdout, /lower lip|the mouth of one who/);
+    assert.match(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", "a.json"), "utf8")).how, /"frame":"crop"/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

@@ -496,6 +496,17 @@ function current(people) {
   };
 }
 
+// Where each person's face looks ("left", "right", "camera") on the model's stills of a shot:
+// [{ t, looks }] by person, as shotsOf made them. Between two stills a face looks as at the
+// nearer one (the turn is not seen, so it is put halfway); before the first and after the last as
+// there. Only the faces alone (facesOver) carry it.
+const looksOf = new WeakMap();
+export function looksAt(person, t) {
+  const at = looksOf.get(person);
+  if (!at?.length) return null;
+  return at.reduce((a, x) => (Math.abs(x.t - t) < Math.abs(a.t - t) ? x : a)).looks;
+}
+
 // the shots of the footage with what the model saw in them: [{ start, end, kind, subject,
 // people: [{ who, speaker, track: [{ t, x, y, w, h }] }], faces }] (faces: each person at the
 // shot's middle, for the window's size). A shot takes its kind from the answer's shot it overlaps
@@ -551,9 +562,15 @@ export function shotsOf(answer, shots, meta) {
         }
         for (const d of doubtful) if (d.who === name) d.guess = true;
       }
+      // where the face looks at each still, kept beside the track for facesOver (the track itself
+      // goes on without it, so that the framing is as it was); none for the agent's own boxes,
+      // whose stand-in answer says "camera" for every one
+      if (ans.by !== "eye") looksOf.set(p, p.track.filter((x) => !x.absent && x.looks).map((x) => ({ t: x.t, looks: x.looks })));
       for (const x of p.track) { delete x.doubt; delete x.looks; }
     }
-    const people = persons.filter((p) => p.track.some((x) => !x.absent)).map(({ key, ...p }) => p);
+    const kept = persons.filter((p) => p.track.some((x) => !x.absent));
+    const people = kept.map(({ key, ...p }) => p);
+    kept.forEach((p, i) => { if (looksOf.has(p)) looksOf.set(people[i], looksOf.get(p)); });
     let kind = KINDS.includes(best.kind) ? best.kind : people.length ? "people" : "broll";
     const subject = (() => {
       const b = pixels(best.subject, meta);
@@ -1259,10 +1276,11 @@ async function facesOf(video, words, { aspect = [9, 16], tracks = null, every = 
 // Every face of the footage over time, in its own pixels, every `step` seconds: for a skill that
 // places the picture itself (best-takes on its own, by agentitos' layout), from footage of any
 // shape. { footage, size, step, by, cost, shots: [{ start, end, kind, note?, doubtful? }], faces:
-// [{ t, boxes: [{ who, box: [x, y, w, h], feat?: [x, y, w, h], eye?, between? }] }] }: box the head's,
+// [{ t, boxes: [{ who, box: [x, y, w, h], feat?: [x, y, w, h], eye?, between?, looks? }] }] }: box the head's,
 // feat the eyes, nose and mouth where the model's hold, eye the y of the middle of the eyes' own
 // box (the eyes with their brows) where the model gave one (between: the two stills they are an
-// estimate between), best-takes' source/faces.json for one video. Only the shots the model calls
+// estimate between), looks where the face points as the model says at the nearer still ("left",
+// "right", "camera"; none for the agent's own boxes), best-takes' source/faces.json for one video. Only the shots the model calls
 // people, unless `every`: footage with nobody of a conversation in it (narrated-short's B-roll of a
 // crew at work) is "broll" to the model, and its faces are what such a skill asks for.
 export function facesOver(seen, meta, { step = 0.1, every = false } = {}) {
@@ -1274,9 +1292,9 @@ export function facesOver(seen, meta, { step = 0.1, every = false } = {}) {
       for (const p of s.people) {
         const f = faceAt(p, t);
         if (!f) continue;
-        const r = (v) => Math.round(v);
+        const r = (v) => Math.round(v), looks = looksAt(p, t);
         boxes.push({ who: p.who ?? p.speaker, box: [r(f.x - f.w / 2), r(f.y - f.h / 2), r(f.w), r(f.h)],
-          ...(f.feat ? { feat: [r(f.feat.x0), r(f.feat.y0), r(f.feat.x1 - f.feat.x0), r(f.feat.y1 - f.feat.y0)] } : {}), ...(f.feat?.eye != null ? { eye: r(f.feat.eye) } : {}), ...(f.feat?.between ? { between: f.feat.between } : {}) });
+          ...(f.feat ? { feat: [r(f.feat.x0), r(f.feat.y0), r(f.feat.x1 - f.feat.x0), r(f.feat.y1 - f.feat.y0)] } : {}), ...(f.feat?.eye != null ? { eye: r(f.feat.eye) } : {}), ...(f.feat?.between ? { between: f.feat.between } : {}), ...(looks ? { looks } : {}) });
       }
       if (boxes.length) faces.push({ t: +t.toFixed(3), boxes });
     }
