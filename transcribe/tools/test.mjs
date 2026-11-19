@@ -666,7 +666,8 @@ async function gateway(said, pieces, numbers, most = Infinity, how = {}) {
         if (Math.abs(whole - seconds) > 2) { res.statusCode = 400; return res.end("{}"); }
         if (seconds > most) { res.statusCode = 413; return res.end("request body too large"); }
         const no = how.refuse?.(q);
-        if (no) return setTimeout(() => { res.statusCode = no[0]; res.end(no[1]); }, no[2] ?? 0);
+        // (no[3]: a test of its own that must hold before the refusal goes out, as another piece having arrived)
+        if (no) { const send = () => (no[3] && !no[3]() ? setTimeout(send, 20) : setTimeout(() => { res.statusCode = no[0]; res.end(no[1]); }, no[2] ?? 0)); return send(); }
         const names = numbers(from);
         const words = said.filter((w) => w.start >= from && w.start < from + seconds)
           .map((w) => ({ word: w.text, start: +(w.start - from).toFixed(3), end: +(w.end - from).toFixed(3), speaker: names[w.who], ...(w.text.startsWith("[") ? { type: "audio_event" } : {}) }));
@@ -922,8 +923,9 @@ test("long requests that fail for another reason: Gemini's speakers; Gemini fail
 test("a piece that fails calls the others off: the tool does not wait for them", { skip: !ffmpeg && "no ffmpeg" }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "transcribe-test-"));
   const { samples, said } = talk(450, inTurns(["ann", "ben"], 0, 450));
-  // the second piece is refused at once, the first would answer after a minute
-  const gate = await gateway(said, PIECES, () => ({ ann: 0, ben: 1 }), Infinity, { refuse: (q) => (q.seconds === 150 ? [400, "bad piece", 1500] : null), hold: () => 60e3 });
+  // the second piece is refused once the first has arrived, which would answer after a minute
+  let gate;
+  gate = await gateway(said, PIECES, () => ({ ann: 0, ben: 1 }), Infinity, { refuse: (q) => (q.seconds === 150 ? [400, "bad piece", 1500, () => gate.asked.some((a) => a.from === 0)] : null), hold: () => 60e3 });
   try {
     const file = path.join(dir, "talk.wav");
     wav(file, samples);
@@ -931,6 +933,9 @@ test("a piece that fails calls the others off: the tool does not wait for them",
     assert.equal(r.code, 1);
     assert.match(r.line, /^The transcription with elevenlabs\/scribe-v2 failed \(OpenRouter 400: bad piece\)/);
     assert.ok(Date.now() - t0 < 20e3, `${Date.now() - t0} ms`);
+    // the tool's end and its hung-up request reach this process as two events in either order
+    // (on a busy machine the request's often second): the hang-up is waited for, a second at most
+    for (const until = Date.now() + 1000; gate.gone < 1 && Date.now() < until;) await new Promise((ok) => setTimeout(ok, 20));
     assert.equal(gate.gone, 1);
   } finally {
     await gate.close();
