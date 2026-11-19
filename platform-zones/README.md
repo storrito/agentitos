@@ -10,9 +10,10 @@ node tools/zones.mjs zones [platform…] (--of <video|image> | --size 1080x1920 
 node tools/zones.mjs check <x,y,w,h> [platform…] (--of … | --size … | --frame …) [--json]
 node tools/zones.mjs draw <video|image> <out.png> [platform…] [--at <s>]
 node tools/zones.mjs layout <page.html|boxes.json> [platform…] [--json]
+node tools/hyperframes-check.mjs <project> [check's flags…]
 ```
 
-Needs Node 20+, ffmpeg for `draw` and `--of`, Chrome for `layout` on a page. No model, no key, no npm packages.
+Needs Node 20+, ffmpeg for `draw` and `--of`, Chrome for `layout` on a page, the HyperFrames CLI for `hyperframes-check.mjs`. No model, no key, no npm packages.
 
 ## What it answers
 
@@ -120,7 +121,9 @@ Measured on 1080×1920 (9:16), 1080×1350 (4:5), 1080×1080 (1:1) and 1920×1080
 
 **Basis.** `official`: the platform publishes the numbers for organic posts (only Pinterest does). `ads`: the platform's numbers for ads, which leave room for the ad's button. `guides`: third-party guides that roughly agree; they disagree by up to 200 px, and the numbers lean to their larger side. `estimate`: no source gives numbers; read off the app's layout, rounded up.
 
-The ad numbers are larger and left out on purpose: Meta asks Reels ads to keep 14 % top, 35 % bottom and 6 % of the sides free (269, 672, 65 px), Google's template for vertical video ads 288 px top, 672 px bottom, 48 left and 192 right. An organic post has no ad button, and those margins would leave less than half of a vertical video.
+The ad numbers are larger and left out on purpose: Meta asks Reels ads to keep 14 % top, 35 % bottom and 6 % of the sides free (269, 672, 65 px; [Meta's ads guide](https://www.facebook.com/business/ads-guide/update/video/instagram-reels)), Google's template for vertical video ads 288 px top, 672 px bottom, 48 left and 192 right ([Google Ads help](https://support.google.com/google-ads/answer/9128498)), TikTok's In-Feed template 240 px top, 660 bottom, 120 at the sides and 300 on the right from 840 px down (on 720×1280: 160, 440, 80, 200 from 560; its templates from [TikTok's ad specs](https://ads.tiktok.com/help/article/video-ads-specifications), updated June 2026, measured by [ManyPixels](https://www.manypixels.co/blog/social-media-design/tiktok-ad-specs), 2026-11-11). An organic post has no ad button, and those margins would leave less than half of a vertical video.
+
+**HyperFrames' own zones.** HyperFrames' `check` (0.9.44 on) warns (`outside_safe_zone`) about every text outside its boxes for TikTok, Reels and Shorts on a 9:16 project, and those boxes are exactly these three ad templates (compared 2026-11-19), not what the apps lay over an organic post, where every guide we found keeps the bottom 320–484 px and not 660–672. The table stays as it is, and `tools/hyperframes-check.mjs` runs HyperFrames' check with its zones left out (`--safe-zone off` where the CLI knows it, read from `check --help`, since 0.8.221 refuses a flag it does not know; such findings dropped from the JSON whatever the version), so an agent sees only this skill's zones.
 
 The apps change their layout without notice. When a frame looks wrong on a phone, correct the entry in `tools/lib/platforms.mjs` with its source and the day, and `CHECKED`; the skills that ask follow by themselves.
 
