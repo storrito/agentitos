@@ -1449,6 +1449,8 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     ok(r.shots[0].lift === 0 && r.shots[1].lift > 0 && !r.conflicts.length, JSON.stringify(r.shots.map((s) => [s.lift, s.on])));
     const whole = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual }, raise: "full" });
     ok(whole.shots[0].lift === 0 && whole.conflicts.length === 1 && !/--raise/.test(whole.conflicts[0]), whole.conflicts.join(" | "));
+    const asMouth = areaOverTime({ zones: Z9, shots: [shot(0, 4, [close], null)], area: { top: usual } });
+    ok(asMouth.conflicts.length === 1 && !/--raise/.test(asMouth.conflicts[0]), `a shot that cannot be raised names no raise: ${asMouth.conflicts.join(" | ")}`);
     return `top ${r.area.top}, raised ${r.shots[1].lift} px`;
   });
   t("returns of one close-up stand at one height, that of the one that needs most", () => {
