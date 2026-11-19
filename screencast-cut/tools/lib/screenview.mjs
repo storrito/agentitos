@@ -411,8 +411,9 @@ export function webcamPeople(cam) {
 // other: a shift before a shrink). The stack's call gets the window as its region; what must be read
 // stays the keep's region. → { crop (0–1), region, window (px of the screen), grown }
 export function stackWindow(c, src) {
-  const R = regionPx(c, src), want = Math.min(src.height, Math.ceil(R[2] * 9 / 16));
-  if (R[3] >= want) return { crop: c, region: R, window: R, grown: false };
+  // (a region within 2 px of 16:9 is 16:9: a box's rounding grows nothing)
+  const R = regionPx(c, src), want = Math.min(src.height, Math.round(R[2] * 9 / 16));
+  if (R[3] >= want - 2) return { crop: c, region: R, window: R, grown: false };
   const y = Math.min(Math.max(0, Math.round(R[1] - (want - R[3]) / 2)), src.height - want);
   const window = [R[0], y, R[2], want];
   return { crop: [R[0] / src.width, y / src.height, (R[0] + R[2]) / src.width, (y + want) / src.height], region: R, window, grown: true };
