@@ -504,7 +504,7 @@ function build(args) {
     // a box that cannot be a face (none, or past the picture, or the whole picture) is left out
     const kept = sane(list, list.source);
     for (const [who, n] of kept.dropped) warn.push(`${b.id}: the face box of "${who}" cannot be a face at ${n} moment(s) (no size, mostly outside the picture, or the whole picture): left out`);
-    return kept.list.faces.length ? kept.list : null;
+    return kept.list;
   });
 
   // ---- the captions: agentitos' captions, paused under the card, the key words and the boxes marked
