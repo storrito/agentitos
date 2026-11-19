@@ -178,6 +178,10 @@ export function placeFace({ tool, folder, moments, cam, width, height, area, pla
 export const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}`;
 // in the order for a speaker: captions on the chin pass (layout's own mark would be –)
 export const markOf = (c) => (c.pick ? (c.pick.passes ? (c.soft ? "!" : "✓") : c.hard ? "✗" : "–") : c.hard ? "✗" : c.unmet.length ? "–" : c.soft ? "!" : "✓");
+// why a picture is marked !: layout's soft problems in a few words (the run of 2026-11-19: the
+// build printed "! crop 4:5 at 1.875×" and the reason, enlarged and so soft, was only in the
+// placement's file); "" where it has none
+export const softOf = (c) => [...new Set((c.problems || []).filter((q) => q.level === "soft").map((q) => (q.code === "enlarged" ? `enlarged ${+Number(c.scale).toFixed(2)}×: soft` : q.what)))].join(", ");
 
 // Where a picture across the width has the captions on the mouth for part of a face keep (layout's
 // pick.mouth, in the webcam's seconds: a lean): the seconds, the word to split the keep at (the
@@ -249,12 +253,13 @@ function namedFails(x, list) {
 // else the first. Without a known face the frame is covered as before, and said; so is a keep whose
 // placement goes wrong (the tracker, layout, a refusal): the build never stops for it. Sets each
 // face piece's picture; returns the lines to print.
-export function faceView(dir, cut, pieces, sources, { width, height, words = [], platforms, area }) {
+export function faceView(dir, cut, pieces, sources, { width, height, words = [], platforms, area, screens = new Set() }) {
   const cam = sources.webcam;
   const faced = [...new Set(pieces.filter((p) => p.view === "face").map((p) => p.keep))];
-  // "layout" names a picture of the face view: on a keep that does not show it, it is left out, said
-  const unused = (cut.keep || []).flatMap((keep, k) => (keep.layout !== undefined && !(faced.includes(k) && cam?.video) ? [k] : []));
-  const left = unused.map((k) => `! keep ${k + 1}: "layout" holds only for a face keep ("view": "face" with a webcam); this keep shows ${pieces.find((p) => p.keep === k)?.view || "no piece"}, so "${cut.keep[k].layout}" is left out.`);
+  // "layout" names a picture of the face view or of a screen keep (screenview.mjs, `screens`): on a
+  // keep that shows neither (a phone's screen), it is left out, said
+  const unused = (cut.keep || []).flatMap((keep, k) => (keep.layout !== undefined && !(faced.includes(k) && cam?.video) && !screens.has(k) ? [k] : []));
+  const left = unused.map((k) => `! keep ${k + 1}: "layout" holds only for a face keep ("view": "face" with a webcam) or a screen keep; this keep shows ${pieces.find((p) => p.keep === k)?.view || "no piece"}, so "${cut.keep[k].layout}" is left out.`);
   const out = faceViewOf(dir, cut, pieces, sources, faced, { width, height, words, platforms, area });
   return [...out, ...left];
 }
@@ -325,7 +330,8 @@ function faceViewOf(dir, cut, pieces, sources, faced, { width, height, words, pl
       const track = res.tracks?.[0];
       const moved = (held && track ? `; the face followed over ${moments.length} moments, its hull ${track.growth.height}× as tall as its usual box` : "")
         + (placed.clamped || placed.outside ? `; ${[placed.clamped ? `${placed.clamped} of its boxes ${placed.clamped === 1 ? "reaches" : "reach"} past the webcam's picture, taken to the part inside it` : "", placed.outside ? `${placed.outside} ${placed.outside === 1 ? "lies" : "lie"} wholly outside it, left out` : ""].filter(Boolean).join(", ")}` : "");
-      said.push(`  keep ${k + 1} (${span(k)}): ${markOf(chosen)} ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.pick.face)} of the height${ground(chosen)}${want ? " (as the keep names it)" : ""}${moved}${chosen.pick.passes || mouth ? "" : want ? namedFails(chosen, list) : ": nothing passes"}`);
+      const soft = markOf(chosen) === "!" ? softOf(chosen) : "";
+      said.push(`  keep ${k + 1} (${span(k)}): ${markOf(chosen)} ${nameOf(chosen)} at ${chosen.scale}×${soft ? ` (${soft})` : ""}, the face ${pct(chosen.pick.face)} of the height${ground(chosen)}${want ? " (as the keep names it)" : ""}${moved}${chosen.pick.passes || mouth ? "" : want ? namedFails(chosen, list) : ": nothing passes"}`);
       // a head that drifts across the webcam (layout's pick.drift): said for the keep
       const d = res.pick?.drift;
       if (mouth) said.push(`    note: ${mouth.said}`);
@@ -335,7 +341,7 @@ function faceViewOf(dir, cut, pieces, sources, faced, { width, height, words, pl
       // the others in short, a failing one with what fails; said once where a keep has the list of the keep before
       const short = (x) => [...(x.hard ? x.problems.filter((q) => q.level === "hard").map((q) => (q.code === "enlarged" ? `enlarged ${x.scale}×` : q.kind === "face" ? "the face under the apps' buttons" : q.what)) : []),
         ...(x.pick.mouth ? [`the captions on the mouth ${x.pick.mouth.seconds} s of ${x.pick.mouth.of} s`] : !x.pick.passes && /mouth, the nose or the eyes/.test(x.pick.why) ? ["the captions on the mouth"] : [])].filter((v, i, a) => a.indexOf(v) === i).join(", ");
-      const also = list.filter((y) => y !== chosen).slice(0, 4).map((x) => `${markOf(x)} ${nameOf(x)} at ${x.scale}× (${x.pick.passes ? `the face ${pct(x.pick.face)}${ground(x)}` : short(x) || "fails"})`).join("; ");
+      const also = list.filter((y) => y !== chosen).slice(0, 4).map((x) => `${markOf(x)} ${nameOf(x)} at ${x.scale}× (${x.pick.passes ? `${markOf(x) === "!" && softOf(x) ? `${softOf(x)}, ` : ""}the face ${pct(x.pick.face)}${ground(x)}` : short(x) || "fails"})`).join("; ");
       said.push(`    also: ${also === lastAlso ? `as keep ${lastKeep + 1}` : also}`);
       if (also !== lastAlso) { lastAlso = also; lastKeep = k; }
     } catch (e) { covered(`its placement stopped (${e.message.split("\n")[0]})`); }

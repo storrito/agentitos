@@ -13,6 +13,7 @@
 // padded, never smaller than MIN_CROP of the source's width, in the box's shape. The crop
 // decides the box's shape too: a box is the area's largest rectangle of the crop's aspect.
 
+import fs from "node:fs";
 import { hottest } from "./activity.mjs";
 
 export const FRAMES = { "9:16": [1080, 1920], "16:9": [1920, 1080], "1:1": [1080, 1080], "4:5": [1080, 1350] };
@@ -21,36 +22,54 @@ const MIN_CROP = 0.38; // of the source's width: at most about 2.6 times as larg
 const PAD = 0.1; // around the region, of its size
 
 // The areas of a frame, in pixels: content (where a screen may go: one area or several to choose
-// the largest shot from), tall (a phone's screen), the webcam's circle (pip: x, y, diameter), the
-// label's corner. zones: platform-zones' answer for this frame and the platforms the video goes
-// to; captions, labels: whether the cut has them (their room is kept only then).
-export function areas(width, height, zones, { captions = true, labels = false } = {}) {
+// the largest shot from), tall (a phone's screen), whole (a phone's screen without the circle,
+// shown whole: the frame's full height above the captions, under the apps' bar and buttons too,
+// whose own bars and buttons it shows; in the safe box alone it came out at 467 × 1010 in a Reel,
+// and bot 1832's person asked twice for it larger: "there is a lot of room left"), wholeLabelled
+// (the same below the label, while one is on: a label over the phone's screen hid its top), the
+// webcam's circle (pip: x, y, diameter), the label's corner. zones: platform-zones' answer for
+// this frame and the platforms the video goes to; captions, labels: whether the cut has them
+// (their room is kept only then).
+// line: the captions' one line as the captions skill built it (its area.json: { top, bottom }),
+// the default since 2026-11-19 (decision captions-clear): what must be read (a screen's region, a
+// phone's screen, a video shown) ends a gap above that line, the rest of a screen runs on under and
+// beside the captions to the frame's edges (bleed: the whole frame; the captions' box behind their
+// words keeps them readable), and the circle stays where the band for two lines put it (main's
+// place, decision circle-still); floor is where a moved circle's bottom corners end. Without line:
+// the band for two lines, as before (a cut's "captions": { "lines": 2 }).
+export function areas(width, height, zones, { captions = true, labels = false, line = null } = {}) {
   const [sx, sy, sw, sh] = zones.safe;
   const short = Math.min(width, height), gap = Math.round(short * 0.022);
   // the captions' band: their lowest line at the safe box's bottom, room for two lines above it
   // (a wide frame's captions are smaller and mostly one line)
-  const capTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
+  const twoTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
+  const one = !!(captions && line && Number.isFinite(line.top) && line.top > sy && line.top <= sy + sh);
+  const capTop = one ? line.top : twoTop;
   const label = [sx, sy];
   const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
   // where a screen's shot may lie around what matters: the whole frame above the captions (the
   // apps' buttons and bars over it are fine there, what matters stays in content). Not under
   // the captions: a screen's text shows through their box and makes them hard to read, and in
   // a Reel the app's own caption covers what is below them anyway
-  const bleed = [0, 0, width, capTop - gap];
+  const bleed = one ? [0, 0, width, height] : [0, 0, width, capTop - gap];
+  // main: the areas with the band for two lines, which the screen's rule compares with (screenview)
+  const extra = one ? { floor: twoTop - gap, line: { top: line.top, bottom: Number.isFinite(line.bottom) ? line.bottom : sy + sh, above: capTop - gap }, main: areas(width, height, zones, { captions, labels }) } : {};
+  const whole = [0, gap, width, capTop - 2 * gap];
+  const wholeLabelled = labels ? [0, top, width, capTop - gap - top] : whole;
   if (height >= width * 1.5) {
     // 9:16: the circle above the captions on the left, a phone's screen beside it. A screen goes
     // across the whole width where no app has buttons on the right (a Story), else either across
     // the whole width above the buttons' column (the zones' wide stretch) or inside the safe box,
     // whichever shows it larger; without the circle (solo) down to the captions
     const d = Math.round(width * 0.22);
-    const pip = [sx, capTop - gap - d, d];
+    const pip = [sx, twoTop - gap - d, d];
     const column = zones.margins.right > zones.margins.left + 40;
     const contentTo = (bottom) => (!column ? [[0, top, width, bottom - top]]
       : [[sx, top, sw, bottom - top], ...(zones.wide && Math.min(bottom, zones.wide[1] + zones.wide[3]) > top
         ? [[0, top, width, Math.min(bottom, zones.wide[1] + zones.wide[3]) - top]] : [])]);
     const tall = [sx + d + gap, top, sw - d - gap, capTop - gap - top];
     // a shot with room around it may also take the safe box beside the circle, down to the captions
-    return { content: contentTo(pip[1] - gap), beside: [tall], solo: contentTo(capTop - gap), bleed, tall, pip, label };
+    return { content: contentTo(pip[1] - gap), beside: [tall], solo: contentTo(capTop - gap), bleed, whole, wholeLabelled, tall, pip, label, ...extra };
   }
   if (height > width * 0.9) {
     // 4:5 and 1:1: the circle in the safe box's top right corner, beside the label, the shot
@@ -59,7 +78,7 @@ export function areas(width, height, zones, { captions = true, labels = false } 
     const pip = [sx + sw - d, sy, d];
     const below = sy + Math.max(top - sy, d + gap);
     const content = [[0, below, width, capTop - gap - below]];
-    return { content, solo: [[0, top, width, capTop - gap - top]], bleed, tall: [sx, below, sw, capTop - gap - below], pip, label };
+    return { content, solo: [[0, top, width, capTop - gap - top]], bleed, whole, wholeLabelled, tall: [sx, below, sw, capTop - gap - below], pip, label, ...extra };
   }
   // wide: the shot across the width between the apps' bar at the top and the captions (the safe
   // box's bottom without them), the circle in the safe box's top right corner and the label in
@@ -67,7 +86,37 @@ export function areas(width, height, zones, { captions = true, labels = false } 
   const d = Math.round(short * 0.2);
   const pip = [sx + sw - d, sy, d];
   const content = [[0, sy, width, (captions ? capTop - gap : sy + sh) - sy]];
-  return { content, solo: content, bleed, tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label };
+  return { content, solo: content, bleed, whole, wholeLabelled, tall: [sx, top, sw - d - gap, capTop - gap - top], pip, label, ...extra };
+}
+
+// How many lines a cut's captions have (caps: captionsOf's answer): one (decided 2026-11-19,
+// captions-clear), or two with "captions": { "lines": 2 }, which builds as before
+export const linesOf = (caps) => (caps?.lines === 2 ? 2 : 1);
+
+// The captions of a cut: clean subtitles unless cut.json says otherwise ("captions": false: none;
+// an object: the style the captions command wrote, and "lines"); an object without a style is
+// hormozi as on main (how highlights were given), except one that holds nothing but "lines": that
+// keeps the default's clean subtitles, so that { "lines": 2 } alone builds as main for a cut that
+// set nothing (review of screencast-clear, 3); none by default when the captions skill is missing
+// (tool: whether it is beside this one)
+export function captionsFor(cut = {}, tool = true) {
+  if (cut.captions === false) return null;
+  if (cut.captions && typeof cut.captions === "object") return !cut.captions.style && Object.keys(cut.captions).every((k) => k === "lines") ? { style: "clean", highlight: [], ...cut.captions } : cut.captions;
+  if (cut.captions) return cut.captions;
+  return tool ? { style: "clean", highlight: [] } : null;
+}
+
+// The captions' area.json handed to the layout skill and the face view: the file as built, except
+// with one line whose file could not be read (captionLine null): then none, never a broken file
+export const captionArea = (caps, line, file) => (!caps ? null : linesOf(caps) === 1 && !line ? null : file);
+
+// the captions' line as the captions skill built it (its area.json: top, bottom), or null where it
+// cannot be read (the areas then keep the band for two lines, as before)
+export function captionLine(file) {
+  try {
+    const a = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Number.isFinite(a.top) && Number.isFinite(a.bottom) && a.bottom > a.top ? { top: a.top, bottom: a.bottom } : null;
+  } catch { return null; }
 }
 
 // the largest box of `aspect` (width / height) inside `area`, centred; of several areas, the one
@@ -141,7 +190,12 @@ export function place(box, c, source) {
 // as far as `bleed` (the frame where the screen may lie, under the apps' buttons too, not under
 // the captions), moved so that it fills `bleed` where it can without pushing `c` out of `area`.
 // Returns the element's geometry as place() does.
-export function spread(area, bleed, c, source, { maxScale = Infinity } = {}) {
+// near: where the source cannot cover the bleed across its height (one caption line: the bleed is
+// the whole frame, and a zoom at the screen's bottom edge has nothing below its region), the box
+// stands as near the uncovered edge as its room allows, on the room's bottom (just above the
+// caption line) or its top, instead of centred in it, so that no more ground shows than on main
+// (review of 2026-11-19: a chat box at the screen's bottom rose to y 300-624 over 42 % ground).
+export function spread(area, bleed, c, source, { maxScale = Infinity, near = false } = {}) {
   const zw = (c[2] - c[0]) * source.width, zh = (c[3] - c[1]) * source.height;
   // the room that holds the box largest
   const rooms = Array.isArray(area[0]) ? area : [area];
@@ -151,22 +205,34 @@ export function spread(area, bleed, c, source, { maxScale = Infinity } = {}) {
   // where the box goes: centred in its room; then the source moved to fill the bleed, as far as
   // the box stays in the room
   const [bx, by, bw, bh] = bleed;
-  const axis = (size, rLo, rSize, bLo, bSize, full, c0) => {
+  const axis = (size, rLo, rSize, bLo, bSize, full, c0, toEdge = false) => {
     const centred = rLo + (rSize - size) / 2 - c0 * full;
     const lo = rLo - c0 * full, hi = rLo + rSize - size - c0 * full; // the box inside its room
     const fLo = bLo + bSize - full, fHi = bLo; // the source covering the bleed
     const a = Math.max(lo, fLo), b = Math.min(hi, fHi);
     if (a <= b) return Math.min(Math.max(centred, a), b);
-    // the source cannot cover the bleed on this axis: centred on the box, kept in the room
+    // the source cannot cover the bleed on this axis: centred on the box, kept in the room; with
+    // near, as close to covering it as the room allows
+    if (toEdge && lo <= hi) return b < a ? (hi < fLo ? hi : lo > fHi ? lo : Math.min(Math.max(centred, lo), hi)) : Math.min(Math.max(centred, lo), hi);
     return Math.min(Math.max(centred, lo), hi);
   };
   const left = axis(zw * scale, room0[0], room0[2], bx, bw, w, c[0]);
-  const top = axis(zh * scale, room0[1], room0[3], by, bh, h, c[1]);
+  const top = axis(zh * scale, room0[1], room0[3], by, bh, h, c[1], near);
   // what shows: the source inside the bleed
   const x0 = Math.max(left, bx), y0 = Math.max(top, by), x1 = Math.min(left + w, bx + bw), y1 = Math.min(top + h, by + bh);
   const r = (v) => +v.toFixed(1);
   return { left: r(left), top: r(top), width: r(w), height: r(h), box: [x0, y0, x1 - x0, y1 - y0],
     inset: [y0 - top, left + w - x1, top + h - y1, x0 - left].map((v) => r(Math.max(0, v))) };
+}
+
+// a label's type (px) in a frame, and the most of it a letter takes across (800 Inter's widest
+// capitals and digits, with the letter spacing; most are narrower); its box in the frame, at the
+// safe box's corner (areas().label): x, y, w, h
+export const labelSize = (width, height) => Math.round(Math.min(width, height) * 0.036);
+export const LABEL_EM = 0.75;
+export function labelBox(text, a, width, height) {
+  const size = labelSize(width, height), [lx, ly] = a.label;
+  return [lx, ly, String(text).length * size * LABEL_EM + 44, size * 1.25 + 24];
 }
 
 // a face box (0–1 of the webcam's picture, from sources.json) or the webcam's middle, a little high
@@ -202,4 +268,27 @@ export function circle(source) {
   const cy = fy0 + (fy1 - fy0) * 0.45;
   const most = source.face ? Math.min(1, Math.max(0.45, Math.min((fy1 - fy0) * 3, (1 - cy) / 0.5))) : 1;
   return around(source, 1, most);
+}
+
+// What of a shot's top lies under the apps' headers (platform-zones' covers that start at the
+// frame's top), per platform: [{ name, px }], where box (x, y, w, h) reaches into one. A phone's
+// screen shown whole takes the frame's height and runs under them (decided 2026-11-19, pair
+// phone-whole: the larger phone stands); the build says how much, so that the agent zooms where
+// the top matters.
+export function underHeaders(box, zones) {
+  const [x, y, w, h] = box;
+  const names = Object.fromEntries((zones.platforms || []).map((p) => [p.id, p.name]));
+  return (zones.covers || []).filter((c) => c.box[1] <= 0 && c.box[0] < x + w && x < c.box[0] + c.box[2])
+    .map((c) => ({ name: names[c.platform] || c.platform, px: Math.round(Math.min(c.box[1] + c.box[3], y + h) - y) }))
+    .filter((u) => u.px > 0);
+}
+
+// The build's sentence for a keep whose phone (or another video shown, "show") is whole under the
+// headers: how many px of its top lie under which app's header, and what to do where it matters.
+export function headerSentence(k, list, height, what = "phone") {
+  const by = new Map();
+  for (const u of list) by.set(u.px, [...(by.get(u.px) || []), u.name]);
+  const parts = [...by.entries()].sort((a, b) => b[0] - a[0]).map(([px, names]) => `${px} px under the header of ${names.join(" and ")}`);
+  const phone = what === "phone";
+  return `! keep ${k + 1}: the top of the ${what} (${Math.round(height)} px high) lies under the apps' header: ${parts.join(", ")}${phone ? " (its status bar and the screen's top below it)" : ""}; where that top matters for these words, ${phone ? `give the keep a "zoom" on the top of the screen, or leave out "circle": false so it stays in the safe box beside the circle` : `set "circle": true on the keep: it then stays in the safe box beside the circle`}.`;
 }

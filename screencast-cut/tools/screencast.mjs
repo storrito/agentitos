@@ -25,7 +25,9 @@
 //   node tools/screencast.mjs check <dir>     the cut as it plays, and what to fix
 //   node tools/screencast.mjs at <dir> <m:ss> what plays at that moment of the cut, and its keep
 //   node tools/screencast.mjs frame <dir> <m:ss>   its source's picture there, whole, with a grid
-//                                     and the shot's crop: to choose a "zoom" box by
+//                                     and the shot's crop: to choose a "zoom" box by; a moment
+//                                     of the cut, before the first build (or with --recording)
+//                                     of the recording
 //   node tools/screencast.mjs captions <dir> --style hormozi   captions in the picture (agentitos'
 //                                     captions skill); --off takes them out
 //   node tools/screencast.mjs finish <dir> <video.mp4>   the rendered video at the platforms'
@@ -58,8 +60,8 @@ import { probe, prepare, samples, hyperframes, clock, seconds } from "./lib/medi
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from "./lib/voice.mjs";
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
-import { plan, range, timeRange } from "./lib/cut.mjs";
-import { FRAMES, areas, crop as cropFor, place } from "./lib/layout.mjs";
+import { plan, range, timeRange, pieceEndSaid, endSaid } from "./lib/cut.mjs";
+import { FRAMES, areas, linesOf, captionLine, captionsFor, captionArea, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { findFace } from "./lib/face.mjs";
@@ -67,9 +69,11 @@ import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
+import { screenView, isScreenPiece, beyondZoom, MOST as ZOOM_MOST } from "./lib/screenview.mjs";
+import { showOf, showProblem, placeShows, cutShownSound, shownVideo, circleOn, soundSaid, listenShown, heardSaid } from "./lib/show.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
-const FLAGS = ["off", "proposal"];
+const FLAGS = ["off", "proposal", "recording"];
 const NUMBERS = ["fps", "pause", "tail", "end", "loudness", "duck"];
 const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const VIDEO = ["screen", "phone-screen", "phone", "webcam"];
@@ -123,19 +127,23 @@ function settings(dir, opts) {
 
 // The captions of a cut: clean subtitles unless cut.json says otherwise ("captions": false: none,
 // or the style the captions command wrote); none by default when the captions skill is missing
-function captionsOf(cut = {}) {
-  if (cut.captions === false) return null;
-  if (cut.captions) return cut.captions;
-  return captionsTool() ? { style: "clean", highlight: [] } : null;
+const captionsOf = (cut = {}) => captionsFor(cut, !!captionsTool());
+
+// what the build and check say of the captions' line: where it stands and what ends above it
+function lineSaid(line, lines) {
+  if (line) return `; one line at y ${Math.round(line.top)}–${Math.round(line.bottom)}: a screen's region, a phone and a video shown end above y ${Math.round(line.above)}, the rest of a screen runs on under the captions (their box behind the words); "captions": { "lines": 2 } for two lines over a band as before`;
+  return lines === 2 ? "; two lines over a band of their own (\"lines\": 2)" : "; their line could not be read from the captions' build, so the band for two lines is kept";
 }
 
 // The frame's areas (layout.areas): from what the platforms the video goes to lay over it
-// (agentitos' platform-zones), with room for captions and labels only when the cut has them.
-function layoutOf(s, cut = {}) {
+// (agentitos' platform-zones), with room for captions and labels only when the cut has them; with
+// one caption line, the room it takes as built (line: captionLine()).
+function layoutOf(s, cut = {}, line = null) {
   const [width, height] = FRAMES[s.frame];
   let z;
   try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ ${e.message}`); }
-  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!captionsOf(cut), labels: (cut.keep || []).some((k) => k.label) }) };
+  const caps = captionsOf(cut);
+  return { width, height, zones: z, areas: areas(width, height, z, { captions: !!caps, labels: (cut.keep || []).some((k) => k.label), line: caps && linesOf(caps) === 1 ? line : null }) };
 }
 
 // Where the face is in the webcam's picture (face.mjs), once, kept in sources.json; null when
@@ -763,10 +771,29 @@ async function cmdBuild(dir, opts) {
   const { clips, words } = read(source(dir, "words.json"));
   const activity = read(source(dir, "activity.json"));
   const sources = meta.sources;
+  const showInfo = new Map();
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.view && ![...VIEWS, "auto"].includes(keep.view)) fail(`✗ keep ${k + 1}: "view" is one of ${[...VIEWS, "auto"].join(", ")}`);
     if (keep.circle !== undefined && typeof keep.circle !== "boolean") fail(`✗ keep ${k + 1}: "circle" is false (no webcam circle while it plays) or true`);
-    if (keep.layout !== undefined && (typeof keep.layout !== "string" || !keep.layout.trim())) fail(`✗ keep ${k + 1}: "layout" names how the face view lays the webcam into the frame, as the build lists it ("crop 4:5", "inset", "cover"), or is left out`);
+    if (keep.layout !== undefined && (typeof keep.layout !== "string" || !keep.layout.trim())) fail(`✗ keep ${k + 1}: "layout" names how the face view lays the webcam into the frame, or how a screen keep shows the screen, as the build lists it ("crop 4:5", "inset", "cover"; "screen-fit", "as before"), or is left out`);
+    if (keep.text !== undefined && !(typeof keep.text === "number" && keep.text > 0 && keep.text < 400)) fail(`✗ keep ${k + 1}: "text" is how tall a capital letter of the smallest text that must be read is, in px of the screen (off the sheet's grid: a tenth of the grid is a tenth of the screen's height), as 14; or leave it out`);
+    // "show": another video over the keep (show.mjs), read once; a fault is one sentence
+    if (keep.show !== undefined) {
+      const file = showOf(keep).file;
+      let info = null;
+      if (typeof file === "string" && file.trim()) {
+        if (!fs.existsSync(file)) info = { missing: true };
+        else try { info = probe(file); } catch (e) { info = { error: e.message.replace(/^cannot read [^:]*: /, "") }; }
+      }
+      const problem = showProblem(keep, k, info);
+      if (problem) fail(problem);
+      // converted as the recordings are at new (a steady rate, H.264, no tags), kept between builds
+      if (!showInfo.has(file)) {
+        const v = await shownVideo(dir, file, s.fps);
+        if (v.why) fail(`✗ keep ${k + 1}: "show": ${v.why}`);
+        showInfo.set(file, v.info);
+      }
+    }
   }
 
   // the pictures that move in a pause: any source but the webcam; a camera among them (the
@@ -786,7 +813,24 @@ async function cmdBuild(dir, opts) {
 
   // the view and the zoom of every piece: a keep's view and crop over the keep's whole span, so
   // that its shot does not jump; a piece that shows a pause by what moves in it
-  const layout = layoutOf(s, cut);
+  // the captions first: with one line, the room they take is what their build reports (area.json)
+  if (cut.captions && cut.captions.lines !== undefined && ![1, 2].includes(cut.captions.lines)) fail(`✗ cut.json "captions": "lines" is 2 (two lines over a band of their own, as before) or left out (one line, what must be read above it)`);
+  const brandFile = s.brand || (fs.existsSync("brand/DESIGN.md") ? "brand/DESIGN.md" : null);
+  const out = path.resolve(s.out || path.join(dir, "composition"));
+  let captions = null, line = null;
+  const caps = captionsOf(cut);
+  fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
+  if (caps) {
+    const [fw, fh] = FRAMES[s.frame];
+    const file = captionWords(dir, r.words, caps, { width: fw, height: fh, duration: r.duration });
+    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", caps.style || "hormozi",
+      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []),
+      ...(linesOf(caps) === 1 ? ["--lines", "1"] : []),
+      ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
+    captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
+    if (linesOf(caps) === 1) line = captionLine(path.join(out, "captions", "area.json"));
+  }
+  const layout = layoutOf(s, cut, line);
   const { width, height } = layout;
   const content = layout.areas.content;
   const tall = (src) => sources[src].height > sources[src].width * 1.25;
@@ -848,7 +892,7 @@ async function cmdBuild(dir, opts) {
     } else {
       Object.assign(p, kv);
     }
-    if (keep.circle === false) p.pip = false;
+    if (!circleOn(keep)) p.pip = false;
   }
 
   // the zoom per scene: where a screen changes almost whole within a keep (another tab, a page, a
@@ -860,7 +904,7 @@ async function cmdBuild(dir, opts) {
   };
   for (const p of r.pieces) {
     const zoom = cut.keep[p.keep].zoom;
-    if (p.view === "face" || !p.source || tall(p.source) || zoom !== "auto") continue;
+    if (p.view === "face" || !p.source || tall(p.source) || zoom !== "auto" || cut.keep[p.keep].show !== undefined) continue;
     const sp = span(p.keep) || [p.in, p.out];
     const cuts = p.wait ? scenes(activity[p.source] || [], p.in, p.out) : sceneCuts(p.keep, p.source);
     if (!cuts.length) continue;
@@ -879,8 +923,7 @@ async function cmdBuild(dir, opts) {
     p.crop = p.segments[0].crop;
   }
 
-  // the brand, the labels, the captions, the music
-  const brandFile = s.brand || (fs.existsSync("brand/DESIGN.md") ? "brand/DESIGN.md" : null);
+  // the brand, the labels, the music (the captions are built above)
   const brand = brandOf(brandFile);
   const labels = [];
   for (const [k, keep] of (cut.keep || []).entries()) {
@@ -888,21 +931,23 @@ async function cmdBuild(dir, opts) {
     const ps = r.pieces.filter((p) => p.keep === k);
     if (ps.length) labels.push({ text: keep.label, start: ps[0].start, duration: ps.at(-1).start + ps.at(-1).duration - ps[0].start });
   }
-  const out = path.resolve(s.out || path.join(dir, "composition"));
   const title = s.title || cut.title || path.basename(path.resolve(dir));
-  let captions = null;
-  const caps = captionsOf(cut);
-  fs.rmSync(path.join(out, "captions"), { recursive: true, force: true });
-  if (caps) {
-    const file = captionWords(dir, r.words, caps, { width, height, duration: r.duration });
-    const said = runCaptions(["build", file, path.join(out, "captions"), "--style", caps.style || "hormozi",
-      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []),
-      ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
-    captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
-  }
+  // a keep that shows another video ("show"): its picture over the keep's whole length (its words,
+  // its pauses, its hold), from "from" on at its own speed; it wins over the keep's view, zoom and
+  // layout, which are left out (said)
+  const shown = placeShows(cut, r.pieces, r.words, (file) => showInfo.get(file));
+  r.warnings.push(...shown.warnings);
+  shown.notes.unshift(...shown.warnings.map((w) => `⚠ ${w}`));
   // the face view: the webcam's picture placed by where its face is (the layout skill), around the
-  // captions as they were just built; each face keep the candidate it names, else the rule's
-  const faceSaid = faceView(dir, cut, r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: caps ? path.join(out, "captions", "area.json") : null });
+  // captions as they were just built; each face keep the candidate it names, else the rule's (a
+  // keep that shows another video is none)
+  const showKeeps = new Set((cut.keep || []).flatMap((keep, k) => (keep.show !== undefined ? [k] : [])));
+  const faceCut = showKeeps.size ? { ...cut, keep: cut.keep.map((keep, k) => { if (!showKeeps.has(k)) return keep; const { layout, ...rest } = keep; return rest; }) } : cut;
+  const screenKeeps = new Set(r.pieces.filter((p) => isScreenPiece(p, sources) && !showKeeps.has(p.keep)).map((p) => p.keep));
+  const faceSaid = faceView(dir, faceCut, showKeeps.size ? r.pieces.filter((p) => !showKeeps.has(p.keep)) : r.pieces, sources, { width, height, words, platforms: platformList(s.platform), area: captionArea(caps, line, path.join(out, "captions", "area.json")), screens: screenKeeps });
+  // a screen keep (the screen whole or a zoom box): the picture as before where it passes the layout
+  // skill's checks, else layout's (lib/screenview.mjs); a keep that shows another video is none
+  const screenSaid = screenView(dir, faceCut, r.pieces, sources, { width, height, platforms: platformList(s.platform), area: captionArea(caps, line, path.join(out, "captions", "area.json")), zones: layout.zones, areas: layout.areas, labels });
   let music = null;
   if (cut.music?.file) {
     if (!fs.existsSync(cut.music.file)) fail(`✗ cut.json "music": there is no ${cut.music.file}`);
@@ -934,24 +979,51 @@ async function cmdBuild(dir, opts) {
       r.pieces, path.join(out, "assets", "backdrop.mp4"), { fps: s.fps, parts: source(dir, "backdrop.parts") });
     backdrop = "backdrop.mp4";
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, brand, areas: layout.areas });
+  // a shown video's sound ("sound"): its stretch measured (ebur128, as finish does) and cut out
+  // beside the composition at the voice's level before the bus (TAKE_LEVEL), a limiter under
+  // 0 dBFS, the file's metadata left behind; it plays through the voice's bus and its ceiling.
+  // Where ffmpeg cannot, the video plays muted and the build says so
+  for (const i of shown.inserts) {
+    const audio = `${i.key}.m4a`;
+    const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), TAKE_LEVEL);
+    i.lufs = a.lufs; i.gain = a.gain;
+    if (a.ok) {
+      i.audio = audio;
+      // whether the clip speaks under the words: heard once (kept), for this line only
+      const heard = i.spoken > 0.3 ? await listenShown({ dir, src: i.src, from: i.from, duration: i.duration, audio: path.join(out, "assets", audio) }) : null;
+      shown.notes.push(soundSaid(i, TAKE_LEVEL, clock, heardSaid(i, heard, r.words, clock)));
+    }
+    else shown.notes.push(`! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`);
+  }
+  const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas });
+  // a phone's screen (or a tall video shown) whole, under the apps' headers: said per keep, once
+  const headed = new Set();
+  for (const { piece: p, layers } of placed) {
+    const l = layers.find((x) => x.main), src = l && { ...sources, ...shown.sources }[l.source];
+    if (!src || headed.has(p.keep) || (src.height <= src.width * 1.25 && !l.show)) continue;
+    const list = underHeaders(l.box, layout.zones);
+    if (!list.length) continue;
+    headed.add(p.keep);
+    shown.notes.push(headerSentence(p.keep, list, l.box[3], l.show ? "shown video" : "phone"));
+  }
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
-      view: p.view, source: p.source, ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
-      ...(p.picture ? { picture: p.picture } : {}),
+      view: p.view, source: p.source, ...(p.show ? { show: showOf(cut.keep[p.keep]).file } : {}), ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
+      ...(p.picture ? { picture: p.picture } : {}), ...(p.screen ? { screen: p.screen } : {}),
       ...(p.segments ? { segments: p.segments.map((g) => ({ in: +g.in.toFixed(3), out: +g.out.toFixed(3), crop: g.crop })) } : {}), lufs: p.lufs, gain: p.gain,
       rate: +p.rate.toFixed(3), lapse: +p.lapse.toFixed(2),
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, ...(p.wait ? { wait: true } : {}), ...(p.hold ? { hold: true } : {}), ...(p.silent ? { silent: true } : {}) }) })),
-    removed: r.removed, ...(Object.keys(limits).length ? { motion: limits } : {}), warnings: r.warnings, words: r.words,
+    removed: r.removed, ...(Object.keys(limits).length ? { motion: limits } : {}), ...(layout.areas.line ? { captions: { lines: 1, ...layout.areas.line } } : {}),
+    ...(shown.inserts.length ? { sounds: shown.inserts.map((i) => ({ keep: i.k + 1, file: i.file, sound: i.sound, lufs: i.lufs, gain: i.gain, playing: !!i.audio })) } : {}), warnings: r.warnings, words: r.words,
   });
   const views = {};
-  for (const p of r.pieces) views[p.view] = (views[p.view] || 0) + p.duration;
+  for (const p of r.pieces) { const v = p.show ? "another video (show)" : p.view; views[v] = (views[v] || 0) + p.duration; }
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(meta.duration)} recorded, ${r.pieces.length} pieces; on screen: ${Object.entries(views).sort((a, b) => b[1] - a[1]).map(([v, t]) => `${v} ${Math.round(t)} s`).join(", ")}` +
     `${r.pieces.some((p) => p.crop && p.crop.join() !== "0,0,1,1") ? `, ${r.pieces.filter((p) => p.crop && p.crop.join() !== "0,0,1,1").length} zoomed in` : ""}${labels.length ? `, ${labels.length} labels` : ""} → index.html`);
-  for (const line of faceSaid) console.log(line);
-  if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}`);
+  for (const line of [...shown.notes, ...faceSaid, ...screenSaid]) console.log(line);
+  if (caps) console.log(`Captions: ${caps.style || "hormozi"}${caps.highlight?.length ? `, ${caps.highlight.length} key words` : ""}${cut.captions ? "" : " (the default; \"captions\": false in cut.json for none)"}${lineSaid(layout.areas.line, linesOf(caps))}`);
   else if (cut.captions !== false) console.log("No captions: agentitos' captions skill is not beside this one.");
   if (talk.rate) console.log(`Speech: ${talk.rate} syllables a second where someone speaks${s.speed === "auto" ? (speed > 1 ? ` → played at ${speed}× (--speed auto: towards ${TARGET} a second, at most ${MOST}×; --speed 1 as recorded)` : `: fast enough, played as recorded (--speed auto)`) : `; played at ${speed}× (--speed ${s.speed})`}.`);
   console.log(`Laid out clear of ${layout.zones.platforms.map((p) => p.name).join(", ")}${layout.zones.fallback ? " (no --platform: the usual ones of this frame; name where it goes with --platform)" : ""}.`);
@@ -983,7 +1055,7 @@ async function cmdCaptions(dir, opts) {
     const marked = spawnSync(process.execPath, [tool, "mark", file, ...(opts.product ? ["--product", opts.product] : [])], { encoding: "utf8" });
     if (marked.status) console.log(`No key words marked (${(marked.stderr || marked.stdout).trim().split("\n").pop()}): the captions come without; mark them by hand with "highlight" (word numbers) in cut.json's "captions".`);
     const highlight = read(file).words.filter((w) => w.highlight).map((w) => w.i);
-    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}) };
+    cut.captions = { style: opts.style || cut.captions?.style || "hormozi", highlight, ...(opts.brand || cut.captions?.brand ? { brand: opts.brand || cut.captions.brand } : {}), ...(cut.captions?.lines ? { lines: cut.captions.lines } : {}) };
     console.log(`Captions ${cut.captions.style}: ${highlight.length} key words (${highlight.map((i) => e.words.find((w) => w.i === i)?.text).join(", ")})`);
   }
   fs.writeFileSync(cutFile, JSON.stringify(cut, null, 2) + "\n");
@@ -1004,7 +1076,7 @@ function cmdCheck(dir) {
 
   console.log(`${clock(e.recorded)} recorded → ${clock(e.duration)} cut, ${e.pieces.length} pieces\n\nAs it plays:`);
   e.pieces.forEach((p, k) => {
-    const where = `${p.view}${z(p)}, recorded at ${clock(p.in)}`;
+    const where = p.show ? `shows ${p.show} over the recording's sound at ${clock(p.in)}` : `${p.view}${z(p)}, recorded at ${clock(p.in)}`;
     if (p.shows) {
       console.log(`${String(k + 1).padStart(3)} ${clock(p.start).padStart(6)}  (no words: ${p.silent ? "a keep by its time" : p.hold ? "held after the words, the voice faded" : p.wait ? "a wait" : "the picture moves"}, ${(p.out - p.in).toFixed(1)} s${p.rate > 1 ? ` ×${p.rate} in ${p.duration.toFixed(1)} s` : ""})   (${where})`);
       return;
@@ -1015,19 +1087,37 @@ function cmdCheck(dir) {
     if (p.in > first.start + 0.02) errors.push(`piece ${k + 1} starts ${(p.in - first.start).toFixed(2)} s into "${first.text}": start the keep at the word before`);
     const next = e.pieces[k + 1];
     const goesOn = next && next.keep === p.keep && (!next.shows || next.hold);
-    if (!goesOn && p.out < last.end + 0.12) warnings.push(`piece ${k + 1} ends ${(p.out - last.end).toFixed(2)} s after "${last.text}" (the next words follow right after it in the recording): it may sound cut off; end the keep a word later, or where the speaker pauses`);
+    if (!goesOn && p.out < last.end + 0.12) warnings.push(pieceEndSaid({ k, out: p.out, first: p.words[0], last: p.words[1], words, recorded: e.recorded }));
     if (p.duration < 0.6 && p.words[1] - p.words[0] < 2) warnings.push(`piece ${k + 1} ("${text(p.words[0], p.words[1])}") is ${p.duration.toFixed(2)} s long: that sounds chopped; keep the whole phrase`);
   });
 
   // the end holds
   const lastWord = e.words.at(-1);
-  if (lastWord && e.duration - lastWord.end < 1) warnings.push(`the cut ends ${(e.duration - lastWord.end).toFixed(1)} s after its last word: give the end a moment ("hold": 1.5 on the last keep)`);
+  const ending = lastWord && endSaid({ gap: e.duration - lastWord.end, lastOut: e.pieces.at(-1).out, recorded: e.recorded });
+  if (ending) warnings.push(ending);
 
   // the face view: a picture that fails the layout skill's checks (named by the keep, or nothing passed)
   for (const k of [...new Set(e.pieces.filter((p) => p.picture && ["✗", "–"].includes(p.picture.mark)).map((p) => p.keep))]) {
     const pic = e.pieces.find((p) => p.keep === k && p.picture).picture;
     if (pic.mouth) { warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×${pic.named ? ", as the keep names it" : ""}) has the captions on the mouth for ${pic.mouth.seconds} s of its ${pic.mouth.of} s (${pic.mouth.from}–${pic.mouth.to} s of the recording): ${pic.mouth.split ? `split it ("words": ${pic.mouth.split.map((r) => `"${r}"`).join(", ")}) and name another picture on the part with the lean` : "split it where the lean begins"}${pic.mouth.smaller ? `, or name "${pic.mouth.smaller}" on it` : ""}`); continue; }
     warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×) ${pic.mark === "✗" ? "fails the layout skill's checks (enlarged over 2×, or the face under the apps' buttons)" : "leaves the captions no place clear of the face"}${pic.named ? ` and is the one the keep names ("layout")` : ": nothing passes"}; the build's list says which pass`);
+  }
+
+  // the captions' line and what ends above it (one line)
+  if (e.captions?.lines === 1) console.log(`\nCaptions${lineSaid(e.captions, 1).replace(/^;/, ":")}`);
+
+  // a screen keep: its scale, the ground, its text's height where the keep says it; ✗ where that
+  // text comes out too small to read or the region lies under an app's bar
+  const screenKeeps = [...new Set(e.pieces.filter((p) => p.screen).map((p) => p.keep))];
+  if (screenKeeps.length) console.log("\nThe screen:");
+  for (const k of screenKeeps) {
+    const sc = e.pieces.find((p) => p.keep === k && p.screen).screen;
+    // text no zoom can make read (beyondZoom): ! and what is true, not a ✗ that nothing fixes
+    const beyond = sc.faults.includes("text") ? beyondZoom({ text: sc.text, readable: sc.readable, width: e.width }) : null;
+    const bad = (sc.faults.includes("text") && !beyond) || sc.faults.includes("bars");
+    console.log(`  ${bad ? "✗" : sc.faults.length ? "!" : "✓"} keep ${k + 1}: ${sc.fit} at ${sc.scale}×, ${Math.round(sc.ground * 100)} % ground${sc.text ? `, its text ${sc.text} px → ${sc.textHeight ?? "?"} px${sc.readable ? ` (reads from ${sc.readable}${beyond ? `; at most ${ZOOM_MOST}×: it cannot be larger here` : ""})` : ", whether it reads not judged (the layout skill gave no height from which text reads)"}` : ", its text's height not given (\"text\")"}${sc.under.length ? `, the region under the bars of ${sc.under.join(", ")}` : ""}${sc.faults.filter((f) => f !== "text" && f !== "bars").length ? `; ${sc.faults.filter((f) => f !== "text" && f !== "bars").map((f) => (f === "across" ? "the region past the safe box's margins" : `the ${f} on the region`)).join(", ")}` : ""}`);
+    if (sc.faults.includes("text")) warnings.push(beyond ? `keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall; ${beyond}` : `keep ${k + 1}'s screen text (${sc.text} px on the screen) comes out ${sc.textHeight} px tall, under the ${sc.readable} px from which text begins to read: for it to read surely, a narrower "zoom" on what is talked about (the build's list says how wide one reads)`);
+    if (sc.faults.includes("bars")) warnings.push(`keep ${k + 1}'s zoom box lies under the bars of ${sc.under.join(", ")}: name another picture with "layout" from the build's list`);
   }
 
   // the sources are on one clock
@@ -1064,7 +1154,7 @@ function cmdCheck(dir) {
   const settingsNow = settings(dir, {});
   const [fw, fh] = FRAMES[settingsNow.frame];
   for (const [k, keep] of (cut.keep || []).entries()) {
-    if (keep.zoom !== undefined || !e.pieces.some((p) => p.keep === k && p.source === "screen" && !p.wait)) continue;
+    if (keep.zoom !== undefined || keep.show !== undefined || !e.pieces.some((p) => p.keep === k && p.source === "screen" && !p.wait)) continue;
     const src = meta.sources.screen;
     if (src && fh > fw && src.width > src.height) warnings.push(`keep ${k + 1} shows the whole screen in a ${settingsNow.frame} frame, where its text is small: decide from its sheet whether to zoom ("zoom": [x0, y0, x1, y1]) or keep it whole on purpose ("zoom": "off")`);
   }
@@ -1124,12 +1214,25 @@ function cmdAt(dir, when) {
 // in 0–1) and the shot's crop in red: to look at before setting "zoom" on a keep.
 function cmdFrame(dir, when, opts) {
   const file = path.join(dir, "edit.json");
-  if (!fs.existsSync(file)) fail(`Build first: ${cmd(`build ${rel(dir)}`)}`);
   const t = seconds(when);
-  const e = read(file);
   const meta = read(source(dir, "sources.json"));
+  // before a build, or with --recording: a moment of the recording (the brief's times, a keep's
+  // "at"), its screen (or --source) with the grid and nothing else
+  if (opts.recording || !fs.existsSync(file)) {
+    const name = opts.source || (meta.sources.screen?.video ? "screen" : Object.keys(meta.sources).find((k) => k !== "webcam" && meta.sources[k].video));
+    const src = meta.sources[name];
+    if (!src?.video) fail(`No source ${name}.`);
+    if (!Number.isFinite(t) || t < 0 || t > meta.duration) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen] [--recording]: before a build (or with --recording) a moment of the recording, which is ${clock(meta.duration)} long`);
+    const out = path.join(dir, "frames", `rec-${String(t.toFixed(1)).replace(".", "_")}-${name}.jpg`);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-ss", String(Math.max(0, t - src.offset)), "-i", source(dir, src.file), "-frames:v", "1",
+      "-vf", "scale='min(1600,iw)':-2,drawgrid=w=iw/10:h=ih/10:t=1:color=0x00a0ff@0.6", "-q:v", "3", out], { encoding: "utf8" });
+    if (r.status) fail(`✗ ${r.stderr.trim()}`);
+    return console.log(`${rel(out)}: ${name} at ${clock(t)} of the recording, a blue line every tenth. For a keep by its time: {"at": "${clock(t)}-…", "zoom": [x0, y0, x1, y1]} (0–1, left top right bottom). After a build, frame takes a moment of the cut (--recording: of the recording).`);
+  }
+  const e = read(file);
   const p = e.pieces.find((x) => t >= x.start && t < x.start + x.duration);
-  if (!p) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen]: a moment of the cut, which is ${clock(e.duration)} long`);
+  if (!p) fail(`Usage: screencast.mjs frame <dir> <m:ss> [--source screen]: a moment of the cut, which is ${clock(e.duration)} long (--recording for a moment of the recording)`);
   const name = opts.source || (p.source === "webcam" ? Object.keys(meta.sources).find((k) => k !== "webcam" && meta.sources[k].video) : p.source);
   const src = meta.sources[name];
   if (!src?.video) fail(`No source ${name}.`);

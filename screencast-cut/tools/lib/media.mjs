@@ -34,10 +34,10 @@ export function probe(file) {
 // With `frames` (activity.differ of activity.grid) the same decoding also streams the grey frames
 // the activity is measured on, so the source is read once; `progress` hears how many seconds of
 // it are done. Resolves with what the copy is (probe).
-export function prepare(file, out, { fps = 30, frames, progress } = {}) {
+export function prepare(file, out, { fps = 30, frames, progress, tags = true } = {}) {
   const p = probe(file);
   fs.rmSync(out, { force: true });
-  const args = ["-v", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", file];
+  const args = ["-v", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", file, ...(tags ? [] : ["-map_metadata", "-1"])];
   if (p.video) {
     args.push("-map", "0:v:0", "-map", "0:a:0?", "-vf", `scale='min(2560,iw)':-2,fps=${fps}`, ...steadyRate(),
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-g", String(fps), "-keyint_min", String(fps));
@@ -72,8 +72,8 @@ export function prepare(file, out, { fps = 30, frames, progress } = {}) {
 }
 
 // A steady frame rate is asked for with -fps_mode from ffmpeg 5.1 on; an older ffmpeg (Ubuntu
-// 22.04 has 4.4) refuses it and knows only -vsync, which a newer one still takes but calls
-// deprecated. ffmpeg is asked once, with a tenth of a second of a made-up picture.
+// 22.04 has 4.4) refuses it and knows only -vsync, which ffmpeg 9 takes no longer (5.1 to 8
+// call it deprecated). ffmpeg is asked once, with a tenth of a second of a made-up picture.
 let rate = null;
 export function steadyRate() {
   if (!rate) {
