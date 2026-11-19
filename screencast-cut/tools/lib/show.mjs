@@ -65,16 +65,17 @@ export function placeShows(cut, pieces, words, infoOf) {
     if (!ps.length) continue;
     const start = ps[0].start, end = ps.at(-1).start + ps.at(-1).duration, from = Number(show.from) || 0;
     const duration = Math.min(end - start, info.duration - from);
-    if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground: an earlier "from", a shorter "hold", or end the keep a word earlier`);
+    const said = words.filter((w) => w.start >= start - 0.01 && w.end <= end + 0.01);
+    const spoken = said.length ? said.at(-1).end - start : 0;
+    const sound = Number(show.sound) || 0;
+    if (duration < end - start - 0.05) warnings.push(`keep ${k + 1}: ${show.file} ends ${(end - start - duration).toFixed(1)} s before the keep does (from ${from} s it has ${duration.toFixed(1)} s), so the keep's last ${(end - start - duration).toFixed(1)} s show the frame's ground${sound > 0 && spoken > duration - FADE ? ", and its sound stays low under the words and fades out where it ends, before the last word" : ""}: an earlier "from", a shorter "hold", or end the keep a word earlier`);
     const key = `show-${k + 1}`;
     sources[key] = { file: `${key}${path.extname(show.file) || ".mp4"}`, path: path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };
     for (const p of ps) p.show = { source: key, in: from + (p.start - start), until: start + duration };
     const skipped = leftOut(keep);
     if (skipped.length) notes.push(`! keep ${k + 1}: "show" plays ${show.file} over the whole keep, so its ${skipped.join(" and ")} ${skipped.length > 1 ? "are" : "is"} left out (the shown video is the keep's picture); to see ${keep.view === "face" ? "the face" : keep.zoom !== undefined && keep.zoom !== "off" ? "the zoom" : "that picture"} too, give it a keep of its own without "show".`);
-    const sound = Number(show.sound) || 0;
     if (sound > 0 && duration > 0.1) {
-      const said = words.filter((w) => w.start >= start - 0.01 && w.end <= end + 0.01);
-      inserts.push({ k, key, file: show.file, from, start, duration, sound, spoken: said.length ? said.at(-1).end - start : 0 });
+      inserts.push({ k, key, file: show.file, from, start, duration, sound, spoken });
     }
   }
   return { sources, inserts, warnings, notes };
@@ -84,10 +85,12 @@ const n = (x) => +x.toFixed(3);
 
 // The volume of a shown video's sound over its insert (seconds from its start): a quarter of its
 // level under the first words, rising over the last RISE s of them to its level at the last word,
-// held, out over the last FADE s. A keep without words (by its time) has it up at once; a video
-// that ends before the last word has risen by its fade-out.
+// held, out over the last FADE s. A keep without words (by its time) has it up at once. The rise
+// belongs to the last word: a video that ends before that word keeps its sound low under the words
+// and fades out at its own end (it never comes up while the speaker is still talking).
 export function soundPoints({ sound, duration, spoken }) {
-  const top = sound, low = top / 4, d = duration, out = Math.max(0, d - FADE), s = Math.min(Math.max(spoken || 0, 0), out);
+  const top = sound, low = top / 4, d = duration, out = Math.max(0, d - FADE), s = Math.max(spoken || 0, 0);
+  if (s > 0.3 && s > out) return [{ t: 0, v: low }, { t: n(out), v: low }, { t: n(d), v: 0 }].filter((x, j, all) => j === 0 || x.t > all[j - 1].t);
   return (s > 0.3 ? [{ t: 0, v: low }, { t: n(Math.max(0, s - RISE)), v: low }, { t: n(s), v: top }] : [{ t: 0, v: 0 }, { t: n(Math.min(0.2, out)), v: top }])
     .concat([{ t: n(out), v: top }, { t: n(d), v: 0 }])
     .filter((x, j, all) => j === 0 || x.t > all.slice(0, j).reduce((m, y) => Math.max(m, y.t), -1));

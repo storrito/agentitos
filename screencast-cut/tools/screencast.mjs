@@ -919,6 +919,7 @@ async function cmdBuild(dir, opts) {
   // layout, which are left out (said)
   const shown = placeShows(cut, r.pieces, r.words, (file) => showInfo.get(file));
   r.warnings.push(...shown.warnings);
+  shown.notes.unshift(...shown.warnings.map((w) => `⚠ ${w}`));
   // the face view: the webcam's picture placed by where its face is (the layout skill), around the
   // captions as they were just built; each face keep the candidate it names, else the rule's (a
   // keep that shows another video is none)

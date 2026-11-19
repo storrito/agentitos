@@ -684,9 +684,19 @@ test("show with sound: a track of its own whose level is a quarter under the fir
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("show's sound: a keep without words has it up at once; a video that ends before the last word has risen by its fade-out", () => {
+test("show's sound: a keep without words has it up at once; a video that ends before the keep's last word keeps its sound low under the words and fades out at its own end, never up mid-sentence (the review's 4.1 s video in a 15.3 s keep, its 12 s video in a 15.2 s one), and the build says so", () => {
   assert.deepEqual(soundPoints({ sound: 0.6, duration: 4, spoken: 0 }), [{ t: 0, v: 0 }, { t: 0.2, v: 0.6 }, { t: 3.75, v: 0.6 }, { t: 4, v: 0 }]);
-  assert.deepEqual(soundPoints({ sound: 0.8, duration: 3, spoken: 5 }), [{ t: 0, v: 0.2 }, { t: 1.25, v: 0.2 }, { t: 2.75, v: 0.8 }, { t: 3, v: 0 }]);
+  // before: full at 3.85 s and at 11.75 s while the words ran on to about 15 s
+  assert.deepEqual(soundPoints({ sound: 0.8, duration: 4.1, spoken: 15 }), [{ t: 0, v: 0.2 }, { t: 3.85, v: 0.2 }, { t: 4.1, v: 0 }]);
+  assert.deepEqual(soundPoints({ sound: 0.8, duration: 12, spoken: 14.8 }), [{ t: 0, v: 0.2 }, { t: 11.75, v: 0.2 }, { t: 12, v: 0 }]);
+  assert.ok(soundPoints({ sound: 0.8, duration: 12, spoken: 14.8 }).every((p) => p.v <= 0.2));
+  // a video that outlasts the last word rises to it as before
+  assert.deepEqual(soundPoints({ sound: 0.8, duration: 16, spoken: 14.8 }).map((p) => p.v), [0.2, 0.2, 0.8, 0.8, 0]);
+  const cut = twoKeeps({ show: { file: "result.mp4", sound: 0.8 } });
+  const r = plan(words, cut, settings, voices);
+  const shown = placeShows(cut, r.pieces, r.words, () => VIDEO_INFO(3));
+  assert.match(shown.warnings[0], /^keep 1: result\.mp4 ends [\d.]+ s before the keep does .*, and its sound stays low under the words and fades out where it ends, before the last word: an earlier "from"/);
+  assert.ok(soundPoints(shown.inserts[0]).every((p) => p.v <= 0.2));
   // every point after the one before it, so the lane never runs back
   for (const x of [{ sound: 1, duration: 0.4, spoken: 0.35 }, { sound: 1, duration: 1, spoken: 0.9 }, { sound: 0.5, duration: 10, spoken: 1 }]) {
     const pts = soundPoints(x);
