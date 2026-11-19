@@ -940,7 +940,7 @@ test("the shown file is converted as the recordings are at new: an HEVC clip wit
 // A screen keep (whole, or a "zoom" box) asks the layout skill (lib/screenview.mjs): the picture as
 // before stays where it passes (its region inside the safe box across, the circle and the label off
 // it, its text read where "text" says how tall), else layout's first; the build never stops for it.
-import { beforePicture, judge, choose, textSentence, placeScreen, screenView, regionPx, BEFORE } from "./lib/screenview.mjs";
+import { beforePicture, judge, choose, textSentence, placeScreen, screenView, regionPx, freeCorner, shiftedInside, BEFORE } from "./lib/screenview.mjs";
 
 const SZ = { safe: [60, 250, 828, 1190], wide: [60, 250, 960, 590], margins: { top: 250, bottom: 480, left: 60, right: 192 },
   covers: [{ platform: "tiktok", box: [0, 0, 1080, 150] }, { platform: "tiktok", box: [900, 840, 180, 1080] }], platforms: [{ id: "tiktok", name: "TikTok" }] };
@@ -1066,3 +1066,36 @@ test("with the layout skill: a zoom box that fills the width as before is drawn 
     assert.deepEqual(s1.layers, m1.layers);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("the circle moves before the picture does (pair screen-circle-169): the picture as before, moved across by as little as brings its region inside the margins, the circle in the first free corner; none free (or a label there): not moved", () => {
+  // the public test's slide in 16:9 (keep 4 of pub-lean-169): the right column at 1.21×, the circle top right on its links
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+  const a = areas(1920, 1080, z, { captions: true, labels: true }), src = { width: 1920, height: 1080 };
+  const b = beforePicture([0.6, 0.15, 0.97, 0.66], src, a, true), opts = { zones: z, width: 1920, height: 1080 };
+  assert.deepEqual(judge(b, opts).faults.map((f) => f.code), ["across", "circle"]);
+  const i = shiftedInside(b, src, z, a, 1920);
+  assert.equal(i.scale, b.scale);
+  assert.ok(i.region[0] + i.region[2] <= 1824.5 && Math.abs(i.left - b.left) < 30, JSON.stringify(i));
+  assert.deepEqual(judge(i, opts).faults.map((f) => f.code), ["circle"]);
+  assert.deepEqual(freeCorner(i, { zones: z, areas: a, width: 1920, height: 1080 }), { circle: [96, 108, 216], corner: "top left" });
+  // a label in the top left corner and the region over the bottom ones: no corner is free
+  const wide = { ...i, region: [96, 300, 1728, 600] };
+  assert.equal(freeCorner(wide, { zones: z, areas: a, labels: [[96, 108, 300, 70]], width: 1920, height: 1080 }), null);
+  // choose takes the moved picture before layout's
+  const moved = Object.assign({ ...i, fit: "as before, inside the margins, the circle top left", circle: [96, 108, 216] }, {}); moved.j = judge(moved, opts);
+  const before = Object.assign(b, { j: judge(b, opts) }), fit = judged({ fit: "screen-fit", scale: 1.16, window: [0, 0, 1319, 748], region: [427, 108, 826, 640], mark: "✓", hard: 0 });
+  assert.equal(choose(before, [fit], { zoomed: true, moved }).pic, moved);
+  assert.equal(choose(before, [fit], { zoomed: true }).pic, fit);
+  assert.equal(choose(before, [fit], { zoomed: true, moved, asked: "screen-fit" }).pic, fit);
+});
+
+test("a moved circle alone keeps the screen exactly as before; only the circle's place changes", () => {
+  const z = { safe: [96, 108, 1728, 822], wide: null, margins: { left: 96, right: 96 }, covers: [], platforms: [] };
+  const a = areas(1920, 1080, z, { captions: true }), sources = { screen: { width: 1920, height: 1080, offset: 0 }, webcam: { width: 1280, height: 720, offset: 0, face: [0.388, 0.202, 0.614, 0.685] } };
+  const p = { view: "screen", source: "screen", start: 0, duration: 2, in: 0, out: 2, crop: [0.3, 0.2, 0.7, 0.6] };
+  const b = beforePicture(p.crop, sources.screen, a, true);
+  const [main] = shots([p], sources, 1920, 1080, a), [moved] = shots([{ ...p, screenPic: { ...b, fit: "as before, the circle top left", circle: [96, 108, 216], circleOnly: true } }], sources, 1920, 1080, a);
+  assert.deepEqual(moved.layers[0], main.layers[0]);
+  assert.deepEqual(moved.layers[1].box, [96, 108, 216, 216]);
+});
+

@@ -133,7 +133,8 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         // text too small) is drawn as layout placed it: at its scale, clipped to its window
         const pic = p.segments?.length ? seg.screenPic : p.screenPic;
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
-        const at = pic ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
+        // (a picture as before whose circle alone moved keeps the screen exactly as before)
+        const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
         const [x, , w] = at.box;
         out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });
