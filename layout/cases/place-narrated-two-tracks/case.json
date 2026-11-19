@@ -1,0 +1,17 @@
+{
+ "guards": "two moving faces as narrated-short hands them over (a dozen moments each) from a 1080p source into 1080x1920",
+ "from": "made-up geometry (made up), in the shape narrated-short writes its faces file",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "1080x1920",
+   "--source",
+   "1920x1080",
+   "--face-track",
+   "faces.json",
+   "--text",
+   "caption"
+  ]
+ ]
+}

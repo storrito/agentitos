@@ -1,0 +1,23 @@
+{
+ "guards": "material beside a 720p speaker in 9:16 with a caption line and the full-frame placement before (--before)",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "beside",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face",
+   "555,150,180,195",
+   "--material-min",
+   "600x340",
+   "--material-ratio",
+   "16:9",
+   "--text",
+   "caption",
+   "--before",
+   "2.6667,-1160,0"
+  ]
+ ]
+}

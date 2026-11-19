@@ -1,0 +1,24 @@
+$ place.mjs place out --frame 16:9 --source 1920x1080 --region 300,200,1200,700 --min-text-height 16 --text caption
+16:9 1920×1080 for YouTube video, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+screen 1920×1080, region x 300–1500, y 200–900 (1200×700), smallest text 16 px (reads from 42.7 px in this frame); text: 1 caption line
+note: at the size that reads (2.67×) the region would be 3200×1867 px, larger than the room the frame leaves it (1728×711 px): at most 1.02×, the text then 16.3 px tall. A narrower region reads: at most 647×266 px of the source (this one is 1200×700); give the part that matters at this moment, and another region for the next
+
+1. – screen-fit  scale 1.0157 (1.02× of covering) at left 0, top -95.1  score 0
+   picture x 0–1920, y 0–819, 24 % ground
+   region  x 305–1524, y 108–819 (1219×711), smallest text 16.3 px
+   caption band-below, x 360–1560, y 843–930, 1 line at 50 px
+   – screen text: the smallest text is 16.3 px tall in the frame, under the 42.7 px that read
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.17× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the screen's smallest text does not read; the source's pixels are enlarged 1.02×, not over the 1.5× from where it shows; the region is 1219×711 px, its smallest text 16.3 px tall; 24 % of the frame is ground; cost 2.42 (ground +2.42)
+
+2. – screen-whole  scale 0.7583 (0.76× of covering) at left 232, top 0  score 0
+   picture x 232–1688, y 0–819, 43 % ground
+   region  x 460–1370, y 152–683 (910×531), smallest text 12.1 px
+   caption band-below, x 360–1560, y 843–930, 1 line at 50 px
+   – screen text: the smallest text is 12.1 px tall in the frame, under the 42.7 px that read
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.17× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the screen's smallest text does not read; the source's pixels are not enlarged (0.76×); the region is 910×531 px, its smallest text 12.1 px tall; 43 % of the frame is ground; cost 4.505 (ground +4.25, subject +0.255); behind the first by 2.085 points (ground +1.83, subject +0.255)
+
+out/placement.json: 2 candidates, 0 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+None passes because the screen's text does not read at any size the frame leaves the region: take a narrower region (at most 647×266 px of the source), not less text.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

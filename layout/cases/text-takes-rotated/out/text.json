@@ -1,0 +1,161 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   1345.3,
+   696,
+   94.7
+  ],
+  "font": 77,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 72.5,
+  "where": "below-chin",
+  "options": {
+   "y": 1440,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 1
+  },
+  "seconds": 0,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 38.034,
+   "lift": 0,
+   "headCut": {
+    "seconds": 38,
+    "px": 153,
+    "byLift": 0
+   },
+   "eyes": 0.244,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "head",
+   "touches": []
+  }
+ ],
+ "hook": {
+  "kind": "text",
+  "box": [
+   192,
+   1036.8,
+   696,
+   238.1
+  ],
+  "font": 96,
+  "lines": 2,
+  "where": "below-chin",
+  "start": 0,
+  "until": 5,
+  "kindWhy": "a text: behind it the picture is calm"
+ },
+ "changes": [],
+ "conflicts": [],
+ "notes": [],
+ "candidates": [
+  {
+   "box": [
+    192,
+    1345.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 0,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 72.5
+  },
+  {
+   "box": [
+    192,
+    1355.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 30.4,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 72.8
+  },
+  {
+   "box": [
+    192,
+    1363.7,
+    696,
+    76.3
+   ],
+   "font": 62,
+   "cost": 57.1,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 73
+  },
+  {
+   "box": [
+    192,
+    365.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 1903092.2,
+   "seconds": 38,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 21.5
+  },
+  {
+   "box": [
+    192,
+    375.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 1903108,
+   "seconds": 38,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 21.7
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

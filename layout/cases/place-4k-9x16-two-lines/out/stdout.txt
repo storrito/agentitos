@@ -1,0 +1,11 @@
+$ place.mjs place out --frame 9:16 --source 3840x2160 --face 1700,400,560,700 --text caption:2 --platform reels,tiktok,shorts
+9:16 1080×1920 for Instagram Reels, TikTok, YouTube Shorts
+source 3840×2160, 1 face (x 1700–2260, y 400–1100); text: 2 caption lines
+
+1. ✓ full  scale 0.8889 (1× of covering) at left -1166.7, top 0  score 100
+   face    x 344–842, y 356–978 (498×622)
+   caption below-chin, x 192–888, y 1206–1440, 2 lines at 77 px
+   why: no hard problem; every text need met: 2 caption lines below-chin; the source's pixels are not enlarged (0.89×); the face is 622 px tall (32 % of the frame's height); the picture fills the frame; cost 0 (no term)
+
+out/placement.json: 1 candidate, 1 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

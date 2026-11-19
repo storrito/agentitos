@@ -50,6 +50,7 @@ A new skill that needs one of these says so in its SKILL.md and README ("needs a
 - Tools are made for agents: each step prints what it did and what to do next; an error is one sentence that says what to do. When something is missing (ffmpeg, a key), say so; never install it from a tool.
 - Node 20+ and ffmpeg; no npm packages unless a skill cannot do without them.
 - Models through OpenRouter only: `OPENROUTER_API_KEY`, else the Sprites gateway's connection (the README's "Models"). The gateway answered requests of 6 MB and refused 8 MB (413) on 2026-10-23, and answered bodies of 12 to 21.7 MB on 2026-11-18: sound goes as MP3 at 48 kbit/s in pieces of five minutes, which fit either way; the skills that guard a body by `GATEWAY_MAX` (7 MB) keep it.
+- Tests are `<skill>/tools/test*.mjs`, with no model, no key and no network, and GitHub runs every one of them on every push and pull request (`.github/workflows/tests.yml`; a new skill's tests are found by their names). The same on your machine, with Chrome and ffmpeg: `node .github/run-tests.mjs --install` (`layout captions` for some skills only, `--jobs 4` for four files at once); its last lines say which file failed and why. A pull request goes in with its run green.
 
 ## What goes into a SKILL.md
 

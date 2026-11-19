@@ -1,0 +1,52 @@
+$ place.mjs place out --frame 9:16 --source 1920x1080 --face 0,240,250,310 --text caption:2
+9:16 1080×1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels (no platform named: the usual ones of this frame)
+source 1920×1080, 1 face (x 0–250, y 240–550); text: 2 caption lines
+note: no crop that fills the frame holds the face in the safe box: a face touches the source's edge
+
+1. ! crop 4:5  scale 1.25 (0.7× of covering) at left 0, top 285  score 95.692
+   picture x 0–1080, y 285–1635, 30 % ground
+   face    x 0–313, y 585–973 (313×388)
+   caption below-chin, x 192–888, y 1206–1440, 2 lines at 77 px
+   ! face: in the safe box's margin (58 px past the left)
+   why: no hard problem; every text need met: 2 caption lines below-chin; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the face is 388 px tall (20 % of the frame's height); 30 % of the frame is ground; soft: face in the safe box's margin (58 px past the left); cost 4.308 (ground +2.97, subject +0.838, soft problems +0.5)
+
+2. ! crop 4:5, text on the ground  scale 1.25 (0.7× of covering) at left 0, top 570  score 95.492
+   picture x 0–1080, y 570–1920, 30 % ground
+   face    x 0–313, y 870–1258 (313×388)
+   caption band-above, x 192–888, y 312–546, 2 lines at 77 px
+   ! face: in the safe box's margin (58 px past the left)
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 2 caption lines band-above; the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows; the face is 388 px tall (20 % of the frame's height); 30 % of the frame is ground; soft: face in the safe box's margin (58 px past the left); cost 4.508 (ground +2.97, subject +0.838, soft problems +0.5, text away +0.2); behind the first by 0.2 points (text away +0.2)
+
+3. ! crop 1:1  scale 1 (0.56× of covering) at left 0, top 420  score 93.064
+   picture x 0–1080, y 420–1500, 44 % ground
+   face    x 0–250, y 660–970 (250×310)
+   caption below-chin, x 192–888, y 1206–1440, 2 lines at 77 px
+   ! face: in the safe box's margin (58 px past the left)
+   why: no hard problem; every text need met: 2 caption lines below-chin; the source's pixels are not enlarged (1×); the face is 310 px tall (16 % of the frame's height); 44 % of the frame is ground; soft: face in the safe box's margin (58 px past the left); cost 6.936 (ground +4.38, subject +2.056, soft problems +0.5); behind the first by 2.628 points (ground +1.41, subject +1.218)
+
+4. ! crop 1:1, text on the ground  scale 1 (0.56× of covering) at left 0, top 101.9  score 93.064
+   picture x 0–1080, y 102–1182, 44 % ground
+   face    x 0–250, y 342–652 (250×310)
+   caption band-below, x 192–888, y 1206–1440, 2 lines at 77 px
+   ! face: in the safe box's margin (58 px past the left)
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 2 caption lines band-below; the source's pixels are not enlarged (1×); the face is 310 px tall (16 % of the frame's height); 44 % of the frame is ground; soft: face in the safe box's margin (58 px past the left); cost 6.936 (ground +4.38, subject +2.056, soft problems +0.5); behind the first by 2.628 points (ground +1.41, subject +1.218)
+
+5. ! inset  scale 0.5625 (0.32× of covering) at left 0, top 574.4  score 88.479
+   picture x 0–1080, y 574–1182, 68 % ground
+   face    x 0–141, y 709–884 (141×174)
+   caption band-below, x 192–888, y 1206–1440, 2 lines at 77 px
+   ! face: in the safe box's margin (58 px past the left)
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 2 caption lines band-below; the source's pixels are not enlarged (0.56×); the face is 174 px tall (9 % of the frame's height); 68 % of the frame is ground; soft: face in the safe box's margin (58 px past the left); cost 11.521 (ground +6.84, subject +4.181, soft problems +0.5); behind the first by 7.213 points (ground +3.87, subject +3.343)
+
+6. ✗ full  scale 1.7778 (1× of covering) at left -1166.7, top 0  score 0
+   face    x -1167–-722, y 427–978 (444×551)
+   caption below-chin, x 192–888, y 1206–1440, 2 lines at 77 px
+   ✗ face: 100 % outside the frame
+   ! picture: the source's pixels are enlarged 1.78× (over 1.5×: soft)
+   why: fails: face 100 % outside the frame; every text need met: 2 caption lines below-chin; the source's pixels are enlarged 1.78×; the face is 551 px tall (29 % of the frame's height); the picture fills the frame; cost 1.667 (enlargement +1.667); behind the first because it has a hard problem
+
+out/placement.json: 6 candidates, 5 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

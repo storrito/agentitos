@@ -1,0 +1,193 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "full",
+ "area": {
+  "box": [
+   192,
+   957,
+   696,
+   483
+  ],
+  "top": 957,
+  "bottom": 1440,
+  "height": 483,
+  "share": 0.252,
+  "usual": 957,
+  "least": 1152,
+  "lower": 0,
+  "where": "below-mouths",
+  "seconds": {
+   "nose": 4,
+   "hair": 0,
+   "mouth": 0,
+   "lip": 0,
+   "chin": 5
+  },
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "n": 1,
+   "start": 0,
+   "end": 4,
+   "lift": 0,
+   "free": 0,
+   "ground": 0,
+   "most": 0,
+   "limit": "none",
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.494,
+   "eyesAre": "brows",
+   "on": {
+    "nose": 4,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 0
+   },
+   "touches": [
+    {
+     "who": "A",
+     "from": 0,
+     "to": 4,
+     "seconds": 4,
+     "nose": 4,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "chin": 0
+    }
+   ],
+   "fault": "nose"
+  },
+  {
+   "shot": 1,
+   "n": 2,
+   "start": 4,
+   "end": 9,
+   "lift": 0,
+   "free": 0,
+   "ground": 0,
+   "most": 0,
+   "limit": "none",
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.336,
+   "eyesAre": "brows",
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 5
+   },
+   "touches": [
+    {
+     "who": "A",
+     "from": 4,
+     "to": 9,
+     "seconds": 5,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "chin": 5
+    }
+   ]
+  }
+ ],
+ "conflicts": [
+  "Shot 1 (0–4 s): the type lies on A's nose or eyes for 4 s. What would avoid it: a lower top for the type (smaller type), a cut to another shot here, or a moment without this stretch."
+ ],
+ "notes": [
+  "Shot 2 (4–9 s): the type lies on A's chin or neck for 5 s, below the mouth."
+ ],
+ "candidates": [
+  {
+   "top": 957,
+   "share": 0.252,
+   "cost": 400005,
+   "mouth": 4,
+   "chin": 5,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 1,
+   "lifts": []
+  },
+  {
+   "top": 997,
+   "share": 0.231,
+   "cost": 400006.8,
+   "mouth": 4,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.917,
+   "lifts": []
+  },
+  {
+   "top": 1037,
+   "share": 0.21,
+   "cost": 400013.5,
+   "mouth": 4,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.834,
+   "lifts": []
+  },
+  {
+   "top": 1077,
+   "share": 0.189,
+   "cost": 400020.3,
+   "mouth": 4,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.752,
+   "lifts": []
+  },
+  {
+   "top": 1117,
+   "share": 0.168,
+   "cost": 400027,
+   "mouth": 4,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.669,
+   "lifts": []
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "raise": "full",
+  "lifts": {}
+ }
+}

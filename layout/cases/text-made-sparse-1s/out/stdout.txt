@@ -1,0 +1,8 @@
+$ place.mjs text out --frame 1080x1920 --shots shots.json --text caption --text hook --raise mouth --set caption.line=1.05 --set caption.padEm=0.18 --platform reels,tiktok,shorts
+1080x1920 for Instagram Reels, TikTok, YouTube Shorts, 1 shot
+captions: one place for the clip, 1 line of 77 px, x 192–888, y 1345–1440 (its middle at 72.5 % of the height, below-chin); on no face
+  shot 1  0.00–10.00 s  as it stands
+hook: a card at 64 px, top, x 60–1020, y 250–448, 0–2 s (a card at the top: no place clear of the faces' margins, this one lies least on them)
+note: The hook found no place clear of the faces' margins on the shots it is shown over; it stands at the top, on no face but within a face's margin (the hair, the ears, the neck): look at it on the sheet.
+Other places it weighed: 69 px with its middle at 72.8 % (on faces 0 s, 0 raised, cost 8); 62 px with its middle at 73 % (on faces 0 s, 0 raised, cost 15); 77 px with its middle at 23.6 % (on faces 10 s, 0 raised, cost 136.4); 69 px with its middle at 23.8 % (on faces 10 s, 0 raised, cost 144.2).
+out/text.json: for agentitos' captions --y 1440 --max-width 696 --font-size 77 --lines 1; each shot's lift for the framing. The choice is yours: --caption-y, --font-size and --lift <shot>:<px> fix one, and the rest is placed around it.

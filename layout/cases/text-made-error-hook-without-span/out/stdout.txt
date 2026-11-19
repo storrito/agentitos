@@ -1,0 +1,3 @@
+$ place.mjs text out --frame 1080x1920 --shots shots.json --text caption --text hook
+--text hook needs "hook": {"start": seconds, "end": seconds} in shots.json: when the hook is shown, on the shots' clock.
+(exit 1)

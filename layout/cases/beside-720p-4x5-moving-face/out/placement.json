@@ -1,0 +1,740 @@
+{
+ "kind": "beside",
+ "frame": "4:5",
+ "size": [
+  1080,
+  1350
+ ],
+ "platforms": [
+  "Instagram feed post",
+  "Facebook feed post",
+  "LinkedIn video"
+ ],
+ "fallback": true,
+ "source": [
+  1280,
+  720
+ ],
+ "faces": [
+  [
+   420,
+   140,
+   350,
+   280
+  ]
+ ],
+ "sources": [
+  {
+   "size": [
+    1280,
+    720
+   ],
+   "faces": [
+    [
+     420,
+     140,
+     350,
+     280
+    ]
+   ]
+  },
+  {
+   "size": null,
+   "material": true
+  }
+ ],
+ "speaker": {
+  "source": [
+   1280,
+   720
+  ],
+  "face": [
+   500,
+   150,
+   200,
+   240
+  ],
+  "hull": [
+   420,
+   140,
+   350,
+   280
+  ]
+ },
+ "material": {
+  "min": [
+   500,
+   300
+  ],
+  "ratio": 1.3333,
+  "fixed": null
+ },
+ "before": {
+  "scale": 1.875,
+  "left": -585,
+  "top": 0,
+  "window": [
+   0,
+   0,
+   1080,
+   1350
+  ],
+  "given": false,
+  "face": [
+   352.5,
+   281.3,
+   375,
+   450
+  ]
+ },
+ "needs": [
+  {
+   "role": "caption",
+   "lines": 1
+  }
+ ],
+ "notes": [
+  "in 1080×1350 the panel holds the face at 12 % of the frame's height or more while the material's field is at most 972×729 px; a material that needs more height gets the circle (nothing was measured in this frame)",
+  "no --before: the speaker full-frame before is taken as the source covering the frame (1.875× at -585, 0); give the placement you used, as --before scale,left,top, for the change's numbers"
+ ],
+ "limits": {
+  "faceMin": 162,
+  "above": {
+   "field": [
+    54,
+    59,
+    972,
+    729
+   ],
+   "says": "with the speaker's face at 12 % of the frame's height (162 px) the material's field is at most 972×729 px"
+  }
+ },
+ "candidates": [
+  {
+   "fit": "beside-above",
+   "arrangement": "above",
+   "material": {
+    "field": [
+     132.5,
+     54,
+     815.1,
+     611.3
+    ],
+    "area": [
+     0,
+     0,
+     1080,
+     756.3
+    ],
+    "share": 0.342
+   },
+   "speaker": {
+    "field": [
+     0,
+     756.3,
+     1080,
+     593.7
+    ],
+    "shape": "rect",
+    "scale": 1.0125,
+    "left": -67.5,
+    "top": 780.8,
+    "window": [
+     0,
+     780.8,
+     1080,
+     569.3
+    ],
+    "card": [
+     0,
+     823.3,
+     1080,
+     526.7
+    ],
+    "host": {
+     "scale": 0.54,
+     "left": 288.9,
+     "top": 780.8
+    },
+    "crop": [
+     66.7,
+     0,
+     1066.7,
+     562.2
+    ],
+    "face": [
+     438.8,
+     932.6,
+     202.5,
+     243
+    ],
+    "hull": [
+     357.8,
+     922.5,
+     354.4,
+     283.5
+    ],
+    "faceHeight": 243,
+    "facePct": 18,
+    "target": {
+     "asked": null,
+     "aimed": 18,
+     "given": 18,
+     "enlargement": 1.01
+    },
+    "share": 0.44,
+    "ground": 0.018
+   },
+   "captions": {
+    "where": "seam",
+    "box": [
+     54,
+     689.3,
+     972,
+     134
+    ],
+    "font": 77,
+    "lines": 1,
+    "align": "center",
+    "band": "the layout skill's own (the tallest block of captions' styles: 1 line at 77 px)"
+   },
+   "seam": 756.3,
+   "change": {
+    "before": {
+     "scale": 1.875,
+     "left": -585,
+     "top": 0,
+     "window": [
+      0,
+      0,
+      1080,
+      1350
+     ],
+     "face": [
+      352.5,
+      281.3,
+      375,
+      450
+     ],
+     "assumed": true
+    },
+    "after": {
+     "scale": 1.0125,
+     "left": -67.5,
+     "top": 780.8,
+     "window": [
+      0,
+      756.3,
+      1080,
+      593.7
+     ],
+     "face": [
+      438.8,
+      932.6,
+      202.5,
+      243
+     ]
+    },
+    "face": {
+     "dx": 0,
+     "dy": 547.9,
+     "zoom": 0.54
+    },
+    "says": "the face moves not across and 548 px down, and becomes 0.54× as large"
+   },
+   "scale": 1.0125,
+   "left": -67.5,
+   "top": 780.8,
+   "window": [
+    0,
+    780.8,
+    1080,
+    569.3
+   ],
+   "faceInFrame": [
+    [
+     132.5,
+     54,
+     815.1,
+     611.3
+    ],
+    [
+     357.8,
+     922.5,
+     354.4,
+     283.5
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "seam",
+     "box": [
+      54,
+      689.3,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      727.6,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center",
+     "band": "the layout skill's own (the tallest block of captions' styles: 1 line at 77 px)"
+    }
+   ],
+   "problems": [],
+   "crops": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "terms": {
+    "enlargement": 0,
+    "ground": 0.181,
+    "subject": 0,
+    "soft": 0
+   },
+   "cost": 0.181,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    181
+   ],
+   "why": [
+    "no hard problem",
+    "the material above, the speaker as a panel below it (what published Shorts do most where a screen and a face show together: usual, not shown to work)",
+    "the material's field is 815×611 px (34 % of the frame), at least the 500×300 it needs",
+    "the speaker's face is 243 px (18 % of the frame's height; 18 % is the usual below a screen), the footage enlarged 1.01×",
+    "2 % of the frame is ground beside the speaker's picture",
+    "the captions on the seam",
+    "cost 0.181 (ground +0.181)"
+   ],
+   "score": 99.819
+  },
+  {
+   "fit": "beside-pip",
+   "arrangement": "pip",
+   "material": {
+    "field": [
+     54,
+     297,
+     972,
+     729
+    ],
+    "area": [
+     0,
+     0,
+     1080,
+     1350
+    ],
+    "share": 0.486
+   },
+   "speaker": {
+    "field": [
+     853,
+     54,
+     173,
+     173
+    ],
+    "shape": "circle",
+    "corner": "top-right",
+    "scale": 0.3089,
+    "left": 755.7,
+    "top": 47.1,
+    "window": [
+     853,
+     54,
+     173,
+     173
+    ],
+    "card": [
+     853,
+     54,
+     173,
+     173
+    ],
+    "host": {
+     "scale": 0.1648,
+     "left": 864.4,
+     "top": 47.1
+    },
+    "crop": [
+     315,
+     22.4,
+     560,
+     560
+    ],
+    "face": [
+     910.2,
+     93.4,
+     61.8,
+     74.1
+    ],
+    "hull": [
+     885.4,
+     90.3,
+     108.1,
+     86.5
+    ],
+    "faceHeight": 74,
+    "facePct": 5.5,
+    "share": 0.021,
+    "ground": 0
+   },
+   "captions": {
+    "where": "below",
+    "box": [
+     54,
+     1096,
+     972,
+     134
+    ],
+    "font": 77,
+    "lines": 1,
+    "align": "center",
+    "band": "the layout skill's own (the tallest block of captions' styles: 1 line at 77 px)"
+   },
+   "change": {
+    "before": {
+     "scale": 1.875,
+     "left": -585,
+     "top": 0,
+     "window": [
+      0,
+      0,
+      1080,
+      1350
+     ],
+     "face": [
+      352.5,
+      281.3,
+      375,
+      450
+     ],
+     "assumed": true
+    },
+    "after": {
+     "scale": 0.3089,
+     "left": 755.7,
+     "top": 47.1,
+     "window": [
+      853,
+      54,
+      173,
+      173
+     ],
+     "round": true,
+     "face": [
+      910.2,
+      93.4,
+      61.8,
+      74.1
+     ]
+    },
+    "face": {
+     "dx": 401,
+     "dy": -375.8,
+     "zoom": 0.16
+    },
+    "says": "the face moves 401 px to the right and 376 px up, and becomes 0.16× as large"
+   },
+   "scale": 0.3089,
+   "left": 755.7,
+   "top": 47.1,
+   "window": [
+    853,
+    54,
+    173,
+    173
+   ],
+   "faceInFrame": [
+    [
+     54,
+     297,
+     972,
+     729
+    ],
+    [
+     885.4,
+     90.3,
+     108.1,
+     86.5
+    ]
+   ],
+   "circle": {
+    "box": [
+     853,
+     54,
+     173,
+     173
+    ],
+    "d": 173,
+    "corner": "top-right",
+    "crop": [
+     315,
+     22.4,
+     560,
+     560
+    ],
+    "of": "speaker",
+    "enlargement": 0.31,
+    "faceHeight": 74
+   },
+   "text": [
+    {
+     "role": "caption",
+     "where": "below",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center",
+     "band": "the layout skill's own (the tallest block of captions' styles: 1 line at 77 px)"
+    }
+   ],
+   "problems": [],
+   "crops": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "terms": {
+    "enlargement": 0,
+    "ground": 0,
+    "subject": 0,
+    "soft": 0
+   },
+   "cost": 0,
+   "rank": [
+    0,
+    0,
+    0,
+    1,
+    0
+   ],
+   "why": [
+    "no hard problem",
+    "the material over the frame, the speaker as a circle in its corner (a small picture in or at the screen: the rarer form in published Shorts)",
+    "the material's field is 972×729 px (49 % of the frame), at least the 500×300 it needs",
+    "the speaker's face is 74 px (5 % of the frame's height)",
+    "the captions at the safe box's bottom",
+    "cost 0 (no term)"
+   ],
+   "score": 100,
+   "behind": "behind the first by the usual order of this frame (above, then pip)"
+  }
+ ],
+ "defaults": {
+  "caption": {
+   "font": {
+    "tall": 77,
+    "wide": 50,
+    "least": 61
+   },
+   "line": 1.3,
+   "padEm": 0.44,
+   "minWidth": {
+    "tall": 540,
+    "wide": 600
+   },
+   "maxEm": 24,
+   "longWord": 9
+  },
+  "hookText": {
+   "font": 96,
+   "minFont": 72,
+   "heightEm": 2.48,
+   "line": 1.14,
+   "width": 0.72,
+   "centre": 0.53
+  },
+  "hookCard": {
+   "font": 76,
+   "minFont": 64,
+   "heightEm": 3.1,
+   "line": 1.14
+  },
+  "hookBig": {
+   "font": 112,
+   "minFont": 72,
+   "widthEm": 10,
+   "heightEm": 2.25,
+   "line": 1.08
+  },
+  "gap": 24,
+  "edgePad": 16,
+  "free": {
+   "above": 0.35,
+   "aboveMin": 16,
+   "below": 0.08,
+   "belowMin": 24,
+   "beside": 0.25,
+   "besideMin": 24
+  },
+  "facePad": 20,
+  "eyes": 0.42,
+  "eyeLine": 0.27,
+  "area": {
+   "least": 0.15,
+   "chin": 1,
+   "smaller": 3.6
+  },
+  "zoomStep": 0.01,
+  "zoomMax": 1.6,
+  "insetStep": 0.01,
+  "insetMin": 0.5,
+  "panelMin": 0.6,
+  "insetFace": 19,
+  "bands": [
+   "4:5",
+   "1:1"
+  ],
+  "track": {
+   "far": 2
+  },
+  "together": 2,
+  "togetherSize": 0.67,
+  "same": {
+   "px": 0.02,
+   "scale": 0.02
+  },
+  "readable": {
+   "height": 24,
+   "per": 1080
+  },
+  "circle": {
+   "tall": 0.22,
+   "square": 0.16,
+   "wide": 0.2,
+   "min": 0.12
+  },
+  "screenFace": {
+   "height": 0.18,
+   "panel": 0.5
+  },
+  "weights": {
+   "enlarge": {
+    "softFrom": 1.5,
+    "forbiddenFrom": 2,
+    "costAtForbidden": 3
+   },
+   "subject": {
+    "from": 23,
+    "to": 34,
+    "smaller": 0.3,
+    "larger": 0.05,
+    "regionEnough": 50
+   },
+   "ground": {
+    "cost": 0.1
+   },
+   "soft": {
+    "cost": 0.5
+   },
+   "text": {
+    "away": 0.05,
+    "hookSmaller": 0.02
+   }
+  },
+  "beside": {
+   "faceMin": 0.12,
+   "column": 0.3333333333333333,
+   "look": 0.1,
+   "pipCrop": 2,
+   "face": 0,
+   "faceUpTo": 0,
+   "wish": 0,
+   "wishUpTo": 0,
+   "side": "look",
+   "captions": "move",
+   "coverUpTo": 0
+  }
+ },
+ "tracks": [
+  {
+   "face": 1,
+   "source": 1,
+   "moments": 3,
+   "from": 0,
+   "to": 4,
+   "usual": [
+    500,
+    150,
+    200,
+    240
+   ],
+   "hull": [
+    420,
+    140,
+    350,
+    280
+   ],
+   "growth": {
+    "width": 1.75,
+    "height": 1.17,
+    "area": 2.04
+   },
+   "edges": {
+    "top": 4,
+    "bottom": 2,
+    "left": 4,
+    "right": 2
+   },
+   "times": [
+    0,
+    2,
+    4
+   ],
+   "boxes": [
+    {
+     "t": 0,
+     "box": [
+      500,
+      150,
+      200,
+      240
+     ]
+    },
+    {
+     "t": 2,
+     "box": [
+      560,
+      170,
+      210,
+      250
+     ]
+    },
+    {
+     "t": 4,
+     "box": [
+      420,
+      140,
+      200,
+      240
+     ]
+    }
+   ]
+  }
+ ],
+ "asked": {
+  "frame": "4:5",
+  "platforms": []
+ }
+}

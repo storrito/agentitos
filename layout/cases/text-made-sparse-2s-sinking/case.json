@@ -1,0 +1,23 @@
+{
+ "guards": "a track with one sample every two seconds whose head sinks toward the bottom: where the one caption place goes from the samples alone",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "guards": "the same box past the top for beside: it is cut back to the frame and said",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "beside",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face",
+   "540,-30,220,260",
+   "--material-min",
+   "600x340",
+   "--material-ratio",
+   "16:9",
+   "--text",
+   "caption"
+  ]
+ ]
+}

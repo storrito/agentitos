@@ -1,0 +1,25 @@
+{
+ "guards": "a clip without any face (a screen, a product): captions at the safe box's bottom and the hook, said as no face",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}

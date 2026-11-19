@@ -1,0 +1,178 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "full",
+ "area": {
+  "box": [
+   192,
+   1152,
+   696,
+   288
+  ],
+  "top": 1152,
+  "bottom": 1440,
+  "height": 288,
+  "share": 0.15,
+  "usual": 957,
+  "least": 1152,
+  "lower": 195,
+  "where": "below-mouths",
+  "seconds": {
+   "nose": 0,
+   "hair": 0,
+   "mouth": 0,
+   "lip": 0,
+   "chin": 6
+  },
+  "lifted": 1
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 6,
+   "lift": 348,
+   "free": 0,
+   "ground": 348,
+   "most": 427,
+   "limit": "eyes",
+   "headCut": {
+    "seconds": 6,
+    "px": 503,
+    "byLift": 348
+   },
+   "eyes": 0.171,
+   "eyesAre": "brows",
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 6
+   },
+   "touches": [
+    {
+     "who": "A",
+     "from": 0,
+     "to": 6,
+     "seconds": 6,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "chin": 6
+    }
+   ]
+  }
+ ],
+ "conflicts": [],
+ "notes": [
+  "Shot 1 (0–6 s): the type lies on A's chin or neck for 6 s, below the mouth.",
+  "Shot 1 (0–6 s): raised 348 px for the type, the frame cuts A's head at the top by up to 348 px more, the brows' top at 17 % of the height (the eyes a little lower) at their highest.",
+  "The type's area starts at y 1152, 195 px below its usual top (957): its type is 40 % smaller at most, so that it keeps off the faces' mouths."
+ ],
+ "candidates": [
+  {
+   "top": 1152,
+   "share": 0.15,
+   "cost": 71.4,
+   "mouth": 0,
+   "chin": 6,
+   "lifted": 1,
+   "liftPx": 348,
+   "size": 0.596,
+   "lifts": [
+    {
+     "shot": 0,
+     "px": 348
+    }
+   ]
+  },
+  {
+   "top": 1107,
+   "share": 0.173,
+   "cost": 72,
+   "mouth": 0,
+   "chin": 6,
+   "lifted": 1,
+   "liftPx": 393,
+   "size": 0.689,
+   "lifts": [
+    {
+     "shot": 0,
+     "px": 393
+    }
+   ]
+  },
+  {
+   "top": 957,
+   "share": 0.252,
+   "cost": 6053.4,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 1,
+   "liftPx": 427,
+   "size": 1,
+   "lifts": [
+    {
+     "shot": 0,
+     "px": 427
+    }
+   ]
+  },
+  {
+   "top": 997,
+   "share": 0.231,
+   "cost": 6057.9,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 1,
+   "liftPx": 427,
+   "size": 0.917,
+   "lifts": [
+    {
+     "shot": 0,
+     "px": 427
+    }
+   ]
+  },
+  {
+   "top": 1037,
+   "share": 0.21,
+   "cost": 6062.4,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 1,
+   "liftPx": 427,
+   "size": 0.834,
+   "lifts": [
+    {
+     "shot": 0,
+     "px": 427
+    }
+   ]
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "raise": "full",
+  "lifts": {}
+ }
+}

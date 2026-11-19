@@ -1,0 +1,21 @@
+{
+ "guards": "material beside a 720p speaker who moves (face track) in 4:5 with a caption line",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "beside",
+   "--frame",
+   "4:5",
+   "--source",
+   "1280x720",
+   "--face-track",
+   "track.json",
+   "--material-min",
+   "500x300",
+   "--material-ratio",
+   "4:3",
+   "--text",
+   "caption"
+  ]
+ ]
+}

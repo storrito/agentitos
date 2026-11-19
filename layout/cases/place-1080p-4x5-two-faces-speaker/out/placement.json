@@ -1,0 +1,1105 @@
+{
+ "frame": "4:5",
+ "size": [
+  1080,
+  1350
+ ],
+ "platforms": [
+  "Instagram feed post",
+  "Facebook feed post",
+  "LinkedIn video"
+ ],
+ "fallback": true,
+ "source": [
+  1920,
+  1080
+ ],
+ "faces": [
+  [
+   400,
+   200,
+   220,
+   260
+  ],
+  [
+   1200,
+   220,
+   230,
+   270
+  ]
+ ],
+ "needs": [
+  {
+   "role": "caption",
+   "lines": 1
+  }
+ ],
+ "defaults": {
+  "caption": {
+   "font": {
+    "tall": 77,
+    "wide": 50,
+    "least": 61
+   },
+   "line": 1.3,
+   "padEm": 0.44,
+   "minWidth": {
+    "tall": 540,
+    "wide": 600
+   },
+   "maxEm": 24,
+   "longWord": 9
+  },
+  "hookText": {
+   "font": 96,
+   "minFont": 72,
+   "heightEm": 2.48,
+   "line": 1.14,
+   "width": 0.72,
+   "centre": 0.53
+  },
+  "hookCard": {
+   "font": 76,
+   "minFont": 64,
+   "heightEm": 3.1,
+   "line": 1.14
+  },
+  "hookBig": {
+   "font": 112,
+   "minFont": 72,
+   "widthEm": 10,
+   "heightEm": 2.25,
+   "line": 1.08
+  },
+  "gap": 24,
+  "edgePad": 16,
+  "free": {
+   "above": 0.35,
+   "aboveMin": 16,
+   "below": 0.08,
+   "belowMin": 24,
+   "beside": 0.25,
+   "besideMin": 24
+  },
+  "facePad": 20,
+  "eyes": 0.42,
+  "eyeLine": 0.27,
+  "area": {
+   "least": 0.15,
+   "chin": 1,
+   "smaller": 3.6
+  },
+  "zoomStep": 0.01,
+  "zoomMax": 1.6,
+  "insetStep": 0.01,
+  "insetMin": 0.5,
+  "panelMin": 0.6,
+  "insetFace": 19,
+  "bands": [
+   "4:5",
+   "1:1"
+  ],
+  "track": {
+   "far": 2
+  },
+  "together": 2,
+  "togetherSize": 0.67,
+  "same": {
+   "px": 0.02,
+   "scale": 0.02
+  },
+  "readable": {
+   "height": 24,
+   "per": 1080
+  },
+  "circle": {
+   "tall": 0.22,
+   "square": 0.16,
+   "wide": 0.2,
+   "min": 0.12
+  },
+  "screenFace": {
+   "height": 0.18,
+   "panel": 0.5
+  },
+  "weights": {
+   "enlarge": {
+    "softFrom": 1.5,
+    "forbiddenFrom": 2,
+    "costAtForbidden": 3
+   },
+   "subject": {
+    "from": 23,
+    "to": 34,
+    "smaller": 0.3,
+    "larger": 0.05,
+    "regionEnough": 50
+   },
+   "ground": {
+    "cost": 0.1
+   },
+   "soft": {
+    "cost": 0.5
+   },
+   "text": {
+    "away": 0.05,
+    "hookSmaller": 0.02
+   }
+  }
+ },
+ "notes": [
+  "no crop that fills the frame holds the faces in the safe box: filling the frame with the faces inside the box takes the source at 1.25× or more (1× of what covers the frame), and there they span 1288×363 px, more than the safe box's 972×1176; they fit the box only up to 0.94×, where the picture no longer fills the frame"
+ ],
+ "candidates": [
+  {
+   "fit": "crop",
+   "scale": 1.25,
+   "left": -97.5,
+   "top": 0,
+   "zoom": 1,
+   "enlargement": 1.25,
+   "crop": "4:5",
+   "window": [
+    0,
+    0,
+    1080,
+    1350
+   ],
+   "faceInFrame": [
+    [
+     402.5,
+     250,
+     275,
+     325
+    ]
+   ],
+   "speaker": 1,
+   "leftOut": 1,
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "ground": 0,
+   "faceHeight": 325,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 0,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 0,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "score": 100,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line below-chin",
+    "the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows",
+    "the speaker's face (face 1) is 325 px tall (24 % of the frame's height)",
+    "the picture fills the frame",
+    "cost 0 (no term)"
+   ]
+  },
+  {
+   "fit": "stacked",
+   "scale": 1.1938,
+   "left": -68.8,
+   "top": -144.1,
+   "zoom": 0.96,
+   "enlargement": 1.19,
+   "window": [
+    0,
+    0,
+    1080,
+    1350
+   ],
+   "faceInFrame": [
+    [
+     408.7,
+     94.6,
+     262.6,
+     310.4
+    ],
+    [
+     402.7,
+     874.8,
+     274.6,
+     322.3
+    ]
+   ],
+   "parts": [
+    {
+     "source": 1,
+     "scale": 1.1938,
+     "left": -68.8,
+     "top": -144.1,
+     "window": [
+      0,
+      0,
+      1080,
+      675
+     ]
+    },
+    {
+     "source": 1,
+     "scale": 1.1938,
+     "left": -1029.8,
+     "top": 612.2,
+     "window": [
+      0,
+      675,
+      1080,
+      675
+     ]
+    }
+   ],
+   "seam": 675,
+   "text": [
+    {
+     "role": "caption",
+     "where": "seam",
+     "on": "picture",
+     "box": [
+      54,
+      608,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      646.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "ground": 0,
+   "faceHeight": 310,
+   "textPenalty": 0,
+   "variant": 1,
+   "terms": {
+    "enlargement": 0,
+    "ground": 0,
+    "subject": 0.011,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 0.011,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    11,
+    1,
+    1
+   ],
+   "score": 99.989,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line seam",
+    "the source's pixels are enlarged 1.19×, not over the 1.5× from where it shows",
+    "the speaker's face (face 1) is 310 px tall (23 % of the frame's height)",
+    "the picture fills the frame",
+    "cost 0.011 (subject +0.011)"
+   ],
+   "behind": "behind the first by 0.011 points (subject +0.011)"
+  },
+  {
+   "fit": "crop",
+   "scale": 1,
+   "left": 0,
+   "top": 270,
+   "zoom": 0.8,
+   "enlargement": 1,
+   "crop": "1:1",
+   "window": [
+    0,
+    270,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     400,
+     470,
+     220,
+     260
+    ]
+   ],
+   "speaker": 1,
+   "leftOut": 1,
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 1.46× the source, centred"
+   },
+   "ground": 0.2,
+   "faceHeight": 260,
+   "textPenalty": 0,
+   "variant": 135,
+   "terms": {
+    "enlargement": 0,
+    "ground": 2,
+    "subject": 1.122,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 3.122,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    3122,
+    0,
+    135
+   ],
+   "score": 96.878,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line below-chin",
+    "the source's pixels are not enlarged (1×)",
+    "the speaker's face (face 1) is 260 px tall (19 % of the frame's height)",
+    "20 % of the frame is ground",
+    "cost 3.122 (ground +2, subject +1.122)"
+   ],
+   "behind": "behind the first by 3.122 points (ground +2, subject +1.122)"
+  },
+  {
+   "fit": "crop",
+   "scale": 1,
+   "left": 0,
+   "top": 0,
+   "zoom": 0.8,
+   "enlargement": 1,
+   "crop": "1:1",
+   "window": [
+    0,
+    0,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     400,
+     200,
+     220,
+     260
+    ]
+   ],
+   "speaker": 1,
+   "leftOut": 1,
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 1.46× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.2,
+   "faceHeight": 260,
+   "textPenalty": 0,
+   "variant": 135,
+   "terms": {
+    "enlargement": 0,
+    "ground": 2,
+    "subject": 1.122,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 3.122,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    3122,
+    0,
+    135
+   ],
+   "onGround": true,
+   "score": 96.878,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are not enlarged (1×)",
+    "the speaker's face (face 1) is 260 px tall (19 % of the frame's height)",
+    "20 % of the frame is ground",
+    "cost 3.122 (ground +2, subject +1.122)"
+   ],
+   "behind": "behind the first by 3.122 points (ground +2, subject +1.122)"
+  },
+  {
+   "fit": "crop",
+   "scale": 0.9375,
+   "left": -317.8,
+   "top": 59.5,
+   "zoom": 0.75,
+   "enlargement": 0.94,
+   "crop": "band",
+   "window": [
+    0,
+    59.5,
+    1080,
+    1012.5
+   ],
+   "faceInFrame": [
+    [
+     57.2,
+     247,
+     206.3,
+     243.8
+    ],
+    [
+     807.2,
+     265.8,
+     215.6,
+     253.1
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 1.46× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.25,
+   "faceHeight": 244,
+   "textPenalty": 0,
+   "variant": 109,
+   "terms": {
+    "enlargement": 0,
+    "ground": 2.5,
+    "subject": 1.478,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 3.978,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    3978,
+    1,
+    109
+   ],
+   "score": 96.022,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are not enlarged (0.94×)",
+    "the speaker's face (face 1) is 244 px tall (18 % of the frame's height)",
+    "25 % of the frame is ground",
+    "cost 3.978 (ground +2.5, subject +1.478)"
+   ],
+   "behind": "behind the first by 3.978 points (ground +2.5, subject +1.478)"
+  },
+  {
+   "fit": "crop",
+   "scale": 1,
+   "left": -375,
+   "top": 270,
+   "zoom": 0.8,
+   "enlargement": 1,
+   "crop": "1:1",
+   "window": [
+    0,
+    270,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     25,
+     470,
+     220,
+     260
+    ],
+    [
+     825,
+     490,
+     230,
+     270
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "margin",
+     "kind": "face",
+     "of": "face 1",
+     "what": "in the safe box's margin (27 px past the left)"
+    },
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "face 1",
+     "what": "3 % cut where the profile grid shows 3:4"
+    },
+    {
+     "level": "soft",
+     "code": "margin",
+     "kind": "face",
+     "of": "face 2",
+     "what": "in the safe box's margin (27 px past the right)"
+    },
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "face 2",
+     "what": "3 % cut where the profile grid shows 3:4"
+    }
+   ],
+   "hard": 0,
+   "soft": 4,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 1.46× the source, centred"
+   },
+   "ground": 0.2,
+   "faceHeight": 260,
+   "textPenalty": 0,
+   "variant": 135,
+   "terms": {
+    "enlargement": 0,
+    "ground": 2,
+    "subject": 1.122,
+    "soft": 2,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 5.122,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    5122,
+    1,
+    135
+   ],
+   "score": 94.878,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line below-chin",
+    "the source's pixels are not enlarged (1×)",
+    "the speaker's face (face 1) is 260 px tall (19 % of the frame's height)",
+    "20 % of the frame is ground",
+    "soft: face 1 in the safe box's margin (27 px past the left); face 1 3 % cut where the profile grid shows 3:4; face 2 in the safe box's margin (27 px past the right); face 2 3 % cut where the profile grid shows 3:4",
+    "cost 5.122 (ground +2, subject +1.122, soft problems +2)"
+   ],
+   "behind": "behind the first by 5.122 points (ground +2, soft problems +2, subject +1.122)"
+  },
+  {
+   "fit": "crop",
+   "scale": 1,
+   "left": -375,
+   "top": 0,
+   "zoom": 0.8,
+   "enlargement": 1,
+   "crop": "1:1",
+   "window": [
+    0,
+    0,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     25,
+     200,
+     220,
+     260
+    ],
+    [
+     825,
+     220,
+     230,
+     270
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "margin",
+     "kind": "face",
+     "of": "face 1",
+     "what": "in the safe box's margin (27 px past the left)"
+    },
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "face 1",
+     "what": "3 % cut where the profile grid shows 3:4"
+    },
+    {
+     "level": "soft",
+     "code": "margin",
+     "kind": "face",
+     "of": "face 2",
+     "what": "in the safe box's margin (27 px past the right)"
+    },
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "face 2",
+     "what": "3 % cut where the profile grid shows 3:4"
+    }
+   ],
+   "hard": 0,
+   "soft": 4,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 1.46× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.2,
+   "faceHeight": 260,
+   "textPenalty": 0,
+   "variant": 135,
+   "terms": {
+    "enlargement": 0,
+    "ground": 2,
+    "subject": 1.122,
+    "soft": 2,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 5.122,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    5122,
+    1,
+    135
+   ],
+   "onGround": true,
+   "score": 94.878,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are not enlarged (1×)",
+    "the speaker's face (face 1) is 260 px tall (19 % of the frame's height)",
+    "20 % of the frame is ground",
+    "soft: face 1 in the safe box's margin (27 px past the left); face 1 3 % cut where the profile grid shows 3:4; face 2 in the safe box's margin (27 px past the right); face 2 3 % cut where the profile grid shows 3:4",
+    "cost 5.122 (ground +2, subject +1.122, soft problems +2)"
+   ],
+   "behind": "behind the first by 5.122 points (ground +2, soft problems +2, subject +1.122)"
+  },
+  {
+   "fit": "inset",
+   "scale": 0.5625,
+   "left": 0,
+   "top": 371.3,
+   "zoom": 0.45,
+   "enlargement": 0.56,
+   "window": [
+    0,
+    371.3,
+    1080,
+    607.5
+   ],
+   "faceInFrame": [
+    [
+     225,
+     483.8,
+     123.8,
+     146.3
+    ],
+    [
+     675,
+     495,
+     129.4,
+     151.9
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 1.46× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     }
+    ]
+   },
+   "ground": 0.55,
+   "faceHeight": 146,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 5.5,
+    "subject": 3.656,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 9.156,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    9156,
+    1,
+    0
+   ],
+   "score": 90.844,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below",
+    "the source's pixels are not enlarged (0.56×)",
+    "the speaker's face (face 1) is 146 px tall (11 % of the frame's height)",
+    "55 % of the frame is ground",
+    "cost 9.156 (ground +5.5, subject +3.656)"
+   ],
+   "behind": "behind the first by 9.156 points (ground +5.5, subject +3.656)"
+  },
+  {
+   "fit": "full",
+   "scale": 1.25,
+   "left": -660,
+   "top": 0,
+   "zoom": 1,
+   "enlargement": 1.25,
+   "window": [
+    0,
+    0,
+    1080,
+    1350
+   ],
+   "faceInFrame": [
+    [
+     -160,
+     250,
+     275,
+     325
+    ],
+    [
+     840,
+     275,
+     287.5,
+     337.5
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      54,
+      1096,
+      972,
+      134
+     ],
+     "ink": [
+      54,
+      1134.4,
+      972,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "hard",
+     "code": "off-frame",
+     "kind": "face",
+     "of": "face 1",
+     "what": "58 % outside the frame"
+    },
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "face 1",
+     "what": "30 % cut where the profile grid shows 3:4"
+    },
+    {
+     "level": "hard",
+     "code": "off-frame",
+     "kind": "face",
+     "of": "face 2",
+     "what": "16 % outside the frame"
+    },
+    {
+     "level": "soft",
+     "code": "crop",
+     "kind": "face",
+     "of": "face 2",
+     "what": "14 % cut where the profile grid shows 3:4"
+    }
+   ],
+   "hard": 2,
+   "soft": 2,
+   "unmet": [],
+   "fullSize": true,
+   "ground": 0,
+   "faceHeight": 325,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 0,
+    "subject": 0,
+    "soft": 1,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 1,
+   "rank": [
+    1,
+    0,
+    0,
+    0,
+    1000,
+    1,
+    0
+   ],
+   "score": 0,
+   "why": [
+    "fails: face 1 58 % outside the frame; face 2 16 % outside the frame",
+    "every text need met: 1 caption line below-chin",
+    "the source's pixels are enlarged 1.25×, not over the 1.5× from where it shows",
+    "the speaker's face (face 1) is 325 px tall (24 % of the frame's height)",
+    "the picture fills the frame",
+    "soft: face 1 30 % cut where the profile grid shows 3:4; face 2 14 % cut where the profile grid shows 3:4",
+    "cost 1 (soft problems +1)"
+   ],
+   "behind": "behind the first because it has a hard problem"
+  }
+ ],
+ "asked": {
+  "frame": "4:5",
+  "platforms": []
+ }
+}

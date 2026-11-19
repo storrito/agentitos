@@ -1,0 +1,7 @@
+$ place.mjs text out --frame 1080x1920 --shots shots.json --text area --area-top 957 --raise full
+1080x1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels, 1 shot
+the type: one area for the clip, x 192–888, y 957–1440 (25 % of the height, its usual top); on a mouth, nose or eyes 6 s, on a chin or neck 0 s
+  shot 1  0.00–6.00 s  as it stands, the eyes from about 54 % of the height (by the head's proportions)  ✗ on A 0–6 s (the nose or eyes 6 s); B 0–6 s (the nose or eyes 6 s)
+✗ Shot 1 (0–6 s): the type lies on A and B's nose or eyes for 6 s. What would avoid it: a lower top for the type (smaller type), a cut to another shot here, or a moment without this stretch.
+It took y 957 at a cost of 600000. Other tops it weighed: y 997 (the type 92 % of its usual size, nothing raised; on a mouth, nose or eyes 6 s, on a chin 0 s; cost 600004.5); y 1037 (the type 83 % of its usual size, nothing raised; on a mouth, nose or eyes 6 s, on a chin 0 s; cost 600009); y 1077 (the type 75 % of its usual size, nothing raised; on a mouth, nose or eyes 6 s, on a chin 0 s; cost 600013.5); y 1117 (the type 67 % of its usual size, nothing raised; on a mouth, nose or eyes 6 s, on a chin 0 s; cost 600018).
+out/text.json: the area's top for the type, each shot's lift for the framing. The choice is yours: --top <px> and --lift <shot>:<px> fix one, --raise how far a picture may go up, and the rest is placed around it.

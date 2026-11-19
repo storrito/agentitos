@@ -1,0 +1,23 @@
+{
+ "guards": "a tight close-up (the head about two thirds of the height): how far it is raised, where captions and the hook go",
+ "from": "a real take of one person talking to the camera (public-domain footage), the shots best-takes' place step wrote, with best-takes' arguments",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18"
+  ]
+ ]
+}

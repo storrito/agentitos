@@ -1,0 +1,170 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   766,
+   696,
+   134
+  ],
+  "font": 77,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 43.4,
+  "where": "below-chin",
+  "options": {
+   "y": 900,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 1
+  },
+  "seconds": 6,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 6,
+   "lift": 0,
+   "headCut": {
+    "seconds": 6,
+    "px": 76,
+    "byLift": 0
+   },
+   "eyes": 0.147,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": [
+    {
+     "role": "caption",
+     "who": "B",
+     "from": 0,
+     "to": 6,
+     "seconds": 6,
+     "nose": 0,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "share": 0
+    }
+   ],
+   "on": {
+    "nose": 0,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 6
+   },
+   "chin": true
+  }
+ ],
+ "hook": null,
+ "changes": [],
+ "conflicts": [],
+ "notes": [
+  "Shot 1 (0–6 s): the captions lie on B's chin or neck for 6 s, below the mouth."
+ ],
+ "candidates": [
+  {
+   "box": [
+    192,
+    766,
+    696,
+    134
+   ],
+   "font": 77,
+   "cost": 70,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 43.4
+  },
+  {
+   "box": [
+    192,
+    779.9,
+    696,
+    120.1
+   ],
+   "font": 69,
+   "cost": 74.6,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 43.7
+  },
+  {
+   "box": [
+    192,
+    792.1,
+    696,
+    107.9
+   ],
+   "font": 62,
+   "cost": 78.6,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 44.1
+  },
+  {
+   "box": [
+    192,
+    1306,
+    696,
+    134
+   ],
+   "font": 77,
+   "cost": 120109.5,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 71.5
+  },
+  {
+   "box": [
+    192,
+    1319.9,
+    696,
+    120.1
+   ],
+   "font": 69,
+   "cost": 120109.8,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 71.9
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

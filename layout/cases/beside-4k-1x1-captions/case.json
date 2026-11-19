@@ -1,0 +1,21 @@
+{
+ "guards": "16:9 material beside a 4K speaker in 1:1 with a caption line",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "beside",
+   "--frame",
+   "1:1",
+   "--source",
+   "3840x2160",
+   "--face",
+   "1700,420,520,640",
+   "--material-min",
+   "500x280",
+   "--material-ratio",
+   "16:9",
+   "--text",
+   "caption"
+  ]
+ ]
+}

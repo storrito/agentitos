@@ -1,0 +1,17 @@
+{
+ "guards": "a face box that begins above the frame's top (a webcam read off a grid): place refuses it in one sentence",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1280x720",
+   "--face",
+   "540,-30,220,260",
+   "--text",
+   "caption"
+  ]
+ ]
+}

@@ -1,0 +1,11 @@
+$ place.mjs place out --frame 1:1 --source 1920x1080 --face 900,250,260,300 --text caption
+1:1 1080×1080 for Instagram feed post, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+source 1920×1080, 1 face (x 900–1160, y 250–550); text: 1 caption line
+
+1. ✓ full  scale 1 (1× of covering) at left -420, top 0  score 100
+   face    x 480–740, y 250–550 (260×300)
+   caption below-chin, x 135–945, y 826–960, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are not enlarged (1×); the face is 300 px tall (28 % of the frame's height); the picture fills the frame; cost 0 (no term)
+
+out/placement.json: 1 candidate, 1 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.
