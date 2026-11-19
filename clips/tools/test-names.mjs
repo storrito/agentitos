@@ -572,3 +572,21 @@ test("the second look: a place the first call pointed to wrongly (another Lars, 
   assert.match(none.out, /0 corrections applied/);
   fs.rmSync(dir, { recursive: true });
 });
+
+test("clips.mjs names: a place left as heard says what the clip heard, why nothing changed, and that leaving an ordinary word is right", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clips-names-heard-"));
+  const episode = path.join(tmp, "episode"), clip = path.join(tmp, "01");
+  fs.mkdirSync(episode); fs.mkdirSync(path.join(clip, "takes", "source"), { recursive: true });
+  // the review's case: the episode heard "Lars" (corrected to the rapper Laas), the clip "das"
+  fs.writeFileSync(path.join(episode, "names.json"), JSON.stringify({ entries: [{ n: 1, status: "applied", from: "Lars", to: "Laas", places: [{ start: 110.0, end: 110.3 }] }] }));
+  fs.writeFileSync(path.join(clip, "clip.json"), JSON.stringify({ from: 100, to: 120, episode }));
+  fs.writeFileSync(path.join(clip, "takes", "source", "words.json"), JSON.stringify({ words: [
+    { i: 0, text: "dass", start: 9.6, end: 9.9, kind: "word" }, { i: 1, text: "das", start: 10.0, end: 10.3, kind: "word" }, { i: 2, text: "geschrieben", start: 10.3, end: 10.9, kind: "word" }] }));
+  fs.writeFileSync(path.join(clip, "takes", "cut.json"), JSON.stringify({ keep: [{ words: "0-2" }] }));
+  const r = spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "names", clip], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^Left as heard at 10\.0 s: the clip heard "das" where the episode's list writes "Laas", and nothing was changed \(the clip heard something else there\)\. Read the brief there: where the clip heard that name otherwise spelt, put "Laas" in cut\.json "fixes"; where it heard another word \("das"\), leave it: that is what was said in this clip\./m);
+  assert.doesNotMatch(r.stdout, /yourself/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(clip, "takes", "cut.json"), "utf8")).fixes, undefined);
+  fs.rmSync(tmp, { recursive: true });
+});

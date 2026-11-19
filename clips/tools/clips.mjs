@@ -247,7 +247,9 @@ function namesNote(named) {
   return [
     named.found.length ? `The names: ${named.found.map((f) => `"${f.heard}" → "${f.to}" (word${f.words.length > 1 ? "s" : ""} ${f.words.join(", ")})`).join(", ")} in cut.json "fixes", as the episode's names list has them.` : "",
     named.removed.length ? `Taken back from cut.json "fixes" (the list no longer applies them): ${named.removed.map((i) => `word ${i} "${word(i)}"`).join(", ")}.` : "",
-    named.missed.length ? `Not found in the clip's words: ${named.missed.map((m) => `"${m.to}" at ${m.at.toFixed(1)} s${m.heard ? ` (the clip heard "${m.heard}")` : ""}`).join(", ")}: read the brief there and fix the spelling in cut.json "fixes" yourself.` : "",
+    // a place left as heard: what was heard, why nothing was changed, and that leaving it is right
+    // where the clip did not hear the name
+    ...named.missed.map((m) => `Left as heard at ${m.at.toFixed(1)} s: ${m.heard ? `the clip heard "${m.heard}"` : "the clip has no word there"} where the episode's list writes "${m.to}", and nothing was changed (${m.why}). Read the brief there: where the clip heard that name otherwise spelt, put "${m.to}" in cut.json "fixes"; where it heard another word${m.heard ? ` ("${m.heard}")` : ""}, leave it: that is what was said in this clip.`),
   ].filter(Boolean).join("\n");
 }
 
