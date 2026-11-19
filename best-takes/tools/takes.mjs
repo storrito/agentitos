@@ -65,7 +65,7 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
-import { pieceSpan, clockOf, covering, inFrame, faceTrack, facesFault, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
+import { pieceSpan, clockOf, covering, inFrame, faceTrack, facesFault, rankPictures, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
@@ -609,7 +609,7 @@ function cmdPlace(dir, opts) {
 
   // each video in the frame: covering it where it has the frame's shape (within 15 %, as clips
   // frames only wider footage), else layout's first candidate that passes; the agent's number wins
-  const pictures = {}, said = [];
+  const pictures = {}, said = [], choices = {};
   for (const c of shown) {
     const cover = { ...covering([c.width, c.height], [W, H]), fit: "cover" };
     const track = faceTrack(faces[c.file], pieces, c.n);
@@ -620,20 +620,27 @@ function cmdPlace(dir, opts) {
     fs.writeFileSync(pf, JSON.stringify(track));
     const r = spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
     if (r.status) fail(`✗ layout place for ${c.file}: ${(r.stderr || r.stdout).trim()}`);
-    const res = JSON.parse(r.stdout), list = res.candidates.map((x, i) => ({ ...x, n: i + 1 })).filter((x) => !x.parts && Number.isFinite(x.scale));
+    const res = JSON.parse(r.stdout);
+    // the face's usual height (the median of the track) as each candidate shows it
+    const hs = track.map((m) => m.box[3]).sort((a, b) => a - b), usual = hs[hs.length >> 1];
+    const ranked = rankPictures(res.candidates, usual, H), list = ranked;
     const passes = (x) => !x.hard && !x.unmet.length;
     const name = (x) => `${x.fit}${x.crop ? ` ${x.crop}` : ""}${x.closer ? " closer" : ""}${x.onGround ? ", text on the ground" : ""}`;
+    const asPic = (x) => ({ scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) });
     let chosen;
     if (want === "cover") chosen = cover;
     else if (Number.isInteger(want)) {
       const x = list.find((y) => y.n === want);
       if (!x) fail(`--picture ${c.file}:${want}: layout gives ${c.file} ${list.length} candidate(s) of one picture (${list.map((y) => y.n).join(", ")}); name one of them, or cover.`);
-      chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) };
+      chosen = asPic(x);
     } else if (sameShape) chosen = cover;
-    else { const x = list.find(passes) || list[0]; chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) }; }
+    else chosen = asPic(ranked[0]);
     pictures[c.file] = chosen;
     const mark = (x) => (x.hard ? "✗" : x.unmet.length ? "–" : x.soft ? "!" : "✓");
-    said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}` : `${chosen.fit} at ${chosen.scale}×, left ${chosen.left}, top ${chosen.top}${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates: ${list.slice(0, 5).map((x) => `${x.n}. ${mark(x)} ${name(x)} ${x.scale}×${x.problems.filter((q) => q.level === "hard").length ? ` (${x.problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ").slice(0, 90)})` : ""}`).join("; ")}`);
+    const reason = (x) => [...x.problems.filter((q) => q.level !== "info").map((q) => `${q.of}: ${q.what}`), ...x.unmet.map((u) => `no place for the ${u}`)].join("; ");
+    const line = (x) => `${x.n}. ${mark(x)} ${name(x)} at ${x.scale}× (the video's pixels ${x.scale > 1 ? `enlarged ${x.scale}×` : `at ${x.scale}×`}), the face ${Math.round(x.face * 100)} % of the height${reason(x) ? `: ${reason(x)}` : ""}${chosen.n === x.n ? "  ← taken" : ""}`;
+    choices[c.file] = { list: ranked, cover: sameShape || want === "cover" ? cover : null, usual, mark, name };
+    said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}, the face ${Math.round(((usual * cover.scale) / H) * 100)} % of the height` : `${chosen.fit} at ${chosen.scale}×${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates, the best for a person's take first:\n    ${ranked.slice(0, 5).map(line).join("\n    ")}`);
   }
 
   // the captions and the hook over the whole cut, each video one shot of layout's text
@@ -714,8 +721,27 @@ function cmdPlace(dir, opts) {
     const pic = pictures[cl.file];
     return { video: source(dir, cl.file), label: `${cl.file}${pic.lift ? ` raised ${pic.lift}` : ""}`, pic: { ...pic, w: cl.width, h: cl.height }, ground: pic.ground ? source(dir, pic.ground) : null, moments };
   });
-  const sheet = placedSheet(rows, { caption: c?.box, hook: text.hook?.box }, path.join(dir, "placed.sheet.jpg"), [W, H]);
-  if (sheet) console.log(`Look at ${rel(sheet)}: a row per video, the frame as placed at the first and last second the cut keeps of it and where its face is lowest and highest, the captions' box yellow, the hook's cyan, the faces red.`);
+  // and under each video's row the first three of layout's candidates as the list ranks them, at
+  // the moment its face is lowest, each with its own text: the agent chooses from one sheet
+  const candRows = [];
+  for (const cl of shown) {
+    const ch = choices[cl.file], row = rows.find((r) => r.video === source(dir, cl.file));
+    if (!ch || !row) continue;
+    const g = source(dir, `${kOf(cl)}.ground.jpg`);
+    const kept = pieces.filter((p) => p.clip === cl.n), mid = kept[Math.floor(kept.length / 2)];
+    if (!fs.existsSync(g)) groundStill(source(dir, cl.file), (mid.in + mid.out) / 2, g, [W, H]);
+    const m = row.moments.find((x) => x.what === "lowest face") || row.moments[0];
+    const near = faces[cl.file].faces.reduce((a, b) => (Math.abs(b.t - m.t) < Math.abs(a.t - m.t) ? b : a));
+    const cells = ch.list.slice(0, 3).map((x) => {
+      const pic = { scale: x.scale, left: x.left, top: x.top, ...(x.window ? { window: x.window } : {}), w: cl.width, h: cl.height };
+      const t = (role) => x.text.find((q) => q.role === role)?.box;
+      return { t: m.t, what: "", hook: true, pic, ground: fs.existsSync(g) ? g : null, faces: near.boxes.map((b) => inFrame(b.box, pic)), text: { caption: t("caption"), hook: t("hook") },
+        label: `${pictures[cl.file].n === x.n ? "TAKEN " : ""}${x.n} ${ch.mark(x)} ${x.fit}${x.crop ? ` ${x.crop.replace(":", "x")}` : ""} ${x.scale.toFixed(2)}x face ${Math.round(x.face * 100)}` };
+    });
+    if (cells.length) candRows.push({ ...row, label: `${cl.file} candidates`, moments: cells });
+  }
+  const sheet = placedSheet([...rows, ...candRows], { caption: c?.box, hook: text.hook?.box }, path.join(dir, "placed.sheet.jpg"), [W, H]);
+  if (sheet) console.log(`Look at ${rel(sheet)}: a row per video, the frame as placed at the first and last second the cut keeps of it and where its face is lowest and highest, the captions' box yellow, the hook's cyan, the faces red${candRows.length ? `; under them layout's first three candidates as listed, each with its own text: --picture <number> takes another` : ""}.`);
   console.log(`To change it: --picture [<video>:]<candidate>|cover (another of layout's candidates for that video), --raise head|mouth|full, --caption-y <px> and --font-size <px> for the captions, --lift [<video>:]<px>, --lines 1|2, --hook-kind text|card; each is kept for the next run, "" gives it back to layout.`);
   if (built) cmdBuild(dir, {});
   else console.log(`Next: node ${self()} build ${rel(dir)}, then place again (the hook's seconds are the cut's, the area the captions' style).`);

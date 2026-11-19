@@ -415,7 +415,7 @@ test("a face that fills the frame already (its box half the frame's height or mo
 });
 
 // ------------------------------------------------------------------- on its own: faces, picture, text
-import { covering, inFrame, faceTrack, facesFault, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { covering, inFrame, faceTrack, facesFault, rankPictures, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
 import { pieceStyle } from "./lib/composition.mjs";
 
 test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
@@ -507,4 +507,15 @@ test("on its own: faces of a phone's take stored on its side, found before the f
   // a box a little past the bottom edge: taken to the edge for layout, which refuses faces not there
   const list = { size: [1080, 1920], faces: [{ t: 0, boxes: [{ who: "A", box: [300, 1200, 600, 800] }] }] };
   assert.deepEqual(faceTrack(list, [{ clip: 1, in: 0, out: 1 }], 1)[0].box, [300, 1200, 600, 720]);
+});
+
+test("on its own: a wide 720p take is placed so that its face comes nearest the usual size under the hard limit of enlargement, not smallest for sharpness (the review: the square band at 1.5×, the face 14 %, before the 4:5 crop at 1.875×)", () => {
+  // layout's candidates for the Epps interview, in layout's order, the model's face 309 px tall
+  const c = (fit, crop, scale, extra = {}) => ({ fit, crop, scale, left: 0, top: 0, hard: 0, unmet: [], soft: 0, problems: [], text: [], ...extra });
+  const list = [c("crop", "1:1", 1.5), c("crop", "1:1", 1.5, { onGround: true }), c("crop", "4:5", 1.875, { soft: 1 }), c("inset", null, 0.8438), c("full", null, 2.6667, { hard: 1 })];
+  const r = rankPictures(list, 309, 1920);
+  assert.deepEqual(r.map((x) => x.n), [3, 1, 2, 4, 5]);
+  assert.ok(Math.abs(r[0].face - 0.302) < 0.001);
+  // a face that would come out larger than the usual band is not pushed past it
+  assert.equal(rankPictures([c("crop", "4:5", 1.875), c("crop", "1:1", 1.5)], 400, 1920)[0].crop, "1:1");
 });

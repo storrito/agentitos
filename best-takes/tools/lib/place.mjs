@@ -160,6 +160,21 @@ export function toCut(t, pieces, clock) {
   return best >= 0 ? pieces[best].start + pieces[best].duration : pieces[0].start;
 }
 
+// layout place's candidates of one picture, best-takes' order: those that pass (no hard problem: the
+// enlargement under layout's hard limit; every text placed) by the face nearest the usual size of a
+// person's own take, as large as it comes up to FACE_UP of the frame's height (the box as given; the
+// upper end of the middle half of faces in published Shorts, layout-data: 23–34 %), layout's order
+// among equals; then the rest in layout's order. Sharpness alone never makes the face smaller (the
+// review: a 720p interview came out as a square band at 1.5×, the face 14 % of the height, where
+// the 4:5 crop at 1.875× fills the frame plainly better). → [{ …candidate, n, face }]
+export const FACE_UP = 0.34;
+export function rankPictures(candidates, usual, H) {
+  const list = candidates.map((x, i) => ({ ...x, n: i + 1, face: (usual * x.scale) / H })).filter((x) => !x.parts && Number.isFinite(x.scale));
+  const passes = (x) => !x.hard && !x.unmet.length;
+  const off = (x) => (x.face <= FACE_UP ? FACE_UP - x.face : 10 * (x.face - FACE_UP));
+  return [...list.filter(passes).sort((a, b) => off(a) - off(b) || a.n - b.n), ...list.filter((x) => !passes(x))];
+}
+
 // Faces that cannot be of this video's picture: found on a picture of another size (a phone's take
 // stored on its side, read before the framing knew the rotation), or boxes mostly outside it. The
 // faces are the tool's own (the model's, followed) or the agent's (--eye): the sentence says whose.
@@ -232,9 +247,11 @@ export function placedSheet(rows, text, file, [W, H], { small = 420 } = {}) {
     const lines = [];
     rows.forEach((r, i) => {
       const cells = r.moments.map((m, j) => {
-        const boxes = [...m.faces.map((b) => [b, "red@0.9", 2]), ...(text.caption ? [[text.caption, "yellow", 4]] : []), ...(text.hook && m.hook ? [[text.hook, "cyan", 4]] : [])];
+        // (a moment may show another picture of the video with its own text: a candidate)
+        const tx = m.text || text, pic = m.pic || r.pic, ground = m.pic ? m.ground : r.ground;
+        const boxes = [...m.faces.map((b) => [b, "red@0.9", 2]), ...(tx.caption ? [[tx.caption, "yellow", 4]] : []), ...(tx.hook && m.hook ? [[tx.hook, "cyan", 4]] : [])];
         const out = path.join(tmp, `${i}-${j}.jpg`);
-        return cell(r.video, m.t, r.pic, r.ground, [W, H], boxes, `${r.label} ${m.what} ${m.t.toFixed(1)} s`, out, small) ? out : null;
+        return cell(r.video, m.t, pic, ground, [W, H], boxes, m.label || `${r.label} ${m.what} ${m.t.toFixed(1)} s`, out, small) ? out : null;
       }).filter(Boolean);
       if (!cells.length) return;
       const line = path.join(tmp, `row-${i}.jpg`);
