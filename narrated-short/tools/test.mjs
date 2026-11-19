@@ -251,6 +251,38 @@ test("faces: the picture gives way in its order: a fill on the main face's eyes,
   assert.match(p5.said, /close-up became a small band \(the face \d+ % of the frame's height\): another stretch\?/);
 });
 
+test("faces: a passer-by counts by the time he is there (crew4 b5: a man seen in a quarter of the beat widened the band of two women); a second person there for most of the beat still counts", () => {
+  const size = [3840, 2160];
+  const women = [["woman with short grey hair", person("G", [480, 962, 1428, 1004], 32)], ["woman with short curly hair", person("C", [1620, 302, 1752, 1016], 32)]];
+  const passer = (n) => ["man in black jacket", person("P", [2700, 300, 1100, 1142], n)];
+  const b5 = counted(listOf(...women, passer(8)), size, 3.17);
+  assert.deepEqual(b5.held.map((p) => p.who), women.map((w) => w[0]));
+  assert.deepEqual(b5.small.map((p) => [p.who, p.why]), [["man in black jacket", "passing"]]);
+  const p = planWindow({ frame: "fill", size, people: b5, captions: CAPTIONS, crop: () => null });
+  assert.equal(p.frame, "whole");
+  assert.match(p.said, /a fill would cut woman with short grey hair, woman with short curly hair .*; a passer-by not held \(man in black jacket\)$/);
+  // the same man there for most of the beat counts, and the band must hold him: smaller
+  const stays = counted(listOf(...women, passer(30)), size, 3.17);
+  assert.equal(stays.held.length, 3);
+  const q = planWindow({ frame: "fill", size, people: stays, captions: CAPTIONS, crop: () => null });
+  assert.ok(q.zoom < p.zoom, `${q.zoom} with him, ${p.zoom} without`);
+  assert.doesNotMatch(q.said, /passer-by/);
+});
+
+test("faces: a face cut beside the ones that count is said as such, \"in the background\" only one small against the main face (the review's b9: four walking side by side, the fourth called a face in the background)", () => {
+  const size = [3840, 2160];
+  const b9 = counted(listOf(["woman with curly hair", person("A", [1482, 800, 270, 288], 17)], ["woman with short hair", person("B", [1858, 780, 300, 330], 17)],
+    ["tall man", person("C", [2380, 820, 260, 234], 17)], ["man on the right", person("D", [3090, 830, 230, 220], 17)]), size, 1.69);
+  assert.deepEqual(b9.small.map((p) => [p.who, p.why]), [["man on the right", "side"]]);
+  const p = planWindow({ frame: "fill", size, people: b9 });
+  assert.equal(p.frame, "fill");
+  assert.match(p.said, /the crop moved to the faces \(woman with curly hair, woman with short hair, tall man\).*; the 3 faces that count held, the one at the side cut \(man on the right: 67 % as tall as the largest, too small to count\)/);
+  assert.doesNotMatch(p.said, /background/);
+  // the same man half as tall as the largest, behind them: in the background
+  const far = counted(listOf(["woman with short hair", person("B", [1858, 780, 300, 330], 17)], ["man on the right", person("D", [3090, 830, 150, 160], 17)]), size, 1.69);
+  assert.match(planWindow({ frame: "fill", size, people: far }).said, /a face in the background cut \(man on the right\)/);
+});
+
 test("faces: a fill whose eyes would lie under the captions is raised over the ground, at the same size (the review's b7, CM S Ingram alone)", () => {
   const low = counted(listOf(["CM S Ingram", person("I", [564, 420, 135, 165], 17)]), [1280, 720], 1.73);
   const p = planWindow({ frame: "fill", size: [1280, 720], people: low, captions: CAPTIONS });
@@ -458,6 +490,34 @@ test("build with faces: the captions never get smaller for one beat's face, and 
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s\) where they stood; .* of 96 px, their size/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).size, size, "the captions keep their size");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("build with faces: a raised fill goes over into the ground below it, no hard line where it ends (crew4 b3, raised 90 px); a crop placed high is cut as before", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    // the review's CM S Ingram alone, low in the picture: the fill is raised
+    facesFile(work, src, ["CM S Ingram", person("I", [564, 420, 135, 165], 25)]);
+    const r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const lift = Number(r.stdout.match(/a: .*raised (\d+) px/)[1]);
+    const how = JSON.parse(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", "a.json"), "utf8")).how);
+    assert.equal(how.box.fade, 96);
+    // a frame of the clip, row by row: the mean step from one row to the next, over the frame's width
+    const g = spawnSync("ffmpeg", ["-v", "error", "-ss", "1", "-i", path.join(comp, "assets", "clips", "a.mp4"), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"], { maxBuffer: 1 << 24 }).stdout;
+    const row = (y) => g.subarray(y * 1080, (y + 1) * 1080);
+    const step = (y) => row(y).reduce((n, v, x) => n + Math.abs(v - row(y + 1)[x]), 0) / 1080;
+    const end = 1920 - lift;
+    // where the picture ends it meets the ground as the ground's own rows meet (testsrc2's bright
+    // pattern against its dark blur: a step of tens before); 96 rows up it is the picture itself
+    assert.ok(step(end - 1) < 3, `a step of ${step(end - 1).toFixed(1)} where the raised picture ends`);
+    assert.ok(Math.abs(row(end - 1).reduce((n, v) => n + v, 0) - row(end).reduce((n, v) => n + v, 0)) / 1080 < 3);
+    const picture = row(end - 100).reduce((n, v) => n + v, 0) / 1080, ground = row(end + 4).reduce((n, v) => n + v, 0) / 1080;
+    assert.ok(picture - ground > 20, `the picture ${picture.toFixed(0)} above the fade, the ground ${ground.toFixed(0)}`);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

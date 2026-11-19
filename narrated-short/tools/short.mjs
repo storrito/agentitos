@@ -256,9 +256,15 @@ function saidOf(list) {
 
 // ---------------------------------------------------------------- the clips
 // a part of the source (box.src) in a part of the frame (box.at) over the same blurred, darkened copy:
-// a crop placed high, or a fill raised over the ground
-function cropped({ src: [sx, sy, sw, sh], at: [ax, ay, aw, ah] }) {
-  return `split[a][b];[a]scale=${SIZE[0]}:${SIZE[1]}:force_original_aspect_ratio=increase,crop=${SIZE[0]}:${SIZE[1]},boxblur=40:3,eq=brightness=-0.18[bg];[b]crop=${sw}:${sh}:${sx}:${sy},scale=${aw}:${ah}:flags=lanczos[fg];[bg][fg]overlay=${ax}:${ay}`;
+// a crop placed high, or a fill raised over the ground. A raised fill (box.fade) ends in no hard
+// line above the ground: its last box.fade rows go over into it, from the whole picture to none
+// (an eased ramp, so that neither end shows); only those rows are made transparent, the rest is laid as it is.
+function cropped({ src: [sx, sy, sw, sh], at: [ax, ay, aw, ah], fade = 0 }) {
+  const ground = `split[a][b];[a]scale=${SIZE[0]}:${SIZE[1]}:force_original_aspect_ratio=increase,crop=${SIZE[0]}:${SIZE[1]},boxblur=40:3,eq=brightness=-0.18[bg];[b]crop=${sw}:${sh}:${sx}:${sy},scale=${aw}:${ah}:flags=lanczos[fg];`;
+  if (!(fade > 0)) return `${ground}[bg][fg]overlay=${ax}:${ay}`;
+  const ramp = "(Y+0.5)/H";
+  return `${ground}[fg]split[up][low];[up]crop=${aw}:${ah - fade}:0:0[top];[low]crop=${aw}:${fade}:0:${ah - fade},format=yuva420p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='255*(1-${ramp}*${ramp}*(3-2*${ramp}))'[end];`
+    + `[bg][top]overlay=${ax}:${ay}[raised];[raised][end]overlay=${ax}:${ay + ah - fade}:format=yuv420`;
 }
 // the whole wide frame as a band over a blurred, darkened copy of itself
 function whole(zoom, pan) {
