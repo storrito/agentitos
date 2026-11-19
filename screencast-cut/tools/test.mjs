@@ -223,7 +223,7 @@ test("the installed ffmpeg converts a recording with the option it was asked abo
 // the model's three boxes by clips' tracker, the element's geometry, and the old cover where no
 // face is known. The layout skill and clips run as programs, beside this one.
 import { readFaces } from "./lib/face.mjs";
-import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, followKey, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
+import { nameOf, markOf, faceMoments, followFace, keepMoments, placeFace, insidePicture, speakerMoments, followKey, mouthSplit, coverOf, geometry, layoutTool, framingTool, FOLLOW_MAX } from "./lib/placement.mjs";
 import { shots } from "./lib/composition.mjs";
 import { cover, place } from "./lib/layout.mjs";
 
@@ -441,4 +441,23 @@ test("a kept track is the one of this webcam and this tracker: another webcam wi
     fs.appendFileSync(path.join(tools, "lib", "track.mjs"), "\n// changed\n");
     assert.notEqual(followKey({ tool: path.join(tools, "frame.mjs"), file, from: b.from }).tracker, followKey({ tool: CLIPS, file, from: b.from }).tracker);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// The review: in 16:9 the keep with the lean became the whole webcam at 1.065× with half the frame
+// ground for all of its 8.7 s. The build keeps one picture per keep and says where to split it.
+test("a face keep whose picture across the width has the captions on the mouth for part of it names the seconds, the word to split the keep at and the smaller picture by name", () => {
+  // words 64–85 every 0.4 s from 21 s of the recording, the webcam 0.5 s behind it
+  const words = Array.from({ length: 90 }, (_, i) => ({ i, text: `w${i}`, start: 21 + (i - 64) * 0.4, end: 21.3 + (i - 64) * 0.4 }));
+  const ps = [{ keep: 4, words: Array.from({ length: 22 }, (_, k) => 64 + k) }];
+  const smaller = { fit: "inset", scale: 1.065, pick: { face: 0.344 } };
+  const kept = mouthSplit({ seconds: 2.4, of: 8.8, from: 25.9, to: 28.1 }, ps, words, 0.5, { smaller });
+  // the mouth from 26.4 to 28.6 s of the recording: split at word 77, the last to start by then
+  // (26.2 s), and at word 84, the first to start after the last moment on the mouth (29 s)
+  assert.match(kept.said, /on the mouth for 2\.4 s of the keep's 8\.8 s \(the webcam's 25\.9–28\.1 s\), at most half, so the picture across the width stays/);
+  assert.match(kept.said, /split the keep at word 77 \("w77"\) and at word 84 \("w84"\) \("words": "64-76", "77-83", "84-85"\)/);
+  assert.match(kept.said, /or name "inset" on the keep for all of it \(it passes, the face 34 % of the height\)/);
+  assert.deepEqual(kept.facts, { seconds: 2.4, of: 8.8, from: 26.4, to: 28.6, split: ["64-76", "77-83", "84-85"], smaller: "inset" });
+  // over half: the smaller picture stands, and the split for the picture across the width is said
+  const over = mouthSplit({ seconds: 5.2, of: 8.8, from: 25, to: 30 }, ps, words, 0.5, { wide: { fit: "cover", scale: 1.5 }, chosen: smaller });
+  assert.match(over.said, /^cover at 1\.5× across the width has the captions on the mouth for 5\.2 s .*more than half, so inset stands for all of it; to keep a picture across the width for the rest, split the keep at word 75 \("w75"\) \("words": "64-74", "75-85"\)/);
 });

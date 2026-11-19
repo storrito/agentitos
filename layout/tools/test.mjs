@@ -1269,6 +1269,29 @@ t("for a speaker: the caller's cover is kept outright only up to 1.5× with the 
   return `close 4:5: ${pname(c[0])} ${c[0].scale}× before the cover ${cov.scale}× (place ${cov.pick.place}); loose 4:5: the cover, the square at ${sq.pick.place}; loose 9:16: ${pname(l916[0])}`;
 });
 
+// An independent review (2026-11-19): screencast-cut's public test in 16:9, the keep in which the
+// speaker leans in (8.7 s, the face 95 px lower for about 3 s of it, followed by clips' tracker),
+// became the whole webcam at 1.065× with half the frame ground for all of it, while the cover put
+// the captions on the mouth for part of it only. One picture holds a clip: across the width it
+// stays where the band lies on the mouth for at most half of the face's time.
+const lean = (full, ramp) => Array.from({ length: 44 }, (_, i) => {
+  const t = +(22.1 + i * 0.2).toFixed(1), d = t < full[0] - ramp || t > full[1] + ramp ? 0 : t < full[0] ? (t - full[0] + ramp) / ramp : t > full[1] ? (full[1] + ramp - t) / ramp : 1;
+  return { t, box: [496.6, +(146 + 95 * d).toFixed(1), 289.3, 348.5] };
+});
+t("for a speaker: a picture across the width whose one fault is the band on the mouth for at most half of the face's time stays before the narrower pictures, its seconds said, the narrower one that passes named; for more than half the narrower one comes first", () => {
+  const order = (track) => solve({ zones: askZones("16:9"), source: [1280, 720], faces: [track], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: SPEAK["16:9"].cover });
+  const short = order(lean([26.5, 28], 0.5)), c = short.candidates[0];
+  ok(c.pick.cover && c.pick.tier === 2 && !c.pick.passes && c.pick.mouth && c.pick.mouth.share <= 0.5 && c.pick.mouth.seconds > 1.5, JSON.stringify(c.pick));
+  ok(/on the mouth for [\d.]+ s of the face's [\d.]+ s/.test(short.pick.note) && /cut the clip where they start, or take inset at 1\.\d+× \(it passes/.test(short.pick.note), short.pick.note);
+  ok(short.candidates.findIndex((x) => x.fit === "inset") > 0, "the inset after the cover");
+  // about the review's lean as the tracker followed it (on the mouth from 25 to 30 s, 5.2 of 8.8 s; 4.6 s here)
+  const long = order(lean([26, 29], 1.5)), l = long.candidates;
+  ok(l[0].fit === "inset" && l[0].pick.tier === 3, `${pname(l[0])}: ${JSON.stringify(l[0].pick)}`);
+  const cov = l.find((x) => x.pick.cover);
+  ok(cov.pick.tier === 4 && cov.pick.mouth.share > 0.5, JSON.stringify(cov.pick));
+  return `${short.candidates[0].pick.mouth.seconds} of ${short.candidates[0].pick.mouth.of} s: the cover stays; ${cov.pick.mouth.seconds} of ${cov.pick.mouth.of} s: ${pname(l[0])} at ${l[0].scale}×`;
+});
+
 t("for a speaker: where the cover fails (9:16 at 2.67×), the pictures across the frame's width come first, the face nearest the usual size; the inset after them, the failing cover last", () => {
   const res = speak("9:16"), c = res.candidates;
   ok(c[0].fit === "crop" && c[0].crop === "4:5" && c[0].scale === 1.875 && c[0].pick.across, `${pname(c[0])} at ${c[0].scale}×`);

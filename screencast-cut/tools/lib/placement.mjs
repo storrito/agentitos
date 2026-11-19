@@ -19,6 +19,8 @@
 //                                          inside the picture, a box wholly outside left out
 //   placeFace({ tool, folder, moments, cam, width, height, area, platforms }) → { res: layout's
 //                                          placement.json } or { why } (it never throws)
+//   mouthSplit(mouth, pieces, words, offset, { smaller | wide, chosen }) → { said, facts }: the
+//                                          seconds the captions lie on the mouth, where to split
 //   nameOf(candidate), markOf(candidate) → "crop 4:5", "cover", …; ✓ ! – ✗ in the order for a speaker
 //   coverOf(cam, width, height)          → the old full-frame crop (layout.cover) as scale, left, top
 //   geometry(pic, cam)                   → the webcam element's left, top, width, height and inset
@@ -159,6 +161,35 @@ export function placeFace({ tool, folder, moments, cam, width, height, area, pla
 export const nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}`;
 // in the order for a speaker: captions on the chin pass (layout's own mark would be –)
 export const markOf = (c) => (c.pick ? (c.pick.passes ? (c.soft ? "!" : "✓") : c.hard ? "✗" : "–") : c.hard ? "✗" : c.unmet.length ? "–" : c.soft ? "!" : "✓");
+
+// Where a picture across the width has the captions on the mouth for part of a face keep (layout's
+// pick.mouth, in the webcam's seconds: a lean): the seconds, the word to split the keep at (the
+// last word that starts by the time the captions reach the mouth; where they leave it before the
+// keep ends, also the first word after) and the other picture by name. Up to half of the keep the
+// picture across the width stays for all of it (`smaller`: the one that passes, offered); over
+// half the smaller picture stands (`wide`: the one across the width, `chosen`: the smaller). The
+// tool never changes the picture inside a keep: the split and the other picture are the agent's.
+export function mouthSplit(m, ps, words, offset, { smaller = null, wide = null, chosen = null } = {}) {
+  const kept = [...new Set(ps.flatMap((p) => p.words || []))].sort((a, b) => a - b).map((i) => words[i]).filter(Boolean);
+  const from = m.from + offset, to = m.to + offset;
+  const at = kept.filter((w) => w.start <= from + 0.05).at(-1), after = kept.find((w) => w.start >= to + 0.05);
+  const first = kept[0], last = kept.at(-1);
+  const quote = (w) => `word ${w.i} ("${w.text}")`;
+  const ranges = [];
+  if (first && last) {
+    const a = at && at.i > first.i ? at.i : first.i, b = after && after.i <= last.i ? after.i : null;
+    if (a > first.i) ranges.push(`${first.i}-${a - 1}`);
+    ranges.push(`${a}-${(b ?? last.i + 1) - 1}`);
+    if (b != null) ranges.push(`${b}-${last.i}`);
+  }
+  const splits = [at && first && at.i > first.i ? quote(at) : null, after && last && after.i <= last.i ? quote(after) : null].filter(Boolean);
+  const split = splits.length ? `split the keep at ${splits.join(" and at ")} ("words": ${ranges.map((r) => `"${r}"`).join(", ")})` : "split the keep where the lean begins";
+  const seconds = `${m.seconds} s of the keep's ${m.of} s (the webcam's ${m.from}–${m.to} s)`;
+  const said = wide
+    ? `${nameOf(wide)} at ${wide.scale}× across the width has the captions on the mouth for ${seconds}, more than half, so ${nameOf(chosen)} stands for all of it; to keep a picture across the width for the rest, ${split}: the parts without the lean take it by themselves`
+    : `the captions lie on the mouth for ${seconds}, at most half, so the picture across the width stays for all of it; to give those seconds another picture, ${split} and name another picture on the part with the lean${smaller ? `, or name "${nameOf(smaller)}" on the keep for all of it (it passes, the face ${Math.round(smaller.pick.face * 100)} % of the height)` : ""}`;
+  return { said, facts: { seconds: m.seconds, of: m.of, from: +from.toFixed(2), to: +to.toFixed(2), ...(ranges.length > 1 ? { split: ranges } : {}), ...(smaller ? { smaller: nameOf(smaller) } : {}) } };
+}
 
 // the frame covered as before this skill asked layout (layout.cover: the webcam's crop of the
 // frame's shape around the face, up to 1.25× closer where the face sits low), as a placement
