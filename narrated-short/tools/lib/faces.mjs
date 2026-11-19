@@ -47,6 +47,10 @@ export const TEXT_FACE = 0.03;
 export const CLOSE = 0.25;
 // how far a fill may be raised to clear the captions of the eyes and noses (the ground shows below it)
 export const MAX_LIFT = 640;
+// the last rows of a raised fill that go over into the ground below it, px of the frame (build's
+// clip): no hard line where the picture ends (crew4 b3, raised 90 px: a line at y 1830, below the
+// captions, where the apps write the post's description)
+export const FADE = 96;
 // the margin kept between a nose line and the captions' top, px of the frame (layout's least margin)
 const MARGIN = 24;
 // every clip grows by a twenty-fifth while it runs, about the frame's middle (the composition's move)
@@ -278,7 +282,7 @@ function raiseFill(out, win, held, [cw, ch], captions) {
   if (lift <= 0) return out;
   lift = even(Math.ceil(lift));
   if (lift > MAX_LIFT) { out.said += `; the eyes would lie under the captions, too low to raise the picture for (${lift} px)`; return out; }
-  const box = cropBox([win[0], lift / k, win[1] - win[0], (SIZE[1] - lift) / k], [0, 0, SIZE[0], SIZE[1] - lift], [cw, ch]);
+  const box = { ...cropBox([win[0], lift / k, win[1] - win[0], (SIZE[1] - lift) / k], [0, 0, SIZE[0], SIZE[1] - lift], [cw, ch]), fade: FADE };
   return { ...out, frame: "crop", box, x: null, changed: true, said: `${out.said}; raised ${lift} px, so that the captions lie on no eyes or nose (the ground below it)` };
 }
 

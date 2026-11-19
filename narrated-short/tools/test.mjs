@@ -493,6 +493,34 @@ test("build with faces: the captions never get smaller for one beat's face, and 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("build with faces: a raised fill goes over into the ground below it, no hard line where it ends (crew4 b3, raised 90 px); a crop placed high is cut as before", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    // the review's CM S Ingram alone, low in the picture: the fill is raised
+    facesFile(work, src, ["CM S Ingram", person("I", [564, 420, 135, 165], 25)]);
+    const r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const lift = Number(r.stdout.match(/a: .*raised (\d+) px/)[1]);
+    const how = JSON.parse(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", "a.json"), "utf8")).how);
+    assert.equal(how.box.fade, 96);
+    // a frame of the clip, row by row: the mean step from one row to the next, over the frame's width
+    const g = spawnSync("ffmpeg", ["-v", "error", "-ss", "1", "-i", path.join(comp, "assets", "clips", "a.mp4"), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"], { maxBuffer: 1 << 24 }).stdout;
+    const row = (y) => g.subarray(y * 1080, (y + 1) * 1080);
+    const step = (y) => row(y).reduce((n, v, x) => n + Math.abs(v - row(y + 1)[x]), 0) / 1080;
+    const end = 1920 - lift;
+    // where the picture ends it meets the ground as the ground's own rows meet (testsrc2's bright
+    // pattern against its dark blur: a step of tens before); 96 rows up it is the picture itself
+    assert.ok(step(end - 1) < 3, `a step of ${step(end - 1).toFixed(1)} where the raised picture ends`);
+    assert.ok(Math.abs(row(end - 1).reduce((n, v) => n + v, 0) - row(end).reduce((n, v) => n + v, 0)) / 1080 < 3);
+    const picture = row(end - 100).reduce((n, v) => n + v, 0) / 1080, ground = row(end + 4).reduce((n, v) => n + v, 0) / 1080;
+    assert.ok(picture - ground > 20, `the picture ${picture.toFixed(0)} above the fade, the ground ${ground.toFixed(0)}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // the author's epps2: the first beat a fill on Jeanette Epps (1280×720), her face as `faces` found it
 const epps = (dy = 0) => ["Jeanette Epps", Array.from({ length: 25 }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box: [544, 84 + dy, 205, 272], feat: [563, 177 + dy, 159, 142] }))];
 const facesWith = (work, src, ...people) => {
