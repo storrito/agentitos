@@ -65,7 +65,7 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
-import { pieceSpan, clockOf, covering, whole, takeKind, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
+import { pieceSpan, clockOf, covering, whole, takeKind, pictureRule, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
@@ -519,10 +519,18 @@ function cmdFaces(dir, opts) {
   if (opts.eye?.length && missing.length) fail(`--eye names no box of ${missing.map((c) => c.file).join(", ")}: give its boxes too (faces ${rel(dir)} --grid shows them), so that no video goes to the model unasked.`);
   let cost = 0;
   const started = Date.now();
+  // a person's take in which a face shows less than half the time: the model missed it, or there is
+  // none (said of faces found now as of faces kept from before)
+  const fewFaces = (c, got) => {
+    const seen = (got.faces || []).filter((f) => f.boxes?.length).length * (got.step || 0.1);
+    if (seen >= 0.5 * c.duration) return;
+    const material = (got.shots || []).filter((x) => x.kind && x.kind !== "people").reduce((t, x) => t + x.end - x.start, 0);
+    console.log(`✗ ${c.file}: a face at ${seen.toFixed(1)} of its ${c.duration.toFixed(1)} s only${material ? ` (it shows a slide, a screen or other material for ${material.toFixed(1)} s, which place keeps whole: no face is needed there)` : ""}. Where a person speaks to the camera in it, the faces were missed: read them yourself (faces ${rel(dir)} --grid, then --eye); place puts the text by the faces it knows, and none where it knows none.`);
+  };
   for (const c of list) {
     const out = source(dir, `${kOf(c)}.faces.json`);
     const boxes = eye[c.file];
-    if (!boxes && fs.existsSync(out) && !opts.again) { console.log(`${c.file}: faces kept from before (${rel(out)}; --again finds them anew)`); continue; }
+    if (!boxes && fs.existsSync(out) && !opts.again) { console.log(`${c.file}: faces kept from before (${rel(out)}; --again finds them anew)`); fewFaces(c, read(out)); continue; }
     // --again asks the model afresh: its answer of before, kept beside the video, goes
     if (opts.again && !boxes) fs.rmSync(source(dir, `${kOf(c)}.people.json`), { force: true });
     // the video's words with who speaks, for the model (one voice where the words name none)
@@ -535,9 +543,7 @@ function cmdFaces(dir, opts) {
     console.log(`${c.file}: ${r.stdout.trim().split("\n").map((l) => l.replace(/^[^:]*faces\.json: /, "")).join("\n  ")}`);
     const got = read(out);
     cost += got.cost || 0;
-    // a person's take in which a face shows less than half the time: the model missed it, or there is none
-    const seen = got.faces.length * (got.step || 0.1);
-    if (seen < 0.5 * c.duration) console.log(`✗ ${c.file}: a face at ${seen.toFixed(1)} of its ${c.duration.toFixed(1)} s only. Where a person speaks to the camera in it, the faces were missed: read them yourself (faces ${rel(dir)} --grid, then --eye); place puts the text by the faces it knows, and none where it knows none.`);
+    fewFaces(c, got);
   }
   console.log(`${cost ? `$${cost.toFixed(4)} in all, ` : ""}${((Date.now() - started) / 1000).toFixed(0)} s.`);
   console.log(`Next: node ${self()} place ${rel(dir)}   (where the picture and the text go; it builds again)`);
@@ -625,22 +631,28 @@ function cmdPlace(dir, opts) {
     const track = faceTrack(faces[c.file], pieces, c.n);
     const want = fixed.picture?.[c.file];
     const sameShape = Math.abs(c.width / c.height - W / H) / (W / H) <= 0.15;
-    if (!track.length) { pictures[c.file] = cover; said.push(`${c.file}: no face in what the cut keeps of it: the picture covers the frame, centred`); continue; }
     // best-takes is for one person's take: footage with cuts in it, two people, or slides and a
     // screen are said, with the skill made for them, instead of placed badly in silence (the review:
     // a talk show's 4K cuts became the whole strip at a third of its size, the faces 3–15 % of the
-    // height; a talk's slides were cropped from the middle, the slide and the speaker cut)
-    const kind = takeKind(faces[c.file], pieces, c.n);
-    if (kind.material && want == null) {
+    // height; a talk's slides were cropped from the middle, the slide and the speaker cut). Material
+    // first: a slide stays whole whether a face was found beside it or not.
+    const kind = takeKind(faces[c.file], pieces, c.n), rule = pictureRule(kind, track.length > 0);
+    if (rule.use === "whole" && want == null) {
       pictures[c.file] = { ...whole([c.width, c.height], [W, H]), fit: "whole" };
-      said.push(`${c.file}: ✗ shows a slide, a screen or other material for ${kind.material.toFixed(1)} s of what the cut keeps: the picture stays whole, smaller, over its blurred copy (a crop would cut the material); clips frames such footage shot by shot (clips' SKILL.md)`);
+      said.push(`${c.file}: ✗ shows a slide, a screen or other material for ${kind.material.toFixed(1)} s of what the cut keeps${track.length ? "" : " (no face found in it)"}: the picture stays whole, smaller, over its blurred copy (a crop would cut the material); clips frames such footage shot by shot (clips' SKILL.md)`);
       continue;
     }
-    if ((kind.shots > 1 || kind.people > 1) && want == null) {
+    if (!track.length) { pictures[c.file] = cover; said.push(`${c.file}: no face in what the cut keeps of it: the picture covers the frame, centred`); continue; }
+    // a cut the detector found counts only where the faces on either side disagree (shotChange);
+    // one they cannot tell is said, and the take placed as one shot all the same
+    const at = (xs) => xs.map((x) => x.t.toFixed(1)).join(", ").replace(/, ([^,]*)$/, " and $1") + " s";
+    if (rule.use === "fallback" && want == null) {
       pictures[c.file] = cover;
-      said.push(`${c.file}: ✗ ${kind.shots > 1 ? `has ${kind.shots} shots, cut in it` : ""}${kind.shots > 1 && kind.people > 1 ? " and " : ""}${kind.people > 1 ? `shows ${kind.people} people` : ""}: best-takes places one picture for one person's take, so it covers the frame from the middle as before and the text is placed by the faces; clips frames such footage shot by shot, on whoever speaks (clips' SKILL.md). --picture <number> takes one of layout's candidates all the same`);
+      said.push(`${c.file}: ✗ ${rule.other.length ? `has ${rule.other.length + 1} shots, cut in it (another framing or person at ${at(rule.other)})` : ""}${rule.other.length && kind.people > 1 ? " and " : ""}${kind.people > 1 ? `shows ${kind.people} people` : ""}: best-takes places one picture for one person's take, so it covers the frame from the middle as before and the text is placed by the faces; clips frames such footage shot by shot, on whoever speaks (clips' SKILL.md). --picture <number> takes one of layout's candidates all the same`);
       continue;
     }
+    const doubt = [...(rule.same.length ? [`${c.file}: the picture changes at ${at(rule.same)} with the same face at the same place before and after (the light, or the person away for a moment): one shot, placed as one`] : []),
+      ...(rule.unsure.length ? [`${c.file}: ⚠ the picture changes at ${at(rule.unsure)} and the faces cannot tell whether it is cut there (none on one side, or the same face back only after a long gap): placed as one person's take all the same; where the sheet shows another shot there, clips frames such footage shot by shot (clips' SKILL.md)`] : [])];
     const pf = path.join(folder, `${kOf(c)}.track.json`);
     fs.writeFileSync(pf, JSON.stringify(track));
     const r = spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
@@ -666,6 +678,7 @@ function cmdPlace(dir, opts) {
     const line = (x) => `${x.n}. ${mark(x)} ${name(x)} at ${x.scale}× (the video's pixels ${x.scale > 1 ? `enlarged ${x.scale}×` : `at ${x.scale}×`}), the face ${Math.round(x.face * 100)} % of the height${reason(x) ? `: ${reason(x)}` : ""}${chosen.n === x.n ? "  ← taken" : ""}`;
     choices[c.file] = { list: ranked, cover: sameShape || want === "cover" ? cover : null, usual, mark, name };
     said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}, the face ${Math.round(((usual * cover.scale) / H) * 100)} % of the height` : `${chosen.fit} at ${chosen.scale}×${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates, the best for a person's take first:\n    ${ranked.slice(0, 5).map(line).join("\n    ")}`);
+    said.push(...doubt);
   }
 
   // the captions and the hook over the whole cut, each video one shot of layout's text
@@ -719,8 +732,10 @@ function cmdPlace(dir, opts) {
 
   // the list: the picture, the captions, each video raised, what lies on a face
   console.log(`The picture:\n  ${said.join("\n  ")}`);
-  const cutLength = pieces.reduce((t, p) => t + p.duration, 0), known = knownSeconds(pieces, clips, inside);
-  if (known < 0.5 * cutLength) console.log(`✗ A face is known for ${known.toFixed(1)} of the cut's ${cutLength.toFixed(1)} s only. Where a person speaks to the camera, the faces were missed: the text is placed against none there. Read them yourself (faces ${rel(dir)} --grid, then --eye), then place again.`);
+  // (a video shown whole for its slides or screen needs no faces for its picture: not counted)
+  const faced = pieces.filter((p) => pictures[clips[p.clip].file]?.fit !== "whole");
+  const cutLength = faced.reduce((t, p) => t + p.duration, 0), known = knownSeconds(faced, clips, inside);
+  if (faced.length && known < 0.5 * cutLength) console.log(`✗ A face is known for ${known.toFixed(1)} of the cut's ${cutLength.toFixed(1)} s only. Where a person speaks to the camera, the faces were missed: the text is placed against none there. Read them yourself (faces ${rel(dir)} --grid, then --eye), then place again.`);
   const c = text.caption;
   if (c) console.log(`The captions: one place for the cut, ${c.lines > 1 ? "up to two lines" : "one line"} of ${c.font} px, the lowest line at y ${capOpts.y} (their middle at ${c.middle} % of the height, ${c.where === "no-face" ? "no face in the cut: where published Shorts set them" : c.where === "above-head" ? "above the head" : "below the chin"})${!cut.captions ? "; no captions in the cut yet: placed for the tallest style, place again after the captions command" : ""}.`);
   const parts = (t) => [t.nose ? `the nose or eyes ${t.nose} s` : "", t.mouth ? `the mouth ${t.mouth} s` : "", t.lip ? `the lower lip ${t.lip} s` : ""].filter(Boolean).join(", ");
@@ -858,8 +873,10 @@ function cmdCheck(dir) {
     // this skill's own faces that miss most of the cut: what is not known is not counted
     const placed = fs.existsSync(path.join(dir, "place.json")) ? read(path.join(dir, "place.json")) : null;
     if (placed?.by === "takes place") {
-      const known = knownSeconds(e.pieces, clips, faces);
-      if (known < 0.5 * e.duration) errors.push(`a face is known for ${known.toFixed(1)} of the cut's ${e.duration.toFixed(1)} s only: where the person is in the picture, the faces were missed and nothing here is checked against them; read them yourself (faces ${rel(dir)} --grid, then --eye), then place again`);
+      // (a video place showed whole for its slides or screen is not counted)
+      const faced = e.pieces.filter((p) => placed.picture?.[clips[p.clip]?.file]?.fit !== "whole"), length = faced.reduce((t, p) => t + p.duration, 0);
+      const known = knownSeconds(faced, clips, faces);
+      if (faced.length && known < 0.5 * length) errors.push(`a face is known for ${known.toFixed(1)} of the cut's ${length.toFixed(1)} s only: where the person is in the picture, the faces were missed and nothing here is checked against them; read them yourself (faces ${rel(dir)} --grid, then --eye), then place again`);
     }
   }
   const over = overTarget(e.duration, s.target);

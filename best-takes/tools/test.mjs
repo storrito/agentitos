@@ -415,7 +415,7 @@ test("a face that fills the frame already (its box half the frame's height or mo
 });
 
 // ------------------------------------------------------------------- on its own: faces, picture, text
-import { covering, whole, takeKind, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { covering, whole, takeKind, pictureRule, shotChange, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
 import { pieceStyle } from "./lib/composition.mjs";
 
 test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
@@ -531,7 +531,7 @@ test("on its own: faces that miss most of the cut are counted, so that place and
 test("on its own: footage with cuts in it, two people, or slides is told apart from one person's take over the seconds the cut keeps (the review: talk-show cuts became a strip at a third of its size, a talk's slides were cropped from the middle)", () => {
   const pieces = [{ clip: 1, in: 0, out: 10 }];
   const one = { shots: [{ start: 0, end: 20, kind: "people" }], faces: Array.from({ length: 100 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) };
-  assert.deepEqual(takeKind(one, pieces, 1), { shots: 1, people: 1, material: 0 });
+  assert.deepEqual(takeKind(one, pieces, 1), { shots: 1, cuts: [], people: 1, material: 0 });
   const cuts = { ...one, shots: [{ start: 0, end: 4, kind: "people" }, { start: 4, end: 8, kind: "people" }, { start: 8, end: 20, kind: "people" }] };
   assert.equal(takeKind(cuts, pieces, 1).shots, 3);
   // a flash of 0.7 s of the shot before at the take's start (the review's conference take) is no cut in it
@@ -544,4 +544,79 @@ test("on its own: footage with cuts in it, two people, or slides is told apart f
   assert.equal(takeKind(slides, pieces, 1).material, 6);
   // the whole picture, centred
   assert.deepEqual(whole([1920, 1080], [1080, 1920]), { scale: 0.5625, left: 0, top: 656.3 });
+});
+
+// ---------------------------------------------------------------- a change of shot, by the faces
+// One person's take of 40 s, her face every tenth of a second at the same place; the cut detector's
+// shots and the faces around each of its cuts made up for each case.
+const her = (t) => ({ t: +t.toFixed(2), boxes: [{ who: "Jeanette Epps", box: [540, 50, 212, 301] }] });
+const take = (shots, face = her, from = 0, to = 40) => ({ shots, faces: Array.from({ length: Math.round((to - from) * 10) }, (_, i) => face(from + i / 10)).filter(Boolean) });
+const all40 = [{ clip: 1, in: 0, out: 40 }];
+const ruleOf = (list) => { const k = takeKind(list, all40, 1); return { ...pictureRule(k, faceTrack(list, all40, 1).length > 0), kind: k }; };
+const people = (a, b) => [{ start: a, end: b, kind: "people" }];
+
+test("a change of shot by the faces: the light dropping and coming back is the same shot, the take placed as one (the review's events take: three such cuts made a cover at 2.67× from the middle)", () => {
+  const r = ruleOf(take([...people(0, 21.98), ...people(21.98, 29.99), ...people(29.99, 40)]));
+  assert.equal(r.kind.shots, 3);
+  assert.deepEqual(r.kind.cuts.map((x) => x.is), ["same", "same"]);
+  assert.equal(r.use, "place");
+  // a phone's exposure that settles over ten frames: the tracker's box wobbles a little, the cut lands mid-way
+  const wobble = (t) => ({ t: +t.toFixed(2), boxes: [{ who: "Jeanette Epps", box: [540 + (t > 22 && t < 22.4 ? 9 : 0), 50 + (t > 22 && t < 22.4 ? 6 : 0), 212, t > 22 && t < 22.4 ? 290 : 301] }] });
+  assert.equal(ruleOf(take([...people(0, 22.17), ...people(22.17, 40)], wobble)).use, "place");
+});
+
+test("a change of shot by the faces: a person who leaves for a moment and comes back to her place is the same shot; back only after a long gap, or never, it is not known, said and placed as one all the same", () => {
+  const away = (a, b) => (t) => (t >= a && t < b ? null : her(t));
+  const left = ruleOf(take([...people(0, 19.98), ...people(19.98, 40)], away(20, 24.1)));
+  assert.deepEqual(left.kind.cuts.map((x) => x.is), ["same"]);
+  assert.equal(left.use, "place");
+  const long = ruleOf(take([...people(0, 10), ...people(10, 40)], away(10, 25)));
+  assert.deepEqual(long.kind.cuts.map((x) => x.is), ["unknown"]);
+  assert.equal(long.use, "place", "a doubt never makes the picture worse");
+  const gone = ruleOf(take([...people(0, 20), ...people(20, 40)], away(20, 40)));
+  assert.deepEqual([gone.kind.cuts[0].is, gone.use], ["unknown", "place"]);
+});
+
+test("a change of shot by the faces: a real cut to another framing, to another person, or the face far from where it was, covers the frame from the middle with the ✗; two people at once too", () => {
+  const closer = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "Jeanette Epps", box: [430, 0, 430, 610] }] });
+  assert.deepEqual([ruleOf(take([...people(0, 20), ...people(20, 40)], closer)).use, shotChange(take([], closer), 20, 20)], ["fallback", "other"]);
+  // the review's reporter: Gina Sunseri, then Nick at 22.21 s, the same size 200 px to the left
+  const nick = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "Nick", box: [488, 114, 224, 284] }] });
+  assert.equal(ruleOf(take([...people(0, 20), ...people(20, 40)], nick)).use, "fallback");
+  // another person at the very same place: the names tell
+  const other = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "a man in a grey suit", box: [540, 50, 212, 301] }] });
+  assert.equal(shotChange(take([], other), 20, 20), "other");
+  const moved = (t) => (t < 20 ? her(t) : { t, boxes: [{ who: "Jeanette Epps", box: [140, 50, 212, 301] }] });
+  assert.equal(shotChange(take([], moved), 20, 20), "other");
+  const two = (t) => ({ t, boxes: [...her(t).boxes, { who: "Nick", box: [100, 80, 200, 280] }] });
+  const r = ruleOf(take(people(0, 40), two));
+  assert.deepEqual([r.kind.people, r.use], [2, "fallback"]);
+});
+
+test("slides stay whole with a face beside them or with none found, before the branch for no face; no face and no material covers the frame from the middle", () => {
+  const slides = [{ start: 0, end: 40, kind: "split", note: "material with the speaker small in it" }];
+  assert.equal(ruleOf(take(slides)).use, "whole");
+  const none = { shots: slides, faces: [] };
+  assert.equal(pictureRule(takeKind(none, all40, 1), false).use, "whole");
+  assert.equal(pictureRule(takeKind({ shots: people(0, 40), faces: [] }, all40, 1), false).use, "none");
+  // a talk with a slide for 6 s and the speaker after
+  assert.equal(ruleOf(take([{ start: 0, end: 6, kind: "broll" }, ...people(6, 40)])).use, "whole");
+});
+
+test("faces kept from before with no face in them get the ✗ that place and check give (they were reused in silence); slides in them are named as what place keeps whole", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "takes-kept-"));
+  try {
+    fs.mkdirSync(path.join(dir, "source"));
+    fs.writeFileSync(path.join(dir, "source", "words.json"), JSON.stringify({ clips: { 1: { n: 1, file: "01.mp4", duration: 10, width: 1280, height: 720 } }, words: [] }));
+    const run = (shots) => {
+      fs.writeFileSync(path.join(dir, "source", "01.faces.json"), JSON.stringify({ by: "model", size: [1280, 720], step: 0.1, shots, faces: [] }));
+      return spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs"), "faces", dir], { encoding: "utf8" }).stdout;
+    };
+    const plain = run([{ start: 0, end: 10, kind: "people" }]);
+    assert.match(plain, /faces kept from before/);
+    assert.match(plain, /✗ 01\.mp4: a face at 0\.0 of its 10\.0 s only\. Where a person speaks/);
+    assert.match(run([{ start: 0, end: 10, kind: "split" }]), /material for 10\.0 s, which place keeps whole/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
