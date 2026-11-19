@@ -984,12 +984,14 @@ test("which picture: as before where it passes; else layout's first it draws, of
   // only its text too small, layout's no larger: it stays, said why
   const small = judged({ fit: BEFORE, scale: 1.2, window: [0, 300, 1080, 600], region: [100, 300, 800, 300] }, { text: 12, readable: 24 });
   const got = choose(small, [judged({ ...fit, scale: 1.1 }, { text: 12, readable: 24 })], { text: 12, zoomed: true });
-  assert.equal(got.pic, small); assert.match(got.why, /no larger/);
+  assert.equal(got.pic, small); assert.match(got.why, /no other picture removes a fault without adding one \(screen-fit at 1\.1×: text 13\.2 px\)/);
   // layout's picture with the label on its region: as before stays when only its margins are at fault
   const onLabel = judged({ ...fit }, { labels: [[60, 300, 300, 70]] });
   assert.match(choose(before, [onLabel], { zoomed: true }).why, /label on the region/);
+  // a picture that removes one fault but adds another is not taken either (it was, until the
+  // first review: the circle off the region bought with the label on it)
   const circled = judged({ ...before, circle: [100, 300, 238] });
-  assert.equal(choose(circled, [onLabel], { zoomed: true }).pic, onLabel);
+  assert.equal(choose(circled, [onLabel], { zoomed: true }).pic, circled);
   // a name: layout's candidate, "as before", or one this frame lacks (the rule's, said)
   assert.equal(choose(before, [fit, whole], { asked: "screen-whole", zoomed: true }).pic, whole);
   assert.equal(choose(before, [fit], { asked: BEFORE }).pic, before);
@@ -1083,10 +1085,11 @@ test("the circle moves before the picture does (pair screen-circle-169): the pic
   assert.equal(freeCorner(wide, { zones: z, areas: a, labels: [[96, 108, 300, 70]], width: 1920, height: 1080 }), null);
   // choose takes the moved picture before layout's
   const moved = Object.assign({ ...i, fit: "as before, inside the margins, the circle top left", circle: [96, 108, 216] }, {}); moved.j = judge(moved, opts);
-  const before = Object.assign(b, { j: judge(b, opts) }), fit = judged({ fit: "screen-fit", scale: 1.16, window: [0, 0, 1319, 748], region: [427, 108, 826, 640], mark: "✓", hard: 0 });
-  assert.equal(choose(before, [fit], { zoomed: true, moved }).pic, moved);
+  const before = Object.assign(b, { j: judge(b, opts) }), fit = { fit: "screen-fit", scale: 1.16, window: [0, 0, 1319, 748], region: [427, 108, 826, 640], circle: [1608, 108, 216], mark: "✓", hard: 0 };
+  fit.j = judge(fit, opts);
+  assert.equal(choose(before, [fit], { zoomed: true, own: [moved] }).pic, moved);
   assert.equal(choose(before, [fit], { zoomed: true }).pic, fit);
-  assert.equal(choose(before, [fit], { zoomed: true, moved, asked: "screen-fit" }).pic, fit);
+  assert.equal(choose(before, [fit], { zoomed: true, own: [moved], asked: "screen-fit" }).pic, fit);
 });
 
 test("a moved circle alone keeps the screen exactly as before; only the circle's place changes", () => {
@@ -1114,6 +1117,7 @@ test("a zoom box under the circle with no free corner and every candidate of lay
     assert.match(said, /! the circle lies on the region for these words: name a wider "zoom", or leave the circle out for them \("circle": false\)/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
 // ------------------------------------------------------- the first review of the screen's picture
 // Its inputs, as numbers (/tmp/screen-review of 2026-11-19): what the build does with each.
 import { zones as realZones } from "./lib/zones.mjs";
@@ -1155,6 +1159,19 @@ test("review 1: a keep split at a scene change draws each part's circle where it
   const p = { keep: 0, view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop: B, segments: [{ in: 0, out: 2, crop: B }, { in: 2, out: 4, crop: [0.02, 0.4, 0.25, 0.65] }] };
   const [s] = shots([p], sources, 1920, 1080, a);
   assert.deepEqual(s.layers.filter((l) => l.pip).map((l) => [l.box, l.start]), [[[1608, 108, 216, 216], undefined]]);
+});
+
+test("review 2: a picture of the layout skill's that removes no fault, or adds one, is not taken: 16:9, zoom [0.3,0.3,0.7,0.7] with a label, the screen 1920×1080 (1.55× against 1.48×) and 3440×1440 (1.16× against 1.11×) stay as before, said", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [screen, scale] of [[[1920, 1080], 1.55]]) {
+    const r = oneKeep({ width: 1920, height: 1080, screen, crop: [0.3, 0.3, 0.7, 0.7], label: "Settings page" });
+    assert.equal(r.p.screenPic, undefined, r.said);
+    assert.equal(r.p.screen.fit, BEFORE); assert.equal(r.p.screen.scale, scale);
+    assert.match(r.said, /the label lies on its region \(it stays: no other picture removes a fault without adding one \(screen-fit at [\d.]+×: [^)]*the label on the region\)\)/);
+  }
+  // and in numbers: before has the label on its region; layout's has it too and is smaller
+  const before = judged({ fit: BEFORE, scale: 1.55, window: [0, 0, 1080, 900], region: [100, 300, 800, 300] }, { labels: [[60, 250, 400, 80]] });
+  const fit = judged({ fit: "screen-fit", scale: 1.48, window: [0, 0, 1080, 900], region: [100, 300, 760, 290], mark: "✓", hard: 0 }, { labels: [[60, 250, 400, 80]] });
+  assert.equal(choose(before, [fit], { zoomed: true }).pic, before);
 });
 
 test("review 3: nonsense from the layout skill (null, a candidate with circle {}, a negative scale, a window of strings) draws the keep as before with one sentence, never stops the build", () => {

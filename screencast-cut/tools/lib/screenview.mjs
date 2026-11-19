@@ -9,12 +9,12 @@
 //      passes: the region inside the safe box across (or inside the zones' wide stretch), the
 //      circle and a label that is on off the region, nothing of it under an app's bar, and, where
 //      the keep says how tall its text is, that text at the height layout says reads in this frame;
-//   3. else layout's first candidate the composition draws (screen-zoom, screen-fit; screen-whole
-//      only for the whole screen) without a hard fault and off the label, and the list says what was
-//      wrong with the picture as before. The picture as before stays where its only fault is text
-//      too small and layout's shows it no larger (a smaller one would read no better), and where
-//      layout's pictures all have the label on the region while the one as before has nothing on
-//      it (only its margins or its text at fault): layout does not know the label.
+//   3. else the first other picture that removes a fault the one as before has and adds none (the
+//      fewest left): the picture as before with the circle in a free corner, then layout's
+//      candidates the composition draws (screen-zoom, screen-fit; screen-whole only for the whole
+//      screen) without a hard fault, and the list says what was wrong with the picture as before.
+//      Where none does (layout's has the label on the region too, or is smaller and its text no
+//      better), the picture as before stays and the list says what remains wrong.
 // Whatever goes wrong (no layout skill, place stops, runs over its time, refuses the box, gives no
 // candidate to draw) the keep is drawn as before, with one sentence: the build never stops for it.
 // screen-stacked (the screen above, the speaker in a panel below) is not drawn: with the captions
@@ -152,28 +152,34 @@ export function pictureOf(c) {
     circle: c.circle ? [c.circle.box[0], c.circle.box[1], c.circle.d] : null, mark: markOf(c), hard: c.hard || 0 };
 }
 
-// which picture: see the head of this file. before and every item of list carry their judgement (j)
-export function choose(before, list, { asked = null, text = 0, zoomed = false, moved = null } = {}) {
+// a fault in a few words, for the lists
+export const shortFault = (x, f) => (f.code === "text" ? `text ${x.j.textHeight} px` : f.code === "across" ? `region ${span(x.region)}` : f.code === "bars" ? "under the apps' bars" : `the ${f.code} on the region`);
+
+// Which picture: the one the keep names; else the picture as before where it passes; else the
+// first of the others that removes a fault the picture as before has and adds none (of those, the
+// first with the fewest faults left): the picture as before with the circle moved, the same shifted
+// inside the margins (own, in that order: the circle moves before the picture does, a shift comes
+// before a shrink), then layout's in its order (not ✗; for a zoom box not the whole screen, unless
+// named). The text of a picture held inside the margins at no less than nine tenths of the scale
+// as before may come out under the height that reads (decided 2026-11-19, screen-text: what must
+// be read stays inside the safe box across, even at a tenth less size). Where none does, the
+// picture as before stays, with what remains wrong. before and every item carry their judgement (j).
+export function choose(before, list, { asked = null, zoomed = false, own = [] } = {}) {
   if (asked === BEFORE) return { pic: before, named: true };
   const named = asked ? list.find((x) => x.fit === asked) : null;
   if (named) return { pic: named, named: true };
-  const missing = asked ? asked : null;
-  if (!before.j.faults.length) return { pic: before, missing };
-  // only the circle on the region: the circle moves before the picture does
-  if (moved) return { pic: moved, missing };
-  // a zoom box is not answered by the whole screen (screen-whole: the region small in a sea of
-  // the rest), unless the keep names it
-  const usable = list.filter((x) => !x.hard && !(zoomed && x.fit === "screen-whole"));
-  const labelled = (x) => x.j.faults.some((f) => f.code === "label");
+  const missing = asked || null;
+  const had = before.j.faults.map((f) => f.code);
+  if (!had.length) return { pic: before, missing };
+  const usable = [...own, ...list.filter((x) => !x.hard && !(zoomed && x.fit === "screen-whole"))];
+  const codes = (x) => x.j.faults.map((f) => f.code);
+  const added = (x) => codes(x).filter((c) => !had.includes(c) && !(c === "text" && had.includes("across") && !codes(x).includes("across") && x.scale >= before.scale * 0.9 - 1e-4));
+  const removes = (x) => had.some((c) => !codes(x).includes(c));
+  const better = usable.filter((x) => !added(x).length && removes(x));
+  const pick = better.reduce((b, x) => (b && b.j.faults.length <= x.j.faults.length ? b : x), null);
+  if (pick) return { pic: pick, missing };
   if (!usable.length) return { pic: before, missing, why: "none of layout's pictures for it passes layout's checks" };
-  // layout does not know the label: a picture it lies on stands only where the one as before has
-  // something on its region too (the circle, the label, an app's bar), not for a region that only
-  // reaches into the safe box's margins or a text too small
-  const first = usable.find((x) => !labelled(x)) || (before.j.faults.some((f) => ["circle", "label", "bars"].includes(f.code)) ? usable[0] : null);
-  if (!first) return { pic: before, missing, why: "layout's picture would have the label on the region" };
-  const only = before.j.faults.every((f) => f.code === "text");
-  if (only && text && first.scale <= before.scale + 1e-4) return { pic: before, missing, why: "layout's pictures show the text no larger" };
-  return { pic: first, missing, left: before.j.faults };
+  return { pic: before, missing, why: `no other picture removes a fault without adding one (${usable.slice(0, 2).map((x) => `${x.fit} at ${r2(x.scale)}×: ${x.j.faults.map((f) => shortFault(x, f)).join(", ")}`).join("; ")})` };
 }
 
 // What a line of the screen becomes in the frame: the keep's text where it says how tall (and
@@ -271,7 +277,7 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones
       if (moved.j.faults.length) moved = null;
     }
   }
-  const got = choose(before, list, { asked, text, zoomed: c.join() !== "0,0,1,1", moved });
+  const got = choose(before, list, { asked, zoomed: c.join() !== "0,0,1,1", own: moved ? [moved] : [] });
   const pic = got.pic, j = pic.j;
   const narrower = (Array.isArray(res.notes) ? res.notes : []).find((x) => /A narrower region reads/.test(x))?.match(/at most \d+×\d+ px of the source/)?.[0]?.replace(" of the source", " of the screen") || null;
   const lines = [];
@@ -288,7 +294,7 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, zones
   }
   if (got.missing) lines.push(`! "layout": "${got.missing}" is not among this screen's pictures in this frame (${width}×${height}), so it takes the rule's; its names here: ${[BEFORE, ...new Set(list.map((x) => x.fit))].map((x) => `"${x}"`).join(", ")}`);
   lines.push(`text: ${textSentence(pic, { text, readable, narrower, size: src })}`);
-  const others = [before, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.j.faults.length ? x.j.faults.map((f) => f.code === "text" ? `text ${x.j.textHeight} px` : f.code === "across" ? `region ${span(x.region)}` : f.code === "bars" ? "under the apps' bars" : `${f.code} on the region`).join(", ") : `${pct(x.j.ground)} ground`})`);
+  const others = [before, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
   if (others.length) lines.push(`also: ${others.join("; ")}`);
   return { pic, facts: facts(pic, j, { readable, named: got.named }), lines };
 }
