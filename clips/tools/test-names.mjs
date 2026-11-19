@@ -173,7 +173,12 @@ test("proposed: the model's knowledge, a case alone, a model not sure; the words
   // the list counts and names them
   const text = namesListing({ names: NAMES, entries: judged([fix(0, "Reed", "Reade"), fix(2, "Miller", "mother", "low", { kind: "word" }), fix(6, "First We Feast I'm", "First We Feast")]) }, TALK.words);
   assert.match(text, /1 correction applied, 2 proposed, 1 refused/);
-  assert.match(text, /"Reed" → "Reade" \(its own captions; sure\), 1 place: 0:02 “So in Gonzo Girl you play Walker \[Reed, → Reade\] a fictionalized/);
+  assert.match(text, /"Reed" → "Reade" \(its own captions; sure\), at 0:02, sentence 0: “So in Gonzo Girl you play Walker \[Reed, → Reade\] a fictionalized/);
+  // an entry of several places (a list from before) shows every one of them
+  const two = { ...judged([fix(0, "Reed", "Reade")])[0] };
+  two.places = [two.places[0], { ...two.places[0], sentence: 4, first: TALK.sentences[4].first, last: TALK.sentences[4].first }];
+  const both = namesListing({ names: [], entries: [two] }, TALK.words);
+  assert.match(both, /at 2 places:\n {8}0:02, sentence 0: “So in Gonzo Girl[^\n]*\n {8}0:02, sentence 4: “…[^\n]*werewolf\. \[Reed, → Reade\] you were great/);
 });
 
 test("applying keeps the times and the punctuation, merges two words into one, and is undone from the words as written", () => {

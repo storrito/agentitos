@@ -444,10 +444,12 @@ function contextOf(words, p, to, span = 7) {
 export function namesListing(j, raw) {
   const { entries } = j;
   const applied = entries.filter((e) => e.status === "applied"), proposed = entries.filter((e) => e.status === "proposed"), refused = entries.filter((e) => e.status === "refused");
+  // every place an entry changes, each with its sentence (an entry is one place: --take applies
+  // exactly what is shown)
   const line = (e) => {
-    const p = e.places[0];
     const where = e.status === "refused" ? `refused: ${e.refused}` : `${e.where}; ${e.sure}${e.because ? `: ${e.because}` : ""}${e.taken ? `; ${e.taken}` : ""}`;
-    return `  ${String(e.n).padStart(2)}. "${e.from}" → "${e.to}" (${where})${e.places.length ? `, ${e.places.length} place${e.places.length > 1 ? "s" : ""}: ${mmss(p.start)} “${contextOf(raw, p, e.to)}”` : ""}`;
+    const at = e.places.map((p) => `${mmss(p.start)}, sentence ${p.sentence}: “${contextOf(raw, p, e.to)}”`);
+    return `  ${String(e.n).padStart(2)}. "${e.from}" → "${e.to}" (${where})${at.length === 1 ? `, at ${at[0]}` : at.length ? `, at ${at.length} places:${at.map((a) => `\n        ${a}`).join("")}` : ""}`;
   };
   const out = [`Names: ${j.names.length} on the video's page${j.names.length ? ` (${j.names.slice(0, 12).map((n) => n.name).join(", ")}${j.names.length > 12 ? ", …" : ""})` : ""}; ${applied.length} correction${applied.length === 1 ? "" : "s"} applied, ${proposed.length} proposed, ${refused.length} refused.`];
   if (applied.length) out.push("Applied (the page writes the name, only the spelling differs):", ...applied.map(line));
