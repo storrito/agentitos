@@ -364,7 +364,7 @@ function cmdBuild(dir, opts) {
     const q = pictures?.[clips[p.clip].file];
     if (!q) return null;
     const c = clips[p.clip];
-    return { left: q.left, top: q.top - (q.lift || 0), width: c.width * q.scale, height: c.height * q.scale };
+    return { left: q.left, top: q.top - (q.lift || 0), width: c.width * q.scale, height: c.height * q.scale, ...(q.window ? { window: [q.window[0], q.window[1] - (q.lift || 0), q.window[2], q.window[3]] } : {}) };
   };
   if (placed?.by === "takes place" && placed.for !== placedFor(cut, s)) console.log(`  ⚠ The cut, the captions' style, the hook or the frame changed since ${rel(placeFile)} was written: node ${self()} place ${rel(dir)} again, so that the text keeps clear of the faces.`);
   const pieces = r.pieces.map((p, k) => {
@@ -510,6 +510,9 @@ function cmdFaces(dir, opts) {
   const tool = framingTool();
   if (!tool) fail("Finding the faces needs agentitos' clips skill beside this one (or FRAME_TOOL naming its tools/frame.mjs).");
   const eye = eyeBoxes(opts.eye, clips);
+  // the agent's own eyes for one video: no other is sent to the model unasked
+  const missing = list.filter((c) => !eye[c.file] && !fs.existsSync(source(dir, `${kOf(c)}.faces.json`)));
+  if (opts.eye?.length && missing.length) fail(`--eye names no box of ${missing.map((c) => c.file).join(", ")}: give its boxes too (faces ${rel(dir)} --grid shows them), so that no video goes to the model unasked.`);
   let cost = 0;
   const started = Date.now();
   for (const c of list) {
@@ -554,6 +557,7 @@ function cmdPlace(dir, opts) {
   if (!fs.existsSync(cutFile)) fail(`Write ${rel(cutFile)} first, as ${rel(source(dir, "brief.md"))} says.`);
   const tool = layoutTool();
   if (!tool) fail("Placing the picture and the text needs agentitos' layout skill beside this one (or LAYOUT_TOOL naming its tools/place.mjs).");
+  if (opts.hook !== undefined) fail(`The hook's words go to build (build ${rel(dir)} --hook "…"), then place again; place takes --hook-kind text|card.`);
   const s = settings(dir, {});
   const { clips, words } = read(source(dir, "words.json"));
   const cut = read(cutFile);
@@ -618,19 +622,19 @@ function cmdPlace(dir, opts) {
     else if (Number.isInteger(want)) {
       const x = list.find((y) => y.n === want);
       if (!x) fail(`--picture ${c.file}:${want}: layout gives ${c.file} ${list.length} candidate(s) of one picture (${list.map((y) => y.n).join(", ")}); name one of them, or cover.`);
-      chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n };
+      chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) };
     } else if (sameShape) chosen = cover;
-    else { const x = list.find(passes) || list[0]; chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n }; }
+    else { const x = list.find(passes) || list[0]; chosen = { scale: x.scale, left: x.left, top: x.top, fit: name(x), n: x.n, ...(x.window ? { window: x.window } : {}) }; }
     pictures[c.file] = chosen;
     const mark = (x) => (x.hard ? "✗" : x.unmet.length ? "–" : x.soft ? "!" : "✓");
     said.push(`${c.file} (${c.width}×${c.height}): ${chosen.fit === "cover" ? `covering the frame, centred${want === "cover" ? " (as you fixed it)" : sameShape ? " (the frame's shape already)" : ""}` : `${chosen.fit} at ${chosen.scale}×, left ${chosen.left}, top ${chosen.top}${Number.isInteger(want) ? " (as you fixed it)" : ""}`}; layout's candidates: ${list.slice(0, 5).map((x) => `${x.n}. ${mark(x)} ${name(x)} ${x.scale}×${x.problems.filter((q) => q.level === "hard").length ? ` (${x.problems.filter((q) => q.level === "hard").map((q) => `${q.of} ${q.what}`).join("; ").slice(0, 90)})` : ""}`).join("; ")}`);
   }
 
   // the captions and the hook over the whole cut, each video one shot of layout's text
-  const { off } = clockOf(clips);
+  const clock = clockOf(clips, pieces);
   const until = s.hook ? (built ? hookUntil(edit.words, edit.duration) : 3) : null;
-  const hook = s.hook ? hookSpan(pieces, until, off) : null;
-  const { input, files } = shotsInput({ clips, pieces, faces, pictures, frame: [W, H], off, hook });
+  const hook = s.hook ? hookSpan(pieces, until, clock) : null;
+  const { input, files } = shotsInput({ clips, pieces, faces, pictures, frame: [W, H], clock, hook });
   const shotsFile = path.join(folder, "shots.json");
   fs.writeFileSync(shotsFile, JSON.stringify(input));
   const lifts = Object.entries(fixed.lifts || {}).filter(([f]) => files.includes(f)).flatMap(([f, px]) => ["--lift", `${files.indexOf(f) + 1}:${px}`]);
@@ -646,7 +650,9 @@ function cmdPlace(dir, opts) {
   // the ground: one still of the video, where the picture leaves part of the frame bare
   for (const c of shown) {
     const pic = pictures[c.file];
-    const bare = pic.left > 0.5 || pic.top - (pic.lift || 0) > 0.5 || pic.left + c.width * pic.scale < W - 0.5 || pic.top - (pic.lift || 0) + c.height * pic.scale < H - 0.5;
+    // (the part of the frame the sharp picture fills: a crop's window, else the picture itself)
+    const w = pic.window || [pic.left, pic.top, c.width * pic.scale, c.height * pic.scale], y0 = w[1] - (pic.lift || 0);
+    const bare = w[0] > 0.5 || y0 > 0.5 || w[0] + w[2] < W - 0.5 || y0 + w[3] < H - 0.5;
     if (!bare) continue;
     const kept = pieces.filter((p) => p.clip === c.n), mid = kept[Math.floor(kept.length / 2)];
     const g = source(dir, `${kOf(c)}.ground.jpg`);
@@ -660,8 +666,8 @@ function cmdPlace(dir, opts) {
     capOpts.y = Math.round(capOpts.y - ink.below * capOpts["font-size"]);
     capOpts["max-width"] = Math.floor(capOpts["max-width"] - 2 * Math.ceil(ink.side * capOpts["font-size"] + 1));
   }
-  const hookOut = text.hook ? { kind: text.hook.kind, box: text.hook.box, font: text.hook.font, lines: text.hook.lines, ...(text.hook.why && built ? { until: +toCut(text.hook.until, pieces, off).toFixed(3) } : {}) } : null;
-  const picOut = Object.fromEntries(Object.entries(pictures).map(([f, p]) => [f, { scale: p.scale, left: p.left, top: p.top, lift: p.lift || 0, fit: p.fit, ...(p.n ? { candidate: p.n } : {}), ...(p.ground ? { ground: p.ground } : {}) }]));
+  const hookOut = text.hook ? { kind: text.hook.kind, box: text.hook.box, font: text.hook.font, lines: text.hook.lines, ...(text.hook.why && built ? { until: +toCut(text.hook.until, pieces, clock).toFixed(3) } : {}) } : null;
+  const picOut = Object.fromEntries(Object.entries(pictures).map(([f, p]) => [f, { scale: p.scale, left: p.left, top: p.top, lift: p.lift || 0, fit: p.fit, ...(p.n ? { candidate: p.n } : {}), ...(p.window ? { window: p.window } : {}), ...(p.ground ? { ground: p.ground } : {}) }]));
   if (!Object.keys(fixed.picture || {}).length) delete fixed.picture;
   if (!Object.keys(fixed.lifts || {}).length) delete fixed.lifts;
   fs.writeFileSync(placeFile, JSON.stringify({ by: "takes place", raise: fixed.raise || "mouth", ...(capOpts ? { caption: capOpts } : {}), ...(hookOut ? { hook: hookOut } : {}), picture: picOut, fixed, for: placedFor(cut, s) }, null, 1) + "\n");
@@ -694,7 +700,8 @@ function cmdPlace(dir, opts) {
     const bottom = (f) => Math.max(...f.boxes.map((b) => b.box[1] + b.box[3])), topOf = (f) => Math.min(...f.boxes.map((b) => b.box[1]));
     const lowest = inKept.length ? inKept.reduce((a, b) => (bottom(b) > bottom(a) ? b : a)) : null, highest = inKept.length ? inKept.reduce((a, b) => (topOf(b) < topOf(a) ? b : a)) : null;
     const first = kept[0].in + 0.05, last = kept.at(-1).out - 0.05;
-    const hookAt = (t) => !!hook && (hook.spans || [[hook.start, hook.end]]).some(([a, b]) => off[cl.n] + t >= a && off[cl.n] + t <= b);
+    // (a second of the video under the hook: in a piece the hook's time covers)
+    const hookAt = (t) => !!hook && pieces.some((p, k) => p.clip === cl.n && t >= p.in && t <= p.out && (hook.spans || [[hook.start, hook.end]]).some(([a, b]) => clock.at[k] + t - p.in >= a && clock.at[k] + t - p.in <= b));
     const near = (t) => list.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), list[0] || { boxes: [] });
     const moments = [{ t: first, what: "first" }, ...(lowest ? [{ t: lowest.t, what: "lowest face" }] : []), ...(highest ? [{ t: highest.t, what: "highest face" }] : []), { t: last, what: "last" }]
       .map((m) => ({ ...m, faces: (near(m.t)?.boxes || []).map((b) => b.box), hook: hookAt(m.t) }));

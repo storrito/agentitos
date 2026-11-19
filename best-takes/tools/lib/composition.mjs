@@ -46,21 +46,22 @@ function place(from, to) {
 export function pieceStyle(p, width, height) {
   const css = [];
   if (p.pic) css.push(`left: ${+p.pic.left.toFixed(1)}px; top: ${+p.pic.top.toFixed(1)}px; width: ${+p.pic.width.toFixed(1)}px; height: ${+p.pic.height.toFixed(1)}px; object-fit: fill`);
-  if (p.scale > 1) {
-    const oy = p.origin != null ? p.origin : 0.32 * height;
-    css.push(`transform: scale(${p.scale}); transform-origin: ${p.pic ? `${+(width / 2 - p.pic.left).toFixed(1)}px ${+(oy - p.pic.top).toFixed(1)}px` : p.origin != null ? `50% ${+p.origin.toFixed(1)}px` : "50% 32%"}`);
-    // a picture that leaves part of the frame bare (a band over a ground) goes closer inside its own
-    // edges: the part of the frame it filled is cut out of it before it grows (clip-path is drawn
-    // in the element's own box, before its transform)
-    const q = p.pic;
-    if (q) {
-      const vis = [Math.max(0, q.left), Math.max(0, q.top), Math.min(width, q.left + q.width), Math.min(height, q.top + q.height)];
-      if (vis[0] > 0.5 || vis[1] > 0.5 || vis[2] < width - 0.5 || vis[3] < height - 0.5) {
-        const ox = width / 2 - q.left, oyl = oy - q.top, back = (v, o, at) => o + (v - at - o) / p.scale;
-        const x0 = back(vis[0], ox, q.left), x1 = back(vis[2], ox, q.left), y0 = back(vis[1], oyl, q.top), y1 = back(vis[3], oyl, q.top);
-        const r = (v) => +Math.max(0, v).toFixed(1);
-        css.push(`clip-path: inset(${r(y0)}px ${r(q.width - x1)}px ${r(q.height - y1)}px ${r(x0)}px)`);
-      }
+  const s = p.scale > 1 ? p.scale : 1, oy = p.origin != null ? p.origin : 0.32 * height;
+  if (s > 1) css.push(`transform: scale(${p.scale}); transform-origin: ${p.pic ? `${+(width / 2 - p.pic.left).toFixed(1)}px ${+(oy - p.pic.top).toFixed(1)}px` : p.origin != null ? `50% ${+p.origin.toFixed(1)}px` : "50% 32%"}`);
+  // A picture that leaves part of the frame bare (a band over a ground, a crop's window) shows only
+  // the part of the frame it fills, and goes closer inside those edges: that part is cut out of it
+  // (clip-path is drawn in the element's own box, before its transform)
+  const q = p.pic;
+  if (q) {
+    const w = q.window || [q.left, q.top, q.width, q.height];
+    const vis = [Math.max(0, w[0], q.left), Math.max(0, w[1], q.top), Math.min(width, w[0] + w[2], q.left + q.width), Math.min(height, w[1] + w[3], q.top + q.height)];
+    const bare = vis[0] > 0.5 || vis[1] > 0.5 || vis[2] < width - 0.5 || vis[3] < height - 0.5;
+    const narrower = vis[0] > Math.max(0, q.left) + 0.5 || vis[1] > Math.max(0, q.top) + 0.5 || vis[2] < Math.min(width, q.left + q.width) - 0.5 || vis[3] < Math.min(height, q.top + q.height) - 0.5;
+    if ((bare && s > 1) || narrower) {
+      const ox = width / 2 - q.left, oyl = oy - q.top, back = (v, o, at) => o + (v - at - o) / s;
+      const x0 = back(vis[0], ox, q.left), x1 = back(vis[2], ox, q.left), y0 = back(vis[1], oyl, q.top), y1 = back(vis[3], oyl, q.top);
+      const r = (v) => +Math.max(0, v).toFixed(1);
+      css.push(`clip-path: inset(${r(y0)}px ${r(q.width - x1)}px ${r(q.height - y1)}px ${r(x0)}px)`);
     }
   }
   return css.join("; ");

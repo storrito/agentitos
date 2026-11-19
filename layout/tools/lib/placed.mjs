@@ -405,14 +405,14 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     const fare0 = hookFare(best);
     let alt = null, fare = fare0;
     for (const c of candidates.slice(1)) {
-      if (!(c.touch <= best.touch + 1e-6 && c.mouth <= best.mouth + 1e-6 && c.nose <= best.nose + 1e-6)) continue;
+      if (!(c.touch <= best.touch + 1e-6 && c.lip <= best.lip + 1e-6 && c.mouth <= best.mouth + 1e-6 && c.nose <= best.nose + 1e-6)) continue;
       const f = hookFare(c);
       if (f < fare) { alt = c; fare = f; if (!f) break; }
     }
     if (alt) {
       gaveWay = { from: best, to: alt };
       const mid = (c) => Math.round(((c.box[1] + c.box[3] / 2) / H) * 1000) / 10;
-      notes.push(`The captions stand with their middle at ${mid(alt)} % of the height${alt.font !== best.font ? ` at ${alt.font} px` : ""}, not at ${mid(best)} %: there the hook would have ${["", "", "lain on a face", "lain on the eyes, nose or mouth", "lain on the captions"][fare0]}${fare0 < 2 ? "found no place clear of the faces" : ""}, here it ${fare ? "lies on neither" : "finds a place clear of the faces"} (the captions on the faces no longer; ${r1(alt.cost - best.cost)} more of the cost).`);
+      notes.push(`The captions stand with their middle at ${mid(alt)} % of the height${alt.font !== best.font ? ` at ${alt.font} px` : ""}, not at ${mid(best)} %: there the hook would have ${["", "", "lain on a face", "lain on the eyes, nose or mouth", "lain on the captions"][fare0]}${fare0 < 2 ? "found no place clear of the faces" : ""}, here it ${["finds a place clear of the faces", "lies on no face", "lies on a face, not on its eyes, nose or mouth", "lies on the eyes, nose or mouth"][fare]} (the captions on the faces no longer; ${r1(alt.cost - best.cost)} more of the cost).`);
       best = alt;
     }
   }

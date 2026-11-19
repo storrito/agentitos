@@ -439,33 +439,34 @@ test("on its own: the face layout places a video by is the face over the seconds
   assert.ok(track.every((m) => m.box[2] === 480 && m.box[1] === 500));
 });
 
-test("on its own: layout's text gets one shot per video on one clock, the faces as placed and only where the cut keeps them; the hook's seconds on that clock, and back in the cut's", () => {
+test("on its own: layout's text gets one shot per video on one clock, the stretches the cut keeps end to end with the faces as placed; the hook's seconds on that clock, and back in the cut's", () => {
   const clips = { 1: { n: 1, file: "01.mp4", duration: 20, width: 1080, height: 1920 }, 2: { n: 2, file: "02.mp4", duration: 30, width: 1280, height: 720 } };
-  const { off } = clockOf(clips);
-  assert.deepEqual(off, { 1: 0, 2: 21 });
   const at = (t, box) => ({ t, boxes: [{ who: "A", box, feat: [box[0] + 50, box[1] + 100, box[2] - 100, box[3] / 2] }] });
   const faces = { "01.mp4": { faces: Array.from({ length: 200 }, (_, i) => at(i / 10, [300, 570, 600, 900])) }, "02.mp4": { faces: Array.from({ length: 300 }, (_, i) => at(i / 10, [555, 150, 185, 185])) } };
   const pictures = { "01.mp4": { scale: 1, left: 0, top: 0 }, "02.mp4": { scale: 1.5, left: -439.5, top: 420 } };
   // the cut: 2–6 s of the first video, then 10–12 s of the second, then 8–9 s of the first
   const pieces = [{ clip: 1, in: 2, out: 6, start: 0, duration: 4 }, { clip: 2, in: 10, out: 12, start: 4, duration: 2 }, { clip: 1, in: 8, out: 9, start: 6, duration: 1 }];
-  const hook = hookSpan(pieces, 5, off);
-  assert.deepEqual(hook, { start: 2, end: 32, spans: [[2, 6], [31, 32]] });
-  const { input, files } = shotsInput({ clips, pieces, faces, pictures, frame: [1080, 1920], off, hook });
+  const clock = clockOf(clips, pieces);
+  // the first video's two stretches end to end (0–4, 4–5), the second's a second after (6–8)
+  assert.deepEqual(clock, { off: { 1: 0, 2: 6 }, at: [0, 6, 4] });
+  const hook = hookSpan(pieces, 5, clock);
+  assert.deepEqual(hook, { start: 0, end: 7, spans: [[0, 4], [6, 7]] });
+  const { input, files } = shotsInput({ clips, pieces, faces, pictures, frame: [1080, 1920], clock, hook });
   assert.deepEqual(files, ["01.mp4", "02.mp4"]);
-  assert.deepEqual(input.shots.map((s) => [s.start, s.end, s.weight]), [[2, 9, 5], [31, 33, 2]]);
-  const ts = input.shots[1].faces[0].track.map((m) => m.t);
-  assert.ok(ts[0] >= 30.95 && ts.at(-1) <= 33.05, JSON.stringify([ts[0], ts.at(-1)]));
-  // none of the first video's seconds the cut leaves out (6–8 s)
-  assert.ok(!input.shots[0].faces[0].track.some((m) => m.t > 6.05 && m.t < 7.95));
+  assert.deepEqual(input.shots.map((s) => [s.start, s.end, s.weight]), [[0, 5, 5], [6, 8, 2]]);
+  // no gap between the first video's stretches: 2 s left out lie between none of its moments
+  const ts = input.shots[0].faces[0].track.map((m) => m.t);
+  assert.ok(ts.every((t, i) => !i || t - ts[i - 1] <= 0.11 + 1e-9), JSON.stringify(ts.filter((t, i) => i && t - ts[i - 1] > 0.11)));
   // placed: the second video's face at 1.5× in its band
   assert.deepEqual(input.shots[1].faces[0].track[0].box, [393, 645, 277.5, 277.5]);
   assert.ok(input.shots[1].faces[0].track[0].feat, "the eyes, nose and mouth go along");
   // the close-up under the hook is calm, the wide one is not
   assert.equal(input.hook.calm, false);
-  // back in the cut's time: 31.5 on the clock is 0.5 s into the second piece
-  assert.equal(toCut(31.5, pieces, off), 4.5);
-  // between two stretches: where the one before ends in the cut
-  assert.equal(toCut(7, pieces, off), 4);
+  // back in the cut's time: 6.5 on the clock is 0.5 s into the second piece; 4.5 into the third
+  assert.equal(toCut(6.5, pieces, clock), 4.5);
+  assert.equal(toCut(4.5, pieces, clock), 6.5);
+  // between the two sections: where the stretch before ends in the cut
+  assert.equal(toCut(5.5, pieces, clock), 7);
 });
 
 test("on its own: before the cut is built, what it plays comes from cut.json's keeps", () => {
@@ -486,6 +487,11 @@ test("on its own: a piece is drawn where its picture stands, and a punch-in grow
   const grown = (v, o) => o + (v - o) * 1.12;
   assert.ok(Math.abs(grown(320 + clip[0], 700) - 320) < 0.2 && Math.abs(grown(320 + 1080 - clip[2], 700) - 1400) < 0.2, JSON.stringify(clip));
   assert.ok(Math.abs(grown(-439.5 + clip[3], 540) - 0) < 0.2 && Math.abs(grown(-439.5 + 1920 - clip[1], 540) - 1080) < 0.2, JSON.stringify(clip));
+  // a crop's window narrower than the picture (layout's crop 4:5 of a wide take): only the window shows, also without a punch-in
+  const crop = { left: -684.4, top: 285, width: 2400, height: 1350, window: [0, 285, 1080, 1350] };
+  assert.equal(pieceStyle({ scale: 1, pic: crop }, 1080, 1920), "left: -684.4px; top: 285px; width: 2400px; height: 1350px; object-fit: fill");
+  const wide = { left: -684.4, top: 285, width: 2400, height: 1350, window: [100, 285, 880, 1350] };
+  assert.match(pieceStyle({ scale: 1, pic: wide }, 1080, 1920), /clip-path: inset\(0px 735\.6px 0px 784\.4px\)$/);
   // covering the frame: nothing to cut out
   assert.doesNotMatch(pieceStyle({ scale: 1.12, origin: 700, pic: { left: 0, top: -100, width: 1080, height: 2100 } }, 1080, 1920), /clip-path/);
 });

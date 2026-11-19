@@ -10,12 +10,12 @@
 // and the check read one thing whoever wrote it; place.json's `picture` is this skill's own key.
 //
 //   pieceSpan(edit | { cut, words }) → [{ clip, in, out, start, duration, rate }]: what the cut plays
-//   clockOf(clips) → { off: { n: seconds } }: every video on one clock for layout, one after the other
+//   clockOf(clips, pieces) → { off, at }: every video a section of one clock, its kept stretches end to end
 //   covering([sw, sh], [W, H]) → { scale, left, top }: the picture covering the frame, centred
 //   inFrame(box, pic) → the box in px of the frame, the picture drawn at pic (scale, left, top − lift)
 //   faceTrack(list, pieces, n, every) → [{ t, box }]: the face over the seconds the cut keeps of video n
 //   shotsInput(…) → { shots, hook }: layout text's shots.json, one shot per video the cut shows
-//   hookSpan(pieces, until, off) → { start, end, spans? } on the one clock
+//   hookSpan(pieces, until, clock) → { start, end, spans? } on the one clock
 //   calmBehind(shots, hook, H) → whether the picture behind the hook is a close-up
 //   inkOf(look) → what of the captions' ink lies outside their line (as clips' place takes it)
 
@@ -48,13 +48,21 @@ export function pieceSpan(edit, { cut, words } = {}) {
   return out;
 }
 
-// every video on one clock, one after the other with a second between: layout's shots are one
-// timeline, and two videos' own seconds overlap
-export function clockOf(clips) {
-  const off = {};
-  let at = 0;
-  for (const c of Object.values(clips).sort((a, b) => a.n - b.n)) { off[c.n] = at; at += c.duration + 1; }
-  return { off };
+// One clock for layout: each video a section of its own, a second after the one before, and in it
+// the stretches the cut keeps of it laid end to end (in the cut's order): a moment of layout's text
+// stands for the time to its neighbour, so a stretch the cut leaves out must not lie between two.
+// { off: { n: seconds }, at: [clock start of each piece] }, and toClock(clip, t) for a second of a video
+export function clockOf(clips, pieces) {
+  const off = {}, at = new Array(pieces.length);
+  let cursor = 0;
+  for (const c of Object.values(clips).sort((a, b) => a.n - b.n)) {
+    const mine = pieces.map((p, k) => [p, k]).filter(([p]) => p.clip === c.n);
+    if (!mine.length) continue;
+    off[c.n] = cursor;
+    for (const [p, k] of mine) { at[k] = cursor; cursor += p.out - p.in; }
+    cursor += 1;
+  }
+  return { off, at };
 }
 
 export function covering([sw, sh], [W, H]) {
@@ -91,50 +99,55 @@ export function faceTrack(list, pieces, n, every = 0.5) {
 // The shots of layout's text: one per video the cut shows, its faces in the frame as the video is
 // placed (before any raise), only at the seconds the cut keeps of it, on the one clock; room: how
 // far its picture may be raised without a ground. weight: the seconds of the cut it plays.
-export function shotsInput({ clips, pieces, faces, pictures, frame: [W, H], off, hook = null }) {
+export function shotsInput({ clips, pieces, faces, pictures, frame: [W, H], clock, hook = null }) {
   const shots = [], files = [];
   for (const c of Object.values(clips).sort((a, b) => a.n - b.n)) {
-    const kept = pieces.filter((p) => p.clip === c.n);
+    const kept = pieces.map((p, k) => [p, k]).filter(([p]) => p.clip === c.n);
     if (!kept.length) continue;
     const pic = pictures[c.file], list = faces[c.file];
-    const weight = kept.reduce((t, p) => t + p.duration, 0);
+    const weight = kept.reduce((t, [p]) => t + p.duration, 0);
     const tracks = new Map();
-    for (const f of list?.faces || []) {
-      if (!kept.some((p) => f.t >= p.in - 0.05 && f.t <= p.out + 0.05)) continue;
-      for (const b of f.boxes) {
-        const key = b.who ?? "a face";
-        if (!tracks.has(key)) tracks.set(key, { who: key, track: [] });
-        tracks.get(key).track.push({ t: +(off[c.n] + f.t).toFixed(3), box: inFrame(b.box, { ...pic, lift: 0 }), ...(b.feat ? { feat: inFrame(b.feat, { ...pic, lift: 0 }) } : {}), ...(b.between ? { between: b.between.map((x) => +(off[c.n] + x).toFixed(2)) } : {}) });
+    for (const [p, k] of kept) {
+      const on = (x) => clock.at[k] + Math.min(p.out - p.in, Math.max(0, x - p.in));
+      for (const f of list?.faces || []) {
+        if (f.t < p.in - 0.05 || f.t > p.out + 0.05) continue;
+        for (const b of f.boxes) {
+          const key = b.who ?? "a face";
+          if (!tracks.has(key)) tracks.set(key, { who: key, track: [] });
+          tracks.get(key).track.push({ t: +on(f.t).toFixed(3), box: inFrame(b.box, { ...pic, lift: 0 }), ...(b.feat ? { feat: inFrame(b.feat, { ...pic, lift: 0 }) } : {}), ...(b.between ? { between: b.between.map((x) => +on(x).toFixed(2)) } : {}) });
+        }
       }
     }
-    const start = Math.min(...kept.map((p) => p.in)), end = Math.max(...kept.map((p) => p.out));
-    shots.push({ n: shots.length + 1, start: +(off[c.n] + start).toFixed(3), end: +(off[c.n] + end).toFixed(3), weight: +weight.toFixed(3), faces: [...tracks.values()], room: { free: roomBelow(pic, [c.width, c.height], H) } });
+    for (const tr of tracks.values()) tr.track.sort((a, b) => a.t - b.t);
+    const start = clock.off[c.n], end = start + kept.reduce((t, [p]) => t + p.out - p.in, 0);
+    shots.push({ n: shots.length + 1, start: +start.toFixed(3), end: +end.toFixed(3), weight: +weight.toFixed(3), faces: [...tracks.values()], room: { free: roomBelow(pic, [c.width, c.height], H) } });
     files.push(c.file);
   }
   return { input: { shots, ...(hook ? { hook: { start: hook.start, end: hook.end, ...(hook.spans ? { spans: hook.spans } : {}), calm: calmBehind(shots, hook, H) } } : {}) }, files };
 }
 
-// the hook's seconds on the one clock: from the cut's start until `until`, the stretches of the
-// videos the cut plays in that time (a cut that opens with a line heard twice plays two)
-export function hookSpan(pieces, until, off) {
+// the hook's seconds on the one clock: from the cut's start until `until`, the stretches the cut
+// plays in that time (a cut that opens with a line heard twice plays two apart)
+export function hookSpan(pieces, until, clock) {
   const spans = [];
-  for (const p of pieces) {
-    if (p.start >= until - 1e-3) break;
-    const a = off[p.clip] + p.in, b = off[p.clip] + p.in + Math.min(p.duration, until - p.start) * (p.rate || 1);
+  pieces.forEach((p, k) => {
+    if (p.start >= until - 1e-3) return;
+    const a = clock.at[k], b = clock.at[k] + Math.min(p.duration, until - p.start) * (p.rate || 1);
     const prev = spans.at(-1);
-    if (prev && Math.abs(prev[1] - a) < 0.5) prev[1] = +b.toFixed(3); else spans.push([+a.toFixed(3), +b.toFixed(3)]);
-  }
+    if (prev && Math.abs(prev[1] - a) < 0.05) prev[1] = +b.toFixed(3); else spans.push([+a.toFixed(3), +b.toFixed(3)]);
+  });
   const start = Math.min(...spans.map((s) => s[0])), end = Math.max(...spans.map((s) => s[1]));
   return { start, end, ...(spans.length > 1 ? { spans } : {}) };
 }
 
-// a moment of the one clock in the cut's time (the hook's end, where layout ends it at a cut)
-export function toCut(t, pieces, off) {
-  const p = pieces.find((q) => t >= off[q.clip] + q.in && t <= off[q.clip] + q.out);
-  if (p) return p.start + (t - off[p.clip] - p.in) / (p.rate || 1);
-  // between two stretches (a stretch the cut leaves out): where the stretch before it ends in the cut
-  const before = pieces.filter((q) => off[q.clip] + q.out <= t + 1e-3).sort((a, b) => off[b.clip] + b.out - (off[a.clip] + a.out))[0];
-  return before ? before.start + before.duration : pieces[0].start;
+// a moment of the one clock in the cut's time (the hook's end, where layout ends it early)
+export function toCut(t, pieces, clock) {
+  const k = pieces.findIndex((q, i) => t >= clock.at[i] - 1e-6 && t <= clock.at[i] + q.out - q.in + 1e-6);
+  if (k >= 0) return pieces[k].start + (t - clock.at[k]) / (pieces[k].rate || 1);
+  // between two videos' sections: where the stretch before it ends in the cut
+  let best = -1;
+  pieces.forEach((q, i) => { const e = clock.at[i] + q.out - q.in; if (e <= t + 1e-3 && (best < 0 || e > clock.at[best] + pieces[best].out - pieces[best].in)) best = i; });
+  return best >= 0 ? pieces[best].start + pieces[best].duration : pieces[0].start;
 }
 
 // Whether the picture behind a hook text is calm (copied from clips' place: a skill never imports
@@ -171,7 +184,11 @@ function cell(video, t, pic, ground, [W, H], boxes, label, out, small) {
   const sw = Math.round(pic.w * pic.scale / 2) * 2, sh = Math.round(pic.h * pic.scale / 2) * 2;
   const draw = boxes.map(([b, colour, th]) => `drawbox=x=${Math.round(b[0] * k)}:y=${Math.round(b[1] * k)}:w=${Math.max(2, Math.round(b[2] * k))}:h=${Math.max(2, Math.round(b[3] * k))}:color=${colour}:t=${th}`);
   const text = String(label).replace(/[\\':,%;\[\]]/g, " ");
-  const graph = `[1:v]setpts=PTS-STARTPTS,scale=${W}:${H}[g];[0:v]setpts=PTS-STARTPTS,scale=${sw}:${sh},setsar=1[p];[g][p]overlay=x=${Math.round(pic.left)}:y=${Math.round(pic.top - (pic.lift || 0))},scale=${Math.round((W * k) / 2) * 2}:${small},setsar=1${draw.length ? "," + draw.join(",") : ""},drawtext=text='${text}':x=6:y=h-24:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=3[c]`;
+  // a crop's window: only that part of the picture shows
+  const win = pic.window || [pic.left, pic.top, sw, sh];
+  const x0 = Math.max(win[0], pic.left), y0 = Math.max(win[1], pic.top), x1 = Math.min(win[0] + win[2], pic.left + sw), y1 = Math.min(win[1] + win[3], pic.top + sh);
+  const crop = `crop=${Math.max(2, Math.round(x1 - x0))}:${Math.max(2, Math.round(y1 - y0))}:${Math.round(x0 - pic.left)}:${Math.round(y0 - pic.top)}`;
+  const graph = `[1:v]setpts=PTS-STARTPTS,scale=${W}:${H}[g];[0:v]setpts=PTS-STARTPTS,scale=${sw}:${sh},setsar=1,${crop}[p];[g][p]overlay=x=${Math.round(x0)}:y=${Math.round(y0 - (pic.lift || 0))},scale=${Math.round((W * k) / 2) * 2}:${small},setsar=1${draw.length ? "," + draw.join(",") : ""},drawtext=text='${text}':x=6:y=h-24:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=3[c]`;
   const inputs = ["-ss", Math.max(0, t).toFixed(3), "-i", video, ...(ground ? ["-i", ground] : ["-f", "lavfi", "-i", `color=c=black:s=${W}x${H}`])];
   let r = spawnSync("ffmpeg", ["-v", "error", "-y", ...inputs, "-filter_complex", graph, "-map", "[c]", "-frames:v", "1", "-q:v", "4", out], { encoding: "utf8" });
   // (an ffmpeg without drawtext: the cell without its label)
