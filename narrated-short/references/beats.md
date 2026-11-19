@@ -33,7 +33,7 @@
 - `from`, `to`: seconds of the film. Beats follow each other without a gap. Change between sentences, in the pause, or at a comma; never inside a word. The first starts at 0; the last ends with the last word and is stretched 0.7 s past it by itself, so its stretch of the source must last that long.
 - `at`: the second of the source where the clip starts.
 - `frame` (may be left out): `whole` (the default: the whole wide frame as a band over a blurred copy of itself), `fill` (a 9:16 crop, from the middle unless `pan` or the faces say otherwise), `native` (the source is vertical).
-- `zoom` (1 to 3), `pan` (with `whole`, and with `fill`): the band larger, and which part of its width stays: 0 the left, 0.5 the middle, 1 the right. A bigger subject, a logo in a corner gone: a logo top left → `"zoom": 1.4, "pan": 1`. A `pan` you give stands, also where it cuts a face (build says so).
+- `zoom` (1 to 3), `pan` (with `whole`, and with a `fill` whose faces `faces` found): the band larger, and which part of its width stays: 0 the left, 0.5 the middle, 1 the right. A bigger subject, a logo in a corner gone: a logo top left → `"zoom": 1.4, "pan": 1`. A `pan` you give stands, also where it cuts a face (build says so).
 - `people`: `true` where the stretch shows a face you can recognise on its strip (people walking far off, a gloved hand, the back of a helmet are none). `faces` sends only these beats; `faces --all` sends every one.
 - `speed`: 0.5 to 1 slows the source down, to fill a beat from a shorter stretch.
 

@@ -266,3 +266,40 @@ test("faces: no beat marked people sends nothing and says so", { skip: !ffmpeg &
     assert.match(r.stdout, /No beat is marked "people": true .*nothing sent/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("faces through a stand-in frame tool: the last beat's stretch is the one build takes (to the film's end, past the \"to\" written), its faces in px of the source, and build uses them", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, build } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    const end = JSON.parse(fs.readFileSync(path.join(work, "clock.json"), "utf8")).end;
+    cfg.beats[1].to = +end.toFixed(2); cfg.beats[1].people = true;   // build stretches it 0.7 s past the last word
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    // the stand-in: a face at the right of whatever stretch it is given, every tenth of its seconds
+    const fake = path.join(dir, "frame.mjs");
+    fs.writeFileSync(fake, `import fs from "node:fs"; import { spawnSync } from "node:child_process";
+const a = process.argv.slice(2), out = a[a.indexOf("--faces") + 1];
+if (!a.includes("--every-shot")) process.exit(2);
+const p = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=width,height:format=duration", "-of", "json", a[0]], { encoding: "utf8" }).stdout);
+const [w, h] = [p.streams[0].width, p.streams[0].height], d = Number(p.format.duration);
+const faces = []; for (let t = 0; t < d - 0.05; t += 0.1) faces.push({ t: +t.toFixed(1), boxes: [{ who: "A", box: [Math.round(w * 0.78), Math.round(h * 0.05), Math.round(w * 0.15), Math.round(h * 0.35)] }] });
+fs.writeFileSync(out, JSON.stringify({ size: [w, h], step: 0.1, by: "model", cost: 0.001, shots: [{ start: 0, end: d, kind: "broll" }], faces }));`);
+    const env = { ...process.env, FRAME_TOOL: fake };
+    let r = spawnSync(process.execPath, [path.join(here, "short.mjs"), "faces", work], { encoding: "utf8", cwd: dir, env });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /b: 1 person \(A\)/);
+    const list = JSON.parse(fs.readFileSync(path.join(work, "faces", "b.json"), "utf8"));
+    near(list.taken, end + 0.7 - 2.5, 0.02);
+    assert.deepEqual(list.source, [1280, 720]);
+    near(list.faces[0].boxes[0].box[0], 0.78 * 1280, 2);
+    // kept: nothing sent again
+    r = spawnSync(process.execPath, [path.join(here, "short.mjs"), "faces", work], { encoding: "utf8", cwd: dir, env });
+    assert.match(r.stdout, /kept from before, nothing spent/);
+    cfg.beats[1].frame = "fill";
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    r = build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /another stretch/);
+    assert.match(r.stdout, /b: the crop moved to the faces \(A\): from the middle it cut it/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

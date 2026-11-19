@@ -155,6 +155,13 @@ function shownSize(file, size) {
 // what a beat's faces were found for: the stretch of the source its clip takes
 const facesKey = (src, b, taken) => JSON.stringify({ file: src.file, stamp: src.stamp, at: b.at, taken });
 const takenOf = (b) => Math.round(r2(b.to - b.from) * (b.speed ?? 1) * 1000) / 1000;
+// the beats' times as build takes them: each starts where the one before ends, the last runs to the film's end
+function timed(beats, ck) {
+  const out = beats.map((b) => ({ ...b }));
+  out.forEach((b, i) => { if (i) b.from = out[i - 1].to; });
+  if (out.length && isNum(ck?.end)) out.at(-1).to = totalOf(out, ck);
+  return out;
+}
 
 // Each beat's stretch of its source (as its clip takes it, at most 1080 lines, without sound and the
 // file's tags) to agentitos' clips: frame.mjs --faces finds every face over time, the model's stills
@@ -167,10 +174,11 @@ function faces(args) {
   const cfg = readJson(beatsFile, "write the beats first (SKILL.md, \"The beats\").");
   if (!cfg || !Array.isArray(cfg.beats) || !cfg.beats.length) fail(`${rel(beatsFile)} needs "beats": a list of them.`);
   for (const t of ["ffmpeg", "ffprobe"]) if (!onPath(t)) fail(`This needs ${t} on the machine; it is not there.`);
-  const beats = cfg.beats.map((b, i) => {
-    if (!b || typeof b !== "object" || typeof b.id !== "string" || !isNum(b.from) || !isNum(b.to) || !isNum(b.at) || !(b.to > b.from)) fail(`Beat ${i + 1} is not a beat build can read: {"id", "from", "to", "source", "at"}; build first.`);
-    return { ...b };
+  const ck = readJson(path.join(work, "clock.json"), `run node ${self()} clock ${rel(work)} first.`);
+  cfg.beats.forEach((b, i) => {
+    if (!b || typeof b !== "object" || typeof b.id !== "string" || typeof b.source !== "string" || !isNum(b.from) || !isNum(b.to) || !isNum(b.at) || !(b.to > b.from)) fail(`Beat ${i + 1} is not a beat build can read: {"id", "from", "to", "source", "at"}; build first.`);
   });
+  const beats = timed(cfg.beats, ck);
   const asked = beats.filter((b) => opts.all || b.people === true);
   const dir = path.join(work, "faces");
   fs.mkdirSync(dir, { recursive: true });
@@ -530,8 +538,8 @@ function build(args) {
       plan = planWindow({ frame, zoom, pan, zoomSet: b.zoom != null, panSet: b.pan != null, size, held: people.held, chinsAbove: captionTop });
       ({ frame, zoom, pan, x } = plan);
     }
-    // a fill the agent panned: its crop where the pan says
-    if (frame === "fill" && x == null && b.pan != null) {
+    // a fill the agent panned, where its faces are known (without them a fill is cut from the middle, as it always was)
+    if (frame === "fill" && x == null && b.pan != null && list) {
       if (bar == null) bar = bars(src.file, b.at, taken, src.size);
       const c = cropOf(bar) || [src.size.width, src.size.height];
       x = Math.round(pan * (2 * Math.round((c[0] * (SIZE[1] / c[1])) / 2) - SIZE[0]));
@@ -637,7 +645,9 @@ function build(args) {
         let look = null;
         try { look = JSON.parse(fs.readFileSync(path.join(comp, "captions", "index.html"), "utf8").match(/var DATA = (\{[\s\S]*?\});\n/)[1]).look; } catch { /* the layout's own band */ }
         const ink = inkOf(look);
-        lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...(capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), "--text", "hook",
+        // (captions that lie on no face stay: the hook is placed around them where they are)
+        const stay = capBox && !capOn.seconds ? ["--caption-y", String(area.bottom), "--font-size", String(area.size)] : [];
+        lr = spawnSync(process.execPath, [layoutTool, "text", folder, "--frame", SIZE.join("x"), "--shots", shotsFile, ...(capBox ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), "--text", "hook", ...stay,
           ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...(ink ? ["--set", `caption.line=${ink.line}`, "--set", `caption.padEm=${ink.box ? 0.44 : ink.below}`] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
         try { placed = lr.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "text.json"), "utf8")) : null; } catch { /* said below */ }
         if (placed) placed.ink = ink;
@@ -668,7 +678,8 @@ function build(args) {
         if (h && (hookOn.seconds || clash)) {
           const until = Math.max(1.2, Math.min(HOOK_SECONDS, h.until ?? HOOK_SECONDS));
           const on = textOn(h.box, moments, 0, until);
-          if (on.cost < hookOn.cost || clash) {
+          if (capNow && meets(h.box, capNow)) report.push(`  ! the hook lies on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)}): agentitos' layout's place for it lies on the captions; it stands where it stood: a shorter hook, or a first beat whose face stands lower`);
+          else if (on.cost < hookOn.cost || clash) {
             hookAt = { box: h.box.map((v) => Math.round(v)), font: Math.min(h.font, hookPx) };
             hookUntil = r2(until);
             report.push(`  the hook: ${hookOn.seconds ? `it lay on a face in ${whose(hookBox, 0, HOOK_SECONDS)} (${parts(hookOn)})` : "the captions moved to its place"}; ${({ "below-chin": "below the chin", "above-head": "above the head", top: "at the top", middle: "in the middle", free: "in the middle" })[h.where] || h.where} instead, ${hookAt.font} px${hookUntil < HOOK_SECONDS ? `, until ${hookUntil} s (the beat after it leaves it no place)` : ""}${on.seconds ? `; on a face still: ${parts(on)}` : ", on no face"}`);

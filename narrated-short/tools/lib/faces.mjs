@@ -75,8 +75,10 @@ export function shown({ frame, zoom = 1, pan = 0.5, x = null, size: [cw, ch] }) 
 // → { frame, zoom, pan, x (fill's crop in px of the scaled source, or null), changed, said, cut: [who] }
 export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet = false, size: [cw, ch], held, chinsAbove = null }) {
   const out = { frame, zoom, pan, x: null, changed: false, said: "", cut: [] };
-  const hull = hullOf(held);
-  if (!hull || frame === "native") return out;
+  const h = hullOf(held);
+  if (!h || frame === "native") return out;
+  // (the room beside a face at the picture's edge is not there to hold)
+  const hull = [Math.max(0, h[0]), Math.min(cw, h[1])];
   const names = (ps) => ps.map((p) => p.who).join(", ");
   const inside = (win) => held.filter((p) => p.boxes.some((b) => b[0] < win[0] - 1 || b[0] + b[2] > win[1] + 1));
   const now = shown({ frame, zoom, pan, size: [cw, ch] });
@@ -97,7 +99,7 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
       const k = SIZE[1] / ch, ws = 2 * Math.round((cw * k) / 2);
       out.x = Math.max(0, Math.min(ws - SIZE[0] - 2, Math.round((middle - width / 2) * k)));
       out.changed = true;
-      out.said = `the crop moved to the faces (${names(held)}): from the middle it cut them`;
+      out.said = `the crop moved to the faces (${names(held)}): from the middle it cut ${held.length > 1 ? "them" : "it"}`;
       return out;
     }
     // wider than a fill's window: the whole picture, as large as holds them all
@@ -105,7 +107,7 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
     out.zoom = down(most);
     out.pan = 0.5;
     out.changed = true;
-    out.said = `a fill would cut ${names(held)} (${held.length > 1 ? "they stand" : "the face takes"} ${Math.round((need / cw) * 100)} % of the width): the whole picture as a band${out.zoom > 1 ? `, ${out.zoom} times larger` : ""}${out.zoom < down(cw / need) ? ", its chins above the captions" : ""}`;
+    out.said = `a fill would cut ${names(held)} (${held.length > 1 ? "they stand" : "the face takes"} ${Math.round((need / cw) * 100)} % of the width): the whole picture as a band${out.zoom > 1 ? `, ${out.zoom} times larger` : ""}${out.zoom < down(cw / need) ? `, ${held.length > 1 ? "their chins" : "the chin"} above the captions` : ""}`;
     return placePan(out, hull, cw);
   }
   // a zoomed band: as large as it was where that holds them, else less
@@ -116,7 +118,7 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
     return out.zoom > 1 ? placePan(out, hull, cw) : { ...out, pan: 0.5 };
   }
   out.changed = true;
-  out.said = `the band's window moved to the faces (${names(held)}): from the middle it cut them`;
+  out.said = `the band's window moved to the faces (${names(held)}): from the middle it cut ${held.length > 1 ? "them" : "it"}`;
   return placePan(out, hull, cw);
 }
 
