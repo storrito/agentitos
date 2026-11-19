@@ -89,15 +89,26 @@ function shortDir() {
 
 // clips as it stands beside the skill, but its shots given (CLIPS_SHOTS) and its framing a copy
 // that writes the lifts asked for into the framing's json
-function fakeClips(shots) {
+function fakeClips(shots, faces = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinetic-clips-"));
   fs.writeFileSync(path.join(dir, "episode.mjs"), "");
   fs.writeFileSync(path.join(dir, "clips.mjs"), `import fs from "node:fs";
 const [cmd, , out] = process.argv.slice(2);
 if (cmd !== "shots") process.exit(1);
 fs.writeFileSync(out, JSON.stringify(${JSON.stringify({ size: [W, H], shots })}));`);
+  // frame.mjs --faces: the faces given (Gemini's, at a cost; the agent's boxes at none), the arguments kept
   fs.writeFileSync(path.join(dir, "frame.mjs"), `import fs from "node:fs";
-const a = process.argv.slice(2), out = a[a.indexOf("--out") + 1], lifts = a.includes("--lift") ? a[a.indexOf("--lift") + 1].split(",").map((v) => v.split(":").map(Number)) : [];
+const a = process.argv.slice(2);
+if (a.includes("--faces")) {
+  fs.writeFileSync(${JSON.stringify(path.join(dir, "faces-args.json"))}, JSON.stringify(a));
+  const eye = a.includes("--face-at");
+  fs.writeFileSync(a[a.indexOf("--faces") + 1], JSON.stringify({ ...${JSON.stringify(faces || {})}, by: eye ? "eye" : "model", cost: eye ? 0 : 0.0312 }));
+  console.log("faces.json: 1 shot(s), a face at 40 moments (4.0 s), by the model, $0.0312.");
+  process.exit(0);
+}
+// (no shots: footage of the frame's shape, which frame.mjs leaves unframed)
+if (${shots.length === 0}) process.exit(0);
+const out = a[a.indexOf("--out") + 1], lifts = a.includes("--lift") ? a[a.indexOf("--lift") + 1].split(",").map((v) => v.split(":").map(Number)) : [];
 fs.copyFileSync(a[0], out);
 fs.writeFileSync(out.replace(/\\.mp4$/, ".json"), JSON.stringify({ aspect: [9, 16], size: [1080, 1920], windows: ${JSON.stringify(shots.map((s, k) => ({ shot: k, start: s.start, end: s.end })))}.map((w) => { const l = lifts.find(([t]) => t >= w.start && t < w.end); return l ? { ...w, lift: { px: l[1] } } : w; }) }));`);
   return dir;
@@ -209,14 +220,63 @@ test("skipping place, and place where no face reaches the type: the build is mai
   }
 });
 
-test("footage of the frame's shape (no framing) and a short without footage: place says why it has nothing to place", { skip }, () => {
+// the faces frame.mjs --faces finds in an upright take of 4 s: one close-up, its mouth line at 1129
+// in the footage (as the frame shows it, the frame's own shape), below where the type starts
+const UPRIGHT = { size: [W, H], step: 0.1, shots: [{ start: 0, end: 4, kind: "people" }],
+  faces: Array.from({ length: 40 }, (_, i) => ({ t: +(i / 10).toFixed(1), boxes: [{ who: "the speaker", box: [250, 320, 580, 900], feat: [380, 560, 320, 495], eye: 600 }] })) };
+
+test("footage of the frame's shape (no framing): place says how to get its faces and changes nothing without them; an override is honoured whatever the footage, a value that is no number is an error sentence; a short without footage says why there is nothing to place", { skip }, () => {
   const dir = shortDir();
-  const env = { CLIPS_TOOLS: fakeClips([]) };
-  // the framing is what frame.mjs leaves for footage of the frame's shape: none
-  fs.copyFileSync(path.join(dir, "source", "video.mp4"), path.join(dir, "source", "framed-9x16.mp4"));
+  const env = { CLIPS_TOOLS: fakeClips([], UPRIGHT) };
   assert.equal(run(env, "build", dir).status, 0);
-  const r = run(env, "place", dir);
+  let r = run(env, "place", dir);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /No framing, so no faces are known/);
-  assert.ok(!fs.existsSync(path.join(dir, "source", "place.json")));
+  assert.match(r.stdout, /No framing: the short shows the footage as it is, and its faces are not known yet.* --faces model has Gemini find them \(one request, a few cents.*--faces grid .*--eye <second>:x,y,w,h/);
+  assert.ok(!fs.existsSync(path.join(dir, "source", "place.json")) && !fs.existsSync(path.join(dir, "source", "faces.json")), "nothing asked, nothing changed");
+  r = run(env, "place", dir, "--type-top", "abc");
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /--type-top is the y in px of the frame where the type starts, a number as 1150, not "abc"/);
+  r = run(env, "place", dir, "--type-top", "1100");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /from y 1100, as --type-top gave it\. No faces are known, so what it lies on is not checked/);
+  near(JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8")).video.typeTop * H, 1100, 1, "the type where it was given");
+  // no footage: an option has nothing to move, said
+  const bare = shortDir();
+  fs.rmSync(path.join(bare, "source", "video.mp4"));
+  assert.equal(run(env, "build", bare).status, 0);
+  r = run(env, "place", bare, "--type-top", "1100");
+  assert.ok(r.status === 1 && /--type-top has nothing to move here: this short has no footage/.test(r.stdout), r.stdout);
+  assert.match(run(env, "place", bare).stdout, /This short has no footage/);
+});
+
+test("footage of the frame's shape with its faces: --faces model finds them once (the cost said), place lowers the type or raises the picture as for framed footage, the build raises it itself, the sheet is drawn; --eye gives the agent's own boxes instead (no model), and a box that is none is an error", { skip }, () => {
+  const dir = shortDir();
+  const clips = fakeClips([], UPRIGHT), env = { CLIPS_TOOLS: clips };
+  assert.equal(run(env, "build", dir).status, 0);
+  let r = run(env, "place", dir, "--faces", "model");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /The faces: Gemini, \$0\.0312; kept in source\/faces\.json/);
+  const p = JSON.parse(fs.readFileSync(path.join(dir, "source", "place.json"), "utf8"));
+  assert.ok(p.framed === false && p.top * H > 1025 + 1, JSON.stringify(p));
+  const plan = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  near(plan.video.typeTop, p.top, 1e-4, "the type's top built");
+  if (p.lifts.length) {
+    assert.deepEqual(plan.video.lifts, p.lifts.map((l) => ({ start: l.start, end: l.end, px: l.px })), "the build raises the picture itself");
+    assert.match(fs.readFileSync(path.join(dir, "composition", "compositions", "world.html"), "utf8"), /id="bg-lift"/);
+  }
+  assert.match(r.stdout, /shot 1 .* (raised \d+ px \(the eyes at \d+ % of the height at their highest\)|as it is): the type on/);
+  assert.ok(fs.existsSync(path.join(dir, "source", "place.sheet.jpg")), "the sheet");
+  // again: the faces kept, no request
+  fs.rmSync(path.join(clips, "faces-args.json"));
+  r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(path.join(clips, "faces-args.json")), "no second request");
+  // the agent's own boxes
+  r = run(env, "place", dir, "--eye", "0.5:250,320,580,900", "--eye", "3.5:250,330,580,900");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(clips, "faces-args.json"), "utf8")).filter((x, i, all) => all[i - 1] === "--face-at"), ["0.5:250,320,580,900", "3.5:250,330,580,900"]);
+  assert.match(r.stdout, /The faces: nothing spent/);
+  r = run(env, "place", dir, "--eye", "1:10,10,4000,20");
+  assert.ok(r.status === 1 && /--eye 1:10,10,4000,20: that is no face's box in the footage \(1080×1920\)/.test(r.stdout), r.stdout);
+  assert.equal(run(env, "build", dir, "--faces", "model").status, 1, "--faces belongs to place");
 });

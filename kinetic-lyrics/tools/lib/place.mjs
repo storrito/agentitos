@@ -11,6 +11,8 @@
 //   pushed(input, plan) → the shots with every face as the push-in and the punches show it, each
 //       moment's zoom with it (the framing raises the picture before it grows: a lift of L px
 //       shows as L × zoom, and layout reckons with it)
+//   shotsOfFaces(faces, plan) → the shots of footage the short shows as it is (no framing), with
+//       its own faces (clips' frame.mjs --faces) drawn into the frame as the build covers it
 //   liftsFor(text, shots) → [{ t, px }] for the framing (frame.mjs --lift), one per raised shot
 //   placeArgs(plan, opts) → the arguments of layout's text for this short
 //   sheet(framed, plan, text, shots, file) → a picture: per shot its first, middle and last frame
@@ -63,6 +65,29 @@ export function pushed(input, plan) {
   };
 }
 
+// Footage of the frame's shape the build shows as it is: it covers the frame, its middle across and
+// 30 % of its overflow above (tools/footage.mjs: object-fit cover, object-position 50% 30%). Its
+// faces (frame.mjs --faces: { size, shots, faces: [{ t, boxes: [{ who, box, feat?, eye?, between? }] }] },
+// px of the footage) as the shots layout's text takes them; every shot may be raised over a
+// ground (the build's own, under the band).
+export function shotsOfFaces(found, plan) {
+  const W = plan.width, H = plan.height, [fw, fh] = found.size;
+  const k = Math.max(W / fw, H / fh), ox = (W - fw * k) * 0.5, oy = (H - fh * k) * 0.3;
+  const map = (b) => [b[0] * k + ox, b[1] * k + oy, b[2] * k, b[3] * k].map((v) => +v.toFixed(1));
+  const spans = found.shots?.length ? found.shots : [{ start: 0, end: plan.duration, kind: "people" }];
+  return {
+    size: [W, H],
+    shots: spans.map((s, i) => {
+      const tracks = new Map();
+      for (const m of found.faces || []) if (m.t >= s.start && m.t < s.end) for (const b of m.boxes) {
+        if (!tracks.has(b.who)) tracks.set(b.who, { who: b.who, track: [] });
+        tracks.get(b.who).track.push({ t: m.t, box: map(b.box), ...(b.feat ? { feat: map(b.feat) } : {}), ...(b.eye != null ? { eye: +(b.eye * k + oy).toFixed(1) } : {}), ...(b.between ? { between: b.between } : {}) });
+      }
+      return { n: i + 1, start: s.start, end: s.end, weight: +(s.end - s.start).toFixed(3), kind: s.kind, picture: [0, 0, W, H], faces: [...tracks.values()], room: { free: 0 } };
+    }),
+  };
+}
+
 // the lifts layout chose, at the middle of each raised shot (frame.mjs --lift takes a second)
 export const liftsFor = (text, shots) => text.shots.filter((s) => s.lift > 0).map((s) => ({ t: +((shots[s.shot].start + shots[s.shot].end) / 2).toFixed(3), px: s.lift }));
 
@@ -83,7 +108,8 @@ export function placeArgs(plan, { folder, shots, raise, top, lifts = [], platfor
 // shows it (grown by the push-in at that moment), the type's area in yellow (its name tag's part
 // dashed off by a thinner line), the faces in red, the mouth line in orange where the framing has
 // the eyes, nose and mouth; eight shots a sheet.
-export function sheet(framed, plan, text, shots, file, { chip = 0 } = {}) {
+// (cover: the footage as it is, covering the frame as the build shows it, raised by the sheet itself)
+export function sheet(framed, plan, text, shots, file, { chip = 0, cover = false } = {}) {
   const W = plan.width, H = plan.height, h = 420, w = Math.round((h * W) / H / 2) * 2, k = w / W, PER = 8, files = [];
   // the last frame the picture has (its stream can end before the sound): a seek past it gives no frame, and the sheet none
   const pr = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration:format=duration", "-of", "json", framed], { encoding: "utf8" });
@@ -101,7 +127,9 @@ export function sheet(framed, plan, text, shots, file, { chip = 0 } = {}) {
         args.push("-ss", t.toFixed(3), "-i", framed);
         const sc = scaleAt(t, plan), ox = ORIGIN[0] * W, oy = ORIGIN[1] * H;
         // the frame grown about the origin, as the short shows it
-        const grow = `scale=${Math.round(W * sc / 2) * 2}:${Math.round(H * sc / 2) * 2},crop=${W}:${H}:${Math.round(ox * (sc - 1))}:${Math.round(oy * (sc - 1))}`;
+        let grow = `scale=${Math.round(W * sc / 2) * 2}:${Math.round(H * sc / 2) * 2},crop=${W}:${H}:${Math.round(ox * (sc - 1))}:${Math.round(oy * (sc - 1))}`;
+        // footage as it is: covering the frame, raised before the push-in over a black ground
+        if (cover) grow = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}:(iw-${W})*0.5:(ih-${H})*0.3${r.lift ? `,crop=${W}:${H - r.lift}:0:${r.lift},pad=${W}:${H}:0:0:black` : ""},${grow}`;
         const boxes = [draw(a, "yellow", 4)];
         if (chip) boxes.push(draw([a[0], a[1] + chip, a[2], 2], "yellow", 1));
         for (const f of s.faces) {

@@ -33,6 +33,9 @@
 //   --type-top f     where the type's top stands, a share of the frame's height (short.mjs place
 //                    decides it from the faces): the band goes with it; the band the footage alone
 //                    gives is kept in plan.video.shadeFound
+//   --video-lift a-b:px,…   footage shown as it is (no framing): its picture raised px for the
+//                    seconds a to b (short.mjs place, from the faces), over a black ground that
+//                    lies under the band; plan.video.lifts
 //   --llm-backend    claude-code (default: headless `claude -p` on your Claude subscription)
 //                    | api (Anthropic API key / `ant auth login`, billed per token)
 //   --staging-brief f   the agent running this build directs instead: write what it needs to read
@@ -236,8 +239,14 @@ if (VIDEO) {
     console.error(`footage: the type from ${(typeTop * 100).toFixed(1)} % of the height (placed by the faces), dark from ${Math.round(shade[1] * 100)} %`);
     if (burn?.band && shade[1] > burn.band[0] - 0.012) console.error(`footage: ⚠ the band now begins below the top of the burned-in captions (${Math.round(burn.band[0] * 100)} %): they show above the type`);
   }
+  // the picture raised for a shot (footage the short shows as it is; a framing raises its own)
+  const lifts = typeof opt["video-lift"] === "string" ? opt["video-lift"].split(",").filter(Boolean).map((x) => {
+    const m = x.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?):(\d+)$/);
+    if (!m || !(+m[2] > +m[1])) { console.error(`--video-lift is <from>-<to>:<px>, seconds and how far the picture goes up then, as 3.4-7.9:120, not ${x}.`); process.exit(1); }
+    return { start: +m[1], end: +m[2], px: +m[3] };
+  }).filter((l) => l.px > 0) : [];
   plan.video = {
-    src: `assets/${path.basename(dst)}`, width: v.width, height: v.height, duration: +v.duration.toFixed(3), shade, ...(shade !== found ? { shadeFound: found, typeTop } : {}),
+    src: `assets/${path.basename(dst)}`, width: v.width, height: v.height, duration: +v.duration.toFixed(3), shade, ...(shade !== found ? { shadeFound: found, typeTop } : {}), ...(lifts.length ? { lifts } : {}),
     dim: opt["video-dim"] != null ? Number(opt["video-dim"]) : burned || !burn ? 1 : 0.85,
     burnin: burn ? { captions: burn.band, graphics: burn.overlay ?? null } : undefined,
   };
