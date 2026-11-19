@@ -286,15 +286,24 @@ test("faces: one who enters late and stays to the beat's end counts (the review'
   assert.deepEqual(of(main, ["X", [...from(1.2, 1.9, [2600, 520, 300, 488]), ...from(2.4, 2.8, [2600, 520, 300, 488])]]).small.map((p) => p.why), ["passing"]);
 });
 
-test("faces: a face cut beside the ones that count is said as such, \"in the background\" only one small against the main face (the review's b9: four walking side by side, the fourth called a face in the background)", () => {
+test("faces: a face cut beside the ones that count is said as such, with what shows it (a pan that holds it with them, else \"frame\": \"whole\"), \"in the background\" only one small against the main face (the review's b9: four walking side by side, the fourth called a face in the background)", () => {
   const size = [3840, 2160];
   const b9 = counted(listOf(["woman with curly hair", person("A", [1482, 800, 270, 288], 17)], ["woman with short hair", person("B", [1858, 780, 300, 330], 17)],
     ["tall man", person("C", [2380, 820, 260, 234], 17)], ["man on the right", person("D", [3090, 830, 230, 220], 17)]), size, 1.69);
   assert.deepEqual(b9.small.map((p) => [p.who, p.why]), [["man on the right", "side"]]);
   const p = planWindow({ frame: "fill", size, people: b9 });
   assert.equal(p.frame, "fill");
-  assert.match(p.said, /the crop moved to the faces \(woman with curly hair, woman with short hair, tall man\).*; the 3 faces that count held, the one at the side cut \(man on the right: 67 % as tall as the largest, too small to count\)/);
+  assert.match(p.said, /the crop moved to the faces \(woman with curly hair, woman with short hair, tall man\).*; the 3 faces that count held, the one at the side cut \(man on the right: 67 % as tall as the largest, too small to count; to show it: "frame": "whole" keeps everyone, a "pan" towards the right cuts another\)/);
   assert.doesNotMatch(p.said, /background/);
+  // the fourth closer to them, so that one fill holds all four: the pan that does, which shows him with them
+  const near4 = counted(listOf(["A", person("A", [1500, 800, 270, 288], 17)], ["B", person("B", [1800, 780, 300, 330], 17)], ["D", person("D", [2450, 830, 230, 220], 17)]), size, 1.69);
+  const q = planWindow({ frame: "fill", size, people: near4 });
+  const pan = Number(q.said.match(/to show it: "pan": ([\d.]+) holds it with them, "frame": "whole" keeps everyone\)/)?.[1]);
+  assert.ok(pan > 0.5 && pan < 0.7, q.said);
+  const win = shown({ frame: "fill", pan, size });
+  assert.ok(win[0] <= 1500 + 0.18 * 270 && win[1] >= 2450 + 0.82 * 230, `the pan's window ${win} holds all four`);
+  const own = planWindow({ frame: "fill", pan, panSet: true, size, people: near4 });
+  assert.deepEqual(own.cut, []);
   // the same man half as tall as the largest, behind them: in the background
   const far = counted(listOf(["woman with short hair", person("B", [1858, 780, 300, 330], 17)], ["man on the right", person("D", [3090, 830, 150, 160], 17)]), size, 1.69);
   assert.match(planWindow({ frame: "fill", size, people: far }).said, /a face in the background cut \(man on the right\)/);

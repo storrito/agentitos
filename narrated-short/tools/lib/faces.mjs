@@ -218,12 +218,23 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   const cutOf = (win, why) => (people.small || []).filter((p) => (p.why || "behind") === why && p.n >= 0.25 * Math.max(...held.map((q) => q.n)) && !within(win, featHull([p])));
   const few = (ps) => (ps.length > 2 ? `${names(ps.slice(0, 2))} and ${ps.length - 2} more` : names(ps));
   const passing = (win) => { const ps = cutOf(win, "passing"); return ps.length ? [`${ps.length > 1 ? "passers-by" : "a passer-by"} not held (${few(ps)})`] : []; };
-  // a face a little smaller than to count, beside the held ones: how many count and are held, and that it is cut
+  // a face a little smaller than to count, beside the held ones: how many count and are held, that
+  // it is cut, and what shows it: the fill's "pan" that holds it with them where one does (the
+  // agent's pan stands), else a pan towards it cuts another; "frame": "whole" keeps everyone
   const beside = (win) => {
     const ps = cutOf(win, "side");
     if (!ps.length) return [];
     const tall = ps.length > 1 ? `${ps.map((p) => Math.round((p.h / main.h) * 100)).join(" and ")} %` : `${Math.round((ps[0].h / main.h) * 100)} %`;
-    return [`${held.length > 1 ? `the ${held.length} faces that count` : "the face that counts"} held, ${ps.length > 1 ? `the ${ps.length} at the side` : "the one at the side"} cut (${few(ps)}: ${tall} as tall as the largest, too small to count)`];
+    const it = ps.length > 1 ? "them" : "it", all = featHull([...held, ...ps]);
+    const k = SIZE[1] / ch, play = 2 * Math.round((cw * k) / 2) - SIZE[0];
+    let fix = null;
+    if (frame === "fill" && play > 0 && all[1] - all[0] <= win[1] - win[0]) {
+      const at = Math.max(0, Math.min(1, (((all[0] + all[1]) / 2) * k - SIZE[0] / 2) / play));
+      fix = [0, -0.01, 0.01, -0.02, 0.02].map((d) => Math.round((at + d) * 100) / 100).find((v) => v >= 0 && v <= 1 && within(shown({ frame, pan: v, size: [cw, ch] }), all));
+    }
+    const side = (ps.reduce((n, p) => n + featHull([p])[0] + featHull([p])[1], 0) / ps.length / 2) > (win[0] + win[1]) / 2 ? "right" : "left";
+    const show = fix != null ? `"pan": ${fix} holds ${it} with them, "frame": "whole" keeps everyone` : `"frame": "whole" keeps everyone, a "pan" towards the ${side} cuts another`;
+    return [`${held.length > 1 ? `the ${held.length} faces that count` : "the face that counts"} held, ${ps.length > 1 ? `the ${ps.length} at the side` : "the one at the side"} cut (${few(ps)}: ${tall} as tall as the largest, too small to count; to show ${it}: ${show})`];
   };
   const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", cutOf(win, "behind").length ? `${cutOf(win, "behind").length > 1 ? "faces" : "a face"} in the background cut (${few(cutOf(win, "behind"))})` : "", ...beside(win), ...passing(win)].filter(Boolean);
   const now = shown({ frame, zoom, pan, size: [cw, ch] });
