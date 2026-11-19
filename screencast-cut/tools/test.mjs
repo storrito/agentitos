@@ -1393,3 +1393,21 @@ test("one caption line: the face view is placed by the layout skill around the o
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("review of screencast-clear, 1: a zoom at the screen's bottom edge stands on the bottom of its room, just above the caption line, never over more ground than main (16:9, zoom [0.3,0.85,0.7,1]: main y 452–776, 28 % ground; was y 300–624, 42 %)", () => {
+  const { one, two } = oneLine(1920, 1080), c = [0.3, 0.85, 0.7, 1];
+  for (const src of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }]) {
+    const at = (a) => { const s = spread(a.content, a.bleed, c, src, { maxScale: 2, near: !!a.line }); return { s, top: s.top + c[1] * s.height, bottom: s.top + c[3] * s.height, ground: 1 - (s.box[2] * s.box[3]) / (1920 * 1080) }; };
+    const m = at(two), n = at(one);
+    assert.deepEqual([Math.round(m.top), Math.round(m.bottom), Math.round(m.ground * 1000)], src.width === 1920 ? [452, 776, 281] : [560, 776, 281], "main as it was");
+    assert.equal(Math.round(n.bottom), 816, `${src.width}: the region on the room's bottom, 24 px above the line at 840`);
+    assert.ok(n.ground <= m.ground + 1e-9, `${src.width}: ground ${n.ground} against main's ${m.ground}`);
+    assert.ok(n.s.width >= m.s.width - 1e-9);
+  }
+  // 4:5 and 1:1, a zoom in the screen's bottom right corner: no more ground than main
+  for (const [w, h] of [[1080, 1350], [1080, 1080]]) {
+    const { one: o, two: t } = oneLine(w, h), cc = [0.6, 0.7, 1, 1], src = { width: 1920, height: 1080 };
+    const g = (a) => { const s = spread(a.content, a.bleed, cc, src, { maxScale: 2, near: !!a.line }); return 1 - (s.box[2] * s.box[3]) / (w * h); };
+    assert.ok(g(o) <= g(t) + 1e-9, `${w}x${h}: ${g(o)} against main's ${g(t)}`);
+  }
+});

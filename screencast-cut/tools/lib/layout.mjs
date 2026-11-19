@@ -172,7 +172,12 @@ export function place(box, c, source) {
 // as far as `bleed` (the frame where the screen may lie, under the apps' buttons too, not under
 // the captions), moved so that it fills `bleed` where it can without pushing `c` out of `area`.
 // Returns the element's geometry as place() does.
-export function spread(area, bleed, c, source, { maxScale = Infinity } = {}) {
+// near: where the source cannot cover the bleed across its height (one caption line: the bleed is
+// the whole frame, and a zoom at the screen's bottom edge has nothing below its region), the box
+// stands as near the uncovered edge as its room allows, on the room's bottom (just above the
+// caption line) or its top, instead of centred in it, so that no more ground shows than on main
+// (review of 2026-11-19: a chat box at the screen's bottom rose to y 300-624 over 42 % ground).
+export function spread(area, bleed, c, source, { maxScale = Infinity, near = false } = {}) {
   const zw = (c[2] - c[0]) * source.width, zh = (c[3] - c[1]) * source.height;
   // the room that holds the box largest
   const rooms = Array.isArray(area[0]) ? area : [area];
@@ -182,17 +187,19 @@ export function spread(area, bleed, c, source, { maxScale = Infinity } = {}) {
   // where the box goes: centred in its room; then the source moved to fill the bleed, as far as
   // the box stays in the room
   const [bx, by, bw, bh] = bleed;
-  const axis = (size, rLo, rSize, bLo, bSize, full, c0) => {
+  const axis = (size, rLo, rSize, bLo, bSize, full, c0, toEdge = false) => {
     const centred = rLo + (rSize - size) / 2 - c0 * full;
     const lo = rLo - c0 * full, hi = rLo + rSize - size - c0 * full; // the box inside its room
     const fLo = bLo + bSize - full, fHi = bLo; // the source covering the bleed
     const a = Math.max(lo, fLo), b = Math.min(hi, fHi);
     if (a <= b) return Math.min(Math.max(centred, a), b);
-    // the source cannot cover the bleed on this axis: centred on the box, kept in the room
+    // the source cannot cover the bleed on this axis: centred on the box, kept in the room; with
+    // near, as close to covering it as the room allows
+    if (toEdge && lo <= hi) return b < a ? (hi < fLo ? hi : lo > fHi ? lo : Math.min(Math.max(centred, lo), hi)) : Math.min(Math.max(centred, lo), hi);
     return Math.min(Math.max(centred, lo), hi);
   };
   const left = axis(zw * scale, room0[0], room0[2], bx, bw, w, c[0]);
-  const top = axis(zh * scale, room0[1], room0[3], by, bh, h, c[1]);
+  const top = axis(zh * scale, room0[1], room0[3], by, bh, h, c[1], near);
   // what shows: the source inside the bleed
   const x0 = Math.max(left, bx), y0 = Math.max(top, by), x1 = Math.min(left + w, bx + bw), y1 = Math.min(top + h, by + bh);
   const r = (v) => +v.toFixed(1);

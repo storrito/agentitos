@@ -141,7 +141,7 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         circles.push({ at: pic?.circle, timed: parts.length > 1 ? timed : {} });
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
         // (a picture as before whose circle alone moved keeps the screen exactly as before)
-        const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
+        const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });
         const [x, , w] = at.box;
         out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });

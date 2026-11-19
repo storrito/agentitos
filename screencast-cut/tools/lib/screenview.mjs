@@ -54,7 +54,7 @@ const span = (b) => `x ${r0(b[0])}–${r0(b[0] + b[2])}`;
 // the frame's edges above the captions; the circle at the areas' place
 export function beforePicture(c, src, a, pip) {
   const rooms = pip ? [...a.content, ...(a.beside || [])] : a.solo || a.content;
-  const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2 });
+  const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });
   const scale = at.width / src.width;
   return { fit: BEFORE, scale: +scale.toFixed(4), left: at.left, top: at.top, window: at.box.map(r1),
     region: [at.left + c[0] * at.width, at.top + c[1] * at.height, (c[2] - c[0]) * at.width, (c[3] - c[1]) * at.height].map(r1),
