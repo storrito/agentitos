@@ -141,9 +141,8 @@ test("the same spelling where the model did not point is never applied: Lou Reed
   ]);
   const tags = pageSources(pageOf({ title: "Prinz Pi | Hiphop.de Talks", tags: ["Fler", "Kollegah"] }));
   const g = entriesOf({ names: [], fixes: [fix(0, "mit Flair", "mit Fler")] }, rap.words, rap.sentences, tags, { lang: "de" });
-  assert.equal(g.filter((e) => e.status === "applied").length, 0, "in German the pointed place stays a proposal while the noun's spelling stands unpointed");
-  assert.match(g.find((e) => e.places[0].sentence === 0).because, /may be a noun, and the same spelling stands unpointed in sentence 1/);
-  assert.match(applyNames(rap.words, g).map((w) => w.text).join(" "), /den Flair so/);
+  assert.deepEqual(g.map((e) => [e.status, e.places[0].sentence]), [["applied", 0], ["proposed", 1]], "the pointed place applied, the noun's place only proposed");
+  assert.match(applyNames(rap.words, g).map((w) => w.text).join(" "), /mit Fler äh .* den Flair so/);
 });
 
 test("a word that is part of a longer name is not that name by itself: no Tinashe Mongeau", () => {

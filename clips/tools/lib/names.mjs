@@ -297,8 +297,7 @@ export const NOUNS_CAPITALISED = /^(de|lb|gsw)$/;
 //   proposed  everything else: the agent reads the sentence and takes it or not
 // The same spelling elsewhere, where the model did not point, is never applied: it may be another
 // person or an ordinary word ("Lou Reed" beside "Walker Reed", the noun "Flair" beside the rapper
-// Fler). Each such place is proposed on its own. In a language that capitalises its nouns, a place
-// the model pointed to is only proposed while the same spelling stands elsewhere unpointed.
+// Fler). Each such place is proposed on its own.
 export function entriesOf(answer, words, sentences, sources, { lang = null } = {}) {
   const lower = new Set(words.map(core).filter((c) => /^\p{Ll}/u.test(c)).map((c) => c.toLowerCase()));
   const byKey = new Map(), entries = [], pointed = new Set();
@@ -325,7 +324,6 @@ export function entriesOf(answer, words, sentences, sources, { lang = null } = {
     for (const r of repeats(words, a, b)) {
       if (pointed.has(r[0]) || byKey.has(`${r[0]}:${e.to.join(" ")}`)) continue;
       byKey.set(`${r[0]}:${e.to.join(" ")}`, { ...e, at: [r], unpointed: true, origin: e.at[0], sentence: sentenceAt(sentences, r[0]) });
-      if (nouns) e.shared = sentenceAt(sentences, r[0]);
     }
   }
   // A word that is part of a longer name is not that name by itself: a place beside another
@@ -373,7 +371,6 @@ export function entriesOf(answer, words, sentences, sources, { lang = null } = {
     if (!capital(out.to)) why.push(`"${out.to}" is an ordinary word, not a name`);
     if (e.sure !== "high") why.push(`the model is ${e.sure === "low" ? "unsure" : "not quite sure"}`);
     if (e.unpointed) why.push("the same spelling as a place the model pointed to, but not pointed to here: maybe another name or an ordinary word");
-    if (e.shared != null && !e.unpointed) why.push(`a capitalised word in this language may be a noun, and the same spelling stands unpointed in sentence ${e.shared}`);
     const applied = !why.length || (why.length === 1 && fold(out.from) === fold(out.to) && /[^\x00-\x7f]/.test(out.to) && source);
     entries.push({ ...out, where: source || (e.where === "knowledge" ? "the model's knowledge" : "nowhere on the page"),
       status: applied ? "applied" : "proposed", sure: applied ? "sure" : e.sure === "low" || plain || !capital(out.to) ? "doubtful" : "likely",
