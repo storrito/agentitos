@@ -128,7 +128,7 @@ function settings(dir, opts) {
 function captionsOf(cut = {}) {
   if (cut.captions === false) return null;
   if (cut.captions) return cut.captions;
-  return captionsTool() ? { style: "clean", highlight: [], on: "shot" } : null; // PROTOTYPE, not to merge: on the shot by default, for the rig
+  return captionsTool() ? { style: "clean", highlight: [], on: "shot-moved" } : null; // PROTOTYPE, not to merge: on the shot, moved, by default, for the rig
 }
 
 // The frame's areas (layout.areas): from what the platforms the video goes to lay over it
