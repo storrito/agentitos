@@ -636,6 +636,16 @@ test("the faces alone, from the agent's own boxes: each box a still of its shot,
   assert.equal(r.faces.some((f) => f.t >= 10), false);
 });
 
+test("the faces of a shot the model calls b-roll: left out, unless every shot is asked for (narrated-short's footage of a crew at work)", () => {
+  const meta = { width: 1080, height: 1920 };
+  const shots = [{ start: 0, end: 4 }];
+  const seen = shotsOf(answerOf([[{ t: 1, box: [300, 570, 600, 900] }, { t: 3, box: [320, 570, 600, 900] }]], shots, meta), shots, meta).map((s) => ({ ...s, kind: "broll" }));
+  assert.equal(facesOver(seen, meta).faces.length, 0);
+  const all = facesOver(seen, meta, { every: true });
+  assert.ok(all.faces.length >= 30);
+  assert.equal(all.shots[0].kind, "broll");
+});
+
 test("a phone's upright take stored on its side (rotation 90, −90) or upside down (180): the size as shown everywhere a frame is read and a box is scaled: the probe, the tracker's frames, the faces written", { skip: !ffmpeg && "no ffmpeg" }, () => {
   const dir = tmp();
   const up = path.join(dir, "up.mp4"), side = path.join(dir, "side.mp4");

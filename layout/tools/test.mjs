@@ -1593,6 +1593,71 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     ok(r.caption.font === alone.caption.font && r.caption.font === DEFAULTS.caption.font.tall, `type ${r.caption.font} with the hook, ${alone.caption.font} without`);
     ok(!(r.hook.onFace?.seconds > 0), JSON.stringify(r.hook));
   });
+  t("text on the hair or the forehead, above the eyes with their brows, is a part of its own, never 'the nose or eyes' (the review of 2026-11-19: a head from y 900 to 1420, its eyes from 1098, captions fixed at 976–1080 were '✗ on the nose or eyes … 3 s'); text that reaches the eyes' top lies on the eyes; with the head's box alone the eyes begin at 15 % of it, not lower than brows go", () => {
+    const box = [300, 900, 480, 520], feat = [386, 1098, 307, 250];
+    const at = (y, f = feat) => textOverTime({ zones: Z9, shots: [shot(0, 3, [{ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box, ...(f ? { feat: f } : {}) })) }])], needs: cap, fixed: { y, font: 60 } });
+    const r = at(1080), s = r.shots[0];
+    ok(s.on.hair === 3 && s.on.nose === 0 && !s.fault && s.hair && !r.conflicts.length, JSON.stringify([s, r.conflicts]));
+    ok(r.notes.some((n) => /Shot 1 .*the captions lie on A's hair or forehead for 3 s, above the eyes, at the height fixed \(--caption-y\)/.test(n)), r.notes.join(" | "));
+    ok(s.touches[0].hair === 3, JSON.stringify(s.touches));
+    // ending a px above the brows' top: the forehead; two px into the eyes: the eyes
+    ok(at(1097).shots[0].on.hair === 3, JSON.stringify(at(1097).shots[0].on));
+    const into = at(1100);
+    ok(into.shots[0].on.nose === 3 && into.shots[0].fault === "nose" && into.conflicts.some((c) => /nose or eyes for 3 s/.test(c)), JSON.stringify([into.shots[0], into.conflicts]));
+    // the box alone: the eyes from 900 + 0.15 × 520 = 978, so 976–1080 reaches them
+    const bare = at(1080, null);
+    ok(bare.shots[0].on.nose === 3 && bare.shots[0].fault === "nose", JSON.stringify(bare.shots[0]));
+    ok(at(976, null).shots[0].on.hair === 3, JSON.stringify(at(976, null).shots[0]));
+    // the command's list names the part
+    const dir = fs.mkdtempSync(path.join(OUT, "hair-")), file = path.join(dir, "shots.json");
+    fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 3, [{ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box, feat })) }])] }));
+    const c = cli("text", dir, "--frame", "9:16", "--shots", file, "--caption-y", "1080", "--font-size", "60");
+    ok(c.status === 0 && /above the eyes, on the hair or forehead of A's face 0–3 s \(3 s, of them the hair or forehead 3 s/.test(c.stdout) && !/✗/.test(c.stdout), c.stdout + c.stderr);
+  });
+  t("a head known by its box alone: captions in the band where its eyes may begin (from 6 % of it down: the brows of a head tipped back) are not said plainly as the hair or forehead: the note says its eyes are not known; above that band they are the hair or forehead; with the eyes known there, the eyes (the coordinator's case: a head from 300 to 1600, captions at 372–480)", () => {
+    const head = (feat) => ({ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box: [240, 300, 600, 1300], ...(feat ? { feat } : {}) })) });
+    const at = (y, feat) => textOverTime({ zones: Z9, shots: [shot(0, 3, [head(feat)])], needs: cap, fixed: { y, font: 62 } });
+    const r = at(480), s = r.shots[0];
+    ok(s.on.hair === 3 && s.on.maybe === 3 && s.touches[0].maybe === 3 && !s.fault && !r.conflicts.length, JSON.stringify([s, r.conflicts]));
+    ok(r.notes.some((n) => /hair or forehead for 3 s, above the eyes of most heads; for 3 s of it where the eyes may begin .*this head is known by its box alone, its eyes are not known; look at those seconds on the sheet, or find the faces with their eyes, nose and mouth/.test(n)), r.notes.join(" | "));
+    // ending above 300 + 0.06 × 1300 = 378: the hair or forehead, plainly
+    const above = at(376);
+    ok(above.shots[0].on.hair === 3 && !above.shots[0].on.maybe && above.notes.some((n) => /hair or forehead for 3 s, above the eyes, at the height/.test(n)), JSON.stringify([above.shots[0].on, above.notes]));
+    // its brows 8 % down, known: the eyes
+    const known = at(480, [380, 404, 320, 500]);
+    ok(known.shots[0].fault === "nose" && known.conflicts.some((c) => /nose or eyes for 3 s/.test(c)), JSON.stringify(known.shots[0]));
+  });
+  t("captions belong below the chin: where a place on the chin or lower lip is had, they never go up onto a forehead, and they do not leave a mouth for a forehead for as long either (a forehead weighs half the eyes, two and a half times a mouth)", () => {
+    // a face shown whole (not raised) that fills the safe box's height: no room above the head; its
+    // forehead from 330 to the eyes at 900, its mouth line at 1245: the captions on its chin
+    const face = (feat) => ({ who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [300, 330, 480, 1230], feat })) });
+    const chin = textOverTime({ zones: Z9, shots: [shot(0, 4, [face([386, 900, 307, 300])], null)], needs: cap });
+    ok(chin.caption.options.y === safeBottom && chin.shots[0].on.hair === 0 && chin.shots[0].on.mouth === 0 && chin.shots[0].on.nose === 0, JSON.stringify([chin.caption, chin.shots[0].on]));
+    // its mouth lower (the lip line at 1334): every place below the eyes lies on the mouth, at the smallest type too; the forehead is free, and not taken
+    const mouth = textOverTime({ zones: Z9, shots: [shot(0, 4, [face([386, 1000, 307, 380])], null)], needs: cap });
+    ok(mouth.caption.options.y === safeBottom && mouth.shots[0].on.hair === 0 && mouth.shots[0].fault === "mouth", JSON.stringify([mouth.caption, mouth.shots[0]]));
+    // with its mouth that low for a second only, the chin the rest: below, as well
+    const brief = { who: "A", track: Array.from({ length: 41 }, (_, i) => ({ t: i / 10, box: [300, 330, 480, 1230], feat: i < 10 ? [386, 1000, 307, 380] : [386, 900, 307, 300] })) };
+    const b = textOverTime({ zones: Z9, shots: [shot(0, 4, [brief], null)], needs: cap });
+    ok(b.caption.box[1] > 1000 && b.shots[0].on.hair === 0, JSON.stringify([b.caption, b.shots[0].on]));
+  });
+  t("a hook on the hair or the forehead is mild: a card over the hair of a head that fills the frame lies on no eyes (they begin at the brows' top); with the head's box alone, where the eyes may begin from 15 % of it, the card is said to perhaps reach the brows, and it still comes before a text on the mouth (counted as the eyes it tied with the text, which won)", () => {
+    // best-takes' tight stand-in, not raised: the head from y 200, 1100 px tall; the card at the top ends at y 448
+    const f = (feat) => ({ who: "A", track: Array.from({ length: 51 }, (_, i) => ({ t: i / 10, box: [130, 200, 820, 1100], ...(feat ? { feat } : {}) })) });
+    const run = (feat) => textOverTime({ zones: Z9, shots: [shot(0, 5, [f(feat)])], needs: [...cap, { role: "hook", kind: "card", start: 0, end: 3 }], fixed: { lifts: { 0: 0 } } });
+    const known = run([270, 620, 540, 530]);
+    ok(known.hook.kind === "card" && known.hook.onFace.seconds > 0 && known.hook.onFace.features === 0 && known.conflicts.some((c) => /on the forehead or the hair, never on the eyes, nose or mouth/.test(c)), JSON.stringify([known.hook, known.conflicts]));
+    // the brows' top a px or two below the card's bottom: on no eyes; two px above it: on them
+    const y1 = known.hook.box[1] + known.hook.box[3];
+    ok(run([270, Math.ceil(y1) + 1, 540, 1150 - Math.ceil(y1) - 1]).hook.onFace.features === 0, "a card that ends above the brows");
+    ok(run([270, Math.floor(y1) - 2, 540, 1150 - Math.floor(y1) + 2]).hook.onFace.features > 0, "a card that reaches 2 px into the brows");
+    // the box alone: the eyes perhaps from 200 + 0.15 × 1100 = 365, by the proportions from 618
+    for (const kind of [undefined, "card", "text"]) {
+      const bare = textOverTime({ zones: Z9, shots: [shot(0, 5, [f(null)])], needs: [...cap, { role: "hook", ...(kind ? { kind } : {}), start: 0, end: 3 }], fixed: { lifts: { 0: 0 } } });
+      ok(bare.hook.kind === "card" && bare.hook.where === "top" && bare.hook.onFace.features === 0 && bare.hook.onFace.maybe > 3, `${kind}: ${JSON.stringify(bare.hook)}`);
+      ok(bare.conflicts.some((c) => /never on the nose or mouth; for 3.1 s it reaches more than 6 % down a head known by its box alone, where the eyes of some heads begin .*this head's eyes are not known/.test(c)), bare.conflicts.join(" | "));
+    }
+  });
   t("the command: text writes text.json and lists every shot; a --lift fixes one shot; a wrong --lift and a shots file without tracks are refused in one sentence", () => {
     const dir = fs.mkdtempSync(path.join(OUT, "text-")), file = path.join(dir, "shots.json");
     fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 4, [still([355, 300, 370, 500], 0, 4)]), shot(4, 8, [still([355, 850, 370, 500], 4, 8)])], hook: { start: 0, end: 2.5 } }));
@@ -1626,6 +1691,11 @@ console.log("\nLarge type in one area over a placed picture (text --text area): 
     ok(r.area.top === usual && r.area.lower === 0 && r.area.bottom === bottom, JSON.stringify(r.area));
     ok(r.shots[0].lift === 0 && !r.shots[0].touches.length && !r.conflicts.length, JSON.stringify(r.shots[0]));
     return `y ${r.area.top}–${r.area.bottom}`;
+  });
+  t("a face whose eyes stand below the area: the type lies on its hair or forehead, said as that, not a fault on the nose or eyes", () => {
+    const r = areaOverTime({ zones: Z9, shots: [shot(0, 4, [still([250, 1300, 580, 600], [350, 1460, 380, 250], 0, 4)], null)], area: { top: usual } });
+    ok(r.shots[0].on.hair >= 3.9 && r.shots[0].on.nose === 0 && !r.shots[0].fault && !r.conflicts.length && r.area.seconds.hair >= 3.9, JSON.stringify([r.shots[0], r.conflicts]));
+    ok(r.notes.some((n) => /the type lies on A's hair or forehead for 4 s, above the eyes/.test(n)), r.notes.join(" | "));
   });
   t("a close-up whose mouth reaches into the usual area: the area goes lower, just below the mouth line (an open mouth's room included), before any shot is raised; the chin under it is said, not a fault", () => {
     const feat = [380, 560, 320, 420];
