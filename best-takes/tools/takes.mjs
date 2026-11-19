@@ -525,7 +525,7 @@ function cmdFaces(dir, opts) {
     const seen = (got.faces || []).filter((f) => f.boxes?.length).length * (got.step || 0.1);
     if (seen >= 0.5 * c.duration) return;
     const material = (got.shots || []).filter((x) => x.kind && x.kind !== "people").reduce((t, x) => t + x.end - x.start, 0);
-    console.log(`✗ ${c.file}: a face at ${seen.toFixed(1)} of its ${c.duration.toFixed(1)} s only${material ? ` (it shows a slide, a screen or other material for ${material.toFixed(1)} s, which place keeps whole: no face is needed there)` : ""}. Where a person speaks to the camera in it, the faces were missed: read them yourself (faces ${rel(dir)} --grid, then --eye); place puts the text by the faces it knows, and none where it knows none.`);
+    console.log(`✗ ${c.file}: a face at ${seen.toFixed(1)} of its ${c.duration.toFixed(1)} s only${material ? ` (it shows a slide, a screen or other material for ${material.toFixed(1)} s: where that is a quarter or more of what the cut keeps, place keeps the picture whole and needs no face)` : ""}. Where a person speaks to the camera in it, the faces were missed: read them yourself (faces ${rel(dir)} --grid, then --eye); place puts the text by the faces it knows, and none where it knows none.`);
   };
   for (const c of list) {
     const out = source(dir, `${kOf(c)}.faces.json`);
@@ -642,16 +642,18 @@ function cmdPlace(dir, opts) {
       said.push(`${c.file}: ✗ shows a slide, a screen or other material for ${kind.material.toFixed(1)} s of what the cut keeps${track.length ? "" : " (no face found in it)"}: the picture stays whole, smaller, over its blurred copy (a crop would cut the material); clips frames such footage shot by shot (clips' SKILL.md)`);
       continue;
     }
-    if (!track.length) { pictures[c.file] = cover; said.push(`${c.file}: no face in what the cut keeps of it: the picture covers the frame, centred`); continue; }
+    // a few seconds called material are said, never shrink the whole take
+    const brief = rule.material ? [`${c.file}: ⚠ ${rule.material.toFixed(1)} of the ${kind.kept.toFixed(1)} s the cut keeps of it were called a slide, a screen or other material (a thing held to the lens, an empty picture): under a quarter of it, so the picture is not kept whole for them; where that stretch must be seen whole, clips frames such footage shot by shot (clips' SKILL.md)`] : [];
+    if (!track.length) { pictures[c.file] = cover; said.push(`${c.file}: no face in what the cut keeps of it: the picture covers the frame, centred`, ...brief); continue; }
     // a cut the detector found counts only where the faces on either side disagree (shotChange);
     // one they cannot tell is said, and the take placed as one shot all the same
     const at = (xs) => xs.map((x) => x.t.toFixed(1)).join(", ").replace(/, ([^,]*)$/, " and $1") + " s";
     if (rule.use === "fallback" && want == null) {
       pictures[c.file] = cover;
-      said.push(`${c.file}: ✗ ${rule.other.length ? `has ${rule.other.length + 1} shots, cut in it (another framing or person at ${at(rule.other)})` : ""}${rule.other.length && kind.people > 1 ? " and " : ""}${kind.people > 1 ? `shows ${kind.people} people` : ""}: best-takes places one picture for one person's take, so it covers the frame from the middle as before and the text is placed by the faces; clips frames such footage shot by shot, on whoever speaks (clips' SKILL.md). --picture <number> takes one of layout's candidates all the same`);
+      said.push(`${c.file}: ✗ ${rule.other.length ? `has ${rule.other.length + 1} shots, cut in it (another framing or person at ${at(rule.other)})` : ""}${rule.other.length && kind.people > 1 ? " and " : ""}${kind.people > 1 ? `shows ${kind.people} people` : ""}: best-takes places one picture for one person's take, so it covers the frame from the middle as before and the text is placed by the faces; clips frames such footage shot by shot, on whoever speaks (clips' SKILL.md). --picture <number> takes one of layout's candidates all the same`, ...brief);
       continue;
     }
-    const doubt = [...(rule.same.length ? [`${c.file}: the picture changes at ${at(rule.same)} with the same face at the same place before and after (the light, or the person away for a moment): one shot, placed as one`] : []),
+    const doubt = [...brief, ...(rule.same.length ? [`${c.file}: the picture changes at ${at(rule.same)} with the same face at the same place before and after (the light, or the person away for a moment): one shot, placed as one`] : []),
       ...(rule.unsure.length ? [`${c.file}: ⚠ the picture changes at ${at(rule.unsure)} and the faces cannot tell whether it is cut there (none on one side, or the same face back only after a long gap): placed as one person's take all the same; where the sheet shows another shot there, clips frames such footage shot by shot (clips' SKILL.md)`] : [])];
     const pf = path.join(folder, `${kOf(c)}.track.json`);
     fs.writeFileSync(pf, JSON.stringify(track));

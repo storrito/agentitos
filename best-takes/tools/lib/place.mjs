@@ -15,9 +15,9 @@
 //   inFrame(box, pic) → the box in px of the frame, the picture drawn at pic (scale, left, top − lift)
 //   faceTrack(list, pieces, n, every) → [{ t, box }]: the face over the seconds the cut keeps of video n, inside its picture
 //   facesFault(list, [w, h]) → a sentence where a video's faces cannot be of its picture, else null
-//   takeKind(list, pieces, n) → { shots, cuts, people, material }: what a video is over the seconds the cut keeps
+//   takeKind(list, pieces, n) → { kept, shots, cuts, people, material }: what a video is over the seconds the cut keeps
 //   shotChange(list, before, after) → "same" | "other" | "unknown": a cut the detector found, by the faces around it
-//   pictureRule(kind, faced) → { use: whole | none | fallback | place, other, same, unsure }
+//   pictureRule(kind, faced) → { use: whole | none | fallback | place, other, same, unsure, material }
 //   shotsInput(…) → { shots, hook }: layout text's shots.json, one shot per video the cut shows
 //   hookSpan(pieces, until, clock) → { start, end, spans? } on the one clock
 //   calmBehind(shots, hook, H) → whether the picture behind the hook is a close-up
@@ -84,6 +84,7 @@ export function whole([sw, sh], [W, H]) {
 // the cut keeps 1.5 s of at least (as the cut detector found them), what each cut between them is
 // by the faces (shotChange), how many people at once (two or more in a fifth of its moments), and
 // how many seconds of material (slides, a screen, a photo: a shot the framing called other than people)
+// of the seconds it keeps of the video (kept)
 export function takeKind(list, pieces, n) {
   const kept = pieces.filter((p) => p.clip === n);
   const over = (s) => kept.reduce((t, p) => t + Math.max(0, Math.min(p.out, s.end) - Math.max(p.in, s.start)), 0);
@@ -92,7 +93,29 @@ export function takeKind(list, pieces, n) {
   const cuts = shots.slice(1).map((s, i) => ({ t: s.start, is: shotChange(list, shots[i].end, s.start) }));
   const moments = (list?.faces || []).filter((f) => kept.some((p) => f.t >= p.in && f.t <= p.out));
   const two = moments.filter((f) => f.boxes.length > 1).length;
-  return { shots: shots.length, cuts, people: moments.length && two >= 0.2 * moments.length ? Math.max(...moments.map((f) => f.boxes.length)) : 1, material: shots.filter((s) => s.kind && s.kind !== "people").reduce((t, s) => t + over(s), 0) };
+  return { kept: +kept.reduce((t, p) => t + Math.max(0, p.out - p.in), 0).toFixed(3), shots: shots.length, cuts, people: moments.length && two >= 0.2 * moments.length ? Math.max(...moments.map((f) => f.boxes.length)) : 1, material: shots.filter((s) => s.kind && s.kind !== "people").reduce((t, s) => t + over(s), 0) };
+}
+
+// How place chooses a video's picture from takeKind and whether a face is known in what the cut
+// keeps. Material is checked first: where it is a quarter or more of what the cut keeps of the
+// video (MATERIAL_SHARE; the review's slides take is all material, dafoe's interview with film
+// clips 31 %), the picture stays whole with a face or without ("whole"). A shorter stretch (2.4 s
+// of an empty stage the model called b-roll in a 22 s cut, a product held to the lens for 3 s) is
+// only said, and the other checks run as for any take: no face, the picture covers the frame from
+// the middle ("none"); the faces disagree (another framing or person across a cut, or two people
+// at once), it covers the frame from the middle and says so ("fallback"); else one person's take,
+// placed by layout ("place"). A doubt (a cut no face tells, a few seconds called material) never
+// makes the picture worse: it is said and the take placed all the same.
+// → { use, other: [cut], same: [cut], unsure: [cut], material: seconds said beside the picture (0: none) }
+export const MATERIAL_SHARE = 0.25;
+export function pictureRule(kind, faced) {
+  const of = (is) => (kind.cuts || []).filter((x) => x.is === is);
+  const out = { other: of("other"), same: of("same"), unsure: of("unknown"), material: 0 };
+  if (kind.material && kind.material >= MATERIAL_SHARE * (kind.kept || 0)) return { use: "whole", ...out };
+  out.material = kind.material || 0;
+  if (!faced) return { use: "none", ...out };
+  if (out.other.length || kind.people > 1) return { use: "fallback", ...out };
+  return { use: "place", ...out };
 }
 
 // Whether a cut the detector found in a person's take is a change of shot. It is one where what
@@ -106,22 +129,6 @@ export function takeKind(list, pieces, n) {
 // behind the same face at the same place and size is not told apart, and need not be: one window
 // serves both. → "same", "other" (the faces disagree), or "unknown" (no face on one side, or the
 // same face only after a longer gap: a cut away and back, perhaps)
-// How place chooses a video's picture from takeKind and whether a face is known in what the cut
-// keeps: material first, a slide or a screen stays whole with a face or without ("whole"); no face,
-// the picture covers the frame from the middle ("none"); the faces disagree (another framing or
-// person across a cut, or two people at once), it covers the frame from the middle and says so
-// ("fallback"); else one person's take, placed by layout ("place"). A doubt (a cut no face tells)
-// never makes the picture worse: it is said and the take placed all the same.
-// → { use, other: [cut], same: [cut], unsure: [cut] }
-export function pictureRule(kind, faced) {
-  const of = (is) => (kind.cuts || []).filter((x) => x.is === is);
-  const out = { other: of("other"), same: of("same"), unsure: of("unknown") };
-  if (kind.material) return { use: "whole", ...out };
-  if (!faced) return { use: "none", ...out };
-  if (out.other.length || kind.people > 1) return { use: "fallback", ...out };
-  return { use: "place", ...out };
-}
-
 export const SAME_GAP = 8;
 export function shotChange(list, before, after) {
   const faces = (list?.faces || []).filter((f) => f.boxes?.length);

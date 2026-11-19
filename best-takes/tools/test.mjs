@@ -531,7 +531,7 @@ test("on its own: faces that miss most of the cut are counted, so that place and
 test("on its own: footage with cuts in it, two people, or slides is told apart from one person's take over the seconds the cut keeps (the review: talk-show cuts became a strip at a third of its size, a talk's slides were cropped from the middle)", () => {
   const pieces = [{ clip: 1, in: 0, out: 10 }];
   const one = { shots: [{ start: 0, end: 20, kind: "people" }], faces: Array.from({ length: 100 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) };
-  assert.deepEqual(takeKind(one, pieces, 1), { shots: 1, cuts: [], people: 1, material: 0 });
+  assert.deepEqual(takeKind(one, pieces, 1), { kept: 10, shots: 1, cuts: [], people: 1, material: 0 });
   const cuts = { ...one, shots: [{ start: 0, end: 4, kind: "people" }, { start: 4, end: 8, kind: "people" }, { start: 8, end: 20, kind: "people" }] };
   assert.equal(takeKind(cuts, pieces, 1).shots, 3);
   // a flash of 0.7 s of the shot before at the take's start (the review's conference take) is no cut in it
@@ -599,8 +599,8 @@ test("slides stay whole with a face beside them or with none found, before the b
   const none = { shots: slides, faces: [] };
   assert.equal(pictureRule(takeKind(none, all40, 1), false).use, "whole");
   assert.equal(pictureRule(takeKind({ shots: people(0, 40), faces: [] }, all40, 1), false).use, "none");
-  // a talk with a slide for 6 s and the speaker after
-  assert.equal(ruleOf(take([{ start: 0, end: 6, kind: "broll" }, ...people(6, 40)])).use, "whole");
+  // a talk with a slide for 12 s and the speaker after
+  assert.equal(ruleOf(take([{ start: 0, end: 12, kind: "broll" }, ...people(12, 40)])).use, "whole");
 });
 
 test("faces kept from before with no face in them get the ✗ that place and check give (they were reused in silence); slides in them are named as what place keeps whole", () => {
@@ -615,8 +615,29 @@ test("faces kept from before with no face in them get the ✗ that place and che
     const plain = run([{ start: 0, end: 10, kind: "people" }]);
     assert.match(plain, /faces kept from before/);
     assert.match(plain, /✗ 01\.mp4: a face at 0\.0 of its 10\.0 s only\. Where a person speaks/);
-    assert.match(run([{ start: 0, end: 10, kind: "split" }]), /material for 10\.0 s, which place keeps whole/);
+    assert.match(run([{ start: 0, end: 10, kind: "split" }]), /material for 10\.0 s: where that is a quarter or more of what the cut keeps, place keeps the picture whole/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("material shows the take whole only where it is a quarter or more of what the cut keeps: a few seconds called material are said and the take placed by its faces, the other checks run (the review's swap: 2.4 s of an empty stage between two women kept the 22 s cut whole and small)", () => {
+  const nobody = (a, b, face) => (t) => (t >= a && t < b ? null : face(t));
+  // swap: her 0–15 s, the empty stage 15–19 s called b-roll, another woman at her place 19–34 s
+  const another = (t) => (t < 15 ? her(t) : { t, boxes: [{ who: "woman in a green dress", box: [540, 50, 212, 301] }] });
+  const swap = { ...take([...people(0, 15), { start: 15, end: 19, kind: "broll" }, ...people(19, 34)], nobody(15, 19, another), 0, 34) };
+  const cut = [{ clip: 1, in: 4, out: 26 }];
+  const k = takeKind(swap, cut, 1), r = pictureRule(k, faceTrack(swap, cut, 1).length > 0);
+  assert.deepEqual([k.kept, k.material], [22, 4]);
+  // (both cuts, into the empty stage and out of it, have her before and the other woman after)
+  assert.deepEqual([r.use, r.material, r.other.length], ["fallback", 4, 2]);
+  // a product held to the lens for 3 s of a 40 s take, the same person before and after
+  const product = ruleOf(take([...people(0, 20), { start: 20, end: 23, kind: "broll" }, ...people(23, 40)], nobody(20, 23, her)));
+  assert.deepEqual([product.use, product.material], ["place", 3]);
+  // material for 60 % of the cut, and the slides take (all of it): whole
+  assert.equal(ruleOf(take([...people(0, 16), { start: 16, end: 40, kind: "split" }])).use, "whole");
+  assert.equal(pictureRule(takeKind({ shots: [{ start: 0, end: 40, kind: "split" }], faces: [] }, all40, 1), false).use, "whole");
+  // dafoe's interview: film clips for 31 % of the cut stay whole; 20 % does not
+  assert.equal(ruleOf(take([...people(0, 27.6), { start: 27.6, end: 40, kind: "broll" }])).use, "whole");
+  assert.equal(ruleOf(take([...people(0, 32), { start: 32, end: 40, kind: "broll" }])).use, "place");
 });
