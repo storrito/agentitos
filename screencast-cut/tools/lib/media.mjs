@@ -72,8 +72,8 @@ export function prepare(file, out, { fps = 30, frames, progress, tags = true } =
 }
 
 // A steady frame rate is asked for with -fps_mode from ffmpeg 5.1 on; an older ffmpeg (Ubuntu
-// 22.04 has 4.4) refuses it and knows only -vsync, which a newer one still takes but calls
-// deprecated. ffmpeg is asked once, with a tenth of a second of a made-up picture.
+// 22.04 has 4.4) refuses it and knows only -vsync, which ffmpeg 9 takes no longer (5.1 to 8
+// call it deprecated). ffmpeg is asked once, with a tenth of a second of a made-up picture.
 let rate = null;
 export function steadyRate() {
   if (!rate) {
