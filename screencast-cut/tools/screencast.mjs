@@ -128,7 +128,7 @@ function settings(dir, opts) {
 function captionsOf(cut = {}) {
   if (cut.captions === false) return null;
   if (cut.captions) return cut.captions;
-  return captionsTool() ? { style: "clean", highlight: [], on: "shot-moved" } : null; // PROTOTYPE, not to merge: on the shot, moved, by default, for the rig
+  return captionsTool() ? { style: "clean", highlight: [], on: "shot", lines: 1 } : null; // PROTOTYPE, not to merge: on the shot in one line by default, for the rig
 }
 
 // The frame's areas (layout.areas): from what the platforms the video goes to lay over it
@@ -920,7 +920,7 @@ async function cmdBuild(dir, opts) {
   if (caps) {
     const file = captionWords(dir, r.words, caps, { width, height, duration: r.duration });
     const said = runCaptions(["build", file, path.join(out, "captions"), "--style", caps.style || "hormozi",
-      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []),
+      ...(s.platform ? ["--platform", platformList(s.platform).join(",")] : []), ...(caps.lines ? ["--lines", String(caps.lines)] : []),
       ...(caps.brand || brandFile ? ["--brand", caps.brand || brandFile] : [])]);
     captions = said.match(/<div id="captions"[^\n]*<\/div>/)?.[0] ?? null;
   }
