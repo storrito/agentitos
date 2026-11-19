@@ -15,7 +15,12 @@ export function footageLayer(plan, { media = "video", canvas = "#world-canvas" }
   const vEnd = Math.min(D, V.duration);
   const stop = (f, o) => `rgba(0,0,0,${(o * d).toFixed(3)}) ${pct(a + (b - a) * f)}`;
   // eased ramp (no visible edge), plus a light veil at the very top for the HUD
-  const shade = `linear-gradient(to bottom, rgba(0,0,0,.42) 0%, rgba(0,0,0,0) 15%, rgba(0,0,0,0) ${pct(a)}, ${stop(0.25, 0.1)}, ${stop(0.5, 0.36)}, ${stop(0.75, 0.74)}, ${stop(1, 1)}, rgba(0,0,0,${d}) 100%)`;
+  // a picture raised by the build (V.lifts) ends above the frame's bottom, over a black ground: the
+  // band goes fully dark just above where the highest raise (grown by the push-in and a punch) ends
+  // it, so that no edge shows through the band
+  const liftEnd = V.lifts?.length ? 1 - (Math.max(...V.lifts.map((l) => l.px)) * 1.06 * 1.025) / plan.height : null;
+  const tail = liftEnd != null && liftEnd > b ? `rgba(0,0,0,${d}) ${pct(Math.max(b, liftEnd - 0.04))}, #000 ${pct(liftEnd)}, #000 100%` : `rgba(0,0,0,${d}) 100%`;
+  const shade = `linear-gradient(to bottom, rgba(0,0,0,.42) 0%, rgba(0,0,0,0) 15%, rgba(0,0,0,0) ${pct(a)}, ${stop(0.25, 0.1)}, ${stop(0.5, 0.36)}, ${stop(0.75, 0.74)}, ${stop(1, 1)}, ${tail})`;
   // the world's light stays faint over the face and comes up where the band is dark
   const fadeMask = `linear-gradient(to bottom, rgba(0,0,0,.1) 0%, rgba(0,0,0,.12) ${pct(a)}, #000 ${pct(b)})`;
   const heroes = plan.phrases.filter((p) => p.layout === "hero").map((p) => +p.tIn.toFixed(3));

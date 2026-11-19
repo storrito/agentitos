@@ -266,7 +266,11 @@ test("footage of the frame's shape with its faces: --faces model finds them once
   near(plan.video.typeTop, p.top, 1e-4, "the type's top built");
   if (p.lifts.length) {
     assert.deepEqual(plan.video.lifts, p.lifts.map((l) => ({ start: l.start, end: l.end, px: l.px })), "the build raises the picture itself");
-    assert.match(fs.readFileSync(path.join(dir, "composition", "compositions", "world.html"), "utf8"), /id="bg-lift"/);
+    const world = fs.readFileSync(path.join(dir, "composition", "compositions", "world.html"), "utf8");
+    assert.match(world, /id="bg-lift"/);
+    // the band fully dark above where the raised picture ends, so that its edge does not show
+    const end = 1 - (Math.max(...p.lifts.map((l) => l.px)) * 1.06 * 1.025) / H;
+    assert.ok(world.includes(`#000 ${(end * 100).toFixed(1)}%, #000 100%`), "the band dark below the raised picture");
   }
   assert.match(r.stdout, /shot 1 .* (raised \d+ px \(the eyes at \d+ % of the height at their highest\)|as it is): the type on/);
   assert.ok(fs.existsSync(path.join(dir, "source", "place.sheet.jpg")), "the sheet");
