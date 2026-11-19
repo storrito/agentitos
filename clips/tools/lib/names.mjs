@@ -350,6 +350,10 @@ export function entriesOf(answer, words, sentences, sources, { lang = null } = {
     if (run) { refuse({ ...e, written: e.from.join(" "), right: e.to.join(" ") }, `part of the longer name "${run}": another name, not this one misspelt`); continue; }
     const out = { from: e.from.join(" "), to: e.to.join(" "), kind: e.kind || "name", why: e.why || "", sound: sounds(e.from.join(" "), e.to.join(" ")) };
     if (words.slice(a, b + 1).some((w) => w.speaker !== words[a].speaker)) { refuse(e, "two voices say these words"); continue; }
+    // the beginning of the name, said whole later in the same sentence: a word broken off ("neben
+    // Malt, dass neben Curaçao auch Malta"), not a misspelling; the caption keeps what was said
+    const f = fold(e.from.join("")), t = fold(e.to.join("")), s = sentences[sentenceAt(sentences, a)];
+    if (f !== t && t.startsWith(f) && words.slice(b + 1, s.last + 1).some((w) => fold(core(w)) === t)) { refuse(e, `the beginning of "${out.to}", said whole later in the sentence: a word broken off, not misspelt`); continue; }
     if (capital(out.from) && onPage(out.from, sources) && !onPage(out.to, sources)) { refuse(e, "the page writes it so already"); continue; }
     let places = [...e.at];
     const source = onPage(out.to, sources);

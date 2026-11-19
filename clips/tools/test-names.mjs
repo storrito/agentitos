@@ -184,6 +184,14 @@ test("the lower-case rule needs the page to write the name, not any word of that
   assert.match(weil[0].because, /capitalises its nouns/);
 });
 
+test("a word broken off before the name said whole stays as said; the same beginning alone is corrected", () => {
+  const ep = episodeOf([["A", "Ich wusste, dass neben Malt, dass neben Curaçao auch Malta ein Hub ist."], ["B", "Und Kollega."]]);
+  const page = pageSources(pageOf({ title: "x", description: "Curaçao, Malta und Kollegah." }));
+  const e = entriesOf({ names: [], fixes: [fix(0, "Malt", "Malta"), fix(1, "Kollega", "Kollegah")] }, ep.words, ep.sentences, page, { lang: "de" });
+  assert.match(e.find((x) => x.to === "Malta").refused, /the beginning of "Malta", said whole later in the sentence/);
+  assert.equal(e.find((x) => x.to === "Kollegah").status, "applied");
+});
+
 test("refused: what would change what was said, and a name already right", () => {
   const why = (f) => { const e = one([f]); assert.equal(e.status, "refused", JSON.stringify(e)); return e.refused; };
   assert.match(why(fix(6, "First We Feast I'm", "First We Feast")), /leaves out words/);
