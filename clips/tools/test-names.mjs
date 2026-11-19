@@ -166,6 +166,25 @@ test("a word that is part of a longer name is not that name by itself: no Tinash
   assert.match(l.find((x) => x.status === "refused").refused, /"Lou Reed"/);
 });
 
+test("the lower-case rule needs the page to write the name, not any word of that spelling; in German it is off", () => {
+  // the review's probe: a page that writes the ordinary word "fall"
+  const ep = episodeOf([["A", "After the fahl of the empire everything changed."]]);
+  const fall = entriesOf({ names: [], fixes: [fix(0, "fahl", "Fall")] }, ep.words, ep.sentences, pageSources(pageOf({ title: "x", description: "After the fall of the empire, a documentary." })), { lang: "en" });
+  assert.equal(fall[0].status, "proposed");
+  // the name at the start of a sentence of the description is no name either
+  const opens = entriesOf({ names: [], fixes: [fix(0, "fahl", "Fall")] }, ep.words, ep.sentences, pageSources(pageOf({ title: "x", description: "Watch it. Fall of the empire, after the war." })), { lang: "en" });
+  assert.equal(opens[0].status, "proposed");
+  // the name as the page writes it, inside a sentence: applied
+  const name = episodeOf([["B", "And Robert Eggers' werewolf on December 25th."]]);
+  const desc = pageSources(pageOf({ title: "x", description: "Catch him in Robert Eggers' Werwulf on December 25th." }));
+  assert.equal(entriesOf({ names: [], fixes: [fix(0, "werewolf", "Werwulf")] }, name.words, name.sentences, desc, { lang: "en" })[0].status, "applied");
+  // German: a capital on the page does not tell a name from a noun, so the rule does not lift
+  const de = episodeOf([["A", "Das war so, weil Kurt das wollte."]]);
+  const weil = entriesOf({ names: [], fixes: [fix(0, "weil", "Weill")] }, de.words, de.sentences, pageSources(pageOf({ title: "x", description: "Über so Weill Kurt das Werk." })), { lang: "de" });
+  assert.equal(weil[0].status, "proposed");
+  assert.match(weil[0].because, /capitalises its nouns/);
+});
+
 test("refused: what would change what was said, and a name already right", () => {
   const why = (f) => { const e = one([f]); assert.equal(e.status, "refused", JSON.stringify(e)); return e.refused; };
   assert.match(why(fix(6, "First We Feast I'm", "First We Feast")), /leaves out words/);

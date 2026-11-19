@@ -168,16 +168,38 @@ function repeats(words, first, last) {
   return out;
 }
 
-// Whether the page writes `to` with the same two words before it or after it as the words at
-// first..last have in the transcript (words of a letter or two do not count)
+// Whether the page writes `to` as a name, with the same two words before it or after it as the
+// words at first..last have in the transcript (words of a letter or two do not count). The name
+// must be written as the name: in its own case, and in running text (the description, the own
+// captions) not as the first word of a sentence, where any word has a capital; in a title, a
+// chapter or a tag anywhere. A page that writes the ordinary word ("the fall of the empire") says
+// nothing about the name "Fall".
+const RUNNING = new Set(["the description", "its own captions"]);
 function samePhrase(words, first, last, to, sources) {
   const near = (from, step) => {
     const out = [];
     for (let i = from; out.length < 2 && i >= 0 && i < words.length; i += step) out.push(core(words[i]).toLowerCase());
     return out.length === 2 && out.every((t) => t.length >= 3) ? (step < 0 ? out.reverse() : out) : null;
   };
-  const want = to.map((t) => t.toLowerCase()), before = near(first - 1, -1), after = near(last + 1, 1);
-  return !!((before && writes([...before, ...want], sources)) || (after && writes([...want, ...after], sources)));
+  const before = near(first - 1, -1), after = near(last + 1, 1);
+  for (const s of sources) {
+    // the page's words with whether each opens a line or a sentence
+    const raw = [], opening = [];
+    for (const line of String(s.text).split("\n")) line.split(/\s+/).filter((t) => parts(t).core).forEach((t, k, all) => {
+      raw.push(t);
+      opening.push(k === 0 || /[.!?…:]["”’)\]]*$/.test(all[k - 1]));
+    });
+    const have = raw.map((t) => parts(t).core);
+    for (let i = 0; i + to.length <= have.length; i++) {
+      if (!to.every((t, k) => have[i + k] === t)) continue;
+      const opens = opening[i];
+      if (RUNNING.has(s.label) && opens) continue;
+      const lower = (a, b) => have.slice(a, b).map((t) => t.toLowerCase());
+      if (before && i >= 2 && lower(i - 2, i).join(" ") === before.join(" ")) return true;
+      if (after && lower(i + to.length, i + to.length + 2).join(" ") === after.join(" ")) return true;
+    }
+  }
+  return false;
 }
 
 // The capitalised words right beside first..last that would make it part of a longer name: the same
@@ -339,7 +361,7 @@ export function entriesOf(answer, words, sentences, sources, { lang = null } = {
     // an ordinary word where the page writes the name with the same words around it ("Robert
     // Eggers' werewolf" against the description's "Robert Eggers' Werwulf"): the name, at the
     // places with those words only
-    if (plain && source && capital(out.to)) {
+    if (plain && source && capital(out.to) && !nouns) {
       const said = places.filter(([x, y]) => samePhrase(words, x, y, e.to, sources));
       if (said.some(([x]) => e.at.some(([y]) => y === x))) { plain = false; places = said; }
     }
@@ -347,7 +369,7 @@ export function entriesOf(answer, words, sentences, sources, { lang = null } = {
     if (!source) why.push(`the page does not write it (${e.where === "knowledge" ? "the model's knowledge" : "the model's reading"}${elsewhere ? `; the transcript writes "${out.to}" ${elsewhere === 1 ? "once" : `${elsewhere} times`} elsewhere` : ""})`);
     if (out.sound < APPLY_SOUND) why.push(`sounds less alike (${out.sound})`);
     if (fold(out.from) === fold(out.to)) why.push("only the case, the accents or the spacing differ");
-    if (plain) why.push(`"${out.from}" is an ordinary word in this transcript`);
+    if (plain) why.push(`"${out.from}" is an ordinary word in this transcript${nouns && source ? " (in a language that capitalises its nouns the page's capital letter does not tell a name, so the page's words around it cannot lift that)" : ""}`);
     if (!capital(out.to)) why.push(`"${out.to}" is an ordinary word, not a name`);
     if (e.sure !== "high") why.push(`the model is ${e.sure === "low" ? "unsure" : "not quite sure"}`);
     if (e.unpointed) why.push("the same spelling as a place the model pointed to, but not pointed to here: maybe another name or an ordinary word");
