@@ -88,10 +88,15 @@ export function shots(pieces, sources, width, height, a, labels = []) {
     // the circle at the areas' place, or where a screen's picture moved it off its region
     // (screenview.mjs): one circle for the piece, or one per part of a piece that spans a scene
     // change where the parts' circles differ, each over its part's stretch of the piece's time
-    const pip = (parts = [{ at: p.screenPic?.circle }]) => {
+    // a screen's part drawn as the stack (screenview.mjs, decided 2026-11-19: stack-916) has the
+    // webcam as a panel below the screen instead: the camera's picture at the stack's scale,
+    // clipped to the panel, no circle and no ring
+    const pip = (parts = [{ at: p.screenPic?.circle, panel: p.screenPic?.stack?.camera }]) => {
       if (!sources.webcam || p.pip === false) return;
-      const one = parts.every((x) => JSON.stringify(x.at || a.pip) === JSON.stringify(parts[0].at || a.pip));
+      const key = (x) => JSON.stringify(x.panel || x.at || a.pip);
+      const one = parts.every((x) => key(x) === key(parts[0]));
       for (const x of one ? [parts[0]] : parts) {
+        if (x.panel) { out.push({ source: "webcam", box: x.panel.window, at: geometry(x.panel, sources.webcam), panel: true, ...(one ? {} : x.timed) }); continue; }
         const [cx, cy, d] = x.at || a.pip;
         out.push({ source: "webcam", box: [cx, cy, d, d], crop: circle(sources.webcam), pip: true, ...(one ? {} : x.timed) });
       }
@@ -148,7 +153,7 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         // (screenview.mjs: the region past the safe box's margins, the circle or a label on it, its
         // text too small) is drawn as layout placed it: at its scale, clipped to its window
         const pic = p.segments?.length ? seg.screenPic : p.screenPic;
-        circles.push({ at: pic?.circle, timed: parts.length > 1 ? timed : {} });
+        circles.push({ at: pic?.circle, panel: pic?.stack?.camera, timed: parts.length > 1 ? timed : {} });
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
         // (a picture as before whose circle alone moved keeps the screen exactly as before)
         const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });
