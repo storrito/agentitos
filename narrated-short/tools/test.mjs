@@ -100,7 +100,7 @@ const filesOf = (dir) => Object.fromEntries(fs.readdirSync(dir, { recursive: tru
 const captionsHere = fs.existsSync(path.join(here, "..", "..", "captions", "tools", "captions.mjs"));
 const musicTag = (comp) => fs.readFileSync(path.join(comp, "index.html"), "utf8").match(/<audio id="music"[^>]*>/)?.[0];
 
-test("build: the music's volume and its lane lay it 17 LU under the voice, --under another distance, the summary says it", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") }, () => {
+test("build: the music's volume times its lane lays it 17 LU under the voice, --under another distance, the summary says it", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") }, () => {
   const dir = tmp();
   try {
     const { comp, build } = short(dir);
@@ -118,12 +118,19 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
       const tag = musicTag(comp);
       const volume = Number(tag.match(/data-volume="([\d.]+)"/)[1]);
       assert.match(tag, new RegExp(`data-under-voice="${under}"`));
-      // the lane holds the same volume until the last word
+      // HyperFrames plays the music at the track's volume × its lane: that product lies `under` LU
+      // under the voice from the start to the last word, and is 0 at the end (the lane holding the
+      // volume a second time played it at volume², about 19 dB too low: 2026-11-19)
       const lane = JSON.parse(tag.match(/data-automation="([^"]*)"/)[1].replace(/&quot;/g, '"')).lanes[0].points;
-      assert.deepEqual([lane[0].v, lane[1].v, lane[2].v], [volume, volume, 0]);
-      const scaled = path.join(dir, "scaled.wav");
-      run(["-i", music, "-af", `volume=${volume}`, scaled]);
-      near(voice - plain(scaled), under, 0.5);
+      assert.equal(lane.length, 3);
+      assert.equal(lane[0].t, 0);
+      assert.ok(lane[1].t > lane[0].t && lane[2].t > lane[1].t, JSON.stringify(lane));
+      for (const p of lane.slice(0, 2)) {
+        const scaled = path.join(dir, "scaled.wav");
+        run(["-i", music, "-af", `volume=${volume * p.v}`, scaled]);
+        near(voice - plain(scaled), under, 0.5);
+      }
+      assert.equal(volume * lane[2].v, 0);
       assert.match(r.stdout, new RegExp(`music ${under}\\.\\d LU under the voice \\(at ${volume}; the voice at −[\\d.]+ LUFS, the music at −[\\d.]+\\)`));
     }
     // music so quiet that even the highest volume leaves it further under: said, and held there
