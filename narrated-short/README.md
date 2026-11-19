@@ -14,7 +14,7 @@ node tools/short.mjs build short/astrobee artifacts/astrobee/composition --platf
 node $L music short/astrobee artifacts/astrobee/composition --prompt "…" --seconds 26
 node tools/short.mjs build short/astrobee artifacts/astrobee/composition --platform tiktok   # again: the music under the voice
 node tools/short.mjs sheet short/astrobee artifacts/astrobee/composition      # stills at the moments that matter
-node --test tools/test.mjs                                                    # the music's level under the voice, the faces' geometry, no request to a model (26 tests)
+node --test tools/test.mjs                                                    # the music's level under the voice, the faces' geometry, no request to a model (31 tests)
 ```
 
 Requirements: Node 20+, ffmpeg (with ffprobe) and the HyperFrames CLI (`RRAGENT_HYPERFRAMES`, `HYPERFRAMES`, else `hyperframes` on the PATH); no npm packages, no model of its own. The other skills beside it, each found through its name in the environment, else beside this folder, else in `/home/sprite/skills/`: platform-zones (`PLATFORM_ZONES`), captions (`CAPTIONS_TOOL`), freeze-cutout (`FREEZE_CUTOUT`, only for a freeze), clips (`FRAME_TOOL`, its `frame.mjs`, only for `faces`) and layout (`LAYOUT_TOOL`, its `place.mjs`: the faces step needs it, for what a text lies on and its place where that is a face), and launch-video with transcribe for the voice and the music, which need OpenRouter. It makes almost nothing itself that another skill of the collection already does:

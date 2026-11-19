@@ -559,7 +559,7 @@ test("build with faces: the captions never get smaller for one beat's face, and 
     facesFile(work, src, ["CM S Ingram", person("I", [564, 560, 135, 150], 25)]);
     r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s\) where they stood; .* of 96 px, their size/);
+    assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s[^)]*\) where they stood; .* of 96 px, their size/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).size, size, "the captions keep their size");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
