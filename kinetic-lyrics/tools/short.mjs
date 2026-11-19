@@ -29,6 +29,7 @@
 //                   folder of a series that shows several shorts side by side
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
@@ -94,6 +95,31 @@ function footage(dir) {
 // other shots than the framing has raised (source/place.json's lifts)
 const framedOf = (dir, s) => source(dir, `framed-${s.aspect.replace(":", "x")}.mp4`);
 const placed = (dir) => { try { return JSON.parse(fs.readFileSync(source(dir, "place.json"), "utf8")); } catch { return null; } };
+// What a placement is made for: the frame, the names (the name tag above the type), the platforms
+// (the safe box), the world (a light world frames the footage), the staging (the phrases and the
+// punches of the hero phrases), the words and the clip (its size and its first and last 64 KB). A
+// placement made for another (also one written before place said what it was for) is not applied.
+const digest = (file, part = false) => {
+  try {
+    const h = crypto.createHash("sha1");
+    if (!part) h.update(fs.readFileSync(file));
+    else {
+      const fd = fs.openSync(file, "r"), size = fs.fstatSync(fd).size, n = Math.min(65536, size), b = Buffer.alloc(n);
+      fs.readSync(fd, b, 0, n, 0); h.update(b); fs.readSync(fd, b, 0, n, Math.max(0, size - n)); h.update(b); h.update(String(size));
+      fs.closeSync(fd);
+    }
+    return h.digest("hex").slice(0, 12);
+  } catch { return null; }
+};
+const placeFor = (dir, s) => JSON.stringify([s.aspect, s.names || null, s.platform || null, s.world || null, digest(source(dir, "staging.json")), digest(source(dir, "transcript.json")), footage(dir) ? digest(footage(dir), true) : null]);
+// the placement for this cut, or null (stale: one sentence says to place again, once a build)
+function placedNow(dir, s, { say = false } = {}) {
+  const p = placed(dir);
+  if (!p) return null;
+  if (p.for === placeFor(dir, s)) return p;
+  if (say) console.log(`⚠ source/place.json was made for another cut (the frame, the names, the platforms, the world, the staging or the clip changed since), so the type stands where the footage alone sets it: short.mjs place ${dir} places it by the faces again.`);
+  return null;
+}
 // the lifts a framing has, as [{ shot, px }]
 const framedLifts = (json) => { try { const f = JSON.parse(fs.readFileSync(json, "utf8")); const seen = new Map(); for (const w of f.windows || []) if (w.lift?.px) seen.set(w.shot, w.lift.px); return [...seen].map(([shot, px]) => ({ shot, px })); } catch { return []; } };
 const sameLifts = (a, b) => a.length === b.length && a.every((x) => b.some((y) => y.shot === x.shot && y.px === x.px));
@@ -101,7 +127,7 @@ function frameFootage(dir, s) {
   const video = footage(dir), out = framedOf(dir, s), words = source(dir, "transcript.json");
   if (!video) return;
   const newer = (a, b) => fs.existsSync(a) && fs.statSync(a).mtimeMs >= fs.statSync(b).mtimeMs;
-  const lifts = placed(dir)?.lifts || [];
+  const lifts = placedNow(dir, s)?.lifts || [];
   if (newer(out, video) && newer(out, words) && sameLifts(lifts, framedLifts(out.replace(/\.mp4$/, ".json")))) return;
   node("frame.mjs", video, words, "--aspect", s.aspect, "--out", out, ...(lifts.length ? ["--lift", lifts.map((l) => `${l.t}:${l.px}`).join(",")] : []));
 }
@@ -114,7 +140,7 @@ function buildArgs(dir, s) {
   for (const [k, flag] of [["names", "--speakers"], ["colors", "--colors"], ["title", "--title"], ["subtitle", "--subtitle"], ["hook", "--hook"],
     ["world", "--world"], ["cta", "--cta"], ["handle", "--handle"], ["platform", "--platform"]]) if (s[k]) args.push(flag, s[k]);
   // the type's top from the faces (short.mjs place); without it the band the footage gives
-  const p = placed(dir);
+  const p = placedNow(dir, s);
   if (p?.top != null && video) args.push("--type-top", String(p.top));
   // no title: none on screen (build.mjs takes a bare --title as none, else the file's name)
   if (!s.title) args.push("--title");
@@ -177,6 +203,7 @@ function build(dir, opts) {
   const has = fs.existsSync(staging);
   if (!has) console.log("No staging yet: the words are set by the keyword lexicon. Better: short.mjs brief first.");
   const out = compositionOf(dir, s);
+  placedNow(dir, s, { say: true });
   frameFootage(dir, s);
   const exit = node("build.mjs", ...buildArgs(dir, s), ...(has ? ["--staging", staging] : []), "--out", out);
   if (exit === 2) fail("Fix the staging as the message above says, then build again.");
@@ -249,7 +276,7 @@ function place(dir, opts) {
   // where the faces leave the type where the footage alone sets it (no face, or none near it),
   // nothing changes: the build stays the one without place, byte for byte
   const top = text.area.lower > 0 || want.length || fixed.top != null ? +((text.area.top + chip) / H).toFixed(4) : null;
-  fs.writeFileSync(file, JSON.stringify({ by: "short.mjs place", top, area: text.area, raise, lifts: want, fixed }, null, 1) + "\n");
+  fs.writeFileSync(file, JSON.stringify({ by: "short.mjs place", top, area: text.area, raise, lifts: want, fixed, for: placeFor(dir, s) }, null, 1) + "\n");
   // the framing (where a lift changed) and the build again
   if (top != null || prev.top != null) {
     console.log(`Placing: the type from y ${Math.round((top ?? text.area.top / H + chip / H) * H)}${want.length ? `, ${want.map((l) => `shot ${l.shot + 1} raised ${l.px} px`).join(", ")}` : ""}; framing and building again …`);

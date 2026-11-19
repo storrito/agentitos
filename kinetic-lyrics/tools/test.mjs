@@ -135,6 +135,18 @@ test("a close-up whose mouth lies where the build sets the type: place lowers th
   r = run(env, "place", dir);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(fs.statSync(path.join(dir, "source", "framed-9x16.json")).mtimeMs, mtime, "the same lift: no framing again");
+  // a placement made for another cut is not applied: the names changed (the name tag), the build
+  // says to place again and stands as without place, the framing without the lift
+  r = run(env, "build", dir, "--names", "A=Ben");
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /source\/place\.json was made for another cut .*: short\.mjs place .* places it by the faces again\./);
+  const stale = JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8"));
+  assert.ok(!stale.video.typeTop && !stale.video.shadeFound, "the old top is not applied");
+  assert.ok(!JSON.parse(fs.readFileSync(path.join(dir, "source", "framed-9x16.json"), "utf8")).windows[0].lift, "nor the old lift");
+  r = run(env, "place", dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(dir, "composition", "plan.json"), "utf8")).video.typeTop > 0, "placed again");
+  assert.doesNotMatch(run(env, "build", dir).stdout, /made for another cut/);
   // the agent's own choice, kept, and given back with ""
   assert.match(run(env, "place", dir, "--type-top", "1300").stdout, /--type-top 1300 leaves the type no room: give a y from \d+ to 1152/);
   r = run(env, "place", dir, "--type-top", "1140", "--raise", "head");

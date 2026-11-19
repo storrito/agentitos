@@ -26,4 +26,4 @@
 
 - The person wants the type larger or higher: `--type-top <px>` (where the type starts; the name tag stands above it). A top above the faces' mouths is your decision and the list says what it then lies on.
 - A raise that looks wrong on the sheet (the model's box of a face can be off on a profile): `--lift <second>:<px>` for that shot (0: as framed).
-- Each choice is kept for the next `place`; `""` gives it back (`--type-top ""`).
+- Each choice is kept for the next `place`; `""` gives it back (`--type-top ""`). The placement itself holds only for the cut it was made for: after a change of the clip, the staging, the frame, the names, the platforms or the world a build leaves it out and says to run `place` again.
