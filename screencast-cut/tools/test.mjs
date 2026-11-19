@@ -1,5 +1,6 @@
 // What becomes of a pause, on made-up movement of a screen and of the phone's camera, and the
-// cut's text as people read it (captions, subtitles), on made-up words. No request, no video.
+// cut's text as people read it (captions, subtitles), on made-up words; which option the
+// installed ffmpeg takes for a steady frame rate. No request.
 //
 //   node --test tools/test.mjs
 
@@ -8,6 +9,11 @@ import assert from "node:assert/strict";
 import { plan, capitalised, endsSentence } from "./lib/cut.mjs";
 import { pauseMoves, whileSpeaking, MOVING } from "./lib/activity.mjs";
 import { HOP } from "./lib/voice.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 // ------------------------------------------------------------------------------ the pauses
 // One recording of 20 s: words every half second from 1 to 8 s and from 12 to 18 s, a pause of
@@ -179,4 +185,34 @@ test("capitalised: Unicode's first letter, by the language; names and digits as 
   assert.equal(capitalised("3d"), "3d");
   assert.equal(capitalised("¿qué"), "¿qué");
   assert.ok(endsSentence("Pixel.") && endsSentence("so?“") && endsSentence("»Ende.«") && !endsSentence("3.") && !endsSentence("z.B.") && !endsSentence("und,"));
+});
+
+// ------------------------------------------------------------------------ ffmpeg's options
+// A steady frame rate: -fps_mode where ffmpeg knows it (5.1 on), else -vsync (4.4 refuses
+// -fps_mode). Each case in a node of its own, with a made-up ffmpeg first on the PATH.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const hasFfmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
+const rateWith = (script) => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "fake-ffmpeg-"));
+  try {
+    fs.writeFileSync(path.join(bin, "ffmpeg"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", `import { steadyRate } from ${JSON.stringify(path.join(HERE, "lib", "media.mjs"))}; console.log(steadyRate().join(" "));`], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    return r.stdout.trim();
+  } finally { fs.rmSync(bin, { recursive: true, force: true }); }
+};
+
+test("a steady frame rate: -fps_mode where ffmpeg takes it, -vsync where it refuses it (ffmpeg 4.4)", () => {
+  assert.equal(rateWith(`exit 0`), "-fps_mode cfr");
+  assert.equal(rateWith(`for a; do [ "$a" = "-fps_mode" ] && { echo "Unrecognized option 'fps_mode'." >&2; exit 1; }; done; exit 0`), "-vsync cfr");
+});
+
+test("the installed ffmpeg converts a recording with the option it was asked about", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, async () => {
+  const { prepare } = await import("./lib/media.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "prepare-"));
+  try {
+    const src = path.join(dir, "in.webm");
+    assert.equal(spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc=s=320x180:r=24:d=1", "-c:v", "libvpx", src]).status, 0);
+    const out = await prepare(src, path.join(dir, "out.mp4"), { fps: 30 });
+    assert.ok(out.video && Math.abs(out.duration - 1) < 0.1, `converted: ${JSON.stringify(out)}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

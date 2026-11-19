@@ -16,12 +16,12 @@ node tools/screencast.mjs at screencast/demo 0:23                               
 node tools/screencast.mjs frame screencast/demo 0:23                                    # its source there, with a grid and the crop
 # the render tool: demo → artifacts/demo.mp4
 node tools/screencast.mjs finish screencast/demo artifacts/demo.mp4                     # at −14 LUFS, and demo.srt
-node --test tools/test.mjs                                                              # the pauses, the cut's text; no request
+node --test tools/test.mjs                                                              # the pauses, the cut's text, ffmpeg's options; no request
 ```
 
 Outside rragent the same works with any HyperFrames project folder (`--out <project>/composition`, then `hyperframes render` there) and any folder with a `recording.json` (below); `transcribe` takes the words from ElevenLabs Scribe through agentitos' [transcribe](../transcribe/) skill beside this one (or `TRANSCRIBE` naming its `tools/transcribe.mjs`).
 
-Requirements: Node 20+, ffmpeg, the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (found at `http://sprite.internal/v1/gateway/list`; an rragent agent there has no key of its own). OpenRouter finds the face in the webcam (`google/gemini-3.8-flash`, three frames, under half a cent) and marks the captions' key words; without it the circle shows the webcam's middle. No npm dependencies. Built after [best-takes](../best-takes/): its cut points, levels, timelapses and finish, copied and adapted (agentitos' folders never import from each other); captions come from [captions](../captions/), called as a tool.
+Requirements: Node 20+, ffmpeg (4.4 or newer: a steady frame rate is asked for as the installed one takes it, `-fps_mode` from 5.1 on, else `-vsync`), the HyperFrames CLI, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (found at `http://sprite.internal/v1/gateway/list`; an rragent agent there has no key of its own). OpenRouter finds the face in the webcam (`google/gemini-3.8-flash`, three frames, under half a cent) and marks the captions' key words; without it the circle shows the webcam's middle. No npm dependencies. Built after [best-takes](../best-takes/): its cut points, levels, timelapses and finish, copied and adapted (agentitos' folders never import from each other); captions come from [captions](../captions/), called as a tool.
 
 ## The recording
 
