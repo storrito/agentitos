@@ -41,7 +41,7 @@ jobs:
   skills:
     name: skills (all but layout)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
@@ -66,7 +66,7 @@ jobs:
           restore-keys: ${{ steps.debs.outputs.key }}-
       - name: ffmpeg and fonts
         id: install
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
           DEBS_BREAK: ${{ inputs.break-cache && '1' || '' }}
         run: .github/debs.sh
@@ -82,7 +82,7 @@ jobs:
   layout:
     name: layout (with Chrome)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
         with:
@@ -103,7 +103,7 @@ jobs:
           restore-keys: ${{ steps.debs.outputs.key }}-
       - name: ffmpeg and fonts
         id: install
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
           DEBS_BREAK: ${{ inputs.break-cache && '1' || '' }}
         run: .github/debs.sh
