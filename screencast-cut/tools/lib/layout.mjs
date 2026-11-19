@@ -29,12 +29,12 @@ const PAD = 0.1; // around the region, of its size
 // webcam's circle (pip: x, y, diameter), the label's corner. zones: platform-zones' answer for
 // this frame and the platforms the video goes to; captions, labels: whether the cut has them
 // (their room is kept only then).
-export function areas(width, height, zones, { captions = true, labels = false } = {}) {
+export function areas(width, height, zones, { captions = true, labels = false, band = null } = {}) {
   const [sx, sy, sw, sh] = zones.safe;
   const short = Math.min(width, height), gap = Math.round(short * 0.022);
   // the captions' band: their lowest line at the safe box's bottom, room for two lines above it
   // (a wide frame's captions are smaller and mostly one line)
-  const capTop = captions ? sy + sh - Math.round(short * (height > width * 0.9 ? 0.2 : 0.12)) : sy + sh;
+  const capTop = captions ? sy + sh - (band ?? Math.round(short * (height > width * 0.9 ? 0.2 : 0.12))) : sy + sh;
   const label = [sx, sy];
   const top = sy + (labels ? Math.round(short * 0.065) + gap : 0);
   // where a screen's shot may lie around what matters: the whole frame above the captions (the
@@ -87,6 +87,18 @@ export function areasOnShot(width, height, zones, { labels = false } = {}) {
   // 9:16: the screen's rooms above the circle stay where main has them (the circle does not move)
   const upright = height >= width * 1.5;
   return { ...b, pip: a.pip, content: upright ? a.content : b.content, bleed: [0, 0, width, height], floor: a.bleed[3], onShot: true };
+}
+
+// PROTOTYPE (step 3's pairs, option "clear": cut.json "captions": { "on": "clear", "lines": 1 }):
+// the captions' band shrunk to one line (CLEAR_LINE px above the safe box's bottom: the captions
+// skill's one line at its 52 px type is 90 px in every frame here), what must be read (the region,
+// a phone's screen) ends a gap above it, the rest of a screen runs on under and beside the captions
+// to the frame's edges (bleed: the whole frame); the circle at main's place (circle-still).
+export const CLEAR_LINE = 90;
+export function areasClear(width, height, zones, { labels = false } = {}) {
+  const a = areas(width, height, zones, { captions: true, labels }), b = areas(width, height, zones, { captions: true, labels, band: Math.round(CLEAR_LINE * Math.min(width, height) / 1080) });
+  const upright = height >= width * 1.5;
+  return { ...b, pip: a.pip, content: upright ? a.content : b.content, bleed: [0, 0, width, height], floor: a.bleed[3] };
 }
 
 // PROTOTYPE (same): one place for the cut's captions over the shot, by a plain rule, not the layout

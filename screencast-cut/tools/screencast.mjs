@@ -59,7 +59,7 @@ import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness } from ".
 import { align, clarity } from "./lib/sync.mjs";
 import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMoves, MOVING } from "./lib/activity.mjs";
 import { plan, range, timeRange } from "./lib/cut.mjs";
-import { FRAMES, areas, areasOnShot, captionsOnShot, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
+import { FRAMES, areas, areasOnShot, areasClear, captionsOnShot, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { findFace } from "./lib/face.mjs";
@@ -128,7 +128,7 @@ function settings(dir, opts) {
 function captionsOf(cut = {}) {
   if (cut.captions === false) return null;
   if (cut.captions) return cut.captions;
-  return captionsTool() ? { style: "clean", highlight: [], on: "shot", lines: 1 } : null; // PROTOTYPE, not to merge: on the shot in one line by default, for the rig
+  return captionsTool() ? { style: "clean", highlight: [], on: "clear", lines: 1 } : null; // PROTOTYPE, not to merge: option "clear" by default, for the rig
 }
 
 // The frame's areas (layout.areas): from what the platforms the video goes to lay over it
@@ -139,6 +139,7 @@ function layoutOf(s, cut = {}) {
   try { z = zones(width, height, platformList(s.platform)); } catch (e) { fail(`✗ ${e.message}`); }
   const labels = (cut.keep || []).some((k) => k.label);
   // PROTOTYPE: "captions": { "on": "shot" | "shot-moved" } lays the captions on the shot (areasOnShot)
+  if (captionsOf(cut)?.on === "clear") return { width, height, zones: z, areas: areasClear(width, height, z, { labels }) };
   if (/^shot/.test(captionsOf(cut)?.on || "")) return { width, height, zones: z, areas: areasOnShot(width, height, z, { labels }) };
   return { width, height, zones: z, areas: areas(width, height, z, { captions: !!captionsOf(cut), labels }) };
 }
