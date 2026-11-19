@@ -23,6 +23,9 @@
 // candidate to draw) the keep is drawn as before, with one sentence: the build never stops for it.
 // screen-stacked (the screen above, the speaker in a panel below) is not drawn: with the captions
 // at the safe box's bottom it has no place for them (layout marks it –).
+// The stack (decided 2026-11-19, stack-916): in 9:16 and 4:5 layout's screen-panel, asked in a call of
+// its own (--screen-panel), draws the screen above and the speaker's panel below it down to the
+// caption line where layout offers it and its screen is no smaller than main's (stackOne).
 //
 //   beforePicture(c, src, areas, pip)        → the picture as before as a placement
 //   judge(pic, { zones, labels, text, readable, width, height }) → { faults, under, textHeight, ground }
@@ -34,7 +37,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { layoutTool, PLACE_TIMEOUT, softOf } from "./placement.mjs";
+import { layoutTool, PLACE_TIMEOUT, softOf, FACE_MIN } from "./placement.mjs";
 import { spread, largest, labelBox } from "./layout.mjs";
 import { clock } from "./media.mjs";
 
@@ -151,7 +154,7 @@ export function regionPx(c, src) {
 // layout's candidates for one screen part, or the reason there are none (place's own words kept
 // in the folder's place.log). cam: the webcam ({ width, height, face }) where the circle shows,
 // its face (0–1) for the crop; without a known face, the webcam's middle, a little high, stands in.
-export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, width, height, area = null, platforms = [], timeout = PLACE_TIMEOUT }) {
+export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, width, height, area = null, platforms = [], timeout = PLACE_TIMEOUT, extra = [] }) {
   try {
     fs.mkdirSync(folder, { recursive: true });
     const R = regionPx(crop, src);
@@ -159,7 +162,7 @@ export function placeScreen({ tool, folder, src, crop, text = 0, cam = null, wid
     const face = f && [f[0] * cam.width, f[1] * cam.height, (f[2] - f[0]) * cam.width, (f[3] - f[1]) * cam.height].map((v) => r0(v));
     const args = [tool, "place", folder, "--frame", `${width}x${height}`, "--source", `${src.width}x${src.height}`, ...(text ? ["--min-text-height", String(text)] : []), "--region", R.join(","),
       ...(cam ? ["--source", `${cam.width}x${cam.height}`, "--face", face.join(",")] : []),
-      ...(area ? ["--caption-area", area] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : []), "--json"];
+      ...(area ? ["--caption-area", area] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : []), ...extra, "--json"];
     const r = spawnSync(process.execPath, args, { encoding: "utf8", maxBuffer: 64 << 20, timeout: timeout * 1000 });
     if (r.error?.code === "ETIMEDOUT" || r.signal) return { why: `layout's place ran over ${timeout} s for it and was stopped` };
     if (r.status !== 0 || r.error) {
@@ -273,6 +276,10 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
     const pip = !!cam && p.pip !== false;
     const on = areas.label ? labels.filter((l) => p.start < l.start + l.duration - 0.001 && p.start + p.duration > l.start + 0.001).map((l) => labelBox(l.text, areas, width, height)) : [];
     const parts = p.segments?.length ? p.segments : [p];
+    // for the stack (stack-916): where the keep's label ends, and the face view's picture just before
+    const labelBottom = on.length ? Math.max(...on.map((l) => l[1] + l[3])) : null;
+    const prev = pieces[pieces.indexOf(p) - 1];
+    const before = prev && prev.view === "face" && prev.picture && [prev.picture.scale, prev.picture.left, prev.picture.top].every(Number.isFinite) ? prev.picture : null;
     for (const [i, part] of parts.entries()) {
       const c = part.crop || [0, 0, 1, 1], src = sources[p.source];
       const key = JSON.stringify([p.keep, p.source, c, pip, on]);
@@ -281,7 +288,7 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
         // the folder is named by the keep (screen-3 for keep 3; screen-3-2 for its second picture)
         const m = folders.filter((k) => k === p.keep).length;
         folders.push(p.keep);
-        got = placeOne({ dir, name: `screen-${p.keep + 1}${m ? `-${m + 1}` : ""}`, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, band, zones, areas });
+        got = placeOne({ dir, name: `screen-${p.keep + 1}${m ? `-${m + 1}` : ""}`, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, band, zones, areas, labelBottom, before });
         done.set(key, got);
         said.push(...got.lines.map((l, j) => (j ? `    ${l}` : `  keep ${p.keep + 1} (${keepSpan(p.keep)}${c.join() === "0,0,1,1" ? ", the whole screen" : `, zoom [${c.join(", ")}]`}): ${l}`)));
       }
@@ -289,27 +296,118 @@ export function screenView(dir, cut, pieces, sources, { width, height, platforms
       if (i === 0) p.screen = got.facts;
     }
   }
-  if (tool) said.push(`  (every candidate with its reasons: ${path.relative(process.cwd(), path.join(dir, "placement"))}/screen-<keep>/placement.json)`);
+  if (tool) said.push(`  (every candidate with its reasons: ${path.relative(process.cwd(), path.join(dir, "placement"))}/screen-<keep>/placement.json${[...done.values()].some((g) => g.facts.stack !== undefined) ? "; the stack's, with what was chosen: screen-<keep>/stack/placement.json" : ""})`);
   return said;
 }
 
-function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, band, zones, areas }) {
+function placeOne({ dir, name, c, src, text, pip, cam, on, keep, tool, timeout, width, height, platforms, area, band, zones, areas, labelBottom = null, before: faceBefore = null }) {
   const before = beforePicture(c, src, areas, pip);
   const facts = (pic, j, extra = {}) => ({ fit: pic.fit, scale: r2(pic.scale), ground: j.ground, region: pic.region.map(r0), ...(text ? { text, textHeight: j.textHeight } : {}),
     ...(extra.readable ? { readable: extra.readable } : {}), under: j.under, faults: j.faults.map((f) => f.code), ...(pic.mark ? { mark: pic.mark } : {}), ...(extra.named ? { named: true } : {}) });
+  // the two names of the stack's question ("screen-panel", "screen-circle") are not pictures of
+  // main's list: main's rule picks for them
+  const asked = typeof keep.layout === "string" ? keep.layout.trim() : null;
+  const mainKeep = asked === STACK || asked === CIRCLE ? { ...keep, layout: undefined } : keep;
   const asBefore = (why) => {
     const j = judge(before, { zones, labels: on, text, width, height });
     return { pic: before, facts: facts(before, j), lines: [`as before, because ${why}; ${textSentence(before, { text, size: src })}`] };
   };
-  if (!tool) return asBefore("the layout skill is missing");
-  const placed = placeScreen({ tool, folder: path.join(dir, "placement", name), src, crop: c, text, cam: pip ? cam : null, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout });
-  if (placed.why) return asBefore(placed.why);
-  if (!placed.res || typeof placed.res !== "object" || Array.isArray(placed.res)) return asBefore("layout's place answered no placement for it");
-  try {
-    return chosen({ before, res: placed.res, c, src, text, pip, on, keep, width, height, band, zones, areas, facts }) || asBefore("layout's place gave no picture to draw for it");
-  } catch (e) {
-    return asBefore(`layout's answer for it could not be drawn (${String(e?.message || e).split("\n")[0]})`);
+  // main's picture for the keep, exactly as main draws it; then, in 9:16 and 4:5, the stack
+  const got = mainOne();
+  return stackOne({ got, name, dir, c, src, text, cam, on, keep, asked, tool, timeout, width, height, platforms, area, zones, areas, labelBottom, faceBefore, facts, pip });
+  function mainOne() {
+    if (!tool) return asBefore("the layout skill is missing");
+    const placed = placeScreen({ tool, folder: path.join(dir, "placement", name), src, crop: c, text, cam: pip ? cam : null, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout });
+    if (placed.why) return asBefore(placed.why);
+    if (!placed.res || typeof placed.res !== "object" || Array.isArray(placed.res)) return asBefore("layout's place answered no placement for it");
+    try {
+      return chosen({ before, res: placed.res, c, src, text, pip, on, keep: mainKeep, width, height, band, zones, areas, facts }) || asBefore("layout's place gave no picture to draw for it");
+    } catch (e) {
+      return asBefore(`layout's answer for it could not be drawn (${String(e?.message || e).split("\n")[0]})`);
+    }
   }
+}
+
+// ------------------------------------------------------------------------------------- the stack
+// Decided 2026-11-19 (stack-916, stack-panel): in 9:16 and 4:5 a keep that shows the whole screen or
+// a wide zoom is drawn as the screen above and the speaker in a panel below it down to the caption
+// line, across the frame, the captions where they stand, the label above the screen; the layout skill
+// computes it (place --screen-panel: its candidate screen-panel) and says where it is not offered (a
+// tight zoom: the screen's part over its limit; a panel or a face in it too small). It is asked for
+// in its own call beside main's, so that main's picture stays what main draws; whatever goes wrong in
+// it (no layout skill, a refusal, a timeout, nonsense) leaves main's picture, with one sentence.
+export const STACK = "screen-panel", CIRCLE = "screen-circle";
+
+// Why the stack is not asked for this keep, or null where it is (upright: { ask: true }); null
+// altogether (no clause in the line) where the question does not arise: a wide or square frame, a
+// keep without the circle, a keep that names one of main's pictures
+export function stackQuestion({ width, height, areas, cam, pip, asked }) {
+  if (height < 1.2 * width || !pip || !cam) return null;
+  if (asked && asked !== STACK && asked !== CIRCLE) return null;
+  if (asked === CIRCLE) return { why: `the keep names "${CIRCLE}"` };
+  if (!areas.line) return { why: "the captions are not one line as the captions skill built it (two lines, or none): the panel ends on that line" };
+  if (!cam.face) return { why: "the webcam's face is not known: the panel is cut around it" };
+  if (cam.face[3] - cam.face[1] < FACE_MIN) return { why: `the face in the webcam is ${Math.round((cam.face[3] - cam.face[1]) * 100)} % of its height, under the ${FACE_MIN * 100} % of a speaker at the camera` };
+  return { ask: true };
+}
+
+const num = (v) => Number.isFinite(v);
+const inFrame = (b, W, H) => box4(b) && b[2] > 0 && b[3] > 0 && b[0] >= -1 && b[1] >= -1 && b[0] + b[2] <= W + 1 && b[1] + b[3] <= H + 1;
+// layout's answer for the stack as a picture the composition draws, or the reason it is not one
+export function stackPicture(res, { width, height }) {
+  const v = res && typeof res === "object" && !Array.isArray(res) ? res.screenPanel : null;
+  if (!v || typeof v !== "object") return { why: "the layout skill's answer has no verdict on it (an older layout skill?)" };
+  if (v.offered !== true) return { why: typeof v.why === "string" && v.why ? v.why : "the layout skill does not offer it here", code: v.code || null };
+  const c = (Array.isArray(res.candidates) ? res.candidates : []).find((x) => x && x.fit === STACK);
+  const s = c?.stack, sp = Array.isArray(c?.parts) ? c.parts[0] : null, cam = s?.camera;
+  const ok = s && sp && num(sp.scale) && sp.scale > 0 && num(sp.left) && num(sp.top) && inFrame(s.screen?.box, width, height) && inFrame(s.panel?.box, width, height)
+    && cam && num(cam.scale) && cam.scale > 0 && num(cam.left) && num(cam.top) && inFrame(cam.window, width, height) && num(s.face?.height) && s.face.height > 0 && num(s.ground);
+  if (!ok) return { why: "the layout skill's answer for it could not be read" };
+  return { pic: { fit: STACK, scale: sp.scale, left: sp.left, top: sp.top, window: s.screen.box, region: s.screen.box, circle: null, mark: markOf(c), ...(c.soft && softOf(c) ? { soft: softOf(c) } : {}),
+    stack: { panel: s.panel.box, camera: { scale: cam.scale, left: cam.left, top: cam.top, window: cam.window }, ...(Array.isArray(cam.crop) ? { crop: cam.crop } : {}),
+      face: { box: s.face.box, height: s.face.height, pct: s.face.pct }, ground: s.ground, ...(s.change?.says && !s.change.before?.assumed ? { change: s.change.says } : {}) } } };
+}
+
+function stackOne({ got, name, dir, c, src, text, cam, on, keep, asked, tool, timeout, width, height, platforms, area, zones, areas, labelBottom, faceBefore, facts, pip }) {
+  const q = stackQuestion({ width, height, areas, cam, pip, asked });
+  const refused = (why) => {
+    if (!q) return got;
+    const lines = [...got.lines];
+    lines[0] += `; not the stack (the screen above, the speaker in a panel below): ${why}`;
+    if (asked === STACK) lines.push(`! "layout": "${STACK}" is not drawn here (${why}), so the keep keeps the circle`);
+    return { ...got, lines, facts: { ...got.facts, stack: null, notStacked: why } };
+  };
+  if (!q) {
+    if (asked === STACK) return { ...got, lines: [...got.lines, `! "layout": "${STACK}" (the screen above, the speaker in a panel below) is for 9:16 and 4:5 with the webcam shown, so the keep keeps the circle`] };
+    return got;
+  }
+  if (q.why) return refused(q.why);
+  if (!tool) return refused("the layout skill is missing");
+  const b = faceBefore && [faceBefore.scale, faceBefore.left, faceBefore.top, ...(box4(faceBefore.window) && !(faceBefore.window[0] === 0 && faceBefore.window[1] === 0 && faceBefore.window[2] === width && faceBefore.window[3] === height) ? faceBefore.window : [])];
+  const folder = path.join(dir, "placement", name, "stack");
+  const placed = placeScreen({ tool, folder, src, crop: c, text, cam, width, height, area: area && fs.existsSync(area) ? area : null, platforms, timeout,
+    extra: ["--screen-panel", "frame", ...(Number.isFinite(labelBottom) ? ["--label-bottom", String(Math.round(labelBottom))] : []), ...(b ? ["--before", b.map((v) => +(+v).toFixed(4)).join(",")] : [])] });
+  if (placed.why) return refused(placed.why.replace(/ for it/, " for the stack"));
+  let st;
+  try { st = stackPicture(placed.res, { width, height }); } catch (e) { st = { why: `the layout skill's answer for it could not be read (${String(e?.message || e).split("\n")[0]})` }; }
+  const record = (chosen) => { try { const f = path.join(folder, "placement.json"); const j = JSON.parse(fs.readFileSync(f, "utf8")); fs.writeFileSync(f, JSON.stringify({ ...j, chosen }, null, 1) + "\n"); } catch {} };
+  if (st.why) { record({ picture: got.pic.fit, why: st.why }); return refused(st.why); }
+  const pic = st.pic, main = got.pic;
+  // no text of the screen smaller than main's, no fault main's picture has not (unless the keep names the stack)
+  const opts = { zones, labels: on, text, readable: got.facts.readable || 0, width, height };
+  pic.j = judge(pic, opts);
+  const mainJ = main.j || judge(main, opts);
+  const added = pic.j.faults.filter((f) => f.code !== "text" && !mainJ.faults.some((g) => g.code === f.code));
+  const named = asked === STACK;
+  if (!named && pic.scale < main.scale - 1e-4) { const why = `its screen would be ${r2(pic.scale)}×, under main's ${r2(main.scale)}×, and its text smaller`; record({ picture: main.fit, why }); return refused(why); }
+  if (!named && added.length) { const why = `its screen would have ${added.map((f) => f.said).join("; ")}`; record({ picture: main.fit, why }); return refused(why); }
+  record({ picture: STACK, scale: pic.scale, screen: pic.window, panel: pic.stack.panel, camera: pic.stack.camera, face: pic.stack.face, ground: pic.stack.ground, instead: main.fit });
+  const sb = pic.window, pb = pic.stack.panel;
+  const lines = [`${pic.mark} ${STACK} (the layout skill's stack${named ? ", as the keep names it" : ""}${pic.soft ? `; ${pic.soft}` : ""}): the screen ${r0(sb[2])}×${r0(sb[3])} at ${r2(pic.scale)}× (y ${r0(sb[1])}–${r0(sb[1] + sb[3])}), the speaker in a panel ${r0(pb[2])}×${r0(pb[3])} ${pb[2] >= width - 1 ? "across the frame" : "as wide as the screen"} below it (y ${r0(pb[1])}–${r0(pb[1] + pb[3])}), the face ${r0(pic.stack.face.height)} px (${pct(pic.stack.face.height / height)} of the frame's height), ${pct(pic.stack.ground)} ground${added.length ? `; ${added.map((f) => f.said).join("; ")}` : ""}; with the circle ("layout": "${CIRCLE}") ${main.fit} at ${r2(main.scale)}×, ${pct(got.facts.ground)} ground`];
+  lines.push(`text: ${textSentence(pic, { text, readable: got.facts.readable || 0, size: src, width })}`);
+  if (pic.stack.change) lines.push(`at the cut from the face view before: ${pic.stack.change}`);
+  const f = facts(pic, pic.j, { readable: got.facts.readable, named });
+  return { pic, lines, facts: { ...f, ground: r2(pic.stack.ground), stack: { screen: sb.map(r0), panel: pb.map(r0), face: r0(pic.stack.face.height), facePct: r1(100 * pic.stack.face.height / height), camera: pic.stack.camera, ...(pic.stack.crop ? { crop: pic.stack.crop } : {}) }, instead: { fit: main.fit, scale: r2(main.scale), ground: got.facts.ground } } };
 }
 
 function chosen({ before, res, c, src, text, pip, on, keep, width, height, band, zones, areas, facts }) {
@@ -367,7 +465,7 @@ function chosen({ before, res, c, src, text, pip, on, keep, width, height, band,
   } else {
     lines.push(`${pic.mark} ${pic.fit} at ${r2(pic.scale)}× (the layout skill's${got.named ? ", as the keep names it" : ""}${pic.soft ? `; ${pic.soft}` : ""})${circleSaid}, ${where}${pic.j.faults.length ? `; ${faultsSaid(pic)}` : ""}${got.named ? "" : `; as before (${r2(before.scale)}×) ${faultsSaid(before)}`}`);
   }
-  if (got.missing) lines.push(`! "layout": "${got.missing}" is not among this screen's pictures in this frame (${width}×${height}), so it takes the rule's; its names here: ${[BEFORE, ...new Set(list.map((x) => x.fit))].map((x) => `"${x}"`).join(", ")}`);
+  if (got.missing) lines.push(`! "layout": "${got.missing}" is not among this screen's pictures in this frame (${width}×${height}), so it takes the rule's; its names here: ${[BEFORE, ...new Set(list.map((x) => x.fit)), ...(pip && height >= 1.2 * width ? [STACK, CIRCLE] : [])].map((x) => `"${x}"`).join(", ")}`);
   lines.push(`text: ${textSentence(pic, { text, readable, narrower, size: src, width })}`);
   const others = [before, ...own, ...list].filter((x) => x !== pic).slice(0, 3).map((x) => `${x === before ? "" : `${x.mark} `}${x.fit} at ${r2(x.scale)}× (${x.soft ? `${x.soft}, ` : ""}${x.j.faults.length ? x.j.faults.map((f) => shortFault(x, f)).join(", ") : `${pct(x.j.ground)} ground`})`);
   if (others.length) lines.push(`also: ${others.join("; ")}`);
