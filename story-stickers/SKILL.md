@@ -122,13 +122,13 @@ Look at the preview first: a sticker on a face, text or the product is wrong, an
 
 **A picture without a line of text**: the snapshot is the whole check. No `hyperframes check`, no sheets: one snapshot after each change, looked at once.
 
-**Text in a film you make, or a picture's line of text**: HyperFrames checks it against the band, given in fractions of the frame (`left/1080`, `top/1920`, `1 - right/1080`, `1 - bottom/1920`):
+**Text in a film you make, or a picture's line of text**: HyperFrames checks it against the band, given in fractions of the frame (`left/1080`, `top/1920`, `1 - right/1080`, `1 - bottom/1920`), through agentitos' platform-zones beside this skill (on a Sprite `/home/sprite/skills/platform-zones`):
 
 ```bash
-npx hyperframes check --json --caption-zone "x0=<left/1080>;y0=<top/1920>;x1=<1-right/1080>;y1=<1-bottom/1920>;severity=error;seek=.5,1"
+node <skill>/../platform-zones/tools/hyperframes-check.mjs <composition> --caption-zone "x0=<left/1080>;y0=<top/1920>;x1=<1-right/1080>;y1=<1-bottom/1920>;severity=error;seek=.5,1"
 ```
 
-Every `caption_zone_collision` names the text, its moment and its box: move the text out of the band, or the band.
+Every `caption_zone_collision` names the text, its moment and its box: move the text out of the band, or the band. It is HyperFrames' check without HyperFrames' own safe zones (the apps' ad templates, `outside_safe_zone` from 0.9.44 on): platform-zones' zones are the ones that count.
 
 **A video's pixels** (burned-in subtitles, a face, a picture-in-picture, the product), every moment: always for a video the person brings; for a film you made only when footage you do not know frame by frame runs under the band (a stock clip with people or text); a band kept free by design needs only `--caption-zone`. Read `<skill>/references/video-moments.md` before checking a video's pixels: the ffmpeg commands for the sheets of moments and the occupancy map, how to choose the band from them, and what to offer when no band is free (say so; re-rendering a film you made only after the person's yes).
 

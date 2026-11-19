@@ -69,6 +69,8 @@ Text meant as texture (under the buttons on purpose) gets `data-zone="ignore"`.
 
 ## For another skill
 
+HyperFrames' own check of a project goes through `node <platform-zones>/tools/hyperframes-check.mjs <project> [check's flags…]`: the CLI's JSON without HyperFrames' own safe zones (`outside_safe_zone`, the apps' ad templates), which contradict these.
+
 Call it with `--json` and read `safe`, `centred`, `wide`, `covers`, `crops`: `node <platform-zones>/tools/zones.mjs zones reels tiktok --size 1080x1920 --json` (beside this skill, `<platform-zones>` is `<skill>/../platform-zones`). Pass the platforms the person named, none when they named none; never copy the numbers into the skill.
 
 ## In the chat
