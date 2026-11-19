@@ -1,0 +1,164 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "full",
+ "area": {
+  "box": [
+   192,
+   957,
+   696,
+   483
+  ],
+  "top": 957,
+  "bottom": 1440,
+  "height": 483,
+  "share": 0.252,
+  "usual": 957,
+  "least": 1152,
+  "lower": 0,
+  "where": "below-mouths",
+  "seconds": {
+   "nose": 6,
+   "hair": 0,
+   "mouth": 0,
+   "lip": 0,
+   "chin": 0
+  },
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "n": 1,
+   "start": 0,
+   "end": 6,
+   "lift": 0,
+   "free": 0,
+   "ground": 0,
+   "most": 0,
+   "limit": "none",
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.536,
+   "eyesAre": "head",
+   "on": {
+    "nose": 6,
+    "hair": 0,
+    "mouth": 0,
+    "lip": 0,
+    "chin": 0
+   },
+   "touches": [
+    {
+     "who": "A",
+     "from": 0,
+     "to": 6,
+     "seconds": 6,
+     "nose": 6,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "chin": 0
+    },
+    {
+     "who": "B",
+     "from": 0,
+     "to": 6,
+     "seconds": 6,
+     "nose": 6,
+     "hair": 0,
+     "mouth": 0,
+     "lip": 0,
+     "chin": 0
+    }
+   ],
+   "fault": "nose"
+  }
+ ],
+ "conflicts": [
+  "Shot 1 (0–6 s): the type lies on A and B's nose or eyes for 6 s. What would avoid it: a lower top for the type (smaller type), a cut to another shot here, or a moment without this stretch."
+ ],
+ "notes": [],
+ "candidates": [
+  {
+   "top": 957,
+   "share": 0.252,
+   "cost": 600000,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 1,
+   "lifts": []
+  },
+  {
+   "top": 997,
+   "share": 0.231,
+   "cost": 600004.5,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.917,
+   "lifts": []
+  },
+  {
+   "top": 1037,
+   "share": 0.21,
+   "cost": 600009,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.834,
+   "lifts": []
+  },
+  {
+   "top": 1077,
+   "share": 0.189,
+   "cost": 600013.5,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.752,
+   "lifts": []
+  },
+  {
+   "top": 1117,
+   "share": 0.168,
+   "cost": 600018,
+   "mouth": 6,
+   "chin": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "size": 0.669,
+   "lifts": []
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [],
+  "raise": "full",
+  "lifts": {}
+ }
+}

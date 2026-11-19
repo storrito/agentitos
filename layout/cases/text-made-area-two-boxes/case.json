@@ -1,0 +1,19 @@
+{
+ "guards": "large type over two people side by side known only by their boxes (no eyes, nose, mouth): the area below where their mouths may be",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "area",
+   "--area-top",
+   "957",
+   "--raise",
+   "full"
+  ]
+ ]
+}

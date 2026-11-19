@@ -1,0 +1,19 @@
+{
+ "guards": "a fixed-size 1920x1080 screenshot beside a 1080p speaker in 16:9 without captions",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "beside",
+   "--frame",
+   "16:9",
+   "--source",
+   "1920x1080",
+   "--face",
+   "1150,220,260,320",
+   "--material-min",
+   "800x450",
+   "--material",
+   "1920x1080"
+  ]
+ ]
+}

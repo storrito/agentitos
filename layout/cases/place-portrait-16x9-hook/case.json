@@ -1,0 +1,19 @@
+{
+ "guards": "an upright 1080x1920 source into 16:9 with a caption line and a hook",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "16:9",
+   "--source",
+   "1080x1920",
+   "--face",
+   "380,500,320,380",
+   "--text",
+   "caption",
+   "--text",
+   "hook"
+  ]
+ ]
+}

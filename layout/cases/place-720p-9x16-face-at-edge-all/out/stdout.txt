@@ -1,0 +1,54 @@
+$ place.mjs place out --frame 9:16 --source 1280x720 --face 100,120,180,220 --text caption --all
+9:16 1080×1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels (no platform named: the usual ones of this frame)
+source 1280×720, 1 face (x 100–280, y 120–340); text: 1 caption line
+
+1. ! crop 4:5  scale 1.875 (0.7× of covering) at left 0, top 285  score 94.333
+   picture x 0–1080, y 285–1635, 30 % ground
+   face    x 188–525, y 510–923 (338×413)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ! picture: the source's pixels are enlarged 1.88× (over 1.5×: soft)
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.88×; the face is 413 px tall (22 % of the frame's height); 30 % of the frame is ground; cost 5.667 (enlargement +2.25, ground +2.97, subject +0.447)
+
+2. ! crop 4:5, text on the ground  scale 1.875 (0.7× of covering) at left 0, top 570  score 94.133
+   picture x 0–1080, y 570–1920, 30 % ground
+   face    x 188–525, y 795–1208 (338×413)
+   caption band-above, x 192–888, y 412–546, 1 line at 77 px
+   ! picture: the source's pixels are enlarged 1.88× (over 1.5×: soft)
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-above; the source's pixels are enlarged 1.88×; the face is 413 px tall (22 % of the frame's height); 30 % of the frame is ground; cost 5.867 (enlargement +2.25, ground +2.97, subject +0.447, text away +0.2); behind the first by 0.2 points (text away +0.2)
+
+3. ✓ crop 1:1  scale 1.5 (0.56× of covering) at left 0, top 420  score 93.876
+   picture x 0–1080, y 420–1500, 44 % ground
+   face    x 150–420, y 600–930 (270×330)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   why: no hard problem; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.5×, not over the 1.5× from where it shows; the face is 330 px tall (17 % of the frame's height); 44 % of the frame is ground; cost 6.124 (ground +4.38, subject +1.744); behind the first by 0.457 points (ground +1.41, subject +1.297)
+
+4. ✓ crop 1:1, text on the ground  scale 1.5 (0.56× of covering) at left 0, top 202  score 93.876
+   picture x 0–1080, y 202–1282, 44 % ground
+   face    x 150–420, y 382–712 (270×330)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are enlarged 1.5×, not over the 1.5× from where it shows; the face is 330 px tall (17 % of the frame's height); 44 % of the frame is ground; cost 6.124 (ground +4.38, subject +1.744); behind the first by 0.457 points (ground +1.41, subject +1.297)
+
+5. ✓ inset  scale 0.8438 (0.32× of covering) at left 0, top 656.3  score 89.166
+   picture x 0–1080, y 656–1264, 68 % ground
+   face    x 84–236, y 758–943 (152×186)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.84×); the face is 186 px tall (10 % of the frame's height); 68 % of the frame is ground; cost 10.834 (ground +6.84, subject +3.994); behind the first by 5.167 points (ground +3.87, subject +3.547)
+
+6. ✗ full  scale 2.6667 (1× of covering) at left -1166.7, top 0  score 0
+   face    x -900–-420, y 320–907 (480×587)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ✗ face: 100 % outside the frame
+   ✗ picture: the source's pixels are enlarged 2.67× (over 2×: too soft to publish)
+   why: fails: face 100 % outside the frame; picture the source's pixels are enlarged 2.67× (over 2×: too soft to publish); every text need met: 1 caption line below-chin; the source's pixels are enlarged 2.67×; the face is 587 px tall (31 % of the frame's height); the picture fills the frame; cost 7 (enlargement +7); behind the first because it has a hard problem
+
+7. ✗ crop 9:16  scale 2.6667 (1× of covering) at left 0, top 0  score 0
+   face    x 267–747, y 320–907 (480×587)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ✗ picture: the source's pixels are enlarged 2.67× (over 2×: too soft to publish)
+   why: fails: picture the source's pixels are enlarged 2.67× (over 2×: too soft to publish); every text need met: 1 caption line below-chin; the source's pixels are enlarged 2.67×; the face is 587 px tall (31 % of the frame's height); the picture fills the frame; cost 7 (enlargement +7); behind the first because it has a hard problem
+
+out/placement.json: 7 candidates, 5 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

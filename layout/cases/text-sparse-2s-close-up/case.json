@@ -1,0 +1,17 @@
+{
+ "guards": "a tight close-up with one sample every two seconds: raise and captions",
+ "from": "a real take of one person talking to the camera (public-domain footage), its track thinned to one sample every two seconds",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--text",
+   "hook"
+  ]
+ ]
+}

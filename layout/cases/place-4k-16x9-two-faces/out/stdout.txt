@@ -1,0 +1,31 @@
+$ place.mjs place out --frame 16:9 --source 3840x2160 --face 900,500,520,640 --face 2500,560,500,620 --text caption --text hook
+16:9 1920×1080 for YouTube video, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+source 3840×2160, 2 faces (x 900–1420, y 500–1140; x 2500–3000, y 560–1180); text: 1 caption line + hook
+
+1. ✓ inset  scale 0.36 (0.72× of covering) at left 268.8, top 302.4  score 94.404
+   picture x 269–1651, y 302–1080, 48 % ground
+   face    x 593–780, y 482–713 (187×230)
+   face    x 1169–1349, y 504–727 (180×223)
+   caption below-chin, x 360–1560, y 843–930, 1 line at 50 px
+   hook    band-above, x 585–1335, y 108–277, big lines at 75 px (shrunk)
+   ground  behind the hook: the blur of face 1 (5 % of the text's box) (the ground is a blurred, darker copy of the picture, 0.59× the source, centred)
+   why: no hard problem; every text need met: 1 caption line below-chin, hook lines at 75 px (smaller than its size) band-above; the source's pixels are not enlarged (0.36×); the smallest face is 223 px tall (21 % of the frame's height); 48 % of the frame is ground; cost 5.596 (ground +4.82, subject +0.706, text away +0.05, hook smaller +0.02)
+
+2. ✓ inset  scale 0.32 (0.64× of covering) at left 345.6, top 388.8  score 92.65
+   picture x 346–1574, y 389–1080, 59 % ground
+   face    x 634–800, y 549–754 (166×205)
+   face    x 1146–1306, y 568–766 (160×198)
+   caption below-chin, x 360–1560, y 843–930, 1 line at 50 px
+   hook    band-above, x 400–1520, y 108–360, big lines at 112 px
+   ground  behind the hook: the blur of face 1 and face 2 (15 % of the text's box) (the ground is a blurred, darker copy of the picture, 0.59× the source, centred)
+   why: no hard problem; every text need met: 1 caption line below-chin, hook lines at 112 px band-above; the source's pixels are not enlarged (0.32×); the smallest face is 198 px tall (18 % of the frame's height); 59 % of the frame is ground; cost 7.35 (ground +5.9, subject +1.4, text away +0.05); behind the first by 1.754 points (ground +1.08, subject +0.694)
+
+3. – full  scale 0.5 (1× of covering) at left 0, top 0  score 0
+   face    x 450–710, y 250–570 (260×320)
+   face    x 1250–1500, y 280–590 (250×310)
+   caption below-chin, x 360–1560, y 843–930, 1 line at 50 px
+   – hook: no free place for the hook
+   why: no hard problem; text without a place: hook (placed: 1 caption line below-chin); the source's pixels are not enlarged (0.5×); the smallest face is 310 px tall (29 % of the frame's height); the picture fills the frame; cost 0 (no term); behind the first because it leaves a need unmet
+
+out/placement.json: 3 candidates, 2 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

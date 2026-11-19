@@ -1,0 +1,40 @@
+$ place.mjs place out --frame 16:9 --source 1080x1920 --face 380,500,320,380 --text caption --text hook
+16:9 1920×1080 for YouTube video, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+source 1080×1920, 1 face (x 380–700, y 500–880); text: 1 caption line + hook
+
+1. ✓ panel left  scale 0.5625 (0.32× of covering) at left 0, top 0  score 92.104
+   picture x 0–608, y 0–1080, 68 % ground
+   face    x 214–394, y 281–495 (180×214)
+   caption beside, x 704–1824, y 843–930, 1 line at 50 px
+   hook    beside, x 704–1824, y 223–475, big lines at 112 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   ground  behind the hook: the blur of the face (31 % of the text's box) (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line beside, hook lines at 112 px beside; the source's pixels are not enlarged (0.56×); the face is 214 px tall (20 % of the frame's height); 68 % of the frame is ground; cost 7.896 (ground +6.84, subject +0.956, text away +0.1)
+
+2. ✓ inset  scale 0.3488 (0.2× of covering) at left 771.7, top 410.4  score 87.744
+   picture x 772–1148, y 410–1080, 88 % ground
+   face    x 904–1016, y 585–717 (112×133)
+   caption band-above, x 360–1560, y 299–386, 1 line at 50 px
+   hook    band-above, x 590–1330, y 108–275, big lines at 74 px (shrunk)
+   ground  behind the caption: the blur of the face (47 % of the text's box) (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   ground  behind the hook: the blur of the face (90 % of the text's box) (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-above, hook lines at 74 px (smaller than its size) band-above; the source's pixels are not enlarged (0.35×); the face is 133 px tall (12 % of the frame's height); 88 % of the frame is ground; cost 12.256 (ground +8.78, subject +3.206, text away +0.25, hook smaller +0.02); behind the first by 4.36 points (subject +2.25, ground +1.94, text away +0.15, hook smaller +0.02)
+
+3. – crop 16:9  scale 1.7778 (1× of covering) at left 0, top -760.9  score 0
+   face    x 676–1245, y 128–804 (569×676)
+   ! picture: the source's pixels are enlarged 1.78× (over 1.5×: soft)
+   – caption: no free place for the 1 caption line
+   – hook: no free place for the hook
+   why: no hard problem; text without a place: caption, hook; the source's pixels are enlarged 1.78×; the face is 676 px tall (63 % of the frame's height); the picture fills the frame; cost 3.097 (enlargement +1.667, subject +1.43); behind the first because it leaves a need unmet
+
+4. ✗ full  scale 1.7778 (1× of covering) at left 0, top -1166.7  score 0
+   face    x 676–1245, y -278–398 (569×676)
+   caption below-chin, x 360–1560, y 843–930, 1 line at 50 px
+   ✗ face: 41 % outside the frame
+   ✗ face: under the title and the buttons, while paused or touched (youtube)
+   ! picture: the source's pixels are enlarged 1.78× (over 1.5×: soft)
+   – hook: no free place for the hook
+   why: fails: face 41 % outside the frame; face under the title and the buttons, while paused or touched (youtube); text without a place: hook (placed: 1 caption line below-chin); the source's pixels are enlarged 1.78×; the face is 676 px tall (63 % of the frame's height); the picture fills the frame; cost 3.097 (enlargement +1.667, subject +1.43); behind the first because it has a hard problem
+
+out/placement.json: 4 candidates, 2 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

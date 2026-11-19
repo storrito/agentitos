@@ -1,0 +1,56 @@
+$ place.mjs place out --frame 9:16 --source 1280x720 --face-track track.json --text caption --text hook:card --set weights.enlarge.softFrom=1.4
+9:16 1080×1920 for Instagram Reels, Instagram Story, TikTok, YouTube Shorts, Facebook Reels (no platform named: the usual ones of this frame)
+source 1280×720, 1 face (x 420–770, y 140–420); text: 1 caption line + hook as card
+note: no crop that fills the frame holds the face in the safe box: filling the frame with the face inside the box takes the source at 2.67× or more (1× of what covers the frame), and there the face is 933×747 px, more than the safe box's 828×1190; it fits the box only up to 2.37×, where the picture no longer fills the frame
+note: face 1 moves (3 moments, 0–4 s): placed for the hull of its boxes, 1.75× as wide and 1.17× as tall as its usual box (2.04× the area): it moves far, one placement for the whole clip holds it small; cut the clip where it moves or follow the face
+face 1: usual box x 500–700, y 150–390, hull x 420–770, y 140–420; its edges come from: top 4 s, bottom 2 s, left 4 s, right 2 s
+   decides: the box at 2 s, which gives the hull its bottom and right edge. Placed without it, the first candidate stays crop 4:5 but the picture 66 px further right and 37 px lower.
+   also: the box at 4 s, which gives the hull its top and left edge. Placed without it, the first candidate stays crop 4:5 but the picture 75 px further left.
+
+1. ! crop 4:5  scale 1.875 (0.7× of covering) at left -575.7, top 472.4  score 94.635
+   picture x 0–1080, y 472–1822, 30 % ground
+   face    x 212–868, y 735–1260 (656×525)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   hook    band-above, x 60–1020, y 250–448, a card at 64 px (shrunk)
+   ! picture: the source's pixels are enlarged 1.88× (over 1.4×: soft)
+   ground  behind the hook: the blur of the face (81 % of the text's box) (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line below-chin, hook card at 64 px (smaller than its size) band-above; the source's pixels are enlarged 1.88×; the face is 450 px tall (23 % of the frame's height); 30 % of the frame is ground; cost 5.365 (enlargement +2.375, ground +2.97, hook smaller +0.02)
+
+2. ! crop 1:1  scale 1.5 (0.56× of covering) at left -352.5, top 509.6  score 93.845
+   picture x 0–1080, y 510–1590, 44 % ground
+   face    x 278–803, y 720–1140 (525×420)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   hook    band-above, x 60–1020, y 250–486, a card at 76 px
+   ! picture: the source's pixels are enlarged 1.5× (over 1.4×: soft)
+   ground  behind the hook: the blur of the face (83 % of the text's box) (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line below-chin, hook card at 76 px band-above; the source's pixels are enlarged 1.5×; the face is 360 px tall (19 % of the frame's height); 44 % of the frame is ground; cost 6.155 (enlargement +0.5, ground +4.38, subject +1.275); behind the first by 0.79 points (ground +1.41, subject +1.275)
+
+3. ! crop 1:1, text on the ground  scale 1.5 (0.56× of covering) at left -352.5, top 790  score 93.645
+   picture x 0–1080, y 790–1870, 44 % ground
+   face    x 278–803, y 1000–1420 (525×420)
+   caption band-above, x 192–888, y 632–766, 1 line at 77 px
+   hook    band-above, x 60–1020, y 250–486, a card at 76 px
+   ! picture: the source's pixels are enlarged 1.5× (over 1.4×: soft)
+   ground  behind the caption: the blur of the face (100 % of the text's box) (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   ground  behind the hook: the blur of the face (83 % of the text's box) (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-above, hook card at 76 px band-above; the source's pixels are enlarged 1.5×; the face is 360 px tall (19 % of the frame's height); 44 % of the frame is ground; cost 6.355 (enlargement +0.5, ground +4.38, subject +1.275, text away +0.2); behind the first by 0.99 points (ground +1.41, subject +1.275, text away +0.2)
+
+4. ✓ inset  scale 0.8438 (0.32× of covering) at left 0, top 656.3  score 89.432
+   picture x 0–1080, y 656–1264, 68 % ground
+   face    x 354–650, y 774–1011 (295×236)
+   caption band-below, x 192–888, y 1306–1440, 1 line at 77 px
+   hook    band-above, x 60–1020, y 250–486, a card at 76 px
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   ground  behind the hook: the blur of the face (83 % of the text's box) (the ground is a blurred, darker copy of the picture, 3.12× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below, hook card at 76 px band-above; the source's pixels are not enlarged (0.84×); the face is 203 px tall (11 % of the frame's height); 68 % of the frame is ground; cost 10.568 (ground +6.84, subject +3.728); behind the first by 5.203 points (ground +3.87, subject +3.728)
+
+5. ✗ full  scale 2.6667 (1× of covering) at left -1166.7, top 0  score 0
+   face    x -47–887, y 373–1120 (933×747)
+   caption below-chin, x 192–888, y 1306–1440, 1 line at 77 px
+   ✗ face: 5 % outside the frame
+   ✗ picture: the source's pixels are enlarged 2.67× (over 2×: too soft to publish)
+   – hook: no free place for the hook
+   why: fails: face 5 % outside the frame; picture the source's pixels are enlarged 2.67× (over 2×: too soft to publish); text without a place: hook (placed: 1 caption line below-chin); the source's pixels are enlarged 2.67×; the face is 640 px tall (33 % of the frame's height); the picture fills the frame; cost 6.333 (enlargement +6.333); behind the first because it has a hard problem
+
+out/placement.json: 5 candidates, 4 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

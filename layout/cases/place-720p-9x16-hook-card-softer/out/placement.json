@@ -1,0 +1,839 @@
+{
+ "frame": "9:16",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "Instagram Story",
+  "TikTok",
+  "YouTube Shorts",
+  "Facebook Reels"
+ ],
+ "fallback": true,
+ "source": [
+  1280,
+  720
+ ],
+ "faces": [
+  [
+   420,
+   140,
+   350,
+   280
+  ]
+ ],
+ "needs": [
+  {
+   "role": "caption",
+   "lines": 1
+  },
+  {
+   "role": "hook",
+   "kind": "card"
+  }
+ ],
+ "defaults": {
+  "caption": {
+   "font": {
+    "tall": 77,
+    "wide": 50,
+    "least": 61
+   },
+   "line": 1.3,
+   "padEm": 0.44,
+   "minWidth": {
+    "tall": 540,
+    "wide": 600
+   },
+   "maxEm": 24,
+   "longWord": 9
+  },
+  "hookText": {
+   "font": 96,
+   "minFont": 72,
+   "heightEm": 2.48,
+   "line": 1.14,
+   "width": 0.72,
+   "centre": 0.53
+  },
+  "hookCard": {
+   "font": 76,
+   "minFont": 64,
+   "heightEm": 3.1,
+   "line": 1.14
+  },
+  "hookBig": {
+   "font": 112,
+   "minFont": 72,
+   "widthEm": 10,
+   "heightEm": 2.25,
+   "line": 1.08
+  },
+  "gap": 24,
+  "edgePad": 16,
+  "free": {
+   "above": 0.35,
+   "aboveMin": 16,
+   "below": 0.08,
+   "belowMin": 24,
+   "beside": 0.25,
+   "besideMin": 24
+  },
+  "facePad": 20,
+  "eyes": 0.42,
+  "eyeLine": 0.27,
+  "area": {
+   "least": 0.15,
+   "chin": 1,
+   "smaller": 3.6
+  },
+  "zoomStep": 0.01,
+  "zoomMax": 1.6,
+  "insetStep": 0.01,
+  "insetMin": 0.5,
+  "panelMin": 0.6,
+  "insetFace": 19,
+  "bands": [
+   "4:5",
+   "1:1"
+  ],
+  "track": {
+   "far": 2
+  },
+  "together": 2,
+  "togetherSize": 0.67,
+  "same": {
+   "px": 0.02,
+   "scale": 0.02
+  },
+  "readable": {
+   "height": 24,
+   "per": 1080
+  },
+  "circle": {
+   "tall": 0.22,
+   "square": 0.16,
+   "wide": 0.2,
+   "min": 0.12
+  },
+  "screenFace": {
+   "height": 0.18,
+   "panel": 0.5
+  },
+  "weights": {
+   "enlarge": {
+    "softFrom": 1.4,
+    "forbiddenFrom": 2,
+    "costAtForbidden": 3
+   },
+   "subject": {
+    "from": 23,
+    "to": 34,
+    "smaller": 0.3,
+    "larger": 0.05,
+    "regionEnough": 50
+   },
+   "ground": {
+    "cost": 0.1
+   },
+   "soft": {
+    "cost": 0.5
+   },
+   "text": {
+    "away": 0.05,
+    "hookSmaller": 0.02
+   }
+  }
+ },
+ "notes": [
+  "no crop that fills the frame holds the face in the safe box: filling the frame with the face inside the box takes the source at 2.67× or more (1× of what covers the frame), and there the face is 933×747 px, more than the safe box's 828×1190; it fits the box only up to 2.37×, where the picture no longer fills the frame",
+  "face 1 moves (3 moments, 0–4 s): placed for the hull of its boxes, 1.75× as wide and 1.17× as tall as its usual box (2.04× the area): it moves far, one placement for the whole clip holds it small; cut the clip where it moves or follow the face"
+ ],
+ "candidates": [
+  {
+   "fit": "crop",
+   "scale": 1.875,
+   "left": -575.7,
+   "top": 472.4,
+   "zoom": 0.7,
+   "enlargement": 1.88,
+   "crop": "4:5",
+   "window": [
+    0,
+    472.4,
+    1080,
+    1350
+   ],
+   "faceInFrame": [
+    [
+     211.8,
+     734.9,
+     656.3,
+     525
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      192,
+      1306,
+      696,
+      134
+     ],
+     "ink": [
+      192,
+      1344.4,
+      696,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    },
+    {
+     "role": "hook",
+     "where": "band-above",
+     "on": "ground",
+     "box": [
+      60,
+      250,
+      960,
+      198.4
+     ],
+     "ink": [
+      60,
+      288.9,
+      960,
+      137
+     ],
+     "lines": 2,
+     "font": 64,
+     "style": "card",
+     "align": "center",
+     "shrunk": true
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "enlarged",
+     "kind": "picture",
+     "of": "picture",
+     "what": "the source's pixels are enlarged 1.88× (over 1.4×: soft)"
+    }
+   ],
+   "hard": 0,
+   "soft": 1,
+   "unmet": [],
+   "fullSize": false,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 3.12× the source, centred",
+    "behind": [
+     {
+      "role": "hook",
+      "shows": "the blur of the face (81 % of the text's box)"
+     }
+    ]
+   },
+   "ground": 0.297,
+   "faceHeight": 450,
+   "textPenalty": 0,
+   "variant": 187,
+   "terms": {
+    "enlargement": 2.375,
+    "ground": 2.97,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0.02
+   },
+   "cost": 5.365,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    5365,
+    0,
+    187
+   ],
+   "score": 94.635,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line below-chin, hook card at 64 px (smaller than its size) band-above",
+    "the source's pixels are enlarged 1.88×",
+    "the face is 450 px tall (23 % of the frame's height)",
+    "30 % of the frame is ground",
+    "cost 5.365 (enlargement +2.375, ground +2.97, hook smaller +0.02)"
+   ]
+  },
+  {
+   "fit": "crop",
+   "scale": 1.5,
+   "left": -352.5,
+   "top": 509.6,
+   "zoom": 0.56,
+   "enlargement": 1.5,
+   "crop": "1:1",
+   "window": [
+    0,
+    509.6,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     277.5,
+     719.6,
+     525,
+     420
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      192,
+      1306,
+      696,
+      134
+     ],
+     "ink": [
+      192,
+      1344.4,
+      696,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    },
+    {
+     "role": "hook",
+     "where": "band-above",
+     "on": "ground",
+     "box": [
+      60,
+      250,
+      960,
+      235.6
+     ],
+     "ink": [
+      60,
+      296.2,
+      960,
+      162.6
+     ],
+     "lines": 2,
+     "font": 76,
+     "style": "card",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "enlarged",
+     "kind": "picture",
+     "of": "picture",
+     "what": "the source's pixels are enlarged 1.5× (over 1.4×: soft)"
+    }
+   ],
+   "hard": 0,
+   "soft": 1,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 3.12× the source, centred",
+    "behind": [
+     {
+      "role": "hook",
+      "shows": "the blur of the face (83 % of the text's box)"
+     }
+    ]
+   },
+   "ground": 0.438,
+   "faceHeight": 360,
+   "textPenalty": 0,
+   "variant": 90,
+   "terms": {
+    "enlargement": 0.5,
+    "ground": 4.38,
+    "subject": 1.275,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 6.155,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    6155,
+    0,
+    90
+   ],
+   "score": 93.845,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line below-chin, hook card at 76 px band-above",
+    "the source's pixels are enlarged 1.5×",
+    "the face is 360 px tall (19 % of the frame's height)",
+    "44 % of the frame is ground",
+    "cost 6.155 (enlargement +0.5, ground +4.38, subject +1.275)"
+   ],
+   "behind": "behind the first by 0.79 points (ground +1.41, subject +1.275)"
+  },
+  {
+   "fit": "crop",
+   "scale": 1.5,
+   "left": -352.5,
+   "top": 790,
+   "zoom": 0.56,
+   "enlargement": 1.5,
+   "crop": "1:1",
+   "window": [
+    0,
+    790,
+    1080,
+    1080
+   ],
+   "faceInFrame": [
+    [
+     277.5,
+     1000,
+     525,
+     420
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-above",
+     "on": "ground",
+     "box": [
+      192,
+      632,
+      696,
+      134
+     ],
+     "ink": [
+      192,
+      670.4,
+      696,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    },
+    {
+     "role": "hook",
+     "where": "band-above",
+     "on": "ground",
+     "box": [
+      60,
+      250,
+      960,
+      235.6
+     ],
+     "ink": [
+      60,
+      296.2,
+      960,
+      162.6
+     ],
+     "lines": 2,
+     "font": 76,
+     "style": "card",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "soft",
+     "code": "enlarged",
+     "kind": "picture",
+     "of": "picture",
+     "what": "the source's pixels are enlarged 1.5× (over 1.4×: soft)"
+    }
+   ],
+   "hard": 0,
+   "soft": 1,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 3.12× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "the blur of the face (100 % of the text's box)"
+     },
+     {
+      "role": "hook",
+      "shows": "the blur of the face (83 % of the text's box)"
+     }
+    ]
+   },
+   "ground": 0.438,
+   "faceHeight": 360,
+   "textPenalty": 4,
+   "variant": 370,
+   "terms": {
+    "enlargement": 0.5,
+    "ground": 4.38,
+    "subject": 1.275,
+    "soft": 0,
+    "text": 0.2,
+    "hook": 0
+   },
+   "cost": 6.355,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    6355,
+    0,
+    370
+   ],
+   "onGround": true,
+   "score": 93.645,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-above, hook card at 76 px band-above",
+    "the source's pixels are enlarged 1.5×",
+    "the face is 360 px tall (19 % of the frame's height)",
+    "44 % of the frame is ground",
+    "cost 6.355 (enlargement +0.5, ground +4.38, subject +1.275, text away +0.2)"
+   ],
+   "behind": "behind the first by 0.99 points (ground +1.41, subject +1.275, text away +0.2)"
+  },
+  {
+   "fit": "inset",
+   "scale": 0.8438,
+   "left": 0,
+   "top": 656.3,
+   "zoom": 0.32,
+   "enlargement": 0.84,
+   "window": [
+    0,
+    656.3,
+    1080,
+    607.5
+   ],
+   "faceInFrame": [
+    [
+     354.4,
+     774.4,
+     295.3,
+     236.3
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "band-below",
+     "on": "ground",
+     "box": [
+      192,
+      1306,
+      696,
+      134
+     ],
+     "ink": [
+      192,
+      1344.4,
+      696,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    },
+    {
+     "role": "hook",
+     "where": "band-above",
+     "on": "ground",
+     "box": [
+      60,
+      250,
+      960,
+      235.6
+     ],
+     "ink": [
+      60,
+      296.2,
+      960,
+      162.6
+     ],
+     "lines": 2,
+     "font": 76,
+     "style": "card",
+     "align": "center"
+    }
+   ],
+   "problems": [],
+   "hard": 0,
+   "soft": 0,
+   "unmet": [],
+   "fullSize": true,
+   "groundShows": {
+    "kind": "a blurred, darker copy of the picture, 3.12× the source, centred",
+    "behind": [
+     {
+      "role": "caption",
+      "shows": "no face: the blur of the picture's rest"
+     },
+     {
+      "role": "hook",
+      "shows": "the blur of the face (83 % of the text's box)"
+     }
+    ]
+   },
+   "ground": 0.684,
+   "faceHeight": 203,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 0,
+    "ground": 6.84,
+    "subject": 3.728,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 10.568,
+   "rank": [
+    0,
+    0,
+    0,
+    0,
+    10568,
+    0,
+    0
+   ],
+   "score": 89.432,
+   "why": [
+    "no hard problem",
+    "every text need met: 1 caption line band-below, hook card at 76 px band-above",
+    "the source's pixels are not enlarged (0.84×)",
+    "the face is 203 px tall (11 % of the frame's height)",
+    "68 % of the frame is ground",
+    "cost 10.568 (ground +6.84, subject +3.728)"
+   ],
+   "behind": "behind the first by 5.203 points (ground +3.87, subject +3.728)"
+  },
+  {
+   "fit": "full",
+   "scale": 2.6667,
+   "left": -1166.7,
+   "top": 0,
+   "zoom": 1,
+   "enlargement": 2.67,
+   "window": [
+    0,
+    0,
+    1080,
+    1920
+   ],
+   "faceInFrame": [
+    [
+     -46.7,
+     373.3,
+     933.3,
+     746.7
+    ]
+   ],
+   "text": [
+    {
+     "role": "caption",
+     "where": "below-chin",
+     "on": "picture",
+     "box": [
+      192,
+      1306,
+      696,
+      134
+     ],
+     "ink": [
+      192,
+      1344.4,
+      696,
+      77
+     ],
+     "lines": 1,
+     "font": 77,
+     "style": "cap",
+     "align": "center"
+    }
+   ],
+   "problems": [
+    {
+     "level": "hard",
+     "code": "off-frame",
+     "kind": "face",
+     "of": "face",
+     "what": "5 % outside the frame"
+    },
+    {
+     "level": "hard",
+     "code": "enlarged",
+     "kind": "picture",
+     "of": "picture",
+     "what": "the source's pixels are enlarged 2.67× (over 2×: too soft to publish)"
+    },
+    {
+     "level": "unmet",
+     "code": "no-room",
+     "kind": "text",
+     "of": "hook",
+     "what": "no free place for the hook"
+    }
+   ],
+   "hard": 2,
+   "soft": 0,
+   "unmet": [
+    "hook"
+   ],
+   "fullSize": true,
+   "ground": 0,
+   "faceHeight": 640,
+   "textPenalty": 0,
+   "variant": 0,
+   "terms": {
+    "enlargement": 6.333,
+    "ground": 0,
+    "subject": 0,
+    "soft": 0,
+    "text": 0,
+    "hook": 0
+   },
+   "cost": 6.333,
+   "rank": [
+    1,
+    1,
+    0,
+    0,
+    6333,
+    0,
+    0
+   ],
+   "score": 0,
+   "why": [
+    "fails: face 5 % outside the frame; picture the source's pixels are enlarged 2.67× (over 2×: too soft to publish)",
+    "text without a place: hook (placed: 1 caption line below-chin)",
+    "the source's pixels are enlarged 2.67×",
+    "the face is 640 px tall (33 % of the frame's height)",
+    "the picture fills the frame",
+    "cost 6.333 (enlargement +6.333)"
+   ],
+   "behind": "behind the first because it has a hard problem"
+  }
+ ],
+ "tracks": [
+  {
+   "face": 1,
+   "source": 1,
+   "moments": 3,
+   "from": 0,
+   "to": 4,
+   "usual": [
+    500,
+    150,
+    200,
+    240
+   ],
+   "hull": [
+    420,
+    140,
+    350,
+    280
+   ],
+   "growth": {
+    "width": 1.75,
+    "height": 1.17,
+    "area": 2.04
+   },
+   "edges": {
+    "top": 4,
+    "bottom": 2,
+    "left": 4,
+    "right": 2
+   },
+   "times": [
+    0,
+    2,
+    4
+   ],
+   "boxes": [
+    {
+     "t": 0,
+     "box": [
+      500,
+      150,
+      200,
+      240
+     ]
+    },
+    {
+     "t": 2,
+     "box": [
+      560,
+      170,
+      210,
+      250
+     ]
+    },
+    {
+     "t": 4,
+     "box": [
+      420,
+      140,
+      200,
+      240
+     ]
+    }
+   ],
+   "placed": "crop 4:5 1.875× at -575.7/472.4, caption below-chin y 1306–1440, hook band-above y 250–448 (64 px)",
+   "decides": [
+    {
+     "t": 2,
+     "edges": [
+      "bottom",
+      "right"
+     ],
+     "without": "crop 4:5 1.875× at -510/509.6, caption below-chin y 1306–1440, hook band-above y 250–486 (76 px)",
+     "says": "the first candidate stays crop 4:5 but the picture 66 px further right and 37 px lower",
+     "change": 223
+    },
+    {
+     "t": 4,
+     "edges": [
+      "top",
+      "left"
+     ],
+     "without": "crop 4:5 1.875× at -650.6/472.4, caption below-chin y 1306–1440, hook band-above y 250–448 (64 px)",
+     "says": "the first candidate stays crop 4:5 but the picture 75 px further left",
+     "change": 75
+    }
+   ]
+  }
+ ],
+ "asked": {
+  "frame": "9:16",
+  "platforms": []
+ }
+}

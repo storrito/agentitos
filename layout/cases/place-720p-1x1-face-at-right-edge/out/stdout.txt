@@ -1,0 +1,22 @@
+$ place.mjs place out --frame 1:1 --source 1280x720 --face 1110,200,170,210 --text caption
+1:1 1080×1080 for Instagram feed post, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+source 1280×720, 1 face (x 1110–1280, y 200–410); text: 1 caption line
+note: no crop that fills the frame holds the face in the safe box: a face touches the source's edge
+
+1. ! inset  scale 0.8438 (0.56× of covering) at left 0, top 194.5  score 92.637
+   picture x 0–1080, y 195–802, 44 % ground
+   face    x 937–1080, y 363–541 (143×177)
+   caption band-below, x 135–945, y 826–960, 1 line at 77 px
+   ! face: in the safe box's margin (52 px past the right)
+   ! face: 95 % cut where the profile grid shows 3:4
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 1.76× the source, centred)
+   why: no hard problem; every text need met: 1 caption line band-below; the source's pixels are not enlarged (0.84×); the face is 177 px tall (16 % of the frame's height); 44 % of the frame is ground; soft: face in the safe box's margin (52 px past the right); face 95 % cut where the profile grid shows 3:4; cost 7.363 (ground +4.38, subject +1.983, soft problems +1)
+
+2. ✗ full  scale 1.5 (1× of covering) at left -420, top 0  score 0
+   face    x 1245–1500, y 300–615 (255×315)
+   caption below-chin, x 135–945, y 826–960, 1 line at 77 px
+   ✗ face: 100 % outside the frame
+   why: fails: face 100 % outside the frame; every text need met: 1 caption line below-chin; the source's pixels are enlarged 1.5×, not over the 1.5× from where it shows; the face is 315 px tall (29 % of the frame's height); the picture fills the frame; cost 0 (no term); behind the first because it has a hard problem
+
+out/placement.json: 2 candidates, 1 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

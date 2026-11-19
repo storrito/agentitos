@@ -1,0 +1,170 @@
+{
+ "frame": "1080x1920",
+ "size": [
+  1080,
+  1920
+ ],
+ "platforms": [
+  "Instagram Reels",
+  "TikTok",
+  "YouTube Shorts"
+ ],
+ "safe": [
+  60,
+  250,
+  828,
+  1190
+ ],
+ "raise": "mouth",
+ "caption": {
+  "box": [
+   192,
+   425.3,
+   696,
+   94.7
+  ],
+  "font": 77,
+  "lines": 1,
+  "align": "center",
+  "least": 61,
+  "middle": 24.6,
+  "where": "above-head",
+  "options": {
+   "y": 520,
+   "max-width": 696,
+   "font-size": 77,
+   "lines": 1
+  },
+  "seconds": 0,
+  "lifted": 0
+ },
+ "shots": [
+  {
+   "shot": 0,
+   "start": 0,
+   "end": 6,
+   "lift": 0,
+   "headCut": {
+    "seconds": 0,
+    "px": 0,
+    "byLift": 0
+   },
+   "eyes": 0.496,
+   "free": 0,
+   "ground": 0,
+   "band": 0,
+   "most": 0,
+   "limit": "none",
+   "touches": []
+  }
+ ],
+ "hook": {
+  "kind": "text",
+  "box": [
+   192,
+   928.3,
+   696,
+   178.6
+  ],
+  "font": 72,
+  "lines": 2,
+  "where": "middle",
+  "start": 0,
+  "until": 2,
+  "onFace": {
+   "seconds": 2.1,
+   "share": 0.27,
+   "features": 2.1
+  },
+  "kindWhy": "a text in the middle: no place clear of the faces' margins, this one lies least on them"
+ },
+ "changes": [],
+ "conflicts": [
+  "The hook lies on a face for 2.1 s (up to 27 % of it, on the eyes, nose or mouth for 2.1 s) wherever it stands on the first shot: no hook (the first line carries the clip), a shorter one that ends before the face reaches it, or a start on another shot would avoid it."
+ ],
+ "notes": [],
+ "candidates": [
+  {
+   "box": [
+    192,
+    425.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 21.2,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 24.6
+  },
+  {
+   "box": [
+    192,
+    435.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 25.9,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 24.9
+  },
+  {
+   "box": [
+    192,
+    443.7,
+    696,
+    76.3
+   ],
+   "font": 62,
+   "cost": 29.9,
+   "seconds": 0,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 25.1
+  },
+  {
+   "box": [
+    192,
+    665.3,
+    696,
+    94.7
+   ],
+   "font": 77,
+   "cost": 73.7,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 37.1
+  },
+  {
+   "box": [
+    192,
+    675.1,
+    696,
+    84.9
+   ],
+   "font": 69,
+   "cost": 78.4,
+   "seconds": 6,
+   "lifted": 0,
+   "liftPx": 0,
+   "middle": 37.4
+  }
+ ],
+ "asked": {
+  "frame": "1080x1920",
+  "platforms": [
+   "reels",
+   "tiktok",
+   "shorts"
+  ],
+  "fixed": {
+   "lifts": {}
+  },
+  "raise": "mouth"
+ }
+}

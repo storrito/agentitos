@@ -1,0 +1,17 @@
+{
+ "guards": "a face whose box touches the 1080p source's left edge into 9:16 with two caption lines",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--source",
+   "1920x1080",
+   "--face",
+   "0,240,250,310",
+   "--text",
+   "caption:2"
+  ]
+ ]
+}

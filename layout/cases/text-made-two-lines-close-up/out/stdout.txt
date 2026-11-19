@@ -1,0 +1,7 @@
+$ place.mjs text out --frame 1080x1920 --shots shots.json --text caption:2 --raise full --set caption.line=1.05 --set caption.padEm=0.18 --platform reels,tiktok,shorts
+1080x1920 for Instagram Reels, TikTok, YouTube Shorts, 1 shot
+captions: one place for the clip, 2 lines of 77 px, x 192–888, y 454–630 (its middle at 28.2 % of the height, above-head); on a face for 6 s
+  shot 1  0.00–6.00 s  as it stands  above the head, on the hair of A's face 0–6 s (6 s, up to 0 % of it)
+note: Shot 1 (0–6 s): the captions stand above A's face, on the hair, for 6 s.
+Other places it weighed: 69 px with its middle at 28.7 % (on faces 6 s, 0 raised, cost 83.6); 62 px with its middle at 29.1 % (on faces 6 s, 0 raised, cost 87.5); 62 px with its middle at 71.3 % (on faces 6 s, 0 raised, cost 120124.8); 69 px with its middle at 70.9 % (on faces 6 s, 0 raised, cost 216123.6).
+out/text.json: for agentitos' captions --y 630 --max-width 696 --font-size 77 --lines 2; each shot's lift for the framing. The choice is yours: --caption-y, --font-size and --lift <shot>:<px> fix one, and the rest is placed around it.

@@ -1,0 +1,23 @@
+$ place.mjs beside out --frame 1:1 --source 3840x2160 --face 1700,420,520,640 --material-min 500x280 --material-ratio 16:9 --text caption
+1:1 1080×1080 for Instagram feed post, Facebook feed post, LinkedIn video, X (Twitter) (no platform named: the usual ones of this frame)
+speaker 3840×2160, face x 1700–2220, y 420–1060; material: laid out into its field, at least 500×280 px, of the shape 1.7778:1; text: 1 caption line
+note: in 1080×1080 the panel holds the face at 12 % of the frame's height or more while the material's field is at most 810×456 px; a material that needs more height gets the circle (nothing was measured in this frame)
+note: no --before: the speaker full-frame before is taken as the source covering the frame (0.5× at -440, 0); give the placement you used, as --before scale,left,top, for the change's numbers
+
+1. ✓ beside-above  score 100
+   material  field x 282–798, y 54–344 (516×290, 13 % of the frame); its ground x 0–1080, y 0–435
+   speaker   field x 0–1080, y 435–1080: the footage at 0.5× (left -440, top 404.4), shows x 880–3040, y 62–1351 of it; face x 410–670, y 614–934 (320 px, 30 %)
+   card      x 0–1080, y 502–1080: the window under the captions (speaker.card), so that they stand on the panel's ground
+   caption   seam, x 135–945, y 368–502, 1 line at 77 px
+   change    from full-frame (0.5× at -440, 0, assumed): the face moves not across and 404 px down, at the same scale: the picture is only cut to the field and moved
+   why: no hard problem; the material above, the speaker as a panel below it (what published Shorts do most where a screen and a face show together: usual, not shown to work); the material's field is 516×290 px (13 % of the frame), at least the 500×280 it needs; the speaker's face is 320 px (30 % of the frame's height; 18 % is the usual below a screen); the speaker keeps the scale it had full-frame; the captions on the seam; cost 0 (no term)
+
+2. ✓ beside-pip  score 100
+   material  field x 135–945, y 299–754 (810×456, 32 % of the frame); its ground x 0–1080, y 0–1080
+   speaker   circle 173 px top-right x 772–945, y 54–227: the footage at 0.1352× (left 593.6, top 33.6), shows x 1320–2600, y 151–1431 of it; face x 823–894, y 90–177 (87 px, 8 %)
+   caption   below, x 135–945, y 826–960, 1 line at 77 px
+   change    from full-frame (0.5× at -440, 0, assumed): the face moves 319 px to the right and 236 px up, and becomes 0.27× as large
+   why: no hard problem; the material over the frame, the speaker as a circle in its corner (a small picture in or at the screen: the rarer form in published Shorts); the material's field is 810×456 px (32 % of the frame), at least the 500×280 it needs; the speaker's face is 87 px (8 % of the frame's height); the captions at the safe box's bottom; cost 0 (no term); behind the first by the usual order of this frame (above, then pip)
+
+out/placement.json: 2 candidates, 2 without a hard problem and with every need met.
+The order is a suggestion. Look before you choose: place.mjs page out --still <speaker's video|image> [--still <the material as a picture>] writes the first three as pictures and has platform-zones check them; place.mjs captions out --candidate N gives the captions' options.

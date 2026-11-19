@@ -1,0 +1,17 @@
+{
+ "guards": "a 4K source whose head sits low into 4:5 with a caption line",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "4:5",
+   "--source",
+   "3840x2160",
+   "--face",
+   "1600,1350,520,640",
+   "--text",
+   "caption"
+  ]
+ ]
+}

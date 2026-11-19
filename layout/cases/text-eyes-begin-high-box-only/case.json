@@ -1,0 +1,17 @@
+{
+ "guards": "the same head lower, known by its box: captions in the band where its eyes may begin",
+ "from": "made-up geometry from a layout review (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--raise",
+   "mouth"
+  ]
+ ]
+}

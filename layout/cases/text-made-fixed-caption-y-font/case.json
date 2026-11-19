@@ -1,0 +1,27 @@
+{
+ "guards": "a caller's fixed caption height and size (--caption-y, --font-size, as clips passes them): kept, and what lies on the face there said",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "text",
+   "--frame",
+   "1080x1920",
+   "--shots",
+   "shots.json",
+   "--text",
+   "caption",
+   "--caption-y",
+   "1380",
+   "--font-size",
+   "70",
+   "--raise",
+   "mouth",
+   "--set",
+   "caption.line=1.05",
+   "--set",
+   "caption.padEm=0.18",
+   "--platform",
+   "reels,tiktok,shorts"
+  ]
+ ]
+}
