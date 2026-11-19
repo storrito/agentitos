@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { pageOf, pageSources, ownTokens, fold, sounds, onPage, locate, entriesOf, applyNames, clipFixes, namesPrompt, namesListing, APPLY_SOUND, REFUSE_SOUND } from "./lib/names.mjs";
 
@@ -85,10 +85,19 @@ test("applied: the page writes the name, only the spelling differs, every place 
   assert.deepEqual(e.places.map((p) => p.sentence), [0, 4], "the same misspelling in sentence 4 too");
   // one word for two: J Lo → JLaw
   assert.equal(one([fix(5, "J Lo", "JLaw")]).status, "applied");
-  // the transcript writes "werewolf" in lower case elsewhere (the creature): the film only proposed
+  // the transcript writes "werewolf" in lower case elsewhere (the creature), but the page writes
+  // the film with the same words before it ("Robert Eggers' Werwulf"): applied there, only there
   const film = one([fix(1, "Werewolf", "Werwulf")]);
-  assert.equal(film.status, "proposed");
-  assert.match(film.because, /"Werewolf" is an ordinary word in this transcript/);
+  assert.equal(film.status, "applied");
+  assert.deepEqual(film.places.map((p) => p.sentence), [1]);
+  // in lower case, as a live transcription wrote it: applied at the page's phrase only
+  const live = episodeOf([["B", "And Robert Eggers' werewolf on December 25th."], ["A", "A werewolf howls."]]);
+  const l = entriesOf({ names: [], fixes: [fix(0, "werewolf", "Werwulf")] }, live.words, live.sentences, SOURCES);
+  assert.deepEqual(l.map((x) => [x.status, x.places.map((p) => p.sentence)]), [["applied", [0]]]);
+  // without the page's words around it, an ordinary word stays proposed
+  const bare = entriesOf({ names: [], fixes: [fix(1, "werewolf", "Werwulf")] }, live.words, live.sentences, SOURCES);
+  assert.equal(bare[0].status, "proposed");
+  assert.match(bare[0].because, /"werewolf" is an ordinary word in this transcript/);
 });
 
 test("never an ordinary word made a name, and a name for an ordinary word only proposed", () => {
@@ -249,4 +258,135 @@ test("names: without OpenRouter the words stay and the line says so", async () =
   assert.match(r.out, /^No OpenRouter .*the words stay as the transcription wrote them\.\n$/);
   assert.ok(!fs.existsSync(path.join(dir, "words.raw.json")));
   fs.rmSync(dir, { recursive: true });
+});
+
+// ---------------------------------------------------------------- fetch, start to end
+// fetch on a link with stand-ins: a yt-dlp on the PATH that answers from files (the page, the
+// sound, the video's own captions) or refuses, and an OpenRouter that writes the words down and
+// answers the names (or answers nothing usable). No network, no model.
+const STUB = `#!/usr/bin/env node
+const fs = require("fs"), a = process.argv.slice(2), o = a[a.indexOf("-o") + 1];
+fs.appendFileSync(process.env.STUB_LOG, a.join(" ") + "\\n");
+if (a.includes("-J")) {
+  if (process.env.STUB_INFO === "refuse") { console.error("ERROR: [youtube] abc: Video unavailable. This content isn't available."); process.exit(1); }
+  process.stdout.write(fs.readFileSync(process.env.STUB_INFO, "utf8"));
+} else if (a.includes("--write-subs")) {
+  fs.writeFileSync(o + ".en.json3", JSON.stringify({ events: [{ tStartMs: 200, dDurationMs: 3000, segs: [{ utf8: "you play Walker Reade, then Hunter." }] }] }));
+} else fs.copyFileSync(process.env.STUB_AUDIO, o.replace("%(ext)s", "m4a"));
+`;
+const HEARD = [["you", 0.3, 0.5], ["play", 0.55, 0.8], ["Walker", 0.9, 1.3], ["Reed,", 1.35, 1.7], ["then", 1.9, 2.1], ["Hunter.", 2.2, 2.7]];
+
+async function fetchWith({ info, names }, args = []) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clips-fetch-"));
+  const bin = path.join(tmp, "bin");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "yt-dlp"), STUB, { mode: 0o755 });
+  const audio = path.join(tmp, "sound.m4a");
+  // three seconds of a tone between pauses, where the words lie
+  spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=220:duration=3.2", "-af", "volume='if(between(t,0.25,2.8),1,0.001)':eval=frame", "-c:a", "aac", audio]);
+  let infoFile = "refuse";
+  if (info) { infoFile = path.join(tmp, "info.json"); fs.writeFileSync(infoFile, JSON.stringify(info)); }
+  let chats = 0;
+  const server = http.createServer((req, res) => {
+    let body = ""; req.on("data", (c) => (body += c)); req.on("end", () => {
+      res.setHeader("Content-Type", "application/json");
+      if (req.url.endsWith("/key")) return res.end("{}");
+      if (req.url.endsWith("/audio/transcriptions")) return res.end(JSON.stringify({ words: HEARD.map(([word, start, end]) => ({ word, start, end, type: "word", speaker: "0" })), usage: { cost: 0.0011 } }));
+      chats++;
+      res.end(JSON.stringify({ choices: [{ message: { content: typeof names === "string" ? names : JSON.stringify(names) }, finish_reason: "stop" }], usage: { cost: 0.002 } }));
+    });
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  const dir = path.join(tmp, "episode");
+  const r = await new Promise((ok) => {
+    const child = spawn(process.execPath, [path.join(HERE, "episode.mjs"), "fetch", "https://www.youtube.com/watch?v=abcdefghijk", dir, ...args], { env: { ...process.env,
+      PATH: `${bin}:${process.env.PATH}`, STUB_INFO: infoFile, STUB_AUDIO: audio, STUB_LOG: path.join(tmp, "calls.log"),
+      OPENROUTER_API_KEY: "test", OPENROUTER_BASE_URL: `http://127.0.0.1:${server.address().port}` } });
+    let out = "", err = "";
+    child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (err += d));
+    child.on("close", (status) => ok({ status, out, err }));
+  });
+  server.close();
+  const read = (f) => (fs.existsSync(path.join(dir, f)) ? JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) : null);
+  const result = { ...r, chats, calls: fs.readFileSync(path.join(tmp, "calls.log"), "utf8"), page: read("page.json"), words: read("words.json"), raw: read("words.raw.json"), list: read("names.json") };
+  fs.rmSync(tmp, { recursive: true });
+  return result;
+}
+const INFO = { id: "abcdefghijk", title: "Dafoe | Hot Ones", channel: "First We Feast", duration: 3, language: "en", subtitles: { en: [{ ext: "json3" }] }, automatic_captions: { "en-orig": [] } };
+const READE = { names: [{ name: "Reade", kind: "person", where: "captions" }], fixes: [fix(0, "Reed", "Reade")] };
+
+test("fetch: a page without a description still gives the names their page (the own captions), the cost of the words and of the names", async () => {
+  const r = await fetchWith({ info: INFO, names: READE });
+  assert.equal(r.status, 0, r.out + r.err);
+  assert.equal(r.page.description, "");
+  assert.deepEqual(r.page.own, ["Reade"], "the own captions' word the transcript never writes");
+  assert.match(r.calls, /--write-subs --sub-langs en /, "the video's own captions, not the automatic ones");
+  assert.match(r.out, /\(\$0\.00\d+ for the words\)/);
+  assert.match(r.out, /1 correction applied, 0 proposed, 0 refused/);
+  assert.match(r.out, /\(\$0\.0020\)/);
+  assert.equal(r.words.find((w) => w.was).text, "Reade,");
+  assert.equal(r.raw.find((w) => w.text === "Reed,").start, r.words.find((w) => w.was).start);
+});
+
+test("fetch: YouTube refuses the page's facts: the words still come, the names go by no page, the line says so", async () => {
+  const r = await fetchWith({ info: null, names: READE });
+  assert.equal(r.status, 0, r.out + r.err);
+  assert.ok(r.words.length >= HEARD.length);
+  assert.match(r.out, /YouTube gave no facts of the video \(title, description, chapters\): the names had no page to go by\./);
+  assert.doesNotMatch(r.calls, /--write-subs/, "no own captions asked for without the facts");
+  assert.equal(r.list.entries[0].status, "proposed", "no page: nothing applied by itself");
+});
+
+test("fetch: a model answer that is no answer leaves the words as written, in one sentence", async () => {
+  const r = await fetchWith({ info: INFO, names: "Here are the names you asked for." });
+  assert.equal(r.status, 0, r.out + r.err);
+  assert.equal(r.chats, 2, "asked once more, then given up");
+  assert.match(r.out, /The names were not checked \(the model gave no list of names twice \(an answer that is not one, \$0\.0040\)\): the words stay as the transcription wrote them; episode\.mjs names \S+ tries again\.\n$/);
+  assert.equal(r.raw, null);
+  assert.ok(r.words.some((w) => w.text === "Reed,"));
+});
+
+test("fetch --no-names: no model call for the names, and the line says how to check them later", async () => {
+  const r = await fetchWith({ info: INFO, names: READE }, ["--no-names"]);
+  assert.equal(r.status, 0, r.out + r.err);
+  assert.equal(r.chats, 0);
+  assert.equal(r.list, null);
+  assert.match(r.out, /The names were not checked \(--no-names\): the words keep the speech model's spellings; episode\.mjs names \S+ checks them later \(a cent or two\)\.\n$/);
+});
+
+// ---------------------------------------------------------------- a prepared clip, the list changed
+test("clips.mjs names: after --take or --leave the clip's fixes follow the list, the agent's own stay, and it says to build again", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clips-names-clip-"));
+  const episode = path.join(tmp, "episode"), clip = path.join(tmp, "01");
+  fs.mkdirSync(episode); fs.mkdirSync(path.join(clip, "takes", "source"), { recursive: true });
+  const entries = judged([fix(0, "Reed", "Reade"), fix(1, "Werewolf", "Werwulf")]);
+  const list = (status) => fs.writeFileSync(path.join(episode, "names.json"), JSON.stringify({ entries: entries.map((e) => (e.to === "Reade" ? { ...e, status } : e)) }));
+  list("applied");
+  const reed = TALK.words.findIndex((w) => w.text === "Reed,"), wolf = TALK.words.findIndex((w) => w.text === "Werewolf");
+  const words = [reed, wolf, wolf + 1].map((k, i) => ({ i, text: TALK.words[k].text, start: TALK.words[k].start, end: TALK.words[k].end, kind: "word" }));
+  fs.writeFileSync(path.join(clip, "takes", "source", "words.json"), JSON.stringify({ words }));
+  fs.writeFileSync(path.join(clip, "clip.json"), JSON.stringify({ from: 0, to: 20, range: "0-1", episode }));
+  fs.writeFileSync(path.join(clip, "takes", "cut.json"), JSON.stringify({ keep: [{ words: "0-2" }], fixes: { 2: "comes-out" } }));
+  const names = () => spawnSync(process.execPath, [path.join(HERE, "clips.mjs"), "names", clip], { encoding: "utf8" });
+  const cut = () => JSON.parse(fs.readFileSync(path.join(clip, "takes", "cut.json"), "utf8"));
+  let r = names();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(cut().fixes, { 0: "Reade,", 1: "Werwulf", 2: "comes-out" });
+  assert.match(r.stdout, /"Reed" → "Reade" \(word 0\), "Werewolf" → "Werwulf" \(word 1\) in cut\.json "fixes"/);
+  assert.match(r.stdout, /Next: node \S+takes\.mjs build \S+takes \(the captions and the hook keep their place: only the words' text changes\), then check\./);
+  // the agent spells the film otherwise by hand: theirs stays
+  fs.writeFileSync(path.join(clip, "takes", "cut.json"), JSON.stringify({ ...cut(), fixes: { ...cut().fixes, 1: "WERWULF" } }));
+  // --leave on Reade: its fix goes, the others stay
+  list("proposed");
+  r = names();
+  assert.deepEqual(cut().fixes, { 1: "WERWULF", 2: "comes-out" });
+  assert.match(r.stdout, /Taken back from cut\.json "fixes" \(the list no longer applies them\): word 0 "Reed,"\./);
+  // --take again: back
+  list("applied");
+  r = names();
+  assert.deepEqual(cut().fixes, { 0: "Reade,", 1: "WERWULF", 2: "comes-out" });
+  // again with nothing changed: says so, no build needed
+  r = names();
+  assert.match(r.stdout, /Nothing changed in cut\.json\./);
+  fs.rmSync(tmp, { recursive: true });
 });

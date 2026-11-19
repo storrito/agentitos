@@ -27,6 +27,9 @@
 //        best-takes (the captions' options, the hook's box) and takes/source/faces.json (the faces
 //        it keeps its punch-ins and its check by). prepare runs it once; run it again after the
 //        cut's start moved or to change what it chose, it builds again when the edit is built
+//   node tools/clips.mjs names <clip> [--episode <dir>]
+//        the episode's names list on the clip's words again (cut.json "fixes"), after
+//        episode.mjs names --take or --leave changed it; prepare does it once. No cost
 //   node tools/clips.mjs render <clip> <video.mp4>
 //        the built preview rendered with HyperFrames, brought to −14 LUFS, subtitles beside it
 //   node tools/clips.mjs prepare-all <episode> <clips.json> [--platform …] [--brand …] [--jobs N]
@@ -54,7 +57,7 @@ import { clipFixes } from "./lib/names.mjs";
 import { numbers, ranges, cutKeeps, dropNote, sentenceWords, openingNote, lengthNote, playedSeconds, MAX_SECONDS } from "./lib/moments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const VALUED = ["out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "drop", "payoff", "max-seconds", "caption-y", "font-size", "lift", "raise", "lines"];
+const VALUED = ["episode", "out", "platform", "hook", "title", "brand", "whole", "follow", "jobs", "drop", "payoff", "max-seconds", "caption-y", "font-size", "lift", "raise", "lines"];
 
 const fail = (message) => { console.log(message); process.exit(1); };
 const rel = (p) => path.relative(process.cwd(), p) || ".";
@@ -141,9 +144,11 @@ function prepare(episode, dir, range, opts) {
   if (!(fs.existsSync(clip) && fs.existsSync(path.join(dir, "clip.json")) && read(path.join(dir, "clip.json")).range === range)) {
     fs.rmSync(path.join(dir, "framed.mp4"), { force: true });
     run(path.join(HERE, "episode.mjs"), ["cut", episode, range, clip]);
-    fs.writeFileSync(path.join(dir, "clip.json"), JSON.stringify({ ...read(path.join(dir, "clip.json")), range }));
+    fs.writeFileSync(path.join(dir, "clip.json"), JSON.stringify({ ...read(path.join(dir, "clip.json")), range, episode: path.resolve(episode) }));
   }
   const { from, to } = read(path.join(dir, "clip.json"));
+  // the episode it was cut from, for clips.mjs names later
+  fs.writeFileSync(path.join(dir, "clip.json"), JSON.stringify({ ...read(path.join(dir, "clip.json")), episode: path.resolve(episode) }));
   // where the moment's first and last sentence are in the clip
   const said = [sentences[a].start - from, sentences[b].end - from];
 
@@ -168,7 +173,7 @@ function prepare(episode, dir, range, opts) {
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
   // the limit as best-takes' target: its check says when the cut, opening and all, is longer
-  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", "--target", String(limit), ...Object.entries(opts).filter(([k]) => !["whole", "follow", "drop", "payoff", "max-seconds", "caption-y", "font-size", "lift", "raise", "lines"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
+  const settings = ["--aspect", "9:16", "--pauses", "tight", "--punch", "on", "--target", String(limit), ...Object.entries(opts).filter(([k]) => !["episode", "whole", "follow", "drop", "payoff", "max-seconds", "caption-y", "font-size", "lift", "raise", "lines"].includes(k)).flatMap(([k, v]) => [`--${k}`, v])];
   run(takes, ["new", td, video, ...settings]);
   writeStill(dir);
 
@@ -184,13 +189,10 @@ function prepare(episode, dir, range, opts) {
   const first = inside[0].i, last = inside.at(-1).i;
   const outside = spoken.filter((w) => w.i < first || w.i > last).map((w) => `${w.i} "${w.text}"`);
   const edge = (ws) => ws.map((w) => `${w.i} "${w.text}"`).join(" ");
-  // the names episode.mjs names corrected in the episode, on the clip's own words (best-takes wrote
-  // them anew): as "fixes", so that the captions and the subtitles spell them so
-  const listed = path.join(episode, "names.json");
-  const named = fs.existsSync(listed) ? clipFixes(heard, read(listed).entries || [], from, to - from) : null;
   fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify({ keep: keeps.map(([x, y], k) => ({ words: x === y ? `${x}` : `${x}-${y}`,
-    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges([...plan.cut, ...plan.asides].sort((x, y) => x - y))} left out)` })),
-    ...(named && Object.keys(named.fixes).length ? { fixes: named.fixes } : {}) }, null, 1) + "\n");
+    why: keeps.length === 1 ? "the moment" : `the moment, part ${k + 1} of ${keeps.length} (sentences ${ranges([...plan.cut, ...plan.asides].sort((x, y) => x - y))} left out)` })) }, null, 1) + "\n");
+  // the names episode.mjs names corrected in the episode, on the clip's own words
+  const named = nameFixes(dir, episode);
 
   // where the text goes: one place for the captions, the shots raised that need it, the hook
   if (video === framed) { console.log(""); place(dir, {}, { build: false }); }
@@ -198,8 +200,7 @@ function prepare(episode, dir, range, opts) {
   const t = rel(takes), d = rel(td);
   console.log(`\n${rel(path.join(td, "cut.json"))}: the moment, words ${first}–${last}: it starts ${edge(inside.slice(0, 3))} …, ends … ${edge(inside.slice(-3))}${outside.length ? `; left out at the edges: ${outside.join(", ")}` : ""}.`);
   if (drop.length) console.log(dropNote(plan, gone, folded, keeps, sentences));
-  if (named?.found.length) console.log(`The names: ${named.found.map((f) => `"${f.heard}" → "${f.to}" (word${f.words.length > 1 ? "s" : ""} ${f.words.join(", ")})`).join(", ")} in cut.json "fixes", as the episode's names list has them.`);
-  if (named?.missed.length) console.log(`Not found in the clip's words: ${named.missed.map((m) => `"${m.to}" at ${m.at.toFixed(1)} s${m.heard ? ` (the clip heard "${m.heard}")` : ""}`).join(", ")}: read the brief there and fix the spelling in cut.json "fixes" yourself.`);
+  if (named) console.log(namesNote(named));
   // how long the moment plays as cut, against the limit it was found for
   const estimate = playedSeconds(spoken, keeps);
   const note = lengthNote(estimate, limit);
@@ -211,6 +212,57 @@ function prepare(episode, dir, range, opts) {
   node ${t} captions ${d} --style <style>${opts.platform ? "" : " --platform <platforms>"}${opts.brand ? ` --brand ${opts.brand}` : ""}
   node ${rel(path.join(HERE, "clips.mjs"))} place ${rel(dir)}   (again once the cut and its captions are built: the hook's time is the cut's, the area the style's; it builds again)
   node ${t} check ${d}`);
+}
+
+// ------------------------------------------------------------------------------------ names
+// The names the episode's list applies (episode.mjs names), on the clip's own words (best-takes
+// wrote them anew, otherwise timed and sometimes spelled), as cut.json "fixes": the captions, the
+// subtitles and the check spell them so. What the list put there is kept in takes/names.json, so
+// that a change of the list (--take, --leave) takes back its old fixes and never one the agent
+// wrote. → { found, missed, added, removed } or null when the episode has no list
+function nameFixes(dir, episode) {
+  const td = path.join(dir, "takes"), listed = path.join(episode, "names.json"), mine = path.join(td, "names.json");
+  if (!fs.existsSync(listed)) return null;
+  const { from, to } = read(path.join(dir, "clip.json"));
+  const { words: heard } = read(path.join(td, "source", "words.json"));
+  const r = clipFixes(heard, read(listed).entries || [], from, to - from);
+  const cut = read(path.join(td, "cut.json"));
+  const fixes = { ...(cut.fixes || {}) }, before = fs.existsSync(mine) ? read(mine).fixes || {} : {};
+  const removed = [], added = [];
+  for (const [i, t] of Object.entries(before)) if (fixes[i] === t && r.fixes[i] !== t) { delete fixes[i]; removed.push(i); }
+  for (const [i, t] of Object.entries(r.fixes)) {
+    // a spelling the agent wrote at that word stays theirs
+    if (fixes[i] != null && fixes[i] !== t && before[i] !== fixes[i]) continue;
+    if (fixes[i] !== t) added.push(i);
+    fixes[i] = t;
+  }
+  if (Object.keys(fixes).length) cut.fixes = fixes; else delete cut.fixes;
+  fs.writeFileSync(path.join(td, "cut.json"), JSON.stringify(cut, null, 1) + "\n");
+  fs.writeFileSync(mine, JSON.stringify({ fixes: Object.fromEntries(Object.entries(r.fixes).filter(([i]) => fixes[i] === r.fixes[i])) }, null, 1) + "\n");
+  return { ...r, added, removed, heard };
+}
+
+function namesNote(named) {
+  const word = (i) => named.heard.find((w) => String(w.i) === String(i))?.text ?? i;
+  return [
+    named.found.length ? `The names: ${named.found.map((f) => `"${f.heard}" → "${f.to}" (word${f.words.length > 1 ? "s" : ""} ${f.words.join(", ")})`).join(", ")} in cut.json "fixes", as the episode's names list has them.` : "",
+    named.removed.length ? `Taken back from cut.json "fixes" (the list no longer applies them): ${named.removed.map((i) => `word ${i} "${word(i)}"`).join(", ")}.` : "",
+    named.missed.length ? `Not found in the clip's words: ${named.missed.map((m) => `"${m.to}" at ${m.at.toFixed(1)} s${m.heard ? ` (the clip heard "${m.heard}")` : ""}`).join(", ")}: read the brief there and fix the spelling in cut.json "fixes" yourself.` : "",
+  ].filter(Boolean).join("\n");
+}
+
+// clips.mjs names <clip> [--episode <dir>]: the list again, after episode.mjs names --take/--leave
+function names(dir, opts) {
+  if (!dir) fail("clips.mjs names <clip> [--episode <dir>]");
+  if (!fs.existsSync(path.join(dir, "takes", "cut.json"))) fail(`${rel(dir)} is not prepared: clips.mjs prepare first.`);
+  const episode = opts.episode || read(path.join(dir, "clip.json")).episode;
+  if (!episode) fail(`${rel(dir)} was prepared before clips kept its episode: clips.mjs names ${rel(dir)} --episode <the episode's folder>.`);
+  const named = nameFixes(dir, episode);
+  if (!named) fail(`There is no names list in ${rel(episode)}: episode.mjs names ${rel(episode)} first.`);
+  const said = namesNote(named);
+  const changed = named.added.length || named.removed.length;
+  const takes = takesTool();
+  console.log(`${said || "No name of the list lies in this clip."}${changed ? `\nNext: node ${takes ? rel(takes) : "<best-takes>/tools/takes.mjs"} build ${rel(path.join(dir, "takes"))} (the captions and the hook keep their place: only the words' text changes), then check.` : said ? "\nNothing changed in cut.json." : ""}`);
 }
 
 // ---------------------------------------------------------------------------------- reframe
@@ -505,6 +557,7 @@ if (command === "prepare") prepare(pos[0], pos[1], pos[2], opts);
 else if (command === "reframe") reframe(pos[0], opts);
 else if (command === "render") render(pos[0], pos[1]);
 else if (command === "place") place(pos[0], opts);
+else if (command === "names") names(pos[0], opts);
 else if (command === "prepare-all") await prepareAll(pos[0], pos[1], opts);
 else if (command === "render-all") await renderAll(pos[0], pos[1], opts);
-else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] [--drop <sentences>] [--payoff <sentence>] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise head|mouth|full] [--caption-y <px>] [--font-size <px>] [--lines 1|2] [--lift <s>:<px>] [--hook text|card] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
+else fail("clips.mjs prepare <episode> <clip> <first>-<last> [--out …] [--platform …] [--hook \"…\"] [--title \"…\"] [--brand …] [--drop <sentences>] [--payoff <sentence>] | reframe <clip> [--whole <s>,…] [--follow <s>,…] | place <clip> [--raise head|mouth|full] [--caption-y <px>] [--font-size <px>] [--lines 1|2] [--lift <s>:<px>] [--hook text|card] | names <clip> [--episode <dir>] | render <clip> <video.mp4> | prepare-all <episode> <clips.json> | render-all <clips.json> <folder>");
