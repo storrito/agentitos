@@ -1026,7 +1026,7 @@ function cmdCheck(dir) {
   // the face view: a picture that fails the layout skill's checks (named by the keep, or nothing passed)
   for (const k of [...new Set(e.pieces.filter((p) => p.picture && ["✗", "–"].includes(p.picture.mark)).map((p) => p.keep))]) {
     const pic = e.pieces.find((p) => p.keep === k && p.picture).picture;
-    if (pic.mouth && !pic.named) { warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×) has the captions on the mouth for ${pic.mouth.seconds} s of its ${pic.mouth.of} s (${pic.mouth.from}–${pic.mouth.to} s of the recording): ${pic.mouth.split ? `split it ("words": ${pic.mouth.split.map((r) => `"${r}"`).join(", ")}) and name another picture on the part with the lean` : "split it where the lean begins"}${pic.mouth.smaller ? `, or name "${pic.mouth.smaller}" on it` : ""}`); continue; }
+    if (pic.mouth) { warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×${pic.named ? ", as the keep names it" : ""}) has the captions on the mouth for ${pic.mouth.seconds} s of its ${pic.mouth.of} s (${pic.mouth.from}–${pic.mouth.to} s of the recording): ${pic.mouth.split ? `split it ("words": ${pic.mouth.split.map((r) => `"${r}"`).join(", ")}) and name another picture on the part with the lean` : "split it where the lean begins"}${pic.mouth.smaller ? `, or name "${pic.mouth.smaller}" on it` : ""}`); continue; }
     warnings.push(`keep ${k + 1}'s face view (${pic.fit} at ${pic.scale}×) ${pic.mark === "✗" ? "fails the layout skill's checks (enlarged over 2×, or the face under the apps' buttons)" : "leaves the captions no place clear of the face"}${pic.named ? ` and is the one the keep names ("layout")` : ": nothing passes"}; the build's list says which pass`);
   }
 

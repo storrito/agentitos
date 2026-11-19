@@ -40,7 +40,7 @@
 import { X1, Y1, area, hullOf, median, r1, r2, pct } from "./boxes.mjs";
 import { DEFAULTS, merged, scaled } from "./defaults.mjs";
 import { cmpRank, evaluate } from "./evaluate.mjs";
-import { MOUTH } from "./placed.mjs";
+import { BROWS, MOUTH, featOf, noseOf } from "./placed.mjs";
 import { pictureFits } from "./fits.mjs";
 import { splitFits } from "./parts.mjs";
 import { screenFits, screenStacked } from "./screen.mjs";
@@ -202,44 +202,53 @@ function solveOnce({ zones: Z, source = null, faces = [], sources = null, region
 }
 
 // The order for a picture of one speaker (pick: "speaker"), the rule best-takes and screencast-cut
-// share: an editor fills the frame's width before anything else and keeps the captions off the
-// eyes, nose and mouth.
-//   1. the picture the caller draws today (cover: the frame covered), kept outright where it
-//      passes, is enlarged no more than layout's crisp limit (weights.enlarge.softFrom, 1.5×) and
-//      holds the face at most SPEAKER.coverFace of the frame's height: what worked stays as it was;
-//   2. the pictures across the frame's full width (the frame covered, a crop over a ground) at 1×
+// share: a picture that fills the frame beats a picture with ground around it, as long as eyes,
+// nose and mouth stay inside the frame and the captions stay off the eyes and the nose, and off the
+// mouth for most of the clip (DECISIONS.md of layout-data's rig, 2026-11-19: lean-169, close-45,
+// nod-45).
+//   0. the picture the caller draws today (cover: the frame covered), kept where it is enlarged at
+//      most SPEAKER.coverMax (2×), the eyes, nose and mouth of every moment lie inside the frame (a
+//      head whose hair or top the frame cuts while it nods passes; its hull is not held against
+//      it), and it passes, or its one fault is the captions' band on the mouth for at most
+//      SPEAKER.mouthAtMost of the face's time (never on the nose or the eyes): what worked stays as
+//      it was, and a large face is no reason to leave it;
+//   1. the pictures across the frame's full width (the frame covered, a crop over a ground) at 1×
 //      or more (SPEAKER.wideFrom; at the covering scale where a source larger than the frame
-//      covers it below 1×), the caller's cover among them up to 2×, the face nearest the usual
-//      size (weights.subject.to of the frame's height: the upper end of published talking heads),
-//      larger or smaller alike; among equals the caller's cover, then layout's order;
+//      covers it below 1×), the face nearest the usual size (weights.subject.to of the frame's
+//      height: the upper end of published talking heads), larger or smaller alike; among equals
+//      the caller's cover, then layout's order;
+//   2. a picture of 1 whose one fault is the band on the mouth for at most SPEAKER.mouthAtMost of
+//      the face's time, the fewest seconds first, the seconds said in `mouth` and the note (with the
+//      narrower picture that passes, by name): one picture for the whole clip is the caller's, and a
+//      lean of a few seconds is no reason to shrink all of it;
 //   3. a picture narrower than the frame, or the source shrunk below 1× over a ground (an inset,
-//      a band of the whole picture), in the same order: only where nothing of 1 and 2 passes, and
-//      the result says so in a note;
+//      a band of the whole picture), in the same order: only where nothing of 0 to 2 passes, and
+//      the result says so in a note (where the head moves across most of the picture, `drift`);
 //   4. what does not pass, in layout's order (a cover that fails last).
-// Between 2 and 3: a picture of 2 whose one fault is the captions' band on the mouth for at most
-// SPEAKER.mouthAtMost of the face's time, the fewest seconds first, the seconds said in `mouth`
-// and the note (with the narrower picture that passes, by name): one picture for the whole clip
-// is the caller's, and a lean of a few seconds is no reason to shrink all of it.
 // Passing: no hard problem (so never enlarged past enlarge.forbiddenFrom; for the caller's cover the
-// apps' bars over the face do not count) and every need met; with
-// a fixed caption band, captions that lie on the chin or in the margin layout keeps below a face
-// pass too, as long as the band stays below every moment's mouth line (placed.mjs' MOUTH: the
-// lower lip, from the head's proportions).
-// coverFace: a face over 45 % of the frame's height is larger than a speaker's picture needs; it is
-// a judgement (published Shorts keep it at 34 % or less in three of four: the upper quartile, the
-// weights' subject.to), set on screencast-cut's close webcam in 4:5, whose cover at 1.875× held
-// the face at 53 % with the captions on the chin, where the square at 1.5× holds it at 39 %.
-// mouthAtMost: a picture across the width stays whose band lies on the mouth for at most this
-// share of the face's time (a lean in a clip of one picture), before a narrower picture for all of
-// it; decided on screencast-cut's public test, whose lean put the band on the mouth for 3 of a
-// keep's 8.7 s and whose whole webcam at 1.065× with half the frame ground for all of it looked
-// like a television inside the frame.
-export const SPEAKER = { coverFace: 0.45, wideFrom: 0.99, mouthAtMost: 0.5 };
+// apps' bars over the face do not count, nor the face's hull past the frame while its eyes, nose
+// and mouth stay inside) and every need met; with a fixed caption band, captions that lie on the
+// chin or in the margin layout keeps below a face pass too, as long as the band stays below every
+// moment's mouth line (placed.mjs' MOUTH: the lower lip, from the head's proportions).
+// mouthAtMost: the share of the face's time the band may lie on the mouth, counted from the band's
+// top (as high as its lines can be) against each moment's mouth line. The count is too high where
+// the captions take fewer lines than the band holds, or none between phrases: on screencast-cut's
+// public test in 16:9 (every caption one line, its ink from y 840 where the band begins at 772) it
+// said 5.2 of 8.8 s where the render showed 3.5 s; how many lines each caption takes the captions
+// skill does not say. Until it does, two thirds (decided: the inset only where the band lies on
+// the mouth for more than half of a keep by an honest count).
+// coverMax: 2×, the enlargement layout forbids above (weights.enlarge.forbiddenFrom); 1.875× of a
+// 720p webcam is the softness the 4:5 crop has in 9:16, accepted there.
+// drift: where nothing across the width passes because the face's boxes over the clip span at
+// least DRIFT times its usual width, the note says that the head moves across the picture and that
+// a clip cut where it moves gets larger pictures.
+export const SPEAKER = { coverMax: 2, wideFrom: 0.99, mouthAtMost: 2 / 3, drift: 2 };
 
 function pickSpeaker(ctx, res, cover) {
   const { W, H, D } = ctx, main = ctx.sources[0], CA = ctx.captionArea;
   if (main.screen || ctx.sources.length > 1) throw new Error("--pick speaker orders the pictures of one recording with a speaker in it: leave it out for a screen or for two files.");
-  const usual = D.weights.subject.to / 100, keepScale = D.weights.enlarge.softFrom;
+  const usual = D.weights.subject.to / 100, coverMax = Math.min(SPEAKER.coverMax, D.weights.enlarge.forbiddenFrom);
+  const most = SPEAKER.mouthAtMost, mostSaid = Math.abs(most - 2 / 3) < 1e-6 ? "two thirds" : Math.abs(most - 0.5) < 1e-6 ? "half" : `${Math.round(most * 100)} %`;
   // across the width at 1× or more; a source larger than the frame covers it below 1×
   const wideFrom = SPEAKER.wideFrom * Math.min(1, ctx.s0), wideSaid = ctx.s0 < 1 ? `${r2(ctx.s0)}×, the scale that covers the frame,` : "1×";
   const list = res.candidates.map((c, i) => ({ c, n: i + 1 }));
@@ -282,36 +291,54 @@ function pickSpeaker(ctx, res, cover) {
     }
     return { mouth, chin };
   };
+  // the eyes (from BROWS of the head down), the nose and the mouth (to the mouth line) of every
+  // moment inside the frame
+  const featuresIn = (c) => !c.parts && moments.every((b) => {
+    const e = featOf({ box: b }), x0 = c.left + c.scale * e[0], x1 = x0 + c.scale * e[2], y0 = c.top + c.scale * (b[1] + BROWS * b[3]), y1 = c.top + c.scale * (b[1] + MOUTH * b[3]);
+    return x0 >= -0.5 && x1 <= W + 0.5 && y0 >= -0.5 && y1 <= H + 0.5;
+  });
+  // whether the band reaches the nose (or above it) at any moment of a face over it
+  const onNose = (c) => !!CA && !c.parts && moments.some((b) => {
+    const x0 = c.left + c.scale * b[0], x1 = x0 + c.scale * b[2];
+    return !(x1 <= CA.left || x0 >= CA.left + CA.width) && c.top + c.scale * noseOf({ box: b }) > CA.top + 1e-6;
+  });
   const pct0 = (v) => `${Math.round(v * 100)} %`;
   for (const x of list) {
     const c = x.c, face = c.faceHeight / H, low = lowest(c);
     const other = c.unmet.filter((u) => u !== "caption");
     const capOk = !c.unmet.includes("caption") || (low && low.mouth <= CA.top + 1e-6);
-    // (the caller's cover is held to what it promised: at most 2× and the text off the face; the
-    // apps' bars over a head that fills the frame are said, not held against it: a phone's own
-    // take is filmed so, and its caller raises it under the text)
-    const hard = c.problems.filter((q) => q.level === "hard" && !(x.cover && q.code === "covered" && q.kind === "face"));
+    // (the caller's cover is held to what it promised: at most 2×, the eyes, nose and mouth in the
+    // frame and the text off the face; the apps' bars over a head that fills the frame are said,
+    // not held against it: a phone's own take is filmed so, and its caller raises it under the
+    // text; nor is the head's top or hair the frame cuts while the features stay inside)
+    const fin = x.cover && featuresIn(c);
+    x.cut = fin && c.problems.some((q) => q.level === "hard" && q.code === "off-frame" && q.kind === "face");
+    const hard = c.problems.filter((q) => q.level === "hard" && !(x.cover && q.kind === "face" && (q.code === "covered" || (q.code === "off-frame" && fin))));
     x.passes = !hard.length && !other.length && capOk;
     x.wide = !c.parts && c.fit !== "inset" && c.window[0] <= 0.5 && c.window[0] + c.window[2] >= W - 0.5;
     x.off = Math.abs(face - usual);
     x.face = face;
     const capSaid = c.unmet.includes("caption") ? (capOk ? `; the captions ${low.chin > CA.top ? "on the chin" : "in the margin kept below the face"}, clear of the mouth` : low && low.mouth > CA.top ? "; the captions on the mouth, the nose or the eyes" : "") : "";
     const fails = () => `does not pass (${[...hard.map((q) => `${q.of} ${q.what}`), ...other.map((u) => `no place for the ${u}`), ...(capOk ? [] : [low && low.mouth > CA.top ? `the captions' band lies on the mouth, the nose or the eyes (the mouth line at y ${Math.round(low.mouth)}, the band from ${CA.top})` : "no place for the captions"])].join("; ")})`;
-    // the cover outright: crisp and the face not larger than a speaker needs
-    const outright = x.cover && c.scale <= keepScale + 1e-6 && face <= SPEAKER.coverFace + 1e-9;
+    // the cover kept: at most 2× and the eyes, nose and mouth inside the frame at every moment
+    const keeps = fin && c.scale <= coverMax + 1e-6;
     x.big = x.wide && c.scale >= wideFrom;
-    // a picture across the width whose one fault is the band on the mouth for at most half of the
-    // face's time: kept before the narrower pictures, its seconds said (one picture for the clip)
+    // a picture across the width whose one fault is the band on the mouth (never the nose or the
+    // eyes) for at most mouthAtMost of the face's time: kept (the cover) or before the narrower
+    // pictures, its seconds said (one picture for the clip)
     x.mouth = !x.passes && x.big && !hard.length && !other.length && low && low.mouth > CA.top ? onMouth(c) : null;
-    x.partly = !!x.mouth && x.mouth.share <= SPEAKER.mouthAtMost + 1e-9;
-    x.tier = x.passes ? (outright ? 0 : x.big ? 1 : 3) : x.partly ? 2 : 4;
+    x.partly = !!x.mouth && x.mouth.share <= most + 1e-9 && !onNose(c);
+    x.tier = x.passes ? (keeps ? 0 : x.big ? 1 : 3) : x.partly ? (keeps ? 0 : 2) : 4;
     const bars = hard.length < c.hard ? "; the apps' bars lie over the face" : "";
+    const top = x.cut ? "; the frame cuts the head's top at some moments, its eyes, nose and mouth inside at every one" : "";
+    const lean = x.partly ? `but the captions' band lies on the mouth for ${x.mouth.seconds} s of the face's ${x.mouth.of} s (${x.mouth.from}–${x.mouth.to} s), at most ${mostSaid}` : "";
     x.why = x.cover
-      ? (x.partly ? `the frame covered as the caller draws it, enlarged ${c.scale}×, the face ${pct0(face)} of the height, but the captions' band lies on the mouth for ${x.mouth.seconds} s of the face's ${x.mouth.of} s (${x.mouth.from}–${x.mouth.to} s), at most half: kept before the narrower pictures`
+      ? (x.partly && keeps ? `the frame covered as the caller draws it, enlarged ${c.scale}×, the face ${pct0(face)} of the height${top}, ${lean}: it stays for all of it`
+        : x.partly ? `the frame covered as the caller draws it, enlarged ${c.scale}×, the face ${pct0(face)} of the height, ${lean}: kept before the narrower pictures`
         : !x.passes ? `the frame covered as the caller draws it ${fails()}`
-        : outright ? `the frame covered as the caller draws it, enlarged ${c.scale}×, the face ${pct0(face)} of the height, passes${capSaid}${bars}: it stays`
-        : `the frame covered as the caller draws it passes, enlarged ${c.scale}×, the face ${pct0(face)} of the height${capSaid}${bars}; it stays outright only up to ${keepScale}× and a face of ${pct0(SPEAKER.coverFace)}, so it is ranked among the pictures across the frame's width (the usual face ${pct0(usual)})`)
-      : x.partly ? `spans the frame's width, the face ${pct0(face)} of the height, but the captions' band lies on the mouth for ${x.mouth.seconds} s of the face's ${x.mouth.of} s (${x.mouth.from}–${x.mouth.to} s), at most half: kept before the narrower pictures`
+        : keeps ? `the frame covered as the caller draws it, enlarged ${c.scale}×, the face ${pct0(face)} of the height, passes${capSaid}${bars}${top}: it stays`
+        : `the frame covered as the caller draws it passes, enlarged ${c.scale}×, the face ${pct0(face)} of the height${capSaid}${bars}; it is kept outright only up to ${coverMax}× with the eyes, nose and mouth inside the frame at every moment, so it is ranked among the pictures across the frame's width (the usual face ${pct0(usual)})`)
+      : x.partly ? `spans the frame's width, the face ${pct0(face)} of the height, ${lean}: kept before the narrower pictures`
       : !x.passes ? fails()
       : x.big ? `spans the frame's width, the face ${pct0(face)} of the height (the usual ${pct0(usual)})${capSaid}`
       : `${c.fit === "inset" ? `the whole picture ${c.scale < 1 ? "shrunk to" : "at"} ${c.scale}× over a ground` : x.wide ? `spans the frame's width shrunk to ${c.scale}× over a ground` : "narrower than the frame"}, the face ${pct0(face)} of the height${capSaid}: only where nothing across the frame's width at ${wideSaid} or more passes`;
@@ -322,18 +349,25 @@ function pickSpeaker(ctx, res, cover) {
   const out = order.map((x, i) => {
     const c = x.c;
     delete c.behind;
-    c.pick = { place: i + 1, layout: x.n, passes: x.passes, ...(x.cover ? { cover: true } : {}), across: x.wide, tier: x.tier, face: +x.face.toFixed(3), ...(x.mouth ? { mouth: x.mouth } : {}), why: x.why };
+    c.pick = { place: i + 1, layout: x.n, passes: x.passes, ...(x.cover ? { cover: true } : {}), across: x.wide, tier: x.tier, face: +x.face.toFixed(3), ...(x.mouth ? { mouth: x.mouth } : {}), ...(x.partly ? { partly: true } : {}), ...(x.cut ? { headCut: true } : {}), why: x.why };
     return c;
   });
   const first = order[0], nameOf = (c) => `${c.fit}${c.crop ? ` ${c.crop}` : ""}${c.closer ? " closer" : ""}${c.onGround ? ", text on the ground" : ""}`;
-  const note = first.tier === 2 ? (() => {
+  // a head that moves across most of the picture: the pictures across the width fail on the face
+  // (outside the frame, under the apps' buttons), and its boxes span DRIFT times its usual width
+  const track = (main.given || []).find((g) => g.track)?.track;
+  const drift = first.tier === 3 && track && track.hull[2] >= SPEAKER.drift * track.usual[2]
+    && order.some((y) => y.big && !y.passes && y.c.problems.some((q) => q.level === "hard" && q.kind === "face" && ["off-frame", "covered", "cut"].includes(q.code)))
+    ? { from: r2(track.hull[0] / ctx.sw), to: r2((track.hull[0] + track.hull[2]) / ctx.sw), across: r2(track.hull[2] / ctx.sw), usual: r2(track.usual[2] / ctx.sw) } : null;
+  const note = first.partly ? (() => {
       const smaller = order.find((y) => y.tier === 3);
-      return `for a speaker: the first, ${nameOf(first.c)} at ${first.c.scale}× across the frame's width, has the captions' band on the mouth for ${first.mouth.seconds} s of the face's ${first.mouth.of} s (${first.mouth.from}–${first.mouth.to} s), at most half, and is kept for the rest; to give those seconds another picture, cut the clip where they start${smaller ? `, or take ${nameOf(smaller.c)} at ${smaller.c.scale}× (it passes, the face ${pct0(smaller.face)} of the height) for all of it` : ""}`;
+      return `for a speaker: the first, ${nameOf(first.c)} at ${first.c.scale}× across the frame's width, has the captions' band on the mouth for ${first.mouth.seconds} s of the face's ${first.mouth.of} s (${first.mouth.from}–${first.mouth.to} s), at most ${mostSaid}, and is kept for all of it; to give those seconds another picture, cut the clip where they start${smaller ? `, or take ${nameOf(smaller.c)} at ${smaller.c.scale}× (it passes, the face ${pct0(smaller.face)} of the height) for all of it` : ""}`;
     })()
+    : drift ? `for a speaker: the head moves across ${pct0(drift.across)} of the picture's width during the clip (its boxes from ${pct0(drift.from)} to ${pct0(drift.to)} of it, the face itself ${pct0(drift.usual)} wide), so no picture across the frame's full width holds it: the first is ${first.c.fit === "inset" ? `the whole picture ${first.c.scale < 1 ? "shrunk to" : "at"} ${first.c.scale}× over a ground` : `${nameOf(first.c)} ${first.c.scale < 1 ? "shrunk to" : "at"} ${first.c.scale}× over a ground`} (the face ${pct0(first.face)} of the height); cut the clip where the head moves, and each part gets a larger picture`
     : !first.passes ? `for a speaker: nothing passes, so the first is ${nameOf(first.c)} at ${first.c.scale}× (${first.why.replace(/^does not pass \((.*)\)$/, "$1")}): look at its page and give the captions another place, or name a candidate`
     : first.tier === 3 ? `for a speaker: no picture across the frame's full width passes at ${wideSaid} or more, so the first is ${first.c.fit === "inset" ? `the whole picture ${first.c.scale < 1 ? "shrunk to" : "at"} ${first.c.scale}× over a ground` : first.wide ? `${nameOf(first.c)} shrunk to ${first.c.scale}× over a ground` : `${nameOf(first.c)}, narrower than the frame`} (the face ${pct0(first.face)} of the height): look at its page, and where the face is too small there, name a wider candidate below with its problem in mind or give the captions another place`
     : null;
-  return { ...res, pick: { for: "speaker", usual, ...(cover ? { cover: { scale: cover.scale, left: cover.left, top: cover.top } } : {}), first: nameOf(first.c), ...(note ? { note } : {}) }, candidates: out };
+  return { ...res, pick: { for: "speaker", usual, mouthAtMost: r2(most), ...(cover ? { cover: { scale: cover.scale, left: cover.left, top: cover.top } } : {}), first: nameOf(first.c), ...(drift ? { drift } : {}), ...(note ? { note } : {}) }, candidates: out };
 }
 
 // rank, and say why

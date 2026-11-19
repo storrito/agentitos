@@ -182,11 +182,13 @@ export const markOf = (c) => (c.pick ? (c.pick.passes ? (c.soft ? "!" : "✓") :
 // Where a picture across the width has the captions on the mouth for part of a face keep (layout's
 // pick.mouth, in the webcam's seconds: a lean): the seconds, the word to split the keep at (the
 // last word that starts by the time the captions reach the mouth; where they leave it before the
-// keep ends, also the first word after) and the other picture by name. Up to half of the keep the
-// picture across the width stays for all of it (`smaller`: the one that passes, offered); over
-// half the smaller picture stands (`wide`: the one across the width, `chosen`: the smaller). The
+// keep ends, also the first word after) and the other picture by name. Up to layout's limit
+// (`most`, its pick.mouthAtMost: two thirds) the picture across the width stays for all of it
+// (`smaller`: the one that passes, offered); over it the smaller picture stands (`wide`: the one
+// across the width, `chosen`: the smaller); a picture the keep names stays as named (`named`). The
 // tool never changes the picture inside a keep: the split and the other picture are the agent's.
-export function mouthSplit(m, ps, words, offset, { smaller = null, wide = null, chosen = null } = {}) {
+const shareSaid = (v) => (Math.abs(v - 2 / 3) < 0.01 ? "two thirds" : Math.abs(v - 0.5) < 0.01 ? "half" : `${Math.round(v * 100)} %`);
+export function mouthSplit(m, ps, words, offset, { smaller = null, wide = null, chosen = null, named = null, most = 2 / 3 } = {}) {
   const kept = [...new Set(ps.flatMap((p) => p.words || []))].sort((a, b) => a - b).map((i) => words[i]).filter(Boolean);
   const from = m.from + offset, to = m.to + offset;
   const at = kept.filter((w) => w.start <= from + 0.05).at(-1), after = kept.find((w) => w.start >= to + 0.05);
@@ -202,9 +204,12 @@ export function mouthSplit(m, ps, words, offset, { smaller = null, wide = null, 
   const splits = [at && first && at.i > first.i ? quote(at) : null, after && last && after.i <= last.i ? quote(after) : null].filter(Boolean);
   const split = splits.length ? `split the keep at ${splits.join(" and at ")} ("words": ${ranges.map((r) => `"${r}"`).join(", ")})` : "split the keep where the lean begins";
   const seconds = `${m.seconds} s of the keep's ${m.of} s (the webcam's ${m.from}–${m.to} s)`;
-  const said = wide
-    ? `${nameOf(wide)} at ${wide.scale}× across the width has the captions on the mouth for ${seconds}, more than half, so ${nameOf(chosen)} stands for all of it; to keep a picture across the width for the rest, ${split}: the parts without the lean take it by themselves`
-    : `the captions lie on the mouth for ${seconds}, at most half, so the picture across the width stays for all of it; to give those seconds another picture, ${split} and name another picture on the part with the lean${smaller ? `, or name "${nameOf(smaller)}" on the keep for all of it (it passes, the face ${Math.round(smaller.pick.face * 100)} % of the height)` : ""}`;
+  const offer = smaller ? `, or name "${nameOf(smaller)}" on the keep for all of it (it passes, the face ${Math.round(smaller.pick.face * 100)} % of the height)` : "";
+  const said = named
+    ? `the captions lie on the mouth for ${seconds}, ${m.share > most + 1e-9 ? `more than ${shareSaid(most)}` : `at most ${shareSaid(most)}`}, and the keep names ${nameOf(named)}, so it stays for all of it; to give those seconds another picture, ${split} and name another picture on the part with the lean${offer}`
+    : wide
+    ? `${nameOf(wide)} at ${wide.scale}× across the width has the captions on the mouth for ${seconds}, more than ${shareSaid(most)}, so ${nameOf(chosen)} stands for all of it; to keep a picture across the width for the rest, ${split}: the parts without the lean take it by themselves`
+    : `the captions lie on the mouth for ${seconds}, at most ${shareSaid(most)}, so the picture across the width stays for all of it; to give those seconds another picture, ${split} and name another picture on the part with the lean${offer}`;
   return { said, facts: { seconds: m.seconds, of: m.of, from: +from.toFixed(2), to: +to.toFixed(2), ...(ranges.length > 1 ? { split: ranges } : {}), ...(smaller ? { smaller: nameOf(smaller) } : {}) } };
 }
 
@@ -306,19 +311,26 @@ function faceViewOf(dir, cut, pieces, sources, faced, { width, height, words, pl
       if (asked && !named) said.push(`  ! keep ${k + 1}: "layout": "${asked}" is not among the face view's pictures in this frame (${width}×${height}), so it takes the first; its names here: ${[...new Set(list.map(nameOf))].map((n) => `"${n}"`).join(", ")}.`);
       // a picture across the width with the captions on the mouth for part of the keep (a lean):
       // kept for all of it, the seconds said, and where to split the keep to give them another
-      // (where the smaller picture stands because the captions are on the mouth for more than half
-      // of it, the same seconds and split are said for the picture across the width)
+      // (where the smaller picture stands because the captions are on the mouth for more than
+      // layout's limit, two thirds, the same seconds and split are said for the picture across the width)
+      // (a picture the keep names prints its own notes: its seconds on the mouth, not those of the first)
+      const most = res.pick?.mouthAtMost ?? 2 / 3, smaller = list.find((x) => x.pick.tier === 3 && x !== chosen) || null;
       const mouthy = (x) => x.pick.tier === 4 && x.pick.mouth && x.pick.across;
       const wideMouth = !want && chosen.pick.tier === 3 ? list.find((x) => mouthy(x) && x.pick.cover) || list.find(mouthy) : null;
-      const mouth = chosen.pick.tier === 2 && chosen.pick.mouth ? mouthSplit(chosen.pick.mouth, ps, words, cam.offset || 0, { smaller: list.find((x) => x.pick.tier === 3) })
-        : wideMouth ? mouthSplit(wideMouth.pick.mouth, ps, words, cam.offset || 0, { wide: wideMouth, chosen }) : null;
+      const mouth = want && chosen.pick.mouth ? mouthSplit(chosen.pick.mouth, ps, words, cam.offset || 0, { named: chosen, smaller: chosen.pick.passes ? null : smaller, most })
+        : !want && chosen.pick.partly && chosen.pick.mouth ? mouthSplit(chosen.pick.mouth, ps, words, cam.offset || 0, { smaller, most })
+        : wideMouth ? mouthSplit(wideMouth.pick.mouth, ps, words, cam.offset || 0, { wide: wideMouth, chosen, most }) : null;
       const pic = { fit: nameOf(chosen), scale: chosen.scale, left: chosen.left, top: chosen.top, window: chosen.window || [0, 0, width, height], mark: markOf(chosen), face: chosen.pick.face, ...(want ? { named: true } : {}), ...(mouth && !wideMouth ? { mouth: mouth.facts } : {}) };
       for (const p of ps) p.picture = pic;
       const track = res.tracks?.[0];
       const moved = (held && track ? `; the face followed over ${moments.length} moments, its hull ${track.growth.height}× as tall as its usual box` : "")
         + (placed.clamped || placed.outside ? `; ${[placed.clamped ? `${placed.clamped} of its boxes ${placed.clamped === 1 ? "reaches" : "reach"} past the webcam's picture, taken to the part inside it` : "", placed.outside ? `${placed.outside} ${placed.outside === 1 ? "lies" : "lie"} wholly outside it, left out` : ""].filter(Boolean).join(", ")}` : "");
       said.push(`  keep ${k + 1} (${span(k)}): ${markOf(chosen)} ${nameOf(chosen)} at ${chosen.scale}×, the face ${pct(chosen.pick.face)} of the height${ground(chosen)}${want ? " (as the keep names it)" : ""}${moved}${chosen.pick.passes || mouth ? "" : want ? namedFails(chosen, list) : ": nothing passes"}`);
+      // a head that drifts across the webcam (layout's pick.drift): said for the keep
+      const d = res.pick?.drift;
       if (mouth) said.push(`    note: ${mouth.said}`);
+      else if (want) {}
+      else if (d) said.push(`    note: the head moves across ${pct(d.across)} of the webcam's width during the keep (from ${pct(d.from)} to ${pct(d.to)} of it), so no picture across the frame's width holds it: ${nameOf(chosen)} at ${chosen.scale}× over a ground stands for all of it (the face ${pct(chosen.pick.face)} of the height); a keep split where the head moves gets larger pictures: split it at the word where the head goes from one side to the other (\`sheets --keeps ${k + 1}\` shows where)`);
       else if (res.pick?.note) said.push(`    note: ${res.pick.note.replace(/^for a speaker: /, "")}`);
       // the others in short, a failing one with what fails; said once where a keep has the list of the keep before
       const short = (x) => [...(x.hard ? x.problems.filter((q) => q.level === "hard").map((q) => (q.code === "enlarged" ? `enlarged ${x.scale}×` : q.kind === "face" ? "the face under the apps' buttons" : q.what)) : []),

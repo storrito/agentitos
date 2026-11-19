@@ -247,13 +247,12 @@ const placed = (dir, size, moments = faceMoments(CAM)) => {
   return r.res;
 };
 
-test("the face view is in the layout skill's order for a speaker: the frame covered as before where it is the one picture across the width at 1× or more (16:9, the build as main's), else the picture across the frame's width with the face nearest the usual size (4:5: the square at 1.5× before the cover at 1.875×; 9:16: the 4:5 crop at 1.875×, the chin above the captions), the old 2.67× cover last", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+test("the face view is in the layout skill's order for a speaker: the frame covered as before where it passes at 2× at most (16:9 at 1.5×, 4:5 at 1.875× before the square at 1.5×: the builds as main's), else the picture across the frame's width with the face nearest the usual size (9:16: the 4:5 crop at 1.875×, the chin above the captions), the old 2.67× cover last", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-view-"));
   try {
     const sq = placed(dir, "1080x1350").candidates;
-    assert.deepEqual([nameOf(sq[0]), sq[0].scale], ["crop 1:1", 1.5]);
-    assert.ok(sq.findIndex((x) => nameOf(x) === "cover") > 0 && sq.find((x) => nameOf(x) === "cover").pick.passes);
-    for (const size of ["1920x1080"]) {
+    assert.ok(sq.findIndex((x) => nameOf(x) === "crop 1:1" && x.scale === 1.5) > 0 && sq.find((x) => nameOf(x) === "crop 1:1").pick.passes);
+    for (const size of ["1920x1080", "1080x1350"]) {
       const res = placed(dir, size), first = res.candidates[0], old = coverOf(CAM, ...size.split("x").map(Number));
       assert.equal(nameOf(first), "cover", size);
       assert.deepEqual([first.scale, first.left, first.top], [old.scale, old.left, old.top], size);
@@ -271,7 +270,7 @@ test("the face view is in the layout skill's order for a speaker: the frame cove
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a keep whose speaker leans in: with the face followed over the keep the frame covered in 16:9 puts the captions on the mouth and is not taken; the keeps around it keep it", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+test("a keep whose speaker leans in: with the face followed over the keep the frame covered in 16:9 puts the captions on the mouth for part of it, under two thirds, and is kept, marked –; the keeps around it keep it, ✓", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-lean-"));
   try {
     // the public webcam's lean as clips' tracker follows it: the face 95 px lower from 26 to 29 s
@@ -279,8 +278,8 @@ test("a keep whose speaker leans in: with the face followed over the keep the fr
     const lean = keepMoments(followed, 22, 30.7, faceMoments(CAM)), before = keepMoments(followed, 20, 23.5, faceMoments(CAM));
     assert.ok(lean.followed && lean.moments.length > 30 && lean.moments.every((m, i) => i === 0 || m.t > lean.moments[i - 1].t));
     const leaning = placed(dir, "1920x1080", lean.moments), still = placed(path.join(dir, "b"), "1920x1080", before.moments);
-    assert.notEqual(nameOf(leaning.candidates[0]), "cover");
-    assert.ok(/on the mouth/.test(leaning.candidates.find((x) => nameOf(x) === "cover").pick.why));
+    const kept = leaning.candidates[0];
+    assert.ok(nameOf(kept) === "cover" && markOf(kept) === "–" && kept.pick.partly && kept.pick.mouth.share <= 2 / 3 && /on the mouth for [\d.]+ s/.test(kept.pick.why), JSON.stringify(kept.pick));
     assert.equal(nameOf(still.candidates[0]), "cover");
     // outside every followed moment the model's three boxes stand
     assert.deepEqual(keepMoments(followed, 40, 44, faceMoments(CAM)), { moments: faceMoments(CAM), followed: false });
@@ -453,13 +452,71 @@ test("a face keep whose picture across the width has the captions on the mouth f
   const kept = mouthSplit({ seconds: 2.4, of: 8.8, from: 25.9, to: 28.1 }, ps, words, 0.5, { smaller });
   // the mouth from 26.4 to 28.6 s of the recording: split at word 77, the last to start by then
   // (26.2 s), and at word 84, the first to start after the last moment on the mouth (29 s)
-  assert.match(kept.said, /on the mouth for 2\.4 s of the keep's 8\.8 s \(the webcam's 25\.9–28\.1 s\), at most half, so the picture across the width stays/);
+  assert.match(kept.said, /on the mouth for 2\.4 s of the keep's 8\.8 s \(the webcam's 25\.9–28\.1 s\), at most two thirds, so the picture across the width stays/);
   assert.match(kept.said, /split the keep at word 77 \("w77"\) and at word 84 \("w84"\) \("words": "64-76", "77-83", "84-85"\)/);
   assert.match(kept.said, /or name "inset" on the keep for all of it \(it passes, the face 34 % of the height\)/);
   assert.deepEqual(kept.facts, { seconds: 2.4, of: 8.8, from: 26.4, to: 28.6, split: ["64-76", "77-83", "84-85"], smaller: "inset" });
-  // over half: the smaller picture stands, and the split for the picture across the width is said
+  // over two thirds: the smaller picture stands, and the split for the picture across the width is said
   const over = mouthSplit({ seconds: 5.2, of: 8.8, from: 25, to: 30 }, ps, words, 0.5, { wide: { fit: "cover", scale: 1.5 }, chosen: smaller });
-  assert.match(over.said, /^cover at 1\.5× across the width has the captions on the mouth for 5\.2 s .*more than half, so inset stands for all of it; to keep a picture across the width for the rest, split the keep at word 75 \("w75"\) \("words": "64-74", "75-85"\)/);
+  assert.match(over.said, /^cover at 1\.5× across the width has the captions on the mouth for 5\.2 s .*more than two thirds, so inset stands for all of it; to keep a picture across the width for the rest, split the keep at word 75 \("w75"\) \("words": "64-74", "75-85"\)/);
+});
+
+// The pairs the coordinator decided from (2026-11-19, layout-data's rig: lean-169, close-45): the
+// public test's close webcam, its lean keep 5 (20.8–29.5 s of the cut, 22.03–30.87 s of the
+// webcam at 1.02×, words 64–85) as clips' tracker followed it in the pair's build.
+const LEAN5 = [[22.1,496,146,289,348],[22.2,496,146,289,348],[22.4,495,146,289,348],[22.6,495,146,289,348],[22.8,495,146,289,348],[23,496,146,289,348],[23.2,496,146,289,348],[23.4,496,146,289,348],[23.6,496,146,289,348],[23.8,496,146,289,348],[24,496,147,289,348],[24.2,496,152,289,348],[24.4,496,162,289,348],[24.6,496,168,289,348],[24.8,496,178,289,348],[25,501,194,289,348],[25.2,496,209,289,348],[25.4,493,219,289,348],[25.6,493,219,289,348],[25.8,493,229,289,348],[26,488,240,289,348],[26.2,488,240,289,348],[26.4,488,240,289,348],[26.6,488,240,289,348],[26.8,489,241,289,348],[27,489,241,289,349],[27.2,489,241,289,349],[27.4,489,241,289,349],[27.6,489,241,289,349],[27.8,489,242,289,349],[28,489,242,289,349],[28.2,490,242,289,349],[28.4,490,242,289,349],[28.6,490,242,289,349],[28.8,490,243,289,349],[29,490,243,289,349],[29.2,490,233,289,349],[29.4,490,228,289,349],[29.6,491,216,289,349],[29.8,491,206,289,349],[30,491,191,289,349],[30.2,491,181,289,349],[30.4,491,171,289,349],[30.6,491,161,289,349],[30.8,492,152,289,349]].map(([t, ...box]) => ({ t, box }));
+const leanProject = (size) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "face-lean-"));
+  fs.mkdirSync(path.join(dir, "source"));
+  const file = path.join(dir, "source", "webcam.mp4");
+  fs.writeFileSync(file, "a stand-in");
+  const cam = { ...CAM, file: "webcam.mp4", video: true, offset: 0, duration: 45 };
+  const from = faceMoments(cam);
+  fs.writeFileSync(path.join(dir, "source", "webcam.followed.json"), JSON.stringify({ key: followKey({ tool: CLIPS, file, from }), from, moments: LEAN5 }));
+  const area = path.join(dir, "area.json");
+  fs.writeFileSync(area, JSON.stringify(BANDS[size]));
+  // words 64–85 over the keep, every 0.4 s of the webcam from 22.1 s
+  const words = Array.from({ length: 90 }, (_, i) => ({ i, text: `w${i}`, start: 22.1 + (i - 64) * 0.4, end: 22.4 + (i - 64) * 0.4 }));
+  const pieces = () => [{ keep: 0, view: "face", source: "webcam", in: 22.03, out: 30.87, start: 20.8, duration: 8.667, rate: 1.02, words: Array.from({ length: 22 }, (_, k) => 64 + k) }];
+  return { dir, area, words, pieces, sources: { webcam: cam, screen: { video: true, width: 1920, height: 1080, offset: 0 } } };
+};
+
+test("lean-169: the public test's lean keep in 16:9 keeps the cover, marked –, its note naming the seconds on the mouth, the word to split at and the inset by name; named \"cover\", it prints the cover's notes, not layout's note about the inset", { skip: (!LAYOUT || !CLIPS) && "no layout or clips skill beside this one" }, () => {
+  const { dir, area, words, pieces, sources } = leanProject("1920x1080");
+  try {
+    const ps = pieces();
+    const out = faceView(dir, { keep: [{ view: "face" }] }, ps, sources, { width: 1920, height: 1080, words, area }).join("\n");
+    const pic = ps[0].picture;
+    assert.ok(pic.fit === "cover" && pic.scale === 1.5 && pic.mark === "–" && !pic.named && pic.mouth.seconds === 5.2 && pic.mouth.of === 8.8 && pic.mouth.smaller === "inset", JSON.stringify(pic));
+    assert.match(out, /keep 1 \([^)]*\): – cover at 1\.5×, the face 48 % of the height/);
+    assert.match(out, /note: the captions lie on the mouth for 5\.2 s of the keep's 8\.8 s \(the webcam's 25–30 s\), at most two thirds, so the picture across the width stays for all of it; to give those seconds another picture, split the keep at word 71 \("w71"\) and at word 84 \("w84"\) \("words": "64-70", "71-83", "84-85"\) and name another picture on the part with the lean, or name "inset" on the keep for all of it \(it passes, the face 34 % of the height\)/);
+    assert.doesNotMatch(out, /no picture across the frame's full width passes/);
+    // named "cover": the same picture, its own note; layout's note about the first is not printed
+    const named = pieces();
+    const said = faceView(dir, { keep: [{ view: "face", layout: "cover" }] }, named, sources, { width: 1920, height: 1080, words, area }).join("\n");
+    assert.deepEqual({ ...named[0].picture, named: undefined }, { ...pic, named: undefined });
+    assert.ok(named[0].picture.named, JSON.stringify(named[0].picture));
+    assert.match(said, /– cover at 1\.5×.*\(as the keep names it\)/);
+    assert.match(said, /note: the captions lie on the mouth for 5\.2 s .*at most two thirds, and the keep names cover, so it stays for all of it; to give those seconds another picture, split the keep at word 71/);
+    assert.doesNotMatch(said, /note: no picture across|the first is the whole picture/);
+    // named "inset" (it passes, no seconds on its mouth): no note at all
+    const inset = pieces();
+    const quiet = faceView(dir, { keep: [{ view: "face", layout: "inset" }] }, inset, sources, { width: 1920, height: 1080, words, area }).join("\n");
+    assert.ok(inset[0].picture.fit === "inset" && inset[0].picture.named && !inset[0].picture.mouth, JSON.stringify(inset[0].picture));
+    assert.doesNotMatch(quiet, /note:/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("close-45: the public test's close webcam in 4:5 keeps the cover at 1.875× in the lean keep too, as main drew it (the face 48 %), the square second", { skip: (!LAYOUT || !CLIPS) && "no layout or clips skill beside this one" }, () => {
+  const { dir, area, words, pieces, sources } = leanProject("1080x1350");
+  try {
+    const ps = pieces();
+    const out = faceView(dir, { keep: [{ view: "face" }] }, ps, sources, { width: 1080, height: 1350, words, area }).join("\n");
+    const pic = ps[0].picture, main = coverOf(sources.webcam, 1080, 1350);
+    assert.ok(pic.fit === "cover" && pic.scale === main.scale && pic.left === main.left && pic.top === main.top && ["✓", "!"].includes(pic.mark), JSON.stringify([pic, main]));
+    assert.match(out, /also: .*[✓!] crop 1:1 at 1\.5× \(the face 39 %, 20 % ground\)/);
+    assert.doesNotMatch(out, /note:/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 // The review's smaller findings, on its own inputs: its drifting webcam (the head at the top edge,

@@ -1246,50 +1246,98 @@ t("for a speaker: the picture the caller draws today stays where it passes and i
   return out.join(", ");
 });
 
-// An independent review of the order (2026-11-19): in 4:5 the cover of the close webcam passed at
-// 1.875×, a soft enlargement, the face 53 % of the frame's height (by a vision model on the render;
-// 49 % by the webcam's box), the captions on the chin; the square at 1.5× holds it at 39 %. The review's loose webcam (the face 37 % of its height) keeps
-// its cover in 4:5, 37 % against the square's 30 %, and in 9:16 takes the 4:5 crop, 26 %.
+// The review's loose webcam (the face 37 % of its height) keeps its cover in 4:5, 37 % against the
+// square's 30 %, and in 9:16 takes the 4:5 crop, 26 %.
 const LOOSE = [{ t: 15.01, box: [546.6, 92.2, 204.8, 267.8] }, { t: 37.53, box: [545.3, 92.2, 204.8, 264.2] }, { t: 60.05, box: [547.8, 93.6, 203.5, 258.5] }];
-t("for a speaker: the caller's cover is kept outright only up to 1.5× with the face at most 45 % of the height, else it is ranked among the pictures across the width (the review's close webcam in 4:5: the square at 1.5×, 39 %, before the cover at 1.875×, 49 % by its box; its loose one: the cover, 37 %, before the square, 30 %)", () => {
+// The coordinator's decision close-45 (2026-11-19, from picture pairs): the close webcam's cover in
+// 4:5 at 1.875× (the face 49 % by its box, 53 % on the render, the captions on the collar) stays;
+// the square at 1.5× left a dark band above the picture. An independent review had set a limit of
+// 1.5× and a face of 45 %, which took the square.
+t("for a speaker: the caller's cover is kept up to 2× with the eyes, nose and mouth inside the frame, a large face no reason to leave it (close-45: the authors' close webcam in 4:5, the cover at 1.875×, 49 %, before the square at 1.5×, 39 %; the review's loose one: the cover, 37 %, before the square, 30 %; 9:16's cover at 2.67× fails)", () => {
   const close = speak("4:5"), c = close.candidates;
-  ok(pname(c[0]) === "crop 1:1" && c[0].scale === 1.5 && c[0].pick.tier === 1 && Math.abs(c[0].pick.face - 0.39) < 0.01, `${pname(c[0])} at ${c[0].scale}×: ${JSON.stringify(c[0].pick)}`);
-  const cov = c.find((x) => x.pick.cover);
-  ok(cov.pick.passes && cov.pick.tier === 1 && cov.scale === 1.875 && cov.pick.face > 0.45 && /stays outright only up to 1\.5× and a face of 45 %/.test(cov.pick.why), cov.pick.why);
+  ok(c[0].pick.cover && c[0].scale === 1.875 && c[0].pick.tier === 0 && c[0].pick.passes && c[0].pick.face > 0.45 && /: it stays$/.test(c[0].pick.why), `${pname(c[0])} at ${c[0].scale}×: ${JSON.stringify(c[0].pick)}`);
+  ok(close.pick.first === "cover" && !close.pick.note, JSON.stringify(close.pick));
+  const sq = c.find((x) => pname(x) === "crop 1:1");
+  ok(sq && sq.scale === 1.5 && sq.pick.tier === 1 && sq.pick.place > 1 && Math.abs(sq.pick.face - 0.39) < 0.01, JSON.stringify(sq?.pick));
   const loose = (frame, cover) => solve({ zones: askZones(frame), source: [1280, 720], faces: [LOOSE], needs: [], captionArea: SPEAK[frame].band, pick: "speaker", cover });
   const l45 = loose("4:5", SPEAK["4:5"].cover).candidates;
-  ok(l45[0].pick.cover && l45[0].pick.tier === 1 && Math.abs(l45[0].pick.face - 0.37) < 0.01, `${pname(l45[0])}: ${JSON.stringify(l45[0].pick)}`);
-  const sq = l45.find((x) => pname(x) === "crop 1:1");
-  ok(sq && sq.pick.place > l45[0].pick.place && Math.abs(sq.pick.face - 0.30) < 0.01, JSON.stringify(sq?.pick));
+  ok(l45[0].pick.cover && l45[0].pick.tier === 0 && Math.abs(l45[0].pick.face - 0.37) < 0.01, `${pname(l45[0])}: ${JSON.stringify(l45[0].pick)}`);
+  const lsq = l45.find((x) => pname(x) === "crop 1:1");
+  ok(lsq && lsq.pick.place > l45[0].pick.place && Math.abs(lsq.pick.face - 0.30) < 0.01, JSON.stringify(lsq?.pick));
   const l916 = loose("9:16", SPEAK["9:16"].cover).candidates;
-  ok(pname(l916[0]) === "crop 4:5" && Math.abs(l916[0].pick.face - 0.26) < 0.01, `${pname(l916[0])}: ${JSON.stringify(l916[0].pick)}`);
-  // a crisp cover with a usual face is kept outright, before a picture whose face is nearer the usual size
-  const crisp = solve({ zones: askZones("16:9"), source: [1280, 720], faces: [LOOSE], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: SPEAK["16:9"].cover });
-  ok(crisp.candidates[0].pick.cover && crisp.candidates[0].pick.tier === 0 && /: it stays$/.test(crisp.candidates[0].pick.why), JSON.stringify(crisp.candidates[0].pick));
-  return `close 4:5: ${pname(c[0])} ${c[0].scale}× before the cover ${cov.scale}× (place ${cov.pick.place}); loose 4:5: the cover, the square at ${sq.pick.place}; loose 9:16: ${pname(l916[0])}`;
+  ok(pname(l916[0]) === "crop 4:5" && Math.abs(l916[0].pick.face - 0.26) < 0.01 && !l916.find((x) => x.pick.cover).pick.passes, `${pname(l916[0])}: ${JSON.stringify(l916[0].pick)}`);
+  return `close 4:5: the cover ${c[0].scale}× (face ${Math.round(c[0].pick.face * 100)} %), the square at place ${sq.pick.place}; loose 4:5: the cover, the square at ${lsq.pick.place}; loose 9:16: ${pname(l916[0])}`;
+});
+
+// The coordinator's decision nod-45 (2026-11-19): the review's nodding webcam (public NASA footage)
+// in 4:5, its long keep (5.2–44.7 s, the head between y 15 and 178 of 720), keeps the cover at
+// 1.875×: the hair may be cut for the moments of a nod, the eyes, nose and mouth stay inside. Here
+// every fifth of the tracker's moments, and its highest and lowest.
+const NOD = [[5.6,529,104,237,247],[6.6,529,64,237,247],[7.6,529,164,237,247],[8.6,529,64,237,247],[9.6,529,114,237,247],[10.6,529,154,237,247],[11.6,529,44,237,247],[12.6,529,149,237,247],[13.6,529,109,237,247],[14.6,529,64,237,247],[15.6,529,178,237,247],[16.6,528,66,237,248],[17.6,528,114,237,248],[18.6,528,153,236,249],[19.6,527,51,236,249],[20.6,527,154,236,249],[21.6,527,97,236,250],[22.6,536,57,236,250],[23.6,533,151,236,251],[24.6,533,44,236,251],[25.6,532,93,236,251],[26.6,532,121,235,252],[27.6,532,30,235,252],[28.6,532,141,235,253],[29.6,532,95,235,253],[30.6,532,58,235,253],[31.6,531,159,235,254],[32.6,531,54,235,254],[33.6,531,108,235,255],[34.6,531,142,235,255],[35.6,531,41,234,256],[36.6,531,135,234,256],[37.6,530,89,234,256],[38.6,531,48,234,258],[39.6,531,147,234,259],[40.6,531,31,234,260],[41.6,531,90,234,261],[42,532,15,234,262],[42.6,532,119,234,262],[43.6,532,23,234,264],[44.6,536,132,234,265],[45,536,47,234,265]].map(([t, ...box]) => ({ t, box }));
+t("for a speaker: a head that nods keeps the cover, its top cut for those moments, while its eyes, nose and mouth stay in the frame (nod-45: the review's nodding webcam in 4:5, the cover at 1.875× first, the square second); a cover that cuts the eyes is not kept", () => {
+  const nod = solve({ zones: askZones("4:5"), source: [1280, 720], faces: [NOD], needs: [], captionArea: SPEAK["4:5"].band, pick: "speaker", cover: { scale: 1.875, left: -680.4, top: 0 } });
+  const c = nod.candidates;
+  ok(c[0].pick.cover && c[0].scale === 1.875 && c[0].pick.tier === 0 && c[0].pick.passes, `${pname(c[0])} at ${c[0].scale}×: ${JSON.stringify(c[0].pick)}`);
+  ok(pname(c[1]) === "full" || pname(c[1]) === "crop 1:1", c.map(pname).join(", "));
+  // a cover drawn closer (16:9 at 1.8×, 100 px above the frame's top): at the nod's top the head's
+  // box reaches above the frame, its eyes below it: kept, said
+  const nodTop = [{ t: 0, box: [500, 150, 290, 350] }, { t: 1, box: [500, 40, 290, 350] }, { t: 2, box: [500, 150, 290, 350] }];
+  const closer = { scale: 1.8, left: -192, top: -100 };
+  const k = solve({ zones: askZones("16:9"), source: [1280, 720], faces: [nodTop], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: closer });
+  const kc = k.candidates.find((x) => x.pick.cover);
+  ok(kc.problems.some((q) => q.code === "off-frame" && q.kind === "face") && kc.pick.passes && kc.pick.tier === 0 && kc.pick.headCut && /cuts the head's top at some moments, its eyes, nose and mouth inside/.test(kc.pick.why) && k.candidates[0] === kc, JSON.stringify(kc.pick));
+  // higher still: the eyes (15 % of the head down) above the frame's top: not kept
+  const eyes = solve({ zones: askZones("16:9"), source: [1280, 720], faces: [[...nodTop.slice(0, 1), { t: 1, box: [500, 0, 290, 350] }, nodTop[2]]], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: closer });
+  const ec = eyes.candidates.find((x) => x.pick.cover);
+  ok(!ec.pick.passes && ec.pick.tier === 4 && /outside the frame/.test(ec.pick.why) && eyes.candidates[0] !== ec, JSON.stringify(ec.pick));
+  return `nod: the cover ${c[0].scale}×, then ${pname(c[1])}; a closer cover with the hair cut: kept; with the eyes cut: ${pname(eyes.candidates[0])} first`;
 });
 
 // An independent review (2026-11-19): screencast-cut's public test in 16:9, the keep in which the
 // speaker leans in (8.7 s, the face 95 px lower for about 3 s of it, followed by clips' tracker),
 // became the whole webcam at 1.065× with half the frame ground for all of it, while the cover put
-// the captions on the mouth for part of it only. One picture holds a clip: across the width it
-// stays where the band lies on the mouth for at most half of the face's time.
+// the captions on the mouth for part of it only. Decided (lean-169): the picture across the width
+// stays unless the captions lie on the mouth for more than half of the keep by an honest count;
+// the count from the band's top is not one yet, so the limit is two thirds.
 const lean = (full, ramp) => Array.from({ length: 44 }, (_, i) => {
   const t = +(22.1 + i * 0.2).toFixed(1), d = t < full[0] - ramp || t > full[1] + ramp ? 0 : t < full[0] ? (t - full[0] + ramp) / ramp : t > full[1] ? (full[1] + ramp - t) / ramp : 1;
   return { t, box: [496.6, +(146 + 95 * d).toFixed(1), 289.3, 348.5] };
 });
-t("for a speaker: a picture across the width whose one fault is the band on the mouth for at most half of the face's time stays before the narrower pictures, its seconds said, the narrower one that passes named; for more than half the narrower one comes first", () => {
+// the lean keep as clips' tracker followed it in the pair's build (lean-169: keep 5, 22.1–30.8 s of the webcam)
+const LEAN = [[22.1,496,146,289,348],[22.2,496,146,289,348],[22.4,495,146,289,348],[22.6,495,146,289,348],[22.8,495,146,289,348],[23,496,146,289,348],[23.2,496,146,289,348],[23.4,496,146,289,348],[23.6,496,146,289,348],[23.8,496,146,289,348],[24,496,147,289,348],[24.2,496,152,289,348],[24.4,496,162,289,348],[24.6,496,168,289,348],[24.8,496,178,289,348],[25,501,194,289,348],[25.2,496,209,289,348],[25.4,493,219,289,348],[25.6,493,219,289,348],[25.8,493,229,289,348],[26,488,240,289,348],[26.2,488,240,289,348],[26.4,488,240,289,348],[26.6,488,240,289,348],[26.8,489,241,289,348],[27,489,241,289,349],[27.2,489,241,289,349],[27.4,489,241,289,349],[27.6,489,241,289,349],[27.8,489,242,289,349],[28,489,242,289,349],[28.2,490,242,289,349],[28.4,490,242,289,349],[28.6,490,242,289,349],[28.8,490,243,289,349],[29,490,243,289,349],[29.2,490,233,289,349],[29.4,490,228,289,349],[29.6,491,216,289,349],[29.8,491,206,289,349],[30,491,191,289,349],[30.2,491,181,289,349],[30.4,491,171,289,349],[30.6,491,161,289,349],[30.8,492,152,289,349]].map(([t, ...box]) => ({ t, box }));
+t("for a speaker: a picture across the width whose one fault is the band on the mouth (never the nose) for at most two thirds of the face's time stays, the cover for all of it, its seconds said and the narrower one that passes named; for more the narrower one comes first (lean-169: the pair's lean keep in 16:9, 5.2 of 8.8 s by the band's top, the render 3.5 s)", () => {
   const order = (track) => solve({ zones: askZones("16:9"), source: [1280, 720], faces: [track], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: SPEAK["16:9"].cover });
-  const short = order(lean([26.5, 28], 0.5)), c = short.candidates[0];
-  ok(c.pick.cover && c.pick.tier === 2 && !c.pick.passes && c.pick.mouth && c.pick.mouth.share <= 0.5 && c.pick.mouth.seconds > 1.5, JSON.stringify(c.pick));
-  ok(/on the mouth for [\d.]+ s of the face's [\d.]+ s/.test(short.pick.note) && /cut the clip where they start, or take inset at 1\.\d+× \(it passes/.test(short.pick.note), short.pick.note);
-  ok(short.candidates.findIndex((x) => x.fit === "inset") > 0, "the inset after the cover");
-  // about the review's lean as the tracker followed it (on the mouth from 25 to 30 s, 5.2 of 8.8 s; 4.6 s here)
-  const long = order(lean([26, 29], 1.5)), l = long.candidates;
+  const pair = order(LEAN), c = pair.candidates[0];
+  ok(c.pick.cover && c.pick.tier === 0 && c.pick.partly && !c.pick.passes && !c.hard && c.pick.mouth.seconds === 5.2 && c.pick.mouth.of === 8.8 && c.pick.mouth.from === 25 && c.pick.mouth.to === 30, JSON.stringify(c.pick));
+  ok(/on the mouth for 5\.2 s of the face's 8\.8 s \(25–30 s\), at most two thirds, and is kept for all of it/.test(pair.pick.note) && /cut the clip where they start, or take inset at 1\.065× \(it passes, the face 34 % of the height\)/.test(pair.pick.note) && pair.pick.mouthAtMost === 0.67, pair.pick.note);
+  ok(pair.candidates.findIndex((x) => x.fit === "inset") > 0, "the inset after the cover");
+  const short = order(lean([26.5, 28], 0.5));
+  ok(short.candidates[0].pick.cover && short.candidates[0].pick.partly && short.candidates[0].pick.mouth.seconds < 3, JSON.stringify(short.candidates[0].pick));
+  // over two thirds: the lean from 24 to 30.5 s
+  const long = order(lean([24, 30.5], 0.3)), l = long.candidates;
   ok(l[0].fit === "inset" && l[0].pick.tier === 3, `${pname(l[0])}: ${JSON.stringify(l[0].pick)}`);
   const cov = l.find((x) => x.pick.cover);
-  ok(cov.pick.tier === 4 && cov.pick.mouth.share > 0.5, JSON.stringify(cov.pick));
-  return `${short.candidates[0].pick.mouth.seconds} of ${short.candidates[0].pick.mouth.of} s: the cover stays; ${cov.pick.mouth.seconds} of ${cov.pick.mouth.of} s: ${pname(l[0])} at ${l[0].scale}×`;
+  ok(cov.pick.tier === 4 && cov.pick.mouth.share > 2 / 3, JSON.stringify(cov.pick));
+  // a lean that brings the nose into the band, for a moment only: not kept
+  const nose = order(LEAN.map((m) => (m.t === 27 ? { t: 27, box: [489, 330, 289, 349] } : m))), n = nose.candidates.find((x) => x.pick.cover);
+  ok(!n.pick.partly && n.pick.tier === 4 && nose.candidates[0].fit === "inset", JSON.stringify(n.pick));
+  return `the pair's lean: ${c.pick.mouth.seconds} of ${c.pick.mouth.of} s, the cover stays; ${cov.pick.mouth.seconds} of ${cov.pick.mouth.of} s: ${pname(l[0])} at ${l[0].scale}×; the nose in the band: ${pname(nose.candidates[0])}`;
+});
+
+// The coordinator's decision long-916 (2026-11-19): the review's drifting webcam in 9:16, a keep of
+// 39.5 s in which the head drifts across most of the picture: no crop across the width holds it (a
+// fixed crop cuts the face in half), the band stays, and the note says why and that a split keep
+// gets larger pictures.
+t("for a speaker: a head that drifts across most of the picture leaves no picture across the width; the note says that it moves across the picture and that a split clip gets larger pictures (long-916)", () => {
+  const drift = Array.from({ length: 40 }, (_, i) => ({ t: i, box: [+(223 + 552 * (0.5 - 0.5 * Math.cos(i / 6))).toFixed(1), 17, 295, 347] }));
+  const res = solve({ zones: askZones("9:16"), source: [1280, 720], faces: [drift], needs: [], captionArea: BAND916, pick: "speaker", cover: SPEAK["9:16"].cover });
+  const c = res.candidates[0];
+  ok(c.pick.tier === 3 && res.pick.drift && res.pick.drift.across > 0.6, `${pname(c)}: ${JSON.stringify(res.pick)}`);
+  ok(/the head moves across \d+ % of the picture's width during the clip/.test(res.pick.note) && /no picture across the frame's full width holds it/.test(res.pick.note) && /cut the clip where the head moves, and each part gets a larger picture/.test(res.pick.note), res.pick.note);
+  // a head that stays: the note of before
+  const still = solve({ zones: askZones("16:9"), source: [1280, 720], faces: [[540, 330, 200, 300]], needs: [], captionArea: SPEAK["16:9"].band, pick: "speaker", cover: SPEAK["16:9"].cover });
+  ok(!still.pick.drift && /no picture across the frame's full width passes/.test(still.pick.note), still.pick.note);
+  return res.pick.note;
 });
 
 t("for a speaker: where the cover fails (9:16 at 2.67×), the pictures across the frame's width come first, the face nearest the usual size; the inset after them, the failing cover last", () => {
