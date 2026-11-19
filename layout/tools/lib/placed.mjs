@@ -8,6 +8,8 @@
 //
 //   textOverTime({ zones, shots, needs, set, fixed }) → { caption, shots, hook, candidates,
 //       changes, conflicts, notes }
+//   measureOver({ shots, boxes }) → [{ name, box, start, end, seconds, nose, hair, maybe, mouth, lip,
+//       chin, faces, moments }]: texts placed already (the caller's boxes), what they lie on
 //
 // shots: [{ n?, start, end, weight?, picture?: [x, y, w, h], faces: [{ who, track: [{ t, box, feat?, between? }] }],
 //   room?: { free, ground? } | null }]: times in seconds of one clock, boxes in px of the frame
@@ -649,4 +651,44 @@ export function textOverTime({ zones: Z, shots, needs = [], set = {}, fixed = {}
     candidates: candidates.filter((c, i, a) => a.findIndex((d) => d.font === c.font && Math.abs(d.box[1] - c.box[1]) < H * 0.02) === i).slice(0, 5)
       .map((c) => ({ box: c.box, font: c.font, cost: r1(c.cost), seconds: r1(c.touch), lifted: c.per.filter((r) => r.lift > 0).length, liftPx: c.per.reduce((n, r) => n + r.lift, 0), middle: Math.round(((c.box[1] + c.box[3] / 2) / H) * 1000) / 10 })),
   };
+}
+
+// What texts that stand where the caller put them lie on (measure: no place is sought, nothing is
+// raised): for each box of the frame over [start, end) of the shots' clock, per moment (momentsOf,
+// with how long it stands) the faces whose box it overlaps, each with the worst part of it the text
+// reaches (PARTS, as the captions' list counts them; `maybe` where a head known by its box alone
+// may have its eyes there; `beside` where it lies beside the features' width, `boxOnly` where the
+// face has none), and the seconds per part over all, the worst part of a moment counting,
+// and per face. For a caller that weighs the parts by rules of its own (narrated-short: nobody shown
+// speaks, so a mouth may be covered, except of one who talks into the camera): it reads `moments`.
+// boxes: [{ name, box: [x, y, w, h], start?, end? }]
+export function measureOver({ shots, boxes }) {
+  const r2 = (v) => Math.round(v * 100) / 100, r3 = (v) => Math.round(v * 1000) / 1000;
+  const list = shots.map((s, i) => ({ i, moments: momentsOf(s) }));
+  return boxes.map((b) => {
+    const start = b.start ?? -Infinity, end = b.end ?? Infinity;
+    const sum = { seconds: 0, nose: 0, hair: 0, maybe: 0, mouth: 0, lip: 0, chin: 0 }, who = new Map(), moments = [];
+    for (const s of list) for (const m of s.moments) {
+      if (m.t < start || m.t >= end) continue;
+      const on = [];
+      for (const f of m.faces) {
+        if (inter(f.box, b.box) <= 0) continue;
+        const part = PARTS[partOf(f, 0, b.box)], maybe = part === "hair" && inMaybe(f, 0, b.box);
+        // (beside: the text overlaps the head but not the width of its eyes, nose and mouth, an ear
+        // or the side of the head, for a caller that reads that as the hair; boxOnly: no features
+        // given, the eyes taken from the head's proportions)
+        const e = featOf(f), beside = !(Math.min(X1(b.box), X1(e)) - Math.max(b.box[0], e[0]) > 0);
+        on.push({ who: f.who, part, ...(maybe ? { maybe: true } : {}), ...(beside ? { beside: true } : {}), ...(f.feat ? {} : { boxOnly: true }) });
+        const w = who.get(f.who) || { who: f.who, seconds: 0, nose: 0, hair: 0, maybe: 0, mouth: 0, lip: 0, chin: 0 };
+        w.seconds += m.dt; w[part] += m.dt; if (maybe) w.maybe += m.dt;
+        who.set(f.who, w);
+      }
+      if (!on.length) continue;
+      const worst = on.reduce((a, x) => (PARTS.indexOf(x.part) > PARTS.indexOf(a.part) ? x : a));
+      sum.seconds += m.dt; sum[worst.part] += m.dt; if (worst.maybe) sum.maybe += m.dt;
+      moments.push({ t: r3(m.t), dt: r3(m.dt), shot: s.i, on });
+    }
+    const round = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === "number" ? r2(v) : v]));
+    return { name: b.name, box: b.box, ...(Number.isFinite(start) ? { start } : {}), ...(Number.isFinite(end) ? { end } : {}), ...round(sum), faces: [...who.values()].map(round), moments };
+  });
 }

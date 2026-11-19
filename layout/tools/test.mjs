@@ -20,7 +20,7 @@ import { evaluate } from "./lib/evaluate.mjs";
 import { judge, compare } from "./lib/judge.mjs";
 import { renderPage } from "./lib/page.mjs";
 import { alike, solve as solveAny } from "./lib/solve.mjs";
-import { textOverTime, MOUTH, momentsOf } from "./lib/placed.mjs";
+import { textOverTime, MOUTH, momentsOf, measureOver } from "./lib/placed.mjs";
 import { areaOverTime } from "./lib/area.mjs";
 import { askZones, checkPage, chromePath, zonesTool } from "./lib/zones.mjs";
 import { besideSolve } from "./lib/beside.mjs";
@@ -1661,6 +1661,46 @@ console.log("\nText over a placed picture, for a whole clip (text): faces over t
     fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 3, [{ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box, feat })) }])] }));
     const c = cli("text", dir, "--frame", "9:16", "--shots", file, "--caption-y", "1080", "--font-size", "60");
     ok(c.status === 0 && /above the eyes, on the hair or forehead of A's face 0–3 s \(3 s, of them the hair or forehead 3 s/.test(c.stdout) && !/✗/.test(c.stdout), c.stdout + c.stderr);
+  });
+  t("--measure: texts that stand where the caller put them, measured there with the captions' parts (narrated-short's captions and hook): per moment the faces each overlaps with the part, per face, over all the worst part of a moment; the same parts as the list of captions fixed there; a window of seconds; nothing placed, and the command alone or refused in one sentence", () => {
+    const box = [300, 900, 480, 520], feat = [386, 1098, 307, 250];
+    const head = (f, who = "A", dx = 0) => ({ who, track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box: [box[0] + dx, box[1], box[2], box[3]], ...(f ? { feat: [f[0] + dx, f[1], f[2], f[3]] } : {}) })) });
+    const one = (b, f = feat, extra = {}) => measureOver({ shots: [shot(0, 3, [head(f)])], boxes: [{ name: "x", box: b, ...extra }] })[0];
+    const fixedAt = (y, f = feat) => textOverTime({ zones: Z9, shots: [shot(0, 3, [head(f)], null)], needs: cap, fixed: { y, font: 60 } });
+    // the forehead above the brows, the eyes from there, and of the box alone from 15 % of it: as the list says them
+    for (const [y, f] of [[1080, feat], [1100, feat], [1080, null], [976, null], [1400, feat]]) {
+      const r = fixedAt(y, f), on = r.shots[0].on || {}, m = one(r.caption.box, f);
+      ok(["nose", "hair", "mouth", "lip"].every((k) => r2(m[k]) === r2(on[k] || 0)) && m.seconds === 3, `${y} ${f ? "feat" : "box"}: ${JSON.stringify([m, on])}`);
+    }
+    const hair = one([200, 976, 600, 104]);
+    ok(hair.hair === 3 && hair.nose === 0 && hair.moments.length === 31 && hair.moments.every((x) => x.shot === 0 && x.on.length === 1 && x.on[0].who === "A" && x.on[0].part === "hair"), JSON.stringify(hair).slice(0, 400));
+    ok(r2(hair.moments.reduce((n, x) => n + x.dt, 0)) === 3, "the moments' dt add up to the shot");
+    // the band where a box-only head's eyes may begin: the hair, said as maybe
+    ok(one([200, 940, 600, 30], null).maybe === 3, JSON.stringify(one([200, 940, 600, 30], null)));
+    // a window: from 1 s to 2 s; off every face: nothing
+    ok(one([200, 976, 600, 104], feat, { start: 1, end: 2 }).seconds === 1, JSON.stringify(one([200, 976, 600, 104], feat, { start: 1, end: 2 })));
+    const off = one([200, 1500, 600, 80]);
+    ok(off.seconds === 0 && !off.moments.length && !off.faces.length, JSON.stringify(off));
+    // two faces under one text at once: each face its part, the moment once with the worst
+    const two = measureOver({ shots: [shot(0, 3, [head(feat), head([386, 1300, 307, 50], "B", 0)])], boxes: [{ name: "x", box: [200, 1250, 600, 80] }] })[0];
+    ok(two.seconds === 3 && two.nose === 3 && two.faces.length === 2 && two.moments.every((x) => x.on.length === 2), JSON.stringify(two).slice(0, 500));
+    // beside the features' width (the review: a head x 800–1100, features 860–1040, a text ending at
+    // x 840 at eye height): still "nose" in layout's own reading, said as beside for a caller that
+    // reads it otherwise; across them not beside; a head without features said as boxOnly
+    const at = (b, f = [860, 520, 180, 220]) => measureOver({ shots: [shot(0, 1, [{ who: "A", track: [{ t: 0, box: [800, 400, 300, 400], ...(f ? { feat: f } : {}) }] }])], boxes: [{ name: "x", box: b }] })[0].moments[0].on[0];
+    const by = at([0, 560, 840, 80]), over = at([0, 560, 870, 80]), bare = at([0, 560, 870, 80], null);
+    ok(by.part === "nose" && by.beside && !by.boxOnly && over.part === "nose" && !over.beside && bare.boxOnly, JSON.stringify([by, over, bare]));
+    // the command
+    const dir = fs.mkdtempSync(path.join(OUT, "measure-")), file = path.join(dir, "shots.json"), boxes = path.join(dir, "boxes.json");
+    fs.writeFileSync(file, JSON.stringify({ shots: [shot(0, 3, [head(feat)])] }));
+    fs.writeFileSync(boxes, JSON.stringify([{ name: "captions", box: [200, 976, 600, 104] }, { name: "hook", box: [200, 1100, 600, 60], start: 0, end: 1.5 }]));
+    const c = cli("text", dir, "--frame", "9:16", "--shots", file, "--measure", boxes);
+    const got = c.status === 0 && JSON.parse(fs.readFileSync(path.join(dir, "measure.json"), "utf8"));
+    ok(got && got.boxes[0].hair === 3 && got.boxes[1].nose === 1.45 && // (the moments from 0 to 1.4 s: the first stands from the shot's start, 0.05 s)
+       !fs.existsSync(path.join(dir, "text.json")) && /captions x 200–800, y 976–1080: on a face 3 s, the hair or forehead 3 s/.test(c.stdout), c.stdout + c.stderr);
+    sentence(cli("text", dir, "--frame", "9:16", "--shots", file, "--measure", boxes, "--text", "hook"), "--measure with --text");
+    fs.writeFileSync(boxes, JSON.stringify([{ name: "captions", box: [200, 976, 0, 104] }]));
+    sentence(cli("text", dir, "--frame", "9:16", "--shots", file, "--measure", boxes), "--measure with a box of no width");
   });
   t("a head known by its box alone: captions in the band where its eyes may begin (from 6 % of it down: the brows of a head tipped back) are not said plainly as the hair or forehead: the note says its eyes are not known; above that band they are the hair or forehead; with the eyes known there, the eyes (the coordinator's case: a head from 300 to 1600, captions at 372–480)", () => {
     const head = (feat) => ({ who: "A", track: Array.from({ length: 31 }, (_, i) => ({ t: i / 10, box: [240, 300, 600, 1300], ...(feat ? { feat } : {}) })) });

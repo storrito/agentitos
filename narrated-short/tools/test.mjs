@@ -139,7 +139,26 @@ test("build: the music's volume and its lane lay it 17 LU under the voice, --und
 });
 
 // ---------------------------------------------------------------- faces
-import { counted, planWindow, noseZoom, framed, textOn, partsOn, shown, bandOf, sane, looking, talksIn } from "./lib/faces.mjs";
+import { counted, planWindow, noseZoom, framed, onOf, shown, bandOf, sane, looking, talksIn } from "./lib/faces.mjs";
+// What a text lies on is agentitos' layout's measure, run as build runs it: the moments (faces in the
+// frame on the film's clock, as framed gives them) as one shot, the box measured where it stands
+const layoutTool = path.join(here, "..", "..", "layout", "tools", "place.mjs"), layoutHere = fs.existsSync(layoutTool);
+function measured(box, moments, start, end) {
+  const dir = tmp();
+  try {
+    const tracks = new Map();
+    for (const m of moments) for (const f of m.boxes) {
+      if (!tracks.has(f.who)) tracks.set(f.who, { who: f.who, track: [] });
+      tracks.get(f.who).track.push({ t: m.t, box: f.box, ...(f.feat ? { feat: f.feat } : {}) });
+    }
+    const ts = moments.map((m) => m.t), step = moments[0]?.step || 0.1;
+    fs.writeFileSync(path.join(dir, "shots.json"), JSON.stringify({ shots: [{ start: Math.min(...ts), end: Math.max(...ts) + step, faces: [...tracks.values()], room: null }] }));
+    fs.writeFileSync(path.join(dir, "boxes.json"), JSON.stringify([{ name: "t", box, ...(start != null ? { start } : {}), ...(end != null ? { end } : {}) }]));
+    const r = spawnSync(process.execPath, [layoutTool, "text", dir, "--frame", "1080x1920", "--shots", path.join(dir, "shots.json"), "--measure", path.join(dir, "boxes.json")], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(fs.readFileSync(path.join(dir, "measure.json"), "utf8")).boxes[0];
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
 // a person over a beat: one box at every tenth of a second
 const person = (who, box, n = 30) => Array.from({ length: n }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box }));
 const listOf = (...people) => {
@@ -335,28 +354,54 @@ test("faces: in the frame on the film's clock (the source's second through speed
   assert.deepEqual(bandOf({ zoom: 1, size }), [656, 1264]);
   const w = framed({ list: l, place: { frame: "whole", zoom: 1, size }, from: 0, seconds: 2, band: bandOf({ zoom: 1, size }) });
   near(w[0].boxes[0].box[1], 656 + 100 * 1080 / 1280, 1);
-  // a text over the eyes, over the mouth, under the chin
-  const face = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [300, 400, 400, 500] }] }];
-  assert.equal(textOn([200, 500, 600, 100], face).nose, 0.5);
-  assert.equal(textOn([200, 780, 600, 100], face).mouth, 0.5);
-  assert.equal(textOn([200, 830, 600, 100], face).lip, 0.5);
-  assert.equal(textOn([200, 880, 600, 100], face).chin, 0.5);
-  assert.equal(textOn([200, 950, 600, 100], face).seconds, 0);
 });
 
-test("faces: a text on the hair or forehead is not on the eyes or nose (the review: a box ending 100 px above the eyes scored as the nose, weight 100); one reaching down into the eyes is", () => {
-  // no feat: the eyes' top at 38 % of the box, y 590
+test("faces: what a text lies on is layout's answer, weighed by this skill's rules: the worst part of a moment counts, by the beats and the seconds asked; the mouth or lower lip of who talks into the camera in its beat is as hard as the eyes, the same person's in another beat is not", () => {
+  const m = (t, shot, ...on) => ({ t, dt: 0.5, shot, on: on.map(([who, part]) => ({ who, part })) });
+  const answer = { moments: [m(0, 0, ["A", "chin"], ["B", "nose"]), m(0.5, 0, ["A", "hair"]), m(1, 1, ["A", "lip"]), m(1.5, 1, ["A", "mouth"], ["B", "chin"])] };
+  const all = onOf(answer);
+  assert.deepEqual([all.seconds, all.nose, all.hair, all.lip, all.mouth, all.chin, all.talk, all.hard], [2, 0.5, 0.5, 0.5, 0.5, 0, 0, 0.5]);
+  assert.equal(all.cost, 50 + 0.25 + 0.5 + 1);
+  assert.deepEqual([onOf(answer, { shots: [1] }).seconds, onOf(answer, { from: 0.5, to: 1.5 }).seconds], [1, 1]);
+  const talking = onOf(answer, { talks: { 1: "A" } });
+  assert.deepEqual([talking.talk, talking.lip, talking.mouth, talking.hard], [1, 0, 0, 1.5]);
+  assert.equal(onOf(answer, { talks: { 0: "A" } }).talk, 0);
+  // no answer: on nothing
+  assert.equal(onOf(null).seconds, 0);
+});
+
+test("faces: layout's measure as build reads it: the eyes, the mouth, the lower lip, the chin of a head known by its box; the hair or forehead above the model's eyes is not the eyes, a text reaching down into them is", { skip: !layoutHere && "no layout beside" }, () => {
   const face = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [300, 400, 400, 500] }] }];
-  const above = textOn([200, 390, 600, 100], face);
-  assert.deepEqual([above.hair, above.nose, above.seconds], [0.5, 0, 0.5]);
-  assert.equal(above.cost, 0.25);
-  assert.equal(textOn([200, 500, 600, 120], face).nose, 0.5);
-  // the model's eyes, nose and mouth: a text from the head's top to 10 px above the eyes
+  assert.equal(onOf(measured([200, 600, 600, 100], face)).nose, 0.5);
+  assert.equal(onOf(measured([200, 780, 600, 50], face)).mouth, 0.5);
+  assert.equal(onOf(measured([200, 830, 600, 100], face)).lip, 0.5);
+  assert.equal(onOf(measured([200, 880, 600, 100], face)).chin, 0.5);
+  assert.equal(onOf(measured([200, 950, 600, 100], face)).seconds, 0);
   const feat = [{ t: 0, step: 0.1, boxes: [{ who: "Jeanette Epps", box: [540, 84, 210, 272], feat: [558, 180, 165, 140] }] }];
-  assert.equal(textOn([100, 60, 900, 110], feat).hair, 0.1);
-  assert.equal(textOn([100, 60, 900, 130], feat).nose, 0.1);
-  // beside the features (an ear, the side of the head) is the hair's kind, not the eyes
-  assert.deepEqual(partsOn([730, 190, 60, 50], [540, 84, 210, 272], [558, 180, 165, 140]), ["hair"]);
+  const above = onOf(measured([100, 60, 900, 110], feat));
+  assert.deepEqual([above.hair, above.nose, above.cost], [0.1, 0, 0.05]);
+  assert.equal(onOf(measured([100, 60, 900, 130], feat)).nose, 0.1);
+});
+
+test("faces: a head known by its box alone: its eyes begin 15 % down it and may begin from 6 % (layout's border, decided: measure-box-only), not at 38 % as narrated-short's own copy had it; captions whose top is at a quarter of it lie on the eyes, and the seconds say that its eyes are not known", { skip: !layoutHere && "no layout beside" }, () => {
+  const head = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [300, 400, 400, 500] }] }];
+  const quarter = onOf(measured([200, 525, 600, 100], head));
+  assert.deepEqual([quarter.nose, quarter.hair, quarter.unknown, quarter.hard], [0.5, 0, 0.5, 0.5]);
+  // above 15 % the forehead, from 6 % on where the eyes may begin
+  const brow = onOf(measured([200, 440, 600, 30], head));
+  assert.deepEqual([brow.hair, brow.maybe, brow.nose], [0.5, 0.5, 0]);
+});
+
+test("faces: text beside the eyes, nose and mouth (an ear, the side of the head) is the hair's kind, not the eyes, as before the measure was layout's (the review: a head x 800–1100, its features 860–1040, captions ending at x 840 at eye height were 'nose')", { skip: !layoutHere && "no layout beside" }, () => {
+  const head = [{ t: 0, step: 0.5, boxes: [{ who: "A", box: [800, 400, 300, 400], feat: [860, 520, 180, 220] }] }];
+  const side = measured([0, 560, 840, 80], head);
+  assert.deepEqual([side.moments[0].on[0].part, side.moments[0].on[0].beside], ["nose", true]);
+  const o = onOf(side);
+  assert.deepEqual([o.hair, o.nose, o.hard], [0.5, 0, 0]);
+  // across the features: the eyes
+  assert.equal(onOf(measured([0, 560, 870, 80], head)).nose, 0.5);
+  // beside the mouth of one who talks into the camera: the hair too, not the talking mouth
+  assert.equal(onOf(measured([0, 690, 840, 40], head), { talks: { 0: "A" } }).hard, 0);
 });
 
 test("build with faces: a face off the middle moves the fill to it and the hook off it, each said; --no-faces and no faces build the same short; faces of another stretch are left out and said", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs")) && "no layout beside") }, () => {
@@ -514,7 +559,7 @@ test("build with faces: the captions never get smaller for one beat's face, and 
     facesFile(work, src, ["CM S Ingram", person("I", [564, 560, 135, 150], 25)]);
     r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s\) where they stood; .* of 96 px, their size/);
+    assert.match(r.stdout, /the captions: they lay on a face in a \(the eyes or nose [\d.]+ s[^)]*\) where they stood; .* of 96 px, their size/);
     assert.equal(JSON.parse(fs.readFileSync(path.join(comp, "captions", "area.json"), "utf8")).size, size, "the captions keep their size");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -593,6 +638,49 @@ test("build with faces: the hook may lie on hair or a forehead (epps2 stays at t
 // Jeanette Epps' interview (the author's epps2) lower in the picture: in the fill her eyes and nose
 // stay above the captions, her lower lip reaches into them; the model says where she looks
 const talking = (looks, dy = 140) => ["Jeanette Epps", epps(dy)[1].map((m) => ({ ...m, ...(looks ? { looks } : {}) }))];
+// layout's measure gone wrong (decided: measure-fallback): the captions and the hook stand as without
+// faces, and one sentence says that the step needs layout and what failed, in the build's words
+const SAID = /the faces step needs agentitos' layout beside this skill to keep the captions and the hook off the faces, and (.+): they stand as they would without faces/;
+test("faces: layout not found: the sentence says the step needs it and that it is not found", async () => {
+  const { measureFault, measureSaid } = await import("./lib/faces.mjs");
+  for (const said of [measureSaid(measureFault(null)), measureSaid(measureFault("/x/place.mjs", { error: { code: "ENOENT" } }, 120))])
+    assert.equal(said.match(SAID)?.[1], "agentitos' layout is not found beside this skill (nor named by LAYOUT_TOOL)");
+});
+// a build whose hook reaches the eyes (it gets smaller with the measure) with a layout whose measure misbehaves
+function withBadMeasure(mode, env = {}) {
+  const dir = tmp(), fake = path.join(dir, "fake-layout.mjs");
+  fs.writeFileSync(fake, `import { spawnSync } from "node:child_process";
+const a = process.argv.slice(2);
+if (a.includes("--measure")) { if (${JSON.stringify(mode)} === "hang") await new Promise((r) => setTimeout(r, 20000)); console.log("(nonsense)"); process.exit(1); }
+process.exit(spawnSync(process.execPath, [${JSON.stringify(layoutTool)}, ...a], { stdio: "inherit" }).status ?? 1);
+`);
+  const keep = { ...process.env };
+  try {
+    const { work, comp, src, withCaptions } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    cfg.hook = { text: "YEARS OF TRAINING", key: "YEARS" };
+    cfg.beats[0].frame = "fill"; cfg.beats[0].people = true;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    let r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const plain = hookTag(comp);
+    facesWith(work, src, epps(-20));
+    Object.assign(process.env, { LAYOUT_TOOL: fake, ...env });
+    r = withCaptions(comp);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(hookTag(comp), plain);
+    assert.doesNotMatch(r.stdout, /nonsense/);
+    return r.stdout.match(SAID)?.[1];
+  } finally { process.env = keep; fs.rmSync(dir, { recursive: true, force: true }); }
+}
+const badSkip = { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!captionsHere && "no captions beside") || (!layoutHere && "no layout beside") };
+test("build with faces: layout's measure gives no answer in time: the hook stands as without faces (at 104 px, where the measure made it smaller), and the sentence says no answer came", badSkip, () => {
+  assert.equal(withBadMeasure("hang", { NARRATED_SHORT_MEASURE_LIMIT: "2" }), "agentitos' layout gave no answer within 2 s");
+});
+test("build with faces: layout's measure answers what cannot be read: the hook stands as without faces, and the sentence says so, never the tool's own output", badSkip, () => {
+  assert.equal(withBadMeasure("nonsense"), "agentitos' layout gave an answer that could not be read (it ended with exit 1)");
+});
+
 test("faces: a speaker who looks into the camera keeps the mouth clear: it weighs as the eyes under a text, and a fill is raised for it; one who looks aside, or whose faces say nothing of it, keeps the relaxed rule", () => {
   const size = [1280, 720], at = (looks) => counted(listWith(talking(looks)), size, 2.5);
   assert.deepEqual(looking(at("camera"), 2.5), { who: "Jeanette Epps", share: 1 });
@@ -611,8 +699,9 @@ test("faces: a speaker who looks into the camera keeps the mouth clear: it weigh
   const lift = 1920 - raised.box.at[3], mouth = (177 + 140 + 1.15 * 142) * 1920 / 720;
   assert.ok(960 + (mouth - lift - 960) * 1.04 + 24 <= 1238 + 2, `raised ${lift}`);
   // a text on her lower lip: "lip" (weight 1) for a face that does not talk, "talk" (as the eyes) for one that does
-  const m = (talks) => framed({ list: listWith(talking("camera")), place: { frame: "fill", size }, from: 0, seconds: 2.5, talks });
-  const quiet = textOn(CAPTIONS, m(null)), loud = textOn(CAPTIONS, m("Jeanette Epps"));
+  if (!layoutHere) return;
+  const moments = framed({ list: listWith(talking("camera")), place: { frame: "fill", size }, from: 0, seconds: 2.5 }), on = measured(CAPTIONS, moments);
+  const quiet = onOf(on), loud = onOf(on, { talks: { 0: "Jeanette Epps" } });
   assert.ok(quiet.lip > 0 && quiet.hard === 0 && quiet.cost < 10, JSON.stringify(quiet));
   assert.ok(loud.talk > 0 && loud.hard === loud.talk && loud.cost >= 100 * loud.talk, JSON.stringify(loud));
 });
