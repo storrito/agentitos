@@ -519,7 +519,9 @@ function cmdFaces(dir, opts) {
     // the video's words with who speaks, for the model (one voice where the words name none)
     const wf = source(dir, `${kOf(c)}.framing-words.json`);
     fs.writeFileSync(wf, JSON.stringify(words.filter((w) => w.clip === c.n && w.kind === "word").map((w) => ({ text: w.text, start: w.start, end: w.end, speaker: w.speaker ?? "A" }))));
-    const r = spawnSync(process.execPath, [tool, source(dir, c.file), wf, "--aspect", "9:16", "--faces", out, ...(boxes || []).flatMap((b) => ["--face-at", b])], { encoding: "utf8" });
+    // (the frame's shape: where a face is a close-up, the model is asked once more where its head tips)
+    const [fw, fh] = size(settings(dir, {}), c);
+    const r = spawnSync(process.execPath, [tool, source(dir, c.file), wf, "--aspect", `${fw}:${fh}`, "--faces", out, ...(boxes || []).flatMap((b) => ["--face-at", b])], { encoding: "utf8" });
     if (r.status || !fs.existsSync(out)) fail(`✗ ${c.file}: ${(r.stdout || r.stderr).trim().split("\n").pop()}`);
     console.log(`${c.file}: ${r.stdout.trim().split("\n").map((l) => l.replace(/^[^:]*faces\.json: /, "")).join("\n  ")}`);
     cost += read(out).cost || 0;
