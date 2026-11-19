@@ -718,13 +718,14 @@ function cmdPlace(dir, opts) {
       ...(rule.unsure.length ? [`${c.file}: ⚠ the picture changes at ${at(rule.unsure)} and the faces cannot tell whether it is cut there (none on one side, or the same face back only after a long gap): placed as one person's take all the same; where the sheet shows another shot there, clips frames such footage shot by shot (clips' SKILL.md)`] : [])];
     const pf = path.join(folder, `${kOf(c)}.track.json`);
     fs.writeFileSync(pf, JSON.stringify(track));
-    // layout's order for a picture of one speaker, the covering picture among its candidates (its
-    // README: kept where it is at most 2× with the eyes, nose and mouth in the frame); a layout too
-    // old for that order is asked without it, and said
+    // layout's order for a picture of one speaker, without a cover of ours to keep: for a take wider
+    // than the frame the centred cover is nobody's choice (it leaves a person off the middle at the
+    // frame's side; the rig's decision takes-4k-suit, 2026-11-19); a layout too old for that order
+    // is asked without it, and said
     const ask = (speaker) => spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform,
-      ...(speaker ? ["--pick", "speaker", "--cover", `${cover.scale},${cover.left},${cover.top}`] : []), "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+      ...(speaker ? ["--pick", "speaker"] : []), "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
     let r = ask(true);
-    if (r.status && /has no option --(pick|cover)/.test(r.stderr || r.stdout)) r = ask(false);
+    if (r.status && /has no option --pick/.test(r.stderr || r.stdout)) r = ask(false);
     if (r.status) fail(`✗ layout place for ${c.file}: ${(r.stderr || r.stdout).trim()}`);
     const res = JSON.parse(r.stdout);
     // the face's usual height (the median of the track) as each candidate shows it

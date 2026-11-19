@@ -251,13 +251,12 @@ export function knownSeconds(pieces, clips, faces) {
 }
 
 // layout place's candidates of one picture, in the order layout gives for a picture of one speaker
-// (`place --pick speaker --cover …`: the picture covering the frame, centred, kept where it is
-// enlarged 2× at most with the eyes, nose and mouth inside the frame at every moment; else the
-// pictures across the frame's width at 1× or more, the face nearest the usual size; narrower or
-// shrunk ones last; layout's README). Each keeps layout's own number (n, as without the order, so
-// that --picture <number> names the same picture), "cover" being 0, and its face as a share of the
-// frame's height. A layout without that order (an older clone): its own order, the ones that pass
-// first, and `older` says so. → { list: [{ …candidate, n, face, passes }], older }
+// (`place --pick speaker`, no --cover: the pictures across the frame's width at 1× or more, the face
+// nearest the usual size; narrower or shrunk ones last; layout's README). Each keeps layout's own
+// number (n, as without the order, so that --picture <number> names the same picture), "cover" (a
+// caller's cover, which this skill does not give) being 0, and its face as a share of the frame's
+// height. A layout without that order (an older clone): its own order, the ones that pass first,
+// and `older` says so. → { list: [{ …candidate, n, face, passes }], older }
 export function speakerPictures(res, usual, H) {
   const older = !res.pick;
   const list = res.candidates.map((x, i) => ({ ...x, n: x.pick ? (x.pick.cover ? 0 : x.pick.layout) : i + 1, face: x.pick ? x.pick.face : (usual * x.scale) / H, passes: x.pick ? x.pick.passes : !x.hard && !x.unmet.length }))

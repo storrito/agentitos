@@ -513,26 +513,25 @@ test("on its own: faces of a phone's take stored on its side, found before the f
 
 // layout's order for a picture of one speaker (its place --pick speaker --cover), as place asks it
 const layoutPlace = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "layout", "tools", "place.mjs");
-const speakerOrder = (size, box, cover) => {
+const speakerOrder = (size, box) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "takes-pick-")), track = path.join(dir, "track.json");
   fs.writeFileSync(track, JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ t: i / 2, box }))));
-  const r = spawnSync(process.execPath, [layoutPlace, "place", path.join(dir, "01"), "--frame", "1080x1920", "--source", size, "--face-track", track, "--text", "caption", "--text", "hook", "--pick", "speaker", "--cover", cover, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
+  const r = spawnSync(process.execPath, [layoutPlace, "place", path.join(dir, "01"), "--frame", "1080x1920", "--source", size, "--face-track", track, "--text", "caption", "--text", "hook", "--pick", "speaker", "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout);
 };
 
-test("on its own: a wide take's picture is the first of layout's order for a speaker: the 720p interview's 4:5 crop at 1.875× (its cover at 2.67× fails), a 1080p take of the same framing kept covering at 1.78×; each candidate keeps layout's own number, the cover 0", { skip: !fs.existsSync(layoutPlace) && "agentitos' layout skill is not beside this one" }, () => {
+test("on its own: a wide take's picture is the first of layout's order for a speaker, asked without a cover (the centred cover of a wider take is nobody's choice: the rig's takes-4k-suit): the 720p interview's 4:5 crop at 1.875×, a 1080p take of the same framing the 4:5 crop at 1.25×; each candidate keeps layout's own number", { skip: !fs.existsSync(layoutPlace) && "agentitos' layout skill is not beside this one" }, () => {
   // the Epps interview: the model's face 309 px tall in 1280×720
-  const epps = speakerPictures(speakerOrder("1280x720", [541, 52, 223, 308], "2.66667,-1066.7,0"), 308, 1920);
+  const epps = speakerPictures(speakerOrder("1280x720", [541, 52, 223, 308]), 308, 1920);
   assert.equal(epps.older, false);
   assert.deepEqual([epps.list[0].fit, epps.list[0].crop, epps.list[0].scale, epps.list[0].passes], ["crop", "4:5", 1.875, true]);
   assert.ok(Math.abs(epps.list[0].face - 0.301) < 0.002);
-  const cover = epps.list.find((x) => x.n === 0);
-  assert.equal(cover.passes, false, "2.67× is past layout's hard limit");
-  // the same framing at 1920×1080: the covering picture (1.78×) stays
-  const hd = speakerPictures(speakerOrder("1920x1080", [812, 78, 334, 462], "1.77778,-1066.7,0"), 462, 1920);
-  assert.deepEqual([hd.list[0].n, hd.list[0].fit, hd.list[0].passes], [0, "cover", true]);
+  // the same framing at 1920×1080: no cover among the candidates, the 4:5 crop first
+  const hd = speakerPictures(speakerOrder("1920x1080", [812, 78, 334, 462]), 462, 1920);
+  assert.ok(!hd.list.some((x) => x.n === 0));
+  assert.deepEqual([hd.list[0].fit, hd.list[0].crop, hd.list[0].scale, hd.list[0].passes], ["crop", "4:5", 1.25, true]);
   // numbers as layout gives them without the order, so that --picture <number> names the same picture
   assert.deepEqual(hd.list.filter((x) => x.n).map((x) => x.n).sort((a, b) => a - b), hd.list.filter((x) => x.n).map((_, i) => i + 1));
 });
