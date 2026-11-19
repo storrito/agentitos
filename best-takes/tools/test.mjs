@@ -829,3 +829,34 @@ test("sound alone: build writes the cut's voice at −14 LUFS with its words tim
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("another cut of the same recordings: new --like takes the words, levels and copies over, not the other cut's file, title, length or hook", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-like-"));
+  try {
+    const film = path.join(dir, "film"), short = path.join(dir, "short");
+    fs.mkdirSync(path.join(film, "source"), { recursive: true });
+    const clips = { 1: { n: 1, file: "01.mp3", from: "narration.mp3", duration: 6, audio: true, lufs: -24 } };
+    const words = ["One", "line.", "Another", "line."].map((text, i) => ({ i, clip: 1, text, kind: "word", start: 0.5 + i * 0.6, end: 0.9 + i * 0.6 }));
+    fs.writeFileSync(path.join(film, "source", "words.json"), JSON.stringify({ asr: "elevenlabs/scribe-v2", clips, words }));
+    fs.writeFileSync(path.join(film, "source", "01.mp3"), "sound");
+    fs.writeFileSync(path.join(film, "source", "settings.json"), JSON.stringify({ aspect: "source", fps: 30, lang: "en", out: "artifacts/film.m4a", title: "The film", target: 170, hook: "x" }));
+    const tool = path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs");
+    const r = spawnSync(process.execPath, [tool, "new", short, "--like", film, "--target", "59"], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /with their 4 words and levels, the word numbers the same: nothing transcribed again, nothing spent/);
+    assert.match(r.stdout, /--out <its own file or folder>/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(short, "source", "words.json"), "utf8")).words, words);
+    assert.equal(fs.readFileSync(path.join(short, "source", "01.mp3"), "utf8"), "sound");
+    const s = JSON.parse(fs.readFileSync(path.join(short, "source", "settings.json"), "utf8"));
+    assert.equal(s.target, 59);
+    assert.equal(s.lang, "en");
+    for (const k of ["out", "title", "hook", "like"]) assert.equal(s[k], undefined, k);
+    assert.match(fs.readFileSync(path.join(short, "source", "brief.md"), "utf8"), /\[0\]One \[1\]line\./);
+    // the folder it names must hold recordings taken in; a second time is refused as new refuses it
+    const none = spawnSync(process.execPath, [tool, "new", path.join(dir, "other"), "--like", path.join(dir, "nothing")], { encoding: "utf8" });
+    assert.equal(none.status, 1);
+    assert.match(none.stdout, /has no recordings taken in/);
+    const again = spawnSync(process.execPath, [tool, "new", short, "--like", film], { encoding: "utf8" });
+    assert.match(again.stdout, /is in use already/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

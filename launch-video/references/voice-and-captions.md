@@ -27,6 +27,16 @@ speaks every line into `assets/voice/<id>.mp3` and writes each word's time into 
 
 The voice's lines are `<audio>` elements in the root `index.html`, each with an `id`.
 
+## A voice the person recorded
+
+A narration the person read themselves, cut by agentitos' best-takes (its voice alone: `takes/<take>/voice.cut.m4a` with every kept word's time in `takes/<take>/edit.json`), is the film's voice instead of a script spoken by a model: no `script.json`, no `voice`.
+
+```bash
+node <skill>/tools/launch.mjs narration launch/<name> takes/<take>/voice.cut.m4a takes/<take>/edit.json artifacts/<name>/composition
+```
+
+copies the voice into `assets/voice/narration.m4a` (without the file's tags) and writes it into `launch/<name>/voice.json` as one line with every word's time, so that `words`, `captions`, `music`, `level` and `check` take it as they take a spoken line. Place it at the film's start as the line it prints says; every beat starts on the word that says it. A new cut of the narration: `narration` again, then move the beats to the new times.
+
 ## Captions
 
 When there is a voice (most watch muted):
@@ -36,3 +46,5 @@ node <skill>/tools/launch.mjs captions launch/<name> artifacts/<name>/compositio
 ```
 
 puts the voice's words, timed where the root plays them, into `composition/captions/` by agentitos' captions skill, placed for the platforms. Mount the line it prints once, as the root's last child. After moving a line of the voice, run it again: the key words marked before stay marked while the words are the same; `--mark` marks anew.
+
+Where the picture already carries the words being said (the hook's title, a model's name on screen, the call to action), the captions pause: `--pause <from>-<to>,…` in seconds of the film, read off `launch/<name>/words.json`, leaves out every word said in those stretches; the stretches are kept for the next run, `--pause none` takes them out.
