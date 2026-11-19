@@ -65,7 +65,7 @@ import { openrouter } from "./lib/openrouter.mjs";
 import { zones, platformList } from "./lib/zones.mjs";
 import { hookCard, hookUntil, brandOf } from "./lib/hook.mjs";
 import { readFaces, facesAt, toFrame, punchPlan, textOnFaces } from "./lib/faces.mjs";
-import { pieceSpan, clockOf, covering, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
+import { pieceSpan, clockOf, covering, whole, takeKind, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, inkOf, groundStill, placedSheet, framingTool, layoutTool } from "./lib/place.mjs";
 import { brief, shown, overTarget } from "./brief.mjs";
 
 const VALUED = ["out", "title", "lang", "aspect", "fit", "target", "pause", "pauses", "punch", "hook", "loudness", "fps", "order", "model", "style", "product", "brand", "platform",
@@ -626,6 +626,21 @@ function cmdPlace(dir, opts) {
     const want = fixed.picture?.[c.file];
     const sameShape = Math.abs(c.width / c.height - W / H) / (W / H) <= 0.15;
     if (!track.length) { pictures[c.file] = cover; said.push(`${c.file}: no face in what the cut keeps of it: the picture covers the frame, centred`); continue; }
+    // best-takes is for one person's take: footage with cuts in it, two people, or slides and a
+    // screen are said, with the skill made for them, instead of placed badly in silence (the review:
+    // a talk show's 4K cuts became the whole strip at a third of its size, the faces 3–15 % of the
+    // height; a talk's slides were cropped from the middle, the slide and the speaker cut)
+    const kind = takeKind(faces[c.file], pieces, c.n);
+    if (kind.material && want == null) {
+      pictures[c.file] = { ...whole([c.width, c.height], [W, H]), fit: "whole" };
+      said.push(`${c.file}: ✗ shows a slide, a screen or other material for ${kind.material.toFixed(1)} s of what the cut keeps: the picture stays whole, smaller, over its blurred copy (a crop would cut the material); clips frames such footage shot by shot (clips' SKILL.md)`);
+      continue;
+    }
+    if ((kind.shots > 1 || kind.people > 1) && want == null) {
+      pictures[c.file] = cover;
+      said.push(`${c.file}: ✗ ${kind.shots > 1 ? `has ${kind.shots} shots, cut in it` : ""}${kind.shots > 1 && kind.people > 1 ? " and " : ""}${kind.people > 1 ? `shows ${kind.people} people` : ""}: best-takes places one picture for one person's take, so it covers the frame from the middle as before and the text is placed by the faces; clips frames such footage shot by shot, on whoever speaks (clips' SKILL.md). --picture <number> takes one of layout's candidates all the same`);
+      continue;
+    }
     const pf = path.join(folder, `${kOf(c)}.track.json`);
     fs.writeFileSync(pf, JSON.stringify(track));
     const r = spawnSync(process.execPath, [tool, "place", path.join(folder, kOf(c)), "--frame", `${W}x${H}`, "--source", `${c.width}x${c.height}`, "--face-track", pf, ...needs, ...platform, "--json"], { encoding: "utf8", maxBuffer: 64 << 20 });

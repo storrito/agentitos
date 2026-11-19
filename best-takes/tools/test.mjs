@@ -415,7 +415,7 @@ test("a face that fills the frame already (its box half the frame's height or mo
 });
 
 // ------------------------------------------------------------------- on its own: faces, picture, text
-import { covering, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
+import { covering, whole, takeKind, inFrame, faceTrack, facesFault, rankPictures, knownSeconds, shotsInput, hookSpan, toCut, clockOf, pieceSpan, roomBelow } from "./lib/place.mjs";
 import { pieceStyle } from "./lib/composition.mjs";
 
 test("on its own: a video of the frame's shape covers it as it is; a wide one is drawn where its placement puts it, a face's box with it, raised by its lift", () => {
@@ -526,4 +526,20 @@ test("on its own: faces that miss most of the cut are counted, so that place and
   const half = { "01.mp4": { faces: Array.from({ length: 30 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) } };
   assert.ok(Math.abs(knownSeconds(pieces, clips, half) - 3) < 0.25);
   assert.equal(knownSeconds(pieces, clips, { "01.mp4": { faces: [] } }), 0);
+});
+
+test("on its own: footage with cuts in it, two people, or slides is told apart from one person's take over the seconds the cut keeps (the review: talk-show cuts became a strip at a third of its size, a talk's slides were cropped from the middle)", () => {
+  const pieces = [{ clip: 1, in: 0, out: 10 }];
+  const one = { shots: [{ start: 0, end: 20, kind: "people" }], faces: Array.from({ length: 100 }, (_, i) => ({ t: i / 10, boxes: [{ box: [0, 0, 10, 10] }] })) };
+  assert.deepEqual(takeKind(one, pieces, 1), { shots: 1, people: 1, material: 0 });
+  const cuts = { ...one, shots: [{ start: 0, end: 4, kind: "people" }, { start: 4, end: 8, kind: "people" }, { start: 8, end: 20, kind: "people" }] };
+  assert.equal(takeKind(cuts, pieces, 1).shots, 3);
+  // a cut in a stretch the cut leaves out does not count
+  assert.equal(takeKind(cuts, [{ clip: 1, in: 9, out: 12 }], 1).shots, 1);
+  const two = { ...one, faces: one.faces.map((f, i) => (i % 3 ? f : { ...f, boxes: [...f.boxes, { box: [50, 0, 10, 10] }] })) };
+  assert.equal(takeKind(two, pieces, 1).people, 2);
+  const slides = { ...one, shots: [{ start: 0, end: 6, kind: "broll" }, { start: 6, end: 20, kind: "people" }] };
+  assert.equal(takeKind(slides, pieces, 1).material, 6);
+  // the whole picture, centred
+  assert.deepEqual(whole([1920, 1080], [1080, 1920]), { scale: 0.5625, left: 0, top: 656.3 });
 });

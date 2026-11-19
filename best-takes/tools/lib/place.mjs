@@ -71,6 +71,24 @@ export function covering([sw, sh], [W, H]) {
   return { scale: +scale.toFixed(5), left: +((W - sw * scale) / 2).toFixed(1), top: +((H - sh * scale) / 2).toFixed(1) };
 }
 
+// the whole picture inside the frame, centred (slides, a screen: nothing of it cut)
+export function whole([sw, sh], [W, H]) {
+  const scale = Math.min(W / sw, H / sh);
+  return { scale: +scale.toFixed(5), left: +((W - sw * scale) / 2).toFixed(1), top: +((H - sh * scale) / 2).toFixed(1) };
+}
+
+// What a video is, over the seconds the cut keeps of it, as its faces file knows: how many shots
+// (cut in the footage), how many people at once (two or more in a fifth of its moments), and how many
+// seconds of material (slides, a screen, a photo: a shot the framing called other than people)
+export function takeKind(list, pieces, n) {
+  const kept = pieces.filter((p) => p.clip === n);
+  const over = (s) => kept.reduce((t, p) => t + Math.max(0, Math.min(p.out, s.end) - Math.max(p.in, s.start)), 0);
+  const shots = (list?.shots || []).filter((s) => over(s) > 0.3);
+  const moments = (list?.faces || []).filter((f) => kept.some((p) => f.t >= p.in && f.t <= p.out));
+  const two = moments.filter((f) => f.boxes.length > 1).length;
+  return { shots: shots.length, people: moments.length && two >= 0.2 * moments.length ? Math.max(...moments.map((f) => f.boxes.length)) : 1, material: shots.filter((s) => s.kind && s.kind !== "people").reduce((t, s) => t + over(s), 0) };
+}
+
 // a box of the video [x, y, w, h] in px of the frame, the picture drawn at its scale, its corner
 // at left, top, raised by lift
 export function inFrame(b, pic) {
