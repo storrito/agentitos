@@ -23,8 +23,13 @@ else
     [ "$try" -lt 3 ] && { echo "::warning::Ubuntu's mirrors failed (try $try of 3): again in 30 s."; sleep 30; }
   done
   [ -n "$ok" ] || { echo "::error::$DEBS could not be installed: Ubuntu's mirrors failed three times."; exit 1; }
-  rm -rf "$dir" && mkdir -p "$dir" && cp /var/cache/apt/archives/*.deb "$dir"/
-  echo "$(ls "$dir"/*.deb | wc -l) packages from Ubuntu's mirrors, kept for the cache"
+  # the set anew: what the mirrors sent now over what the cache brought (the mirrors send only
+  # what was still missing), without a file dpkg cannot read
+  shopt -s nullglob; sent=(/var/cache/apt/archives/*.deb)
+  mkdir -p "$dir" && { [ ${#sent[@]} -eq 0 ] || cp "${sent[@]}" "$dir"/; }
+  for f in "$dir"/*.deb; do dpkg-deb -I "$f" > /dev/null 2>&1 || rm -f "$f"; done
+  kept=("$dir"/*.deb)
+  echo "${#kept[@]} packages kept for the cache, ${#sent[@]} of them from Ubuntu's mirrors"
   echo "fresh=true" >> "$out"
 fi
 ffmpeg -hide_banner -version | sed -n 1p
