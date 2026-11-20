@@ -34,12 +34,14 @@ Say in one sentence that you are working on the sound. Then
 
 ```bash
 node <skill>/tools/voice.mjs clean uploads/<file> artifacts/<name>.m4a --before artifacts/<name>-before.m4a [--for <platform…>]
-node <skill>/tools/voice.mjs clean uploads/<video> artifacts/<name>.mp4 --before artifacts/<name>-before.m4a [--for <platform…>]   # the picture kept as it is
+node <skill>/tools/voice.mjs clean uploads/<video> artifacts/<name>.<its ending> --before artifacts/<name>-before.m4a [--for <platform…>]   # the picture kept as it is
 ```
+
+A video's output keeps the upload's own ending (`IMG_0042.MOV` → `artifacts/<name>.mov`, `clip.webm` → `artifacts/<name>.webm`): the picture is copied into the same kind of file, and another ending is refused.
 
 The tool measures the recording, mends what the numbers give a reason for and nothing else, and prints each step with its reason, the numbers before and after, and what it could not mend. A recording with nothing wrong gets a high-pass under the voice and its loudness, its peaks held to fit. `--before` writes the sound as it was, brought to the result's loudness, so that the two can be compared: louder always sounds better, and a comparison at two levels says nothing.
 
-`--for` takes the platforms' names as platform-zones has them (`reels`, `tiktok`, `shorts`, `youtube`, `linkedin`, …) and `podcast`; without it the master for video (`targets` below). A video keeps its picture in its own kind of file (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`). When the line says the video has several audio streams, the first was taken: `--audio <n>` takes another.
+`--for` takes the platforms' names as platform-zones has them (`reels`, `tiktok`, `shorts`, `youtube`, `linkedin`, …) and `podcast`; without it the master for video (`targets` below). A video keeps its picture in its own kind of file (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`). When the line says the video has several audio streams, the first was taken: `--audio <n>` takes another. Where the refusal says no voice was found and names `--audio`, run it again with that `--audio <n>` before you ask anything: the voice is often in the second stream.
 
 It refuses, in one sentence, a recording in which it finds no voice or under half a second of one, and a voice so quiet that little of it stands over the floor of its recording (more than 70 dB under the platforms' loudness). Pass the reason on in their words and ask for the recording they meant, or for one made closer to the microphone or with the recorder's input turned up; do not try to get round it (a lower `--loudness` does not: the bound is the recording's own level). A voice recorded very low but over that bound comes out at the target, and its line says that it was very low and that its noise and its room came up with it: pass that on as it is, with how to record it next time.
 
@@ -85,7 +87,8 @@ Run `clean` again on the upload (never on a result) with the option, and show bo
 | --- | --- |
 | watery, tinny, robotic, "under water", syllables swallowed | `--denoise gentle`; still so: `--denoise off` |
 | still noisy | `--denoise strong`, once: the noise step then runs even where the numbers named no noise, and may take up to 24 dB off with the denoiser (18 with ffmpeg alone) instead of 18 (12). Say that it may cost the voice some of its body |
-| still noisy after `strong`, or its line says the noise stays, or that the denoiser's result was thrown away because it took the voice down too, or the noise before → after did not move | nothing more here: say plainly that this recording's noise cannot be taken out further with this tool, and how to record it next time (closer to the microphone, a quieter room). Never run it again with another option to try, never promise that more is possible |
+| still noisy after `strong`, or the noise before → after did not move | nothing more here: say plainly that this tool took out of this recording's noise what it could, and how to record it next time (closer to the microphone, a quieter room). Never run it again with another option to try, never promise that more is possible |
+| what is left says "The neural denoiser took this voice for noise …" | pass on what that line says, in their words: the better noise method would have taken part of the voice with the noise, so its result was not used and the simpler method did the noise this time. Say nothing more than that line does: neither that the noise cannot be taken out at all, nor that another run would take it out |
 | "that is not my voice", too sharp, too dull | `--tone off` |
 | it pumps, it breathes, too flat, "like the radio" | `--level plain`: as loud, with the recording's own dynamics (no evening out of its phrases) |
 | too loud, too quiet beside other videos | `--loudness <LUFS>` (a platform's own figure: `targets`) |

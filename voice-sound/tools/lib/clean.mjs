@@ -207,28 +207,46 @@ function numbers(m) {
 // 48 kHz, as many channels as the output (one channel on both sides, or a mix of more), without
 // tags, sound only. A limiter (as level's: oversampled, look-ahead taken back) only when the gain
 // would push its peaks over what a check accepts; then it is not quite untouched: `limited` and
-// `peaksHeldDb` say so, and the line. The gain corrected until within 0.3 LU (three times at most).
-// → { gainDb, limited, peaksHeldDb, lufs, truePeak }
-async function comparison(src, dest, { lufs, channels, srcChannels, codec, T }) {
+// `peaksHeldDb` say so, and the line. Measured as the output was levelled: where the level stage
+// turned knocks down, with their stretches (`cut`) left out of the loudness on both sides, since
+// the comparison keeps them as they came. The file is measured after it is written, the gain
+// corrected until within 0.3 LU and the limiter's ceiling lowered until its true peak after the
+// encoding is under what a check accepts, both in each write, six writes at most; the nearest
+// kept, and the line says its own numbers.
+// → { gainDb, limited, peaksHeldDb, lufs, truePeak, matched: "whole" | "voice", aimLufs, ceilingDb, writes }
+const COMPARISON_WRITES = 6;
+async function comparison(src, dest, { lufs, channels, srcChannels, codec, T, cut = null, tmp }) {
+  const bestFile = path.join(tmp, `before-best${path.extname(dest)}`);
   const chan = channels === 1 ? (srcChannels === 1 ? "anull" : "aformat=channel_layouts=mono")
     : srcChannels === 1 ? "pan=stereo|c0=c0|c1=c0" : srcChannels === 2 ? "anull" : "aformat=channel_layouts=stereo";
   // (float first: a filter fed 16 bits may work in 16 bits and round a quiet voice again)
   const base = `aformat=sample_fmts=fltp,${chan},aresample=48000`;
-  const was = await loudnessAt(src, base);
+  const was = await loudnessAt(src, cut ? `${base},${cut}` : base), wasPeak = cut ? (await loudnessAt(src, base)).truePeak : was.truePeak;
   if (was.lufs == null || lufs == null) throw new LevelError("could not measure the source's loudness for --before.");
-  let gain = lufs - was.lufs, limited = was.truePeak != null && was.truePeak + gain > T.peakAccepted, got;
-  for (let pass = 0; pass < 4; pass++) {
+  let gain = lufs - was.lufs, limited = wasPeak != null && wasPeak + gain > T.peakAccepted, ceiling = T.truePeak, best = null, writes = 0;
+  for (;;) {
     const af = [base, `volume=${gain.toFixed(2)}dB`];
-    if (limited) af.push(`aresample=${LIMITER.rate}`, `alimiter=limit=${(10 ** (T.truePeak / 20)).toFixed(6)}:attack=${LIMITER.attack}:release=${LIMITER.release}:level=disabled:latency=1`, "aresample=48000");
+    if (limited) af.push(`aresample=${LIMITER.rate}`, `alimiter=limit=${(10 ** (Math.max(-24, ceiling) / 20)).toFixed(6)}:attack=${LIMITER.attack}:release=${LIMITER.release}:level=disabled:latency=1`, "aresample=48000");
     const w = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", src, "-map", "0:a:0", "-vn", "-af", af.join(","), "-map_metadata", "-1", "-map_chapters", "-1", "-ar", "48000", ...codec, dest]);
     if (w.status !== 0) throw new LevelError(`ffmpeg could not write the sound before: ${lastLine(w.stderr)}`);
-    got = await loudness(dest);
-    if (!limited && got.truePeak != null && got.truePeak > T.peakAccepted) { limited = true; continue; }
-    if (got.lufs == null || Math.abs(got.lufs - lufs) <= 0.3) break;
-    gain += lufs - got.lufs;
+    writes++;
+    const whole = await loudness(dest), got = cut ? { ...(await loudness(dest, cut)), truePeak: whole.truePeak } : whole;
+    const off = got.lufs == null ? 0 : got.lufs - lufs, over = got.truePeak == null ? 0 : got.truePeak - T.peakAccepted;
+    // (the nearest: never over what a check accepts, then the loudness)
+    const key = [over > 0 ? 1 : 0, Math.abs(off)];
+    const now = { key, got, gain, limited, ceiling, write: writes };
+    if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1])) { best = now; fs.copyFileSync(dest, bestFile); }
+    if ((Math.abs(off) <= 0.3 && over <= 0) || writes === COMPARISON_WRITES) break;
+    // both corrections in the same write: the ceiling for the peak, the gain for the loudness
+    if (over > 0) { if (!limited) limited = true; else ceiling -= got.truePeak - T.truePeak + 0.1; }
+    if (Math.abs(off) > 0.3) gain -= off;
   }
-  const held = limited && was.truePeak != null && got.truePeak != null ? Math.max(0, was.truePeak + gain - got.truePeak) : null;
-  return { gainDb: +gain.toFixed(2), limited, peaksHeldDb: held == null ? null : +held.toFixed(1), lufs: got.lufs, truePeak: got.truePeak };
+  if (best.write !== writes) fs.copyFileSync(bestFile, dest);
+  fs.rmSync(bestFile, { force: true });
+  const g = best.got;
+  const held = best.limited && wasPeak != null && g.truePeak != null ? Math.max(0, wasPeak + best.gain - g.truePeak) : null;
+  return { gainDb: +best.gain.toFixed(2), limited: best.limited, peaksHeldDb: held == null ? null : +held.toFixed(1), lufs: g.lufs, truePeak: g.truePeak,
+    matched: cut ? "voice" : "whole", aimLufs: lufs, ceilingDb: best.limited ? +best.ceiling.toFixed(2) : null, writes };
 }
 
 // what dead runs left: older than a day, beside an output or in the system's temp directory
@@ -350,8 +368,13 @@ export async function clean(file, out, opts = {}, stages = null) {
     try { m = await measureOf(src, "before"); } catch (e) { throw named(e); }
     const voiceS = m.speech?.seconds ?? 0;
     const what = src === fileAbs ? f.name : `${f.name}'s ${nth(o.audio)} audio stream`;
-    if (m.voice?.found === false) refuse(`measure finds no voice in ${what} (${String(m.voice.why || "nothing in it is speech").replace(/\.$/, "")}): there is nothing to mend or bring to a loudness, and raising it would only raise its noise.`);
-    if (!voiceS) refuse(`measure finds no voice in ${what} (its level never rises far enough over its floor): there is nothing to mend or bring to a loudness, and raising it would only raise its noise.`);
+    // (a file with more audio streams: the voice may be in another, and the sentence says how to take it)
+    const others = nAudio > 1 ? [...Array(nAudio).keys()].map((i) => i + 1).filter((i) => i !== o.audio) : [];
+    const noVoice = (why) => refuse(`measure finds no voice in ${what} (${why}): ${others.length
+      ? `${f.name} has ${nAudio} audio streams, and the voice may be in another: --audio ${others[0]} takes the ${nth(others[0])}${others.length > 1 ? ` (the others: ${others.join(", ")})` : ""}.`
+      : "there is nothing to mend or bring to a loudness, and raising it would only raise its noise."}`);
+    if (m.voice?.found === false) noVoice(String(m.voice.why || "nothing in it is speech").replace(/\.$/, ""));
+    if (!voiceS) noVoice("its level never rises far enough over its floor");
     if (voiceS < MIN_VOICE_S) refuse(`measure finds only ${voiceS.toFixed(1)} s of voice in ${what}, under the ${MIN_VOICE_S} s clean needs to measure a voice's loudness: give it a longer recording.`);
     // the loudness it came in at, as played (a file with one channel plays on both speakers)
     const srcLufs = lufsOrNull(m.loudness?.integratedLufs);
@@ -399,7 +422,11 @@ export async function clean(file, out, opts = {}, stages = null) {
     // 7. the untouched sound beside it, as loud as the output, to compare by ear
     let before = null;
     if (o.before != null) {
-      before = await comparison(src, beforePart, { lufs: lv.delivered.lufs, channels: o.mono ? 1 : 2, srcChannels: chosen.channels ?? f.channels, codec: bfmt.codec, T });
+      // (where knocks were turned down in the output and stay as they came in the comparison, both
+      // are matched on the voice: the knocks' stretches left out of the loudness)
+      const kn = lv.steps.find((s) => s.id === "bursts" && s.at?.length && s.voiceLufs != null);
+      const cut = kn ? `aselect='not(${kn.at.map((x) => `between(t,${x.from.toFixed(3)},${x.to.toFixed(3)})`).join("+")})',asetpts=N/SR/TB` : null;
+      before = await comparison(src, beforePart, { lufs: kn ? kn.voiceLufs : lv.delivered.lufs, channels: o.mono ? 1 : 2, srcChannels: chosen.channels ?? f.channels, codec: bfmt.codec, T, cut, tmp: work });
       before.file = rel(beforeAbs);
     }
     const stage = (name, xs) => (xs || []).map((s) => ({ stage: name, ...s }));
@@ -475,9 +502,13 @@ export function lines(r) {
   out.push(`Targets: ${f1(T.lufs)} LUFS as played on two speakers${mono ? ` (the one channel ${f1(T.measuredLufs)} LUFS as ffmpeg measures it)` : ""}, true peak ${f1(T.truePeak)} dBTP after the encoding (a check accepts ${f1(T.peakAccepted)}), range ${T.rangeLu} LU or under; ${T.from}${T.overridden?.length ? `, ${T.overridden.join(" and ")} as asked` : ""}.`);
   if (r.before) {
     const g = r.before.gainDb, B = r.before;
-    out.push(`To compare by ear: ${B.file}, the recording as it was but for ${g >= 0 ? "+" : ""}${f1(g)} dB, as loud as the output (${f1(B.lufs)} LUFS)` +
-      (B.limited ? `. Its peaks were held by a limiter to be that loud (${B.peaksHeldDb != null ? `${f1(B.peaksHeldDb)} dB off the loudest, ` : ""}under ${f1(T.truePeak)} dBTP), so it is not quite untouched` : "") +
-      ": both play equally loud, so neither wins by being louder.");
+    // (every number here is the written file's, measured after it was written)
+    const voice = B.matched === "voice", off = B.lufs != null && B.aimLufs != null ? B.lufs - B.aimLufs : 0, near = Math.abs(off) <= 0.3;
+    out.push(`To compare by ear: ${B.file}, the recording as it was but for ${g >= 0 ? "+" : ""}${f1(g)} dB, ` +
+      (near ? `as loud as the output${voice ? "'s voice" : ""} (${f1(B.lufs)} LUFS${voice ? ", the knocks' stretches left out of both, since it keeps them as they came" : ""})`
+        : `${f1(Math.abs(off))} LU ${off < 0 ? "under" : "over"} the output${voice ? "'s voice" : ""} (${f1(B.lufs)} against ${f1(B.aimLufs)} LUFS${voice ? ", the knocks' stretches left out" : ""})`) +
+      (B.limited ? `. Its peaks were held by a limiter to be that loud (${B.peaksHeldDb != null ? `${f1(B.peaksHeldDb)} dB off the loudest, ` : ""}its true peak ${f1(B.truePeak)} dBTP), so it is not quite untouched` : `; its true peak ${f1(B.truePeak)} dBTP`) +
+      (near ? ": both play equally loud, so neither wins by being louder." : ": it could not be made as loud with its peaks under the ceiling, so the louder one may win by that."));
   }
   out.push(`Beside it: ${r.output}.json (what was measured, done and left). Measured, not heard: say so.`);
   return out;
