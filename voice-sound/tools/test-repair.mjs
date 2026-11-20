@@ -154,6 +154,12 @@ test("plan: each finding alone gives its step and no other", () => {
   assert.equal(so.fundamentalHz, 50.963);
   assert.match(so.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady in the pauses \(up to 27 dB over the noise beside it\): notched at 50\.96, 101\.93 Hz, each 2 Hz wide at its −3 dB points\.$/);
   assert.doesNotMatch(so.why, /taken out|gone|removed/);
+  // hum judged over the whole recording (measure's long windows, where the pauses are too few):
+  // the step says so, never "in the pauses"
+  const whole = repairPlan(made({ hum: { ...off, from: "whole" }, findings: [finding("hum")] })).steps.find((s) => s.id === "dehum");
+  assert.match(whole.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady through the whole recording, under the voice too \(too little pause to judge it there alone\) \(up to 27 dB/);
+  assert.equal(whole.judgedFrom, "whole");
+  assert.match(repairPlan(made({ hum: { ...off, from: "pauses" }, findings: [finding("hum")] })).steps.find((s) => s.id === "dehum").why, /steady in the pauses \(/);
   // a lineHz that is no number: the multiple of the mains
   const odd = repairPlan(made({ hum: { ...off, at50: [{ n: 1, hz: 50, lineHz: null, overDb: 27, counts: true }] }, findings: [finding("hum")] }));
   assert.deepEqual(odd.graph.match(/bandreject=f=[\d.]+/g), ["bandreject=f=50"]);

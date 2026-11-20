@@ -282,8 +282,8 @@ export function repairPlan(m, opts = {}) {
     const n = notches.length;
     const base = Number.isFinite(h.fundamentalHz) && h.fundamentalHz > 0 && r2(h.fundamentalHz) !== h.hz ? `${r2(h.fundamentalHz)} Hz (mains of ${h.hz} Hz)` : `${h.hz} Hz`;
     steps.push({
-      id: "dehum", why: `Hum at ${base}, steady in the pauses (up to ${dB(h.overDb)} dB over the noise beside it): notched at ${notches.map((x) => x.notchHz).join(", ")} Hz, ${n === 1 ? "" : "each "}${HUM_NOTCH_HZ} Hz wide at its −3 dB points.`,
-      hz: h.hz, ...(Number.isFinite(h.fundamentalHz) && { fundamentalHz: h.fundamentalHz }), overDb: h.overDb, filter: "bandreject", widthHz: HUM_NOTCH_HZ, notches,
+      id: "dehum", why: `Hum at ${base}, steady ${h.from === "whole" ? "through the whole recording, under the voice too (too little pause to judge it there alone)" : "in the pauses"} (up to ${dB(h.overDb)} dB over the noise beside it): notched at ${notches.map((x) => x.notchHz).join(", ")} Hz, ${n === 1 ? "" : "each "}${HUM_NOTCH_HZ} Hz wide at its −3 dB points.`,
+      hz: h.hz, ...(Number.isFinite(h.fundamentalHz) && { fundamentalHz: h.fundamentalHz }), ...(h.from && { judgedFrom: h.from }), overDb: h.overDb, filter: "bandreject", widthHz: HUM_NOTCH_HZ, notches,
     });
   }
 
