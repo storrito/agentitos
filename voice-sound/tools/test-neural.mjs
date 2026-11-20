@@ -656,6 +656,25 @@ test("after the run: one stretch of the voice taken down is caught where the who
   assert.ok(v.worst.from >= 6 && v.worst.to <= 24, JSON.stringify(v.worst));
 });
 
+test("a clap measure set aside is no speech frame: the denoiser that takes it down is kept", { skip }, async () => {
+  // a quiet voice (its noise named) and 30 ms of white noise at 0.9 in a pause at 13.5 s; the
+  // stand-in takes the clap 30 dB down and leaves the rest
+  run(["-i", noisy, "-filter_complex", `[0:a]volume=-20dB[v];anoisesrc=color=white:amplitude=0.9:r=48000:d=0.03:seed=3,adelay=13500,apad[b];[v][b]amix=inputs=2:normalize=0:duration=first`, "-c:a", "pcm_f32le", file("clap.wav")]);
+  const m0 = await measure(file("clap.wav"));
+  assert.ok(m0.findings.some((f) => f.id === "noise"), "noise named");
+  // (measure's bursts, as it lists them: made up here, so that the test does not hang on its rule)
+  const clap = { ...m0, speech: { ...m0.speech, bursts: { count: 1, seconds: 0.03, overDb: 40, at: [{ t: 13.5, seconds: 0.03, overDb: 40 }] } } };
+  const none = { ...m0, speech: { ...m0.speech, bursts: { count: 0, seconds: 0, overDb: null, at: [] } } };
+  const sw = { STANDIN_LOW_DB: -30, STANDIN_LOW_FROM: 13.45, STANDIN_LOW_TO: 13.65 };
+  const r = await withEnv({ ...STANDIN_ENV(), ...sw }, () => repair(file("clap.wav"), file("clap.out.wav"), clap));
+  assert.equal(r.method, "dpdfnet", JSON.stringify(r.steps.find((s) => s.id === "denoise")));
+  assert.doesNotMatch(r.left.map((l) => l.why).join(" "), /took this voice for noise/);
+  // without the burst in the measurement the clap is a speech frame, and sets their level
+  const t = await withEnv({ ...STANDIN_ENV(), ...sw }, () => repair(file("clap.wav"), file("clap2.out.wav"), none));
+  assert.equal(t.method, "afftdn-sample");
+  assert.match(t.steps.find((s) => s.id === "denoise").fallback.reason, /took the voice itself down/);
+});
+
 test("the probe fired, the run then took the voice down: no noise step, said in the step and in left", { skip }, async () => {
   const m = await measure(file("quiet-noise.wav"));
   const count = file("count-pd");

@@ -372,7 +372,8 @@ export function repairPlan(m, opts = {}) {
       const t = { ...NEURAL, ...opts.tune };
       const pauses = m.speech?.longest || [];
       const cut = piecesOf(Math.round((m.analysed?.seconds ?? m.duration ?? 0) * RATE), pauses, t);
-      neural = { ...dn, limit, tune: t, pauses };
+      // (bursts: measure's, which the check of its run leaves out of the voice)
+      neural = { ...dn, limit, tune: t, pauses, bursts: m.speech?.bursts?.at };
       const tail = needed > cap ? `, the most --denoise ${strength} allows (the aim needed ${dB(needed)})`
         : past ? `, more than the ${dB(Math.max(0, aim))} dB the ${DENOISE_AIM_DB} dB aim needs, as --denoise strong asks` : "";
       const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${Math.ceil(Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE / 60)} minutes` : "";
@@ -916,10 +917,17 @@ function speechFrames(energy, t = VOICE_KEPT) {
   return { is: (i) => lv[i] >= from && energy[i] > 0, loud: (i) => lv[i] >= top - t.topDb && energy[i] > 0, top };
 }
 
-// inE, outE: the frames' energies in and out → { down, numbers, said }
-export function voiceKept(inE, outE, t = VOICE_KEPT) {
-  const n = Math.min(inE.length, outE.length);
-  const isSpeech = speechFrames(inE.subarray(0, n), t).is;
+// inE, outE: the frames' energies in and out; ctx: { bursts (measure's m.speech.bursts.at: a
+// knock or a clap it set aside from the voice, { t, seconds }), times (each frame's start, s; else
+// i × 0.1 s) } → { down, numbers, said }. A frame that touches a burst (and 50 ms before it, 100 ms
+// after: the burst's own ring) is no speech frame: one clap in a quiet recording would else set the
+// sum of the speech frames' energy, and the denoiser that rightly takes it down be thrown away.
+export function voiceKept(inE, outE, t = VOICE_KEPT, ctx = {}) {
+  const n = Math.min(inE.length, outE.length), F = VOICE_FRAME / RATE;
+  const level = speechFrames(inE.subarray(0, n), t).is;
+  const bursts = (ctx.bursts || []).filter((b) => Number.isFinite(b?.t)).map((b) => [b.t - 0.05, b.t + (b.seconds || 0) + 0.1]);
+  const at = (i) => (ctx.times ? ctx.times[i] : i * F);
+  const isSpeech = (i) => level(i) && !bursts.some(([a, b]) => a < at(i) + F && b > at(i));
   const stats = (a, b) => {
     let k = 0, d = 0, ei = 0, eo = 0;
     for (let i = a; i < b; i++) {
@@ -1015,17 +1023,17 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), stat
     const y = readRange(fd, oi, 0, n);
     fs.closeSync(fd);
     // what it did to the voice itself: the speech frames' level kept against what went in
-    const VF = VOICE_FRAME, inE = [], outE = [];
+    const VF = VOICE_FRAME, inE = [], outE = [], times = [];
     let s0 = 0;
-    for (const p of parts) {
+    for (const [w, p] of parts.entries()) {
       for (let a = s0 + Math.round(P.skipS * RATE); a + VF <= s0 + p.length; a += VF) {
         let e = 0, k = 0;
         for (let i = a; i < a + VF; i++) { e += xi[i] * xi[i]; k += y[i] * y[i]; }
-        inE.push(e); outE.push(k);
+        inE.push(e); outE.push(k); times.push(spans[w][0] + (a - s0) / RATE);
       }
       s0 += p.length;
     }
-    const voice = voiceKept(Float64Array.from(inE), Float64Array.from(outE), { ...VOICE_KEPT, ...PROBE_KEPT, ...opts.probeKept });
+    const voice = voiceKept(Float64Array.from(inE), Float64Array.from(outE), { ...VOICE_KEPT, ...PROBE_KEPT, ...opts.probeKept }, { bursts: m.speech?.bursts?.at, times: Float64Array.from(times) });
     // per frame: what it kept and what it took out; speech: the frames whose kept level lies within
     // speechDb of the loud kept frames (the 95th percentile), past each stretch's start
     const F = Math.round(P.frameS * RATE), skip = Math.round(P.skipS * RATE);
@@ -1335,7 +1343,7 @@ async function neuralRepair(file, outWav, plan, opts, state) {
       close(fdDen);
       close(fdPre);
       // 4. what it did to the voice itself, over the whole and every stretch of it
-      voice = voiceKept(inE, outE, { ...VOICE_KEPT, ...opts.voiceKept });
+      voice = voiceKept(inE, outE, { ...VOICE_KEPT, ...opts.voiceKept }, { bursts: nr.bursts });
       if (voice.down) throw new NeuralFailure(`it took the voice itself down (${voice.said})`, { voice: voice.numbers });
     } catch (e) {
       if (e instanceof NeuralFailure || e instanceof Refusal) throw e;
