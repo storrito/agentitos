@@ -466,7 +466,7 @@ function build(args) {
     if (i === 0 && b.from !== 0) fail("The first beat starts at 0.");
     if (i && Math.abs(b.from - beats[i - 1].to) > 0.011) fail(`Beat ${b.id} starts at ${b.from}, the beat before ends at ${beats[i - 1].to}: beats follow each other without a gap.`);
     if (i) b.from = beats[i - 1].to;   // a hundredth apart would be a frame without a picture
-    if (b.frame != null && !["whole", "fill", "native"].includes(b.frame)) fail(`Beat ${b.id}: "frame" is whole (the wide frame as a band over a blurred copy, the default), fill (a 9:16 crop from the middle) or native (the source is vertical).`);
+    if (b.frame != null && !["whole", "fill", "native"].includes(b.frame)) fail(`Beat ${b.id}: "frame" is whole (the wide frame as a band over a blurred copy), fill (a 9:16 crop, from the middle unless "pan" or the faces say otherwise) or native (the source is vertical); left out, the largest picture that holds the faces found, else the band.`);
     if (b.speed != null && !(isNum(b.speed) && b.speed >= 0.5 && b.speed <= 1)) fail(`Beat ${b.id}: "speed" slows the source down, a number from 0.5 to 1.`);
     if (b.zoom != null && !(isNum(b.zoom) && b.zoom >= 1 && b.zoom <= 3)) fail(`Beat ${b.id}: "zoom" makes the band larger, a number from 1 to 3.`);
     if (b.pan != null && !(isNum(b.pan) && b.pan >= 0 && b.pan <= 1)) fail(`Beat ${b.id}: "pan" is the part of the width that stays (of a zoomed band or a fill), a number from 0 (the left) to 1 (the right).`);
@@ -577,18 +577,24 @@ function build(args) {
   const report = [];
   let failed = 0, cutAnew = 0;
   const popped = {};   // beat id → the clip with the freeze, when it was made
-  const seen = [];     // the faces in the frame, beat by beat, on the film's clock
-  const unknown = [];  // the beats whose large main face may look into the camera: faces of before say nothing of it
-  beats.forEach((b, i) => {
+  let seen = [];       // the faces in the frame, beat by beat, on the film's clock
+  let unknown = [];    // the beats whose large main face may look into the camera: faces of before say nothing of it
+  const cropOf = (bb) => (bb ? bb.match(/crop=(\d+):(\d+):(\d+):(\d+)/).slice(1).map(Number) : null);
+  // a beat that leaves "frame" (and its "zoom" and "pan") out: where its faces are known and its
+  // source is wider than the frame, the largest picture that holds them whole (planWindow's silent);
+  // before 2026-11-20 it was the band, and still is without layout or where layout's measure fails
+  const silentOf = (b) => b.frame == null && b.zoom == null && b.pan == null;
+  const wide = (size) => size[0] * SIZE[1] > size[1] * SIZE[0] * 1.01;
+  // ---- each beat's picture, before a clip is cut (the captions and the hook are placed on it first)
+  const planOf = (b, i, asBefore = false) => {
     const src = sources[i], speed = b.speed ?? 1;
     let frame = b.frame || "whole";
     const seconds = r2(b.to - b.from), taken = Math.round(seconds * speed * 1000) / 1000;
     let zoom = b.zoom ?? (i === 0 && frame === "whole" ? HOOK_ZOOM : 1), pan = b.pan ?? 0.5;
     // Where faces are known: a window that would cut them goes to them (planWindow); the faces in
     // px of the source with the black bars cut away, as the clip's filter sees it
-    let bar = null, x = null, box = null, plan = null, inBars = null, size = null, people = null, talk = null, looks = "";
+    let bar = null, x = null, box = null, plan = null, inBars = null, size = null, people = null, talk = null, looks = "", silent = false, unknownOf = null, moments = null;
     const list = faceLists[i];
-    const cropOf = (bb) => (bb ? bb.match(/crop=(\d+):(\d+):(\d+):(\d+)/).slice(1).map(Number) : null);
     if (list) {
       bar = bars(src.file, b.at, taken, src.size);
       const c = cropOf(bar) || [list.source[0], list.source[1], 0, 0];
@@ -596,7 +602,8 @@ function build(args) {
       const shift = (v) => [v[0] - c[2], v[1] - c[3], v[2], v[3]];
       inBars = { ...list, faces: list.faces.map((f) => ({ t: f.t, boxes: f.boxes.map((v) => ({ ...v, box: shift(v.box), ...(v.feat ? { feat: shift(v.feat) } : {}) })) })) };
       people = counted(inBars, size, taken);
-      const planned = (ps) => planWindow({ frame, zoom, pan, zoomSet: b.zoom != null, panSet: b.pan != null, size, people: ps, captions: capArea, crop: cropFor(b, size) });
+      silent = !asBefore && !!layoutTool && silentOf(b) && wide(size);
+      const planned = (ps) => planWindow({ frame, zoom, pan, zoomSet: b.zoom != null, panSet: b.pan != null, size, people: ps, captions: capArea, crop: cropFor(b, size), silent, at: b.at });
       plan = planned(people);
       // A main face that looks into the camera most of the beat and is large in the picture it
       // gets: its mouth weighs as its eyes, and the picture is placed again with that (looking)
@@ -606,79 +613,34 @@ function build(args) {
         talk = look.who;
         plan = planned(talksIn(people));
         looks = `${look.who} looks into the camera (${Math.round(look.share * 100)} % of the beat, the face ${tall} % of the frame's height): the captions and the hook keep off the mouth as off the eyes`;
-      } else if (look?.unknown && tall >= TALK_FACE * 100) unknown.push({ id: b.id, who: look.who });
+      } else if (look?.unknown && tall >= TALK_FACE * 100) unknownOf = { id: b.id, who: look.who };
       ({ frame, zoom, pan, x, box } = plan);
     }
-    // a fill the agent panned, where its faces are known (without them a fill is cut from the middle, as it always was)
-    if (frame === "fill" && x == null && b.pan != null && list) {
+    // a fill the agent panned: its pan stands, with faces known or not (a fill without faces and
+    // without a pan is cut from the middle, as it always was)
+    if (frame === "fill" && x == null && b.pan != null) {
       if (bar == null) bar = bars(src.file, b.at, taken, src.size);
       const c = cropOf(bar) || [src.size.width, src.size.height];
       x = Math.round(pan * (2 * Math.round((c[0] * (SIZE[1] / c[1])) / 2) - SIZE[0]));
       size ||= [c[0], c[1]];
     }
-    const out = path.join(clipsDir, `${b.id}.mp4`), note = path.join(clipsDir, `${b.id}.json`);
-    const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed, ...(x != null ? { x } : {}), ...(box ? { box } : {}) });
-    let kept = null;
-    try { kept = JSON.parse(fs.readFileSync(note, "utf8")); } catch { /* not cut yet */ }
-    let m = kept && kept.how === how && kept.measured && fs.existsSync(out) && fs.statSync(out).size ? kept.measured : null;
-    if (!m) {
-      fs.rmSync(note, { force: true });   // a cut that fails leaves no note of a clip that is not there
-      if (bar == null) bar = bars(src.file, b.at, taken, src.size);
-      const vf = bar + (frame === "whole" ? whole(zoom, pan) : frame === "crop" ? cropped(box) : frame === "fill" && x != null ? `scale=-2:${SIZE[1]}:flags=lanczos,crop=${SIZE[0]}:${SIZE[1]}:${x}:0` : FRAMES[frame])
-        + (speed !== 1 ? `,setpts=PTS/${speed}` : "") + `,fps=${FPS},format=yuv420p`;
-      const part = path.join(clipsDir, `${b.id}.part.mp4`);
-      // a keyframe a second: HyperFrames seeks cleanly (sparse ones froze frames)
-      const r = ff(["-v", "error", "-y", "-ss", String(b.at), "-t", String(taken), "-i", src.file, "-an", "-vf", vf, "-t", String(seconds),
-        "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-g", String(FPS), "-keyint_min", String(FPS), part]);
-      if (r.status !== 0 || !fs.existsSync(part) || !fs.statSync(part).size) {
-        fs.rmSync(part, { force: true });
-        fail(`Beat ${b.id}: the clip could not be cut from ${rel(src.file)} at ${b.at} s${b.at >= src.size.duration ? `: the source is ${src.size.duration.toFixed(1)} s long` : ` (${reason({ ...r, stdout: "" })})`}.`);
-      }
-      fs.renameSync(part, out);
-      m = { ...measure(out), bars: bar ? bar.slice(0, -1) : null };
-      fs.writeFileSync(note, JSON.stringify({ how, measured: m }));
-      cutAnew++;
-    }
-    if (m.bars) report.push(`  ${b.id}: black bars in the source cut away (${m.bars})`);
-    if (i === 0 && frame === "whole" && b.zoom == null && !plan?.changed) report.push(`  ${b.id}: the first beat's band is ${HOOK_ZOOM} times larger, its middle kept ("zoom": 1 shows the whole width, "pan" another part)`);
-    const own = plan?.cut.length && (b.pan != null || b.zoom != null);
-    if (plan?.said) report.push(`  ${own || plan.flag ? "! " : ""}${b.id}: ${plan.said}${own ? "; leave \"pan\" (and \"zoom\") out and the picture goes to the faces" : ""}${looks ? `; ${looks}` : ""}`);
-    else if (list && !people.held.length) report.push(`  ${b.id}: ${people.small.length ? `its faces (${people.small.map((p) => p.who).join(", ")}) are too small or seen too briefly to move the picture for` : "no face found"}: the picture stays as it is`);
-    else if (looks) report.push(`  ${b.id}: ${looks}`);
     if (list) {
       const band = frame === "whole" || frame === "crop" ? bandOf({ frame, zoom, box, size }) : null;
-      seen.push({ i, id: b.id, talk, moments: framed({ list: inBars, place: { frame, zoom, pan, x, box, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band, talks: talk }) });
+      moments = framed({ list: inBars, place: { frame, zoom, pan, x, box, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band, talks: talk });
     }
-    // the gate: what needs no judgement
-    const problems = [];
-    if (m.peak < DARK_MAX[frame]) problems.push("DARK: the clip is near black; another stretch");
-    else if (i === 0 && m.first < Math.max(DARK_MAX[frame], OPEN_PART * m.median)) problems.push("DARK-OPEN: the hook starts on a dark frame, a fade-in of the source; start it later");
-    if (m.dur < seconds - SHORT_TOL) problems.push(`SHORT: ${m.dur.toFixed(2)} s of ${seconds.toFixed(2)} s; the stretch runs past the end of the source`);
-    for (const p of problems) report.push(`  ✗ ${b.id}: ${p}`);
-    if (problems.length) failed++;
-    if (m.dur && m.frozen / m.dur > FROZEN_PART) report.push(`  ! ${b.id}: ${m.frozen.toFixed(1)} s of ${m.dur.toFixed(1)} s stand still; meant?`);
-    if (src.cuts) {
-      const inside = src.cuts.filter((t) => t > b.at + 0.05 && t < b.at + taken - 0.05);
-      if (inside.length) report.push(`  ? ${b.id}: the source has a cut of its own at ${inside.map((t) => Number(t).toFixed(2)).join(", ")} s inside ${b.at}-${r2(b.at + taken)} s: look at the stretch (footage's strip); a real cut: move it or slow it`);
-    } else report.push(`  ? ${b.id}: the cuts of its source are not known (footage's look writes them): look at the stretch for a cut inside it`);
-
-    // the first beat's freeze, when it asks for one: agentitos' freeze-cutout, run as a program
-    if (i === 0 && b.freeze != null && !problems.length) {
-      const cut = tool("FREEZE_CUTOUT", "freeze-cutout", "cutout.mjs");
-      const pop = path.join(clipsDir, `${b.id}-pop.mp4`), popNote = path.join(clipsDir, `${b.id}-pop.json`);
-      const popHow = JSON.stringify({ how, freeze: b.freeze, subject: cfg.subject || null, pop: b.pop || "strong" });
-      if (!cut) report.push(`  ! ${b.id}: the freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs); the plain clip is used`);
-      else if (fs.existsSync(pop) && fs.statSync(pop).size && fs.existsSync(popNote) && fs.readFileSync(popNote, "utf8") === popHow) popped[b.id] = true;
-      else {
-        fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true });
-        const cr = spawnSync(process.execPath, [cut, out, pop, "--at", String(b.freeze), "--work", path.join(work, "cutout"), ...(frame === "whole" || frame === "crop" ? ["--region", "band"] : []),
-          ...(text(cfg.subject) ? ["--subject", cfg.subject.trim()] : []), ...(b.pop ? ["--style", b.pop] : [])], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 900e3 });
-        if (cr.status === 0 && fs.existsSync(pop) && fs.statSync(pop).size) { fs.writeFileSync(popNote, popHow); popped[b.id] = true; }
-        else { fs.rmSync(pop, { force: true }); report.push(`  ! ${b.id}: no freeze (${reason(cr)}); the plain clip is used`); }
-      }
-      if (popped[b.id]) report.push(`  ${b.id}: freezes at ${b.freeze} s; look at ${rel(path.join(work, "cutout", "cutout-check.jpg"))}: the outline around the subject only, nothing cut off`);
-    }
-  });
+    return { src, speed, seconds, taken, frame, zoom, pan, x, box, bar, plan, list, people, talk, looks, silent, unknownOf, moments };
+  };
+  let plans = beats.map((b, i) => planOf(b, i));
+  const seenOf = () => {
+    seen = plans.flatMap((p, i) => (p.list ? [{ i, id: beats[i].id, talk: p.talk, moments: p.moments }] : []));
+    unknown = plans.map((p) => p.unknownOf).filter(Boolean);
+  };
+  seenOf();
+  if (!layoutTool) {
+    const ids = beats.filter((b, i) => faceLists[i] && silentOf(b) && plans[i].people?.held.length && wide([plans[i].src.size.width, plans[i].src.size.height])).map((b) => b.id);
+    if (ids.length) warn.push(`the beat${ids.length > 1 ? "s" : ""} ${ids.join(", ")} without "frame" stay${ids.length > 1 ? "" : "s"} the band, as before: a larger picture of their faces needs agentitos' layout beside this skill to keep the captions off them`);
+  }
+  let measureBroke = false;
 
   // ---- the captions and the hook off the faces. The captions move only where they lie on eyes or
   // a nose (nobody shown is heard: a mouth, a mask or a chin may be covered), or on the mouth of one
@@ -728,6 +690,7 @@ function build(args) {
       fs.writeFileSync(shotsFile, JSON.stringify({ shots, hook: { start: 0, end: HOOK_SECONDS, calm: true } }));
       ok = measure([...(capBox ? [{ name: "captions", box: capBox }] : []), { name: "hook", box: hookBox, start: 0, end: HOOK_SECONDS },
         ...sizes.map((v) => ({ name: `hook-${v}`, box: hookAs(v), start: 0, end: HOOK_SECONDS }))]);
+      measureBroke = !ok;
     }
     // a text's seconds on the faces: of the beats `ids` (seen's i) or of all
     const on = (name, ids = null) => onOf(measured.get(name), { shots: ids, talks });
@@ -821,6 +784,86 @@ function build(args) {
     }
     if (blind.length) report.push(`  the captions lie on the mouth of ${blind.map((u) => `${u.who} in ${u.id}`).join(", ")}: whether ${blind.length > 1 ? "they look" : "it looks"} into the camera is not known (faces found before they said so; node ${self()} faces ${rel(work)} --again asks anew, and the mouth of one who does is kept clear like the eyes)`);
   }
+
+  // a beat whose "frame" was left out and whose faces layout's measure could not place: as before
+  if (measureBroke && plans.some((p) => p.silent)) {
+    const ids = beats.filter((b, i) => plans[i].silent).map((b) => b.id);
+    plans = plans.map((p, i) => (p.silent ? planOf(beats[i], i, true) : p));
+    warn.push(`the beat${ids.length > 1 ? "s" : ""} ${ids.join(", ")} without "frame" stay${ids.length > 1 ? "" : "s"} the band, as before: a larger picture of their faces needs agentitos' layout's measure, and it failed`);
+  }
+  const placed = report.splice(0);   // the captions' and the hook's lines, said after the beats'
+
+  // ---- the clips, one ffmpeg each
+  beats.forEach((b, i) => {
+    const { src, speed, seconds, taken, frame, zoom, pan, x, box, plan, list, people, looks } = plans[i];
+    let bar = plans[i].bar;
+    const out = path.join(clipsDir, `${b.id}.mp4`), note = path.join(clipsDir, `${b.id}.json`);
+    const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed, ...(x != null ? { x } : {}), ...(box ? { box } : {}) });
+    let kept = null;
+    try { kept = JSON.parse(fs.readFileSync(note, "utf8")); } catch { /* not cut yet */ }
+    let m = kept && kept.how === how && kept.measured && fs.existsSync(out) && fs.statSync(out).size ? kept.measured : null;
+    if (!m) {
+      fs.rmSync(note, { force: true });   // a cut that fails leaves no note of a clip that is not there
+      if (bar == null) bar = bars(src.file, b.at, taken, src.size);
+      const vf = bar + (frame === "whole" ? whole(zoom, pan) : frame === "crop" ? cropped(box) : frame === "fill" && x != null ? `scale=-2:${SIZE[1]}:flags=lanczos,crop=${SIZE[0]}:${SIZE[1]}:${x}:0` : FRAMES[frame])
+        + (speed !== 1 ? `,setpts=PTS/${speed}` : "") + `,fps=${FPS},format=yuv420p`;
+      const part = path.join(clipsDir, `${b.id}.part.mp4`);
+      // a keyframe a second: HyperFrames seeks cleanly (sparse ones froze frames)
+      const r = ff(["-v", "error", "-y", "-ss", String(b.at), "-t", String(taken), "-i", src.file, "-an", "-vf", vf, "-t", String(seconds),
+        "-c:v", "libx264", "-crf", "17", "-preset", "medium", "-g", String(FPS), "-keyint_min", String(FPS), part]);
+      if (r.status !== 0 || !fs.existsSync(part) || !fs.statSync(part).size) {
+        fs.rmSync(part, { force: true });
+        fail(`Beat ${b.id}: the clip could not be cut from ${rel(src.file)} at ${b.at} s${b.at >= src.size.duration ? `: the source is ${src.size.duration.toFixed(1)} s long` : ` (${reason({ ...r, stdout: "" })})`}.`);
+      }
+      fs.renameSync(part, out);
+      m = { ...measure(out), bars: bar ? bar.slice(0, -1) : null };
+      fs.writeFileSync(note, JSON.stringify({ how, measured: m }));
+      cutAnew++;
+    }
+    if (m.bars) report.push(`  ${b.id}: black bars in the source cut away (${m.bars})`);
+    if (i === 0 && frame === "whole" && b.zoom == null && !plan?.changed) report.push(`  ${b.id}: the first beat's band is ${HOOK_ZOOM} times larger, its middle kept ("zoom": 1 shows the whole width, "pan" another part)`);
+    const own = plan?.cut.length && (b.pan != null || b.zoom != null);
+    if (plan?.said) report.push(`  ${own || plan.flag ? "! " : ""}${b.id}: ${plan.said}${own ? "; leave \"pan\" (and \"zoom\") out and the picture goes to the faces" : ""}${looks ? `; ${looks}` : ""}`);
+    else if (list && !people.held.length) report.push(`  ${b.id}: ${people.small.length ? `its faces (${people.small.map((p) => p.who).join(", ")}) are too small or seen too briefly to move the picture for` : "no face found"}: the picture stays as it is`);
+    else if (looks) report.push(`  ${b.id}: ${looks}`);
+    // a band nobody chose and nothing placed: what it costs, and what to do
+    if (!list && silentOf(b) && !opts["no-faces"]) {
+      const c = cropOf(m.bars) || [src.size.width, src.size.height], [t, u] = bandOf({ frame: "whole", zoom, size: c });
+      const ground = Math.round((1 - (u - t) / SIZE[1]) * 100);
+      if (ground > 0) report.push(`  ! ${b.id}: no "frame" and no faces known: the whole picture as a band, ${ground} % of the frame blurred ground; to show its subject larger: ${b.people ? `node ${self()} faces ${rel(work)} (its faces place it)` : `"people": true where it shows a face (faces places it)`}, or "frame": "fill" with a "pan" on the subject (0 the left, 1 the right); "frame": "whole" keeps the band`);
+    }
+    // the gate: what needs no judgement
+    const problems = [];
+    if (m.peak < DARK_MAX[frame]) problems.push("DARK: the clip is near black; another stretch");
+    else if (i === 0 && m.first < Math.max(DARK_MAX[frame], OPEN_PART * m.median)) problems.push("DARK-OPEN: the hook starts on a dark frame, a fade-in of the source; start it later");
+    if (m.dur < seconds - SHORT_TOL) problems.push(`SHORT: ${m.dur.toFixed(2)} s of ${seconds.toFixed(2)} s; the stretch runs past the end of the source`);
+    for (const p of problems) report.push(`  ✗ ${b.id}: ${p}`);
+    if (problems.length) failed++;
+    if (m.dur && m.frozen / m.dur > FROZEN_PART) report.push(`  ! ${b.id}: ${m.frozen.toFixed(1)} s of ${m.dur.toFixed(1)} s stand still; meant?`);
+    if (src.cuts) {
+      const inside = src.cuts.filter((t) => t > b.at + 0.05 && t < b.at + taken - 0.05);
+      if (inside.length) report.push(`  ? ${b.id}: the source has a cut of its own at ${inside.map((t) => Number(t).toFixed(2)).join(", ")} s inside ${b.at}-${r2(b.at + taken)} s: look at the stretch (footage's strip); a real cut: move it or slow it`);
+    } else report.push(`  ? ${b.id}: the cuts of its source are not known (footage's look writes them): look at the stretch for a cut inside it`);
+
+    // the first beat's freeze, when it asks for one: agentitos' freeze-cutout, run as a program
+    if (i === 0 && b.freeze != null && !problems.length) {
+      const cut = tool("FREEZE_CUTOUT", "freeze-cutout", "cutout.mjs");
+      const pop = path.join(clipsDir, `${b.id}-pop.mp4`), popNote = path.join(clipsDir, `${b.id}-pop.json`);
+      const popHow = JSON.stringify({ how, freeze: b.freeze, subject: cfg.subject || null, pop: b.pop || "strong" });
+      if (!cut) report.push(`  ! ${b.id}: the freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs); the plain clip is used`);
+      else if (fs.existsSync(pop) && fs.statSync(pop).size && fs.existsSync(popNote) && fs.readFileSync(popNote, "utf8") === popHow) popped[b.id] = true;
+      else {
+        fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true });
+        const cr = spawnSync(process.execPath, [cut, out, pop, "--at", String(b.freeze), "--work", path.join(work, "cutout"), ...(frame === "whole" || frame === "crop" ? ["--region", "band"] : []),
+          ...(text(cfg.subject) ? ["--subject", cfg.subject.trim()] : []), ...(b.pop ? ["--style", b.pop] : [])], { encoding: "utf8", maxBuffer: 64 << 20, timeout: 900e3 });
+        if (cr.status === 0 && fs.existsSync(pop) && fs.statSync(pop).size) { fs.writeFileSync(popNote, popHow); popped[b.id] = true; }
+        else { fs.rmSync(pop, { force: true }); report.push(`  ! ${b.id}: no freeze (${reason(cr)}); the plain clip is used`); }
+      }
+      if (popped[b.id]) report.push(`  ${b.id}: freezes at ${b.freeze} s; look at ${rel(path.join(work, "cutout", "cutout-check.jpg"))}: the outline around the subject only, nothing cut off`);
+    }
+  });
+
+  report.push(...placed);
 
   // ---- the composition
   const accent = brandAccent() || "#ffd166";
