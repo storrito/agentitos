@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loudness, musicVolume, distance, inFilm, LOWEST, HIGHEST } from "./lib/level.mjs";
-import { soundLine, skippedLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords, gapSpecs, splitVoice, duckLane, filled, fillVerdict } from "./launch.mjs";
+import { soundLine, skippedLine, meterOf, finishLine, musicElement, boardLayout, storyboardFrames, recordedWords, musicLane, musicTag, endWarning, pauseSpans, captionWords, gapSpecs, splitVoice, duckLane, filled, fillVerdict } from "./launch.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const near = (x, y, by) => assert.ok(Math.abs(x - y) <= by, `${x} is not within ${by} of ${y}`);
@@ -287,9 +287,36 @@ test("finish: the levelled video names no place, even made from a file that name
     assert.ok(tagsOf(video).some((k) => /location/i.test(k)), "the made-up video should name a place");
     const r = launch(dir, "finish", "film.mp4");
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /→ −14 LUFS/);
+    assert.match(r.stdout, /→ −1[34]\.\d LUFS, true peak −\d+\.\d dBTP, measured on the finished file\. Not heard/);
+    near(meterOf(video).lufs, -14, 0.5);
     assert.deepEqual(tagsOf(video).filter((k) => /location|gps/i.test(k)), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("finish: sharp peaks: the numbers are those of the finished file, its true peak under −1 dBTP", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    // bursts of noise half a second apart: peaks far over the loudness, which −14 LUFS cannot be reached with
+    const video = path.join(dir, "film.mp4");
+    run(["-f", "lavfi", "-i", "color=c=gray:s=320x180:r=30:d=6", "-f", "lavfi", "-i", "anoisesrc=color=white:sample_rate=48000:duration=6:seed=3,volume='if(lt(mod(t,0.5),0.03),1,0.02)':eval=frame",
+      "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-b:a", "192k", "-shortest", video]);
+    const r = launch(dir, "finish", "film.mp4");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const got = meterOf(video), said = r.stdout.match(/→ (−[\d.]+) LUFS, true peak (−[\d.]+) dBTP/);
+    assert.ok(said, r.stdout);
+    near(Number(said[1].replace("−", "-")), got.lufs, 0.05);
+    near(Number(said[2].replace("−", "-")), got.peak, 0.05);
+    assert.ok(got.peak <= -1, `true peak ${got.peak}`);
+    assert.doesNotMatch(r.stdout, /still over/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("finishLine: what was lowered and why −14 was not reached are said, a peak left over −1 is a warning", () => {
+  assert.equal(finishLine("film.mp4", -20.3, { lufs: -14.1, peak: -1.2 }, 0), "film.mp4: −20.3 → −14.1 LUFS, true peak −1.2 dBTP, measured on the finished file. Not heard: say so.");
+  const lowered = finishLine("film.mp4", -13.4, { lufs: -18.4, peak: -1.2 }, 1);
+  assert.match(lowered, /the whole sound is 1\.0 dB lower\. Not −14: its peaks stand far over its loudness/);
+  assert.doesNotMatch(finishLine("film.mp4", -20, { lufs: -14.6, peak: -1.1 }, 0.6), /Not −14/);
+  assert.match(finishLine("film.mp4", -20, { lufs: -14, peak: -0.4 }, 0.8), /\n  ! Its true peak is still over −1 dBTP/);
 });
 
 test("storyboardFrames: both of HyperFrames' headings, times from a range or the durations", () => {
