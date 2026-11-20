@@ -1,10 +1,13 @@
 // The neural denoiser in repair (lib/repair.mjs): found where the machine has it, chosen only where
-// `measure` found noise, its 16-bit step kept from costing a quiet recording its resolution or a
-// hot one its peaks, its delay taken out, a long recording in overlapping pieces with no seam, and
-// ffmpeg's method in its place wherever it fails. No real denoiser (GitHub's runner has none): a
-// stand-in written here, a Node script that takes the same options and copies its input to a
-// 16-bit output, with switches (environment variables) that lower it, delay it, fail, write
-// nothing, another length, silence, or numbers that are not finite. No request, no key, no network.
+// `measure` found noise, the probe found it under the voice or the person named a strength, its
+// 16-bit step at a level by the voice (a quiet recording keeps its resolution, a hot one or a bump
+// its peaks), its delay taken out, a long recording in overlapping pieces cross-faded, what it did
+// to the voice itself checked, and ffmpeg's method in its place wherever it fails. No real denoiser
+// needed (GitHub's runner has none): a stand-in written here, a Node script that takes the same
+// options and copies its input to a 16-bit output, with switches (environment variables) that
+// lower it (all of it, each piece by more, or one stretch), add noise, delay it, fail, hang, write
+// nothing, another length, silence, junk, or numbers that are not finite. Where VOICE_SOUND_DENOISER
+// and VOICE_SOUND_DPDFNET name the real one, one test runs it too. No request, no key, no network.
 //
 //   node --test tools/test-neural.mjs
 
@@ -30,6 +33,7 @@ const run = (args) => { const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...a
 const ids = (list) => list.map((s) => s.id);
 const near = (x, y, by, what = "") => assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`);
 const db = (x) => 10 * Math.log10(x);
+const r2 = (x) => Math.round(x * 100) / 100;
 
 // the synthetic voice of test-repair.mjs (phrases of 2.5 s, pauses of 1.1 s), with pink noise
 const D = 28.8;
@@ -69,7 +73,8 @@ for (let i = 0; i < n; i++) for (let c = 0; c < fmt.ch; c++) {
   x[i] += (fmt.tag === 3 ? data.readFloatLE(j) : data.readInt16LE(j) / 32768) / fmt.ch;
 }
 let len = Math.floor(n / 480) * 480 + Number(E.STANDIN_LENGTH || 0);
-const g = 10 ** (Number(E.STANDIN_GAIN_DB || 0) / 20), d = Number(E.STANDIN_DELAY || 0);
+// (STANDIN_STEP_DB: the k-th call lowered by k − 1 times that, so that each piece differs)
+const g = 10 ** ((Number(E.STANDIN_GAIN_DB || 0) + (count - 1) * Number(E.STANDIN_STEP_DB || 0)) / 20), d = Number(E.STANDIN_DELAY || 0);
 // (STANDIN_LOW_DB: from the STANDIN_LOW_CALL-th call on, the samples from STANDIN_LOW_FROM to
 // STANDIN_LOW_TO seconds of its input lowered by that much: a denoiser that takes a voice for noise)
 const low = E.STANDIN_LOW_DB && count >= Number(E.STANDIN_LOW_CALL || 1) ? 10 ** (Number(E.STANDIN_LOW_DB) / 20) : 1;
@@ -80,6 +85,8 @@ const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed
 let ex = 0; for (let i = 0; i < n; i++) ex += x[i] * x[i];
 const junk = Math.sqrt((12 * ex) / Math.max(1, n));
 for (let i = 0; i < len; i++) {
+  // (STANDIN_JUNK: noise as loud as its input, which follows nothing of it)
+  if (E.STANDIN_JUNK) { y[i] = rnd() * junk; continue; }
   y[i] = E.STANDIN_SILENCE ? 0 : (x[i - d] ?? 0) * g * (i >= lowFrom && i < lowTo ? low : 1);
   // (STANDIN_ADD_DB: noise that much under its input's level added: what "came out" is that noise)
   if (E.STANDIN_ADD_DB) y[i] += rnd() * junk * 10 ** (Number(E.STANDIN_ADD_DB) / 20);
@@ -100,7 +107,7 @@ fs.writeFileSync(a["output-wav"], Buffer.concat([h, o]));
 let dir, standin, model, noisy;
 const file = (name) => path.join(dir, name);
 const SWITCHES = ["STANDIN_PID", "STANDIN_SLEEP", "STANDIN_LOG","STANDIN_COUNT", "STANDIN_FAIL", "STANDIN_FAIL_AFTER", "STANDIN_NOTHING", "STANDIN_LENGTH", "STANDIN_GAIN_DB", "STANDIN_DELAY", "STANDIN_SILENCE", "STANDIN_NAN",
-  "STANDIN_LOW_DB", "STANDIN_LOW_CALL", "STANDIN_LOW_FROM", "STANDIN_LOW_TO", "STANDIN_ADD_DB"];
+  "STANDIN_STEP_DB", "STANDIN_LOW_DB", "STANDIN_LOW_CALL", "STANDIN_LOW_FROM", "STANDIN_LOW_TO", "STANDIN_JUNK", "STANDIN_ADD_DB"];
 const ENV = ["VOICE_SOUND_DENOISER", "VOICE_SOUND_DPDFNET", "VOICE_SOUND_DENOISE", "PATH", ...SWITCHES];
 // runs fn with the environment set as given (null: unset), and puts it back after
 async function withEnv(vars, fn) {
@@ -327,13 +334,16 @@ test("its delay is measured and taken out: in step and as long", { skip }, async
   assert.doesNotMatch(r0.steps.find((s) => s.id === "denoise").why, /late/);
 });
 
-test("longer than a piece: as long, in step, no jump at the seams (a tone through them keeps its phase and level)", { skip }, async () => {
+test("longer than a piece: as long, in step, each seam a cross-fade (a stand-in that differs from piece to piece)", { skip }, async () => {
   // a 1 kHz tone under the voice
   run(["-i", noisy, "-filter_complex", `sine=f=1000:r=48000:d=${D},volume=0.05[t];[0:a][t]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("tone.wav")]);
   const m = await measure(file("tone.wav"));
   const tune = { pieceS: 6, shiftS: 1, warmS: 0.5, fadeS: 0.4, tailS: 0.2 };
-  const log = file("calls.log");
-  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log, STANDIN_GAIN_DB: LOWER_DB }, () => repair(file("tone.wav"), file("tone.out.wav"), m, { tune }));
+  const log = file("calls.log"), count = file("count-seams");
+  fs.rmSync(count, { force: true });
+  // (piece k lowered by k × 0.25 dB: a hard cut between two pieces would step by 0.25 dB)
+  const STEP = -0.25;
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log, STANDIN_STEP_DB: STEP, STANDIN_COUNT: count }, () => repair(file("tone.wav"), file("tone.out.wav"), m, { tune }));
   const st = r.steps.find((s) => s.id === "denoise");
   assert.equal(r.method, "dpdfnet");
   assert.equal(st.pieces.length, 5);
@@ -347,18 +357,29 @@ test("longer than a piece: as long, in step, no jump at the seams (a tone throug
   }
   const x = reference("tone.wav", m), y = samples(file("tone.out.wav"));
   assert.equal(y.length, x.length);
-  assert.ok(maxDiff(x, y, LOWER) <= step(st), `${maxDiff(x, y, LOWER)} over ${step(st)}`);
-  for (const s of st.seams) {
-    const at = Math.round(s.at * 48000), w = Math.round(tune.fadeS * 48000);
-    assert.equal(lagOf(x, y, at - 6000), 0, `in step at ${s.at} s`);
-    // over the fade and on both sides of it, sample for sample the reference lowered
-    assert.ok(maxDiff(x, y, LOWER, at - w, at + w) <= step(st), `the seam at ${s.at} s`);
-    // the tone in the 50 ms before the fade and after it: the same level, its phase running on
-    const n = 2400, a = sineAt(y, 1000, at - w / 2 - n, n), b = sineAt(y, 1000, at + w / 2, n);
-    const ra = sineAt(x, 1000, at - w / 2 - n, n), rb = sineAt(x, 1000, at + w / 2, n);
-    assert.ok(Math.abs(20 * Math.log10(a.amp / b.amp) - 20 * Math.log10(ra.amp / rb.amp)) < 0.05, `level at ${s.at} s`);
+  // what must come out, sample for sample: piece k at its own gain, and over each seam's fade the
+  // raised cosine from the one before into it, the two weights summing to one
+  const cut = piecesOf(x.length, m.speech.longest, { ...NEURAL, ...tune }), half = cut.fade / 2;
+  assert.deepEqual(cut.seams.map((s) => r2(s.at / 48000)), st.seams.map((s) => s.at));
+  const gk = (k) => 10 ** ((k * STEP) / 20), want = new Float64Array(x.length);
+  for (let k = 0; k < cut.pieces.length; k++) {
+    const a = k ? cut.seams[k - 1].at - half : 0, b = k < cut.seams.length ? cut.seams[k].at - half : x.length;
+    for (let i = a; i < b; i++) want[i] = gk(k) * x[i];
+    if (k) for (let j = 0; j < cut.fade; j++) { const w = Math.sin((Math.PI / 2) * ((j + 0.5) / cut.fade)) ** 2; want[a + j] = (w * gk(k) + (1 - w) * gk(k - 1)) * x[a + j]; }
+  }
+  const off = maxDiff(want, y);
+  assert.ok(off <= step(st), `${off} over ${step(st)}`);
+  for (const [j, s] of cut.seams.entries()) {
+    assert.equal(lagOf(x, y, s.at - 6000), 0, `in step at ${s.at / 48000} s`);
+    // (a hard cut there would be this far off: the stand-in's pieces differ enough for it to show)
+    let cutOff = 0;
+    for (let i = s.at - half; i < s.at + half; i++) cutOff = Math.max(cutOff, Math.abs((i < s.at ? gk(j) : gk(j + 1)) * x[i] - want[i]));
+    assert.ok(cutOff > 5 * step(st), `a hard cut would be ${cutOff} off`);
+    // the tone in the 50 ms before the fade and after it: its phase running on
+    const w = cut.fade, n = 2400, a = sineAt(y, 1000, s.at - w / 2 - n, n), b = sineAt(y, 1000, s.at + w / 2, n);
+    const ra = sineAt(x, 1000, s.at - w / 2 - n, n), rb = sineAt(x, 1000, s.at + w / 2, n);
     const dphi = (u, v) => Math.atan2(Math.sin(u - v), Math.cos(u - v));
-    assert.ok(Math.abs(dphi(a.phase, ra.phase)) < 0.01 && Math.abs(dphi(b.phase, rb.phase)) < 0.01, `phase at ${s.at} s`);
+    assert.ok(Math.abs(dphi(a.phase, ra.phase)) < 0.01 && Math.abs(dphi(b.phase, rb.phase)) < 0.01, `phase at ${s.at / 48000} s`);
   }
 });
 
@@ -373,11 +394,14 @@ test("each failure falls back to ffmpeg's method for the whole recording and say
     [{ STANDIN_SILENCE: 1 }, /silent/],
     [{ STANDIN_NAN: 1 }, /not finite/],
     [{ STANDIN_GAIN_DB: 12 }, /clipped/],
+    [{ STANDIN_JUNK: 1 }, /its output does not follow its input \(correlation −?-?0\.\d\d\)/],
+    // (its time: a second here, where the program sleeps for three)
+    [{ STANDIN_SLEEP: 3 }, /it took longer than 1 s/, { timeoutS: 1, timeoutPerS: 0 }],
   ];
   const x = reference("noisy.wav", m);
-  for (const [sw, why] of cases) {
+  for (const [sw, why, more] of cases) {
     fs.rmSync(file("count"), { force: true });
-    const r = await withEnv({ ...STANDIN_ENV(), ...sw }, () => repair(noisy, file("failed.out.wav"), m, { tune }));
+    const r = await withEnv({ ...STANDIN_ENV(), ...sw }, () => repair(noisy, file("failed.out.wav"), m, { tune: { ...tune, ...more } }));
     const st = r.steps.find((s) => s.id === "denoise");
     assert.equal(r.method, "afftdn-sample", JSON.stringify(sw));
     assert.match(st.why, /the neural denoiser failed \(.*\), so ffmpeg's afftdn-sample did this for the whole recording\.$/);

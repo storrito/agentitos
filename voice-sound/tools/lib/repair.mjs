@@ -633,13 +633,13 @@ const OPT_MODEL = `/opt/sherpa-onnx/models/${DPDFNET_MODEL}`;
 // some of the room and scored nearly as well as no limit; gentle takes off what afftdn's strong
 // did, strong 6 dB more than auto (a voice in a café: DNSMOS's background 3.56 at 18)
 export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
-// the pieces (seconds) and the level for it (dBFS); the lab's knobs through opts.tune. voiceDb:
-// −26 dBFS is the speech level DNSMOS and the lab's scores hear a recording at (ITU-T P.56
-// practice); peakDb: the peak the lab ran it at (2026-11-19), with 6 dB for its output to rise
-// over its input; holdS: how fast the gain goes down before a peak and back after it (a
-// judgement: slower than a syllable's onset, so that the gain does not follow the voice's own
-// peaks)
-export const NEURAL = { pieceS: 150, shiftS: 15, warmS: 3, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1 };
+// the pieces (seconds), the level for it (dBFS) and its time (seconds, and seconds a second of
+// sound); the lab's knobs through opts.tune. voiceDb: −26 dBFS is the speech level DNSMOS and the
+// lab's scores hear a recording at (ITU-T P.56 practice); peakDb: the peak the lab ran it at
+// (2026-11-19), with 6 dB for its output to rise over its input; holdS: how fast the gain goes
+// down before a peak and back after it (a judgement: slower than a syllable's onset, so that
+// the gain does not follow the voice's own peaks)
+export const NEURAL = { pieceS: 150, shiftS: 15, warmS: 3, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1, timeoutS: 120, timeoutPerS: 4 };
 // its delay at 48 kHz in samples (0 measured) and how far either side it is looked for
 const DPDFNET_DELAY = 0;
 const DELAY_SEARCH = 2400;
@@ -1008,7 +1008,8 @@ function ffmpegPass(args, progress) {
 function runDenoiser(nr, inWav, outWav, seconds) {
   const args = [`--speech-denoiser-dpdfnet-model=${nr.model}`, "--num-threads=1", "--print-args=false",
     `--speech-denoiser-dpdfnet-attenuation-limit-db=${nr.limit}`, `--input-wav=${inWav}`, `--output-wav=${outWav}`];
-  const limit = Math.round(120 + 4 * seconds);
+  const t = { ...NEURAL, ...nr.tune };
+  const limit = Math.round(t.timeoutS + t.timeoutPerS * seconds);
   return new Promise((resolve) => {
     let p;
     try { p = spawn(nr.program, args, { stdio: ["ignore", "ignore", "ignore"] }); } catch (e) { resolve(`it could not be started (${e.code || e.message})`); return; }
