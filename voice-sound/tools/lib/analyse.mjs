@@ -1068,16 +1068,25 @@ function humOf(st, quiet, F, speechPower) {
         const lv = Float64Array.from(wins, (j) => { let s = 0; for (let k = km - 1; k <= km + 1; k++) s += 10 ** (st.humSpec[j * HUM_KEEP + k] / 1000); return db(s); });
         spread = quantile(lv, 0.9) - quantile(lv, 0.1);
       }
-      const counts = isPeak && inParts === P && spread <= HUM_STEADY_DB;
+      let counts = isPeak && inParts === P && spread <= HUM_STEADY_DB;
       // where the line lies: in the long windows where it stands out there (0.37 Hz a bin), else
-      // between the pauses' own bins (2.9 Hz, eight times coarser: weighed 1/64 in the fit)
+      // between the pauses' own bins (2.9 Hz, eight times coarser: weighed 1/64 in the fit); and a
+      // line counts only within HUM_OFF_SHARE of the mains' multiple, as from the whole recording
+      // (one bin of 2.9 Hz is 5 % of 60 Hz: a tune file read "60 Hz, its line at 57.87", 2026-11-20)
       let lineHz = null, weight = 0;
       if (counts) {
         const long = L?.at(h * f0);
         if (long && long.overDb >= HUM_LINE_DB) { lineHz = long.hz; weight = 1; } else { lineHz = (km + gauss(all, km)) * df; weight = L ? (L.df / df) ** 2 : 1; }
+        if (Math.abs(lineHz - h * base) > h * base * HUM_OFF_SHARE) { counts = false; lineHz = null; weight = 0; }
       }
       out.push({ n: h, hz: h * base, overDb: r1(over), inParts, spreadDb: r1(spread), counts, lineHz, weight, f0, most: isPeak ? most : -Infinity, excess: Math.max(0, line(all, km).excess), shared: (h * base) % 300 === 0 });
     }
+    // (and the counted lines must be the harmonics of one fundamental, as mains hum's are: each
+    // within 1.5 Hz of its multiple of their fit, about the pauses' own bins' precision; a series
+    // at 57.9 Hz otherwise lays lines on the 50 Hz grid at 347 and 405 Hz, 7 × 49.6 and 8 × 50.7)
+    let a = 0, b = 0;
+    for (const x of out) if (x.counts) { a += x.weight * x.n * x.lineHz; b += x.weight * x.n * x.n; }
+    if (b) for (const x of out) if (x.counts && Math.abs(x.lineHz - (x.n * a) / b) > 1.5) { x.counts = false; x.lineHz = null; x.weight = 0; }
     return out;
   };
   const at50 = grid(50), at60 = grid(60);

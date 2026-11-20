@@ -138,6 +138,18 @@ test("hum off the grid: each line where it lies (50.96 and 61.1 Hz), the fundame
   assert.equal(clean.hum.fundamentalHz, null);
 });
 
+test("hum in the pauses holds its line within 2.5 % of the mains: 59 Hz is a 60 Hz hum, 57.9 Hz none", { skip }, async () => {
+  for (const [hz, named] of [[59, true], [57.9, false]]) {
+    const f = file(`hum-near-${hz}.wav`);
+    run(["-i", base, "-filter_complex", `${humOf(hz)};[0:a][hum]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", f]);
+    const m = await measure(f);
+    assert.equal(m.hum.from, "pauses");
+    for (const x of [...m.hum.at50, ...m.hum.at60].filter((y) => y.counts)) assert.ok(Math.abs(x.lineHz - x.hz) <= x.hz * 0.025, `${hz}: ${JSON.stringify(x)}`);
+    assert.equal(ids(m).includes("hum"), named, `${hz}: ${ids(m).join()} ${JSON.stringify(m.hum.at60.slice(0, 2))}`);
+    if (named) near(m.hum.fundamentalHz, hz, 0.1, "fundamental");
+  }
+});
+
 test("hum under a voice without a pause: judged from the whole recording, named where it is steady, never a held pitch", { skip }, async () => {
   // its pitch held at 120 Hz, held at 180 Hz (lines on the 60 Hz grid without its odd harmonics),
   // gliding from 80 to 120 Hz through 100 Hz. (A held pitch is made of its harmonics to 1.4 kHz:
