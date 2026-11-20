@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample } from "./lib/repair.mjs";
+import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample, declipCpuS, declipPieces, declipWindow, usableCores } from "./lib/repair.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 import { fftOf } from "./lib/fft.mjs";
 
@@ -223,8 +223,8 @@ test("plan: declip makes headroom, clicks get adeclick over a plosive's release"
   assert.equal(st.gainDb, -5);
   assert.match(p.graph, /volume=1\.1dB,adeclip=[^,]+,volume=-6\.1dB/);
   // the window 55 ms, its AR model a share of it by how much is clipped; 10 ms where asked (the
-  // stage's second try after DECLIP_LIMIT)
-  const clipped = (share, o) => repairPlan(made({ clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), o);
+  // stage's second try after the net)
+  const clipped = (share, o, seconds = 10) => repairPlan(made({ analysed: { sampleRate: 48000, channels: 1, seconds }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), { cores: 4, ...o });
   assert.deepEqual([0.0005, 0.004, 0.02, 0.45].map((s) => clipped(s).steps[0].arOrder), [8, 12, 16, 16]);
   assert.match(clipped(0.02).graph, /adeclip=w=55:o=75:a=16:t=3:n=1000/);
   assert.match(clipped(0.02).steps[0].why, /\(a 55 ms window, its model 16 % of it\)/);
@@ -232,15 +232,50 @@ test("plan: declip makes headroom, clicks get adeclick over a plosive's release"
   // the second try from DECLIP_FAST_MAX_SHARE on: not redrawn (the 10 ms window does harm there)
   const fastMuch = clipped(0.35, { declipFast: true });
   assert.doesNotMatch(fastMuch.graph, /adeclip/);
-  assert.ok(fastMuch.left.some((l) => l.id === "clipped" && /took longer than its limit .* it stays as it is\.$/.test(l.why)), JSON.stringify(fastMuch.left));
-  assert.match(clipped(0.35).graph, /adeclip=w=55:/);
-  // past DECLIP_MAX_SHARE: not redrawn, said in left
-  const most = clipped(0.7);
-  assert.deepEqual(ids(most.steps), ["highpass"]);
-  assert.doesNotMatch(most.graph, /adeclip/);
-  assert.ok(most.left.some((l) => l.id === "clipped" && /^Clipped on 70 % of the samples, too much to redraw/.test(l.why)), JSON.stringify(most.left));
+  assert.ok(fastMuch.left.some((l) => l.id === "clipped" && /took far longer than foreseen.* it stays as it is\.$/.test(l.why)), JSON.stringify(fastMuch.left));
+  // no share is left alone for its own sake: 70 % clipped is redrawn where it fits
+  assert.match(clipped(0.7, {}, 10).graph, /adeclip=w=55:/);
   const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
   assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
+});
+
+test("plan: adeclip's window is chosen before it runs, from the predicted time on the machine's cores", () => {
+  // the prediction: twice the fit on the clip sets, the pieces' CPU 1.3 times the whole's
+  near(declipCpuS(0.25, 10, 55), 10 * 2 * 26.3 * 0.25 ** 1.36, 1e-9, "55 ms");
+  near(declipCpuS(0.25, 10, 10), 10 * 2 * 0.54 * 0.25 ** 0.79, 1e-9, "10 ms");
+  assert.equal(declipCpuS(0.005, 10, 55), 2, "under 1 %: 0.2 times the length");
+  assert.equal(declipPieces(60, 4), 4);
+  assert.equal(declipPieces(5, 8), 2, "a piece at least 2 s");
+  assert.equal(declipPieces(1.5, 8), 1);
+  // the limit: 150 s and once the length, of wall time: where the 55 ms window's predicted wall
+  // time lies just under it, 55 ms; just over, the next that fits
+  const s = 0.25, cores = 1;
+  const wall = (L) => declipCpuS(s, L, 55);
+  let L = 10; while (wall(L) < 150 + L) L += 0.01;
+  assert.equal(declipWindow(s, L - 0.05, cores).w, 55);
+  const over = declipWindow(s, L + 0.05, cores);
+  assert.equal(over.w, 20);
+  assert.equal(over.limitS, Math.round((150 + L + 0.05) * 10) / 10);
+  // more cores, the same recording: the 55 ms window again (its pieces run at once, their CPU
+  // 1.3 times the whole's spread over them)
+  const eight = declipWindow(s, L + 0.05, 8);
+  assert.equal(eight.w, 55);
+  assert.equal(eight.pieces, 8);
+  near(eight.wallS, (declipCpuS(s, L + 0.05, 55) * 1.3) / 8, 0.06, "its wall time");
+  // the machine's cores, one left for the video cut beside it
+  assert.equal(usableCores(), Math.max(1, os.availableParallelism() - 1));
+  // from 30 % only 55 ms or nothing (the coarse windows do harm there)
+  let L2 = 1; while (declipCpuS(0.35, L2, 55) < 150 + L2) L2 += 0.1;
+  assert.equal(declipWindow(0.35, L2 + 0.2, 1).w, null);
+  // in the plan: the coarse window says why, nothing else differs; past the limit at 35 %: left
+  const plan = (share, seconds) => repairPlan(made({ analysed: { sampleRate: 48000, channels: 1, seconds }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), { cores: 1 });
+  const coarse = plan(s, L + 0.05).steps[0];
+  assert.equal(coarse.windowMs, 20);
+  assert.match(coarse.why, /\(a 20 ms window, its model 16 % of it\), the old ceiling then at −6\.0 dBFS; the 55 ms window would take about \d+ s here, over the \d+ s it may\.$/);
+  assert.deepEqual(Object.keys(coarse.predicted), ["cpuS", "pieces", "limitS"]);
+  const none = plan(0.35, L2 + 0.2);
+  assert.ok(!none.steps.some((x) => x.id === "declip"));
+  assert.ok(none.left.some((l) => /^Clipped on 35 % of the samples: redrawing it would take about \d+ s here, over the \d+ s it may, and a coarser window does more harm than good this far: it stays as it is\.$/.test(l.why)), JSON.stringify(none.left));
 });
 
 test("plan: the denoise method, its strength, and what is left", () => {
@@ -501,19 +536,37 @@ test("clipped: a redrawing that takes longer than its limit is stopped and run a
   const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.97)];
   fault("clipped2.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)))'[o]`, "pcm_s16le");
   const m = await measure(file("clipped2.wav"));
-  // (a limit of 0.3 s of CPU: the 55 ms window on 28.8 s takes more)
-  const { r, x, y } = await mended("clipped2.wav", m, { declipLimit: { baseS: 0.3, perSecond: 0 } });
+  // (a net of 0.3 s of CPU, whatever the prediction: the 55 ms window on 28.8 s takes more; the
+  // 10 ms one then runs to its end, though it too takes more than 0.3 s)
+  const { r, x, y } = await mended("clipped2.wav", m, { cores: 1, declipNet: { times: 0, s: 0.3 } });
   const st = r.steps.find((s) => s.id === "declip");
   assert.equal(st.windowMs, 10);
   assert.match(r.graph, /adeclip=w=10:/);
-  assert.match(st.why, /; the 55 ms window took over 0\.3 s of CPU, so it ran again with the coarser 10 ms one\.$/);
+  assert.match(st.why, /; the 55 ms window ran past 0\.3 s of CPU, far over what was foreseen, so it ran again with the coarser 10 ms one\.$/);
   assert.deepEqual(st.slow, { windowMs: 55, cpuLimitS: 0.3 });
   assert.equal(y.length, x.length);
-  // without a limit that small: the 55 ms window, nothing said
-  const plain = await repair(file("clipped2.wav"), file("clipped2.plain.wav"), m);
+  // the net as it is: the 55 ms window, nothing said
+  const plain = await repair(file("clipped2.wav"), file("clipped2.plain.wav"), m, { cores: 1 });
   assert.equal(plain.steps.find((s) => s.id === "declip").windowMs, 55);
   assert.ok(!plain.steps.find((s) => s.id === "declip").slow);
+  // the window from the prediction, before anything runs: a limit of 0.1 s a second of sound
+  // leaves the 10 ms window alone, chosen, not tried after the others
+  const small = await repair(file("clipped2.wav"), file("clipped2.small.wav"), m, { cores: 1, declipLimit: { baseS: 0, perSecond: 0.1 } });
+  const sm = small.steps.find((s) => s.id === "declip");
+  assert.equal(sm.windowMs, 10);
+  assert.ok(!sm.slow);
+  assert.match(sm.why, /; the 55 ms window would take about [\d.]+ s here, over the 2\.9 s it may\.$/);
 });
+
+test("clipped: redrawn in pieces at once, the joined result the one-piece result to the sample", { skip }, async () => {
+  const m = await measure(file("clipped2.wav"));
+  const one = await repair(file("clipped2.wav"), file("clipped2.one.wav"), m, { cores: 1 });
+  const four = await repair(file("clipped2.wav"), file("clipped2.four.wav"), m, { cores: 4 });
+  assert.equal(one.steps.find((s) => s.id === "declip").predicted.pieces, 1);
+  assert.equal(four.steps.find((s) => s.id === "declip").predicted.pieces, 4);
+  assert.ok(fs.readFileSync(file("clipped2.one.wav")).equals(fs.readFileSync(file("clipped2.four.wav"))), "the four pieces joined differ from the whole");
+});
+
 
 test("clipped at full scale with a DC offset before it: both sides redrawn, the offset taken out after adeclip", { skip }, async () => {
   // (a preamp's offset, then the converter clipping at ±1: both sides at the same |x| only with
