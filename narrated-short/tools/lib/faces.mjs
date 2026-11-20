@@ -275,8 +275,8 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
     }
     const share = Math.min(100, Math.round(((hullOf(held)[1] - hullOf(held)[0]) / cw) * 100));
     const cost = `${lead} is the band${z > 1 ? `, ${z} times larger` : ""} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): ${bandCost(held, [cw, ch], z, at, "\"frame\": \"fill\" with a \"pan\"")}`;
-    if (z === old.zoom) return { ...old, flag: true, said: [cost, ...(old.said && !/in the picture as it is/.test(old.said) ? [old.said] : [])].join("; ") };
-    const banded = placePan({ ...out, zoom: z, changed: true, flag: true }, hullOf(held), cw);
+    if (z === old.zoom) return { ...old, flag: smallBand(main, [cw, ch], z), said: [cost, ...(old.said && !/in the picture as it is/.test(old.said) ? [old.said] : [])].join("; ") };
+    const banded = placePan({ ...out, zoom: z, changed: true, flag: smallBand(main, [cw, ch], z) }, hullOf(held), cw);
     banded.said = [cost, ...passing(shown({ frame: "whole", zoom: banded.zoom, pan: banded.pan, size: [cw, ch] }))].join("; ");
     return banded;
   }
@@ -321,7 +321,7 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
         return out;
       }
     }
-    Object.assign(out, { frame: "whole", zoom: band.zoom, pan: 0.5, changed: true, flag: true });
+    Object.assign(out, { frame: "whole", zoom: band.zoom, pan: 0.5, changed: true, flag: smallBand(main, [cw, ch], band.zoom) });
     out.said = `a fill would cut ${names(featsCut(now, held))} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): the whole picture as a band${out.zoom > 1 ? `, ${out.zoom} times larger` : ""}${band.limited ? `, ${held.length > 1 ? "their eyes" : "the eyes"} above the captions` : ""}; ${bandCost(held, [cw, ch], band.zoom, at, "a \"pan\"")}`;
     const banded = placePan(out, hullOf(held), cw);
     banded.said = [banded.said, ...passing(shown({ frame: "whole", zoom: banded.zoom, pan: banded.pan, size: [cw, ch] }))].join("; ");
@@ -343,6 +343,8 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   return placePan(out, hull, cw);
 }
 
+// a band marked `!`: a close-up shown in it, or more of the frame blurred ground than picture
+const smallBand = (main, [cw, ch], zoom) => main.h >= CLOSE * ch || groundOf({ frame: "whole", zoom }, [cw, ch]) >= 50;
 // whether every box of the faces (where inside the source) lies inside a rect of the source [x, y, w, h]
 function wholeIn(rect, ps, [cw, ch]) {
   return ps.every((p) => p.boxes.every((b) => Math.max(0, b[0]) >= rect[0] - 1 && Math.min(cw, b[0] + b[2]) <= rect[0] + rect[2] + 1 && Math.max(0, b[1]) >= rect[1] - 1 && Math.min(ch, b[1] + b[3]) <= rect[1] + rect[3] + 1));
@@ -360,23 +362,24 @@ function groundOf(place, size) {
 }
 // What a band of the held faces costs and the ways out: the ground's share, their heights, a "pan"
 // (the agent's choice of whom the words are about) or another stretch; where in the beat's own
-// stretch they stand within a 1:1 crop's width (the source's height) at every moment for 0.3 s or
-// more, those seconds of the source
+// stretch their boxes stand within a 1:1 crop's width (the source's height) at every moment for
+// 0.3 s or more, and the band is smaller than such a 1:1, those seconds of the source
 export function bandCost(held, [cw, ch], zoom, at = 0, pan = "a \"pan\"") {
   const k = (Math.round((SIZE[0] * zoom) / 2) * 2) / cw;
   const two = held.length > 1;
-  let said = `${groundOf({ frame: "whole", zoom }, [cw, ch])} % of the frame blurred ground, ${two ? "the faces" : "the face"} ${heights(held, k)}; to show ${two ? "them" : "it"} larger: ${pan} on ${two ? "the one the words are about (it cuts the other)" : "it"}, or another stretch where ${two ? "they stand closer" : "it is smaller"}`;
-  const close = closer(held, [cw, ch]);
+  let said = `${groundOf({ frame: "whole", zoom }, [cw, ch])} % of the frame blurred ground, ${two ? "the faces" : "the face"} ${heights(held, k)}; to show ${two ? "them" : "it"} larger: ${pan} on ${two ? `the one the words are about (it cuts the other${held.length > 2 ? "s" : ""})` : "it"}, or another stretch where ${two ? "they stand closer" : "it is smaller"}`;
+  // (a 1:1 at the source's full height is larger than the band only where the band is under 1080 / ch)
+  const close = k < SIZE[0] / ch - 1e-6 ? closer(held, [cw, ch]) : null;
   if (close) said += ` (at the source's ${(at + close[0]).toFixed(1)}-${(at + close[1]).toFixed(1)} s, inside this beat's stretch, ${two ? "they stand" : "it stands"} within ${ch} px, where a 1:1 crop holds ${two ? "them" : "it"})`;
   return said;
 }
 // the longest run of moments (0.3 s or more) where all the held faces are seen within the source's
-// height across, their room beside them included: [from, to] seconds of the stretch, or null
+// height across, their boxes whole: [from, to] seconds of the stretch, or null
 function closer(held, [, ch]) {
   const at = new Map();
   for (const p of held) p.ts.forEach((t, j) => { const key = Math.round(t * 1000); if (!at.has(key)) at.set(key, []); at.get(key).push({ who: p.who, b: p.boxes[j] }); });
   const ok = [...at.entries()].filter(([, fs]) => held.every((p) => fs.some((f) => f.who === p.who))).filter(([, fs]) => {
-    const x0 = Math.min(...fs.map((f) => f.b[0] - SIDE * f.b[2])), x1 = Math.max(...fs.map((f) => f.b[0] + f.b[2] + SIDE * f.b[2]));
+    const x0 = Math.min(...fs.map((f) => f.b[0])), x1 = Math.max(...fs.map((f) => f.b[0] + f.b[2]));
     return x1 - x0 <= ch;
   }).map(([t]) => t / 1000).sort((a, b) => a - b);
   const step = ok.length > 1 ? Math.min(...ok.slice(1).map((t, j) => t - ok[j])) : 0.1;

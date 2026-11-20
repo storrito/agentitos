@@ -821,6 +821,12 @@ test("no \"frame\": four people no fill holds, low in the picture, get layout's 
   const q = planWindow({ frame: "whole", size: SIZE4K, people: four, captions: CAPTIONS, crop: () => tight, silent: true });
   assert.equal(q.frame, "whole");
   assert.ok(wholeIn(((w) => [w[0], 0, w[1] - w[0], 2160])(shown({ ...q, size: SIZE4K })), four));
+  // the same four higher up (the run's b10): a band at 1.8x and more is larger than any 1:1 of them, so the band, unmarked, and no stretch for a 1:1 named
+  const high = counted(listOf(...[[600, "A"], [1100, "B"], [1600, "C"], [2300, "D"]].map(([x, who]) => [who, person(who, [x, 600, 150, 200], 34)])), SIZE4K, 3.4);
+  const h = planWindow({ frame: "whole", size: SIZE4K, people: high, captions: CAPTIONS, crop: () => square, silent: true });
+  assert.equal(h.frame, "whole");
+  assert.ok(h.zoom > 1.8 && h.flag === false, `zoom ${h.zoom}, flag ${h.flag}`);
+  assert.match(h.said, /\d+ % of the frame blurred ground, the faces 114 to 114 px; to show them larger: "frame": "fill" with a "pan" on the one the words are about \(it cuts the others\), or another stretch where they stand closer$/);
 });
 
 test("no \"frame\": a pair only the band holds keeps the band (never a fill on one of them), and its line says the cost and the ways out, with the seconds of the clip where they stand closer (the run's b9)", () => {
