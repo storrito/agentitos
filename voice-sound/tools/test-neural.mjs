@@ -231,8 +231,9 @@ test("plan: dpdfnet where both files are there and noise was measured, never wit
     assert.deepEqual(p.inputs, [{ input: 0, what: "the file" }]);
     assert.equal(p.graphs.length, 2);
     assert.doesNotMatch(p.graphs[0], /afftdn|arnndn/);
-    // the limit: what the aim needs, never more than --denoise allows
-    for (const s of ["gentle", "auto", "strong"]) assert.equal(repairPlan(made(), { denoise: s }).steps.at(-1).limitDb, Math.min(20, DPDFNET_LIMITS[s]), s);
+    // the limit: what the aim needs, never more than --denoise allows (strong: its cap)
+    for (const s of ["gentle", "auto"]) assert.equal(repairPlan(made(), { denoise: s }).steps.at(-1).limitDb, Math.min(20, DPDFNET_LIMITS[s]), s);
+    assert.equal(repairPlan(made(), { denoise: "strong" }).steps.at(-1).limitDb, DPDFNET_LIMITS.strong, "strong: its cap");
     assert.ok(DPDFNET_LIMITS.gentle < DPDFNET_LIMITS.auto && DPDFNET_LIMITS.auto < DPDFNET_LIMITS.strong);
     assert.equal(repairPlan(made({ levels: { speechLufs: -20, snrDb: 33, snrADb: 33 } })).steps.at(-1).limitDb, 12, "not more than needed");
     // no noise measured, --denoise off: no denoiser
@@ -677,6 +678,29 @@ test("--denoise gentle or strong where nothing found noise: the noise step runs 
   assert.equal(sd.asked, true);
   assert.equal(sd.fallback.voice.downShare, 1);
   assert.ok(d.left.some((l) => /took this voice for noise/.test(l.why)));
+});
+
+test("--denoise strong where measure named noise: its cap whatever the aim needs, so never auto's file; gentle never more than auto", async () => {
+  // noise 33 dB under the speech: the 45 dB aim needs 12
+  const m = made({ levels: { speechLufs: -20, noiseLufs: -53, snrDb: 33, snrADb: 33 } });
+  for (const [env, auto, gentle, strong] of [[STANDIN_ENV(), 12, 12, DPDFNET_LIMITS.strong], [NONE_ENV(), 12, 6, DENOISE_CAPS["afftdn-sample"].strong]]) {
+    await withEnv(env, () => {
+      const st = (s) => repairPlan(m, { denoise: s }).steps.find((x) => x.id === "denoise");
+      assert.equal(st("auto").reduceDb, auto);
+      assert.equal(st("auto").pastAim, undefined);
+      assert.equal(st("gentle").reduceDb, gentle);
+      assert.equal(st("gentle").pastAim, undefined);
+      const s = st("strong");
+      assert.equal(s.reduceDb, strong);
+      assert.equal(s.pastAim, true);
+      assert.match(s.why, new RegExp(`${strong} dB.*, more than the 12 dB the 45 dB aim needs, as --denoise strong asks`));
+      assert.equal(s.why.split(/\. /).length, 1, s.why);
+      // where the aim needs more than strong's cap: the cap, said as before
+      const far = repairPlan(made({ levels: { speechLufs: -20, snrDb: 10, snrADb: 10 } }), { denoise: "strong" }).steps.find((x) => x.id === "denoise");
+      assert.equal(far.pastAim, undefined);
+      assert.match(far.why, /the most --denoise strong allows|as much as afftdn-sample takes without artefacts/);
+    });
+  }
 });
 
 test("--denoise strong with nothing to work from: left says why", async () => {
