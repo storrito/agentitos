@@ -122,7 +122,7 @@ test("plan: a clean recording gets the high-pass at 80 Hz and nothing else", () 
   assert.equal(p.steps[0].poles, 2);
   assert.deepEqual(p.left, []);
   assert.equal(p.method, "off");
-  assert.match(p.graph, /^\[0:a\]aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
+  assert.match(p.graph, /^\[0:a\]aformat=sample_fmts=flt,aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
 });
 
 test("plan: each finding alone gives its step and no other", () => {
@@ -141,8 +141,28 @@ test("plan: each finding alone gives its step and no other", () => {
     assert.deepEqual(st.notches.map((x) => x.hz), [50, 100]);
     assert.deepEqual(p.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50:t=h:w=2:r=f64", "bandreject=f=100:t=h:w=2:r=f64"]);
     assert.equal(st.widthHz, 2);
-    assert.match(st.why, /^Hum at 50 Hz, steady in the pauses at 50, 100 Hz \(up to 18 dB over the noise beside it\): each of the 2 lines taken out by a notch 2 Hz wide at its −3 dB points\.$/);
+    assert.match(st.why, /^Hum at 50 Hz, steady in the pauses \(up to 18 dB over the noise beside it\): notched at 50, 100 Hz, each 2 Hz wide at its −3 dB points\.$/);
   }
+  // each notch on its line as measured (lineHz), not on the multiple of the mains: a line at
+  // 50.96 Hz loses 3.2 dB to a notch at 50 (fleurs-de-05, 2026-11-20); the step keeps both
+  // numbers and says where it notched, never that the line is gone
+  const off = { judged: true, hz: 50, fundamentalHz: 50.963, harmonics: 2, overDb: 27, at50: [{ n: 1, hz: 50, lineHz: 50.963, overDb: 27, counts: true }, { n: 2, hz: 100, lineHz: 101.93, overDb: 12, counts: true }, { n: 3, hz: 150, lineHz: 152.9, overDb: 4, counts: false }], at60: [] };
+  const po = repairPlan(made({ hum: off, findings: [finding("hum")] }));
+  assert.deepEqual(po.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50.96:t=h:w=2:r=f64", "bandreject=f=101.93:t=h:w=2:r=f64"]);
+  const so = po.steps.find((s) => s.id === "dehum");
+  assert.deepEqual(so.notches.map((x) => [x.n, x.hz, x.lineHz, x.notchHz]), [[1, 50, 50.963, 50.96], [2, 100, 101.93, 101.93]]);
+  assert.equal(so.fundamentalHz, 50.963);
+  assert.match(so.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady in the pauses \(up to 27 dB over the noise beside it\): notched at 50\.96, 101\.93 Hz, each 2 Hz wide at its −3 dB points\.$/);
+  assert.doesNotMatch(so.why, /taken out|gone|removed/);
+  // hum judged over the whole recording (measure's long windows, where the pauses are too few):
+  // the step says so, never "in the pauses"
+  const whole = repairPlan(made({ hum: { ...off, from: "whole" }, findings: [finding("hum")] })).steps.find((s) => s.id === "dehum");
+  assert.match(whole.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady through the whole recording, under the voice too \(too little pause to judge it there alone\) \(up to 27 dB/);
+  assert.equal(whole.judgedFrom, "whole");
+  assert.match(repairPlan(made({ hum: { ...off, from: "pauses" }, findings: [finding("hum")] })).steps.find((s) => s.id === "dehum").why, /steady in the pauses \(/);
+  // a lineHz that is no number: the multiple of the mains
+  const odd = repairPlan(made({ hum: { ...off, at50: [{ n: 1, hz: 50, lineHz: null, overDb: 27, counts: true }] }, findings: [finding("hum")] }));
+  assert.deepEqual(odd.graph.match(/bandreject=f=[\d.]+/g), ["bandreject=f=50"]);
   // hum that was not judged (too little pause) or counts nowhere: no notch
   for (const hum of [{ judged: false, hz: null, harmonics: 0, overDb: null, at50: [], at60: [] }, { judged: true, hz: 50, harmonics: 0, overDb: 12, at50: [{ n: 1, hz: 50, overDb: 12, counts: false }], at60: [] }])
     assert.deepEqual(ids(repairPlan(made({ hum, findings: [finding("hum")] })).steps), ["highpass"]);
@@ -173,6 +193,54 @@ test("plan: two channels become one as measured", () => {
   const real = two({ correlation: 0.4, levelDifferenceDb: 2, monoLossDb: -1.6, identical: false, silentChannel: null });
   assert.equal(real.steps[0].take, "mean");
   assert.match(real.graph, /pan=mono\|c0=0\.5\*c0\+0\.5\*c1/);
+  // one channel 20 dB and more under the other is dead but for noise: the louder alone
+  const faint = two({ correlation: 0.9, levelDifferenceDb: -24, monoLossDb: -0.4, identical: false, silentChannel: null });
+  assert.equal(faint.steps[0].take, "right");
+  assert.match(faint.graph, /pan=mono\|c0=c1,/);
+  // more than two: ffmpeg's downmix to two first, as measure reads them
+  assert.match(repairPlan(made({ sound: { channels: 6 }, channels: { correlation: 1, levelDifferenceDb: 0, monoLossDb: 0, identical: true, silentChannel: null } })).graph, /aformat=channel_layouts=stereo,pan=mono\|c0=c0,/);
+});
+
+test("plan: the high-pass's slope follows the rumble, the DC offset is taken at declip's gain", () => {
+  // need: the rumble over speech's −28 dB under 80 Hz; over 9 dB 4 poles, over 16 dB 6, over 25 dB 90 Hz
+  const lowOf = (below80Db, pauses80Db = below80Db, over = {}) => repairPlan(made({ low: { below80Db, pauses80Db, thumps: { count: 0, perMinute: 0, at: [] } }, findings: [finding("rumble")], ...over })).steps.find((s) => s.id === "highpass");
+  assert.deepEqual([-20, -18, -10, 0].map((v) => [lowOf(v).poles, lowOf(v).hz]), [[2, 80], [4, 80], [6, 80], [6, 90]]);
+  // the pauses' low end counts as rumble, unless hum stands in them (its lines are no rumble)
+  assert.equal(lowOf(-30, -10).poles, 6);
+  const hum = { judged: true, hz: 50, harmonics: 1, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }], at60: [] };
+  assert.equal(lowOf(-30, -10, { hum, findings: [finding("rumble"), finding("hum")] }).poles, 2);
+  // a DC offset is subtracted at declip's gain, after it and before the high-pass
+  const both = repairPlan(made({ dc: { values: [0.05], db: -26 }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 }, findings: [finding("clipped"), finding("dc")] }));
+  const gain = both.steps.find((s) => s.id === "declip").gainDb;
+  near(Number(both.graph.match(/dcshift=shift=([-\d.e]+)/)[1]), -0.05 * 10 ** (gain / 20), 1e-4, "the offset at declip's gain");
+  assert.ok(both.graph.indexOf("adeclip") < both.graph.indexOf("dcshift") && both.graph.indexOf("dcshift") < both.graph.indexOf("highpass"));
+});
+
+test("plan: declip makes headroom, clicks get adeclick over a plosive's release", () => {
+  const p = repairPlan(made({ clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 }, findings: [finding("clipped")] }));
+  const st = p.steps.find((s) => s.id === "declip");
+  // the ceiling lifted to full scale for adeclip (with the 0.1 dB under it), then the old ceiling at −6 dBFS
+  assert.equal(st.gainDb, -5);
+  assert.match(p.graph, /volume=1\.1dB,adeclip=[^,]+,volume=-6\.1dB/);
+  // the window 55 ms, its AR model a share of it by how much is clipped; 10 ms where asked (the
+  // stage's second try after DECLIP_LIMIT)
+  const clipped = (share, o) => repairPlan(made({ clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), o);
+  assert.deepEqual([0.0005, 0.004, 0.02, 0.45].map((s) => clipped(s).steps[0].arOrder), [8, 12, 16, 16]);
+  assert.match(clipped(0.02).graph, /adeclip=w=55:o=75:a=16:t=3:n=1000/);
+  assert.match(clipped(0.02).steps[0].why, /\(a 55 ms window, its model 16 % of it\)/);
+  assert.match(clipped(0.02, { declipFast: true }).graph, /adeclip=w=10:o=75:a=16:/);
+  // the second try from DECLIP_FAST_MAX_SHARE on: not redrawn (the 10 ms window does harm there)
+  const fastMuch = clipped(0.35, { declipFast: true });
+  assert.doesNotMatch(fastMuch.graph, /adeclip/);
+  assert.ok(fastMuch.left.some((l) => l.id === "clipped" && /took longer than its limit .* it stays as it is\.$/.test(l.why)), JSON.stringify(fastMuch.left));
+  assert.match(clipped(0.35).graph, /adeclip=w=55:/);
+  // past DECLIP_MAX_SHARE: not redrawn, said in left
+  const most = clipped(0.7);
+  assert.deepEqual(ids(most.steps), ["highpass"]);
+  assert.doesNotMatch(most.graph, /adeclip/);
+  assert.ok(most.left.some((l) => l.id === "clipped" && /^Clipped on 70 % of the samples, too much to redraw/.test(l.why)), JSON.stringify(most.left));
+  const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
+  assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
 });
 
 test("plan: the denoise method, its strength, and what is left", () => {
@@ -282,8 +350,8 @@ test("hum of ten harmonics: every harmonic found down by 20 dB and more, the voi
     const dehum = r.steps.find((s) => s.id === "dehum");
     assert.ok(dehum, ids(r.steps).join());
     assert.equal(dehum.hz, hz);
-    assert.ok(dehum.notches.length >= 8 && dehum.notches.every((n) => n.hz % hz === 0 && n.widthHz === 2), JSON.stringify(dehum.notches));
-    assert.match(dehum.why, new RegExp(`^Hum at ${hz} Hz, steady in the pauses at [\\d, ]+ Hz .*: each of the ${dehum.notches.length} lines taken out by a notch 2 Hz wide at its −3 dB points\\.$`));
+    assert.ok(dehum.notches.length >= 8 && dehum.notches.every((n) => n.hz % hz === 0 && Math.abs(n.notchHz - n.hz) <= 0.2 && n.widthHz === 2), JSON.stringify(dehum.notches));
+    assert.match(dehum.why, new RegExp(`^Hum at ${hz}(\\.\\d+)? Hz.*, steady in the pauses \\(.*\\): notched at [\\d., ]+ Hz, each 2 Hz wide at its −3 dB points\\.$`));
     // the hum alone, through the graph with its notches and without them (after the first
     // second: a notch 2 Hz wide settles in about half of one)
     run(["-filter_complex", `${humTones(hz, 0.01)}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("humonly.wav")]);
@@ -313,6 +381,28 @@ test("hum of ten harmonics: every harmonic found down by 20 dB and more, the voi
   }
 });
 
+test("hum off the mains (50.96 Hz): each notch on its measured line takes it down by 20 dB and more", { skip }, async () => {
+  // (lineHz is `measure`'s number for each harmonic; made up here as it will give it)
+  const f0 = 50.96, N = 9;
+  const tones = `${HUM_AMPS.slice(0, N).map((a, i) => `sine=f=${(f0 * (i + 1)).toFixed(3)}:r=48000:d=${D},volume=${(0.01 * a).toPrecision(3)}[h${i}]`).join(";")};` +
+    `${HUM_AMPS.slice(0, N).map((_, i) => `[h${i}]`).join("")}amix=inputs=${N}:normalize=0`;
+  run(["-i", base, "-filter_complex", `${tones}[hum];[0:a][hum]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("hum5096.wav")]);
+  const m = await measure(file("hum5096.wav"));
+  m.hum = { ...m.hum, judged: true, hz: 50, fundamentalHz: f0, harmonics: N, overDb: 25, at50: [...Array(N).keys()].map((i) => ({ n: i + 1, hz: 50 * (i + 1), lineHz: +(f0 * (i + 1)).toFixed(2), overDb: 25, counts: true })), at60: [] };
+  if (!m.findings.some((f) => f.id === "hum")) m.findings.push(finding("hum"));
+  const { r, x, y } = await mended("hum5096.wav", m);
+  assert.equal(y.length, x.length);
+  const dehum = r.steps.find((s) => s.id === "dehum");
+  assert.deepEqual(dehum.notches.map((q) => q.notchHz), [...Array(N).keys()].map((i) => +(f0 * (i + 1)).toFixed(2)));
+  run(["-filter_complex", `${tones}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("hum5096only.wav")]);
+  const through = (graph, z) => { run(["-i", file("hum5096only.wav"), "-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_f32le", file(z)]); return samples(file(z)).subarray(48000); };
+  const hy = through(r.graph, "hum5096.out2.wav"), hx = through(unnotched(r.graph), "hum5096.ref2.wav");
+  for (let i = 0; i < N; i++) {
+    const f = f0 * (i + 1), down = lineDb(hx, f) - lineDb(hy, f);
+    assert.ok(down >= 20, `${f.toFixed(2)} Hz down by ${down.toFixed(1)} dB`);
+  }
+});
+
 test("the notch, measured through ffmpeg: 2 Hz wide at its −3 dB points on every harmonic, deep at its line", { skip }, async () => {
   const p = repairPlan(made({ hum: { judged: true, hz: 50, harmonics: 2, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }, { n: 9, hz: 450, overDb: 12, counts: true }], at60: [] }, findings: [finding("hum")] }));
   const notches = p.graph.match(/bandreject=[^,;[]+/g);
@@ -325,6 +415,8 @@ test("the notch, measured through ffmpeg: 2 Hz wide at its −3 dB points on eve
       return lineDb(samples(file("sine.wav")).subarray(48000), f) - db((0.125 / 2) ** 2);
     };
     for (const d of [-1, 1]) near(gain(f0 + d), -3, 0.2, `${f0} Hz notch at ${d > 0 ? "+" : ""}${d} Hz`);
+    // how well a line must be known (HUM_NOTCH_HZ): 0.1 Hz off −20 dB, 0.2 Hz −14, 0.5 Hz −7
+    for (const [d, want] of [[0.1, -20], [0.2, -14.1], [0.5, -7]]) near(gain(f0 + d), want, 0.3, `${f0} Hz notch at +${d} Hz`);
     for (const d of [-3, 3]) assert.ok(gain(f0 + d) > -0.7, `${f0 + d} Hz`);
     assert.ok(gain(f0) < -60, `${f0} Hz itself: ${gain(f0).toFixed(1)} dB`);
   }
@@ -404,6 +496,45 @@ test("clipped: the peaks are redrawn over the old ceiling", { skip }, async () =
   assert.ok(err(y) < err(clipped) * 0.8, `error ${(10 * Math.log10(err(y) / err(clipped))).toFixed(1)} dB against the clipped one's`);
 });
 
+test("clipped: a redrawing that takes longer than its limit is stopped and run again with the 10 ms window, and says so", { skip }, async () => {
+  const loud = samples(fault("loud2.wav", "[0:a]volume=9dB[o]"));
+  const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.97)];
+  fault("clipped2.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)))'[o]`, "pcm_s16le");
+  const m = await measure(file("clipped2.wav"));
+  // (a limit of 0.3 s of CPU: the 55 ms window on 28.8 s takes more)
+  const { r, x, y } = await mended("clipped2.wav", m, { declipLimit: { baseS: 0.3, perSecond: 0 } });
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.equal(st.windowMs, 10);
+  assert.match(r.graph, /adeclip=w=10:/);
+  assert.match(st.why, /; the 55 ms window took over 0\.3 s of CPU, so it ran again with the coarser 10 ms one\.$/);
+  assert.deepEqual(st.slow, { windowMs: 55, cpuLimitS: 0.3 });
+  assert.equal(y.length, x.length);
+  // without a limit that small: the 55 ms window, nothing said
+  const plain = await repair(file("clipped2.wav"), file("clipped2.plain.wav"), m);
+  assert.equal(plain.steps.find((s) => s.id === "declip").windowMs, 55);
+  assert.ok(!plain.steps.find((s) => s.id === "declip").slow);
+});
+
+test("clipped at full scale with a DC offset before it: both sides redrawn, the offset taken out after adeclip", { skip }, async () => {
+  // (a preamp's offset, then the converter clipping at ±1: both sides at the same |x| only with
+  // the offset in)
+  // (as the test above: the ceiling where 0.5 % of the samples, the offset in, lie over it)
+  const loud = samples(fault("dcloud.wav", "[0:a]volume=9dB,aeval=val(0)+0.1[o]"));
+  const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.995)];
+  fault("dcclipped.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)+0.1))'[o]`);
+  const m = await measure(file("dcclipped.wav"));
+  // (the ceiling as measure gives it from 2111e94 on, read from the offset)
+  m.clipping = { ...m.clipping, ceilingDb: 20 * Math.log10(ceiling) };
+  const { r, y } = await mended("dcclipped.wav", m);
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.ok(st && r.graph.indexOf("adeclip") < r.graph.indexOf("dcshift"), r.graph);
+  const through = (src, name) => { run(["-i", src, "-af", `${highpasses(r.graph)},volume=${st.gainDb}dB`, "-c:a", "pcm_f32le", file(name)]); return samples(file(name)); };
+  const truth = through(file("dcloud.wav"), "dcloud.hp.wav"), clipped = through(file("dcclipped.wav"), "dcclipped.hp.wav");
+  const err = (z) => { let s = 0; for (let i = 48000; i < z.length; i++) s += (z[i] - truth[i]) ** 2; return s; };
+  // nearer the voice before it clipped than the clipped one is (here by 3.1 dB)
+  assert.ok(db(err(y) / err(clipped)) < -2, `error ${db(err(y) / err(clipped)).toFixed(1)} dB against the clipped one's`);
+});
+
 test("two channels: a dead one and an inverted one give a single channel at full level", { skip }, async () => {
   const level = rms(samples(base));
   for (const [name, pan] of [["dead.wav", "c0=c0|c1=0*c0"], ["inverted.wav", "c0=c0|c1=-1*c0"], ["offcentre.wav", "c0=c0|c1=0.5*c0"]]) {
@@ -419,6 +550,23 @@ test("two channels: a dead one and an inverted one give a single channel at full
   }
 });
 
+test("16-bit input: the filters work in float (no second rounding, no high-pass clipped at full scale)", { skip }, async () => {
+  // a quiet voice written at 16 bits, and one whose peaks touch full scale
+  const peak = samples(base).reduce((p, v) => Math.max(p, Math.abs(v)), 0);
+  for (const [name, gain] of [["quiet16.wav", -45], ["full16.wav", null]]) {
+    fault(name, `[0:a]volume=${gain ?? (-20 * Math.log10(peak)).toFixed(3)}dB[o]`, "pcm_s16le");
+    const m = await measure(file(name));
+    const { r, y } = await mended(name, m);
+    assert.deepEqual(ids(r.steps), ["highpass"], name);
+    // the exact answer: the same 16-bit samples through the same high-pass in double precision
+    run(["-i", file(name), "-af", `aformat=sample_fmts=dbl,${highpasses(r.graph)}`, "-c:a", "pcm_f32le", file(`${name}.exact.wav`)]);
+    const x = samples(file(`${name}.exact.wav`));
+    let e = 0, s = 0;
+    for (let i = 0; i < x.length; i++) { e += (y[i] - x[i]) ** 2; s += x[i] ** 2; }
+    assert.ok(db(e / s) < -70, `${name}: ${db(e / s).toFixed(1)} dB off the exact high-pass`);
+  }
+});
+
 test("after: the tone stage's filters run at the end of the same pass", { skip }, async () => {
   const m = await measure(base);
   const { r, x, y } = await mended("voice.wav", m, { after: "volume=-6dB" });
@@ -429,6 +577,46 @@ test("after: the tone stage's filters run at the end of the same pass", { skip }
 test("a filter ffmpeg lacks is one sentence naming it", { skip }, () => {
   assert.throws(() => checkFilters(["afftdn", "nosuchfilter"]), (e) => e instanceof Refusal && /no nosuchfilter filter/.test(e.message) && !e.message.includes("\n"));
   checkFilters(["afftdn", "adeclip", "adeclick", "asendcmd", "concat", "amix", "equalizer", "highpass", "dcshift", "pan"]);
+});
+
+test("a file whose name begins with a dash or holds a colon is repaired, not read as an option or a protocol", { skip }, async () => {
+  // (named relative to the working folder, as a person types them)
+  fs.copyFileSync(base, file("take:1.wav"));
+  const m = await measure(base), was = process.cwd();
+  process.chdir(dir);
+  try {
+    const r = await repair("take:1.wav", "-out.wav", m);
+    assert.deepEqual(ids(r.steps), ["highpass"]);
+  } finally { process.chdir(was); }
+  assert.equal(samples(file("-out.wav")).length, samples(base).length);
+});
+
+test("more than two channels: mixed to two as measure reads them, then to one (a voice in the centre channel alone)", { skip }, async () => {
+  fault("centre.wav", "[0:a]pan=5.1|FC=c0[o]");
+  const m = await measure(file("centre.wav"));
+  const { r, out } = await mended("centre.wav", m);
+  assert.equal(r.steps[0].id, "channels");
+  // (ffmpeg's downmix puts the centre into both at −3 dB; the front left alone would be silent)
+  near(20 * Math.log10(rms(samples(out)) / rms(samples(base))), -3, 1, "level");
+});
+
+test("what ffmpeg wrote is checked: a sample beyond ±16 or a failed run is a refusal, and no file is left", { skip }, async () => {
+  // a sample of 1e11 (ffmpeg 9.0.2's arnndn wrote such values) is found like a NaN
+  const raw = new Float32Array(48000).fill(0.1);
+  raw[30000] = 1e11;
+  fs.writeFileSync(file("big.raw"), Buffer.from(raw.buffer));
+  run(["-f", "f32le", "-ar", "48000", "-ac", "1", "-i", file("big.raw"), "-c:a", "pcm_f32le", file("big.wav")]);
+  const found = await invalidSample(file("big.wav"));
+  assert.match(found?.value ?? "", /^a sample of 1\.0e\+11$/);
+  near(found.at, 30000 / 48000, 1e-6, "where");
+  // filters that write such a sample (here the tone stage's `after`, 60 dB up): refused, the output removed
+  const m = await measure(base);
+  const out = file("loud.out.wav");
+  await assert.rejects(repair(base, out, m, { after: "volume=60dB" }), (e) => e instanceof Refusal && /^ffmpeg's filters wrote a sample of /.test(e.message) && !e.message.includes("\n"));
+  assert.equal(fs.existsSync(out), false);
+  // a file ffmpeg cannot read: one sentence that says what to check
+  fs.writeFileSync(file("not-sound.wav"), "no sound here\n");
+  await assert.rejects(repair(file("not-sound.wav"), file("not-sound.out.wav"), m), (e) => e instanceof Refusal && /^ffmpeg could not repair not-sound\.wav .*check that it plays/.test(e.message) && !e.message.includes("\n"));
 });
 
 function near(x, y, by, what = "") { assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`); }
