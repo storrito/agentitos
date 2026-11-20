@@ -264,24 +264,60 @@ test("plan: dpdfnet where both files are there and noise was measured, never wit
     assert.doesNotMatch(changing.left.map((x) => x.why).join(" "), /cannot follow/);
     for (const x of changing.left) assert.equal(x.why.split(/\. /).length, 1, x.why);
   });
-  // without it: ffmpeg's method, and changing noise is left as today, nothing said of software
+  // without it: ffmpeg's method, the step saying the machine has no denoiser, and changing noise
+  // left with what a machine with it would do; no program or model named
   await withEnv(NONE_ENV(), () => {
     const changing = repairPlan(made({ noise: { lufs: -45, kind: "changing", fluctuationDb: 5, bands: NOISE_BANDS } }));
     assert.equal(changing.method, "afftdn-sample");
-    assert.ok(changing.left.some((x) => /a filter that learns one noise cannot follow it, so some of it stays/.test(x.why)));
-    assert.doesNotMatch(JSON.stringify(changing), /neural|dpdfnet|DPDFNet|sherpa/);
+    const l = changing.left.find((x) => /changes/.test(x.why));
+    assert.match(l.why, /a filter that learns one noise cannot follow it, so some of it stays; a machine with the neural denoiser would take more of it\.$/);
+    assert.doesNotMatch(JSON.stringify(changing), /dpdfnet|DPDFNet|sherpa/);
     assert.throws(() => repairPlan(made(), { method: "dpdfnet" }), (e) => e instanceof Refusal && /VOICE_SOUND_DENOISER/.test(e.message));
   });
 });
 
-test("plan: without the denoiser exactly what ffmpeg's method gives with it", async () => {
+// a plan without the denoiser, what it says of the machine taken out: what ffmpeg's method gives
+const unsaid = (p) => JSON.parse(JSON.stringify(p, (k, v) => k === "denoiser" && v === "absent" ? undefined
+  : typeof v === "string" ? v.replace("; no neural denoiser on this machine: ffmpeg's method.", ".").replace("; a machine with the neural denoiser would take more of it.", ".") : v));
+
+test("plan: without the denoiser exactly what ffmpeg's method gives with it, but for saying so", async () => {
   const cases = [made(), made({ speech: { longest: [] } }), made({ noise: { lufs: -45, kind: "changing", fluctuationDb: 5, bands: NOISE_BANDS } })];
   for (const m of cases) {
     const without = await withEnv(NONE_ENV(), () => repairPlan(m));
     const asked = await withEnv(STANDIN_ENV(), () => repairPlan(m, { method: "ffmpeg" }));
-    assert.deepEqual(without, asked);
+    const st = without.steps.find((s) => s.id === "denoise");
+    assert.equal(st.denoiser, "absent");
+    assert.deepEqual(Object.keys(st).slice(0, 4), ["id", "why", "method", "denoiser"]);
+    assert.match(st.why, /; no neural denoiser on this machine: ffmpeg's method\.$/);
+    assert.equal(st.why.split(/\. /).length, 1, st.why);
+    assert.doesNotMatch(JSON.stringify(asked), /absent|no neural denoiser|would take more/);
+    assert.equal(without.graph, asked.graph);
+    assert.deepEqual(unsaid(without), asked);
     assert.equal(without.graphs, undefined);
   }
+});
+
+test("plan: the machine's missing denoiser is said only where it decided the method", async () => {
+  const changing = made({ noise: { lufs: -45, kind: "changing", fluctuationDb: 5, bands: NOISE_BANDS } });
+  // ffmpeg's method chosen, by option or by the environment; the noise step off; no noise at all;
+  // a strength named where no pause lets ffmpeg's methods learn a noise (no step runs)
+  const plans = [
+    await withEnv(NONE_ENV(), () => repairPlan(changing, { method: "ffmpeg" })),
+    await withEnv(NONE_ENV(), () => repairPlan(changing, { method: "afftdn-profile" })),
+    await withEnv({ ...NONE_ENV(), VOICE_SOUND_DENOISE: "ffmpeg" }, () => repairPlan(changing)),
+    await withEnv(NONE_ENV(), () => repairPlan(changing, { denoise: "off" })),
+    await withEnv(NONE_ENV(), () => repairPlan(made({ findings: [] }))),
+    await withEnv(NONE_ENV(), () => repairPlan(made({ findings: [], speech: { share: 0.9, longest: [] } }), { denoise: "strong" })),
+  ];
+  for (const p of plans) assert.doesNotMatch(JSON.stringify(p), /absent|no neural denoiser|would take more/);
+  assert.ok(plans[0].left.some((x) => /cannot follow it, so some of it stays\.$/.test(x.why)));
+  assert.equal(plans[3].steps.find((s) => s.id === "denoise"), undefined);
+  // a strength the person named where measure found none: the method still the machine's lack
+  const named = await withEnv(NONE_ENV(), () => repairPlan(made({ findings: [] }), { denoise: "strong" }));
+  const st = named.steps.find((s) => s.id === "denoise");
+  assert.equal(st.method, "afftdn-sample");
+  assert.equal(st.denoiser, "absent");
+  assert.match(st.why, /^Asked for with --denoise strong.*; no neural denoiser on this machine: ffmpeg's method\.$/);
 });
 
 test("pieces: bounded whatever the length, overlapping, cut at a pause near the cut", () => {
@@ -540,7 +576,8 @@ test("without it: repair is today's, to the sample", { skip }, async () => {
   const a = await withEnv(NONE_ENV(), () => repair(noisy, file("none.out.wav"), m));
   const b = await withEnv(STANDIN_ENV(), () => repair(noisy, file("ffmpeg.out.wav"), m, { method: "ffmpeg" }));
   assert.equal(a.method, "afftdn-sample");
-  assert.deepEqual(a, b);
+  assert.equal(a.steps.find((s) => s.id === "denoise").denoiser, "absent");
+  assert.deepEqual(unsaid(a), b);
   assert.ok(fs.readFileSync(file("none.out.wav")).equals(fs.readFileSync(file("ffmpeg.out.wav"))));
 });
 
@@ -824,7 +861,8 @@ test("--denoise gentle or strong where nothing found noise: the noise step runs 
     assert.equal(f.method, "afftdn-sample", strength);
     assert.equal(sf.asked, true);
     assert.equal(sf.reduceDb, DENOISE_CAPS["afftdn-sample"][strength]);
-    assert.match(sf.why, new RegExp(`^Asked for with --denoise ${strength}, although measure found no noise in the pauses \\(they lie \\d+ dB under the speech\\): ${DENOISE_CAPS["afftdn-sample"][strength]} dB less, its profile from the pause at 0:\\d\\d \\(\\d\\.\\d s\\)\\.$`));
+    assert.match(sf.why, new RegExp(`^Asked for with --denoise ${strength}, although measure found no noise in the pauses \\(they lie \\d+ dB under the speech\\): ${DENOISE_CAPS["afftdn-sample"][strength]} dB less, its profile from the pause at 0:\\d\\d \\(\\d\\.\\d s\\); no neural denoiser on this machine: ffmpeg's method\\.$`));
+    assert.equal(sf.denoiser, "absent");
     assert.equal(samples(file(`asked-${strength}-ff.out.wav`)).length, samples(file("quiet-noise.wav")).length);
   }
   // auto and off as they were: nothing where nothing was found

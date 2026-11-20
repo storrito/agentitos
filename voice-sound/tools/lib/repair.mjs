@@ -430,8 +430,12 @@ export function repairPlan(m, opts = {}) {
   const dn = (noisy || under || named) && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
   if (wants === "dpdfnet" && (noisy || named) && strength !== "off" && !dn) refuse(`dpdfnet needs sherpa-onnx's offline denoiser and the DPDFNet-2 model (${DPDFNET_MODEL}): name them in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET (the skill ships neither).`);
   let neural = null;
-  if (noisy && n?.kind === "changing" && !dn)
-    left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB)${model && (wants ?? "arnndn") === "arnndn" ? ": RNNoise follows some of it, not all" : ": a filter that learns one noise cannot follow it, so some of it stays"}.` });
+  // (the denoiser would have run but the machine has none: not the person's choice of a method or
+  // of no denoising; said in the step and in left, so that ffmpeg's method is not read as chosen)
+  const absent = (noisy || named) && strength !== "off" && asked == null && !dn;
+  const changing = noisy && n?.kind === "changing" && !dn
+    ? { id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB)${model && (wants ?? "arnndn") === "arnndn" ? ": RNNoise follows some of it, not all" : ": a filter that learns one noise cannot follow it, so some of it stays"}.` } : null;
+  if (changing) left.push(changing);
   if (dn) {
     // its attenuation limit: what the aim needs, never more than --denoise allows (DPDFNET_LIMITS)
     const est = under ? under.underDb : snr;
@@ -508,6 +512,11 @@ export function repairPlan(m, opts = {}) {
         steps.push({ id: "denoise", why: `${what}: RNNoise (${path.basename(model)}), mixed so that ${dB(reduce)} dB of it goes${tail}.`, method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, mix: den.mix, model: path.basename(model), ...(named && { asked: true }), ...(past && { pastAim: true }) });
       }
       if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${dB(snr)} dB under the speech; ${dB(reduce)} dB less is what ${method} takes without watery artefacts, so it ends about ${dB(ends)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
+      if (absent) {
+        const i = steps.findIndex((s) => s.id === "denoise"), { id, why, method: mt, ...rest } = steps[i];
+        steps[i] = { id, why: `${why.replace(/\.$/, "")}; no neural denoiser on this machine: ffmpeg's method.`, method: mt, denoiser: "absent", ...rest };
+        if (changing) changing.why = `${changing.why.replace(/\.$/, "")}; a machine with the neural denoiser would take more of it.`;
+      }
     } else method = "off";
   } else if (noisy) left.push({ id: "noise", why: `The noise stays ${dB(snr)} dB under the speech: denoising is off.` });
 
