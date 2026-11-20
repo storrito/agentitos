@@ -495,7 +495,9 @@ test("each failure falls back to ffmpeg's method for the whole recording and say
   const tune = { pieceS: 6, shiftS: 1, warmS: 0.5, fadeS: 0.4, tailS: 0.2 };
   const cases = [
     [{ STANDIN_FAIL: 3 }, /it exited with 3/],
-    [{ STANDIN_FAIL: 3, STANDIN_FAIL_AFTER: 1, STANDIN_BY_PIECE: 1 }, /it exited with 3, on piece 2 of 5/],
+    // (the second piece alone fails: with every piece after the first failing, the pieces that run at
+    // once race for which is named, and a slower machine named the third)
+    [{ STANDIN_FAIL: 3, STANDIN_FAIL_ONLY: 2, STANDIN_BY_PIECE: 1 }, /it exited with 3, on piece 2 of 5/],
     [{ STANDIN_NOTHING: 1 }, /it wrote nothing/],
     [{ STANDIN_LENGTH: -480 }, /samples long for/],
     [{ STANDIN_SILENCE: 1 }, /silent/],
