@@ -209,6 +209,9 @@ function state(C, duration) {
     // with a pitch (4.8 kB whatever the length)
     pBuf: new Float64Array(PITCH_N), pCum: new Float64Array(PITCH_N + 1), pR: new Float64Array(PITCH_HI + 2),
     pCount: new Float64Array(300), pVoiced: new Float64Array(300), lastSp: 0,
+    // and per frame one bit, whether it has a pitch (63 kB for three hours: what tells a shouted
+    // word from a knock, burstsOf)
+    pitched: new Uint8Array(Math.ceil(frames / 8)),
     // the clicks: per 1.3 ms the largest |second difference| of any channel, kept for ±16 ms
     ring: new Float64Array(256), blocks: 0, checked: 0, clicks: [], clickCount: 0, bmax: new Float64Array(16),
   };
@@ -219,6 +222,7 @@ function grow(st) {
   const g = (a, k) => { const b = new a.constructor(cap * k); b.set(a); return b; };
   const two = st.C === 2 ? 1 : 0;
   Object.assign(st, { cap, bands: g(st.bands, NB), kw: g(st.kw, 1), aw: g(st.aw, 1), sub: g(st.sub, 4), e0: g(st.e0, two), e1: g(st.e1, two), c01: g(st.c01, two) });
+  const p = new Uint8Array(Math.ceil(cap / 8)); p.set(st.pitched); st.pitched = p;
 }
 
 const RUN_MIN_BIN = new Uint32Array(new Float32Array([0.01]).buffer)[0] >>> 16;   // runs count from −40 dBFS up
@@ -351,7 +355,7 @@ function pitchFrame(st, end) {
   for (let t = PITCH_LO; t <= PITCH_HI; t++) if (r[t] > best && r[t] >= r[t - 1] && r[t] >= r[t + 1]) best = r[t];
   const q = Math.max(0, Math.min(299, Math.round(10 * Math.log10(st.lastSp || 1e-30)) + 200));
   st.pCount[q]++;
-  if (best >= VOICE_PITCH_NAC) st.pVoiced[q]++;
+  if (best >= VOICE_PITCH_NAC) { st.pVoiced[q]++; st.pitched[st.n >> 3] |= 1 << (st.n & 7); }
 }
 
 // A window of the hum's 3 kHz signal: its power spectrum, added to the bucket of its level in
@@ -374,6 +378,9 @@ function humFrame(st) {
   st.humCount[h][q]++;
   if ((st.humFrames + 1) * HUM_KEEP > st.humSpec.length) { const g = new Int16Array(st.humSpec.length * 2); g.set(st.humSpec); st.humSpec = g; }
   for (let k = 0, o = st.humFrames * HUM_KEEP; k < HUM_KEEP; k++) st.humSpec[o + k] = Math.max(-32000, Math.round(1000 * Math.log10(p[k] || 1e-300)));
+  // (bin 0, the mean taken out, holds nothing: it keeps the window's bucket and half instead, so
+  // that a window can be taken out of the buckets again, a burst's: fineOf)
+  st.humSpec[st.humFrames * HUM_KEEP] = q + 1000 * h;
   st.humFrames++;
   for (let c = 0; c < C; c++) dec[c].copyWithin(0, HUM_HOP);
   st.decFill = HUM_N - HUM_HOP;
@@ -510,12 +517,26 @@ function summarise(st) {
     if (e - f < 3) active.fill(0, f, e);
     f = e;
   }
+  // bursts (burstsOf): set aside from the voice's frames, with the frame after each (its
+  // spectrum's window reaches a frame back). One in the middle of speech holds the speech after
+  // it as the voice it covers would have; one after a pause holds nothing.
+  const bursts = burstsOf(st, Sp, Tp, active, F);
+  const aside = new Uint8Array(F);
+  for (const b of bursts) for (const g of b.core) aside.fill(1, Math.max(0, g - 1), Math.min(F, g + 2));
+  for (const b of bursts) {
+    let before = false;
+    for (let g = Math.max(0, b.from - 12); g < b.from && !before; g++) before = active[g] === 1 && !aside[g];
+    if (!before) for (let g = b.from; g < Math.min(F, b.to + 1); g++) if (aside[g]) active[g] = 0;
+  }
   const speech = new Uint8Array(F);
   for (let f = 0; f < F; f++) if (active[f]) for (let k = Math.max(0, f - 2); k <= Math.min(F - 1, f + 10); k++) speech[k] = 1;
-  for (let f = 0; f < F; f++) if (silent[f]) speech[f] = 0;
+  for (let f = 0; f < F; f++) if (silent[f] || aside[f]) speech[f] = 0;
   // quiet frames: not speech, not digital silence, at most 6 dB over the floor there
   const quiet = new Uint8Array(F);
   for (let f = 0; f < F; f++) quiet[f] = !speech[f] && !silent[f] && S[f] <= floorAt(f) + 6 ? 1 : 0;
+  // (nor a burst and the 16 frames after its stretch, 341 ms: a thump has little in 300–3500 Hz
+  // and rings on under 100 Hz)
+  for (const b of bursts) quiet.fill(0, Math.max(0, b.from - 1), Math.min(F, b.to + 16));
   const count = (a) => a.reduce((s, v) => s + v, 0);
   const speechFrames = count(speech), quietFrames = count(quiet);
 
@@ -626,7 +647,7 @@ function summarise(st) {
     noise.octaves = [[125, 250], [250, 500], [500, 1000], [1000, 2000], [2000, 4000], [4000, 8000], [8000, 16000]];
   }
 
-  const fine = fineOf(st);
+  const fine = fineOf(st, aside);
   // 4. hum: read in the pauses alone, never where a voice is (humOf, below): a hum is there when
   // nobody speaks, steadily, at one frequency; a voice's pitch is not.
   const hum = humOf(st, quiet, F, speechBands ? speechBands.reduce((a, b) => a + b, 0) : NaN);
@@ -729,8 +750,7 @@ function summarise(st) {
     // (below 80 Hz from the fine spectra, against their 300–750 Hz, carried over to 300–3000 Hz
     // by the speech frames' own ratio of the two)
     const carry = db(sum(speechBands, bandsIn(300, 750)) / ref), mid = fine ? fine.band(fine.speech, 300, 750) : 0;
-    const humHz = hum?.fundamentalHz ?? hum?.hz;
-    low = {
+    const humHz = hum?.fundamentalHz ?? hum?.hz;    low = {
       below80Db: mid > 0 ? r1(db(fine.band(fine.speech, 20, 80, humHz) / mid) + carry) : null,
       pauses80Db: mid > 0 && fine.from === "pauses" ? r1(db(fine.band(fine.pause, 20, 80, humHz) / mid) + carry) : null,
       thumps: { count: thumps.length, perMinute: r2(thumps.length / Math.max(seconds / 60, 1 / 60)), at: thumps.slice(0, 10) }, bursts,
@@ -799,6 +819,10 @@ function summarise(st) {
     speech: {
       share: r3(speechFrames / Math.max(1, F)), seconds: r1(speechFrames * FRAME_S), silentShare: r3(silentFrames / Math.max(1, F)),
       floorDb: r1(floor), marginDb: r1(margin), loudDb: r1(loud), confidence,
+      // the bursts set aside from the voice's numbers (burstsOf): how many, the first ten (from,
+      // seconds, how far over the voice's 90th percentile), and how far over the strongest stood
+      bursts: { count: bursts.length, seconds: r2(bursts.reduce((a, b) => a + (b.to - b.from), 0) * FRAME_S), overDb: bursts.length ? r1(Math.max(...bursts.map((b) => b.overDb))) : null,
+        at: bursts.slice(0, 10).map((b) => ({ t: t(b.from), seconds: r2((b.to - b.from) * FRAME_S), overDb: r1(b.overDb) })) },
       pauses: { count: long.length, seconds: r1(long.reduce((a, s) => a + (s.to - s.from), 0) * FRAME_S) },
       longest: [...long].sort((a, b) => b.to - b.from - (a.to - a.from)).slice(0, 5)
         .map((s) => ({ from: t(s.from), to: t(s.to), seconds: r2((s.to - s.from) * FRAME_S), db: r1(db(s.p)), lufs: r1(lufs(s.k)), silent: s.silent })),
@@ -826,15 +850,85 @@ function ansiPower(lo, hi) {
 }
 const REFERENCE = TONE.map(([lo, hi]) => (lo < 100 || hi > 8000 ? null : 10 * Math.log10(ansiPower(lo, hi) / ansiPower(300, 3000))));
 
+// Bursts: a knock, a clap, a door, a bump on the microphone. Each of three levels of a frame (the
+// K-weighted, the flat, the one in 300–3500 Hz) is read against its 90th percentile over the
+// frames taken for speech (the voice's own upper level, which a few bursts do not move). A burst
+// is a stretch of frames over it by BURST_NEAR_DB or more in any of the three (gaps of up to 2
+// frames joined), at most BURST_MAX_FRAMES long, whose core (its frames BURST_OVER_DB over) is no
+// voice's: fewer than half its frames a voice's, under half their power over 4 kHz and either a
+// pitch (pitchFrame) or a level in 300–3500 Hz risen within 6 dB of the whole's (a voice louder;
+// reverberation and a strong EQ hide some loud vowels' pitch: 3 of 2473 recordings of the tune
+// split, 2026-11-20). White noise and a clap put 40 to 86 % over 4 kHz, a thump raises the whole
+// far more than the speech band; the 3 kHz signal the pitch is read on hears a voice under white
+// noise 17 dB over it. Its top must stand BURST_ALONE_DB over the 10 frames either side. A shout, a
+// laugh, an emphatic word may stand as far over the voice, but with its pitch, or beside its own
+// loud vowels: a word raised by 12 dB breaks into stretches of 3 to 10 frames over BURST_NEAR_DB
+// (4 of 6 clean voices, 2026-11-20), and a shouted "sch" has no pitch but shouted vowels beside
+// it. A knock, a clap, a bump on the microphone has neither. Set aside are the core and the
+// stretch's other frames BURST_NEAR_DB over that are no voice's (a frame the burst half covers);
+// the voice's own loud vowels beside it stay.
+// → [{ from, to, core: [frames], overDb }]
+const BURST_NEAR_DB = 6, BURST_OVER_DB = 12, BURST_ALONE_DB = 6, BURST_MAX_FRAMES = 10;
+function burstsOf(st, Sp, Tp, active, F) {
+  const levels = [(f) => db(st.kw[f]), (f) => db(Tp[f]), (f) => db(Sp[f])];
+  let n = 0;
+  for (let f = 0; f < F; f++) n += active[f];
+  if (n < 20) return [];
+  const ref = levels.map((L) => quantile(where(Float32Array.from({ length: F }, (_, f) => L(f)), (f) => active[f]), 0.9));
+  const over = (f) => Math.max(...levels.map((L, i) => L(f) - ref[i]));
+  // (a frame's share of its power over 4 kHz: a voice's loud frames keep it low, a burst of noise not)
+  const HIGH = bandsIn(4000, 24000);
+  const high = (f) => { let s = 0; for (const b of HIGH) s += 10 ** (st.bands[f * NB + b] / 1000); return Tp[f] > 0 ? s / Tp[f] : 0; };
+  const out = [];
+  for (let f = 0; f < F;) {
+    if (over(f) < BURST_NEAR_DB) { f++; continue; }
+    let e = f + 1, top = over(f);
+    for (;;) {
+      let g = e;
+      while (g < F && g < e + 3 && over(g) < BURST_NEAR_DB) g++;
+      if (g >= F || g >= e + 3) break;
+      e = g + 1; top = Math.max(top, over(g));
+    }
+    let voiced = 0, n12 = 0, around = -Infinity;
+    const core = [], voice = (g) => high(g) < 0.5 && (((st.pitched[g >> 3] >> (g & 7)) & 1) === 1 || Math.abs(levels[2](g) - ref[2] - (levels[1](g) - ref[1])) <= 6);
+    for (let g = f; g < e; g++) {
+      if (over(g) >= BURST_OVER_DB) { n12++; voiced += voice(g) ? 1 : 0; }
+      if (over(g) >= BURST_OVER_DB || (over(g) >= BURST_NEAR_DB && !voice(g))) core.push(g);
+    }
+    for (let g = Math.max(0, f - 10); g < Math.min(F, e + 10); g++) if (g < f || g >= e) around = Math.max(around, over(g));
+    if (e - f <= BURST_MAX_FRAMES && n12 && voiced < n12 / 2 && top - around >= BURST_ALONE_DB) out.push({ from: f, to: e, core, overDb: top });
+    f = e;
+  }
+  return out;
+}
+
 // The fine spectra (2.9 Hz a bin, up to 900 Hz) of the hum's windows: the pauses' (the buckets up
 // to 3 dB over the 5th percentile of their level in 300–800 Hz; when they are fewer than 4
 // windows, up to 2 dB over the 20th; else all), the same for each half of the file, and the
 // speech's (the buckets from the median up). The low end is read here: the frames' 23 Hz bins
 // leak a low voice's fundamental under 80 Hz. band(P, lo, hi, hum): the power in lo–hi, without
 // the bins within 2 of the multiples of `hum` Hz (their share filled in from the other bins).
-function fineOf(st) {
+function fineOf(st, aside) {
   const half = HUM_N / 2, [c0, c1] = st.humCount;
   if (!st.humFrames) return null;
+  // (a window over a burst, or over the 16 frames after one, where a thump's low tail rings on,
+  // taken out of its bucket: the bucket's bins to 750 Hz, all that is read of them, summed again
+  // from the windows that stay, as kept; subtracting it at the 0.01 dB it is kept to would leave
+  // 0.1 % of a burst 50 dB over the rest)
+  const near = Uint8Array.from(aside);
+  for (let f = aside.length - 1; f >= 0; f--) if (aside[f]) near.fill(1, f, Math.min(aside.length, f + 17));
+  const out = new Uint8Array(st.humFrames), redo = new Set();
+  for (let j = 0; j < st.humFrames; j++) {
+    for (let f = j * HUM_STEP; f < Math.min(near.length, j * HUM_STEP + HUM_SPAN) && !out[j]; f++) out[j] = near[f];
+    if (out[j]) { const tag = st.humSpec[j * HUM_KEEP]; redo.add(tag); st.humCount[Math.floor(tag / 1000)][tag % 1000]--; }
+  }
+  for (const tag of redo) st.humBuckets[Math.floor(tag / 1000)].fill(0, (tag % 1000) * (half + 1), (tag % 1000) * (half + 1) + HUM_KEEP);
+  if (redo.size) for (let j = 0; j < st.humFrames; j++) {
+    const tag = st.humSpec[j * HUM_KEEP];
+    if (out[j] || !redo.has(tag)) continue;
+    const B = st.humBuckets[Math.floor(tag / 1000)], at = (tag % 1000) * (half + 1);
+    for (let k = 1, o = j * HUM_KEEP; k < HUM_KEEP; k++) B[at + k] += 10 ** (st.humSpec[o + k] / 1000);
+  }
   const counts = c0.map((n, q) => n + c1[q]);
   const levels = [];
   counts.forEach((n, q) => { for (let i = 0; i < n; i++) levels.push(q); });

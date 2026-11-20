@@ -310,6 +310,54 @@ test("a voice: found in a voice, a whisper and a voice under noise as loud as it
   }
 });
 
+// the voice at a speech level of `lufs`, with sounds of lavfi laid in at the times given
+function withBursts(name, lufs, list = [], af = "") {
+  const out = file(name), g = (lufs - clean.levels.speechLufs).toFixed(2);
+  const graph = `[0:a]volume=${g}dB${af ? `,${af}` : ""}${list.length ? "[v]" : ""}` + list.map(([, t], i) => `;[${i + 1}:a]adelay=${Math.round(t * 1000)}[b${i}]`).join("") +
+    (list.length ? `;[v]${list.map((_, i) => `[b${i}]`).join("")}amix=inputs=${list.length + 1}:normalize=0:duration=first` : "");
+  run(["-i", base, ...list.flatMap(([src]) => ["-f", "lavfi", "-i", src]), "-filter_complex", graph, "-c:a", "pcm_s16le", out]);
+  return out;
+}
+const WHITE = "anoisesrc=d=0.03:amplitude=0.9:color=white:r=48000:seed=3";
+const CLAP = "anoisesrc=d=0.08:amplitude=0.9:color=white:r=48000:seed=11,volume='if(lt(t,0.005),t/0.005,exp(-(t-0.005)/0.02))':eval=frame";
+const THUMP = "aevalsrc=exprs='0.9*sin(2*PI*55*t)*exp(-t/0.03)':s=48000:d=0.1";
+
+test("a knock, a clap, a thump: set aside from the voice's numbers, named, the peak still theirs", { skip }, async () => {
+  // (the findings that may name a burst or its peak)
+  const PEAK = new Set(["loud", "clicks", "thumps", "bursts", "clipped"]);
+  const rest = (m) => m.findings.map((f) => f.id).filter((i) => !PEAK.has(i)).sort().join();
+  for (const lufs of [-25, -45]) {
+    const plain = await measure(withBursts(`plain${lufs}.wav`, lufs));
+    for (const [kind, list] of [["white", [[WHITE, 2]]], ["clap", [[CLAP, 5]]], ["thump", [[THUMP, 2.8]]],
+      ["five", [1, 4.3, 8, 12.5, 20].map((t) => [WHITE, t])], ["start", [[WHITE, 0]]]]) {
+      const m = await measure(withBursts(`${kind}${lufs}.wav`, lufs, list));
+      const what = `${kind} at ${lufs} LUFS: ${JSON.stringify(m.speech.bursts ?? null)}`;
+      near(m.levels.speechLufs, plain.levels.speechLufs, 1, `${what}: speechLufs`);
+      near(m.levels.snrADb, plain.levels.snrADb, 3, `${what}: noise against the speech`);
+      assert.equal(rest(m), rest(plain), what);
+      // (at −25 LUFS a clap 12 dB over the voice may stay in its numbers: they hold either way)
+      if (lufs === -45) assert.equal(m.speech.bursts?.count, list.length, what);
+      if (m.speech.bursts?.count) {
+        assert.ok(m.findings.some((f) => f.id === "bursts"), what);
+        assert.ok(lines(m).some((l) => /^(A short loud sound|\d+ short loud sounds) \(a knock, a clap, a bump\) at /.test(l)), lines(m).join("\n"));
+      }
+      // (the file's own peak counts it)
+      if (lufs === -45) assert.ok(m.loudness.truePeakDb > plain.loudness.truePeakDb + 3, what);
+    }
+    assert.equal(plain.speech.bursts.count, 0);
+  }
+});
+
+test("a shouted word is the voice, no burst: raised by 12 and by 20 dB it is in the speech's numbers", { skip }, async () => {
+  const plain = await measure(withBursts("word-plain.wav", -35));
+  for (const up of [12, 20]) {
+    const m = await measure(withBursts(`word${up}.wav`, -35, [], `volume='if(between(t,7.5,7.95),${(10 ** (up / 20)).toFixed(4)},1)':eval=frame`));
+    assert.equal(m.speech.bursts.count, 0, JSON.stringify(m.speech.bursts));
+    // (450 ms of 21 s of speech 12 dB louder: the speech's power by a quarter more, 1 LU)
+    assert.ok(m.levels.speechLufs >= plain.levels.speechLufs + (up === 12 ? 0.8 : 3), `+${up}: ${m.levels.speechLufs} against ${plain.levels.speechLufs}`);
+  }
+});
+
 test("band limits: a 16 kHz source ends at 8 kHz, a telephone's at 3.5 to 4 kHz and over 200 Hz", { skip }, async () => {
   const m16 = await measure(fault("16k.wav", "-af", "aresample=16000,aresample=48000"));
   assert.equal(m16.bandwidth.topHz, 8000);

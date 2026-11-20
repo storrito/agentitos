@@ -13,7 +13,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { facts, analyse, Refusal } from "./analyse.mjs";
-import { findingsOf, noiseKind, humHz, voiceOf } from "./findings.mjs";
+import { findingsOf, noiseKind, humHz, voiceOf, burstsText } from "./findings.mjs";
 
 const TOOL = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "voice.mjs");
 const rel = (p) => { const r = path.relative(process.cwd(), p); return r && !r.startsWith("..") ? r : p; };
@@ -49,6 +49,7 @@ export function lines(m) {
   const out = [`${m.file}: ${clock(m.analysed.seconds)} of sound${s.video ? " in a video" : ""}, ${s.sampleRate ? `${+(s.sampleRate / 1000).toFixed(1)} kHz ` : ""}${layout}, speech ${Math.round(sp.share * 100)} % of the time.`];
   if (!sp.seconds) out.push("No voice found in it: the level never rises far enough over its floor.");
   else if (m.voice?.found === false) out.push(`No voice found in it: ${m.voice.why}.`);
+  if (sp.bursts?.count) out.push(`${burstsText(sp.bursts)}: the voice's numbers are taken without ${sp.bursts.count === 1 ? "it" : "them"}, the file's loudness and true peak with.`);
   const loud = [lo.integratedLufs != null && `Loudness ${f1(lo.integratedLufs)} LUFS`, L.speechLufs != null && `the speech ${f1(L.speechLufs)} LUFS`,
     lo.rangeLu != null && `range ${f1(lo.rangeLu)} LU`, lo.truePeakDb != null && `true peak ${f1(lo.truePeakDb)} dBTP`].filter(Boolean);
   if (loud.length) out.push(`${loud.join(", ")}.`);
