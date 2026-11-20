@@ -16,12 +16,16 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, neuralDenoiser, piecesOf, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL, PROBE_FIRES_DB } from "./lib/repair.mjs";
+import { repair, repairPlan, neuralDenoiser, piecesOf, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const skip = !ffmpeg && "no ffmpeg";
+// the real denoiser, where the two variables name it on this machine (the lab's: see the skill's README)
+const REAL = { VOICE_SOUND_DENOISER: process.env.VOICE_SOUND_DENOISER, VOICE_SOUND_DPDFNET: process.env.VOICE_SOUND_DPDFNET, VOICE_SOUND_DENOISE: null };
+const real = ffmpeg && REAL.VOICE_SOUND_DENOISER && REAL.VOICE_SOUND_DPDFNET && fs.existsSync(REAL.VOICE_SOUND_DENOISER) && fs.existsSync(REAL.VOICE_SOUND_DPDFNET);
+const skipReal = !real && "no real denoiser named in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET";
 const run = (args) => { const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); };
 const ids = (list) => list.map((s) => s.id);
 const near = (x, y, by, what = "") => assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`);
@@ -29,7 +33,9 @@ const db = (x) => 10 * Math.log10(x);
 
 // the synthetic voice of test-repair.mjs (phrases of 2.5 s, pauses of 1.1 s), with pink noise
 const D = 28.8;
-const HALF = 10 ** (-6 / 20);   // the stand-in lowered by 6 dB
+// the stand-in lowered by 1 dB (so that the gain round it is seen to be taken back; more would be
+// a denoiser that takes the voice down)
+const LOWER_DB = -1, LOWER = 10 ** (LOWER_DB / 20);
 const VOICE = `aevalsrc=exprs='st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t)));st(1,mod(t,3.6));` +
   `0.25*lt(ld(1),2.5)*pow(sin(12.566*ld(1)),2)*(0.6+0.4*sin(5.655*t))*2*(ld(0)-floor(ld(0)+0.5))':s=48000:d=${D},` +
   `equalizer=f=500:t=o:w=1:g=10,equalizer=f=1500:t=o:w=1:g=6,equalizer=f=2700:t=o:w=0.8:g=4,lowpass=f=5000[v];` +
@@ -64,8 +70,20 @@ for (let i = 0; i < n; i++) for (let c = 0; c < fmt.ch; c++) {
 }
 let len = Math.floor(n / 480) * 480 + Number(E.STANDIN_LENGTH || 0);
 const g = 10 ** (Number(E.STANDIN_GAIN_DB || 0) / 20), d = Number(E.STANDIN_DELAY || 0);
+// (STANDIN_LOW_DB: from the STANDIN_LOW_CALL-th call on, the samples from STANDIN_LOW_FROM to
+// STANDIN_LOW_TO seconds of its input lowered by that much: a denoiser that takes a voice for noise)
+const low = E.STANDIN_LOW_DB && count >= Number(E.STANDIN_LOW_CALL || 1) ? 10 ** (Number(E.STANDIN_LOW_DB) / 20) : 1;
+const lowFrom = Number(E.STANDIN_LOW_FROM || 0) * 48000, lowTo = E.STANDIN_LOW_TO ? Number(E.STANDIN_LOW_TO) * 48000 : Infinity;
 const y = new Float64Array(len);
-for (let i = 0; i < len; i++) y[i] = E.STANDIN_SILENCE ? 0 : (x[i - d] ?? 0) * g;
+let seed = 12345;
+const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 - 0.5; };
+let ex = 0; for (let i = 0; i < n; i++) ex += x[i] * x[i];
+const junk = Math.sqrt((12 * ex) / Math.max(1, n));
+for (let i = 0; i < len; i++) {
+  y[i] = E.STANDIN_SILENCE ? 0 : (x[i - d] ?? 0) * g * (i >= lowFrom && i < lowTo ? low : 1);
+  // (STANDIN_ADD_DB: noise that much under its input's level added: what "came out" is that noise)
+  if (E.STANDIN_ADD_DB) y[i] += rnd() * junk * 10 ** (Number(E.STANDIN_ADD_DB) / 20);
+}
 const nan = !!E.STANDIN_NAN, ob = nan ? 4 : 2;
 const h = Buffer.alloc(44);
 h.write("RIFF", 0); h.writeUInt32LE(36 + len * ob, 4); h.write("WAVE", 8); h.write("fmt ", 12); h.writeUInt32LE(16, 16);
@@ -81,7 +99,8 @@ fs.writeFileSync(a["output-wav"], Buffer.concat([h, o]));
 
 let dir, standin, model, noisy;
 const file = (name) => path.join(dir, name);
-const SWITCHES = ["STANDIN_PID", "STANDIN_SLEEP", "STANDIN_LOG","STANDIN_COUNT", "STANDIN_FAIL", "STANDIN_FAIL_AFTER", "STANDIN_NOTHING", "STANDIN_LENGTH", "STANDIN_GAIN_DB", "STANDIN_DELAY", "STANDIN_SILENCE", "STANDIN_NAN"];
+const SWITCHES = ["STANDIN_PID", "STANDIN_SLEEP", "STANDIN_LOG","STANDIN_COUNT", "STANDIN_FAIL", "STANDIN_FAIL_AFTER", "STANDIN_NOTHING", "STANDIN_LENGTH", "STANDIN_GAIN_DB", "STANDIN_DELAY", "STANDIN_SILENCE", "STANDIN_NAN",
+  "STANDIN_LOW_DB", "STANDIN_LOW_CALL", "STANDIN_LOW_FROM", "STANDIN_LOW_TO", "STANDIN_ADD_DB"];
 const ENV = ["VOICE_SOUND_DENOISER", "VOICE_SOUND_DPDFNET", "VOICE_SOUND_DENOISE", "PATH", ...SWITCHES];
 // runs fn with the environment set as given (null: unset), and puts it back after
 async function withEnv(vars, fn) {
@@ -292,7 +311,7 @@ test("the gain round its 16-bit step: a quiet and a hot recording come back as t
 
 test("its delay is measured and taken out: in step and as long", { skip }, async () => {
   const m = await measure(noisy);
-  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_DELAY: 300, STANDIN_GAIN_DB: -6 }, () => repair(noisy, file("delayed.out.wav"), m));
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_DELAY: 300, STANDIN_GAIN_DB: LOWER_DB }, () => repair(noisy, file("delayed.out.wav"), m));
   const st = r.steps.find((s) => s.id === "denoise");
   assert.equal(r.method, "dpdfnet");
   assert.equal(st.delaySamples, 300);
@@ -301,7 +320,7 @@ test("its delay is measured and taken out: in step and as long", { skip }, async
   assert.equal(y.length, x.length);
   for (const at of [48000, 600000, 1300000]) assert.equal(lagOf(x, y, at), 0, `at ${at}`);
   // sample for sample the reference lowered, within half a step of its 16 bits (the gain taken back)
-  assert.ok(maxDiff(x, y, HALF) <= step(st), `${maxDiff(x, y, HALF)} over ${step(st)}`);
+  assert.ok(maxDiff(x, y, LOWER) <= step(st), `${maxDiff(x, y, LOWER)} over ${step(st)}`);
   // no delay: none taken out, nothing said
   const r0 = await withEnv(STANDIN_ENV(), () => repair(noisy, file("plain.out.wav"), m));
   assert.equal(r0.steps.find((s) => s.id === "denoise").delaySamples, 0);
@@ -314,7 +333,7 @@ test("longer than a piece: as long, in step, no jump at the seams (a tone throug
   const m = await measure(file("tone.wav"));
   const tune = { pieceS: 6, shiftS: 1, warmS: 0.5, fadeS: 0.4, tailS: 0.2 };
   const log = file("calls.log");
-  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log, STANDIN_GAIN_DB: -6 }, () => repair(file("tone.wav"), file("tone.out.wav"), m, { tune }));
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log, STANDIN_GAIN_DB: LOWER_DB }, () => repair(file("tone.wav"), file("tone.out.wav"), m, { tune }));
   const st = r.steps.find((s) => s.id === "denoise");
   assert.equal(r.method, "dpdfnet");
   assert.equal(st.pieces.length, 5);
@@ -328,12 +347,12 @@ test("longer than a piece: as long, in step, no jump at the seams (a tone throug
   }
   const x = reference("tone.wav", m), y = samples(file("tone.out.wav"));
   assert.equal(y.length, x.length);
-  assert.ok(maxDiff(x, y, HALF) <= step(st), `${maxDiff(x, y, HALF)} over ${step(st)}`);
+  assert.ok(maxDiff(x, y, LOWER) <= step(st), `${maxDiff(x, y, LOWER)} over ${step(st)}`);
   for (const s of st.seams) {
     const at = Math.round(s.at * 48000), w = Math.round(tune.fadeS * 48000);
     assert.equal(lagOf(x, y, at - 6000), 0, `in step at ${s.at} s`);
     // over the fade and on both sides of it, sample for sample the reference lowered
-    assert.ok(maxDiff(x, y, HALF, at - w, at + w) <= step(st), `the seam at ${s.at} s`);
+    assert.ok(maxDiff(x, y, LOWER, at - w, at + w) <= step(st), `the seam at ${s.at} s`);
     // the tone in the 50 ms before the fade and after it: the same level, its phase running on
     const n = 2400, a = sineAt(y, 1000, at - w / 2 - n, n), b = sineAt(y, 1000, at + w / 2, n);
     const ra = sineAt(x, 1000, at - w / 2 - n, n), rb = sineAt(x, 1000, at + w / 2, n);
@@ -444,28 +463,29 @@ test("no noise in the pauses: the probe, unlimited, on the mended sound; quiet w
 test("the probe fires where the denoiser took much out: the whole recording denoised, the step says it was found under the voice", { skip }, async () => {
   const m = await measure(file("quiet-noise.wav"));
   const tones = [];
-  // (a stand-in that halves everything took out as much as it kept: 0 dB under the voice)
-  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -6 }, () =>
+  // (a stand-in that lowers everything by 1 dB took out 0.109 of the amplitude and kept 0.891:
+  // 18.3 dB under the voice, and the voice 1 dB down)
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB }, () =>
     repair(file("quiet-noise.wav"), file("fired.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return d ? "volume=0dB" : ""; } }));
   assert.equal(r.method, "dpdfnet");
   assert.equal(r.probe.fires, true);
-  near(r.probe.underDb, 0, 0.2, "the estimate");
+  near(r.probe.underDb, 18.3, 0.2, "the estimate");
   const st = r.steps.find((s) => s.id === "denoise");
   assert.equal(st.underVoiceDb, r.probe.underDb);
   assert.equal(st.limitDb, DPDFNET_LIMITS.auto);
-  assert.match(st.why, /^Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of \d+ s of it: about 0 dB under the speech; DPDFNet-2 asked to take at most 18 dB off/);
+  assert.match(st.why, /^Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of \d+ s of it: about 18 dB under the speech; DPDFNet-2 asked to take at most 18 dB off/);
   assert.equal(st.why.split(/\. /).length, 1);
   // the tone stage was asked again, with the step that ran
   assert.equal(tones.at(-1)?.method, "dpdfnet");
   assert.equal(samples(file("fired.out.wav")).length, samples(file("quiet-noise.wav")).length);
   // the denoiser failing after the probe fired: nothing ffmpeg can do, said so, the tone told
   tones.length = 0;
-  const f = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -6, STANDIN_FAIL: 4, STANDIN_FAIL_AFTER: 1, STANDIN_COUNT: file("count-p") }, () =>
+  const f = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB, STANDIN_FAIL: 4, STANDIN_FAIL_AFTER: 1, STANDIN_COUNT: file("count-p") }, () =>
     repair(file("quiet-noise.wav"), file("fired-failed.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return ""; } }));
   fs.rmSync(file("count-p"), { force: true });
   const fs1 = f.steps.find((s) => s.id === "denoise");
   assert.equal(f.method, "off");
-  assert.match(fs1.why, /^Noise lies under the voice, about 0 dB under the speech as the neural denoiser's probe found it, but the denoiser then failed \(it exited with 4\)/);
+  assert.match(fs1.why, /^Noise lies under the voice, about 18 dB under the speech as the neural denoiser's probe found it, but the denoiser then failed \(it exited with 4\)/);
   assert.equal(tones.at(-1), null, "the tone stage told that no noise was taken out");
 });
 
@@ -477,6 +497,137 @@ test("after a fallback the tone stage hears what ffmpeg's method did, not what t
   assert.equal(tones[0].method, "dpdfnet");
   assert.equal(tones.at(-1).method, "afftdn-sample");
   assert.equal(tones.at(-1).reduceDb, 12);
+});
+
+// ---------------------------------------------------------------- what it did to the voice
+
+const callsOf = (log) => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").length : 0);
+
+test("voiceKept: the share of speech frames down, and their level, each a bound of its own", () => {
+  // 20 frames of voice (10 at a level, 10 of them 10 dB under it) and 10 of pause 40 dB under
+  // that, so that the pauses set the floor and the voice is all speech frames
+  const F = 4800, E = (db) => F * 10 ** (db / 10);
+  const inE = Float64Array.from([...Array(10).fill(E(-20)), ...Array(10).fill(E(-30)), ...Array(10).fill(E(-70))]);
+  const out = (f) => Float64Array.from(inE, (e, i) => e * 10 ** (f(i) / 10));
+  const t = { ...VOICE_KEPT, minFrames: 5 };
+  // nothing down: kept
+  assert.equal(voiceKept(inE, out(() => -0.5), t).down, false);
+  // 12 of the 20 a little more than 6 dB down: the share alone is over its bound, the level not
+  const a = voiceKept(inE, out((i) => (i >= 4 && i < 16 ? -6.5 : 0)), t);
+  assert.ok(a.numbers.downShare > t.shareMax && a.numbers.levelDb >= -t.levelMaxDb, JSON.stringify(a.numbers));
+  assert.equal(a.down, true);
+  // 8 of the 10 loud ones 30 dB down: the level alone is over its bound, the share not
+  const b = voiceKept(inE, out((i) => (i < 8 ? -30 : 0)), t);
+  assert.ok(b.numbers.downShare <= t.shareMax && b.numbers.levelDb < -t.levelMaxDb, JSON.stringify(b.numbers));
+  assert.equal(b.down, true);
+  assert.match(b.said, /^40 % of its speech frames more than 6 dB down, their level −\d\.\d dB$/);
+});
+
+test("the probe declines where the denoiser takes the voice itself for noise: nothing denoised, its result says why", { skip }, async () => {
+  const m = await measure(file("quiet-noise.wav"));
+  const log = file("decline.log");
+  fs.rmSync(log, { force: true });
+  // (10 dB off everything: an estimate of −6.7 dB, which the threshold alone took for noise)
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -10, STANDIN_LOG: log }, () => repair(file("quiet-noise.wav"), file("declined.out.wav"), m));
+  assert.equal(r.method, "off");
+  assert.deepEqual(ids(r.steps), ["highpass"]);
+  assert.equal(r.probe.fires, false);
+  assert.equal(r.probe.declined, "voice");
+  near(r.probe.underDb, -6.7, 0.2, "the estimate");
+  assert.ok(r.probe.underDb <= PROBE_FIRES_DB);
+  assert.equal(r.probe.voice.downShare, 1);
+  near(r.probe.voice.levelDb, -10, 0.1, "the speech frames' level");
+  assert.match(r.probe.why, /^The neural denoiser took the voice itself down in its sample \(100 % of its speech frames more than 6 dB down, their level −10\.0 dB\), so what it took out is no noise under the voice: nothing denoised\.$/);
+  // the denoiser ran once, on the sample, never on the whole recording
+  assert.equal(callsOf(log), 1);
+  const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("declined-plain.out.wav"), m));
+  assert.ok(fs.readFileSync(file("declined.out.wav")).equals(fs.readFileSync(file("declined-plain.out.wav"))));
+  assert.equal(plain.method, "off");
+  // what came out nearly as loud as what was kept, the speech frames' level kept: declined too
+  const a = await withEnv({ ...STANDIN_ENV(), STANDIN_ADD_DB: -3 }, () => repair(file("quiet-noise.wav"), file("declined2.out.wav"), m));
+  assert.equal(a.method, "off");
+  assert.equal(a.probe.declined, "voice");
+  assert.ok(a.probe.underDb < PROBE_MIN_DB && a.probe.underDb > 0, JSON.stringify(a.probe));
+  assert.ok(a.probe.voice.downShare <= PROBE_KEPT.shareMax && a.probe.voice.levelDb >= -PROBE_KEPT.levelMaxDb, JSON.stringify(a.probe.voice));
+  assert.match(a.probe.why, /^What the neural denoiser took out of its sample is nearly as loud as what it kept \(about \d dB under it\): that is the voice taken for noise, not noise under it, so nothing is denoised\.$/);
+});
+
+test("after the run: a voice taken down is thrown away as any failure is; ffmpeg's method where measure named noise, said in the step and in left", { skip }, async () => {
+  const m = await measure(noisy);
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -20 }, () => repair(noisy, file("down.out.wav"), m));
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.equal(r.method, "afftdn-sample");
+  assert.match(st.why, /; the neural denoiser took the voice itself down \(100 % of its speech frames more than 6 dB down, their level −20\.0 dB\) and its result was thrown away, so ffmpeg's afftdn-sample did this for the whole recording\.$/);
+  assert.equal(st.why.split(/\. /).length, 1, st.why);
+  assert.equal(st.fallback.voice.downShare, 1);
+  const l = r.left.filter((x) => /took this voice for noise/.test(x.why));
+  assert.equal(l.length, 1);
+  assert.match(l[0].why, /^The neural denoiser took this voice for noise \(100 % of its speech frames more than 6 dB down, their level −20\.0 dB\), so its result was thrown away; ffmpeg's afftdn-sample took off what it could\.$/);
+  // what ffmpeg's method gives without the denoiser, to the sample
+  await withEnv(NONE_ENV(), () => repair(noisy, file("down-plain.out.wav"), m));
+  assert.ok(fs.readFileSync(file("down.out.wav")).equals(fs.readFileSync(file("down-plain.out.wav"))));
+  // a voice the denoiser leaves (1 dB off everything): used, its numbers in the step
+  const ok = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB }, () => repair(noisy, file("kept.out.wav"), m));
+  const sk = ok.steps.find((s) => s.id === "denoise");
+  assert.equal(ok.method, "dpdfnet");
+  assert.equal(sk.voice.downShare, 0);
+  near(sk.voice.levelDb, LOWER_DB, 0.1, "the speech frames' level");
+});
+
+test("after the run: one stretch of the voice taken down is caught where the whole is not", { skip }, async () => {
+  const m = await measure(noisy);
+  const tune = { pieceS: 6, shiftS: 1, warmS: 0.5, fadeS: 0.4, tailS: 0.2 };
+  const count = file("count-low");
+  fs.rmSync(count, { force: true });
+  // the third of five pieces: 3 s of its own sound 20 dB down (a tenth of the recording), the
+  // stretches 3 s long (as 30 s are to a long recording)
+  const sw = { STANDIN_LOW_DB: -20, STANDIN_LOW_CALL: 3, STANDIN_LOW_FROM: 1, STANDIN_LOW_TO: 4, STANDIN_COUNT: count };
+  const voiceKept = { windowS: 3, hopS: 0.5, minFrames: 8 };
+  const r = await withEnv({ ...STANDIN_ENV(), ...sw }, () => repair(noisy, file("stretch.out.wav"), m, { tune, voiceKept }));
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.equal(r.method, "afftdn-sample");
+  assert.match(st.fallback.reason, /^it took the voice itself down \(\d+ % of its speech frames more than 6 dB down, their level −?\d+\.\d dB from 0:\d\d to 0:\d\d\)$/, JSON.stringify(st.fallback.voice));
+  // the whole alone was within the bounds
+  const v = st.fallback.voice;
+  assert.ok(v.downShare <= VOICE_KEPT.shareMax && v.levelDb >= -VOICE_KEPT.levelMaxDb, JSON.stringify(v));
+  assert.ok(v.worst.downShare > VOICE_KEPT.shareMax || v.worst.levelDb < -VOICE_KEPT.levelMaxDb, JSON.stringify(v));
+  assert.ok(v.worst.from >= 6 && v.worst.to <= 24, JSON.stringify(v.worst));
+});
+
+test("the probe fired, the run then took the voice down: no noise step, said in the step and in left", { skip }, async () => {
+  const m = await measure(file("quiet-noise.wav"));
+  const count = file("count-pd");
+  fs.rmSync(count, { force: true });
+  // (the probe's call lowers everything by 1 dB; the real run's, the second, by 20)
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB, STANDIN_LOW_DB: -19, STANDIN_LOW_CALL: 2, STANDIN_COUNT: count }, () => repair(file("quiet-noise.wav"), file("pd.out.wav"), m));
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.equal(r.probe.fires, true);
+  assert.equal(r.method, "off");
+  assert.match(st.why, /^Noise lies under the voice, about 18 dB under the speech as the neural denoiser's probe found it, but on the whole recording the denoiser took the voice itself down \(100 % of its speech frames more than 6 dB down, their level −20\.0 dB\) and its result was thrown away, and ffmpeg's methods learn a noise from the pauses, where there is too little of it: it stays\.$/);
+  assert.ok(r.left.some((l) => /^The neural denoiser took this voice for noise \(.*\), so its result was thrown away and any noise under the voice stays\.$/.test(l.why)), JSON.stringify(r.left));
+  const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("pd-plain.out.wav"), m));
+  assert.ok(fs.readFileSync(file("pd.out.wav")).equals(fs.readFileSync(file("pd-plain.out.wav"))));
+  assert.equal(plain.method, "off");
+});
+
+// ---------------------------------------------------------------- the real one
+
+test("the real denoiser, where the machine has it: it takes this made-up voice for noise, and both checks see it", { skip: skipReal }, async () => {
+  // (DPDFNet-2 takes the synthetic voice down to its limit, 18 dB, on every frame: the run's check
+  // throws that away for ffmpeg's method, and the probe declines where measure named no noise)
+  const m = await measure(noisy);
+  const r = await withEnv(REAL, () => repair(noisy, file("real.out.wav"), m));
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.equal(r.method, "afftdn-sample");
+  assert.match(st.fallback.reason, /^it took the voice itself down \(100 % of its speech frames more than 6 dB down, their level −1\d\.\d dB\)$/);
+  assert.ok(st.fallback.voice.levelDb <= -15, JSON.stringify(st.fallback.voice));
+  await withEnv(NONE_ENV(), () => repair(noisy, file("real-plain.out.wav"), m));
+  assert.ok(fs.readFileSync(file("real.out.wav")).equals(fs.readFileSync(file("real-plain.out.wav"))));
+  const q = await measure(file("quiet-noise.wav"));
+  const p = await withEnv(REAL, () => repair(file("quiet-noise.wav"), file("real-q.out.wav"), q));
+  assert.equal(p.method, "off");
+  assert.equal(p.probe.declined, "voice", JSON.stringify(p.probe));
+  assert.equal(samples(file("real-q.out.wav")).length, samples(file("quiet-noise.wav")).length);
 });
 
 test("a signal to clean ends a running denoiser and leaves none of its files", { skip }, async () => {

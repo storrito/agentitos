@@ -613,8 +613,9 @@ const ffPath = (p) => `file:${path.resolve(p)}`;
 //   is brought to a peak of −6 dBFS (float) and that gain taken back after it
 //
 // Where it fails (a non-zero exit, a signal, no output, another length, silence, numbers that are
-// not finite, clipping, an output that does not follow its input, longer than its time), the stage
-// runs ffmpeg's method on the whole recording instead and says so in the denoise step.
+// not finite, clipping, an output that does not follow its input, longer than its time, the voice
+// itself taken down: see voiceKept), the stage runs ffmpeg's method on the whole recording instead
+// (where only the probe found noise: no noise step) and says so in the denoise step.
 
 export const DPDFNET_MODEL = "dpdfnet2_48khz_hr.onnx";
 const DENOISER_PROGRAM = "sherpa-onnx-offline-denoiser";
@@ -679,17 +680,24 @@ function neuralGraphs(head, chain, after) {
   return { graph: one.graph, graphs: [one.graph, two], filters: [...new Set([...one.filters, "aformat"])] };
 }
 
-class NeuralFailure extends Error {}
+class NeuralFailure extends Error {
+  // (voice: what it did to the voice, where that was the failure)
+  constructor(message, extra = {}) { super(message); Object.assign(this, extra); }
+}
 
 // ffmpeg's method for the whole recording, the denoise step saying why
 function fallbackPlan(m, opts, e) {
   const plan = withTone(m, { ...opts, method: "ffmpeg" });
-  const said = `the neural denoiser failed (${e.message}), so ffmpeg's ${plan.method} did this for the whole recording`;
+  // (the voice taken down: the denoiser ran, its result is not used)
+  const what = e.voice ? `the neural denoiser ${e.message.replace(/^it /, "")} and its result was thrown away` : `the neural denoiser failed (${e.message})`;
+  const said = `${what}, so ffmpeg's ${plan.method} did this for the whole recording`;
   const st = plan.steps.find((s) => s.id === "denoise");
   const u = opts.underVoice;
-  if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; ${said}.`, fallback: { from: "dpdfnet", reason: e.message } });
-  else if (u?.fires) plan.steps.push({ id: "denoise", why: `Noise lies under the voice, about ${dB(u.underDb)} dB under the speech as the neural denoiser's probe found it, but the denoiser then failed (${e.message}), and ffmpeg's methods learn a noise from the pauses, where there is too little of it: it stays.`, method: "off", underVoiceDb: u.underDb, probe: u, fallback: { from: "dpdfnet", reason: e.message } });
-  else plan.steps.push({ id: "denoise", why: `The ${said.replace(/, so .*/, "")}, and ffmpeg's method has nothing to take off here.`, method: "off", fallback: { from: "dpdfnet", reason: e.message } });
+  const fallback = { from: "dpdfnet", reason: e.message, ...(e.voice && { voice: e.voice }) };
+  if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; ${said}.`, fallback });
+  else if (u?.fires) plan.steps.push({ id: "denoise", why: `Noise lies under the voice, about ${dB(u.underDb)} dB under the speech as the neural denoiser's probe found it, but ${e.voice ? `on the whole recording ${what.replace(/^the neural denoiser/, "the denoiser")}` : `the denoiser then failed (${e.message})`}, and ffmpeg's methods learn a noise from the pauses, where there is too little of it: it stays.`, method: "off", underVoiceDb: u.underDb, probe: u, fallback });
+  else plan.steps.push({ id: "denoise", why: `The ${what.replace(/^the /, "")}, and ffmpeg's method has nothing to take off here.`, method: "off", fallback });
+  if (e.voice) plan.left.push({ id: "noise", why: `The neural denoiser took this voice for noise (${e.message.replace(/^it took the voice itself down \((.*)\)$/, "$1")}), so its result was thrown away${st ? `; ffmpeg's ${plan.method} took off what it could` : " and any noise under the voice stays"}.` });
   return plan;
 }
 
@@ -710,7 +718,10 @@ function withTone(m, opts) {
 // mended sound: what it took out (input minus output, in step: its delay is 0) against what it
 // kept, over the frames with speech, is the noise under the voice. Over PROBE_FIRES_DB under it
 // nothing is done (the denoiser takes a little off clean speech too); within it the recording
-// counts as noisy, and the limit follows from the estimate as from the pauses' SNR.
+// counts as noisy, and the limit follows from the estimate as from the pauses' SNR. But a
+// denoiser that takes the voice itself for noise takes much out too: where the estimate lies
+// under PROBE_MIN_DB, or the sample's speech frames came back down beyond PROBE_KEPT (see
+// voiceKept), the probe declines, says why (`declined`, `why`), and nothing is denoised.
 //
 // The sample: the whole of a recording up to PROBE.wholeS, else PROBE.windows stretches of
 // PROBE.windowS spread evenly over it, each through the steps before the noise, joined; each
@@ -731,8 +742,88 @@ function withTone(m, opts) {
 // VoiceBank pairs (true SNR 7.5, 12.5, 17.5 dB) its medians were 21, 27.5 and 29.5.
 export const PROBE = { wholeS: 40, windows: 6, windowS: 5, skipS: 0.5, frameS: 0.02, speechDb: 20 };
 export const PROBE_FIRES_DB = 21;
+// Under PROBE_MIN_DB the estimate is no noise but the voice taken for noise: what came out is
+// nearly as loud as what was kept. On the second review's cases (2026-11-20) every estimate under
+// 6.3 dB was a voice the denoiser then turned down by 2.2 to 16.8 LU (two video calls, three voices
+// in a telephone's band, two clipped by 20 dB, a made-up song) and two people talking at once lay
+// at 6.3 (1.7 LU off); on the tune split the lowest estimates of real noise under a voice were 9.0
+// and 9.2 (a keyboard and a café, the denoiser's background score up from 3.17 to 3.77 on the
+// first), and the one at 7.0 was a small room (reverb-small: the voice 1.9 dB down). So 8, in that
+// gap: a judgement within it, 1 dB under the lowest real noise.
+export const PROBE_MIN_DB = 8;
+// and the probe's own bounds on the speech frames (see voiceKept), tighter than the run's: where
+// the pauses showed no noise the voice is most likely clean, and taking some of it is harm. On the
+// tune split the recordings the probe fired on and the denoiser helped took the speech frames at
+// most 0.11 of them down and their level 1.2 dB (a keyboard at 9.0 dB); a voice in a telephone's
+// band at 12.8 dB lost 0.23 and 1.5 dB, and PESQ fell from 3.62 to 3.13 (scored with the lab's
+// score.py, 2026-11-20). So 0.2 and 1.5 dB.
+export const PROBE_KEPT = { shareMax: 0.2, levelMaxDb: 1.5 };
 // (for the lab only: VOICE_SOUND_PROBE_DB another threshold)
 const probeThreshold = () => Number(process.env.VOICE_SOUND_PROBE_DB) || PROBE_FIRES_DB;
+
+// ---------------------------------------------------------------- what it did to the voice
+//
+// A denoiser can take a voice for noise (a voice in a telephone's band, one through a video call's
+// codec, a whisper) and turn it down. Both in the probe and after every real run, the level of
+// the speech frames (100 ms) that went in is set against what came out, frame by frame: a speech
+// frame is one within topDb of the loud frames (the 95th percentile) and floorDb over the quiet
+// ones (the 10th: in a noisy recording, the noise), where noise takes up at most a tenth of the
+// power, so that taking all of it out costs such a frame under half a dB. A frame more than
+// downDb under what went in lost voice. Over the whole sound and over every stretch of windowS
+// with at least minFrames speech frames: more than shareMax of the speech frames down, or their
+// level more than levelMaxDb down, and the denoiser took the voice down.
+//
+// The run's bounds, from the lab's tune split (2026-11-20, every noisy set: 12 real recordings
+// with a café or a keyboard, 60 VoiceBank pairs, 336 recordings with noise or hiss built in at 0 to
+// 25 dB, 126 combinations): where the denoiser ran on measure's noise finding it took at most 0.33
+// of the speech frames down and their level at most 1.9 dB (strong wind; there it raised PESQ from
+// 1.32 to 2.68), noise at 0 dB under the voice 1.4 dB; a whisper it took for noise lost 0.89 of
+// them and 11.5 dB. So half of the speech frames and 3 dB (half the voice's power): a judgement
+// between the two, nearer the denoiser's own work, since the probe's bounds (PROBE_KEPT) stop the
+// subtler cases before the run. windowS: a stretch of half a minute (a judgement: one turn of a
+// conversation, so that a speaker or a minute dropped from a long recording is seen).
+export const VOICE_FRAME = 4800;
+export const VOICE_KEPT = { topDb: 15, floorDb: 10, downDb: 6, shareMax: 0.5, levelMaxDb: 3, windowS: 30, hopS: 5, minFrames: 20 };
+
+// the speech frames of these energies: → { is(i) }
+function speechFrames(energy, t = VOICE_KEPT) {
+  const n = energy.length;
+  const lv = Array.from(energy, (e) => 10 * Math.log10(e / VOICE_FRAME + 1e-20));
+  const sorted = [...lv].sort((a, b) => a - b);
+  const top = sorted[Math.floor(0.95 * (n - 1))] ?? -200, floor = sorted[Math.floor(0.1 * (n - 1))] ?? -200;
+  const from = Math.max(top - t.topDb, floor + t.floorDb);
+  return { is: (i) => lv[i] >= from && energy[i] > 0 };
+}
+
+// inE, outE: the frames' energies in and out → { down, numbers, said }
+export function voiceKept(inE, outE, t = VOICE_KEPT) {
+  const n = Math.min(inE.length, outE.length);
+  const isSpeech = speechFrames(inE.subarray(0, n), t).is;
+  const stats = (a, b) => {
+    let k = 0, d = 0, ei = 0, eo = 0;
+    for (let i = a; i < b; i++) {
+      if (!isSpeech(i)) continue;
+      k++; ei += inE[i]; eo += outE[i];
+      if (outE[i] < inE[i] * 10 ** (-t.downDb / 10)) d++;
+    }
+    return { frames: k, downShare: k ? r2(d / k) : 0, levelDb: k ? r1(Math.max(-99, 10 * Math.log10(eo / ei + 1e-20))) : 0 };
+  };
+  const whole = stats(0, n);
+  const W = Math.round((t.windowS * RATE) / VOICE_FRAME), H = Math.max(1, Math.round((t.hopS * RATE) / VOICE_FRAME));
+  const bad = (s) => s && s.frames >= t.minFrames && (s.downShare > t.shareMax || s.levelDb < -t.levelMaxDb);
+  // the worst stretch: the first that is out of bounds, else the one whose level fell most
+  let worst = null;
+  for (let a = 0; a < n; a += H) {
+    const s = stats(a, Math.min(n, a + W));
+    if (s.frames >= t.minFrames && !bad(worst) && (bad(s) || !worst || s.levelDb < worst.levelDb))
+      worst = { ...s, from: r1((a * VOICE_FRAME) / RATE), to: r1((Math.min(n, a + W) * VOICE_FRAME) / RATE) };
+    if (a + W >= n) break;
+  }
+  const down = bad(whole) || bad(worst);
+  const where = bad(whole) || !worst ? whole : worst;
+  const said = `${Math.round(where.downShare * 100)} % of its speech frames more than ${t.downDb} dB down, their level ${db1(where.levelDb)} dB${where === whole ? "" : ` from ${clockOf(where.from)} to ${clockOf(where.to)}`}`;
+  return { down, numbers: { ...whole, ...(worst && { worst }) }, said };
+}
 
 function probeWanted(m, opts) {
   const strength = opts.denoise ?? "auto";
@@ -742,8 +833,9 @@ function probeWanted(m, opts) {
     (m.speech?.seconds ?? 0) > 0 && !!neuralDenoiser();
 }
 
-// → { fires, underDb, removedDb, sampleS, speechS, windows, seconds } (the estimate: how far the
-// noise lies under the voice, dB), or { fires: false, failed } where it could not be run
+// → { fires, underDb, removedDb, sampleS, speechS, windows, seconds, voice } (the estimate: how far
+// the noise lies under the voice, dB; voice: what it did to the speech frames), with declined and
+// why where it declined, or { fires: false, failed } where it could not be run
 export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir()) {
   const t0 = Date.now();
   const dn = neuralDenoiser();
@@ -786,6 +878,18 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir()) {
     const fd = fs.openSync(outW, "r");
     const y = readRange(fd, oi, 0, n);
     fs.closeSync(fd);
+    // what it did to the voice itself: the speech frames' level kept against what went in
+    const VF = VOICE_FRAME, inE = [], outE = [];
+    let s0 = 0;
+    for (const p of parts) {
+      for (let a = s0 + Math.round(P.skipS * RATE); a + VF <= s0 + p.length; a += VF) {
+        let e = 0, k = 0;
+        for (let i = a; i < a + VF; i++) { e += xi[i] * xi[i]; k += y[i] * y[i]; }
+        inE.push(e); outE.push(k);
+      }
+      s0 += p.length;
+    }
+    const voice = voiceKept(Float64Array.from(inE), Float64Array.from(outE), { ...VOICE_KEPT, ...PROBE_KEPT, ...opts.probeKept });
     // per frame: what it kept and what it took out; speech: the frames whose kept level lies within
     // speechDb of the loud kept frames (the 95th percentile), past each stretch's start
     const F = Math.round(P.frameS * RATE), skip = Math.round(P.skipS * RATE);
@@ -806,7 +910,13 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir()) {
     for (const f of frames) if (10 * Math.log10(f.k / F + 1e-20) >= loud - P.speechDb) { K += f.k; Rm += f.r; sp++; }
     if (!(K > 0)) return done({ failed: "no speech kept" });
     const underDb = r1(Math.min(99, Rm > 0 ? 10 * Math.log10(K / Rm) : 99));
-    return done({ fires: underDb <= probeThreshold(), underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length });
+    const found = { underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length, voice: voice.numbers };
+    // (a denoiser that takes the voice for noise: what it took out is no noise, nothing is denoised)
+    if (underDb <= probeThreshold() && voice.down)
+      return done({ ...found, declined: "voice", why: `The neural denoiser took the voice itself down in its sample (${voice.said}), so what it took out is no noise under the voice: nothing denoised.` });
+    if (underDb < PROBE_MIN_DB)
+      return done({ ...found, declined: "voice", why: `What the neural denoiser took out of its sample is nearly as loud as what it kept (about ${dB(underDb)} dB under it): that is the voice taken for noise, not noise under it, so nothing is denoised.` });
+    return done({ fires: underDb <= probeThreshold(), ...found });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -905,12 +1015,12 @@ function readRange(fd, info, from, count) {
   return out;
 }
 
-// the largest absolute sample of a float WAV, streamed
-function peakOf(fd, info) {
+// the largest absolute sample of a float WAV, streamed; its frames' energies added into energy
+function peakOf(fd, info, energy) {
   let peak = 0;
   for (let p = 0; p < info.samples; p += CHUNK) {
     const x = readRange(fd, info, p, Math.min(CHUNK, info.samples - p));
-    for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > peak) peak = v; }
+    for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > peak) peak = v; energy[Math.floor((p + i) / VOICE_FRAME)] += v * v; }
   }
   return peak;
 }
@@ -959,18 +1069,24 @@ async function neuralRepair(file, outWav, plan, opts) {
     const N = info.samples;
     const den = path.join(tmp, "denoised.wav");
     const st = { ...plan.steps.find((s) => s.id === "denoise") };
-    let delay = DPDFNET_DELAY, gainDb = 0;
+    let delay = DPDFNET_DELAY, gainDb = 0, voice = null;
     const cut = piecesOf(N, nr.pauses, t);
     try {
-      // 2. the level for its 16-bit output
+      // 2. the level for its 16-bit output; the speech frames' energies, to check what it did to them
       const fdPre = open(pre, "r");
-      const peak = peakOf(fdPre, info);
+      const inE = new Float64Array(Math.ceil(N / VOICE_FRAME)), outE = new Float64Array(inE.length);
+      const peak = peakOf(fdPre, info, inE);
       gainDb = r2(peak > 0 ? Math.max(-40, Math.min(60, t.peakDb - 20 * Math.log10(peak))) : 0);
       const g = 10 ** (gainDb / 20);
       // 3. piece by piece, each output in step and cross-faded into the one before
       const fdDen = open(den, "w");
       fs.writeSync(fdDen, floatHeader(N));
-      const write = (x) => fs.writeSync(fdDen, Buffer.from(x.buffer, x.byteOffset, x.length * 4));
+      let at = 0;
+      const write = (x) => {
+        for (let i = 0; i < x.length; i++) outE[Math.floor((at + i) / VOICE_FRAME)] += x[i] * x[i];
+        at += x.length;
+        fs.writeSync(fdDen, Buffer.from(x.buffer, x.byteOffset, x.length * 4));
+      };
       const { pieces, seams, fade } = cut, half = fade / 2, K = pieces.length;
       let pending = null;
       for (let k = 0; k < K; k++) {
@@ -1042,6 +1158,9 @@ async function neuralRepair(file, outWav, plan, opts) {
       }
       close(fdDen);
       close(fdPre);
+      // 4. what it did to the voice itself, over the whole and every stretch of it
+      voice = voiceKept(inE, outE, { ...VOICE_KEPT, ...opts.voiceKept });
+      if (voice.down) throw new NeuralFailure(`it took the voice itself down (${voice.said})`, { voice: voice.numbers });
     } catch (e) {
       if (e instanceof NeuralFailure || e instanceof Refusal) throw e;
       throw new NeuralFailure(`the step round it broke: ${String(e?.message || e).split("\n")[0]}`);
@@ -1057,7 +1176,7 @@ async function neuralRepair(file, outWav, plan, opts) {
       refuse(`ffmpeg's filters wrote ${bad2.value} at ${clockOf(bad2.at)} of the repaired sound (after dpdfnet): run it again with --denoise off or another method, and tell the skill's authors.`);
     }
     Object.assign(st, {
-      gainDb, delaySamples: delay,
+      gainDb, delaySamples: delay, voice: voice.numbers,
       pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })),
       seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
       ...(delay !== DPDFNET_DELAY && { why: `${st.why.replace(/\.$/, "")}; its output came ${delay} samples late, taken out.` }),
