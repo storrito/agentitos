@@ -122,7 +122,7 @@ test("plan: a clean recording gets the high-pass at 80 Hz and nothing else", () 
   assert.equal(p.steps[0].poles, 2);
   assert.deepEqual(p.left, []);
   assert.equal(p.method, "off");
-  assert.match(p.graph, /^\[0:a\]aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
+  assert.match(p.graph, /^\[0:a\]aformat=sample_fmts=flt,aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
 });
 
 test("plan: each finding alone gives its step and no other", () => {
@@ -485,6 +485,23 @@ test("two channels: a dead one and an inverted one give a single channel at full
     assert.equal(ch, "pcm_f32le,48000,1");
     const want = name === "offcentre.wav" ? 0.75 : 1;
     near(20 * Math.log10(rms(y) / (level * want)), 0, 0.5, `${name} level`);
+  }
+});
+
+test("16-bit input: the filters work in float (no second rounding, no high-pass clipped at full scale)", { skip }, async () => {
+  // a quiet voice written at 16 bits, and one whose peaks touch full scale
+  const peak = samples(base).reduce((p, v) => Math.max(p, Math.abs(v)), 0);
+  for (const [name, gain] of [["quiet16.wav", -45], ["full16.wav", null]]) {
+    fault(name, `[0:a]volume=${gain ?? (-20 * Math.log10(peak)).toFixed(3)}dB[o]`, "pcm_s16le");
+    const m = await measure(file(name));
+    const { r, y } = await mended(name, m);
+    assert.deepEqual(ids(r.steps), ["highpass"], name);
+    // the exact answer: the same 16-bit samples through the same high-pass in double precision
+    run(["-i", file(name), "-af", `aformat=sample_fmts=dbl,${highpasses(r.graph)}`, "-c:a", "pcm_f32le", file(`${name}.exact.wav`)]);
+    const x = samples(file(`${name}.exact.wav`));
+    let e = 0, s = 0;
+    for (let i = 0; i < x.length; i++) { e += (y[i] - x[i]) ** 2; s += x[i] ** 2; }
+    assert.ok(db(e / s) < -70, `${name}: ${db(e / s).toFixed(1)} dB off the exact high-pass`);
   }
 });
 

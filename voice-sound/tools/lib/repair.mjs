@@ -190,7 +190,11 @@ export function repairPlan(m, opts = {}) {
   let gain = 1;              // the linear gain so far (declip's), for the DC offset and the floor
 
   // 1. the channels. (More than two are first mixed to two by ffmpeg, as `measure` reads them.)
-  const head = [`aresample=${RATE}`];
+  // (float from the first filter on: on 16-bit samples ffmpeg's highpass works in s16, rounds the
+  // sound a second time and clips its overshoot at full scale: a clean voice 45 dB down at 16 bits
+  // came out of `clean --level off` at PESQ 2.78, with this 3.49; at its own level, peaks at full
+  // scale, the high-pass's error went from −50 to −88 dB, 2026-11-20)
+  const head = ["aformat=sample_fmts=flt", `aresample=${RATE}`];
   let pick = null;           // the pan coefficients of the analysed left and right
   if (inChannels >= 2) {
     const c = m.channels || {};
