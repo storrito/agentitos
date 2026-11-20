@@ -1,0 +1,729 @@
+// repair (lib/repair.mjs), the first stage of `clean`: its plan on made-up measures (each finding
+// alone gives its step and no other), then on a voice made up with ffmpeg's lavfi (the same
+// synthesiser as tools/test.mjs: a sawtooth whose pitch wanders around 120 Hz, three formants,
+// syllables in phrases of 2.5 s with pauses of 1.1 s) with one fault at a time: the output is as
+// long as the input and in step with it, hum, noise, clipping and a dead or inverted channel are
+// mended, a clean voice comes out nearly as it went in. No request, no key, no network.
+//
+//   node --test tools/test-repair.mjs
+
+import test, { before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { measure } from "./voice.mjs";
+import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample, declipCpuS, declipPieces, declipWindow, usableCores, memoryMb, atOnce, denoiserSlots, NEURAL } from "./lib/repair.mjs";
+import { Refusal } from "./lib/analyse.mjs";
+import { clean } from "./lib/clean.mjs";
+import { fftOf } from "./lib/fft.mjs";
+
+// the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
+process.env.VOICE_SOUND_DENOISER = "/nonexistent/voice-sound-no-denoiser";
+const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
+const skip = !ffmpeg && "no ffmpeg";
+const run = (args) => { const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); };
+const ids = (list) => list.map((s) => s.id);
+const db = (x) => 10 * Math.log10(x);
+
+const D = 28.8;
+const VOICE = `aevalsrc=exprs='st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t)));st(1,mod(t,3.6));` +
+  `0.25*lt(ld(1),2.5)*pow(sin(12.566*ld(1)),2)*(0.6+0.4*sin(5.655*t))*2*(ld(0)-floor(ld(0)+0.5))':s=48000:d=${D},` +
+  `equalizer=f=500:t=o:w=1:g=10,equalizer=f=1500:t=o:w=1:g=6,equalizer=f=2700:t=o:w=0.8:g=4,lowpass=f=5000[v];` +
+  `anoisesrc=color=white:amplitude=0.03:r=48000:d=${D}:seed=3,highpass=f=4000,highpass=f=4000,volume='lt(mod(t,3.6),2.5)*lt(mod(t,0.75),0.09)':eval=frame[s];` +
+  `anoisesrc=color=pink:amplitude=0.0015:r=48000:d=${D}:seed=5[n];[v][s][n]amix=inputs=3:normalize=0`;
+
+let dir, base;
+const file = (name) => path.join(dir, name);
+// the samples of a file as `measure` decodes it (48 kHz), one channel or `ch` of two
+function samples(f, ch = null) {
+  const r = spawnSync("ffmpeg", ["-v", "error", "-i", f, ...(ch == null ? ["-ac", "1"] : ["-af", `pan=mono|c0=c${ch}`]), "-ar", "48000", "-f", "f32le", "-"], { maxBuffer: 1 << 28 });
+  return new Float32Array(r.stdout.buffer, r.stdout.byteOffset, r.stdout.length / 4);
+}
+const rms = (x, a = 0, b = x.length) => { let s = 0; for (let i = a; i < b; i++) s += x[i] * x[i]; return Math.sqrt(s / Math.max(1, b - a)); };
+// the lag (samples) at which y matches x best around `at` (0.25 s of x against ±lag of y)
+function lagOf(x, y, at, lag = 1500) {
+  const n = 12000;
+  let best = -Infinity, bl = null;
+  for (let l = -lag; l <= lag; l++) {
+    let s = 0;
+    for (let i = at; i < at + n; i++) s += x[i] * (y[i + l] ?? 0);
+    if (s > best) { best = s; bl = l; }
+  }
+  return bl;
+}
+// the power of a sine at f in x (a Goertzel over all of it), as dB
+function lineDb(x, f) {
+  const w = (2 * Math.PI * f) / 48000, c = 2 * Math.cos(w);
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < x.length; i++) { const s = x[i] + c * s1 - s2; s2 = s1; s1 = s; }
+  return db((s1 * s1 + s2 * s2 - c * s1 * s2) / (x.length * x.length) + 1e-30);
+}
+async function mended(name, m, opts) {
+  const out = file(`${name}.out.wav`);
+  const r = await repair(file(name), out, m, opts);
+  return { r, out, x: samples(file(name)), y: samples(out) };
+}
+// the input through the plan's filters that delay nothing (the plan without denoising): an IIR
+// high-pass turns a voice's phase (its lows lead), which no delay can undo, so being in step is
+// measured against this
+function undelayed(name, m) {
+  const out = file(`${name}.ref.wav`);
+  run(["-i", file(name), "-filter_complex", repairPlan(m, { denoise: "off" }).graph, "-map", "[out]", "-c:a", "pcm_f32le", out]);
+  return samples(out);
+}
+// the high-pass sections of a graph, to put a reference through the same
+const highpasses = (graph) => graph.match(/highpass=[^,;[]+/g).join(",");
+// a copy of the voice through `filter` (a filter_complex with [0:a] the voice, ending in [o])
+function fault(name, filter, codec = "pcm_f32le") {
+  run(["-i", base, "-filter_complex", filter, "-map", "[o]", "-c:a", codec, file(name)]);
+  return file(name);
+}
+
+before(() => {
+  if (!ffmpeg) return;
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "voice-sound-repair-"));
+  base = file("voice.wav");
+  run(["-filter_complex", VOICE, "-ac", "1", "-c:a", "pcm_f32le", base]);
+});
+after(() => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
+
+// ---------------------------------------------------------------- the plan on made-up measures
+
+const band = (lo, hi, dbv) => ({ lo, hi, db: dbv });
+const EDGES = [0, 40, 60, 80, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000, 3000, 3500, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 14000, 16000, 18000, 20000, 24000];
+// pink-ish noise at about −70 dB a band
+const NOISE_BANDS = EDGES.slice(0, -1).map((lo, i) => band(lo, EDGES[i + 1], -70 - 3 * Math.log2(Math.max(1, lo / 500))));
+function made(over = {}) {
+  return {
+    file: "made.wav", duration: 60,
+    sound: { channels: 1, sampleRate: 48000 },
+    analysed: { sampleRate: 48000, channels: 1, seconds: 60 },
+    loudness: { integratedLufs: -20, truePeakDb: -3 },
+    speech: { share: 0.7, longest: [{ from: 12.3, to: 13.5, seconds: 1.2, db: -70, lufs: -72, silent: false }], confidence: "high" },
+    levels: { speechLufs: -20, noiseLufs: -75, snrDb: 55, snrADb: 55 },
+    noise: { lufs: -75, kind: "broadband", fluctuationDb: 0.5, spreadDb: 1, bands: NOISE_BANDS },
+    hum: { judged: true, hz: null, harmonics: 0, overDb: null, at50: [], at60: [] },
+    clipping: { peakDb: -3, ceilingDb: -3, pileUp: 0.2, share: 0, exactShare: 0 },
+    dc: { values: [0], db: -120 },
+    low: { below80Db: -30, pauses80Db: -35, thumps: { count: 0, perMinute: 0, at: [] } },
+    clicks: { count: 0, over: { 20: 0, 30: 0, 40: 0 }, at: [] },
+    channels: null, room: { rt60: 0.3, confidence: "medium" },
+    findings: [],
+    ...over,
+  };
+}
+const finding = (id, strength = "strong") => ({ id, strength, text: id });
+
+test("plan: a clean recording gets the high-pass at 80 Hz and nothing else", () => {
+  const p = repairPlan(made());
+  assert.deepEqual(ids(p.steps), ["highpass"]);
+  assert.equal(p.steps[0].hz, 80);
+  assert.equal(p.steps[0].poles, 2);
+  assert.deepEqual(p.left, []);
+  assert.equal(p.method, "off");
+  assert.match(p.graph, /^\[0:a\]aformat=sample_fmts=flt,aresample=async=1:first_pts=0,aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
+});
+
+test("plan: each finding alone gives its step and no other", () => {
+  const cases = [
+    ["clipped", { clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 } }, "declip"],
+    ["hum", { hum: { judged: true, hz: 50, harmonics: 2, overDb: 18, at50: [{ n: 1, hz: 50, overDb: 18, counts: true }, { n: 2, hz: 100, overDb: 12, counts: true }, { n: 3, hz: 150, overDb: 12, counts: false }, { n: 4, hz: 200, overDb: 3, counts: false }], at60: [] } }, "dehum"],
+    ["clicks", { clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] } }, "declick"],
+    ["noise", { levels: { speechLufs: -20, noiseLufs: -45, snrDb: 25, snrADb: 25 }, noise: { lufs: -45, kind: "broadband", bands: NOISE_BANDS.map((b) => ({ ...b, db: b.db + 25 })) } }, "denoise"],
+  ];
+  for (const [id, over, step] of cases) {
+    const p = repairPlan(made({ ...over, findings: [finding(id)] }));
+    assert.deepEqual(ids(p.steps), step === "highpass" ? ["highpass"] : (step === "declip" ? ["declip", "highpass"] : ["highpass", step]), id);
+    if (id !== "hum") continue;
+    // each harmonic on its own: the two that count get a notch, 150 Hz (12 dB over, not steady) none
+    const st = p.steps.find((s) => s.id === "dehum");
+    assert.deepEqual(st.notches.map((x) => x.hz), [50, 100]);
+    assert.deepEqual(p.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50:t=h:w=2:r=f64", "bandreject=f=100:t=h:w=2:r=f64"]);
+    assert.equal(st.widthHz, 2);
+    assert.match(st.why, /^Hum at 50 Hz, steady in the pauses \(up to 18 dB over the noise beside it\): notched at 50, 100 Hz, each 2 Hz wide at its −3 dB points\.$/);
+  }
+  // each notch on its line as measured (lineHz), not on the multiple of the mains: a line at
+  // 50.96 Hz loses 3.2 dB to a notch at 50 (fleurs-de-05, 2026-11-20); the step keeps both
+  // numbers and says where it notched, never that the line is gone
+  const off = { judged: true, hz: 50, fundamentalHz: 50.963, harmonics: 2, overDb: 27, at50: [{ n: 1, hz: 50, lineHz: 50.963, overDb: 27, counts: true }, { n: 2, hz: 100, lineHz: 101.93, overDb: 12, counts: true }, { n: 3, hz: 150, lineHz: 152.9, overDb: 4, counts: false }], at60: [] };
+  const po = repairPlan(made({ hum: off, findings: [finding("hum")] }));
+  assert.deepEqual(po.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50.96:t=h:w=2:r=f64", "bandreject=f=101.93:t=h:w=2:r=f64"]);
+  const so = po.steps.find((s) => s.id === "dehum");
+  assert.deepEqual(so.notches.map((x) => [x.n, x.hz, x.lineHz, x.notchHz]), [[1, 50, 50.963, 50.96], [2, 100, 101.93, 101.93]]);
+  assert.equal(so.fundamentalHz, 50.963);
+  assert.match(so.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady in the pauses \(up to 27 dB over the noise beside it\): notched at 50\.96, 101\.93 Hz, each 2 Hz wide at its −3 dB points\.$/);
+  assert.doesNotMatch(so.why, /taken out|gone|removed/);
+  // hum judged over the whole recording (measure's long windows, where the pauses are too few):
+  // the step says so, never "in the pauses"
+  const whole = repairPlan(made({ hum: { ...off, from: "whole" }, findings: [finding("hum")] })).steps.find((s) => s.id === "dehum");
+  assert.match(whole.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady through the whole recording, under the voice too \(too little pause to judge it there alone\) \(up to 27 dB/);
+  assert.equal(whole.judgedFrom, "whole");
+  assert.match(repairPlan(made({ hum: { ...off, from: "pauses" }, findings: [finding("hum")] })).steps.find((s) => s.id === "dehum").why, /steady in the pauses \(/);
+  // a lineHz that is no number: the multiple of the mains
+  const odd = repairPlan(made({ hum: { ...off, at50: [{ n: 1, hz: 50, lineHz: null, overDb: 27, counts: true }] }, findings: [finding("hum")] }));
+  assert.deepEqual(odd.graph.match(/bandreject=f=[\d.]+/g), ["bandreject=f=50"]);
+  // hum that was not judged (too little pause) or counts nowhere: no notch
+  for (const hum of [{ judged: false, hz: null, harmonics: 0, overDb: null, at50: [], at60: [] }, { judged: true, hz: 50, harmonics: 0, overDb: 12, at50: [{ n: 1, hz: 50, overDb: 12, counts: false }], at60: [] }])
+    assert.deepEqual(ids(repairPlan(made({ hum, findings: [finding("hum")] })).steps), ["highpass"]);
+  // the low end and DC change the high-pass, never add a step
+  const rumble = repairPlan(made({ low: { below80Db: -10, pauses80Db: -10, thumps: { count: 0, perMinute: 0, at: [] } }, findings: [finding("rumble")] }));
+  assert.deepEqual(ids(rumble.steps), ["highpass"]);
+  assert.ok(rumble.steps[0].poles >= 4 && rumble.steps[0].hz <= 90, JSON.stringify(rumble.steps[0]));
+  const thumps = repairPlan(made({ low: { below80Db: -30, pauses80Db: -35, thumps: { count: 6, perMinute: 6, at: [1, 2] } }, findings: [finding("thumps")] }));
+  assert.equal(thumps.steps[0].poles, 4);
+  const dc = repairPlan(made({ dc: { values: [0.05], db: -26 }, findings: [finding("dc")] }));
+  assert.deepEqual(ids(dc.steps), ["highpass"]);
+  assert.match(dc.graph, /dcshift=shift=-0\.05/);
+  // a high-pass never over 90 Hz, however strong the rumble: a low voice's fundamental lies at 85–100 Hz
+  const worst = repairPlan(made({ low: { below80Db: 5, pauses80Db: 5, thumps: { count: 9, perMinute: 9, at: [] } }, findings: [finding("rumble"), finding("thumps")] }));
+  assert.ok(worst.steps[0].hz <= 90);
+});
+
+test("plan: two channels become one as measured", () => {
+  const two = (channels, f = []) => repairPlan(made({ sound: { channels: 2 }, channels, findings: f }));
+  const dead = two({ correlation: null, levelDifferenceDb: null, monoLossDb: -3, identical: false, silentChannel: "right" }, [finding("one-channel")]);
+  assert.deepEqual(ids(dead.steps), ["channels", "highpass"]);
+  assert.equal(dead.steps[0].take, "left");
+  assert.match(dead.graph, /pan=mono\|c0=c0,/);
+  const inv = two({ correlation: -1, levelDifferenceDb: -0.5, monoLossDb: -60, identical: false, silentChannel: null }, [finding("inverted")]);
+  assert.equal(inv.steps[0].take, "right");
+  assert.doesNotMatch(inv.graph, /c0\+|\+.*c1/, "never their sum");
+  assert.equal(two({ correlation: 1, levelDifferenceDb: 0, monoLossDb: 0, identical: true, silentChannel: null }).steps[0].take, "left");
+  const real = two({ correlation: 0.4, levelDifferenceDb: 2, monoLossDb: -1.6, identical: false, silentChannel: null });
+  assert.equal(real.steps[0].take, "mean");
+  assert.match(real.graph, /pan=mono\|c0=0\.5\*c0\+0\.5\*c1/);
+  // one channel 20 dB and more under the other is dead but for noise: the louder alone
+  const faint = two({ correlation: 0.9, levelDifferenceDb: -24, monoLossDb: -0.4, identical: false, silentChannel: null });
+  assert.equal(faint.steps[0].take, "right");
+  assert.match(faint.graph, /pan=mono\|c0=c1,/);
+  // more than two: ffmpeg's downmix to two first, as measure reads them
+  assert.match(repairPlan(made({ sound: { channels: 6 }, channels: { correlation: 1, levelDifferenceDb: 0, monoLossDb: 0, identical: true, silentChannel: null } })).graph, /aformat=channel_layouts=stereo,pan=mono\|c0=c0,/);
+});
+
+test("plan: the high-pass's slope follows the rumble, the DC offset is taken at declip's gain", () => {
+  // need: the rumble over speech's −28 dB under 80 Hz; over 9 dB 4 poles, over 16 dB 6, over 25 dB 90 Hz
+  const lowOf = (below80Db, pauses80Db = below80Db, over = {}) => repairPlan(made({ low: { below80Db, pauses80Db, thumps: { count: 0, perMinute: 0, at: [] } }, findings: [finding("rumble")], ...over })).steps.find((s) => s.id === "highpass");
+  assert.deepEqual([-20, -18, -10, 0].map((v) => [lowOf(v).poles, lowOf(v).hz]), [[2, 80], [4, 80], [6, 80], [6, 90]]);
+  // the pauses' low end counts as rumble, unless hum stands in them (its lines are no rumble)
+  assert.equal(lowOf(-30, -10).poles, 6);
+  const hum = { judged: true, hz: 50, harmonics: 1, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }], at60: [] };
+  assert.equal(lowOf(-30, -10, { hum, findings: [finding("rumble"), finding("hum")] }).poles, 2);
+  // a DC offset is subtracted at declip's gain, after it and before the high-pass
+  const both = repairPlan(made({ dc: { values: [0.05], db: -26 }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 }, findings: [finding("clipped"), finding("dc")] }));
+  const gain = both.steps.find((s) => s.id === "declip").gainDb;
+  near(Number(both.graph.match(/dcshift=shift=([-\d.e]+)/)[1]), -0.05 * 10 ** (gain / 20), 1e-4, "the offset at declip's gain");
+  assert.ok(both.graph.indexOf("adeclip") < both.graph.indexOf("dcshift") && both.graph.indexOf("dcshift") < both.graph.indexOf("highpass"));
+});
+
+test("plan: declip makes headroom, clicks get adeclick over a plosive's release", () => {
+  const p = repairPlan(made({ clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 }, findings: [finding("clipped")] }));
+  const st = p.steps.find((s) => s.id === "declip");
+  // the ceiling lifted to full scale for adeclip (with the 0.1 dB under it), then the old ceiling at −6 dBFS
+  assert.equal(st.gainDb, -5);
+  assert.match(p.graph, /volume=1\.1dB,adeclip=[^,]+,volume=-6\.1dB/);
+  // the window 55 ms, its AR model a share of it by how much is clipped; 10 ms where asked (the
+  // stage's second try after the net)
+  const clipped = (share, o, seconds = 10) => repairPlan(made({ analysed: { sampleRate: 48000, channels: 1, seconds }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), { cores: 4, ...o });
+  assert.deepEqual([0.0005, 0.004, 0.02, 0.45].map((s) => clipped(s).steps[0].arOrder), [8, 12, 16, 16]);
+  assert.match(clipped(0.02).graph, /adeclip=w=55:o=75:a=16:t=3:n=1000/);
+  assert.match(clipped(0.02).steps[0].why, /\(a 55 ms window, its model 16 % of it\)/);
+  assert.match(clipped(0.02, { declipFast: true }).graph, /adeclip=w=10:o=75:a=16:/);
+  // the second try from DECLIP_FAST_MAX_SHARE on: not redrawn (the 10 ms window does harm there)
+  const fastMuch = clipped(0.35, { declipFast: true });
+  assert.doesNotMatch(fastMuch.graph, /adeclip/);
+  assert.ok(fastMuch.left.some((l) => l.id === "clipped" && /took far longer than foreseen.* it stays as it is\.$/.test(l.why)), JSON.stringify(fastMuch.left));
+  // no share is left alone for its own sake: 70 % clipped is redrawn where it fits
+  assert.match(clipped(0.7, {}, 3).graph, /adeclip=w=55:/);
+  const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
+  assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
+});
+
+test("the memory that can be had: MemAvailable and what a balloon holds back, at most MemTotal", () => {
+  // a Sprite of a bot's size, nothing else running (2026-11-20): 8155 MB in all, 932 available,
+  // 6.6 GB in the balloon (pages of 4 kB), handed out as it is used
+  const sprite = "MemTotal:        8350720 kB\nMemFree:          600000 kB\nMemAvailable:     954368 kB\n";
+  const balloon = "nr_free_pages 150000\nballoon_inflate 4557312\nballoon_deflate 2829568\n";
+  const mb = memoryMb(sprite, balloon);
+  near(mb, 932 + (4557312 - 2829568) * 4 / 1024, 0.5, "MB");
+  // seven pieces at once on 8 cores, for the denoiser and the redrawing alike
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: mb }), 7);
+  assert.equal(atOnce(7, mb), 7);
+  // never more than MemTotal; a balloon that gave back more than it took counts for nothing
+  near(memoryMb(sprite, "balloon_inflate 9000000\nballoon_deflate 0\n"), 8155, 0.5, "capped");
+  near(memoryMb(sprite, "balloon_inflate 10\nballoon_deflate 20\n"), 932, 0.5, "no balloon");
+  // a machine without a balloon and with little memory free: few
+  const tight = memoryMb("MemTotal: 8350720 kB\nMemAvailable: 614400 kB\n", "nr_free_pages 1\n");
+  near(tight, 600, 0.5, "tight");
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: tight }), 1);
+  assert.equal(atOnce(7, tight), 1);
+  assert.equal(memoryMb("no such lines"), null);
+});
+
+test("plan: adeclip's window is chosen before it runs, from the predicted time on the machine's cores", () => {
+  // the prediction: twice the fit on the clip sets
+  near(declipCpuS(0.25, 10, 55), 10 * 2 * 26.3 * 0.25 ** 1.36, 1e-9, "55 ms");
+  near(declipCpuS(0.25, 10, 10), 10 * 2 * 0.54 * 0.25 ** 0.79, 1e-9, "10 ms");
+  assert.equal(declipCpuS(0.005, 10, 55), 2, "under 1 %: 0.2 times the length");
+  assert.equal(declipPieces(60, 4), 4);
+  assert.equal(declipPieces(5, 8), 2, "a piece at least 2 s");
+  assert.equal(declipPieces(1.5, 8), 1);
+  // the limit: 150 s and once the length, of wall time: where the 55 ms window's predicted wall
+  // time lies just under it, 55 ms; just over, the next that fits
+  const s = 0.25, cores = 1;
+  const wall = (L) => declipCpuS(s, L, 55);
+  let L = 10; while (wall(L) < 150 + L) L += 0.01;
+  assert.equal(declipWindow(s, L - 0.05, cores).w, 55);
+  const over = declipWindow(s, L + 0.05, cores);
+  assert.equal(over.w, 20);
+  assert.equal(over.limitS, Math.round((150 + L + 0.05) * 10) / 10);
+  // more cores, the same recording: the 55 ms window again (its pieces run at once, 8 of them
+  // 8 / 3.5 times as fast as one)
+  const eight = declipWindow(s, L + 0.05, 8);
+  assert.equal(eight.w, 55);
+  assert.equal(eight.pieces, 8);
+  near(eight.wallS, (declipCpuS(s, L + 0.05, 55) * 3.5) / 8, 0.06, "its wall time");
+  // the machine's cores, one left for the video cut beside it
+  assert.equal(usableCores(), Math.max(1, os.availableParallelism() - 1));
+  // from 30 % only 55 ms or nothing (the coarse windows do harm there)
+  let L2 = 1; while (declipCpuS(0.35, L2, 55) < 150 + L2) L2 += 0.1;
+  assert.equal(declipWindow(0.35, L2 + 0.2, 1).w, null);
+  // in the plan: the coarse window says why, nothing else differs; past the limit at 35 %: left
+  const plan = (share, seconds) => repairPlan(made({ analysed: { sampleRate: 48000, channels: 1, seconds }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), { cores: 1 });
+  const coarse = plan(s, L + 0.05).steps[0];
+  assert.equal(coarse.windowMs, 20);
+  assert.match(coarse.why, /\(a 20 ms window, its model 16 % of it\), the old ceiling then at −6\.0 dBFS; the 55 ms window would take about \d+ s here, over the \d+ s it may\.$/);
+  assert.deepEqual(Object.keys(coarse.predicted), ["cpuS", "pieces", "limitS"]);
+  const none = plan(0.35, L2 + 0.2);
+  assert.ok(!none.steps.some((x) => x.id === "declip"));
+  assert.ok(none.left.some((l) => /^Clipped on 35 % of the samples: redrawing it would take about \d+ s here, over the \d+ s it may, and a coarser window does more harm than good this far: it stays as it is\.$/.test(l.why)), JSON.stringify(none.left));
+});
+
+test("plan: the denoise method, its strength, and what is left", () => {
+  const noisy = (over = {}) => made({
+    levels: { speechLufs: -20, noiseLufs: -45, snrDb: 25, snrADb: 25 },
+    noise: { lufs: -45, kind: "broadband", fluctuationDb: 0.5, bands: NOISE_BANDS.map((b) => ({ ...b, db: b.db + 25 })) },
+    findings: [finding("noise")], ...over,
+  });
+  const p = repairPlan(noisy());
+  assert.equal(p.method, "afftdn-sample");
+  const st = p.steps.find((s) => s.id === "denoise");
+  assert.equal(st.reduceDb, 12, "the cap, short of the 20 dB to the aim");
+  assert.deepEqual(st.pause, { from: 12.3, seconds: 1.17 });
+  assert.equal(p.inputs[1].from, 12.3);
+  assert.match(p.graph, /asendcmd=c='0\.0 afftdn@dn sn start;[\d.]+ afftdn@dn sn stop'/);
+  assert.ok(p.left.some((l) => l.id === "noise" && /short of the 45 dB/.test(l.why)), JSON.stringify(p.left));
+  // gentle and strong move the cap; off leaves the noise, and says so
+  assert.ok(repairPlan(noisy(), { denoise: "gentle" }).steps.at(-1).reduceDb < st.reduceDb);
+  assert.ok(repairPlan(noisy(), { denoise: "strong" }).steps.at(-1).reduceDb > st.reduceDb);
+  const off = repairPlan(noisy(), { denoise: "off" });
+  assert.deepEqual(ids(off.steps), ["highpass"]);
+  assert.ok(off.left.some((l) => l.id === "noise"));
+  // never more than the aim needs
+  const mild = repairPlan(noisy({ levels: { speechLufs: -20, snrDb: 38, snrADb: 38 } }));
+  assert.equal(mild.steps.at(-1).reduceDb, 7);
+  // no pause long enough: afftdn with the pauses' measured spectrum, no second input
+  const none = repairPlan(noisy({ speech: { longest: [{ from: 3, to: 3.3, seconds: 0.3, silent: false }, { from: 9, to: 11, seconds: 2, silent: true }] } }));
+  assert.equal(none.method, "afftdn-profile");
+  assert.equal(none.inputs.length, 1);
+  assert.match(none.graph, /afftdn=nr=12:nf=-?[\d.]+:nt=c:bn=[-\d.|]+:tn=0/);
+  assert.throws(() => repairPlan(noisy({ speech: { longest: [] } }), { method: "afftdn-sample" }), Refusal);
+  // changing noise and a room: left with one sentence each
+  const changing = repairPlan(noisy({ noise: { lufs: -45, kind: "changing", fluctuationDb: 5, bands: NOISE_BANDS } }));
+  assert.ok(changing.left.some((l) => l.id === "noise" && /changes/.test(l.why)));
+  const roomy = repairPlan(made({ room: { rt60: 0.9, confidence: "high" }, findings: [finding("roomy")] }));
+  assert.deepEqual(ids(roomy.steps), ["highpass"]);
+  assert.ok(roomy.left.some((l) => l.id === "roomy" && /0\.9 s/.test(l.why)));
+  for (const l of [...p.left, ...changing.left, ...roomy.left]) assert.equal(l.why.split(/\. /).length, 1, l.why);
+  // arnndn only with a model named
+  const was = process.env.VOICE_SOUND_RNNOISE;
+  delete process.env.VOICE_SOUND_RNNOISE;
+  assert.throws(() => repairPlan(noisy(), { method: "arnndn" }), /VOICE_SOUND_RNNOISE/);
+  if (was) process.env.VOICE_SOUND_RNNOISE = was;
+  assert.throws(() => repairPlan(noisy(), { method: "anlmdn" }), Refusal);
+  assert.throws(() => repairPlan(noisy(), { denoise: "max" }), Refusal);
+});
+
+test("afftdn's floor: white noise of variance σ² sits at 10·log10(σ²) − 3 in every band", () => {
+  // white noise at −40 dB mean square: its 31 bands share it by their width
+  const bands = EDGES.slice(0, -1).map((lo, i) => band(lo, EDGES[i + 1], -40 + db((EDGES[i + 1] - lo) / 24000)));
+  const lv = afftdnLevels({ bands });
+  for (const v of lv) assert.ok(Math.abs(v - -43) < 0.05, `${v}`);
+  const f = afftdnFloor(lv, false, 0);
+  assert.equal(f.nf, -43);
+  assert.equal(f.lift, 0);
+  assert.ok(f.bn.split("|").every((v) => Math.abs(Number(v)) < 0.05));
+  // a very quiet noise is lifted into afftdn's range and the lift taken back
+  const quiet = afftdnFloor(lv.map((v) => v - 50), true, 0);
+  assert.equal(quiet.nf, -78);
+  assert.equal(quiet.lift, 15);
+});
+
+// ---------------------------------------------------------------- on sound
+
+test("a clean voice comes out nearly as it went in, as long and in step", { skip }, async () => {
+  const m = await measure(base);
+  const { r, out, x, y } = await mended("voice.wav", m);
+  assert.deepEqual(ids(r.steps), ["highpass"]);
+  assert.equal(y.length, x.length);
+  // (the high-pass's phase: the waveform as a whole leads by a sample or two, no more)
+  assert.ok(Math.abs(lagOf(x, y, 48000)) <= 3);
+  assert.equal(lagOf(undelayed("voice.wav", m), y, 48000), 0);
+  near(db(rms(y) / rms(x)) * 2, 0, 0.6, "level");
+  const a = await measure(out);
+  for (const b of a.tone.bands.filter((b) => b.lo >= 250 && b.diff != null))
+    near(b.diff, m.tone.bands.find((c) => c.lo === b.lo).diff, 0.5, `${b.lo} Hz band`);
+});
+
+// the power of x in bands lo–hi (one FFT over all of it, zero-padded)
+function bandPower(x) {
+  let n = 1; while (n < x.length) n <<= 1;
+  const re = new Float64Array(n), im = new Float64Array(n);
+  re.set(x);
+  fftOf(n)(re, im);
+  const df = 48000 / n;
+  return (lo, hi) => { let s = 0; for (let k = Math.ceil(lo / df); k * df < hi; k++) s += re[k] * re[k] + im[k] * im[k]; return s; };
+}
+// mains hum of ten harmonics, as the lab's corpus builds it (the tenth added)
+const HUM_AMPS = [1, 0.5, 0.6, 0.25, 0.35, 0.15, 0.2, 0.1, 0.12, 0.08];
+const humTones = (hz, level) => `${HUM_AMPS.map((a, i) => `sine=f=${hz * (i + 1)}:r=48000:d=${D},volume=${(level * a).toPrecision(3)}[h${i}]`).join(";")};` +
+  `${HUM_AMPS.map((_, i) => `[h${i}]`).join("")}amix=inputs=${HUM_AMPS.length}:normalize=0`;
+// a graph without its notches: the same steps but the dehum
+const unnotched = (graph) => graph.replace(/,bandreject=[^,;[]+/g, "");
+
+test("hum of ten harmonics: every harmonic found down by 20 dB and more, the voice in 90–500 Hz by under 1 dB", { skip }, async (t) => {
+  // (the voice's pitch here moves over a speaker's range, 65 to 185 Hz, where VOICE's wanders by
+  // ±25 Hz: a narrow pitch puts a band's whole power next to one notch, VOICE's 2nd harmonic at
+  // 190–202 Hz beside the notch at 200 Hz loses 1.3 dB of the third octave 160–202 Hz)
+  const wide = file("voice-wide.wav");
+  run(["-filter_complex", VOICE.replace("st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t)))", "st(0,125*t+34.6*(1-cos(1.3*t))+4.84*(1-cos(3.1*t)))"), "-ac", "1", "-c:a", "pcm_f32le", wide]);
+  for (const hz of [50, 60]) {
+    const name = `hum${hz}.wav`;
+    run(["-i", wide, "-filter_complex", `${humTones(hz, 0.01)}[hum];[0:a][hum]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file(name)]);
+    const m = await measure(file(name));
+    const { r, out, x, y } = await mended(name, m);
+    assert.equal(y.length, x.length);
+    const dehum = r.steps.find((s) => s.id === "dehum");
+    assert.ok(dehum, ids(r.steps).join());
+    assert.equal(dehum.hz, hz);
+    assert.ok(dehum.notches.length >= 8 && dehum.notches.every((n) => n.hz % hz === 0 && Math.abs(n.notchHz - n.hz) <= 0.2 && n.widthHz === 2), JSON.stringify(dehum.notches));
+    assert.match(dehum.why, new RegExp(`^Hum at ${hz}(\\.\\d+)? Hz.*, steady in the pauses \\(.*\\): notched at [\\d., ]+ Hz, each 2 Hz wide at its −3 dB points\\.$`));
+    // the hum alone, through the graph with its notches and without them (after the first
+    // second: a notch 2 Hz wide settles in about half of one)
+    run(["-filter_complex", `${humTones(hz, 0.01)}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("humonly.wav")]);
+    const through = (graph, z) => { run(["-i", file("humonly.wav"), "-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_f32le", file(z)]); return samples(file(z)).subarray(48000); };
+    const hy = through(r.graph, "humonly.out.wav"), hx = through(unnotched(r.graph), "humonly.ref.wav");
+    let least = Infinity, worst = 0;
+    for (const n of dehum.notches) {
+      const down = lineDb(hx, n.hz) - lineDb(hy, n.hz);
+      least = Math.min(least, down);
+      assert.ok(down >= 20, `${n.hz} Hz down by ${down.toFixed(1)} dB`);
+    }
+    // the voice alone through the same two graphs, in third octaves a sixth of an octave apart
+    // from 90 to 500 Hz: those across a harmonic and those between them
+    const vy = file("voice.notched.wav"), vx = file("voice.unnotched.wav");
+    run(["-i", wide, "-filter_complex", r.graph, "-map", "[out]", "-c:a", "pcm_f32le", vy]);
+    run(["-i", wide, "-filter_complex", unnotched(r.graph), "-map", "[out]", "-c:a", "pcm_f32le", vx]);
+    const py = bandPower(samples(vy)), px = bandPower(samples(vx));
+    for (let lo = 90; lo * 2 ** (1 / 3) <= 500; lo *= 2 ** (1 / 6)) {
+      const hi = lo * 2 ** (1 / 3), change = 10 * Math.log10(py(lo, hi) / px(lo, hi));
+      if (Math.abs(change) > Math.abs(worst)) worst = change;
+      assert.ok(Math.abs(change) < 1, `${hz} Hz hum: the voice in ${lo.toFixed(0)}–${hi.toFixed(0)} Hz changed by ${change.toFixed(2)} dB`);
+    }
+    t.diagnostic(`${hz} Hz: ${dehum.notches.length} harmonics notched, each down by ${least.toFixed(1)} dB or more; the voice's third octaves in 90–500 Hz changed by ${worst.toFixed(2)} dB at most`);
+    // and no tone rings on at a notch into the pauses
+    const a = await measure(out);
+    assert.ok(!a.findings.some((f) => f.id === "hum"), JSON.stringify(a.hum.at50.slice(0, 4)));
+  }
+});
+
+test("hum off the mains (50.96 Hz): each notch on its measured line takes it down by 20 dB and more", { skip }, async () => {
+  // (lineHz is `measure`'s number for each harmonic; made up here as it will give it)
+  const f0 = 50.96, N = 9;
+  const tones = `${HUM_AMPS.slice(0, N).map((a, i) => `sine=f=${(f0 * (i + 1)).toFixed(3)}:r=48000:d=${D},volume=${(0.01 * a).toPrecision(3)}[h${i}]`).join(";")};` +
+    `${HUM_AMPS.slice(0, N).map((_, i) => `[h${i}]`).join("")}amix=inputs=${N}:normalize=0`;
+  run(["-i", base, "-filter_complex", `${tones}[hum];[0:a][hum]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("hum5096.wav")]);
+  const m = await measure(file("hum5096.wav"));
+  m.hum = { ...m.hum, judged: true, hz: 50, fundamentalHz: f0, harmonics: N, overDb: 25, at50: [...Array(N).keys()].map((i) => ({ n: i + 1, hz: 50 * (i + 1), lineHz: +(f0 * (i + 1)).toFixed(2), overDb: 25, counts: true })), at60: [] };
+  if (!m.findings.some((f) => f.id === "hum")) m.findings.push(finding("hum"));
+  const { r, x, y } = await mended("hum5096.wav", m);
+  assert.equal(y.length, x.length);
+  const dehum = r.steps.find((s) => s.id === "dehum");
+  assert.deepEqual(dehum.notches.map((q) => q.notchHz), [...Array(N).keys()].map((i) => +(f0 * (i + 1)).toFixed(2)));
+  run(["-filter_complex", `${tones}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("hum5096only.wav")]);
+  const through = (graph, z) => { run(["-i", file("hum5096only.wav"), "-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_f32le", file(z)]); return samples(file(z)).subarray(48000); };
+  const hy = through(r.graph, "hum5096.out2.wav"), hx = through(unnotched(r.graph), "hum5096.ref2.wav");
+  for (let i = 0; i < N; i++) {
+    const f = f0 * (i + 1), down = lineDb(hx, f) - lineDb(hy, f);
+    assert.ok(down >= 20, `${f.toFixed(2)} Hz down by ${down.toFixed(1)} dB`);
+  }
+});
+
+test("the notch, measured through ffmpeg: 2 Hz wide at its −3 dB points on every harmonic, deep at its line", { skip }, async () => {
+  const p = repairPlan(made({ hum: { judged: true, hz: 50, harmonics: 2, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }, { n: 9, hz: 450, overDb: 12, counts: true }], at60: [] }, findings: [finding("hum")] }));
+  const notches = p.graph.match(/bandreject=[^,;[]+/g);
+  assert.equal(notches.length, 2);
+  for (const [f0, notch] of [[50, notches[0]], [450, notches[1]]]) {
+    // (lavfi's sine has an amplitude of 1/8: its line is (1/16)² in lineDb's terms; the first
+    // second left out, the notch settling)
+    const gain = (f) => {
+      run(["-f", "lavfi", "-i", `sine=f=${f}:r=48000:d=3`, "-af", `aformat=sample_fmts=flt,${notch}`, "-c:a", "pcm_f32le", file("sine.wav")]);
+      return lineDb(samples(file("sine.wav")).subarray(48000), f) - db((0.125 / 2) ** 2);
+    };
+    for (const d of [-1, 1]) near(gain(f0 + d), -3, 0.2, `${f0} Hz notch at ${d > 0 ? "+" : ""}${d} Hz`);
+    // how well a line must be known (HUM_NOTCH_HZ): 0.1 Hz off −20 dB, 0.2 Hz −14, 0.5 Hz −7
+    for (const [d, want] of [[0.1, -20], [0.2, -14.1], [0.5, -7]]) near(gain(f0 + d), want, 0.3, `${f0} Hz notch at +${d} Hz`);
+    for (const d of [-3, 3]) assert.ok(gain(f0 + d) > -0.7, `${f0 + d} Hz`);
+    assert.ok(gain(f0) < -60, `${f0} Hz itself: ${gain(f0).toFixed(1)} dB`);
+  }
+});
+
+test("steady noise: lower in the pauses, the voice within a dB or two, in step (sample and profile)", { skip }, async () => {
+  run(["-i", base, "-filter_complex", `anoisesrc=color=pink:amplitude=0.02:r=48000:d=${D}:seed=9[n];[0:a][n]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("noisy.wav")]);
+  const m = await measure(file("noisy.wav"));
+  assert.ok(m.findings.some((f) => f.id === "noise"));
+  const ref = undelayed("noisy.wav", m);
+  for (const method of ["afftdn-sample", "afftdn-profile"]) {
+    const { r, out, x, y } = await mended("noisy.wav", m, { method });
+    const st = r.steps.find((s) => s.id === "denoise");
+    assert.equal(r.method, method);
+    assert.equal(y.length, x.length, method);
+    for (const at of [48000, 600000, 1300000]) assert.equal(lagOf(ref, y, at), 0, `${method} at ${at}`);
+    const a = await measure(out);
+    const down = m.levels.noiseLufs - a.levels.noiseLufs;
+    assert.ok(down >= st.reduceDb - 2, `${method}: the noise down by ${down.toFixed(1)} dB of ${st.reduceDb}`);
+    near(a.levels.speechLufs, m.levels.speechLufs, 1.5, `${method}: the voice`);
+  }
+});
+
+// ffmpeg 9.0.2's arnndn writes NaN or values around 1e11 into its last 480 samples when the
+// input ends inside a block (2026-11-19); no method may hand on such a sample, whichever filter
+// makes it. arnndn runs here when VOICE_SOUND_RNNOISE names a model (the skill ships none).
+test("every method: finite samples within ±16 to the last one, on a length that is no multiple of 480", { skip }, async () => {
+  run(["-i", base, "-filter_complex", `anoisesrc=color=pink:amplitude=0.02:r=48000:d=${D}:seed=9[n];[0:a][n]amix=inputs=2:normalize=0,atrim=end_sample=${48000 * 7 + 123}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("odd.wav")]);
+  const m = await measure(file("odd.wav"));
+  const methods = ["afftdn-sample", "afftdn-profile", "afftdn-track", ...(process.env.VOICE_SOUND_RNNOISE ? ["arnndn"] : [])];
+  for (const method of methods) {
+    const { r, x, y } = await mended("odd.wav", m, { method });
+    assert.equal(r.method, method);
+    assert.equal(y.length, x.length, method);
+    const bad = y.findIndex((v) => !Number.isFinite(v) || Math.abs(v) > 16);
+    assert.equal(bad, -1, `${method}: sample ${bad} of ${y.length} is ${y[bad]}`);
+  }
+  // and repair's own check finds such a sample in a WAV, to the sample
+  const raw = new Float32Array(48000 * 3).fill(0.1);
+  raw[100000] = NaN;
+  fs.writeFileSync(file("nan.raw"), Buffer.from(raw.buffer));
+  run(["-f", "f32le", "-ar", "48000", "-ac", "1", "-i", file("nan.raw"), "-c:a", "pcm_f32le", file("nan.wav")]);
+  const found = await invalidSample(file("nan.wav"));
+  assert.equal(found?.value, "NaN");
+  near(found.at, 100000 / 48000, 1e-6, "where");
+  assert.equal(await invalidSample(file("odd.wav")), null);
+});
+
+test("an input at 44.1 kHz with a DC offset: as long as measure decodes it", { skip }, async () => {
+  run(["-i", base, "-af", "aresample=44100,aeval=val(0)+0.05", "-c:a", "pcm_s16le", file("dc44.wav")]);
+  const m = await measure(file("dc44.wav"));
+  const { r, x, y } = await mended("dc44.wav", m);
+  assert.ok(r.steps[0].dc, JSON.stringify(r.steps));
+  assert.equal(y.length, x.length);
+  assert.ok(Math.abs(y.reduce((s, v) => s + v, 0) / y.length) < 1e-3, "no offset left");
+  assert.equal(lagOf(undelayed("dc44.wav", m), y, 96000), 0);
+});
+
+test("clipped: the peaks are redrawn over the old ceiling", { skip }, async () => {
+  const loud = samples(fault("loud.wav", "[0:a]volume=9dB[o]"));
+  const abs = Float64Array.from(loud, Math.abs).sort();
+  const ceiling = abs[Math.floor(abs.length * 0.995)];
+  fault("clipped.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)))'[o]`, "pcm_s16le");
+  const m = await measure(file("clipped.wav"));
+  const { r, x, y } = await mended("clipped.wav", m);
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.ok(st, ids(r.steps).join());
+  const old = ceiling * 10 ** (st.gainDb / 20);
+  let over = 0, peak = 0;
+  for (const v of y) { if (Math.abs(v) > old * 1.02) over++; peak = Math.max(peak, Math.abs(v)); }
+  assert.ok(over > 1000 && peak > old * 1.2, `${over} samples over the old ceiling, the peak ${(20 * Math.log10(peak / old)).toFixed(1)} dB over it`);
+  assert.equal(y.length, x.length);
+  // nearer the voice before it clipped than the clipped one is, both through the same high-pass
+  const through = (src, name) => { run(["-i", src, "-af", `${highpasses(r.graph)},volume=${st.gainDb}dB`, "-c:a", "pcm_f32le", file(name)]); return samples(file(name)); };
+  const truth = through(file("loud.wav"), "loud.hp.wav"), clipped = through(file("clipped.wav"), "clipped.hp.wav");
+  const err = (z) => { let s = 0; for (let i = 0; i < z.length; i++) s += (z[i] - truth[i]) ** 2; return s; };
+  assert.ok(err(y) < err(clipped) * 0.8, `error ${(10 * Math.log10(err(y) / err(clipped))).toFixed(1)} dB against the clipped one's`);
+});
+
+test("clipped: a redrawing that takes longer than its limit is stopped and run again with the 10 ms window, and says so", { skip }, async () => {
+  const loud = samples(fault("loud2.wav", "[0:a]volume=9dB[o]"));
+  const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.97)];
+  fault("clipped2.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)))'[o]`, "pcm_s16le");
+  const m = await measure(file("clipped2.wav"));
+  // (a net of 0.3 s of CPU, whatever the prediction: the 55 ms window on 28.8 s takes more; the
+  // 10 ms one then runs to its end, though it too takes more than 0.3 s)
+  const { r, x, y } = await mended("clipped2.wav", m, { cores: 1, declipNet: { times: 0, s: 0.3 } });
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.equal(st.windowMs, 10);
+  assert.match(r.graph, /adeclip=w=10:/);
+  assert.match(st.why, /; the 55 ms window ran past 0\.3 s of CPU, far over what was foreseen, so it ran again with the coarser 10 ms one\.$/);
+  assert.deepEqual(st.slow, { windowMs: 55, cpuLimitS: 0.3 });
+  assert.equal(y.length, x.length);
+  // the net as it is: the 55 ms window, nothing said
+  const plain = await repair(file("clipped2.wav"), file("clipped2.plain.wav"), m, { cores: 1 });
+  assert.equal(plain.steps.find((s) => s.id === "declip").windowMs, 55);
+  assert.ok(!plain.steps.find((s) => s.id === "declip").slow);
+  // the window from the prediction, before anything runs: a limit of 0.1 s a second of sound
+  // leaves the 10 ms window alone, chosen, not tried after the others
+  const small = await repair(file("clipped2.wav"), file("clipped2.small.wav"), m, { cores: 1, declipLimit: { baseS: 0, perSecond: 0.1 } });
+  const sm = small.steps.find((s) => s.id === "declip");
+  assert.equal(sm.windowMs, 10);
+  assert.ok(!sm.slow);
+  assert.match(sm.why, /; the 55 ms window would take about [\d.]+ s here, over the 2\.9 s it may\.$/);
+});
+
+test("clipped: redrawn in pieces at once, the joined result the one-piece result to the sample", { skip }, async () => {
+  const m = await measure(file("clipped2.wav"));
+  const one = await repair(file("clipped2.wav"), file("clipped2.one.wav"), m, { cores: 1 });
+  const four = await repair(file("clipped2.wav"), file("clipped2.four.wav"), m, { cores: 4 });
+  assert.equal(one.steps.find((s) => s.id === "declip").predicted.pieces, 1);
+  assert.equal(four.steps.find((s) => s.id === "declip").predicted.pieces, 4);
+  assert.ok(fs.readFileSync(file("clipped2.one.wav")).equals(fs.readFileSync(file("clipped2.four.wav"))), "the four pieces joined differ from the whole");
+});
+
+
+test("clipped at full scale with a DC offset before it: both sides redrawn, the offset taken out after adeclip", { skip }, async () => {
+  // (a preamp's offset, then the converter clipping at ±1: both sides at the same |x| only with
+  // the offset in)
+  // (as the test above: the ceiling where 0.5 % of the samples, the offset in, lie over it)
+  const loud = samples(fault("dcloud.wav", "[0:a]volume=9dB,aeval=val(0)+0.1[o]"));
+  const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.995)];
+  fault("dcclipped.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)+0.1))'[o]`);
+  const m = await measure(file("dcclipped.wav"));
+  // (the ceiling as measure gives it from 2111e94 on, read from the offset)
+  m.clipping = { ...m.clipping, ceilingDb: 20 * Math.log10(ceiling) };
+  const { r, y } = await mended("dcclipped.wav", m);
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.ok(st && r.graph.indexOf("adeclip") < r.graph.indexOf("dcshift"), r.graph);
+  const through = (src, name) => { run(["-i", src, "-af", `${highpasses(r.graph)},volume=${st.gainDb}dB`, "-c:a", "pcm_f32le", file(name)]); return samples(file(name)); };
+  const truth = through(file("dcloud.wav"), "dcloud.hp.wav"), clipped = through(file("dcclipped.wav"), "dcclipped.hp.wav");
+  const err = (z) => { let s = 0; for (let i = 48000; i < z.length; i++) s += (z[i] - truth[i]) ** 2; return s; };
+  // nearer the voice before it clipped than the clipped one is (here by 3.1 dB)
+  assert.ok(db(err(y) / err(clipped)) < -2, `error ${db(err(y) / err(clipped)).toFixed(1)} dB against the clipped one's`);
+});
+
+test("two channels: a dead one and an inverted one give a single channel at full level", { skip }, async () => {
+  const level = rms(samples(base));
+  for (const [name, pan] of [["dead.wav", "c0=c0|c1=0*c0"], ["inverted.wav", "c0=c0|c1=-1*c0"], ["offcentre.wav", "c0=c0|c1=0.5*c0"]]) {
+    fault(name, `[0:a]pan=stereo|${pan}[o]`);
+    const m = await measure(file(name));
+    const { r, out } = await mended(name, m);
+    assert.equal(r.steps[0].id, "channels", name);
+    const y = samples(out);
+    const ch = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=channels,sample_rate,codec_name", "-of", "csv=p=0", out], { encoding: "utf8" }).stdout.trim();
+    assert.equal(ch, "pcm_f32le,48000,1");
+    const want = name === "offcentre.wav" ? 0.75 : 1;
+    near(20 * Math.log10(rms(y) / (level * want)), 0, 0.5, `${name} level`);
+  }
+});
+
+test("16-bit input: the filters work in float (no second rounding, no high-pass clipped at full scale)", { skip }, async () => {
+  // a quiet voice written at 16 bits, and one whose peaks touch full scale
+  const peak = samples(base).reduce((p, v) => Math.max(p, Math.abs(v)), 0);
+  for (const [name, gain] of [["quiet16.wav", -45], ["full16.wav", null]]) {
+    fault(name, `[0:a]volume=${gain ?? (-20 * Math.log10(peak)).toFixed(3)}dB[o]`, "pcm_s16le");
+    const m = await measure(file(name));
+    const { r, y } = await mended(name, m);
+    assert.deepEqual(ids(r.steps), ["highpass"], name);
+    // the exact answer: the same 16-bit samples through the same high-pass in double precision
+    run(["-i", file(name), "-af", `aformat=sample_fmts=dbl,${highpasses(r.graph)}`, "-c:a", "pcm_f32le", file(`${name}.exact.wav`)]);
+    const x = samples(file(`${name}.exact.wav`));
+    let e = 0, s = 0;
+    for (let i = 0; i < x.length; i++) { e += (y[i] - x[i]) ** 2; s += x[i] ** 2; }
+    assert.ok(db(e / s) < -70, `${name}: ${db(e / s).toFixed(1)} dB off the exact high-pass`);
+  }
+});
+
+test("a browser's WebM whose sound has a gap in its time stamps: measured, mended and laid under the picture as it plays", { skip }, async () => {
+  // (as Chrome's Opus in WebM can be: 2 s of voice, 2 s without a single sound packet, 2 s of voice,
+  // beside 6 s of picture; decoded as the packets come it is 4 s long, the second stretch at 2 s)
+  for (const [i, from] of [[0, 0], [1, 3.6]]) run(["-ss", String(from), "-t", "2", "-i", base, "-c:a", "libopus", "-b:a", "64k", file(`gap-${i}.webm`)]);
+  fs.writeFileSync(file("gap.txt"), `file '${file("gap-0.webm")}'\nduration 4\nfile '${file("gap-1.webm")}'\n`);
+  run(["-f", "concat", "-safe", "0", "-i", file("gap.txt"), "-c", "copy", file("gap-audio.webm")]);
+  run(["-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=6", "-c:v", "libvpx", "-b:v", "100k", file("gap-video.webm")]);
+  run(["-i", file("gap-video.webm"), "-i", file("gap-audio.webm"), "-map", "0:v", "-map", "1:a", "-c", "copy", file("gap.webm")]);
+  const plays = (f) => { const r = spawnSync("ffmpeg", ["-v", "error", "-i", f, "-vn", "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], { maxBuffer: 1 << 28 }); return new Float32Array(r.stdout.buffer, r.stdout.byteOffset, r.stdout.length / 4); };
+  assert.ok(samples(file("gap.webm")).length < 4.1 * 48000, "the made-up file decodes short");
+  // measure reads it as it plays
+  const m = await measure(file("gap.webm"));
+  near(m.analysed.seconds, 6, 0.03, "measure's length");
+  // clean: the sound as long as it plays, the second stretch of voice where it plays (4 s)
+  await clean(file("gap.webm"), file("gap.out.webm"), { level: "off", before: file("gap.before.m4a") });
+  const y = plays(file("gap.out.webm")), x = plays(file("gap.webm"));
+  near(y.length / 48000, 6, 0.02, "the output's sound");
+  // the sound as it was beside it, as long and in step
+  const bx = plays(file("gap.before.m4a"));
+  near(bx.length / 48000, 6, 0.03, "the comparison's sound");
+  assert.ok(Math.abs(lagOf(x, bx, 4.3 * 48000, 2400)) <= 48, "the comparison in step");
+  const lv = (z, a, b) => db(rms(z, Math.round(a * 48000), Math.round(b * 48000)) ** 2 + 1e-12);
+  assert.ok(lv(y, 2.2, 3.8) < lv(y, 4.2, 5.8) - 30, `the gap is silent (${lv(y, 2.2, 3.8).toFixed(1)} dB against ${lv(y, 4.2, 5.8).toFixed(1)})`);
+  for (const t of [0.5, 4.3]) assert.ok(Math.abs(lagOf(x, y, t * 48000, 2400)) <= 48, `in step at ${t} s`);
+  // a late start (the sound's first packet 1 s after the picture's): filled once, not offset twice
+  run(["-i", file("gap-video.webm"), "-itsoffset", "1", "-i", file("gap-0.webm"), "-map", "0:v", "-map", "1:a", "-c", "copy", file("late.webm")]);
+  await clean(file("late.webm"), file("late.out.webm"), { level: "off" });
+  const ly = plays(file("late.out.webm")), lx = plays(file("late.webm"));
+  near(ly.length / 48000, 3, 0.02, "the late one's sound");
+  assert.ok(Math.abs(lagOf(lx, ly, 1.5 * 48000, 2400)) <= 48, "the late one in step");
+});
+
+test("after: the tone stage's filters run at the end of the same pass", { skip }, async () => {
+  const m = await measure(base);
+  const { r, x, y } = await mended("voice.wav", m, { after: "volume=-6dB" });
+  assert.match(r.graph, /volume=-6dB,aformat=sample_fmts=flt/);
+  near(20 * Math.log10(rms(y) / rms(x)), -6, 0.3, "level");
+});
+
+test("a filter ffmpeg lacks is one sentence naming it", { skip }, () => {
+  assert.throws(() => checkFilters(["afftdn", "nosuchfilter"]), (e) => e instanceof Refusal && /no nosuchfilter filter/.test(e.message) && !e.message.includes("\n"));
+  checkFilters(["afftdn", "adeclip", "adeclick", "asendcmd", "concat", "amix", "equalizer", "highpass", "dcshift", "pan"]);
+});
+
+test("a file whose name begins with a dash or holds a colon is repaired, not read as an option or a protocol", { skip }, async () => {
+  // (named relative to the working folder, as a person types them)
+  fs.copyFileSync(base, file("take:1.wav"));
+  const m = await measure(base), was = process.cwd();
+  process.chdir(dir);
+  try {
+    const r = await repair("take:1.wav", "-out.wav", m);
+    assert.deepEqual(ids(r.steps), ["highpass"]);
+  } finally { process.chdir(was); }
+  assert.equal(samples(file("-out.wav")).length, samples(base).length);
+});
+
+test("more than two channels: mixed to two as measure reads them, then to one (a voice in the centre channel alone)", { skip }, async () => {
+  fault("centre.wav", "[0:a]pan=5.1|FC=c0[o]");
+  const m = await measure(file("centre.wav"));
+  const { r, out } = await mended("centre.wav", m);
+  assert.equal(r.steps[0].id, "channels");
+  // (ffmpeg's downmix puts the centre into both at −3 dB; the front left alone would be silent)
+  near(20 * Math.log10(rms(samples(out)) / rms(samples(base))), -3, 1, "level");
+});
+
+test("what ffmpeg wrote is checked: a sample beyond ±16 or a failed run is a refusal, and no file is left", { skip }, async () => {
+  // a sample of 1e11 (ffmpeg 9.0.2's arnndn wrote such values) is found like a NaN
+  const raw = new Float32Array(48000).fill(0.1);
+  raw[30000] = 1e11;
+  fs.writeFileSync(file("big.raw"), Buffer.from(raw.buffer));
+  run(["-f", "f32le", "-ar", "48000", "-ac", "1", "-i", file("big.raw"), "-c:a", "pcm_f32le", file("big.wav")]);
+  const found = await invalidSample(file("big.wav"));
+  assert.match(found?.value ?? "", /^a sample of 1\.0e\+11$/);
+  near(found.at, 30000 / 48000, 1e-6, "where");
+  // filters that write such a sample (here the tone stage's `after`, 60 dB up): refused, the output removed
+  const m = await measure(base);
+  const out = file("loud.out.wav");
+  await assert.rejects(repair(base, out, m, { after: "volume=60dB" }), (e) => e instanceof Refusal && /^ffmpeg's filters wrote a sample of /.test(e.message) && !e.message.includes("\n"));
+  assert.equal(fs.existsSync(out), false);
+  // a file ffmpeg cannot read: one sentence that says what to check
+  fs.writeFileSync(file("not-sound.wav"), "no sound here\n");
+  await assert.rejects(repair(file("not-sound.wav"), file("not-sound.out.wav"), m), (e) => e instanceof Refusal && /^ffmpeg could not repair not-sound\.wav .*check that it plays/.test(e.message) && !e.message.includes("\n"));
+});
+
+function near(x, y, by, what = "") { assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`); }
