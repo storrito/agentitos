@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { level, levellerOf, framesOf, loudnessOf, TARGETS } from "./lib/level.mjs";
+import { measure } from "./lib/measure.mjs";
 
 // the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
 process.env.VOICE_SOUND_DENOISER = "/nonexistent/voice-sound-no-denoiser";
@@ -353,6 +354,44 @@ test("encoded as delivered (.m4a, .mp3): within 0.3 LU of the target and the tru
     // (this voice can have both)
     near(got.lufs, lufs, 0.3, `${what}: loudness`);
   }
+});
+
+test("a quiet voice with a knock: the gain is the voice's, the knock turned down to the voice's level before the limiters, no hole after it; with more knocks than measure lists, as before", { skip }, async () => {
+  // the voice at −57 LUFS (one channel), and the same with a 30 ms white burst at 0.9 at 2 s, as a
+  // knock or a clap for sync: whole, it reads about −14 LUFS
+  const plainIn = intermediate("knock-plain.wav", "volume=-35dB");
+  const knockIn = file("knock.wav");
+  run(["-i", plainIn, "-f", "lavfi", "-i", "anoisesrc=d=0.03:amplitude=0.9:color=white:r=48000:seed=3", "-filter_complex", "[1:a]adelay=2000[b];[0:a][b]amix=inputs=2:normalize=0:duration=first", "-c:a", "pcm_f32le", knockIn]);
+  const bursts = (await measure(knockIn)).speech.bursts;
+  assert.equal(bursts.count, 1, JSON.stringify(bursts));
+  // the voice alone: the result with the knock's stretch cut out
+  const voiceOf = (f) => {
+    const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", f, "-af", "aselect='not(between(t,1.97,2.18))',asetpts=N/SR/TB,ebur128", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+    return Number(r.slice(r.lastIndexOf("Summary:")).match(/I:\s+(-?[\d.]+)/)[1]);
+  };
+  for (const [ext, encode] of [["wav", ["-c:a", "pcm_s24le"]], ["m4a", ["-c:a", "aac", "-b:a", "192k"]]]) {
+    const plain = file(`knock-plain.out.${ext}`), knock = file(`knock.out.${ext}`);
+    await level(plainIn, plain, { encode });
+    const r = await level(knockIn, knock, { encode, bursts });
+    const got = loudnessOf(knock);
+    near(voiceOf(knock), -14, 0.5, `${ext}: the voice`);
+    near(voiceOf(knock), voiceOf(plain), 0.5, `${ext}: the voice against the voice without the knock`);
+    near(got.lufs, -14, 0.3, `${ext}: the whole file`);
+    assert.ok(got.truePeak <= TARGETS.truePeak + 0.05 || r.left.some((x) => x.id === "peak"), `${ext}: true peak ${got.truePeak}`);
+    // no hole: the 300 ms after the knock as loud as in the voice without it
+    near(levelWhere(samples(knock, 0), (t) => t > 2.18 && t < 2.48), levelWhere(samples(plain, 0), (t) => t > 2.18 && t < 2.48), 1.5, `${ext}: the 300 ms after the knock`);
+    const s = r.steps.find((x) => x.id === "bursts");
+    assert.ok(s, `${ext}: ${r.steps.map((x) => x.id)}`);
+    assert.match(s.why, /^A short loud sound \(a knock, a clap, a bump: no voice's\) at 1\.9\d s, up to \d+\.\d dB over the voice's loud frames: each turned down to 6 dB under them/);
+    assert.match(r.left.find((x) => x.id === "bursts")?.why ?? "", /^A knock \(or a clap, a bump\) is in the recording at 1\.9\d s and stays, a little under the voice's loud frames/);
+    assert.ok(!r.left.some((x) => x.id === "loudness"), JSON.stringify(r.left));
+  }
+  // more knocks than measure lists (it lists ten): as before, nothing turned down
+  const many = await level(knockIn, file("knock-many.wav"), { bursts: { ...bursts, count: 11 } });
+  assert.ok(!many.steps.some((x) => x.id === "bursts"));
+  // with level off: its own dynamics, the knock as it is
+  const off = await level(knockIn, file("knock-off.wav"), { level: "off", bursts });
+  assert.ok(!off.steps.some((x) => x.id === "bursts"));
 });
 
 test("where the loudness cannot be had under the ceiling, `left` says that it gave way and by how much", { skip }, async () => {

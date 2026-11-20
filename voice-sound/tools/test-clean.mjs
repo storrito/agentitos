@@ -447,6 +447,18 @@ test("a voice recorded very low (−61 LUFS as played, 47 dB of gain) is deliver
   assert.ok(r2.left.some((x) => x.id === "quiet"));
 });
 
+test("a quiet voice with one knock: clean hands measure's bursts to the level stage, the voice comes to the target and the lines say the knock stays", { skip }, async () => {
+  const knock = file("knock.wav");
+  run(["-i", base, "-f", "lavfi", "-i", "anoisesrc=d=0.03:amplitude=0.9:color=white:r=48000:seed=3", "-filter_complex", "[0:a]volume=-35dB[v];[1:a]adelay=2000[b];[v][b]amix=inputs=2:normalize=0:duration=first", "-c:a", "pcm_f32le", knock]);
+  const r = await clean(knock, file("knock.m4a"), {}, stages);
+  const cut = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", file("knock.m4a"), "-af", "aselect='not(between(t,1.97,2.18))',asetpts=N/SR/TB,ebur128", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  near(Number(cut.slice(cut.lastIndexOf("Summary:")).match(/I:\s+(-?[\d.]+)/)[1]), -14, 0.5, "the voice, the knock's stretch cut out");
+  near(loudness(file("knock.m4a")).lufs, -14, 0.3, "the whole");
+  assert.equal(r.measured.before.findings.some((x) => x.id === "bursts"), true);
+  assert.match(lines(r).join("\n"), /\n {2}bursts \(level\): A short loud sound/);
+  assert.match(lines(r).join("\n"), /Not mended: .*bursts: A knock \(or a clap, a bump\) is in the recording at 1\.9\d s and stays/);
+});
+
 test("delivered together, the report last: the output, then the comparison, then <out>.json, so that a skill which finds the JSON finds the sound beside it", { skip }, async () => {
   const order = [], rename = fs.renameSync;
   fs.renameSync = (a, b) => { order.push(path.basename(b)); return rename(a, b); };

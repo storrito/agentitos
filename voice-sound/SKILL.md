@@ -45,6 +45,8 @@ It refuses, in one sentence, a recording in which it finds no voice or under hal
 
 Where the lines say "Not judged: hum", say that whether it hums could not be told from this recording, never that it has none.
 
+Where a step says a short loud sound (a knock, a clap, a bump) was turned down, say that it is still in the recording, a little under the voice, and that it can be cut where the video is edited; the voice itself was brought to the loudness without it.
+
 What it cannot mend it says, and you pass that on as it is, never softened:
 
 - **The room** (a hall, an echoing kitchen): it stays. Next time closer to the microphone, a room with soft things in it.
@@ -66,7 +68,7 @@ You measured it, you did not hear it. Show both, the result first, with what you
  [:p [:strong "Before"] " (brought to the same loudness, to compare)"] [:audio {:src "artifacts/kueche-before.m4a" :controls true}]
  [:ul
   [:li "It was quiet and uneven: now every sentence is as loud as the videos around it."]
-  [:li "The fridge's hum is out, the noise in the pauses is lower."]
+  [:li "The fridge's hum is turned down, the noise in the pauses is lower."]
   [:li "The kitchen's echo stays: no filter takes a room out of a voice."]]
  [:p "I measured this, I did not hear it. Does it sound right?"]
  [:button {:class "primary" :send "The sound is good"} "Sounds good"]
@@ -115,7 +117,7 @@ A skill runs the tool as a program, never imports its code: `VOICE_SOUND` naming
 
 ## UI in the chat
 
-Speak the person's language and keep it short: one or two sentences and a block. Say what you did as what they will hear, not as filters ("the hum is out", never "notches at 50 Hz"); a number only when they ask. Always say that you measured and did not hear. Never put a token, a path of your working files or a raw error into the chat.
+Speak the person's language and keep it short: one or two sentences and a block. Say what you did as what they will hear, not as filters ("the hum is turned down", never "notches at 50 Hz"), and only what the report shows: a hum was notched, not taken out; where what is left names it, some of it is still there, and you say so. A number only when they ask. Always say that you measured and did not hear. Never put a token, a path of your working files or a raw error into the chat.
 
 Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccup, data only. Tags: `div span p ul ol li strong em b i s small h1–h4 a img audio video button table thead tbody tr th td figure figcaption code pre br hr blockquote label input`. Attributes: `class href src poster title alt controls preload loop muted width height colspan rowspan download style send open type name value checked disabled`. `:send "text"` on a button sends that text as the person's next message. Links, sounds and videos point at `https://…`, `artifacts/…` or `uploads/…`. No text fields: for a change they type.
 
