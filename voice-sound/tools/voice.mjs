@@ -16,11 +16,12 @@
 //             repair (channels, clipping, rumble, hum, clicks, noise), tone (what stands out in
 //             the spectrum, sibilance), level (an even level, the loudness, a slow limiter for
 //             the loudest peaks and a true-peak ceiling on the file as delivered). It refuses a
-//             recording without a voice, one over 60 minutes (to be cut into parts), and one
-//             whose voice stands too little over the floor of its recording to be raised;
-//             lib/clean.mjs says all of it. Once it has measured it says how long the rest
-//             takes, then each stage as it begins and ends (on stderr with --json); a run ended
-//             by a signal goes on where it stopped when the same command is run again.
+//             recording without a voice, one whose voice stands too little over the floor of its
+//             recording to be raised, and a run whose working files the disk will not hold;
+//             lib/clean.mjs says all of it. A recording of any length is taken: one over an hour
+//             first hears what the whole will take; once it has measured it says how long the
+//             rest takes, then each stage as it begins and ends (on stderr with --json); a run
+//             ended by a signal goes on where it stopped when the same command is run again.
 //   measure   the first audio stream, decoded once (ffmpeg, streamed, 48 kHz): ebur128's
 //             loudness, range and true peak; where the voice speaks and the noise floor in its
 //             pauses; the speech's level, the noise's level, kind and bands, their distance;
@@ -50,7 +51,7 @@ import { targets, list, format, formatList } from "./lib/targets.mjs";
 // (for a test or a script that takes them from the tool's own file)
 export { measure, lines };
 
-const USAGE = "Usage: voice.mjs clean <audio|video, up to 60 min> <out> [options] | measure <audio|video> [--json] | targets [platform…] [--json] | targets list";
+const USAGE = "Usage: voice.mjs clean <audio|video> <out> [options] | measure <audio|video> [--json] | targets [platform…] [--json] | targets list";
 const TOOL = fileURLToPath(import.meta.url);
 let json = false;
 const fail = (msg) => { console.log(json ? JSON.stringify({ error: msg }) : msg); process.exit(1); };

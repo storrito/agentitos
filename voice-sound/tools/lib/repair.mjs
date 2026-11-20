@@ -1338,9 +1338,19 @@ async function beforeNoise(file, pre, plan, state, tmp) {
   const fd = fs.openSync(joined, "w");
   try {
     fs.writeSync(fd, floatHeader(N));
+    // (each piece's part copied in blocks, never read whole: a piece is the recording's length over
+    // the cores, 395 MB for 4 hours on 7 of them, and Node reads no file over 2 GB at once)
+    const buf = Buffer.alloc(1 << 22);
     for (let k = 0; k < K; k++) {
-      const { a, raw } = done[k], y = fs.readFileSync(raw);
-      fs.writeSync(fd, y, (cuts[k] - a) * 4, (cuts[k + 1] - cuts[k]) * 4);
+      const { a, raw } = done[k], fr = fs.openSync(raw, "r");
+      try {
+        for (let at = (cuts[k] - a) * 4, left = (cuts[k + 1] - cuts[k]) * 4; left > 0;) {
+          const n = fs.readSync(fr, buf, 0, Math.min(buf.length, left), at);
+          if (n <= 0) throw new Error(`the redrawing of clipped peaks wrote piece ${k + 1} of ${K} short`);
+          fs.writeSync(fd, buf, 0, n);
+          at += n; left -= n;
+        }
+      } finally { fs.closeSync(fr); }
       fs.rmSync(raw, { force: true });
     }
   } finally { fs.closeSync(fd); }
