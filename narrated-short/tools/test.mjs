@@ -724,14 +724,14 @@ test("build with faces: an interview's speaker to the camera, large in a fill, i
     let r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const aside = filesOf(comp);
-    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is\n/);
+    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is; enlarged 2\.67×: soft\n/);
     assert.match(r.stdout, /the captions lie on the lower lip [\d.]+ s in a, no eyes or nose: nobody shown speaks, they may/);
     // faces of before: the same short, and the line says what is not known
     facesWith(work, src, talking(null));
     r = withCaptions(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(filesOf(comp), aside);
-    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is\n/);
+    assert.match(r.stdout, /a: the faces \(Jeanette Epps\) are in the picture as it is; enlarged 2\.67×: soft\n/);
     assert.match(r.stdout, /the captions lie on the mouth of Jeanette Epps in a: whether it looks into the camera is not known \(faces found before they said so; node \S+ faces \S+ --again asks anew, and the mouth of one who does is kept clear like the eyes\)/);
     // she looks into the camera: raised, said, and the captions lie on no mouth
     facesWith(work, src, talking("camera"));
@@ -829,7 +829,7 @@ test("no \"frame\": four people no fill holds, low in the picture, get layout's 
   assert.match(h.said, /\d+ % of the frame blurred ground, the faces 112 to 112 px; to show them larger: "frame": "fill" with a "pan" on the one the words are about \(it cuts the others\), or another stretch where they stand closer$/);
 });
 
-test("no \"frame\": a pair only the band holds keeps the band (never a fill on one of them), and its line says the cost and the ways out, with the seconds of the clip where they stand closer (the run's b9)", () => {
+test("no \"frame\": a pair only the band holds keeps the band (never a fill on one of them), and its line says the cost and the ways out (the run's b9; no seconds named: the faces are known only in the beat's own stretch)", () => {
   // crew4's two women, the curly one nearer in the stretch's first 0.5 s
   const near = (t) => (t < 0.5 ? [1500, 394, 856, 756] : [2300, 394, 856, 756]);
   const pair = counted(listOf(["woman with short grey hair", person("G", [800, 990, 1022, 970], 32)], ["woman with short curly hair", person("C", null, 32).map((m) => ({ ...m, box: near(m.t) }))]), SIZE4K, 3.17);
@@ -837,7 +837,7 @@ test("no \"frame\": a pair only the band holds keeps the band (never a fill on o
   assert.equal(p.frame, "whole");
   assert.equal(p.flag, true);
   assert.ok(wholeIn(((w) => [w[0], 0, w[1] - w[0], 2160])(shown({ ...p, size: SIZE4K })), pair));
-  assert.match(p.said, /^no "frame", so the largest picture that holds woman with short grey hair, woman with short curly hair whole is the band, [\d.]+ times larger \(they stand \d+ % of the width\): \d+ % of the frame blurred ground, the faces \d+ and \d+ px; to show them larger: "frame": "fill" with a "pan" on the one the words are about \(it cuts the other\), or another stretch where they stand closer \(at the source's 7\.4-7\.9 s, inside this beat's stretch, they stand within 2160 px, where a 1:1 crop holds them\)$/);
+  assert.match(p.said, /^no "frame", so the largest picture that holds woman with short grey hair, woman with short curly hair whole is the band, [\d.]+ times larger \(they stand \d+ % of the width\): \d+ % of the frame blurred ground, the faces \d+ and \d+ px; to show them larger: "frame": "fill" with a "pan" on the one the words are about \(it cuts the other\), or another stretch where they stand closer$/);
   // never smaller than the band it had (1x, or the first beat's own)
   assert.ok(p.zoom >= 1);
   const first = planWindow({ frame: "whole", zoom: 1.6, size: SIZE4K, people: pair, captions: CAPTIONS, crop: () => null, silent: true });
@@ -845,7 +845,7 @@ test("no \"frame\": a pair only the band holds keeps the band (never a fill on o
   // a fill written: the same band, its line the same cost with a "pan" as the way out
   const fill = planWindow({ frame: "fill", size: SIZE4K, people: pair, captions: CAPTIONS, crop: () => null, at: 7.4 });
   assert.deepEqual([fill.frame, fill.zoom, fill.pan], [p.frame, p.zoom, p.pan]);
-  assert.match(fill.said, /; \d+ % of the frame blurred ground, the faces \d+ and \d+ px; to show them larger: a "pan" on the one the words are about \(it cuts the other\), or another stretch where they stand closer \(at the source's 7\.4-7\.9 s/);
+  assert.match(fill.said, /; \d+ % of the frame blurred ground, the faces \d+ and \d+ px; to show them larger: a "pan" on the one the words are about \(it cuts the other\), or another stretch where they stand closer; a passer-by|; \d+ % of the frame blurred ground, the faces \d+ and \d+ px; to show them larger: a "pan" on the one the words are about \(it cuts the other\), or another stretch where they stand closer$/);
 });
 
 // the faces file `faces` writes for a beat of the test short
@@ -856,7 +856,7 @@ const facesOf = (work, src, beat, at, taken, ...people) => {
 };
 const noteOf = (comp, id) => JSON.parse(JSON.parse(fs.readFileSync(path.join(comp, "assets", "clips", `${id}.json`), "utf8")).how);
 const layoutBeside = fs.existsSync(path.join(here, "..", "..", "layout", "tools", "place.mjs"));
-test("build: a beat with faces and no \"frame\" gets the fill that holds them, a rebuild equals it; \"frame\": \"whole\" is the band as without faces; a beat without faces and without \"frame\" says what its band costs; a fill takes a \"pan\" without faces", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!layoutBeside && "no layout beside") }, () => {
+test("build: a beat with faces and no \"frame\" gets the largest picture that holds them within 2x of its pixels, a rebuild equals it; \"frame\": \"whole\" is the band as without faces; a beat without faces and without \"frame\" says what its band costs; a fill takes a \"pan\" without faces", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!layoutBeside && "no layout beside") }, () => {
   const dir = tmp();
   try {
     const { work, comp, src, build } = short(dir);
@@ -878,10 +878,11 @@ test("build: a beat with faces and no \"frame\" gets the fill that holds them, a
     facesOf(work, src, "b", 3, taken, ["A", person("A", [1000, 40, 200, 260], Math.round(taken * 10))]);
     r = build();
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /\n {2}b: no "frame", so the largest picture that holds A whole: a fill, moved to them \(the face 693 px; as the band 219 px over 68 % ground; "frame": "whole" for the band\)/);
+    // (a fill of this 720p source would enlarge it 2.67x: the 1:1 at 1.5x, the face whole in it)
+    assert.match(r.stdout, /\n {2}b: no "frame", so the largest picture that holds A whole: a 1:1 crop placed high \(the face 390 px, 44 % ground; as the band 219 px over 68 % ground; "frame": "whole" for the band\); a fill would enlarge the source 2\.67×: the 1:1 instead; enlarged 1\.5×: soft/);
     const filled = noteOf(comp, "b");
-    assert.equal(filled.frame, "fill");
-    assert.ok(filled.x > 0 && (filled.x / (1920 / 720)) <= 1000 && ((filled.x + 1080) / (1920 / 720)) >= 1200, `the fill at x ${filled.x} holds the face whole`);
+    assert.equal(filled.frame, "crop");
+    assert.ok(filled.box.src[0] <= 1000 && filled.box.src[0] + filled.box.src[2] >= 1200, `the crop ${filled.box.src} holds the face whole`);
     const first = filesOf(comp);
     r = build();
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -974,4 +975,55 @@ test("no \"frame\": a pair that counts and a third face too far for one fill wit
   // a face the source's edge cuts is no reason: it is cut in every picture
   const edge = counted(listOf(["A", person("A", [1300, 1700, 170, 200], 30)], ["B", person("B", [2180, 1700, 170, 200], 30)], ["C", person("C", [3740, 1720, 200, 124], 30)]), SIZE4K, 3);
   assert.equal(planWindow({ frame: "whole", size: SIZE4K, people: edge, captions: CAPTIONS, crop: () => square, silent: true }).frame, "fill");
+});
+
+// 2026-11-20, after the review of pull request 115: at most 2x of the source's pixels in a picture chosen
+// by itself; a slow layout; a beat marked people with nobody found
+test("no \"frame\": a 720p interview is no fill at 2.67x but the 4:5 at 1.875x (the review's silent-720 b2); a band at most 2x", () => {
+  const size = [1280, 720];
+  const epps = counted(listWith(["Jeanette Epps", person("E", [560, 150, 160, 200], 20).map((m) => ({ ...m, feat: [580, 210, 120, 110] }))]), size, 2);
+  const four5 = { fit: "crop", crop: "4:5", scale: 1.875, left: -352 * 1.875, top: 100, window: [0, 100, 1080, 1350] };
+  const p = planWindow({ frame: "whole", size, people: epps, captions: CAPTIONS, crop: () => four5, silent: true });
+  assert.equal(p.frame, "crop");
+  near(p.box.at[3] / p.box.src[3], 1.875, 0.01);
+  assert.match(p.said, /: a 4:5 crop placed high \(the face 375 px, .*; a fill would enlarge the source 2\.67×: the 4:5 instead$/);
+  // no crop: the band, at most 2x of the source's pixels
+  const q = planWindow({ frame: "whole", size, people: epps, captions: CAPTIONS, crop: () => null, silent: true });
+  assert.equal(q.frame, "whole");
+  assert.ok((1080 * q.zoom) / 1280 <= 2 + 0.01, `zoom ${q.zoom}`);
+  assert.match(q.said, /a fill would enlarge the source 2\.67×: the band instead/);
+});
+
+test("build: an enlarged picture says so from 1.25x, a fill written too; a slow layout leaves a beat without \"frame\" the band, said; a beat marked people with nobody found says what its band costs", { skip: (!ffmpeg && "no ffmpeg") || (!zones && "no platform-zones beside") || (!layoutBeside && "no layout beside") }, () => {
+  const dir = tmp();
+  try {
+    const { work, comp, src, build } = short(dir);
+    const beatsFile = path.join(work, "beats.json"), cfg = JSON.parse(fs.readFileSync(beatsFile, "utf8"));
+    const b = cfg.beats[1], taken = Math.round((b.to - b.from) * 1000) / 1000;
+    cfg.beats[1] = { ...b, people: true, frame: "fill" };
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    facesOf(work, src, "b", 3, taken, ["A", person("A", [1000, 40, 200, 260], Math.round(taken * 10))]);
+    let r = build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /\n {2}b: the crop moved to the faces \(A\).*; enlarged 2\.67×: soft/);
+    // nobody found in a beat marked people, no "frame": the band's cost
+    delete cfg.beats[1].frame;
+    fs.writeFileSync(beatsFile, JSON.stringify(cfg));
+    facesOf(work, src, "b", 3, taken);
+    r = build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /! b: no face found: the picture stays as it is; the whole picture as a band, 68 % of the frame blurred ground; to show its subject larger: "frame": "fill" with a "pan" on the subject/);
+    // layout's place that never answers: stopped, the band as before, one sentence
+    facesOf(work, src, "b", 3, taken, ["A", person("A", [560, 150, 160, 200], Math.round(taken * 10))]);
+    const stub = path.join(dir, "place.mjs");
+    fs.writeFileSync(stub, `import { spawnSync } from "node:child_process";
+if (process.argv[2] === "place") setInterval(() => {}, 1000);
+else process.exit(spawnSync(process.execPath, [${JSON.stringify(path.join(here, "..", "..", "layout", "tools", "place.mjs"))}, ...process.argv.slice(2)], { stdio: "inherit" }).status);`);
+    const t0 = Date.now();
+    r = spawnSync(process.execPath, [path.join(here, "short.mjs"), "build", work, comp, "--no-captions", "--platform", "tiktok"], { encoding: "utf8", cwd: dir, env: { ...process.env, LAYOUT_TOOL: stub, NARRATED_SHORT_PLACE_LIMIT: "3" } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /! b: agentitos' layout did not place its picture in 3 s: the band, as before/);
+    assert.deepEqual([noteOf(comp, "b").frame, noteOf(comp, "b").zoom], ["whole", 1]);
+    assert.ok(Date.now() - t0 < 60e3, `${Date.now() - t0} ms`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

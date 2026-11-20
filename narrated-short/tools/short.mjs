@@ -45,6 +45,8 @@ const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] 
 const fail = (msg) => { console.log(msg); process.exit(1); };
 // how long layout's measure may take, s (it takes a tenth of a second; NARRATED_SHORT_MEASURE_LIMIT for a test)
 const MEASURE_LIMIT = Number(process.env.NARRATED_SHORT_MEASURE_LIMIT) || 120;
+// seconds layout's place may take for a beat's crop (it is asked for beats without "frame" too)
+const PLACE_LIMIT = Number(process.env.NARRATED_SHORT_PLACE_LIMIT) || 60;
 const log = (s) => console.error(s);
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
@@ -554,8 +556,9 @@ function build(args) {
   const layoutTool = tool("LAYOUT_TOOL", "layout", "place.mjs");
   // layout's place for a beat's held faces (the source's px): its best 4:5 or 1:1 crop that holds
   // them all, with the captions below it, or null (layout not beside, or no such crop)
+  const slow = new Set();   // the beats whose crop layout did not place in PLACE_LIMIT s
   const cropFor = (b, size) => (held) => {
-    if (!layoutTool) return null;
+    if (!layoutTool || slow.has(b.id)) return null;
     const folder = path.join(work, "placement", b.id);
     fs.mkdirSync(folder, { recursive: true });
     const inside = (x) => { const x0 = Math.max(0, x[0]), y0 = Math.max(0, x[1]); return [x0, y0, Math.min(size[0], x[0] + x[2]) - x0, Math.min(size[1], x[1] + x[3]) - y0].map(Math.round); };
@@ -564,7 +567,8 @@ function build(args) {
     const file = path.join(folder, "faces.json");
     fs.writeFileSync(file, JSON.stringify(tracks));
     const r = spawnSync(process.execPath, [layoutTool, "place", folder, "--frame", SIZE.join("x"), "--source", size.join("x"), "--face-track", file,
-      ...(area ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : [])], { encoding: "utf8", maxBuffer: 64 << 20 });
+      ...(area ? ["--text", area.lines > 1 ? "caption:2" : "caption"] : []), ...(platforms.length ? ["--platform", platforms.join(",")] : [])], { encoding: "utf8", maxBuffer: 64 << 20, timeout: PLACE_LIMIT * 1000 });
+    if (r.error?.code === "ETIMEDOUT" || r.signal) { slow.add(b.id); return null; }
     let got = null;
     try { got = r.status === 0 ? JSON.parse(fs.readFileSync(path.join(folder, "placement.json"), "utf8")) : null; } catch { /* no crop then */ }
     return got?.candidates?.find((c) => c.fit === "crop" && ["4:5", "1:1"].includes(c.crop) && !c.speaker && !c.leftOut && !c.onGround && !c.hard && !(c.unmet || []).length) || null;
@@ -614,6 +618,13 @@ function build(args) {
         plan = planned(talksIn(people));
         looks = `${look.who} looks into the camera (${Math.round(look.share * 100)} % of the beat, the face ${tall} % of the frame's height): the captions and the hook keep off the mouth as off the eyes`;
       } else if (look?.unknown && tall >= TALK_FACE * 100) unknownOf = { id: b.id, who: look.who };
+      if (slow.has(b.id)) {
+        if (silent) {
+          warn.push(`${b.id}: agentitos' layout did not place its picture in ${PLACE_LIMIT} s: the band, as before`);
+          return planOf(b, i, true);
+        }
+        warn.push(`${b.id}: agentitos' layout did not place a crop in ${PLACE_LIMIT} s: none was tried`);
+      }
       ({ frame, zoom, pan, x, box } = plan);
     }
     // a fill the agent panned: its pan stands, with faces known or not (a fill without faces and
@@ -628,7 +639,7 @@ function build(args) {
       const band = frame === "whole" || frame === "crop" ? bandOf({ frame, zoom, box, size }) : null;
       moments = framed({ list: inBars, place: { frame, zoom, pan, x, box, size }, from: b.from, seconds, speed, move: i % 2 ? [1.04, 1] : [1, 1.04], band, talks: talk });
     }
-    return { src, speed, seconds, taken, frame, zoom, pan, x, box, bar, plan, list, people, talk, looks, silent, unknownOf, moments };
+    return { src, speed, seconds, taken, frame, zoom, pan, x, box, bar, plan, list, people, talk, looks, silent, unknownOf, moments, size };
   };
   let plans = beats.map((b, i) => planOf(b, i));
   const seenOf = () => {
@@ -797,7 +808,7 @@ function build(args) {
 
   // ---- the clips, one ffmpeg each
   beats.forEach((b, i) => {
-    const { src, speed, seconds, taken, frame, zoom, pan, x, box, plan, list, people, looks } = plans[i];
+    const { src, speed, seconds, taken, frame, zoom, pan, x, box, plan, list, people, looks, size } = plans[i];
     let bar = plans[i].bar;
     const out = path.join(clipsDir, `${b.id}.mp4`), note = path.join(clipsDir, `${b.id}.json`);
     const how = JSON.stringify({ v: VERSION, file: src.file, stamp: src.stamp, at: b.at, taken, seconds, frame, zoom, pan, speed, ...(x != null ? { x } : {}), ...(box ? { box } : {}) });
@@ -825,15 +836,20 @@ function build(args) {
     if (m.bars) report.push(`  ${b.id}: black bars in the source cut away (${m.bars})`);
     if (i === 0 && frame === "whole" && b.zoom == null && !plan?.changed) report.push(`  ${b.id}: the first beat's band is ${HOOK_ZOOM} times larger, its middle kept ("zoom": 1 shows the whole width, "pan" another part)`);
     const own = plan?.cut.length && (b.pan != null || b.zoom != null);
-    if (plan?.said) report.push(`  ${own || plan.flag ? "! " : ""}${b.id}: ${plan.said}${own ? "; leave \"pan\" (and \"zoom\") out and the picture goes to the faces" : ""}${looks ? `; ${looks}` : ""}`);
-    else if (list && !people.held.length) report.push(`  ${b.id}: ${people.small.length ? `its faces (${people.small.map((p) => p.who).join(", ")}) are too small or seen too briefly to move the picture for` : "no face found"}: the picture stays as it is`);
-    else if (looks) report.push(`  ${b.id}: ${looks}`);
+    // how far the picture enlarges the source's pixels: from 1.25 times it is soft, and said
+    const c = size || cropOf(m.bars) || [src.size.width, src.size.height];
+    const enl = frame === "crop" ? box.at[3] / box.src[3] : frame === "whole" ? (2 * Math.round((SIZE[0] * zoom) / 2)) / c[0] : frame === "fill" ? SIZE[1] / c[1] : Math.max(SIZE[0] / c[0], SIZE[1] / c[1]);
+    const softly = enl >= 1.25 ? `enlarged ${r2(enl)}×: soft` : "";
     // a band nobody chose and nothing placed: what it costs, and what to do
-    if (!list && silentOf(b) && !opts["no-faces"]) {
-      const c = cropOf(m.bars) || [src.size.width, src.size.height], [t, u] = bandOf({ frame: "whole", zoom, size: c });
-      const ground = Math.round((1 - (u - t) / SIZE[1]) * 100);
-      if (ground > 0) report.push(`  ! ${b.id}: no "frame" and no faces known: the whole picture as a band, ${ground} % of the frame blurred ground; to show its subject larger: ${b.people ? `node ${self()} faces ${rel(work)} (its faces place it)` : `"people": true where it shows a face (faces places it)`}, or "frame": "fill" with a "pan" on the subject (0 the left, 1 the right); "frame": "whole" keeps the band`);
-    }
+    const [t, u] = bandOf({ frame: "whole", zoom, size: c }), ground = Math.round((1 - (u - t) / SIZE[1]) * 100);
+    const bandSaid = `the whole picture as a band, ${ground} % of the frame blurred ground; to show its subject larger: `;
+    const outs = `"frame": "fill" with a "pan" on the subject (0 the left, 1 the right); "frame": "whole" keeps the band`;
+    const lone = frame === "whole" && silentOf(b) && !opts["no-faces"] && ground > 0;
+    if (plan?.said) report.push(`  ${own || plan.flag ? "! " : ""}${b.id}: ${plan.said}${own ? "; leave \"pan\" (and \"zoom\") out and the picture goes to the faces" : ""}${looks ? `; ${looks}` : ""}${softly ? `; ${softly}` : ""}`);
+    else if (list && !people.held.length) report.push(`  ${lone ? "! " : ""}${b.id}: ${people.small.length ? `its faces (${people.small.map((p) => p.who).join(", ")}) are too small or seen too briefly to move the picture for` : "no face found"}: the picture stays as it is${lone ? `; ${bandSaid}${outs}` : ""}${softly ? `; ${softly}` : ""}`);
+    else if (looks) report.push(`  ${b.id}: ${looks}${softly ? `; ${softly}` : ""}`);
+    else if (list || !lone) { if (softly) report.push(`  ${b.id}: ${softly}`); }
+    if (!list && lone) report.push(`  ! ${b.id}: no "frame" and no faces known: ${bandSaid}${b.people ? `node ${self()} faces ${rel(work)} (its faces place it)` : `"people": true where it shows a face (faces places it)`}, or ${outs}${softly ? `; ${softly}` : ""}`);
     // the gate: what needs no judgement
     const problems = [];
     if (m.peak < DARK_MAX[frame]) problems.push("DARK: the clip is near black; another stretch");
