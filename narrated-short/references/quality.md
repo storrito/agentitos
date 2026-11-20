@@ -12,7 +12,7 @@ Each point: what to look for, then the usual fix.
 6. **The captions.** The key words in colour are the ones that carry the story; a box holds its whole phrase (the number with its unit) and sits on the words it says; a name spelled as the script has it; no caption on burnt-in text of the source. → Other `keys`; a misheard name is the script's line, spoken again.
 7. **The card.** Two rows, one unit, nothing cut off, 2.5 s or longer, no caption under it, a fitting shot behind it.
 8. **Two texts at once**: the hook text and the card, the card and the handle. → Move the card onto its own sentence.
-9. **The end.** The last word is not cut off, the handle stands, the last picture is not black and leads back into the first.
+9. **The end.** The last word is not cut off, the handle stands (none where beats.json has none, and no empty space for it), the last picture is not black and leads back into the first.
 10. **A wrong emoji, flag or spelling** anywhere on screen.
 
 What only a render can break is checked after it: `launch.mjs finish` levels the sound, publish-video's `check` measures the file.

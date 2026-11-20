@@ -86,7 +86,7 @@ node <launch> check short/<name> artifacts/<name>/composition
 node <skill>/tools/short.mjs sheet short/<name> artifacts/<name>/composition
 ```
 
-Read `<skill>/references/quality.md` and go through `short/<name>/sheet.jpg` by it. `lint` must name no error; its warnings `nested_structure_needs_subcomposition` (the hook text, the card, the handle: two without a card) are this composition's own and stay. `check` names text the apps would cover: a `✗` is always fixed; its `!` for the hook text and for the card may stay, both stand in the wide stretch above the buttons on purpose. Fix every defect in the beats or the script, build, look again, until nothing is left.
+Read `<skill>/references/quality.md` and go through `short/<name>/sheet.jpg` by it. `lint` must name no error; its warnings `nested_structure_needs_subcomposition` (the hook text, the card, the handle: one each the short has) are this composition's own and stay. `check` names text the apps would cover: a `✗` is always fixed; its `!` for the hook text and for the card may stay, both stand in the wide stretch above the buttons on purpose. Fix every defect in the beats or the script, build, look again, until nothing is left.
 
 ### 7. Ask whether it is right
 
