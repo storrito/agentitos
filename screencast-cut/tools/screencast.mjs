@@ -64,6 +64,7 @@ import { plan, range, timeRange, pieceEndSaid, endSaid } from "./lib/cut.mjs";
 import { FRAMES, areas, linesOf, captionLine, captionsFor, captionArea, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
+import { roomTone } from "./lib/room.mjs";
 import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
@@ -969,7 +970,14 @@ async function cmdBuild(dir, opts) {
   // the voice and the webcam as one track each for the whole cut (a browser plays about 75 media
   // elements on a page, a clip per piece ran out of them)
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
-  voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"));
+  // where the voice is muted (a keep held past its last word, a pause shown, a stretch "at" a
+  // time), the recording's room instead of digital silence: a quiet stretch between its words
+  // (lib/room.mjs), from the voice before its pauses were lowered, at the level of the words before
+  const mutedFor = Math.max(0, ...r.pieces.filter((p) => p.mute).map((p) => p.duration));
+  const tone = mutedFor > 0 ? roomTone(source(dir, meta.voice), words, source(dir, "room-tone.wav"), mutedFor) : null;
+  if (tone?.why) console.log(`The voice's muted pieces stay silent: ${tone.why}.`);
+  else if (tone) console.log(`The voice's muted pieces carry the recording's room: ${(tone.to - tone.from).toFixed(2)} s of it from ${clock(tone.from)} (${tone.rms} dBFS), ${tone.to - tone.from < mutedFor ? "looped, " : ""}at the level of the words before each.`);
+  voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"), { tone });
   let camera = null;
   if (sources.webcam?.video) {
     cameraTrack(source(dir, sources.webcam.file), sources.webcam.offset, r.pieces, path.join(out, "assets", "camera.mp4"), { fps: s.fps, parts: source(dir, "camera.parts") });

@@ -3,9 +3,10 @@
 // clip per piece for the voice and another for the webcam's circle made a cut of 35 pieces 94
 // elements, and from the 76th on the preview was silent. One track each takes two.
 //
-//   voiceTrack(file, pieces, out)                 the voice of every spoken piece at its take's
-//                                                 level and speed with 20 ms fades, silence for
-//                                                 the rest
+//   voiceTrack(file, pieces, out, { tone })       the voice of every spoken piece at its take's
+//                                                 level and speed with 20 ms fades; the muted
+//                                                 pieces the recording's room (room.mjs) at the
+//                                                 level of the words before them, else silence
 //   cameraTrack(file, offset, pieces, out, opts)  the webcam at every piece's moment and speed
 //   backdropTrack(pick, pieces, out, opts)        each piece's screen, small and blurred: the
 //                                                 background behind the shots
@@ -47,22 +48,48 @@ function inputs(file, pieces, span) {
   });
 }
 
-export function voiceTrack(file, pieces, out) {
-  const key = JSON.stringify({ file, mtime: fs.statSync(file).mtimeMs, pieces: pieces.map((p) => [n(p.in), n(p.duration), p.mute ? 0 : p.gain, p.rate || 1]) });
+// a muted piece's room fades in and out this long: nothing clicks where it meets the words
+const ROOM_FADE = 0.005;
+
+// the gain of a muted piece's room: the spoken piece's before it (the take it holds), else the next
+// one's: the room as loud as in the pauses around it
+function roomGains(pieces) {
+  return pieces.map((p, i) => {
+    if (!p.mute) return null;
+    const near = pieces.slice(0, i).reverse().find((q) => !q.mute) ?? pieces.slice(i + 1).find((q) => !q.mute);
+    return near ? near.gain || 0 : 0;
+  });
+}
+
+// tone: roomTone()'s answer (its file, or why there is none); without one the muted pieces are
+// silence, as before
+export function voiceTrack(file, pieces, out, { tone } = {}) {
+  const room = tone?.file && pieces.some((p) => p.mute) ? tone : null;
+  const gains = room ? roomGains(pieces) : null;
+  const key = JSON.stringify({ file, mtime: fs.statSync(file).mtimeMs, pieces: pieces.map((p) => [n(p.in), n(p.duration), p.mute ? 0 : p.gain, p.rate || 1]),
+    ...(room ? { room: [...room.key, gains] } : {}) });
   if (fresh(out, key)) return out;
   const spoken = pieces.filter((p) => !p.mute);
-  let k = 0;
+  // the room is the input after the spoken pieces', split once for every muted piece
+  const muted = pieces.filter((p) => p.mute).length;
+  let k = 0, r = 0;
   const parts = pieces.map((p, i) => {
     const d = n(p.duration);
+    if (p.mute && room) {
+      return `[room${r++}]atrim=duration=${d},asetpts=PTS-STARTPTS,volume=${gains[i]}dB,`
+        + `afade=t=in:d=${ROOM_FADE},afade=t=out:st=${n(Math.max(0, d - ROOM_FADE))}:d=${ROOM_FADE},apad=whole_dur=${d},atrim=duration=${d}[a${i}]`;
+    }
     if (p.mute) return `aevalsrc=0:s=48000:c=mono:d=${d}[a${i}]`;
     // a cut played faster (--speed): its voice too, at its own pitch
     const rate = p.rate || 1;
     return `[${k++}:a]atrim=duration=${n(d * rate)},asetpts=PTS-STARTPTS,aresample=48000,${Math.abs(rate - 1) > 0.001 ? `atempo=${n(rate)},` : ""}volume=${p.gain || 0}dB,`
       + `afade=t=in:d=${FADE},afade=t=out:st=${n(Math.max(0, d - FADE))}:d=${FADE},apad=whole_dur=${d},atrim=duration=${d}[a${i}]`;
   });
-  const graph = `${parts.join(";")};${pieces.map((_, i) => `[a${i}]`).join("")}concat=n=${pieces.length}:v=0:a=1[out]`;
+  const split = room ? `[${spoken.length}:a]aresample=48000,asplit=${muted}${Array.from({ length: muted }, (_, j) => `[room${j}]`).join("")};` : "";
+  const graph = `${split}${parts.join(";")};${pieces.map((_, i) => `[a${i}]`).join("")}concat=n=${pieces.length}:v=0:a=1[out]`;
   // a cut of silence alone still needs an input for ffmpeg: the file, unused
-  const ins = spoken.length ? inputs(file, spoken, (p) => [p.in, p.duration * (p.rate || 1)]) : ["-i", file];
+  const ins = spoken.length ? inputs(file, spoken, (p) => [p.in, p.duration * (p.rate || 1)]) : room ? [] : ["-i", file];
+  if (room) ins.push("-i", room.file);
   run(["-v", "error", "-y", ...ins, "-filter_complex", graph, "-map", "[out]", "-ac", "1", "-c:a", "aac", "-b:a", "192k", out], "the voice's track");
   fs.writeFileSync(`${out}.json`, key);
   return out;
