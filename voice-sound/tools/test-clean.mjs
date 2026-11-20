@@ -36,7 +36,8 @@ const VOICE = `aevalsrc=exprs='st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.44
 const STAGES = `import { spawn } from "node:child_process";
 export function repairPlan() { return { steps: [], left: [], method: "stand-in", graph: "" }; }
 export async function repair(file, outWav, m, opts = {}) {
-  const args = ["-v", "error", "-y", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", "48000", ...(opts.after ? ["-af", opts.after] : []), "-c:a", "pcm_f32le", outWav];
+  // (the sound as it plays, from the file's start, as the real repair reads it)
+  const args = ["-v", "error", "-y", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-af", ["aresample=async=1:first_pts=0", opts.after].filter(Boolean).join(","), "-c:a", "pcm_f32le", outWav];
   // (a child the run can end at once, as the real stage's are)
   const r = await new Promise((res) => { const p = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] }); let e = ""; p.stderr.on("data", (d) => { e += d; }); p.on("close", (status) => res({ status, stderr: e })); });
   if (r.status !== 0) throw new Error(r.stderr);

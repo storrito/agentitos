@@ -60,7 +60,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-import { Refusal } from "./analyse.mjs";
+import { Refusal, AS_PLAYED } from "./analyse.mjs";
 import {
   findingsOf, CHANNEL_STRONG_DB, INVERTED_SOME_DB, CLIP_STRONG_SHARE, HUM_SOME_DB, RUMBLE_SOME_DB,
 } from "./findings.mjs";
@@ -196,7 +196,28 @@ export const usableCores = () => Math.max(1, os.availableParallelism() - 1);
 // (an adeclip ffmpeg held 54 MB on 17 s, 2026-11-20), DECLIP_RESERVE_MB kept free. It changes
 // when they run, never what they give: the pieces are cut the same way whatever runs at once.
 export const DECLIP_PIECE_MB = 100, DECLIP_RESERVE_MB = 512;
-const atOnce = (K) => Math.max(1, Math.min(K, Math.floor((os.freemem() / 2 ** 20 - DECLIP_RESERVE_MB) / DECLIP_PIECE_MB)));
+export const atOnce = (K, mb = availableMb()) => Math.max(1, Math.min(K, Math.floor((mb - DECLIP_RESERVE_MB) / DECLIP_PIECE_MB)));
+// The memory that can be had, MB: MemAvailable, and what a balloon holds back where /proc/vmstat
+// shows one (balloon_inflate − balloon_deflate, pages of 4 kB, never negative), at most MemTotal;
+// os.freemem() where /proc is missing. (A Sprite of a bot's size, 8 cores and 8 GB, nothing else
+// running, 2026-11-20: MemTotal 8155 MB, MemAvailable 932 MB, all processes 41 MB resident;
+// balloon_inflate 4557312, balloon_deflate 2829568, 6.6 GB held back. The host hands that memory
+// out as it is used, as was seen there, not documented: seven of the denoiser's pieces held 878 MB
+// at most and ran, where MemAvailable alone allowed one.) memoryMb takes the two files' texts.
+export function memoryMb(meminfo, vmstat = "") {
+  const kb = (k) => { const m = String(meminfo).match(new RegExp(`^${k}:\\s+(\\d+) kB`, "m")); return m ? Number(m[1]) : null; };
+  const avail = kb("MemAvailable"), total = kb("MemTotal");
+  if (avail == null) return null;
+  const pg = (k) => { const m = String(vmstat).match(new RegExp(`^${k}\\s+(\\d+)`, "m")); return m ? Number(m[1]) : 0; };
+  const balloonKb = Math.max(0, pg("balloon_inflate") - pg("balloon_deflate")) * 4;
+  return Math.min(total ?? Infinity, avail + balloonKb) / 1024;
+}
+export function availableMb() {
+  let meminfo = null, vmstat = "";
+  try { meminfo = fs.readFileSync("/proc/meminfo", "utf8"); } catch { /* not Linux */ }
+  try { vmstat = fs.readFileSync("/proc/vmstat", "utf8"); } catch { /* none */ }
+  return (meminfo && memoryMb(meminfo, vmstat)) ?? os.freemem() / 2 ** 20;
+}
 // → { w (ms), cpuS, wallS, pieces, limitS, tried: [{ w, wallS }] } or { w: null, … } where none
 // may run (only a window that does harm at this share would fit)
 export function declipWindow(share, seconds, cores = os.availableParallelism(), lim = DECLIP_LIMIT) {
@@ -266,7 +287,8 @@ export function repairPlan(m, opts = {}) {
   // sound a second time and clips its overshoot at full scale: a clean voice 45 dB down at 16 bits
   // came out of `clean --level off` at PESQ 2.78, with this 3.49; at its own level, peaks at full
   // scale, the high-pass's error went from −50 to −88 dB, 2026-11-20)
-  const head = ["aformat=sample_fmts=flt", `aresample=${RATE}`];
+  // (the sound as it plays, its gaps and a late start filled with silence: as measure reads it)
+  const head = ["aformat=sample_fmts=flt", AS_PLAYED, `aresample=${RATE}`];
   let pick = null;           // the pan coefficients of the analysed left and right
   if (inChannels >= 2) {
     const c = m.channels || {};
@@ -429,7 +451,8 @@ export function repairPlan(m, opts = {}) {
       neural = { ...dn, limit, tune: t, pauses, bursts: m.speech?.bursts?.at };
       const tail = needed > cap ? `, the most --denoise ${strength} allows (the aim needed ${dB(needed)})`
         : past ? `, more than the ${dB(Math.max(0, aim))} dB the ${DENOISE_AIM_DB} dB aim needs, as --denoise strong asks` : "";
-      const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${Math.ceil(Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE / 60)} minutes` : "";
+      const longest = Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE;
+      const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${longest < 120 ? `${Math.round(longest)} s` : `${Math.ceil(longest / 60)} minutes`}` : "";
       const said = under
         ? `Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of ${Math.round(under.sampleS)} s of it: about ${dB(est)} dB under the speech; DPDFNet-2 asked to take at most ${dB(limit)} dB off`
         : named ? `Asked for with --denoise ${strength}, although measure found no noise in the pauses${snr != null ? ` (they lie ${dB(snr)} dB under the speech)` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off`
@@ -800,8 +823,8 @@ export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
 export const NEURAL = { pieceS: 60, minPieceS: 20, shiftS: 15, warmS: 10, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1, timeoutS: 120, timeoutPerS: 4 };
 // How many run at once: the cores the redrawing of clipped peaks uses too (usableCores: all but
 // one, for the video cut that runs beside it; the two run one after the other, so one rule for
-// both), and no more than half the memory the system says is available holds (MemAvailable; a
-// judgement: the rest for the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB
+// both), and no more than half the memory that can be had holds (availableMb: MemAvailable and a
+// balloon's; a judgement: the rest for the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB
 // and 1.45 MB a second of it with its overlaps; at least one. Read at run time; t.slots (and, for
 // the lab and the tests, VOICE_SOUND_SLOTS) fixes it.
 export const SLOTS = { spareCores: 1, memShare: 0.5, baseMb: 47, mbPerS: 1.45 };
@@ -809,11 +832,7 @@ export function denoiserSlots(t = NEURAL, sys = null) {
   if (Number.isFinite(t.slots)) return Math.max(1, Math.floor(t.slots));
   if (!sys && Number(process.env.VOICE_SOUND_SLOTS) > 0) return Math.floor(Number(process.env.VOICE_SOUND_SLOTS));
   const usable = sys?.cores != null ? sys.cores - SLOTS.spareCores : usableCores();
-  let availMb = sys?.availMb;
-  if (availMb == null) {
-    try { const m = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+) kB/m); availMb = m ? Number(m[1]) / 1024 : null; } catch { availMb = null; }
-    if (availMb == null) availMb = os.freemem() / 2 ** 20;
-  }
+  const availMb = sys?.availMb ?? availableMb();
   const pieceMb = SLOTS.baseMb + SLOTS.mbPerS * (t.pieceS + t.warmS + t.fadeS + t.tailS + 2 * t.shiftS);
   return Math.max(1, Math.min(usable, Math.floor((SLOTS.memShare * availMb) / pieceMb)));
 }
@@ -983,6 +1002,17 @@ function withTone(m, opts) {
 // gave 3.49 there and nothing else that differed: not taken. The estimate is coarse: on the
 // VoiceBank pairs (true SNR 7.5, 12.5, 17.5 dB) its medians were 21, 27.5 and 29.5.
 export const PROBE = { wholeS: 40, windows: 6, windowS: 5, skipS: 0.5, frameS: 0.02, speechDb: 20 };
+// The events in the probe's sample (see probeNoise): frames where what the denoiser took out lies
+// within levelDb of the loud kept frames and over what it kept (overDb), touching frames one
+// event; no more than `max` a minute are a knock or a pop that measure did not set aside, and are
+// left out. Chosen 2026-11-20 on the probe's frames of the review's clips and the tune split: 22
+// clean clips with a knock or a pop had 0 to 9 a minute (17 of them fired, the knock taken for
+// noise), the 11 without none; the 12 café and keyboard recordings 0 to 146 (two that fire with 5
+// and 6 a minute are read without those and still fire), the 20 noisy pairs none. With 10 a
+// minute: 0 of the 17 fire, 10 of the 12 still do, the pairs' estimates move by 0.0 dB. A thin
+// margin (9 against 10), and a café whose few events are its loudest clatter is read as without
+// them.
+export const PROBE_EVENTS = { levelDb: 10, overDb: 0, max: 10 };
 export const PROBE_FIRES_DB = 21;
 // Under PROBE_MIN_DB the estimate is no noise but the voice taken for noise: what came out is
 // nearly as loud as what was kept. On the second review's cases (2026-11-20) every estimate under
@@ -1042,12 +1072,17 @@ function speechFrames(energy, t = VOICE_KEPT) {
 // i × 0.1 s) } → { down, numbers, said }. A frame that touches a burst (and 50 ms before it, 100 ms
 // after: the burst's own ring) is no speech frame: one clap in a quiet recording would else set the
 // sum of the speech frames' energy, and the denoiser that rightly takes it down be thrown away.
+// whether a frame from t (s), d long, touches one of measure's bursts (50 ms before it, 100 ms after)
+const burstsOf = (list) => {
+  const spans = (list || []).filter((b) => Number.isFinite(b?.t)).map((b) => [b.t - 0.05, b.t + (b.seconds || 0) + 0.1]);
+  return (t, d) => spans.some(([a, b]) => a < t + d && b > t);
+};
 export function voiceKept(inE, outE, t = VOICE_KEPT, ctx = {}) {
   const n = Math.min(inE.length, outE.length), F = VOICE_FRAME / RATE;
   const level = speechFrames(inE.subarray(0, n), t).is;
-  const bursts = (ctx.bursts || []).filter((b) => Number.isFinite(b?.t)).map((b) => [b.t - 0.05, b.t + (b.seconds || 0) + 0.1]);
+  const inBurst = burstsOf(ctx.bursts);
   const at = (i) => (ctx.times ? ctx.times[i] : i * F);
-  const isSpeech = (i) => level(i) && !bursts.some(([a, b]) => a < at(i) + F && b > at(i));
+  const isSpeech = (i) => level(i) && !inBurst(at(i), F);
   const stats = (a, b) => {
     let k = 0, d = 0, ei = 0, eo = 0;
     for (let i = a; i < b; i++) {
@@ -1123,14 +1158,15 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), pre 
     const L = levelFor(frameE, blockPeak, { ...NEURAL, ...opts.tune });
     const xi = new Float32Array(n);
     for (let i = 0; i < n; i++) xi[i] = x[i] * L.at(i);
-    // the program on each stretch at once (as many as there are slots: denoiserSlots), a stretch
-    // longer than two of minPieceS cut in as many of that as the slots allow; each starts afresh,
-    // so each one's first skipS is left out of the sums below. segs: [where in x, how long, its
-    // stretch, where in it]
+    // the program on each stretch, as many at once as there are slots (denoiserSlots), a stretch
+    // longer than two of minPieceS cut in as many of that as fit, whatever the slots (the estimate
+    // is the same on every machine; only how many run at once is the machine's); each starts
+    // afresh, so each one's first skipS is left out of the sums below. segs: [where in x, how long,
+    // its stretch, where in it]
     const tn = { ...NEURAL, ...opts.tune }, slots = denoiserSlots(tn), segs = [];
     let at0 = 0;
     for (const [w, p] of parts.entries()) {
-      const k = Math.max(1, Math.min(slots, Math.floor(p.length / (tn.minPieceS * RATE))));
+      const k = Math.max(1, Math.floor(p.length / (tn.minPieceS * RATE)));
       for (let j = 0; j < k; j++) { const a = Math.round((j * p.length) / k), b = Math.round(((j + 1) * p.length) / k); segs.push([at0 + a, b - a, w, a]); }
       at0 += p.length;
     }
@@ -1163,23 +1199,44 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), pre 
     const voice = voiceKept(Float64Array.from(inE), Float64Array.from(outE), { ...VOICE_KEPT, ...PROBE_KEPT, ...opts.probeKept }, { bursts: m.speech?.bursts?.at, times: Float64Array.from(times) });
     // per frame: what it kept and what it took out; speech: the frames whose kept level lies within
     // speechDb of the loud kept frames (the 95th percentile), past each stretch's start
+    // (the frames of a burst measure set aside, a knock or a pop, are left out as the check leaves
+    // them out: what the denoiser takes off a knock is no noise under the voice. Four clean clips
+    // with a pop measure set aside read 14.1 to 18.1 dB with it counted, 29.5 to 37.6 left out,
+    // within 0.4 dB of the same clips without it, but for 3.5 on one, 2026-11-20. A knock measure
+    // does not set aside still counts: leaving out the frames the denoiser took most out of, as
+    // few as six, would also leave out a keyboard's keys, 11.4 → 31.7 dB on one of the café and
+    // keyboard recordings, 6 of 12 firing instead of 10)
     const F = Math.round(P.frameS * RATE), skip = Math.round(P.skipS * RATE);
-    const frames = [];
-    for (const [start, len] of segs) {
-      for (let a = start + skip; a + F <= start + len; a += F) {
+    const frames = [], inBurst = burstsOf(m.speech?.bursts?.at);
+    let idx = 0;
+    for (const [start, len, w, off] of segs) {
+      for (let a = start + skip; a + F <= start + len; a += F, idx++) {
+        if (inBurst(spans[w][0] + (off + a - start) / RATE, P.frameS)) continue;
         let k = 0, r = 0;
         for (let i = a; i < a + F; i++) { const v = y[i], d = xi[i] - v; if (!Number.isFinite(v)) return done({ failed: "not finite" }); k += v * v; r += d * d; }
-        frames.push({ k, r });
+        frames.push({ k, r, i: idx });
       }
+      idx += 2;     // (frames of two stretches never touch)
     }
     if (frames.length < 10) return done({ failed: "too short" });
     const lv = frames.map((f) => 10 * Math.log10(f.k / F + 1e-20)).sort((a, b) => a - b);
     const loud = lv[Math.floor(lv.length * 0.95)];
+    // events (PROBE_EVENTS): touching frames where what was taken out is loud and over what was
+    // kept. Where there are no more than E.max of them a minute, they are a knock or a pop that
+    // measure did not set aside, and are left out with a frame either side; more is a noise of
+    // many events (a keyboard's keys, a café's clatter), kept
+    const E = { ...PROBE_EVENTS, ...opts.probeEvents };
+    const isEv = (f) => 10 * Math.log10(f.r / F + 1e-20) >= loud - E.levelDb && f.r >= f.k * 10 ** (E.overDb / 10);
+    const events = [];
+    for (const f of frames) if (isEv(f)) { const last = events.at(-1); if (last && f.i - last.to <= 1) last.to = f.i; else events.push({ from: f.i, to: f.i }); }
+    const minutes = (frames.length * P.frameS) / 60, few = events.length > 0 && events.length <= E.max * minutes;
+    const out = few ? (f) => events.some((e) => f.i >= e.from - 1 && f.i <= e.to + 1) : () => false;
     let K = 0, Rm = 0, sp = 0;
-    for (const f of frames) if (10 * Math.log10(f.k / F + 1e-20) >= loud - P.speechDb) { K += f.k; Rm += f.r; sp++; }
+    for (const f of frames) if (!out(f) && 10 * Math.log10(f.k / F + 1e-20) >= loud - P.speechDb) { K += f.k; Rm += f.r; sp++; }
     if (!(K > 0)) return done({ failed: "no speech kept" });
     const underDb = r1(Math.min(99, Rm > 0 ? 10 * Math.log10(K / Rm) : 99));
-    const found = { underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length, voice: voice.numbers };
+    const found = { underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length, voice: voice.numbers, events: { count: events.length, leftOut: few },
+      ...(opts.probeDiag && { diag: { frames: frames.map((f) => [f.k, f.r, f.i]), loud, F } }) };
     // (a denoiser that takes the voice for noise: what it took out is no noise, nothing is denoised)
     if (underDb <= probeThreshold() && voice.down)
       return done({ ...found, declined: "voice", why: `The neural denoiser took the voice itself down in its sample (${voice.said}), so what it took out is no noise under the voice: nothing denoised.` });

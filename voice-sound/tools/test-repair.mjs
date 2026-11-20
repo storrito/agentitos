@@ -14,8 +14,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample, declipCpuS, declipPieces, declipWindow, usableCores } from "./lib/repair.mjs";
+import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample, declipCpuS, declipPieces, declipWindow, usableCores, memoryMb, atOnce, denoiserSlots, NEURAL } from "./lib/repair.mjs";
 import { Refusal } from "./lib/analyse.mjs";
+import { clean } from "./lib/clean.mjs";
 import { fftOf } from "./lib/fft.mjs";
 
 // the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
@@ -122,7 +123,7 @@ test("plan: a clean recording gets the high-pass at 80 Hz and nothing else", () 
   assert.equal(p.steps[0].poles, 2);
   assert.deepEqual(p.left, []);
   assert.equal(p.method, "off");
-  assert.match(p.graph, /^\[0:a\]aformat=sample_fmts=flt,aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
+  assert.match(p.graph, /^\[0:a\]aformat=sample_fmts=flt,aresample=async=1:first_pts=0,aresample=48000,aformat=channel_layouts=mono,highpass=f=80:t=q:w=0\.7071,aformat=sample_fmts=flt/);
 });
 
 test("plan: each finding alone gives its step and no other", () => {
@@ -237,6 +238,27 @@ test("plan: declip makes headroom, clicks get adeclick over a plosive's release"
   assert.match(clipped(0.7, {}, 3).graph, /adeclip=w=55:/);
   const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
   assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
+});
+
+test("the memory that can be had: MemAvailable and what a balloon holds back, at most MemTotal", () => {
+  // a Sprite of a bot's size, nothing else running (2026-11-20): 8155 MB in all, 932 available,
+  // 6.6 GB in the balloon (pages of 4 kB), handed out as it is used
+  const sprite = "MemTotal:        8350720 kB\nMemFree:          600000 kB\nMemAvailable:     954368 kB\n";
+  const balloon = "nr_free_pages 150000\nballoon_inflate 4557312\nballoon_deflate 2829568\n";
+  const mb = memoryMb(sprite, balloon);
+  near(mb, 932 + (4557312 - 2829568) * 4 / 1024, 0.5, "MB");
+  // seven pieces at once on 8 cores, for the denoiser and the redrawing alike
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: mb }), 7);
+  assert.equal(atOnce(7, mb), 7);
+  // never more than MemTotal; a balloon that gave back more than it took counts for nothing
+  near(memoryMb(sprite, "balloon_inflate 9000000\nballoon_deflate 0\n"), 8155, 0.5, "capped");
+  near(memoryMb(sprite, "balloon_inflate 10\nballoon_deflate 20\n"), 932, 0.5, "no balloon");
+  // a machine without a balloon and with little memory free: few
+  const tight = memoryMb("MemTotal: 8350720 kB\nMemAvailable: 614400 kB\n", "nr_free_pages 1\n");
+  near(tight, 600, 0.5, "tight");
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: tight }), 1);
+  assert.equal(atOnce(7, tight), 1);
+  assert.equal(memoryMb("no such lines"), null);
 });
 
 test("plan: adeclip's window is chosen before it runs, from the predicted time on the machine's cores", () => {
@@ -618,6 +640,38 @@ test("16-bit input: the filters work in float (no second rounding, no high-pass 
     for (let i = 0; i < x.length; i++) { e += (y[i] - x[i]) ** 2; s += x[i] ** 2; }
     assert.ok(db(e / s) < -70, `${name}: ${db(e / s).toFixed(1)} dB off the exact high-pass`);
   }
+});
+
+test("a browser's WebM whose sound has a gap in its time stamps: measured, mended and laid under the picture as it plays", { skip }, async () => {
+  // (as Chrome's Opus in WebM can be: 2 s of voice, 2 s without a single sound packet, 2 s of voice,
+  // beside 6 s of picture; decoded as the packets come it is 4 s long, the second stretch at 2 s)
+  for (const [i, from] of [[0, 0], [1, 3.6]]) run(["-ss", String(from), "-t", "2", "-i", base, "-c:a", "libopus", "-b:a", "64k", file(`gap-${i}.webm`)]);
+  fs.writeFileSync(file("gap.txt"), `file '${file("gap-0.webm")}'\nduration 4\nfile '${file("gap-1.webm")}'\n`);
+  run(["-f", "concat", "-safe", "0", "-i", file("gap.txt"), "-c", "copy", file("gap-audio.webm")]);
+  run(["-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=6", "-c:v", "libvpx", "-b:v", "100k", file("gap-video.webm")]);
+  run(["-i", file("gap-video.webm"), "-i", file("gap-audio.webm"), "-map", "0:v", "-map", "1:a", "-c", "copy", file("gap.webm")]);
+  const plays = (f) => { const r = spawnSync("ffmpeg", ["-v", "error", "-i", f, "-vn", "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], { maxBuffer: 1 << 28 }); return new Float32Array(r.stdout.buffer, r.stdout.byteOffset, r.stdout.length / 4); };
+  assert.ok(samples(file("gap.webm")).length < 4.1 * 48000, "the made-up file decodes short");
+  // measure reads it as it plays
+  const m = await measure(file("gap.webm"));
+  near(m.analysed.seconds, 6, 0.03, "measure's length");
+  // clean: the sound as long as it plays, the second stretch of voice where it plays (4 s)
+  await clean(file("gap.webm"), file("gap.out.webm"), { level: "off", before: file("gap.before.m4a") });
+  const y = plays(file("gap.out.webm")), x = plays(file("gap.webm"));
+  near(y.length / 48000, 6, 0.02, "the output's sound");
+  // the sound as it was beside it, as long and in step
+  const bx = plays(file("gap.before.m4a"));
+  near(bx.length / 48000, 6, 0.03, "the comparison's sound");
+  assert.ok(Math.abs(lagOf(x, bx, 4.3 * 48000, 2400)) <= 48, "the comparison in step");
+  const lv = (z, a, b) => db(rms(z, Math.round(a * 48000), Math.round(b * 48000)) ** 2 + 1e-12);
+  assert.ok(lv(y, 2.2, 3.8) < lv(y, 4.2, 5.8) - 30, `the gap is silent (${lv(y, 2.2, 3.8).toFixed(1)} dB against ${lv(y, 4.2, 5.8).toFixed(1)})`);
+  for (const t of [0.5, 4.3]) assert.ok(Math.abs(lagOf(x, y, t * 48000, 2400)) <= 48, `in step at ${t} s`);
+  // a late start (the sound's first packet 1 s after the picture's): filled once, not offset twice
+  run(["-i", file("gap-video.webm"), "-itsoffset", "1", "-i", file("gap-0.webm"), "-map", "0:v", "-map", "1:a", "-c", "copy", file("late.webm")]);
+  await clean(file("late.webm"), file("late.out.webm"), { level: "off" });
+  const ly = plays(file("late.out.webm")), lx = plays(file("late.webm"));
+  near(ly.length / 48000, 3, 0.02, "the late one's sound");
+  assert.ok(Math.abs(lagOf(lx, ly, 1.5 * 48000, 2400)) <= 48, "the late one in step");
 });
 
 test("after: the tone stage's filters run at the end of the same pass", { skip }, async () => {
