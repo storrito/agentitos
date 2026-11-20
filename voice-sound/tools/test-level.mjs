@@ -330,6 +330,18 @@ test("no measurement, no voice, too quiet: −70 LUFS is none; a silent or 0.3 s
   assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".")), []);
 });
 
+test("the gain search never passes the bound: where the limiter takes loudness and the search asks for more, it stops at the bound and says so", { skip }, async () => {
+  // (plain at −8 LUFS: the made-up voice's peaks lie 20 dB over its loudness, so the limiter takes
+  // several LU and every correction asks for more gain than the first guess; the bound 1 dB over it)
+  const first = -8 - 3.01 - loudnessOf(base).lufs;
+  const bound = Math.round((first + 1) * 10) / 10;
+  const r = await level(base, file("capped.wav"), { level: "plain", targets: { lufs: -8 }, maxGainDb: bound });
+  assert.ok(r.passes.length >= 2, JSON.stringify(r.passes));
+  for (const p of r.passes) assert.ok(p.gainDb <= bound + 0.005, `a pass at ${p.gainDb} dB over the bound of ${bound}: ${JSON.stringify(r.passes)}`);
+  assert.ok(r.passes.some((p) => Math.abs(p.gainDb - bound) < 0.01), `the search reached the bound: ${JSON.stringify(r.passes)}`);
+  assert.match(r.left.find((x) => x.id === "loudness")?.why ?? "", new RegExp(`the gain stops at ${bound} dB\\.$`));
+});
+
 test("a file whose name begins with a dash is a file to ffmpeg, in and out", { skip }, async () => {
   const dash = file("-voice.wav");
   fs.copyFileSync(base, dash);

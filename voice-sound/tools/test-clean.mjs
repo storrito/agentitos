@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { clean, lines } from "./lib/clean.mjs";
+import { clean, lines, MIN_VOICE_S } from "./lib/clean.mjs";
 import { measure } from "./lib/measure.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -394,7 +394,8 @@ test("a signal ends the running ffmpeg at once and leaves nothing: no output, no
     try { const s = fs.readFileSync(`/proc/${d}/stat`, "utf8"); return Number(s.slice(s.lastIndexOf(")") + 2).split(" ")[1]) === pid; } catch { return false; }
   });
   const alive = (k) => { try { return !/State:\s*Z/.test(fs.readFileSync(`/proc/${k}/status`, "utf8")); } catch { return false; } };
-  for (const sig of ["SIGTERM", "SIGINT"]) {
+  // (SIGHUP: the terminal an agent ran it from closed)
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
     const p = spawn(process.execPath, [runner, "clean", "long.wav", "sig.m4a", "--before", "sig.before.m4a"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
     let said = "";
     p.stdout.on("data", (d) => { said += d; });
@@ -411,7 +412,7 @@ test("a signal ends the running ffmpeg at once and leaves nothing: no output, no
     p.kill(sig);
     const end = await closed;
     assert.ok(Date.now() - sent < 1500, `${sig}: ended ${Date.now() - sent} ms after the signal`);
-    assert.equal(end.code, sig === "SIGINT" ? 130 : 143, `${sig}: ${JSON.stringify(end)} ${said}`);
+    assert.equal(end.code, { SIGINT: 130, SIGHUP: 129, SIGTERM: 143 }[sig], `${sig}: ${JSON.stringify(end)} ${said}`);
     assert.equal(said, "", `${sig}: printed ${said}`);
     await new Promise((r) => setTimeout(r, 200));
     for (const k of kids) assert.ok(!alive(k), `${sig}: its ffmpeg ${k} still runs`);
@@ -436,6 +437,35 @@ test("a voice recorded very low (−61 LUFS as played, 47 dB of gain) is deliver
   near(loudness(file("lower.m4a")).lufs, -14, 0.5, "under the gate, delivered");
   near(loudness(file("lower.before.m4a")).lufs, loudness(file("lower.m4a")).lufs, 0.4, "its comparison");
   assert.ok(r2.left.some((x) => x.id === "quiet"));
+});
+
+test("delivered together, the report last: the output, then the comparison, then <out>.json, so that a skill which finds the JSON finds the sound beside it", { skip }, async () => {
+  const order = [], rename = fs.renameSync;
+  fs.renameSync = (a, b) => { order.push(path.basename(b)); return rename(a, b); };
+  try { await clean(base, file("order.m4a"), { before: file("order.before.m4a") }, stages); } finally { fs.renameSync = rename; }
+  assert.deepEqual(order.filter((n) => n.startsWith("order")), ["order.m4a", "order.before.m4a", "order.m4a.json"]);
+});
+
+test(`the least voice: ${MIN_VOICE_S} s. A burst measure reads as 0.4 s, and 0.3 s in its numbers, are refused; 0.6 to 0.8 s of voice come out at the target`, { skip }, async () => {
+  // cuts of the made-up voice laid over a faint floor of 4 s (measure holds a syllable 0.2 s on:
+  // a cut of 0.1 s reads as 0.4 s of voice, cuts of 0.3 to 0.5 s as 0.6 to 0.8 s)
+  const cut = (d) => {
+    const f = file(`cut-${d}.wav`);
+    run(["-i", base, "-filter_complex", `[0:a]atrim=start=0.5:duration=${d},asetpts=PTS-STARTPTS,adelay=1500:all=1,apad=whole_dur=4[v];anoisesrc=color=pink:amplitude=0.0015:r=48000:d=4:seed=9[n];[v][n]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", f]);
+    return f;
+  };
+  const burst = cut(0.1);
+  await assert.rejects(clean(burst, file("burst.m4a"), {}, stages), /^Error: measure finds only 0\.4 s of voice in \S*cut-0\.1\.wav, under the 0\.5 s clean needs/);
+  // the same sound with 0.3 s in measure's numbers
+  const made = { ...stages, async measure(f, when) { const m = await measure(f); if (when === "before") m.speech.seconds = 0.3; return m; } };
+  await assert.rejects(clean(burst, file("burst.m4a"), {}, made), /measure finds only 0\.3 s of voice/);
+  assert.ok(!fs.existsSync(file("burst.m4a")));
+  for (const d of [0.3, 0.4, 0.5]) {
+    const r = await clean(cut(d), file(`cut-${d}.m4a`), {}, stages);
+    assert.ok(r.measured.before.voiceSeconds >= 0.6 && r.measured.before.voiceSeconds <= 0.8, `${d}: ${r.measured.before.voiceSeconds} s of voice`);
+    near(loudness(file(`cut-${d}.m4a`)).lufs, -14, 0.5, `${d} s cut`);
+    assert.ok(loudness(file(`cut-${d}.m4a`)).truePeak <= -1, `${d} s cut: true peak`);
+  }
 });
 
 test("measure's word on the voice: where it says none was found, clean refuses with measure's reason", { skip }, async () => {
