@@ -76,7 +76,7 @@ What Instagram, TikTok, YouTube and the other apps lay over a video (their butto
 
 ## Contributing
 
-Issues and pull requests are welcome. A new agent gets its own top-level folder with a `SKILL.md` and a `README.md` that describe what it does, what it needs (API keys, CLI tools, …) and how to run it. What another agent of this collection already does, it calls instead of doing again: captions through [captions](captions/), the brand's look from the [brand kit](#the-brand-kit), the space the apps cover through [platform-zones](#the-platforms-zones).
+Issues and pull requests are welcome. What a skill is measured by is in [docs/standards.md](docs/standards.md), how it is tested in [docs/testing.md](docs/testing.md). A new agent gets its own top-level folder with a `SKILL.md` and a `README.md` that describe what it does, what it needs (API keys, CLI tools, …) and how to run it. What another agent of this collection already does, it calls instead of doing again: captions through [captions](captions/), the brand's look from the [brand kit](#the-brand-kit), the space the apps cover through [platform-zones](#the-platforms-zones).
 
 ## License
 

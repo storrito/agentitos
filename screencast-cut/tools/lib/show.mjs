@@ -117,7 +117,9 @@ function leftOut(keep) {
 // absolute path, linked into assets/ as show-<k>.<ext>), the inserts with sound ({ k, key, file,
 // from, start, duration, sound, spoken: the keep's last word's end from its start }), warnings
 // (the video ends before the keep) and notes (what the keep's view, zoom or layout no longer do).
-export function placeShows(cut, pieces, words, infoOf) {
+// room: how many seconds of the recording's room a muted piece of the voice carries (room.mjs,
+// 0 where it has none), for what the line about a silent hold says is there
+export function placeShows(cut, pieces, words, infoOf, { room = 0 } = {}) {
   const sources = {}, inserts = [], warnings = [], notes = [];
   for (const [k, keep] of (cut.keep || []).entries()) {
     if (keep.show === undefined) continue;
@@ -145,7 +147,11 @@ export function placeShows(cut, pieces, words, infoOf) {
       // (muted counts only while the shown video plays, so its 1 s and more is room for the hold form)
       const way = !info.audio ? `, which has no sound: end the keep at its last word, "hold": 0`
         : `: let its sound play there, "sound": {"hold": 0.8} (silent under the words), or end the keep at its last word, "hold": 0`;
-      warnings.push(`keep ${k + 1}: its "hold" after the last word is ${muted.toFixed(1)} s of silence (the recording's sound stops with the words there) while ${show.file} plays on${way}`);
+      // what is there: the recording's room as long as it lasts (each muted piece from its start),
+      // then silence
+      const heard = Math.min(muted, room);
+      const there = heard <= 0.05 ? `${muted.toFixed(1)} s of silence` : heard >= muted - 0.05 ? `${muted.toFixed(1)} s of the room alone` : `${muted.toFixed(1)} s of the room alone for ${heard.toFixed(1)} s, then silence`;
+      warnings.push(`keep ${k + 1}: its "hold" after the last word is ${there} (the recording's sound stops with the words there) while ${show.file} plays on${way}`);
     }
     const key = `show-${k + 1}`;
     sources[key] = { file: `${key}${path.extname(info.path || show.file) || ".mp4"}`, path: info.path || path.resolve(show.file), width: info.width, height: info.height, offset: 0, video: true, duration: info.duration };

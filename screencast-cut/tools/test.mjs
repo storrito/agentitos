@@ -2041,3 +2041,179 @@ test("the label's room only where it does not cost the stack: an unlabelled stac
     } finally { c.done(); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ------------------------------------------------------------------------------ the room
+// A muted piece of the voice (a keep held past its last word) was digital silence: a hole where
+// every pause carries the room (2026-11-19, "clearly audible" mid-sentence). Made-up voices: room
+// noise at about −50 dBFS, "words" of a loud tone, pauses between them; one pause with a click.
+import { chooseTone, lay, roomTone, wav, FADE_OUT } from "./lib/room.mjs";
+import { voiceTrack } from "./lib/tracks.mjs";
+
+const wordsAt = (spans) => spans.map(([start, end], i) => ({ i, clip: 1, kind: "word", text: "wort", start, end }));
+const ROOM_WORDS = wordsAt([[0.3, 1.2], [1.25, 2.0], [2.6, 3.3], [3.9, 4.6], [5.2, 5.8]]);
+// x(t) at sr: room (a fixed noise, so every run is the same) + the words + a click at 3.6 s
+// (+ a soft tick: [t, amplitude] of 4 ms at 2 kHz)
+function roomVoice(sr, { room = 0.0055, words = 0.25, under = 0, click = true, tick = null, spoken = ROOM_WORDS, seconds = 6 } = {}) {
+  // xorshift32: a noise that does not repeat (a float LCG lost its bits and repeated every 0.29 s)
+  let seed = 7;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296) * 2 - 1; };
+  return Float32Array.from({ length: seconds * sr }, (_, k) => {
+    const t = k / sr;
+    const said = spoken.some((w) => t >= w.start && t < w.end);
+    return room * Math.sqrt(3) * rnd() + (said ? words * Math.sin(2 * Math.PI * 220 * t) : 0) + under * Math.sin(2 * Math.PI * 330 * t) + (click && Math.abs(t - 3.6) < 0.004 ? 0.3 : 0)
+      + (tick && t >= tick[0] && t < tick[0] + 0.004 ? tick[1] * Math.sin(2 * Math.PI * 2000 * (t - tick[0])) : 0);
+  });
+}
+const dbOf = (x) => 20 * Math.log10(Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length));
+const decoded = (file, sr = 48000) => {
+  const raw = spawnSync("ffmpeg", ["-v", "error", "-i", file, "-ac", "1", "-ar", String(sr), "-f", "f32le", "-"], { maxBuffer: 1 << 28 }).stdout;
+  return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength - (raw.byteLength % 4)));
+};
+const longestZero = (x) => { let run = 0, most = 0; for (const v of x) { run = v === 0 ? run + 1 : 0; most = Math.max(most, run); } return most; };
+// the highest correlation of x with itself shifted by a lag from a to b seconds (one sample's steps)
+function selfSimilar(x, sr, a, b) {
+  let most = 0, at = 0;
+  for (let lag = Math.round(a * sr); lag <= Math.round(b * sr) && lag < x.length - sr * 0.1; lag++) {
+    let xy = 0, xx = 0, yy = 0;
+    for (let i = 0; i + lag < x.length; i++) { xy += x[i] * x[i + lag]; xx += x[i] * x[i]; yy += x[i + lag] * x[i + lag]; }
+    const c = xy / Math.sqrt(xx * yy || 1);
+    if (c > most) { most = c; at = lag / sr; }
+  }
+  return { most, at };
+}
+// 50 ms windows' levels (dBFS) of x
+const windows = (x, sr) => Array.from({ length: Math.floor(x.length / (0.05 * sr)) }, (_, k) => dbOf(x.subarray(Math.round(k * 0.05 * sr), Math.round((k + 1) * 0.05 * sr))));
+
+test("the room: the pauses that serve, the quietest first, never a word nor a click in them, at the room's level", () => {
+  const sr = 16000, x = roomVoice(sr);
+  const t = chooseTone(x, sr, ROOM_WORDS);
+  assert.ok(!t.why, t.why);
+  // the pauses 2.0–2.6 and 4.6–5.2 (alike, the noise decides their order), never 3.3–3.9 (the click)
+  assert.equal(t.stretches.length, 2);
+  for (const s of t.stretches) {
+    assert.ok((s.from >= 2.1 && s.to <= 2.5) || (s.from >= 4.7 && s.to <= 5.1), `${s.from}–${s.to}`);
+    for (const w of ROOM_WORDS) assert.ok(s.to <= w.start - 0.1 || s.from >= w.end + 0.1, `word ${w.i} (${w.start}–${w.end}) in ${s.from}–${s.to}`);
+  }
+  assert.deepEqual([t.from, t.to], [t.stretches[0].from, t.stretches[0].to]);
+  assert.ok(Math.abs(t.rms - dbOf(x.subarray(t.from * sr, t.to * sr))) < 1, `${t.rms} dBFS`);
+  // a gap under 0.12 + 0.15 + 0.25 s (1.2–1.25) is none
+  assert.ok(t.stretches.every((s) => !(s.from < 1.25 && s.to > 1.2)));
+});
+
+test("the room: a soft tick (4 ms, 9.5 dB over the room's peaks) keeps its pause out", () => {
+  const sr = 16000, peak = 0.0055 * Math.sqrt(3);
+  const x = roomVoice(sr, { click: false, tick: [4.9, peak * 10 ** (9.5 / 20)] });
+  const t = chooseTone(x, sr, ROOM_WORDS);
+  assert.ok(!t.why, t.why);
+  assert.ok(t.stretches.every((s) => !(s.from < 4.905 && s.to > 4.9)), JSON.stringify(t.stretches));
+  assert.ok(t.stretches.some((s) => s.from > 3.3 && s.to < 3.9), "the pause without the click serves now");
+});
+
+test("the room: none where the pauses are digitally silent or carry music, said in a clause; a recording that cannot be read is a clause too", () => {
+  const sr = 16000;
+  const silent = roomVoice(sr, { room: 0, click: false });
+  assert.match(chooseTone(silent, sr, ROOM_WORDS).why, /digitally silent between its words/);
+  const music = roomVoice(sr, { under: 0.1 });
+  assert.match(chooseTone(music, sr, ROOM_WORDS).why, /carry speech, music or clicks/);
+  const dense = ROOM_WORDS.map((w, i) => ({ ...w, end: ROOM_WORDS[i + 1]?.start ?? 6 }));
+  assert.match(chooseTone(roomVoice(sr), sr, dense).why, /no pause between its words/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "room-bad-"));
+  try {
+    const bad = path.join(dir, "voice.m4a");
+    fs.writeFileSync(bad, "not a recording at all");
+    const t = roomTone(bad, ROOM_WORDS, path.join(dir, "room.wav"), 0.5);
+    assert.match(t.why, /could not be/);
+    assert.ok(!fs.existsSync(path.join(dir, "room.wav")));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the room laid: each stretch once, the later ones at the first one's level, no seam louder or quieter", () => {
+  const sr = 48000, x = roomVoice(sr);
+  const a = x.slice(2.15 * sr, 2.45 * sr), b = x.slice(4.75 * sr, 5.05 * sr).map((v) => v * 1.6);
+  const y = lay([a, b], sr);
+  assert.equal(y.length, a.length + b.length - 0.03 * sr);
+  const levels = windows(y, sr), room = dbOf(a);
+  assert.ok(levels.every((l) => Math.abs(l - room) < 1.5), levels.map((l) => l.toFixed(1)).join(" "));
+  const same = selfSimilar(decimate(y), 16000, 0.2, 0.5);
+  assert.ok(same.most < 0.3, `correlates ${same.most.toFixed(2)} at ${same.at.toFixed(3)} s`);
+});
+const decimate = (y) => Float32Array.from({ length: Math.floor(y.length / 3) }, (_, k) => y[3 * k]);
+
+test("the voice's muted pieces carry the room at the take's level, the same bytes twice; a cut without muted pieces and the fallback as before", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "room-"));
+  try {
+    const voice = path.join(dir, "voice.wav");
+    wav(voice, roomVoice(48000), 48000);
+    // words 0–1 at +6 dB, held 0.5 s muted (the recording goes on into word 2), then word 2
+    const pieces = [
+      { in: 0.2, duration: 1.9, gain: 6, rate: 1 },
+      { in: 2.1, duration: 0.5, gain: 0, rate: 1, mute: true, hold: true },
+      { in: 2.5, duration: 0.9, gain: 6, rate: 1 },
+    ];
+    const tone = roomTone(voice, ROOM_WORDS, path.join(dir, "room.wav"), 0.5);
+    assert.ok(!tone.why && tone.used === 2 && tone.seconds > 0.5, "two pauses: one is shorter than the piece");
+    const out = path.join(dir, "voice.cut.m4a");
+    voiceTrack(voice, pieces, out, { tone });
+    const y = decoded(out), sr = 48000;
+    // inside the muted piece (its 5 ms fades aside): never more than 3 ms at zero, the room at its
+    // own level raised by the take's 6 dB, whole
+    const fill = y.subarray(Math.round(1.92 * sr), Math.round(2.38 * sr));
+    assert.ok(longestZero(fill) < 0.003 * sr, `${longestZero(fill)} samples at zero`);
+    assert.ok(Math.abs(dbOf(fill) - (tone.rms + 6)) < 3, `the fill at ${dbOf(fill).toFixed(1)} dBFS, the room ${tone.rms} + 6`);
+    assert.ok(windows(fill, sr).every((l) => Math.abs(l - (tone.rms + 6)) < 3), "no fade inside it");
+    const first = fs.readFileSync(out);
+    fs.rmSync(out); fs.rmSync(`${out}.json`);
+    voiceTrack(voice, pieces, out, { tone: roomTone(voice, ROOM_WORDS, path.join(dir, "room.wav"), 0.5) });
+    assert.ok(first.equals(fs.readFileSync(out)), "the same build twice, the same bytes");
+    // without a room (roomTone's why): silence, as before
+    const quiet = path.join(dir, "quiet.m4a");
+    voiceTrack(voice, pieces, quiet, { tone: { why: "the recording is digitally silent between its words" } });
+    assert.ok(longestZero(decoded(quiet).subarray(Math.round(1.92 * sr), Math.round(2.38 * sr))) > 0.3 * sr, "the muted piece silent");
+    // no muted piece: the track and its key as without a room
+    const spoken = [pieces[0], pieces[2]];
+    const a = path.join(dir, "a.m4a"), b = path.join(dir, "b.m4a");
+    voiceTrack(voice, spoken, a);
+    voiceTrack(voice, spoken, b, { tone });
+    assert.ok(fs.readFileSync(a).equals(fs.readFileSync(b)));
+    assert.equal(fs.readFileSync(`${a}.json`, "utf8").replace(/a\.m4a/g, ""), fs.readFileSync(`${b}.json`, "utf8").replace(/b\.m4a/g, ""));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a long muted piece: the room never repeats, its level steady, then it fades out and is silent", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "room-long-"));
+  try {
+    // 14 s, a word of 0.7 s every 1.3 s: twelve pauses of 0.6 s (0.33 s of room each); words at
+    // the start, then a "hold" of 4 s
+    const spoken = wordsAt(Array.from({ length: 11 }, (_, k) => [0.3 + 1.3 * k, 1.0 + 1.3 * k]));
+    const voice = path.join(dir, "voice.wav");
+    wav(voice, roomVoice(48000, { click: false, spoken, seconds: 14 }), 48000);
+    const pieces = [{ in: 0.2, duration: 1.0, gain: 0, rate: 1 }, { in: 1.2, duration: 4, gain: 0, rate: 1, mute: true, hold: true }];
+    const tone = roomTone(voice, spoken, path.join(dir, "room.wav"), 4);
+    assert.ok(!tone.why && tone.seconds > 2 && tone.seconds < 4, JSON.stringify(tone));
+    const out = path.join(dir, "voice.cut.m4a");
+    voiceTrack(voice, pieces, out, { tone });
+    const y = decoded(out), sr = 48000;
+    // the room's part, its fades aside: no lag of 0.2–1 s at which it correlates with itself over
+    // 0.5 (a loop of one stretch: 1.000)
+    const room = y.slice(Math.round(1.02 * sr), Math.round((1 + tone.seconds - FADE_OUT) * sr));
+    const same = selfSimilar(decimate(room), 16000, 0.2, 1);
+    assert.ok(same.most < 0.5, `correlates ${same.most.toFixed(2)} at ${same.at.toFixed(3)} s`);
+    // steady: its 50 ms windows within 3 dB of the room's level (a loop dipped 4–5 dB at every seam)
+    const levels = windows(room, sr);
+    assert.ok(Math.max(...levels) - Math.min(...levels) < 3, levels.map((l) => l.toFixed(1)).join(" "));
+    assert.ok(levels.every((l) => Math.abs(l - tone.rms) < 2));
+    // the fade-out: its last 50 ms 10 dB under the room, and silence after it to the piece's end
+    const end = 1 + tone.seconds;
+    assert.ok(dbOf(y.subarray(Math.round((end - 0.06) * sr), Math.round((end - 0.01) * sr))) < tone.rms - 10);
+    assert.ok(longestZero(y.subarray(Math.round((end + 0.03) * sr), Math.round(4.98 * sr))) >= (4.95 - end - 0.03) * sr, "silent after the room");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("show: a muted hold's line says what is there: the room, the room then silence, or silence", () => {
+  const cut = twoKeeps({ show: { file: "result.mp4", from: 2 }, hold: 2 });
+  const r = plan(words, cut, settings, voices, movingPause);
+  const said = (room) => placeShows(cut, r.pieces, r.words, () => VIDEO_INFO(60), { room }).warnings[0];
+  assert.match(said(0), /is [\d.]+ s of silence \(the recording's sound stops/);
+  assert.match(said(30), /is [\d.]+ s of the room alone \(the recording's sound stops/);
+  assert.match(said(0.5), /is [\d.]+ s of the room alone for 0\.5 s, then silence \(the recording's sound stops/);
+});

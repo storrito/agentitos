@@ -64,6 +64,7 @@ import { plan, range, timeRange, pieceEndSaid, endSaid } from "./lib/cut.mjs";
 import { FRAMES, areas, linesOf, captionLine, captionsFor, captionArea, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
 import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
+import { roomTone } from "./lib/room.mjs";
 import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
@@ -941,7 +942,19 @@ async function cmdBuild(dir, opts) {
   // a keep that shows another video ("show"): its picture over the keep's whole length (its words,
   // its pauses, its hold), from "from" on at its own speed; it wins over the keep's view, zoom and
   // layout, which are left out (said)
-  const shown = placeShows(cut, r.pieces, r.words, (file) => showInfo.get(file));
+  // where the voice is muted (a keep held past its last word, a pause shown, a stretch "at" a
+  // time), the recording's room instead of digital silence: quiet stretches between its words
+  // (lib/room.mjs), each heard once, from the voice before its pauses were lowered, at the level of
+  // the words before; a piece longer than the room the recording has fades out and is silent after
+  const muted = r.pieces.filter((p) => p.mute), mutedFor = Math.max(0, ...muted.map((p) => p.duration));
+  const tone = mutedFor > 0 ? roomTone(source(dir, meta.voice), words, source(dir, "room-tone.wav"), mutedFor) : null;
+  if (tone?.why) console.log(`The voice's muted pieces stay silent: ${tone.why}.`);
+  else if (tone) {
+    const long = muted.filter((p) => p.duration > tone.seconds + 0.01);
+    console.log(`The voice's muted pieces carry the recording's room: ${tone.seconds.toFixed(2)} s of it from ${tone.used} of its pauses (the quietest from ${clock(tone.from)}, ${tone.rms} dBFS), each heard once, at the level of the words before each`
+      + (long.length ? `; ${long.map((p) => `keep ${p.keep + 1}'s ${p.duration.toFixed(1)} s at ${clock(p.start)}`).join(", ")} ${long.length > 1 ? "carry" : "carries"} it for ${tone.seconds.toFixed(1)} s, fading out, the rest is silence (the recording has no more room than that between its words)` : "") + ".");
+  }
+  const shown = placeShows(cut, r.pieces, r.words, (file) => showInfo.get(file), { room: tone?.seconds || 0 });
   r.warnings.push(...shown.warnings);
   shown.notes.unshift(...shown.warnings.map((w) => `⚠ ${w}`));
   // the face view: the webcam's picture placed by where its face is (the layout skill), around the
@@ -969,7 +982,14 @@ async function cmdBuild(dir, opts) {
   // the voice and the webcam as one track each for the whole cut (a browser plays about 75 media
   // elements on a page, a clip per piece ran out of them)
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
-  voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"));
+  try {
+    voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"), { tone });
+  } catch (e) {
+    if (!tone?.file) throw e;
+    // the room never stops a build: the muted pieces silent, as before
+    console.log(`The voice's muted pieces stay silent: ffmpeg could not lay the room into them (${String(e.message).slice(0, 160)}).`);
+    voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"));
+  }
   let camera = null;
   if (sources.webcam?.video) {
     cameraTrack(source(dir, sources.webcam.file), sources.webcam.offset, r.pieces, path.join(out, "assets", "camera.mp4"), { fps: s.fps, parts: source(dir, "camera.parts") });

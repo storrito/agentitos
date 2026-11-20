@@ -2,6 +2,16 @@
 
 A collection of agent skills, one top-level folder each. [README.md](README.md) holds the conventions in full; this is what an agent working on the collection must not miss.
 
+## Before you build a skill
+
+The collection makes videos for social media from raw material of any source and brings them out on the platforms. People use it through rragent, whose bots run on Claude Opus 5.5 on a Sprite of 8 cores and 8 GB, and wait in front of the chat for their video. [docs/standards.md](docs/standards.md) is what a skill is measured by.
+
+- Read `docs/standards.md` before you plan a skill or a change to what one does or asks; the pull request answers its table.
+- Read `docs/testing.md` before you look for material to try it on or run anything on a Sprite: the corpus the sessions share, and the test Sprites.
+- Read `docs/lessons.md` before you write the tools and the SKILL.md, and add to it when you are done what went wrong and would go wrong again.
+- Ask the skill's owner at the moments of `docs/standards.md`, section 10, each time on an acceptance page: before building (examples and the flow), at an intermediate result where a person's judgement matters (variants), and when the skill works (your own whole run as a bot, for their verdict).
+- A decision that cannot be taken back (a one-way door: publishing, deleting, a name or a format others will build on) is the owner's, whatever else you decide yourself. What can be taken back you decide, and say what you chose. Merged means deployable: judge a pull request as if it ran on every bot's machine, not by whether git can revert it (`docs/standards.md`, section 10).
+
 ## Reuse what a skill already does
 
 Before writing code for a job, look whether a skill here does it, and call its tool instead of doing it again:
@@ -52,7 +62,7 @@ A new skill that needs one of these says so in its SKILL.md and README ("needs a
 - Paths in a SKILL.md are `<skill>/…`; everything a skill writes goes to the caller's working directory, never into the skill's folder.
 - Tools are made for agents: each step prints what it did and what to do next; an error is one sentence that says what to do. When something is missing (ffmpeg, a key), say so; never install it from a tool.
 - Node 20+ and ffmpeg; no npm packages unless a skill cannot do without them.
-- Models through OpenRouter only: `OPENROUTER_API_KEY`, else the Sprites gateway's connection (the README's "Models"). The gateway answered requests of 6 MB and refused 8 MB (413) on 2026-10-23, and answered bodies of 12 to 21.7 MB on 2026-11-18: sound goes as MP3 at 48 kbit/s in pieces of five minutes, which fit either way; the skills that guard a body by `GATEWAY_MAX` (7 MB) keep it.
+- Models through OpenRouter, and on the machine itself only a small one (`docs/standards.md`, section 6): `OPENROUTER_API_KEY`, else the Sprites gateway's connection (the README's "Models"). The gateway answered requests of 6 MB and refused 8 MB (413) on 2026-10-23, and answered bodies of 12 to 21.7 MB on 2026-11-18: sound goes as MP3 at 48 kbit/s in pieces of five minutes, which fit either way; the skills that guard a body by `GATEWAY_MAX` (7 MB) keep it.
 - Tests are `<skill>/tools/test*.mjs`, with no model, no key and no network, and GitHub runs every one of them on every push and pull request (`.github/workflows/tests.yml`; a new skill's tests are found by their names). The same on your machine, with Chrome and ffmpeg: `node .github/run-tests.mjs --install` (`layout captions` for some skills only, `--jobs 4` for four files at once); its last lines say which file failed and why. A pull request goes in with its run green.
 
 ## What goes into a SKILL.md
@@ -69,6 +79,7 @@ Tools do what can be measured (sync, cuts between words, levels, sizes, what the
 
 ## Videos
 
+- Rendering is hfrender's, Storrito's renderer for HyperFrames compositions: a skill's steps name rragent's `render` tool, and on a Sprite of your own it is `hfrender render <composition folder> --output <file.mp4>`.
 - In rragent: a HyperFrames preview first, the render only after the person's yes. Change the inputs and build again; never edit a built `index.html` by hand.
 - A page plays only about 75 media elements (Chrome): one element per source for the whole cut (a voice track, a webcam track), not one per piece.
 - Sprites have little memory: never decode a whole recording at once to cut many pieces from it; one ffmpeg per piece, joined afterwards.
