@@ -8,7 +8,7 @@ Three places, cheapest first. [standards.md](standards.md) says what each has to
 
 ## 2. The lab: a skill from the first message to the file
 
-Storrito's sessions share `agentitos-lab`, a local repository without a remote, beside this repo's main checkout (`git worktree list` names that checkout first). Its media lie under `corpus/media/`, outside git. It holds two things:
+Storrito's sessions share `plugin-lab` (called `agentitos-lab` until 2026-11-20), a local repository without a remote, beside this repo's main checkout (`git worktree list` names that checkout first). Its media lie under `corpus/media/`, outside git. It holds two things:
 
 - **The corpus**: raw material to try skills on, shared because finding, cutting and preparing material costs more than anything else in building a skill. Every file has an entry that says where it comes from, whether it may be shown outside, and what is true of it (what kind of recording, how many speakers, which language).
 - **The rig**: runs a skill with Claude Code on Opus 5.5 as the agent and a small model as the person, and writes down what was said, every tool call, how long it took and what it cost. The agent may run only the programs the rig's `run.mjs` lists.
