@@ -148,23 +148,67 @@ const DECLIP_HEADROOM_DB = -6;
 // PESQ or DNSMOS overall; PESQ 2.04 → 1.79 at 20–30 % with 10 ms), and better than none at every
 // share there (PESQ 1.41 → 2.04 at 20–30 % with 55 ms).
 export const DECLIP_WINDOW_MS = 55;
-// So the time is bounded where the pass runs: the stage stops after DECLIP_LIMIT's CPU seconds
-// (baseS and perSecond of sound; the 126 files took at most 127 s for 14.8 s, under 165) and runs
-// again with DECLIP_FAST_MS, and says so: under DECLIP_FAST_MAX_SHARE that takes at most half the
-// sound's length more (0.3 of it clipped through at 1.6 times; the clip sets at 20–30 %: 0.3
-// times). The stage's CPU time with clipping is so at most 150 s + 1.5 times the sound's length.
+// The redrawing runs in pieces at once, one a core (usableCores, below), each cut on the
+// window's hop (a quarter of it) with a window more on either side and only its own part kept:
+// the joined result is the one-piece result to the sample (clip-20db p004_rainbow_07, 16.9 s, 4
+// and 8 pieces: 0 samples differ; cut off the hop, −27 dB of difference). A piece is at least
+// DECLIP_PIECE_MIN_S long.
+export const DECLIP_PIECE_MIN_S = 2;
+// The window is chosen before it runs, from the share and the length, never from how a run went:
+// the 55 ms window where its predicted wall time (DECLIP_TIME) stays within DECLIP_LIMIT (baseS +
+// perSecond × the length), else the coarser ones in turn (20, then 10 ms), the step saying why.
+// DECLIP_TIME: adeclip's CPU a second of sound at a clipped share s (from 1 %, the AR model 16 %
+// of the window), fitted on the 126 files (2026-11-20, ffmpeg 9.0.2, the lab's laptop): 55 ms
+// 26.3 × s^1.36, 20 ms 2.51 × s^1.05, 10 ms 0.54 × s^0.79; the measured times lay at 0.47 to
+// 1.76 times the fit (55 ms; 20 and 10 ms up to 2.1), and ffmpeg 8.1.3 took 0.97 to 1.0 times
+// 9.0.2's (10, 20, 40 % clipped), so the prediction is twice the fit. Under 1 % (an order of 8 or
+// 12 %) every file took under 0.2 times its length. Spread over P pieces the wall time is that
+// CPU × spread / P: 7 pieces on 8 threads of 4 cores (taskset 0-7, 8.1.3) ran 2.1 to 2.5 times
+// faster than one (15 and 60 s at 20 and 40 %), 2.8 times on the laptop's 20 threads: spread 3.5.
+export const DECLIP_TIME = { 55: { c: 26.3, p: 1.36 }, 20: { c: 2.51, p: 1.05 }, 10: { c: 0.54, p: 0.79 }, under: 0.2, safety: 2, spread: 3.5 };
 export const DECLIP_LIMIT = { baseS: 150, perSecond: 1 };
+export const DECLIP_WINDOWS = [55, 20, 10];
+// The net, should a piece ever run far over its prediction: stopped after netTimes × its predicted
+// CPU + netS, and the redrawing run again with the 10 ms window, the step saying so (the coarse
+// window then runs to its end, unlimited)
+export const DECLIP_NET = { times: 3, s: 30 };
 export const DECLIP_FAST_MS = 10;
 // ... but not from this share on: there the 10 ms window scored under no redrawing at all on
 // DNSMOS overall (clip sets at 30–47 %: 2.85 against 3.14; clean voices clipped to 36–65 %: 0.09
-// to 0.31 lower), so where the 55 ms one ran out of time it is left as it is
+// to 0.31 lower), so where only it would fit, or the net was hit, it is left as it is. (No share
+// is left alone for time: three clean tune voices clipped to 62–65 % still gained on NISQA by
+// 0.25 to 0.59 from the 55 ms window, PESQ by 0.03, 2026-11-20.)
 export const DECLIP_FAST_MAX_SHARE = 0.3;
-// Over this share too little of the wave is left to draw from. Three clean tune voices clipped by
-// 26, 32 and 40 dB (2026-11-20): redrawn against left, PESQ +0.21 to +0.31 at 31–37 %, +0.08 to
-// +0.11 at 46–51 %, +0.03 at 62–65 %; DNSMOS overall there −0.05 to +0.17, NISQA +0.25 to +0.59;
-// adeclip took 22 to 23 times their length. A judgement: where PESQ no longer moves, the time
-// (which the limit would spend before leaving it anyway) is not spent. Named in `left`.
-export const DECLIP_MAX_SHARE = 0.6;
+
+// adeclip's predicted CPU seconds for `seconds` of sound clipped on `share` with a w ms window
+export function declipCpuS(share, seconds, w) {
+  const T = DECLIP_TIME;
+  const perS = share < 0.01 ? T.under : T.safety * T[w].c * share ** T[w].p;
+  return perS * seconds;
+}
+// the pieces for `seconds` of sound on `cores`
+export const declipPieces = (seconds, cores) => Math.max(1, Math.min(cores, Math.floor(seconds / DECLIP_PIECE_MIN_S)));
+// the cores the redrawing may use: all but one (the video cut that runs beside it), as the
+// machine has them (its CPU affinity counted: `taskset`, a container's limit). A property of the
+// machine, not of its load: the window chosen from it is the same however busy it is.
+export const usableCores = () => Math.max(1, os.availableParallelism() - 1);
+// how many of the pieces run at once: no more than the free memory holds at DECLIP_PIECE_MB each
+// (an adeclip ffmpeg held 54 MB on 17 s, 2026-11-20), DECLIP_RESERVE_MB kept free. It changes
+// when they run, never what they give: the pieces are cut the same way whatever runs at once.
+export const DECLIP_PIECE_MB = 100, DECLIP_RESERVE_MB = 512;
+const atOnce = (K) => Math.max(1, Math.min(K, Math.floor((os.freemem() / 2 ** 20 - DECLIP_RESERVE_MB) / DECLIP_PIECE_MB)));
+// → { w (ms), cpuS, wallS, pieces, limitS, tried: [{ w, wallS }] } or { w: null, … } where none
+// may run (only a window that does harm at this share would fit)
+export function declipWindow(share, seconds, cores = os.availableParallelism(), lim = DECLIP_LIMIT) {
+  const P = declipPieces(seconds, cores), limitS = r1(lim.baseS + lim.perSecond * seconds), tried = [];
+  for (const w of DECLIP_WINDOWS) {
+    if (w !== DECLIP_WINDOW_MS && share >= DECLIP_FAST_MAX_SHARE) continue;
+    const cpuS = declipCpuS(share, seconds, w), wallS = P > 1 ? (cpuS * DECLIP_TIME.spread) / P : cpuS;
+    tried.push({ w, wallS: r1(wallS) });
+    if (wallS <= limitS) return { w, cpuS: r1(cpuS), wallS: r1(wallS), pieces: P, limitS, tried };
+  }
+  return { w: null, pieces: P, limitS, tried };
+}
 
 // ---------------------------------------------------------------- ffmpeg
 
@@ -199,6 +243,7 @@ const r2 = (x) => Math.round(x * 100) / 100;
 const minus = (s) => String(s).replace(/^-/, "−");
 const dB = (x) => minus(Math.round(x));
 const db1 = (x) => minus(r1(x).toFixed(1));
+const secs = (x) => (x < 10 ? r1(x) : Math.round(x));
 const pct = (x) => (x >= 0.01 ? `${+(x * 100).toFixed(1)} %` : `${+(x * 100).toPrecision(2)} %`);
 const METHODS = ["afftdn-sample", "afftdn-profile", "afftdn-track", "arnndn", "dpdfnet", "ffmpeg", "off"];
 const STRENGTHS = ["auto", "off", "gentle", "strong"];
@@ -269,16 +314,23 @@ export function repairPlan(m, opts = {}) {
     // the AR model's order, a % of the window: the longer the runs, the more of the signal around
     // them it needs
     const order = share >= 0.01 ? 16 : share >= CLIP_STRONG_SHARE ? 12 : 8;
-    const w = opts.declipFast ? DECLIP_FAST_MS : DECLIP_WINDOW_MS;
+    // the window: chosen from the predicted time (declipWindow); the fast one after the net was hit
+    const seconds = m.analysed?.seconds ?? m.duration ?? 0;
+    const fit = declipWindow(share, seconds, opts.cores ?? usableCores(), { ...DECLIP_LIMIT, ...opts.declipLimit });
+    const w = opts.declipFast ? (share < DECLIP_FAST_MAX_SHARE ? DECLIP_FAST_MS : null) : fit.w;
     const up = -level, back = Math.min(0, DECLIP_HEADROOM_DB - c.ceilingDb);
-    if (opts.declipFast && share >= DECLIP_FAST_MAX_SHARE) left.push({ id: "clipped", why: `Clipped on ${pct(share)} of the samples: redrawing it took longer than its limit (${DECLIP_WINDOW_MS} ms window), and the faster ${DECLIP_FAST_MS} ms one does more harm than good this far: it stays as it is.` });
-    else if (share > DECLIP_MAX_SHARE) left.push({ id: "clipped", why: `Clipped on ${pct(share)} of the samples, too much to redraw (over ${pct(DECLIP_MAX_SHARE)} too little of the wave is left to draw from): it stays as it is.` });
+    const full = fit.tried[0];
+    if (w == null) left.push({ id: "clipped", why: opts.declipFast
+      ? `Clipped on ${pct(share)} of the samples: redrawing it took far longer than foreseen, and the ${DECLIP_FAST_MS} ms window does more harm than good this far: it stays as it is.`
+      : `Clipped on ${pct(share)} of the samples: redrawing it would take about ${secs(full.wallS)} s here, over the ${secs(fit.limitS)} s it may, and a coarser window does more harm than good this far: it stays as it is.` });
     else {
       chain.push(`volume=${r2(up)}dB`, `adeclip=w=${w}:o=75:a=${order}:t=${DECLIP_T}:n=1000`, `volume=${r2(back - up)}dB`);
       gain *= 10 ** (back / 20);
+      const coarse = !opts.declipFast && w !== DECLIP_WINDOW_MS ? `; the ${DECLIP_WINDOW_MS} ms window would take about ${secs(full.wallS)} s here, over the ${secs(fit.limitS)} s it may` : "";
       steps.push({
-        id: "declip", why: `Clipped on ${pct(share)} of the samples at ${db1(c.ceilingDb)} dBFS: adeclip redraws the peaks from ${db1(level)} dBFS up (a ${w} ms window, its model ${order} % of it), the old ceiling then at ${db1(c.ceilingDb + back)} dBFS.`,
+        id: "declip", why: `Clipped on ${pct(share)} of the samples at ${db1(c.ceilingDb)} dBFS: adeclip redraws the peaks from ${db1(level)} dBFS up (a ${w} ms window, its model ${order} % of it), the old ceiling then at ${db1(c.ceilingDb + back)} dBFS${coarse}.`,
         share, ceilingDb: c.ceilingDb, fromDb: r2(level), windowMs: w, arOrder: order, threshold: DECLIP_T, gainDb: r2(back),
+        predicted: { cpuS: r1(declipCpuS(share, seconds, w)), pieces: fit.pieces, limitS: fit.limitS },
       });
       if (share >= CLIP_STRONG_SHARE) left.push({ id: "clipped", why: `Clipped hard (${pct(share)} of the samples): the peaks are redrawn, but the distortion of long flat runs is not undone; some roughness stays.` });
     }
@@ -438,8 +490,12 @@ export function repairPlan(m, opts = {}) {
   if (has("roomy")) left.push({ id: "roomy", why: `The room's reverberation (about ${m.room?.rt60?.toFixed(1) ?? "half a"} s) stays: none of ffmpeg's filters removes it; a closer microphone or a softer room next time.` });
 
   const after = (opts.after || "").trim();
-  if (neural) return { steps, left, method, ...neuralGraphs(head, chain, after), inputs, neural };
-  return { steps, left, method, ...graphOf(head, chain, den, after), inputs };
+  // (the stage's passes are built from these, see repair: the channels; adeclip and the gains round
+  // it, the first three filters of the chain where it runs; the rest before the noise; the noise)
+  const k = steps.some((s) => s.id === "declip") ? 3 : 0;
+  const parts = { head, declip: chain.slice(0, k), rest: chain.slice(k), den, after };
+  if (neural) return { steps, left, method, ...neuralGraphs(head, chain, after), inputs, neural, parts };
+  return { steps, left, method, ...graphOf(head, chain, den, after), inputs, parts };
 }
 
 const clockOf = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -551,44 +607,67 @@ function graphOf(head, chain, den, after) {
 export async function repair(file, outWav, m, opts = {}) {
   if (!fs.existsSync(file)) refuse(`There is no ${file}.`);
   // every plan from here: the probe's finding, the neural denoiser's failure, the fast declip
-  // window once a pass ran out of time (declipPass)
+  // window once the redrawing ran past its net (beforeNoise)
   let probe = null, failure = null;
   const state = { opts, slow: null };
   const planOf = (extra = {}) => {
     const o = { ...opts, ...(probe && { underVoice: probe }), ...(state.slow && { declipFast: true }), ...extra };
     return slowed(failure ? fallbackPlan(m, o, failure) : withTone(m, o), state.slow);
   };
-  const seconds = m.analysed?.seconds ?? m.duration ?? 0;
-  Object.assign(state, { replan: planOf, seconds });
+  state.replan = planOf;
   let plan = planOf();
-  // no noise in the pauses: the denoiser's probe asks whether it lies under the voice
-  if (!plan.neural && probeWanted(m, opts)) {
-    checkFilters(plan.filters);
-    probe = await probeNoise(file, m, opts, opts.tmp ?? path.dirname(path.resolve(outWav)), state);
-    if (probe.fires || state.slow) plan = planOf();
-  }
-  // the neural denoiser between two passes; where it fails, ffmpeg's method in one, as without it
-  if (plan.neural) {
-    checkFilters(plan.filters);
-    try {
-      const r = await neuralRepair(file, outWav, plan, opts, state);
-      return probe ? { ...r, probe } : r;
-    } catch (e) {
-      if (!(e instanceof NeuralFailure)) throw e;
-      failure = e;
-      plan = planOf();
-    }
-  }
+  const wantProbe = !plan.neural && probeWanted(m, opts);
   // (the filters of opts.after are the tone stage's to check)
   checkFilters(plan.filters);
   fs.mkdirSync(path.dirname(path.resolve(outWav)), { recursive: true });
-  const pass = (plan, cpuLimitS) => {
-    const pause = plan.inputs.find((i) => i.input === 1);
-    return ffmpegPass(["-i", ffPath(file), ...(pause ? ["-ss", String(pause.from), "-t", String(pause.seconds), "-i", ffPath(file)] : []),
-      "-filter_complex", plan.graph, "-map", "[out]", ...WAV_OUT, ffPath(outWav)], opts.progress, cpuLimitS);
-  };
   let code;
-  ({ code, plan } = await declipPass(state, plan, seconds, pass));
+  if (!wantProbe && !plan.neural && !plan.parts.declip.length && !plan.parts.den) {
+    // no redrawing, no noise step, no probe: one pass. (With a noise step the two passes below:
+    // ffmpeg's method then reads the same intermediate as where it stands in for the denoiser,
+    // and its pause comes from it, not mended again on its own.)
+    const pause = plan.inputs.find((i) => i.input === 1);
+    code = await ffmpegPass(["-i", ffPath(file), ...(pause ? ["-ss", String(pause.from), "-t", String(pause.seconds), "-i", ffPath(file)] : []),
+      "-filter_complex", plan.graph, "-map", "[out]", ...WAV_OUT, ffPath(outWav)], opts.progress);
+  } else {
+    // the work before the noise step once (beforeNoise), then the probe, the denoiser, ffmpeg's
+    // method, each on that one intermediate
+    const workDir = opts.tmp ?? path.dirname(path.resolve(outWav));
+    fs.mkdirSync(workDir, { recursive: true });
+    const tmp = fs.mkdtempSync(path.join(workDir, ".voice-sound-repair-"));
+    try {
+      const pre = path.join(tmp, "pre.wav");
+      ({ code, plan } = await beforeNoise(file, pre, plan, state, tmp));
+      if (code === "missing") refuse("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
+      if (code !== 0) refuse(`ffmpeg could not repair ${path.basename(file)} (${code}): check that it plays (ffprobe ${path.basename(file)}).`);
+      const bad = await invalidSample(pre);
+      if (bad) refuse(`ffmpeg's filters wrote ${bad.value} at ${clockOf(bad.at)} of the repaired sound (the repair before the noise step): run it again with --denoise off, and tell the skill's authors.`);
+      // no noise in the pauses: the denoiser's probe asks whether it lies under the voice
+      if (wantProbe) {
+        probe = await probeNoise(file, m, opts, tmp, pre);
+        if (probe.fires) plan = planOf();
+      }
+      // the neural denoiser; where it fails, ffmpeg's method, as without it
+      if (plan.neural) {
+        checkFilters(plan.filters);
+        try {
+          const r = await neuralRepair(file, outWav, plan, opts, pre);
+          return probe ? { ...r, probe } : r;
+        } catch (e) {
+          if (!(e instanceof NeuralFailure)) throw e;
+          failure = e;
+          plan = planOf();
+          checkFilters(plan.filters);
+        }
+      }
+      // ffmpeg's noise step (or none) and the tone stage's filters, on the intermediate
+      const g = graphOf([FMT], [], plan.parts.den, plan.parts.after).graph;
+      const pause = plan.inputs.find((i) => i.input === 1);
+      code = await ffmpegPass(["-i", ffPath(pre), ...(pause ? ["-ss", String(pause.from), "-t", String(pause.seconds), "-i", ffPath(pre)] : []),
+        "-filter_complex", g, "-map", "[out]", ...WAV_OUT, ffPath(outWav)], opts.progress);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
   if (code === "missing") refuse("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
   if (code !== 0) refuse(`ffmpeg could not repair ${path.basename(file)} (${code}): check that it plays (ffprobe ${path.basename(file)}).`);
   // a filter that writes garbage (arnndn's last block in 9.0.2) must not reach a person's file
@@ -958,39 +1037,30 @@ function probeWanted(m, opts) {
 // → { fires, underDb, removedDb, sampleS, speechS, windows, seconds, voice } (the estimate: how far
 // the noise lies under the voice, dB; voice: what it did to the speech frames), with declined and
 // why where it declined, or { fires: false, failed } where it could not be run
-export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), state = null) {
+export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), pre = null) {
   const t0 = Date.now();
   const dn = neuralDenoiser();
   const P = { ...PROBE, ...opts.probe };
-  let slowNote = null;     // (declipSlow: its stretches ran out of time and went again with 10 ms)
-  const done = (x) => ({ fires: false, ...x, ...(slowNote && { declipSlow: slowNote }), threshold: probeThreshold(), seconds: r1((Date.now() - t0) / 1000) });
+  const done = (x) => ({ fires: false, ...x, threshold: probeThreshold(), seconds: r1((Date.now() - t0) / 1000) });
   if (!dn) return done({ failed: "no denoiser" });
-  // (its stretches run adeclip as the one pass does, within the same limit for their length:
-  // declipPass; a stretch that runs out of time makes the stage's later plans fast, state.slow)
-  const ps = { opts, slow: state?.slow ?? null, replan: (extra) => repairPlan(m, { denoise: "off", tune: opts.tune, ...extra }) };
   const S = m.analysed?.seconds ?? 0;
   const spans = S <= P.wholeS ? [[0, S]] : [...Array(P.windows).keys()].map((i) => [Math.max(0, ((i + 0.5) * S) / P.windows - P.windowS / 2), P.windowS]);
   fs.mkdirSync(workDir, { recursive: true });
   const tmp = fs.mkdtempSync(path.join(workDir, ".voice-sound-probe-"));
   try {
-    // the stretches through the steps before the noise, as floats
-    let parts = [];
-    const stretches = async (plan, cpuLimitS) => {
-      parts = [];
-      for (const [from, len] of spans) {
-        const raw = path.join(tmp, `w${parts.length}.f32`);
-        const c = await ffmpegPass([...(from > 0 ? ["-ss", from.toFixed(3)] : []), "-t", len.toFixed(3), "-i", ffPath(file), "-filter_complex", plan.graph, "-map", "[out]", "-f", "f32le", ffPath(raw)], null, cpuLimitS && r1(cpuLimitS / spans.length));
-        if (c !== 0) return c;
-        const b = fs.readFileSync(raw);
-        parts.push(new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)));
-        fs.rmSync(raw, { force: true });
-      }
-      return 0;
-    };
-    const { code: c } = await declipPass(ps, ps.replan(ps.slow ? { declipFast: true } : {}), spans.reduce((s, [, len]) => s + len, 0), stretches);
-    if (state && ps.slow) state.slow = ps.slow;
-    slowNote = ps.slow;
-    if (c !== 0) return done({ failed: `ffmpeg: ${c}` });
+    // the stretches of the sound mended up to the noise: the stage's intermediate (beforeNoise,
+    // made once for the probe, the denoiser and ffmpeg's method), made here only where the probe
+    // runs on its own
+    if (!pre) {
+      pre = path.join(tmp, "pre.wav");
+      const own = await beforeNoise(file, pre, repairPlan(m, { denoise: "off", tune: opts.tune }), { opts, slow: null, replan: (extra) => repairPlan(m, { denoise: "off", tune: opts.tune, ...extra }) }, tmp);
+      if (own.code !== 0) return done({ failed: `ffmpeg: ${own.code}` });
+    }
+    const info = wavInfo(pre);
+    if (!info) return done({ failed: "no intermediate" });
+    const fdPre = fs.openSync(pre, "r");
+    const parts = spans.map(([from, len]) => readRange(fdPre, info, Math.round(from * RATE), Math.min(Math.round(len * RATE), info.samples - Math.round(from * RATE))));
+    fs.closeSync(fdPre);
     const n = parts.reduce((s, p) => s + p.length, 0);
     if (n < RATE) return done({ failed: "too short" });
     const x = new Float32Array(n);
@@ -1061,14 +1131,17 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), stat
 const WAV_OUT = ["-map_metadata", "-1", "-fflags", "+bitexact", "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav"];
 
 // one ffmpeg; → 0, "missing", "late" (it used more than cpuLimitS seconds of CPU and was
-// stopped), or its last line of error
-function ffmpegPass(args, progress, cpuLimitS = null) {
+// stopped), "stopped" (signal aborted), or its last line of error
+export function ffmpegPass(args, progress, cpuLimitS = null, signal = null) {
   return new Promise((resolve) => {
+    if (signal?.aborted) { resolve("stopped"); return; }
     const p = spawn("ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-nostats", ...(progress ? ["-progress", "pipe:2"] : []), "-y", ...args], { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "", partial = "", late = false;
+    let err = "", partial = "", late = false, stopped = false;
     const t0 = Date.now();
+    const onAbort = () => { stopped = true; p.kill("SIGKILL"); };
+    signal?.addEventListener("abort", onAbort, { once: true });
     // (its CPU time; its wall time where the system does not tell it)
-    const watch = cpuLimitS ? setInterval(() => { if ((cpuSecondsOf(p.pid) ?? (Date.now() - t0) / 1000) > cpuLimitS) { late = true; p.kill("SIGKILL"); } }, 1000) : null;
+    const watch = cpuLimitS ? setInterval(() => { if ((cpuSecondsOf(p.pid) ?? (Date.now() - t0) / 1000) > cpuLimitS) { late = true; p.kill("SIGKILL"); } }, 250) : null;
     p.stderr.setEncoding("utf8");
     p.stderr.on("data", (d) => {
       const lines = (partial + d).split("\n");
@@ -1079,35 +1152,80 @@ function ffmpegPass(args, progress, cpuLimitS = null) {
         else if (!/^[a-z0-9_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
       }
     });
-    p.on("error", (e) => { clearInterval(watch); resolve(e.code === "ENOENT" ? "missing" : String(e.message)); });
-    p.on("close", (c) => { clearInterval(watch); resolve(late ? "late" : c === 0 ? 0 : err.trim().split("\n").pop() || `exit ${c}`); });
+    const end = () => { clearInterval(watch); signal?.removeEventListener("abort", onAbort); };
+    p.on("error", (e) => { end(); resolve(e.code === "ENOENT" ? "missing" : String(e.message)); });
+    p.on("close", (c) => { end(); resolve(late ? "late" : stopped ? "stopped" : c === 0 ? 0 : err.trim().split("\n").pop() || `exit ${c}`); });
   });
 }
 
-// A pass that runs the steps before the noise (the one pass, the neural path's first, the probe's
-// stretches): adeclip's full window within DECLIP_LIMIT's CPU seconds for `seconds` of sound, else
-// the pass again with the fast one (state.replan({ declipFast: true })), the declip step saying so.
-// pass(plan, cpuLimitS) → ffmpegPass's code. state: { opts, replan, slow }; once one pass ran out
-// of time, state.slow holds it and later plans start with the fast window (planOf).
-// → { code, plan }
-async function declipPass(state, plan, seconds, pass) {
-  const declipping = plan.steps.some((s) => s.id === "declip" && s.windowMs !== DECLIP_FAST_MS);
-  // (opts.declipLimit: another limit, for the tests and the lab)
-  const lim = { ...DECLIP_LIMIT, ...state.opts.declipLimit };
-  const cpuLimitS = declipping ? r1(lim.baseS + lim.perSecond * seconds) : null;
-  let code = await pass(plan, cpuLimitS);
-  if (code === "late") {
-    state.slow = { windowMs: DECLIP_WINDOW_MS, cpuLimitS };
-    plan = slowed(state.replan({ declipFast: true }), state.slow);
-    code = await pass(plan, null);
+const FMT = `aformat=sample_fmts=flt:sample_rates=${RATE}:channel_layouts=mono`;
+
+// The work before the noise step, once, into one float WAV (`pre`) that the probe, the neural
+// denoiser and ffmpeg's noise method all read: the channels, the redrawing of clipped peaks, the
+// high-pass, the notches, adeclick. Where adeclip runs: the channels to a first intermediate, the
+// redrawing in pieces at once (declipPieces; to the sample the one-piece result), the rest after.
+// A piece that runs past the net (DECLIP_NET over its prediction) stops them all, and the
+// redrawing runs again with the fast window, unlimited; state.slow then holds it, and the plans
+// after it (state.replan) keep that window and say so. → { code, plan }
+async function beforeNoise(file, pre, plan, state, tmp) {
+  const P = plan.parts, step = plan.steps.find((s) => s.id === "declip");
+  const pass = (input, chain, out, extra = {}) => ffmpegPass(["-i", ffPath(input), "-filter_complex", `[0:a]${[...chain, FMT].join(",")}[out]`, "-map", "[out]", ...WAV_OUT, ffPath(out)], null, extra.cpuLimitS ?? null, extra.signal);
+  if (!P.declip.length) return { code: await pass(file, [...P.head, ...P.rest], pre), plan };
+  const base = path.join(tmp, "channels.wav");
+  let code = await pass(file, P.head, base);
+  if (code !== 0) return { code, plan };
+  const info = wavInfo(base);
+  if (!info) return { code: "no sound", plan };
+  const N = info.samples;
+  // the pieces: cut on the window's hop, each with a window more on either side
+  const win = Math.max(100, Math.floor((step.windowMs * RATE) / 1000)), hop = Math.max(1, Math.floor(win * 0.25));
+  const K = step.predicted.pieces;
+  const cuts = [...Array(K + 1).keys()].map((k) => (k === K ? N : Math.round((k * N) / K / hop) * hop));
+  // (opts.declipNet: another net, for the tests and the lab)
+  const nt = { ...DECLIP_NET, ...state.opts.declipNet };
+  // (a piece's predicted CPU: the whole's spread over the pieces, cores shared)
+  const net = state.unlimited ? null : r1(nt.times * (K > 1 ? (step.predicted.cpuS * DECLIP_TIME.spread) / K : step.predicted.cpuS) + nt.s);
+  const stop = new AbortController();
+  const piece = (k) => {
+    const a = Math.max(0, Math.floor((cuts[k] - win) / hop) * hop), b = Math.min(N, cuts[k + 1] + win);
+    const raw = path.join(tmp, `declip-${k}.f32`);
+    return ffmpegPass(["-f", "wav", "-i", ffPath(base), "-filter_complex", `[0:a]atrim=start_sample=${a}:end_sample=${b},asetpts=PTS-STARTPTS,${P.declip.join(",")}[out]`, "-map", "[out]", "-f", "f32le", ffPath(raw)], null, net, stop.signal)
+      .then((c) => { if (c !== 0) stop.abort(); return { c, a, raw }; });
+  };
+  // (at most atOnce(K) at a time, the next starting as one ends)
+  const done = new Array(K);
+  let next = 0;
+  await Promise.all([...Array(atOnce(K)).keys()].map(async () => { while (next < K) { const k = next++; done[k] = await piece(k); } }));
+  const bad = done.find((d) => d.c !== 0 && d.c !== "stopped");
+  if (bad?.c === "late" && !state.slow) {
+    for (const d of done) fs.rmSync(d.raw, { force: true });
+    state.slow = { windowMs: step.windowMs, cpuLimitS: net };
+    state.unlimited = true;
+    return beforeNoise(file, pre, state.replan(), state, tmp);
   }
+  if (bad) return { code: bad.c, plan };
+  // joined: each piece's own part, then the rest of the steps before the noise
+  const joined = P.rest.length ? path.join(tmp, "declipped.wav") : pre;
+  const fd = fs.openSync(joined, "w");
+  try {
+    fs.writeSync(fd, floatHeader(N));
+    for (let k = 0; k < K; k++) {
+      const { a, raw } = done[k], y = fs.readFileSync(raw);
+      fs.writeSync(fd, y, (cuts[k] - a) * 4, (cuts[k + 1] - cuts[k]) * 4);
+      fs.rmSync(raw, { force: true });
+    }
+  } finally { fs.closeSync(fd); }
+  fs.rmSync(base, { force: true });
+  if (joined === pre) return { code: 0, plan };
+  code = await pass(joined, P.rest, pre);
+  fs.rmSync(joined, { force: true });
   return { code, plan };
 }
 
-// the plan's declip step saying that the full window ran out of time
+// the plan's declip step saying that the full window ran past the net
 function slowed(plan, slow) {
   const st = slow && plan.steps.find((s) => s.id === "declip");
-  if (st && !st.slow) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; the ${slow.windowMs} ms window took over ${slow.cpuLimitS} s of CPU, so it ran again with the coarser ${DECLIP_FAST_MS} ms one.`, slow });
+  if (st && !st.slow) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; the ${slow.windowMs} ms window ran past ${slow.cpuLimitS} s of CPU, far over what was foreseen, so it ran again with the coarser ${DECLIP_FAST_MS} ms one.`, slow });
   return plan;
 }
 
@@ -1216,7 +1334,7 @@ function lagOf(x, y) {
   return { ...best, c0 };
 }
 
-async function neuralRepair(file, outWav, plan, opts, state) {
+async function neuralRepair(file, outWav, plan, opts, pre) {
   const nr = plan.neural, t = nr.tune;
   fs.mkdirSync(path.dirname(path.resolve(outWav)), { recursive: true });
   // (beside the output, in the caller's working folder where it names one: clean removes that
@@ -1228,14 +1346,7 @@ async function neuralRepair(file, outWav, plan, opts, state) {
   const open = (f, flags) => { const fd = fs.openSync(f, flags); fds.push(fd); return fd; };
   const close = (fd) => { const i = fds.indexOf(fd); if (i >= 0) fds.splice(i, 1); fs.closeSync(fd); };
   try {
-    // 1. everything before the noise, as one pass would do it
-    const pre = path.join(tmp, "pre.wav");
-    // (adeclip within its limit, as in the one pass: declipPass)
-    const first = (p, cpuLimitS) => ffmpegPass(["-i", ffPath(file), "-filter_complex", p.graphs[0], "-map", "[out]", ...WAV_OUT, ffPath(pre)], null, cpuLimitS);
-    let c1;
-    ({ code: c1, plan } = await declipPass(state, plan, state.seconds, first));
-    if (c1 === "missing") refuse("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
-    if (c1 !== 0) refuse(`ffmpeg could not repair ${path.basename(file)} (${c1}): check that it plays (ffprobe ${path.basename(file)}).`);
+    // 1. everything before the noise: the stage's intermediate (beforeNoise, made once)
     const info = wavInfo(pre);
     if (!info) refuse(`ffmpeg wrote no sound for ${path.basename(file)}: check that it plays (ffprobe ${path.basename(file)}).`);
     const bad = await invalidSample(pre);
