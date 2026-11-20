@@ -36,7 +36,7 @@ People use the skills through rragent, whose bots run on Claude Opus 5.5 unless 
 
 - Every skill with a flow in the chat has at least one case in the lab ([testing.md](testing.md)) that Opus 5.5 passes with the SKILL.md as its definition and a model playing the person: from the first message to the finished file.
 - A flow with a question has a case for the person who says no or wants a change, not only for the one who agrees.
-- A run in the lab is Claude Code, not rragent. Before a skill counts as done for bots, it runs once in a bot's chat in rragent with the branch's skill on the machine: the owner's run of section 10, which the agent asks for and reads afterwards with agent-timeline. Without one, the pull request says so.
+- Before a skill counts as done, the agent makes one whole run as a bot would: with nothing but the SKILL.md, on Opus 5.5, real material, from the first message to the rendered file, its tools and the render on a Sprite of a bot's size where one is free. It writes down every sentence a tool printed that it could not act on. What such a run cannot show (the buttons, the preview beside the chat, Storrito taking a post) is named on the acceptance page (section 10).
 - What the agent did in a run is read, not only whether it passed. A step it repeated, a file it opened that the SKILL.md did not send it to, a thing it built itself because a tool lacked it: each is a defect of the tool or of the text, and is fixed there.
 
 ## 4. It runs on a bot's machine
@@ -61,7 +61,7 @@ Four waits are read from the times of a run's messages and tool calls (the lab w
 | a change | their wish | the changed result | 2 min |
 | the file | their yes | the finished video | 1.5 times the video's length, plus 1 min |
 
-The owner agreed to these four waits as the measure on 2026-11-20. The starting values are a proposal, not a measurement on a bot's machine. What they rest on: fourteen runs in the lab (2026-11-16 to 18, a laptop, Opus 5.5) took 2 to 12 minutes for a whole case on clips of under a minute and 20 minutes for a launch film's storyboard, and one case of two 17 s Stories passed once in 8 minutes with 49 tool calls and once in 60 minutes with 114. A call of the model takes 2 to 7 s at 70,000 tokens of conversation (rragent's README). best-takes tells the person 1.5 times the cut's length for a render. The 2 minutes for a change and the minute for every 10 minutes of material are guesses no run has tested. Only the owner changes these values, from their verdict on a run in rragent (section 10); a skill's own measurements go into its README and its pull request.
+The owner agreed to these four waits as the measure on 2026-11-20. The starting values are a proposal, not a measurement on a bot's machine. What they rest on: fourteen runs in the lab (2026-11-16 to 18, a laptop, Opus 5.5) took 2 to 12 minutes for a whole case on clips of under a minute and 20 minutes for a launch film's storyboard, and one case of two 17 s Stories passed once in 8 minutes with 49 tool calls and once in 60 minutes with 114. A call of the model takes 2 to 7 s at 70,000 tokens of conversation (rragent's README). best-takes tells the person 1.5 times the cut's length for a render. The 2 minutes for a change and the minute for every 10 minutes of material are guesses no run has tested. Only the owner changes these values, from their verdict on an acceptance page that shows a whole run's waits (section 10); a skill's own measurements go into its README and its pull request.
 
 What holds whatever the numbers are:
 
@@ -74,8 +74,7 @@ What holds whatever the numbers are:
 A skill's README has "How long it takes":
 
 - each tool's time and peak memory on a Sprite of a bot's size, for material of 15 s, 60 s, 5 min and 15 min as far as the skill takes them, the time also as a share of the material's length; where no such Sprite could be had, the machine it was measured on instead;
-- the four waits, the tool calls and the cents for models of a lab case on typical material, with the machine named;
-- the waits of the owner's run in rragent, once there was one.
+- the four waits, the tool calls and the cents for models of the whole run as a bot (section 3), with the machine named.
 
 Each is measured once, and again only after a change to what it measures.
 
@@ -114,7 +113,7 @@ Whoever asked for the skill (its owner) works on it too. Their time is the scarc
 | at the first rough result | which of a few variants goes on (a look, a motion, a pace of cuts, a voice, a music bed, a hook, the wording of the chat) | taste again; a comparison takes them seconds and no measure agrees with them reliably |
 | while the tests are made | the right answer for a handful of files where the answer is a judgement: the better take, the moment that stands alone, the crop that holds the subject | their answers become the tests' truth |
 | when a measure is in doubt | whether what the tool flags is what they see or hear (a cut that jumps, lips out of step, a subject lost, a voice that sounds processed) | they notice in one viewing what would take a rig to measure |
-| when the skill works | one run as a user would have it, in a bot's chat in rragent: are the questions the right ones and few enough, were the waits bearable, would they post the result | the only test of the flow as it feels; their verdict on the waits sets section 5's values |
+| when the skill works | the result of the agent's whole run as a bot (section 3): the finished videos beside what came in, the chat as it went, its questions and its waits. Are the questions the right ones and few enough, are the waits bearable, would they post the result | their verdict is the acceptance, and on the waits it sets section 5's values |
 | at any time | every decision that cannot be taken back (a one-way door): what is published or sent outside, what is deleted, a name, a command or a file format that others will build on, a part of another skill removed, a change to what another skill gives its users (its default look, its questions), material of theirs or their recordings leaving the machine. Theirs as well: what to build and what to leave out, money (a paid service, a dearer model, a new Sprite), an account or a sign-in | authority, not perception |
 
 Not asked: what a tool can measure, what this page or AGENTS.md answers, how to implement something, a small flaw, and anything that can be taken back (a two-way door). The agent decides those and says what it chose. Where it is unclear whether a step can be taken back, it counts as one that cannot.
@@ -123,7 +122,8 @@ A merge means the change can be deployed, so a pull request is judged as if it a
 
 How they are asked:
 
-- One private page with the variants side by side on the same material, each with a letter. The answer is a letter or a sentence, and takes them two minutes. Material from elsewhere may be shown on such a page; it says that it is internal.
+- Always on an acceptance page, for an intermediate result where a person's judgement matters as much as for the finished skill: one private page that shows what is to be judged where they can watch and hear it (variants side by side on the same material, each with a letter; a result beside what came in), lets them tick, give a verdict with conditions and write a note on each item, and keeps what they entered. The agent reads that back as their answer. Material from elsewhere may be shown on it; it says that it is internal.
+- A question about variants takes them two minutes. The acceptance page of a finished skill has four parts: what to watch and hear; the decisions the agent took without them, as pairs, to overturn; how the work went, what went badly first, with the time and the tokens it took; their overall verdict. A condition they set there is work to do before the merge.
 - Numbers are shown per kind of material, never as one average over all of it.
 - Comparisons, not grades, and without saying which variant is the new one. The agent's own pick and its reason stand folded below the variants, for after the owner chose.
 - The agent goes on with its own pick meanwhile wherever that can be undone. It waits only where the answer decides what gets built, or where the step cannot be taken back.
@@ -137,12 +137,12 @@ How they are asked:
 | --- | --- |
 | 1 | the README's list of material taken and tried, with the files from the lab's corpus |
 | 2 | which skills' tools it calls; which of its own tools others can call (their rows in AGENTS.md's table); what it changed in another skill, in which pull request |
-| 3 | the lab's cases and their results (passed, turns, tool calls); the owner's run in rragent, or that there was none |
+| 3 | the lab's cases and their results (passed, turns, tool calls); the whole run as a bot, and what it could not show |
 | 4 | time and peak memory of each tool on the longest material, and on which machine |
 | 5 | the README's "How long it takes"; for a wait over its value, why |
 | 6 | every model, what for, the cents a run; for a local one its size, memory and licence |
 | 8 | what goes out, through which skill, and where the person says yes |
 | 9 | what the author saw in the result; what the reviewer found |
-| 10 | what the owner was asked and what they answered; what was decided without them that they should know |
+| 10 | the acceptance pages and the owner's verdicts, their conditions met; what was decided without them that they should know |
 
 What went wrong on the way and would go wrong again for the next skill goes into [lessons.md](lessons.md).
