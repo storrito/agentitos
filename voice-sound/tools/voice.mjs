@@ -87,4 +87,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === TOOL) {
   const [cmd, ...args] = process.argv.slice(2);
   if (!cmd || !COMMANDS[cmd]) fail(cmd ? `Unknown command ${cmd}. ${USAGE}` : USAGE);
   await COMMANDS[cmd](args);
+  // The work is done: end the process once what was printed has left it, instead of waiting for
+  // Node to wind down by itself. Node 23.6.0 was seen never to exit after a finished run (about
+  // one run in three to six of a repair of clipped files, 2026-11-20): its main thread, the loop
+  // empty, waits in DrainTasks for a Maglev compile job that waits for a garbage collection. That
+  // is V8's fault, not this tool's, and a chat that runs the tool would wait on it for ever.
+  process.stdout.write("", () => process.exit(process.exitCode ?? 0));
 }
