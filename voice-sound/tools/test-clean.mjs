@@ -22,6 +22,7 @@ process.env.VOICE_SOUND_DENOISER = "/nonexistent/voice-sound-no-denoiser";
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
 const skip = !ffmpeg && "no ffmpeg";
 const near = (x, y, by, what = "") => assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`);
+const f1 = (x) => (Math.round(x * 10) / 10 || 0).toFixed(1).replace(/^-/, "−");
 const run = (args) => { const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); };
 
 const D = 14.4;
@@ -314,16 +315,22 @@ test("--before: the source untouched but for a gain, as loud as the output, its 
   assert.ok(!placeIn(p));
   // the gain is the difference of the loudness as played (the source has one channel)
   near(r.before.gainDb, loudness(out).lufs - (loudness(base).lufs + 3.01), 0.6, "gain");
-  assert.ok(lines(r).some((l) => /^To compare by ear: \S*cmp\.before\.m4a, the recording as it was but for [+−]\d+\.\d dB, as loud as the output \(−\d+\.\d LUFS\): both play equally loud/.test(l)));
+  assert.ok(lines(r).some((l) => /^To compare by ear: \S*cmp\.before\.m4a, the recording as it was but for [+−]\d+\.\d dB, as loud as the output \(−\d+\.\d LUFS\); its true peak −\d+\.\d dBTP: both play equally loud/.test(l)), lines(r).join("\n"));
   assert.deepEqual(JSON.parse(fs.readFileSync(`${out}.json`, "utf8")).before, r.before);
   // a loud source whose gain would take its peaks over the ceiling: limited, and said so
   const hot = file("hot2.wav");
   run(["-i", base, "-af", "volume=6dB", "-c:a", "pcm_f32le", hot]);
   const r2 = await clean(hot, file("hot2.wav.m4a"), { before: file("hot2.before.wav"), level: "plain", loudness: -10 }, stages);
   assert.equal(r2.before.limited, true);
-  assert.ok(loudness(file("hot2.before.wav")).truePeak <= -1);
+  assert.ok(loudness(file("hot2.before.wav")).truePeak <= -1, `${loudness(file("hot2.before.wav")).truePeak}`);
+  assert.equal(r2.before.truePeak, loudness(file("hot2.before.wav")).truePeak, "the line's true peak is the file's");
   assert.ok(r2.before.peaksHeldDb > 0, JSON.stringify(r2.before));
-  assert.ok(lines(r2).some((l) => /^To compare by ear: .*\. Its peaks were held by a limiter to be that loud \(\d+\.\d dB off the loudest, under −1\.5 dBTP\), so it is not quite untouched: both play equally loud/.test(l)), lines(r2).join("\n"));
+  // (−10 LUFS plain: the output's own limiter took 23 LU; one limiter on the untouched sound may
+  // not make it as loud, and then the line says by how much, as the file has it)
+  const l2 = lines(r2).find((l) => l.startsWith("To compare by ear:")), off2 = loudness(file("hot2.before.wav")).lufs - r2.before.aimLufs;
+  assert.equal(r2.before.lufs, loudness(file("hot2.before.wav")).lufs, "the line's loudness is the file's");
+  assert.match(l2, /\. Its peaks were held by a limiter to be that loud \(\d+\.\d dB off the loudest, its true peak −\d\.\d dBTP\), so it is not quite untouched/);
+  assert.match(l2, Math.abs(off2) <= 0.3 ? /: both play equally loud/ : new RegExp(`${f1(Math.abs(off2))} LU ${off2 < 0 ? "under" : "over"} the output \\(.*: it could not be made as loud with its peaks under the ceiling`), l2);
   // (not limited: the line says nothing of it)
   assert.ok(!lines(r).some((l) => /held by a limiter/.test(l)));
   // with --level off: matched to the output as measured
@@ -434,7 +441,7 @@ test("a voice recorded very low (−61 LUFS as played, 47 dB of gain) is deliver
   run(["-i", base, "-af", "volume=-42dB", "-c:a", "pcm_f32le", low]);
   const r = await clean(low, file("low.m4a"), { before: file("low.before.m4a") }, stages);
   near(loudness(file("low.m4a")).lufs, -14, 0.5, "delivered at the target");
-  near(loudness(file("low.before.m4a")).lufs, loudness(file("low.m4a")).lufs, 0.4, "the comparison as loud");
+  near(loudness(file("low.before.m4a")).lufs, loudness(file("low.m4a")).lufs, 0.3, "the comparison as loud");
   const q = r.left.find((x) => x.id === "quiet");
   assert.ok(q && q.stage === "level", JSON.stringify(r.left));
   assert.match(lines(r).find((l) => l.startsWith("Not mended:")), /quiet: It was recorded very low, −6\d\.\d LUFS as played, 4\d dB under the −14\.0 it was brought to all the same: its noise and its room came up with the voice by as much/);
@@ -443,7 +450,7 @@ test("a voice recorded very low (−61 LUFS as played, 47 dB of gain) is deliver
   run(["-i", base, "-af", "volume=-56dB", "-c:a", "pcm_f32le", lower]);
   const r2 = await clean(lower, file("lower.m4a"), { before: file("lower.before.m4a") }, stages);
   near(loudness(file("lower.m4a")).lufs, -14, 0.5, "under the gate, delivered");
-  near(loudness(file("lower.before.m4a")).lufs, loudness(file("lower.m4a")).lufs, 0.4, "its comparison");
+  near(loudness(file("lower.before.m4a")).lufs, loudness(file("lower.m4a")).lufs, 0.3, "its comparison");
   assert.ok(r2.left.some((x) => x.id === "quiet"));
 });
 
@@ -457,6 +464,72 @@ test("a quiet voice with one knock: clean hands measure's bursts to the level st
   assert.equal(r.measured.before.findings.some((x) => x.id === "bursts"), true);
   assert.match(lines(r).join("\n"), /\n {2}bursts \(level\): A short loud sound/);
   assert.match(lines(r).join("\n"), /Not mended: .*bursts: A knock \(or a clap, a bump\) is in the recording at 1\.9\d s and stays/);
+});
+
+test("--before with a knock that stays: matched to the output's voice, its true peak under what a check accepts, and the line's numbers are the written file's", { skip }, async () => {
+  const knock = file("knock-b.wav");
+  run(["-i", base, "-f", "lavfi", "-i", "anoisesrc=d=0.03:amplitude=0.9:color=white:r=48000:seed=3", "-filter_complex", "[0:a]volume=-35dB[v];[1:a]adelay=2000[b];[v][b]amix=inputs=2:normalize=0:duration=first", "-c:a", "pcm_f32le", knock]);
+  const r = await clean(knock, file("knock-b.m4a"), { before: file("knock-b.before.m4a") }, stages);
+  const B = r.before, kn = r.steps.find((s) => s.id === "bursts");
+  assert.equal(B.matched, "voice");
+  const cut = `aselect='not(${kn.at.map((x) => `between(t,${x.from.toFixed(3)},${x.to.toFixed(3)})`).join("+")})',asetpts=N/SR/TB`;
+  const ebur = (f, af) => { const q = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", f, "-af", `${af ? `${af},` : ""}ebur128=peak=true`, "-f", "null", "-"], { encoding: "utf8" }).stderr; const s = q.slice(q.lastIndexOf("Summary:")); return { lufs: Number(s.match(/I:\s+(-?[\d.]+)/)[1]), truePeak: Number(s.match(/Peak:\s+(-?[\d.]+)/)[1]) }; };
+  const voiceOut = ebur(file("knock-b.m4a"), cut).lufs, before = ebur(file("knock-b.before.m4a"), cut), beforeWhole = ebur(file("knock-b.before.m4a"));
+  // (the made-up voice's peaks lie 20 dB over its loudness and the knock is kept as it came: one
+  // limiter alone may not make it as loud; then the line says by how much, as the file has it)
+  assert.equal(B.lufs, before.lufs, "the line's loudness is the file's");
+  assert.equal(B.truePeak, beforeWhole.truePeak, "the line's true peak is the file's");
+  assert.equal(B.aimLufs, kn.voiceLufs, "aimed at the output's voice");
+  near(B.aimLufs, voiceOut, 0.11, "the output's voice, as measured here");
+  assert.ok(beforeWhole.truePeak <= -1, `the comparison's true peak ${beforeWhole.truePeak}`);
+  const l = lines(r).find((x) => x.startsWith("To compare by ear:"));
+  const off = before.lufs - B.aimLufs;
+  assert.match(l, Math.abs(off) <= 0.3 ? new RegExp(`as loud as the output's voice \\(${f1(before.lufs)} LUFS, the knocks' stretches left out of both`)
+    : new RegExp(`${f1(Math.abs(off))} LU ${off < 0 ? "under" : "over"} the output's voice \\(${f1(before.lufs)} against ${f1(B.aimLufs)} LUFS, the knocks' stretches left out\\)`), l);
+  assert.match(l, new RegExp(`its true peak ${f1(beforeWhole.truePeak)} dBTP`));
+  // (the voice as loud as it can be under the ceiling: within 1.5 LU even so)
+  near(before.lufs, voiceOut, 1.5, "the comparison's voice against the output's");
+});
+
+test("a video whose first audio stream holds no voice: the refusal names --audio and the stream to take", { skip }, () => {
+  run(["-f", "lavfi", "-i", "testsrc=s=160x120:r=25:d=14", "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.02:r=48000:d=14:seed=4", "-i", base,
+    "-map", "0:v", "-map", "1:a", "-map", "2:a", "-shortest", "-c:v", "mpeg4", "-c:a", "aac", file("room-first.mp4")]);
+  const r = cli("clean", "room-first.mp4", "x.mp4");
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout.trim(), /^measure finds no voice in room-first\.mp4 \(.*\): room-first\.mp4 has 2 audio streams, and the voice may be in another: --audio 2 takes the second\.$/);
+});
+
+test("through voice.mjs: a refusal of clean exits 1", { skip }, () => {
+  const bad = spawnSync(process.execPath, [path.join(HERE, "voice.mjs"), "clean", "gone.wav", "x.m4a"], { encoding: "utf8", cwd: dir, timeout: 60000 });
+  assert.equal(bad.status, 1, bad.stdout);
+  assert.match(bad.stdout, /^There is no gone\.wav\./);
+});
+
+test("a thump on a word that the real repair takes out: measured again after repair, nothing is turned down, no 20 ms of the voice lies 3 dB under the voice without it, and nothing says a knock stays", { skip }, async () => {
+  // the made-up voice 15 dB down, two 40 Hz thumps of 100 ms (24 dB over the voice) in its phrases:
+  // measure names them bursts; the high-pass (steeper for thumps) takes them out
+  const plainIn = file("thump-plain.wav"), thumpIn = file("thump.wav");
+  run(["-i", base, "-af", "volume=-15dB", "-c:a", "pcm_f32le", plainIn]);
+  run(["-i", plainIn, "-filter_complex", "aevalsrc=exprs='0.9*sin(2*PI*40*t)*exp(-t/0.04)':s=48000:d=0.1,asplit[t1][t2];[t1]adelay=1200[b1];[t2]adelay=4900[b2];[0:a][b1][b2]amix=inputs=3:normalize=0:duration=first", "-c:a", "pcm_f32le", thumpIn]);
+  // (the real stages: repair and tone of lib/)
+  const r = await clean(thumpIn, file("thump.out.wav"), {});
+  const p = await clean(plainIn, file("thump-plain.out.wav"), {});
+  assert.equal(r.measured.before.findings.some((x) => x.id === "bursts"), true, "measure names the thumps in the recording as it came");
+  const s = r.steps.find((x) => x.id === "bursts");
+  assert.ok(s, JSON.stringify(r.steps.map((x) => x.id)));
+  assert.deepEqual(s.at, [], "nothing turned down");
+  assert.equal(s.gone.length, 2, JSON.stringify(s));
+  assert.match(s.why, /^2 of the short loud sounds measure named in the recording \(at 1\.\d\d s, 4\.\d\d s\) were gone after repair, measured again on the mended sound: nothing to turn down\.$/);
+  assert.ok(!r.left.some((x) => x.id === "bursts"), JSON.stringify(r.left));
+  // every 20 ms of the voice (within 25 dB of its loud frames) against the voice without the thumps
+  const frames = (f) => { const x = (() => { const q = spawnSync("ffmpeg", ["-v", "error", "-i", f, "-ac", "1", "-f", "f32le", "-"], { maxBuffer: 1 << 28 }); return new Float32Array(q.stdout.buffer, q.stdout.byteOffset, q.stdout.length >> 2); })(); const o = []; for (let i = 0; i + 960 <= x.length; i += 960) { let e = 0; for (let k = i; k < i + 960; k++) e += x[k] * x[k]; o.push(10 * Math.log10(e / 960 + 1e-20)); } return o; };
+  const T = frames(file("thump.out.wav")), R = frames(file("thump-plain.out.wav"));
+  const top = [...R].sort((a, b) => a - b)[Math.floor(R.length * 0.95)];
+  const voice = R.map((v, i) => i).filter((i) => R[i] >= top - 25 && i < T.length);
+  const d = voice.map((i) => T[i] - R[i]).sort((a, b) => a - b), med = d[d.length >> 1];
+  const worst = Math.min(...voice.map((i) => T[i] - R[i] - med));
+  assert.ok(worst >= -3, `a 20 ms of the voice ${worst.toFixed(1)} dB under the voice without the thumps`);
+  void p;
 });
 
 test("delivered together, the report last: the output, then the comparison, then <out>.json, so that a skill which finds the JSON finds the sound beside it", { skip }, async () => {
