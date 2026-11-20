@@ -308,6 +308,13 @@ test("a voice: found in a voice, a whisper and a voice under noise as loud as it
   const loud = file("noisy-0db.wav");
   run(["-i", base, "-i", noise, "-filter_complex", `[1:a]volume=${gain.toFixed(2)}dB[n];[0:a][n]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", loud]);
   assert.equal((await measure(loud)).voice.found, true);
+  // under noise 10 dB louder than itself its pitch is lost (9 % of the frames): a voice may be
+  // there, and it cannot be told otherwise
+  const drowned = file("noisy-10db-over.wav");
+  run(["-i", base, "-i", noise, "-filter_complex", `[1:a]volume=${(gain + 10).toFixed(2)}dB[n];[0:a][n]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", drowned]);
+  const d = await measure(drowned);
+  assert.ok(d.voice.pitchShare < 0.1 && d.voice.found === true, JSON.stringify(d.voice));
+  assert.match(d.voice.why, /noise in the pauses lies [\d.]+ dB over them: too loud to read a pitch under/);
   // noise alone: steady pink, a swell of it, brown (traffic's rumble), a hum with harmonics
   for (const [name, graph] of [["pink", "anoisesrc=color=pink:amplitude=0.05:r=48000:d=20:seed=1"],
     ["swell", "anoisesrc=color=pink:amplitude=0.05:r=48000:d=20:seed=5,volume='0.2+0.8*pow(sin(0.5*t),2)':eval=frame"],

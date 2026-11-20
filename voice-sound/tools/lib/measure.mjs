@@ -36,7 +36,7 @@ export async function measure(file) {
     analysed: { sampleRate: 48000, channels: m.channelsAnalysed, seconds: m.seconds },
     loudness: m.loudness, speech: m.speech, levels: m.levels, noise: m.noise, hum: m.hum, clipping: m.clipping, dc: m.dc,
     bandwidth: m.bandwidth, tone: m.tone, low: m.low, clicks: m.clicks, channels: m.channels, room: m.room,
-    voice: voiceOf(m.voice),
+    voice: voiceOf(m.voice, m.levels),
   };
   out.findings = findingsOf(out);
   return out;
