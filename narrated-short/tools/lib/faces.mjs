@@ -253,22 +253,25 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
     const k = SIZE[1] / ch, ws = 2 * Math.round((cw * k) / 2), mid = shown({ frame: "fill", size: [cw, ch] }), width = mid[1] - mid[0];
     const raw = [Math.max(0, Math.min(...held.flatMap((p) => p.boxes.map((b) => b[0])))), Math.min(cw, Math.max(...held.flatMap((p) => p.boxes.map((b) => b[0] + b[2]))))];
     if (raw[1] - raw[0] <= width) {
-      const fill = { ...out, frame: "fill", zoom: 1, pan: 0.5, changed: true };
-      let win = mid;
-      if (!within(mid, raw)) {
-        const room = hullOf(held), around = room[1] - room[0] <= width ? room : raw;
-        fill.x = Math.max(0, Math.min(ws - SIZE[0] - 2, Math.round(((around[0] + around[1]) / 2 - width / 2) * k)));
-        win = shown({ frame: "fill", x: fill.x, size: [cw, ch] });
+      // from the middle where that shows them whole, else moved to them
+      const room = hullOf(held), around = room[1] - room[0] <= width ? room : raw;
+      const moved = Math.max(0, Math.min(ws - SIZE[0] - 2, Math.round(((around[0] + around[1]) / 2 - width / 2) * k)));
+      for (const x of within(mid, raw) ? [null, moved] : [moved]) {
+        const fill = { ...out, frame: "fill", zoom: 1, pan: 0.5, x, changed: true };
+        const win = x == null ? mid : shown({ frame: "fill", x, size: [cw, ch] });
+        fill.said = [`${lead}: a fill${x != null ? ", moved to them" : ""} (the ${held.length > 1 ? "faces" : "face"} ${heights(held, k)}; ${asBand})`, ...notes(win).filter((n) => !/^(an ear|ears or)/.test(n))].join("; ");
+        const r = raiseFill(fill, win, held, [cw, ch], captions);
+        if (seenWhole(r, held, [cw, ch])) return r;
       }
-      fill.said = [`${lead}: a fill${fill.x != null ? ", moved to them" : ""} (the ${held.length > 1 ? "faces" : "face"} ${heights(held, k)}; ${asBand})`, ...notes(win).filter((n) => !/^(an ear|ears or)/.test(n))].join("; ");
-      const r = raiseFill(fill, win, held, [cw, ch], captions);
-      if (wholeIn(r.frame === "crop" ? r.box.src : [win[0], 0, win[1] - win[0], ch], held, [cw, ch])) return r;
     }
-    const band = bandPlan(held, [cw, ch], captions, 3), z = Math.max(band.zoom, old.zoom);
+    // the band: as large as holds them whole while the clip grows (from bandPlan's zoom down), never under the band before
+    const band = bandPlan(held, [cw, ch], captions, 3);
+    let z = old.zoom;
+    for (let v = band.zoom; v > old.zoom + 0.005; v = Math.round((v - 0.01) * 100) / 100) if (seenWhole(placePan({ frame: "whole", zoom: v }, hullOf(held), cw), held, [cw, ch])) { z = v; break; }
     const c = crop ? crop(held) : null;
     if (c && ["4:5", "1:1"].includes(c.crop) && c.scale >= (SIZE[0] * z) / cw - 1e-6) {
       const box = cropOf(c, [cw, ch]);
-      if (cropHolds(box, held, captions) && wholeIn(box.src, held, [cw, ch])) {
+      if (cropHolds(box, held, captions) && seenWhole({ frame: "crop", box }, held, [cw, ch])) {
         const ground = Math.round((1 - (box.at[2] * box.at[3]) / (SIZE[0] * SIZE[1])) * 100);
         return { ...out, frame: "crop", zoom: 1, box, changed: true, said: [`${lead}: a ${c.crop} crop placed high (the ${held.length > 1 ? "faces" : "face"} ${heights(held, box.at[3] / box.src[3])}, ${ground} % ground; a fill would cut ${held.length > 1 ? "one of them" : "it"}; ${asBand})`, ...passing([box.src[0], box.src[0] + box.src[2]])].join("; ") };
       }
@@ -345,9 +348,19 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
 
 // a band marked `!`: a close-up shown in it, or more of the frame blurred ground than picture
 const smallBand = (main, [cw, ch], zoom) => main.h >= CLOSE * ch || groundOf({ frame: "whole", zoom }, [cw, ch]) >= 50;
-// whether every box of the faces (where inside the source) lies inside a rect of the source [x, y, w, h]
-function wholeIn(rect, ps, [cw, ch]) {
-  return ps.every((p) => p.boxes.every((b) => Math.max(0, b[0]) >= rect[0] - 1 && Math.min(cw, b[0] + b[2]) <= rect[0] + rect[2] + 1 && Math.max(0, b[1]) >= rect[1] - 1 && Math.min(ch, b[1] + b[3]) <= rect[1] + rect[3] + 1));
+// whether every box of the faces (the part inside the source) is seen whole in the sharp picture
+// of a place (a fill's frame, a crop's box, a band's rows), also when the clip has grown by MOVE
+// about the frame's middle, as it does by its end or start
+function seenWhole(place, ps, [cw, ch]) {
+  const map = mapper({ ...place, size: [cw, ch] });
+  const grow = (b) => [SIZE[0] / 2 + (b[0] - SIZE[0] / 2) * MOVE, SIZE[1] / 2 + (b[1] - SIZE[1] / 2) * MOVE, b[2] * MOVE, b[3] * MOVE];
+  const sharp = place.frame === "crop" ? place.box.at : place.frame === "whole" ? ((t) => [0, t[0], SIZE[0], t[1] - t[0]])(bandOf({ ...place, size: [cw, ch] })) : [0, 0, SIZE[0], SIZE[1]];
+  const g = grow(sharp), area = [Math.max(0, g[0]), Math.max(0, g[1]), Math.min(SIZE[0], g[0] + g[2]), Math.min(SIZE[1], g[1] + g[3])];
+  return ps.every((p) => p.boxes.every((b) => {
+    const x0 = Math.max(0, b[0]), y0 = Math.max(0, b[1]), in0 = [x0, y0, Math.min(cw, b[0] + b[2]) - x0, Math.min(ch, b[1] + b[3]) - y0];
+    const f = grow(map(in0));
+    return f[0] >= area[0] - 1 && f[1] >= area[1] - 1 && f[0] + f[2] <= area[2] + 1 && f[1] + f[3] <= area[3] + 1;
+  }));
 }
 // the faces' heights in the frame at a scale k: "235 and 256 px", "108 to 177 px"
 function heights(ps, k) {

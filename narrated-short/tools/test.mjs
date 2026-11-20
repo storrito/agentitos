@@ -826,7 +826,7 @@ test("no \"frame\": four people no fill holds, low in the picture, get layout's 
   const h = planWindow({ frame: "whole", size: SIZE4K, people: high, captions: CAPTIONS, crop: () => square, silent: true });
   assert.equal(h.frame, "whole");
   assert.ok(h.zoom > 1.8 && h.flag === false, `zoom ${h.zoom}, flag ${h.flag}`);
-  assert.match(h.said, /\d+ % of the frame blurred ground, the faces 114 to 114 px; to show them larger: "frame": "fill" with a "pan" on the one the words are about \(it cuts the others\), or another stretch where they stand closer$/);
+  assert.match(h.said, /\d+ % of the frame blurred ground, the faces 112 to 112 px; to show them larger: "frame": "fill" with a "pan" on the one the words are about \(it cuts the others\), or another stretch where they stand closer$/);
 });
 
 test("no \"frame\": a pair only the band holds keeps the band (never a fill on one of them), and its line says the cost and the ways out, with the seconds of the clip where they stand closer (the run's b9)", () => {
