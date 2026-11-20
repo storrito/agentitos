@@ -10,12 +10,13 @@ Three places, cheapest first. [standards.md](standards.md) says what each has to
 
 Storrito's sessions share `agentitos-lab`, a local repository without a remote, beside this repo's main checkout (`git worktree list` names that checkout first). Its media lie under `corpus/media/`, outside git. It holds two things:
 
-- **The corpus**: raw material to try skills on, shared because finding, cutting and preparing material costs more than anything else in building a skill. Every file has an entry that says where it comes from, under which licence, whether it may be shown outside, and what is true of it (what kind of recording, how many speakers, which language).
+- **The corpus**: raw material to try skills on, shared because finding, cutting and preparing material costs more than anything else in building a skill. Every file has an entry that says where it comes from, whether it may be shown outside, and what is true of it (what kind of recording, how many speakers, which language).
 - **The rig**: runs a skill with Claude Code on Opus 5.5 as the agent and a small model as the person, and writes down what was said, every tool call, how long it took and what it cost. The agent may run only the programs the rig's `run.mjs` lists.
 
 Read the lab's `README.md` and `corpus/README.md` before you look for material anywhere else. Then:
 
 - Take from the corpus what fits (`node corpus/find.mjs` lists it by kind, length and language). Where your skill needs material that is not there (another kind of source, a longer file, a picture, music), you add it, as a new set, by the corpus README's "Adding material". Nobody fills the corpus in advance: what is needed is known to the agent whose skill needs it.
+- For a test on this machine, material is taken wherever it serves the test, a video from YouTube too: its licence is no condition. What may be shown outside is marked in its entry, and only that leaves the machine.
 - The corpus is not only video: sound, pictures, texts and lists of pages belong in it as much, and what was prepared from a file at some cost (its words, its cuts) lies beside it for the next session.
 - Nothing from the corpus goes into this repository unless its entry says it may be shown, and never a recording of a person who did not agree. A picture in a skill's `references/` is drawn, or made from material that may be shown.
 - A phone writes the place of a recording into its file (AGENTS.md, "Videos"): the corpus keeps such originals apart from the copies without tags, and only the copies go to a model.
@@ -32,5 +33,6 @@ A skill has to run where the bots run: 8 cores, 8 GB of memory. The lab's `sprit
 
 - Where a test Sprite is free, a skill's tools are tried on one before its pull request is ready, with their time and peak memory. The run of the flow in a bot's chat is the owner's (standards.md, section 3).
 - The larger test Sprites (16 cores, 32 GB) are there to be used in full while a skill is built: many variants rendered at once, a measurement over the whole corpus. What is measured for standards.md's sections 4 and 5 is measured on a Sprite of a bot's size.
+- Renders and other heavy work run on a Sprite, not on the machine the sessions share. While you work, check from the built composition; render once for a pull request, at the end.
 - A test Sprite's ffmpeg, fonts and HyperFrames are not always a bot's, which come with rragent's image: loudness, emoji and snapshots are checked against the bot's.
 - A Sprite is taken only after the sessions that are running have agreed who holds which, the way `sprites.md` says. Use only what you were given, say which you hold, and say when you are done. Never start anything on a Sprite another session holds.
