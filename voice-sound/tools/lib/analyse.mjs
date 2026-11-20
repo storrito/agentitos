@@ -15,8 +15,9 @@
 // shows as rumble). Per frame 31 band levels (Int16, 1/100 dB), the K- and the A-weighted power
 // and the channels' powers and product; per 256 samples the K-weighted power (for the room's
 // decay). That is about 100 bytes a frame: a three-hour podcast keeps about 50 MB. The hum's
-// spectra (2.9 Hz a bin) are summed into 1-dB buckets of their level, and the clicks are found
-// on the way, with 16 ms of the signal's second difference kept.
+// spectra (2.9 Hz a bin) are summed into 1-dB buckets of their level, those of its long windows
+// (0.37 Hz a bin) too, with a few sums per bin (2.5 MB whatever the length), and the clicks are
+// found on the way, with 16 ms of the signal's second difference kept.
 //
 // Levels without a unit name are dB of the mean square against full scale (a full-scale sine is
 // −3 dB); "LUFS" are BS.1770's K-weighted power, the channels summed, −0.691 dB, as ebur128 has
@@ -26,7 +27,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fftOf, split, hann } from "./fft.mjs";
-import { HUM_MIN_PAUSE_S, HUM_PART_S, HUM_PARTS_MAX, HUM_LINE_DB, HUM_STEADY_DB, HUM_SOME_DB } from "./findings.mjs";
+import { HUM_MIN_PAUSE_S, HUM_PART_S, HUM_PARTS_MAX, HUM_LINE_DB, HUM_STEADY_DB, HUM_SOME_DB, HUM_OFF_SHARE,
+  HUM_WHOLE_LINE_DB, HUM_WHOLE_SHARE, HUM_WHOLE_STEADY_DB, HUM_WHOLE_MIN_WINDOWS, VOICE_PITCH_NAC } from "./findings.mjs";
 
 export class Refusal extends Error {}
 const refuse = (msg) => { throw new Refusal(msg); };
@@ -43,6 +45,19 @@ const HUM_N = 1024, HUM_HOP = 512;       // …in windows of 341 ms: 2.93 Hz a b
 // in the frames found to be pauses at the end: 32 MB for three hours)
 const HUM_SPAN = (HUM_N * DECIM) / HOP, HUM_STEP = (HUM_HOP * DECIM) / HOP, HUM_KEEP = 256;
 const HUM_TOP_HZ = 720;                  // the harmonics looked at: up to 720 Hz (12 × 60, 14 × 50)
+// The same 3 kHz signal in long windows, over the whole recording, voice and all: 8192 samples
+// (2.7 s, 0.37 Hz a bin) every 2048 (0.68 s). Nothing of a window is kept but sums per bin up
+// to LONG_K (770 Hz): how often a bin stood over the bins beside it, its level's mean and square,
+// and its power added into the bucket of the window's level in 300–750 Hz (1 dB a bucket, as the
+// short windows'), 2.5 MB whatever the length. They say where each line is to a few hundredths
+// of a hertz, and whether a line is there under the voice.
+const LONG_N = 8192, LONG_HOP = 2048, LONG_K = 2100;
+const LONG_NEAR = 4, LONG_FAR = 12;      // the bins beside a line: 4 to 12 away (1.5–4.4 Hz)
+// A frame's pitch, on the same 3 kHz signal: its last 128 samples (43 ms, the frame's spectrum's
+// span), the normalised autocorrelation at lags of 8 to 43 samples (375 to 70 Hz), its highest
+// peak (a lag whose neighbours are lower: rumble and a 50 Hz hum fall off from the shortest lag);
+// a pitch where that reaches VOICE_PITCH_NAC
+const PITCH_N = 128, PITCH_LO = 8, PITCH_HI = 43;
 export const FRAME_S = HOP / RATE;
 
 // The bands every frame keeps, in Hz: fine enough at the bottom for rumble and thumps (<100 Hz),
@@ -154,7 +169,7 @@ function ebur(log) {
 function state(C, duration) {
   const frames = Math.ceil(((duration || 60) * RATE) / HOP) + 64;
   const fft = fftOf(WIN), humFft = fftOf(HUM_N);
-  const w = hann(WIN), hw = hann(HUM_N);
+  const w = hann(WIN), hw = hann(HUM_N), lw = hann(LONG_N);
   const sumW2 = w.reduce((s, x) => s + x * x, 0), humW2 = hw.reduce((s, x) => s + x * x, 0);
   const bandOf = new Uint8Array(WIN / 2).fill(255);
   for (let k = 1; k < WIN / 2; k++) {
@@ -185,6 +200,15 @@ function state(C, duration) {
     // every window's spectrum to 750 Hz (Int16, 1/100 dB), for the hum in the pauses
     humSpec: new Int16Array((Math.ceil(frames / HUM_STEP) + 2) * HUM_KEEP),
     halfway: duration ? duration / 2 : Infinity,
+    // the long windows (LONG_N): per channel the last LONG_N samples of the 3 kHz signal, and the sums
+    lng: [...Array(C)].map(() => new Float64Array(LONG_N)), lngFill: 0, lw, lfft: fftOf(LONG_N),
+    lre: new Float64Array(LONG_N), lim: new Float64Array(LONG_N), lP: new Float64Array(LONG_K + 1), lCum: new Float64Array(LONG_K + 2),
+    lOver: new Float64Array(LONG_K + 1), lDb: new Float64Array(LONG_K + 1), lDb2: new Float64Array(LONG_K + 1),
+    lBuckets: new Float64Array(150 * (LONG_K + 1)), lCount: new Float64Array(150), lWindows: 0, lW2: lw.reduce((s, x) => s + x * x, 0),
+    // the pitch: per 1 dB of the frames' level in 300–3500 Hz, how many frames, and how many
+    // with a pitch (4.8 kB whatever the length)
+    pBuf: new Float64Array(PITCH_N), pCum: new Float64Array(PITCH_N + 1), pR: new Float64Array(PITCH_HI + 2),
+    pCount: new Float64Array(300), pVoiced: new Float64Array(300), lastSp: 0,
     // the clicks: per 1.3 ms the largest |second difference| of any channel, kept for ±16 ms
     ring: new Float64Array(256), blocks: 0, checked: 0, clicks: [], clickCount: 0, bmax: new Float64Array(16),
   };
@@ -260,6 +284,12 @@ function frame(st, x, bits, count) {
     st.e0[fi] = a / count; st.e1[fi] = b / count; st.c01[fi] = ab / count;
   }
   spectrum(st, fi);
+  // the frame's new 3 kHz samples into the long windows (before humFrame moves them on)
+  const nd = count >> 4;
+  for (let c = 0; c < C; c++) st.lng[c].set(st.dec[c].subarray(st.decFill, st.decFill + nd), st.lngFill);
+  st.lngFill += nd;
+  if (st.lngFill >= LONG_N) longFrame(st);
+  pitchFrame(st, st.decFill + nd);
   st.decFill += count >> 4;
   if (st.decFill >= HUM_N) humFrame(st);
   // the clicks' blocks of this frame
@@ -290,6 +320,38 @@ function spectrum(st, fi) {
   }
   for (let b = 0; b < NB; b++) st.bands[fi * NB + b] = Math.max(-30000, Math.round(1000 * Math.log10(band[b] || 1e-300)));
   st.aw[fi] = aw;
+  let sp = 0;
+  for (const b of SPEECH_BANDS) sp += band[b];
+  st.lastSp = sp;
+}
+
+// The frame's pitch (PITCH_N): on the louder channel's last 128 samples of the 3 kHz signal,
+// which end at `end` in st.dec; counted into the bucket of the frame's level
+function pitchFrame(st, end) {
+  if (end < PITCH_N) return;
+  let c = 0;
+  if (st.C === 2) {
+    let e0 = 0, e1 = 0;
+    for (let i = end - PITCH_N; i < end; i++) { e0 += st.dec[0][i] ** 2; e1 += st.dec[1][i] ** 2; }
+    c = e1 > e0 ? 1 : 0;
+  }
+  const x = st.dec[c], b = st.pBuf, e = st.pCum, r = st.pR, N = PITCH_N, o = end - N;
+  let m = 0;
+  for (let i = 0; i < N; i++) m += x[o + i];
+  m /= N;
+  e[0] = 0;
+  for (let i = 0; i < N; i++) { b[i] = x[o + i] - m; e[i + 1] = e[i] + b[i] * b[i]; }
+  for (let t = PITCH_LO - 1; t <= PITCH_HI + 1; t++) {
+    let s = 0;
+    for (let i = 0; i < N - t; i++) s += b[i] * b[i + t];
+    const d = Math.sqrt(e[N - t] * (e[N] - e[t]));
+    r[t] = d > 0 ? s / d : 0;
+  }
+  let best = 0;
+  for (let t = PITCH_LO; t <= PITCH_HI; t++) if (r[t] > best && r[t] >= r[t - 1] && r[t] >= r[t + 1]) best = r[t];
+  const q = Math.max(0, Math.min(299, Math.round(10 * Math.log10(st.lastSp || 1e-30)) + 200));
+  st.pCount[q]++;
+  if (best >= VOICE_PITCH_NAC) st.pVoiced[q]++;
 }
 
 // A window of the hum's 3 kHz signal: its power spectrum, added to the bucket of its level in
@@ -315,6 +377,43 @@ function humFrame(st) {
   st.humFrames++;
   for (let c = 0; c < C; c++) dec[c].copyWithin(0, HUM_HOP);
   st.decFill = HUM_N - HUM_HOP;
+}
+
+// A long window of the 3 kHz signal (both channels in one transform, as above): per bin its three
+// bins' power (a line's whole power under the Hann window) against three times the mean of the
+// bins LONG_NEAR to LONG_FAR beside it, on the side where they are louder; how often that stands
+// HUM_WHOLE_LINE_DB over, and the level's sum and square, so that a line's spread over the windows
+// is known. Windows of digital silence are left out.
+function longFrame(st) {
+  const { C, lng, lre, lim, lw, lP: P, lCum, lOver, lDb, lDb2 } = st;
+  const m0 = lng[0].reduce((s, v) => s + v, 0) / LONG_N, m1 = C === 2 ? lng[1].reduce((s, v) => s + v, 0) / LONG_N : 0;
+  for (let i = 0; i < LONG_N; i++) { lre[i] = (lng[0][i] - m0) * lw[i]; lim[i] = C === 2 ? (lng[1][i] - m1) * lw[i] : 0; }
+  st.lfft(lre, lim);
+  const norm = 2 / (LONG_N * st.lW2) / C, two = [0, 0];
+  let band = 0;
+  const df = RATE / DECIM / LONG_N, b0 = Math.ceil(300 / df), b1 = Math.floor(750 / df);
+  lCum[0] = 0;
+  for (let k = 0; k <= LONG_K; k++) {
+    if (k === 0) P[k] = 0;
+    else if (C === 2) { split(lre, lim, LONG_N, k, two); P[k] = (two[0] + two[1]) * norm; } else P[k] = (lre[k] * lre[k] + lim[k] * lim[k]) * norm;
+    lCum[k + 1] = lCum[k] + P[k];
+    if (k >= b0 && k <= b1) band += P[k];
+  }
+  for (let c = 0; c < C; c++) lng[c].copyWithin(0, LONG_HOP);
+  st.lngFill = LONG_N - LONG_HOP;
+  if (band < 1e-15) return;
+  st.lWindows++;
+  const q = Math.max(0, Math.min(149, Math.round(10 * Math.log10(band)) + 150)), at = q * (LONG_K + 1);
+  st.lCount[q]++;
+  const over = 10 ** (HUM_WHOLE_LINE_DB / 10), span = LONG_FAR - LONG_NEAR + 1;
+  for (let k = 0; k <= LONG_K; k++) st.lBuckets[at + k] += P[k];
+  for (let k = LONG_FAR + 1; k <= LONG_K - LONG_FAR; k++) {
+    const p3 = P[k - 1] + P[k] + P[k + 1];
+    const left = (lCum[k - LONG_NEAR + 1] - lCum[k - LONG_FAR]) / span, right = (lCum[k + LONG_FAR + 1] - lCum[k + LONG_NEAR]) / span;
+    if (p3 >= over * 3 * Math.max(left, right, 1e-30)) lOver[k]++;
+    const d = 10 * Math.log10(p3 || 1e-30);
+    lDb[k] += d; lDb2[k] += d * d;
+  }
 }
 
 // A click: a block whose peak stands CLICK_OVER times over every block 2.7–16 ms before it and
@@ -630,14 +729,16 @@ function summarise(st) {
     // (below 80 Hz from the fine spectra, against their 300–750 Hz, carried over to 300–3000 Hz
     // by the speech frames' own ratio of the two)
     const carry = db(sum(speechBands, bandsIn(300, 750)) / ref), mid = fine ? fine.band(fine.speech, 300, 750) : 0;
+    const humHz = hum?.fundamentalHz ?? hum?.hz;
     low = {
-      below80Db: mid > 0 ? r1(db(fine.band(fine.speech, 20, 80, hum?.hz) / mid) + carry) : null,
-      pauses80Db: mid > 0 && fine.from === "pauses" ? r1(db(fine.band(fine.pause, 20, 80, hum?.hz) / mid) + carry) : null,
+      below80Db: mid > 0 ? r1(db(fine.band(fine.speech, 20, 80, humHz) / mid) + carry) : null,
+      pauses80Db: mid > 0 && fine.from === "pauses" ? r1(db(fine.band(fine.pause, 20, 80, humHz) / mid) + carry) : null,
       thumps: { count: thumps.length, perMinute: r2(thumps.length / Math.max(seconds / 60, 1 / 60)), at: thumps.slice(0, 10) }, bursts,
     };
   }
 
-  // 5. clipping: from the histogram of the samples' levels. The ceiling: the level within 6 dB
+  // 5. clipping: from the histogram of the samples' levels, read as their distance from the DC
+  // offset (an offset alone is no ceiling; clippingOf). The ceiling: the level within 6 dB
   // under the peak (resampling a file clipped hard at 44.1 kHz overshoots its ceiling by 3 dB)
   // where the samples pile up most against a stretch under it (pileUp: samples a
   // dB within ±0.1 dB of it over samples a dB 1–3 dB under it, or within ±0.5 dB over 1.5–4 dB
@@ -646,11 +747,10 @@ function summarise(st) {
   // the signal rose to there, runSamples: the samples there a rise, on average. exactShare and
   // exactRuns: runs of 3 or more samples of the very same value within 0.1 dB of the peak (PCM
   // clipped, decoded unchanged), exactRunSamples: their mean length.
-  const clipping = clippingOf(st);
-
   // 6. DC: each channel's mean sample
   const dcs = [...st.dc].map((s) => s / Math.max(1, st.samples));
   const dcMax = Math.max(...dcs.map(Math.abs));
+  const clipping = clippingOf(st, dcMax);
 
   // 10. clicks (found in the pass): how many, a minute, how many in the pauses, the strongest
   const clickFrames = st.clicks.map(([j, d]) => ({ t: (j * CLICK_BLOCK) / RATE, overDb: d }));
@@ -690,7 +790,11 @@ function summarise(st) {
   // slower than the room, never faster. rangeDb: the median dB a decay was fitted over.
   const room = roomOf(st, F, lufs(noiseKw) + 0.691, speechKw);
 
+  // 13. a voice: whether what was taken for speech carries a pitch and a syllable's rhythm (voiceOf)
+  const voice = voiceOf(st, Sp, silent, floor, margin, F);
+
   return {
+    voice,
     seconds: r2(seconds), channelsAnalysed: C,
     speech: {
       share: r3(speechFrames / Math.max(1, F)), seconds: r1(speechFrames * FRAME_S), silentShare: r3(silentFrames / Math.max(1, F)),
@@ -766,10 +870,13 @@ function fineOf(st) {
 
 // The hum, from the windows of the hum's grid (341 ms, 2.93 Hz a bin) that lie wholly in the
 // pauses: every one of their 16 frames a quiet one (no speech, no digital silence, at the floor).
-// With under HUM_MIN_PAUSE_S of such pause in all there is nothing to judge from: `judged` false,
-// no hum, whatever the voice's frames hold. Else the pause windows, in time order, are cut into
-// `parts` (one per HUM_PART_S of pause, two to HUM_PARTS_MAX), and each harmonic n of 50 and of
-// 60 Hz up to HUM_TOP_HZ is judged on its own:
+// With under HUM_MIN_PAUSE_S of such pause in all it is judged under the voice instead, from the
+// long windows over the whole recording (wholeHum, `from: "whole"`), from LONG_MIN_S of sound on;
+// under that there is nothing to judge from: `judged` false, `from` null, no hum. Else (`from:
+// "pauses"`) the pause windows, in time order, are cut into `parts` (one per HUM_PART_S of pause,
+// two to HUM_PARTS_MAX), and each harmonic n of 50 and of 60 Hz up to HUM_TOP_HZ is judged on
+// its own, at n times the long windows' fundamental of that grid (longOf; the grid's own where
+// they show no line):
 //   - its bin: the largest of the three around n·f in all the pauses' mean spectrum, and a peak
 //     there (no bin beside it larger: the flank of a line 10 Hz away is no line)
 //   - narrow: in each part, the power of that bin and its two neighbours (a line's whole power
@@ -778,13 +885,17 @@ function fineOf(st) {
 //   - steady: it stands HUM_LINE_DB over in every part (`inParts` of `parts`), and its level in
 //     the pause windows, one by one, spreads by at most HUM_STEADY_DB (`spreadDb`: the 10th to
 //     the 90th percentile; a line that drops in one pause of several is no steady line)
-// Such a harmonic `counts`. The mains frequency is the one whose counted harmonics that the two
+// Such a harmonic `counts`, and `lineHz` says where it lies (longOf's interpolated line where it
+// stands out in the long windows, else the pauses' own bins interpolated); fundamentalHz is the
+// fit of the counted lines (fitLines), and every other entry's lineHz n times it. The mains
+// frequency is the one whose counted harmonics that the two
 // do not share (300 Hz and its multiples) stand out more; without any, there is no hum (hz null).
 // overDb: the strongest counted harmonic's; levelDb: the counted harmonics' power over their
 // surroundings in all the pauses; underSpeechDb: that under the speech frames' whole power.
 // intermittent: some line of either grid stands HUM_SOME_DB over in a part but does not count
 // (a hum that comes and goes, a device switched on): named, never notched.
 function humOf(st, quiet, F, speechPower) {
+  const L = longOf(st);
   const df = st.humHz, wins = [];
   for (let j = 0; j < st.humFrames; j++) {
     const a = j * HUM_STEP, b = a + HUM_SPAN;
@@ -797,9 +908,11 @@ function humOf(st, quiet, F, speechPower) {
   let covered = 0, end = 0;
   for (const j of wins) { const a = j * HUM_STEP, b = a + HUM_SPAN; covered += b - Math.max(a, end); end = b; }
   const pauseSeconds = covered * FRAME_S;
-  const none = { judged: false, hz: null, harmonics: 0, overDb: null, levelDb: null, underSpeechDb: null, from: "pauses", steadyChecked: false, pauseSeconds: r1(pauseSeconds), parts: 0, intermittent: false, at50: [], at60: [] };
-  if (pauseSeconds < HUM_MIN_PAUSE_S)
-    return { ...none, why: `${pauseSeconds.toFixed(1)} s of pause without a voice: a hum is judged from ${HUM_MIN_PAUSE_S} s on, never from where someone speaks.` };
+  const none = { judged: false, hz: null, fundamentalHz: null, harmonics: 0, overDb: null, levelDb: null, underSpeechDb: null, from: null, steadyChecked: false, pauseSeconds: r1(pauseSeconds), parts: 0, intermittent: false, at50: [], at60: [] };
+  if (pauseSeconds < HUM_MIN_PAUSE_S) {
+    if (L && L.windows >= HUM_WHOLE_MIN_WINDOWS) return wholeHum(L, pauseSeconds, speechPower, df);
+    return { ...none, why: `${pauseSeconds.toFixed(1)} s of pause without a voice and ${(st.samples / RATE).toFixed(1)} s of sound: a hum is judged from ${HUM_MIN_PAUSE_S} s of pause, or under the voice from ${LONG_MIN_S.toFixed(1)} s of sound on.` };
+  }
   const meanOf = (list) => {
     const s = new Float64Array(HUM_KEEP);
     for (const j of list) for (let k = 0, o = j * HUM_KEEP; k < HUM_KEEP; k++) s[k] += 10 ** (st.humSpec[o + k] / 1000);
@@ -816,8 +929,10 @@ function humOf(st, quiet, F, speechPower) {
   };
   const grid = (base) => {
     const out = [];
+    // (the harmonics where the long windows put them, the grid's own where they show no line)
+    const f0 = L ? L.f0[base] : base;
     for (let h = 1; h * base <= HUM_TOP_HZ; h++) {
-      const kc = Math.round((h * base) / df);
+      const kc = Math.round((h * f0) / df);
       let km = kc;
       for (let k = kc - 1; k <= kc + 1; k++) if (all[k] > all[km]) km = k;
       const isPeak = all[km] >= all[km - 1] && all[km] >= all[km + 1];
@@ -832,7 +947,14 @@ function humOf(st, quiet, F, speechPower) {
         spread = quantile(lv, 0.9) - quantile(lv, 0.1);
       }
       const counts = isPeak && inParts === P && spread <= HUM_STEADY_DB;
-      out.push({ n: h, hz: h * base, overDb: r1(over), inParts, spreadDb: r1(spread), counts, most: isPeak ? most : -Infinity, excess: Math.max(0, line(all, km).excess), shared: (h * base) % 300 === 0 });
+      // where the line lies: in the long windows where it stands out there (0.37 Hz a bin), else
+      // between the pauses' own bins (2.9 Hz, eight times coarser: weighed 1/64 in the fit)
+      let lineHz = null, weight = 0;
+      if (counts) {
+        const long = L?.at(h * f0);
+        if (long && long.overDb >= HUM_LINE_DB) { lineHz = long.hz; weight = 1; } else { lineHz = (km + gauss(all, km)) * df; weight = L ? (L.df / df) ** 2 : 1; }
+      }
+      out.push({ n: h, hz: h * base, overDb: r1(over), inParts, spreadDb: r1(spread), counts, lineHz, weight, f0, most: isPeak ? most : -Infinity, excess: Math.max(0, line(all, km).excess), shared: (h * base) % 300 === 0 });
     }
     return out;
   };
@@ -842,17 +964,146 @@ function humOf(st, quiet, F, speechPower) {
   const c = hs.filter((x) => x.counts);
   const hz = c.some((x) => !x.shared) ? base : null;
   const excess = hz ? c.reduce((a, x) => a + x.excess, 0) : 0;
-  const strip = (list) => list.map(({ n, hz: f, overDb, inParts, spreadDb, counts }) => ({ n, hz: f, overDb, inParts, spreadDb, counts }));
+  const f50 = fitLines(at50), f60 = fitLines(at60);
   return {
-    judged: true, hz, harmonics: hz ? c.length : 0, overDb: hz ? r1(Math.max(...c.map((x) => x.overDb))) : null,
+    judged: true, hz, fundamentalHz: hz ? r2(base === 50 ? f50 : f60) : null, harmonics: hz ? c.length : 0, overDb: hz ? r1(Math.max(...c.map((x) => x.overDb))) : null,
     levelDb: excess > 0 ? r1(db(excess)) : null, underSpeechDb: excess > 0 && speechPower > 0 ? r1(db(speechPower / excess)) : null,
     from: "pauses", steadyChecked: P >= 2, pauseSeconds: r1(pauseSeconds), parts: P,
     intermittent: P >= 2 && [...at50, ...at60].some((x) => !x.shared && !x.counts && x.most >= HUM_SOME_DB),
-    at50: strip(at50), at60: strip(at60),
+    at50: stripLines(at50), at60: stripLines(at60),
   };
 }
 
-function clippingOf(st) {
+// where a line lies between bins: a Gaussian through the bin and its two neighbours, on the log of
+// their power (a Hann window's peak is close to a Gaussian's: off by under 0.02 of a bin); in bins from k
+function gauss(S, k) {
+  const a = Math.log(S[k - 1] || 1e-300), b = Math.log(S[k] || 1e-300), c = Math.log(S[k + 1] || 1e-300), d = a - 2 * b + c;
+  return d < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / d)) : 0;
+}
+
+// The fundamental that a grid's counted lines are the harmonics of: least squares over them, each
+// by its precision (Σ w·n·f / Σ w·n²: the higher harmonics tell it best); null without one. Every
+// entry not counted gets n times it (or the long windows' fundamental, or the grid's) as lineHz.
+function fitLines(hs) {
+  let a = 0, b = 0;
+  for (const x of hs) if (x.counts && x.lineHz) { a += x.weight * x.n * x.lineHz; b += x.weight * x.n * x.n; }
+  const f0 = b ? a / b : null;
+  for (const x of hs) if (!x.counts || !x.lineHz) x.lineHz = x.n * (f0 ?? x.f0);
+  return f0;
+}
+const stripLines = (list) => list.map(({ n, hz, lineHz, overDb, inParts, spreadDb, counts }) => ({ n, hz, lineHz: r2(lineHz), overDb, inParts, spreadDb, counts }));
+
+// The long windows at the end of the pass. The quiet quarter: the mean spectrum of the windows up
+// to the 25th percentile of their level in 300–750 Hz (where a voice is least); a bin's line there
+// (`overDb`): its three bins against three times the mean of the bins 4 to 12 away, on the louder
+// side. at(hz): the line nearest hz (the largest of three bins), where it lies (gauss), its line
+// in the quiet quarter, the share of all windows it stood HUM_WHOLE_LINE_DB over in, its level's
+// standard deviation over them, and its power over its surroundings. f0: per grid, the fundamental
+// within HUM_OFF_SHARE whose harmonics up to HUM_TOP_HZ lie on the strongest lines (0.005 Hz
+// steps), where one of them stands HUM_LINE_DB over; else the grid's own 50 or 60.
+const LONG_MIN_S = ((HUM_WHOLE_MIN_WINDOWS - 1) * LONG_HOP + LONG_N) * DECIM / RATE;
+function longOf(st) {
+  const W = st.lWindows, K = LONG_K, df = RATE / DECIM / LONG_N;
+  if (!W) return null;
+  const levels = [];
+  st.lCount.forEach((n, q) => { for (let i = 0; i < n; i++) levels.push(q); });
+  const p25 = quantile(levels, 0.25);
+  const Q = new Float64Array(K + 1);
+  let n = 0;
+  for (let q = 0; q < 150; q++) {
+    if (!st.lCount[q] || q > p25) continue;
+    n += st.lCount[q];
+    for (let k = 0, o = q * (K + 1); k <= K; k++) Q[k] += st.lBuckets[o + k];
+  }
+  for (let k = 0; k <= K; k++) Q[k] /= n;
+  const span = LONG_FAR - LONG_NEAR + 1;
+  const side = (k) => { let l = 0, r = 0; for (let d = LONG_NEAR; d <= LONG_FAR; d++) { l += Q[k - d]; r += Q[k + d]; } return Math.max(l, r) / span; };
+  const ok = (k) => k - LONG_FAR >= 1 && k + LONG_FAR <= K;
+  const lineDb = (k) => (ok(k) ? db((Q[k - 1] + Q[k] + Q[k + 1]) / (3 * Math.max(side(k), 1e-30))) : -Infinity);
+  const at = (hz) => {
+    const k0 = Math.round(hz / df);
+    let km = k0;
+    for (let k = k0 - 1; k <= k0 + 1; k++) if (Q[k] > Q[km]) km = k;
+    if (!ok(km)) return { hz, overDb: -Infinity, share: 0, sdDb: Infinity, excess: 0 };
+    const m = st.lDb[km] / W, sd = Math.sqrt(Math.max(0, st.lDb2[km] / W - m * m));
+    return { hz: (km + gauss(Q, km)) * df, overDb: lineDb(km), share: st.lOver[km] / W, sdDb: sd, excess: Math.max(0, Q[km - 1] + Q[km] + Q[km + 1] - 3 * side(km)) };
+  };
+  // (the comb scores each harmonic by its one bin over the bins beside it, so that a harmonic half
+  // a bin off scores less; then, harmonic by harmonic upwards, each line that stands out moves
+  // the fundamental to the least-squares fit of those found so far)
+  const one = (k) => (ok(k) ? Math.max(0, db(Q[k] / Math.max(side(k), 1e-30))) : 0);
+  const f0 = {};
+  for (const g of [50, 60]) {
+    let best = { f: g, s: -1 };
+    for (let f = g * (1 - HUM_OFF_SHARE); f <= g * (1 + HUM_OFF_SHARE); f += 0.005) {
+      let s = 0;
+      for (let h = 1; h * g <= HUM_TOP_HZ; h++) s += one(Math.round((h * f) / df));
+      if (s > best.s) best = { f, s };
+    }
+    let f = best.f, a = 0, b = 0;
+    for (let h = 1; h * g <= HUM_TOP_HZ; h++) {
+      const e = at(h * f);
+      if (e.overDb < HUM_LINE_DB) continue;
+      a += h * e.hz; b += h * h; f = a / b;
+    }
+    f0[g] = b ? f : g;
+  }
+  return { windows: W, df, at, f0 };
+}
+
+// The hum under the voice, from the long windows alone (humOf, where the pauses are too few): each
+// harmonic of each grid at the long windows' fundamental counts when it stands HUM_WHOLE_LINE_DB
+// over in HUM_WHOLE_SHARE of the windows, HUM_LINE_DB over in the quiet quarter, and its level's
+// standard deviation over the windows is HUM_WHOLE_STEADY_DB at most. The grid is chosen as from
+// the pauses; a hum also needs its counted harmonics' numbers to have no common divisor but 1.
+// The fields as from the pauses, with the windows for the parts: inParts the windows a harmonic
+// stood over in, spreadDb 2.56 standard deviations (the 10th to the 90th percentile of a normal
+// spread), overDb its line in the quiet quarter as it would stand in the pauses' bins, eight
+// times wider (the noise beside it eight times the power, the line the same), so that the
+// findings' HUM_SOME_DB means the same from either.
+function wholeHum(L, pauseSeconds, speechPower, dfShort) {
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  const wide = (d) => db(1 + (10 ** (d / 10) - 1) * (L.df / dfShort));
+  const grid = (base) => {
+    const f0 = L.f0[base], out = [];
+    for (let h = 1; h * base <= HUM_TOP_HZ; h++) {
+      const e = L.at(h * f0);
+      const counts = e.share >= HUM_WHOLE_SHARE && e.sdDb <= HUM_WHOLE_STEADY_DB && e.overDb >= HUM_LINE_DB;
+      out.push({ n: h, hz: h * base, overDb: r1(e.overDb > 0 ? wide(e.overDb) : e.overDb), inParts: Math.round(e.share * L.windows), spreadDb: r1(2.56 * e.sdDb), counts, lineHz: counts ? e.hz : null, weight: 1, f0, excess: e.excess, shared: (h * base) % 300 === 0 });
+    }
+    return out;
+  };
+  const at50 = grid(50), at60 = grid(60);
+  // (a grid whose counted harmonics share a divisor is a held pitch, never hum: it scores nothing)
+  const prime = (hs) => hs.filter((x) => x.counts).reduce((g, x) => gcd(g, x.n), 0) === 1;
+  const score = (hs) => (prime(hs) ? hs.filter((x) => x.counts && !x.shared).reduce((a, x) => a + x.overDb, 0) : 0);
+  const [base, hs] = score(at50) >= score(at60) ? [50, at50] : [60, at60];
+  const c = hs.filter((x) => x.counts);
+  const hz = c.some((x) => !x.shared) && prime(hs) ? base : null;
+  const excess = hz ? c.reduce((a, x) => a + x.excess, 0) : 0;
+  const f50 = fitLines(at50), f60 = fitLines(at60);
+  return {
+    judged: true, hz, fundamentalHz: hz ? r2(base === 50 ? f50 : f60) : null, harmonics: hz ? c.length : 0, overDb: hz ? r1(Math.max(...c.map((x) => x.overDb))) : null,
+    levelDb: excess > 0 ? r1(db(excess)) : null, underSpeechDb: excess > 0 && speechPower > 0 ? r1(db(speechPower / excess)) : null,
+    from: "whole", steadyChecked: true, pauseSeconds: r1(pauseSeconds), parts: L.windows,
+    intermittent: [...at50, ...at60].some((x) => !x.shared && !x.counts && x.overDb >= HUM_SOME_DB),
+    at50: stripLines(at50), at60: stripLines(at60),
+  };
+}
+
+// (dc: the largest channel's offset. The samples' levels gather around an offset: one larger than
+// the voice is a pile-up the histogram would read as a ceiling (dc-large of the lab's faults: 11
+// of 42 called clipped, up to 97 % of the samples, 2026-11-20). A ceiling is an extreme of the
+// wave, so every level below is its distance from the offset: the ceiling within 6 dB under the
+// peak's distance, the stretch it is compared with 1–4 dB under it, the share from it up. On the
+// side of the offset, where an offset larger than the voice puts every sample, that is exact;
+// the other side's samples, at the same level, lie further from it and are counted lower.)
+// A ceiling under 16 steps of 16 bits (−66.2 dBFS) is not read: there a voice's own steps pile up
+// as a ceiling would, also where a resampler has smeared each into a clump (clean speech of the
+// tune split turned down by 70 dB at 16 bits: 3 of 42 called clipped at −74.7 to −78.2 dBFS,
+// 2026-11-20); the lowest ceiling the lab's clip faults reach turned down by 40 dB is −60 dBFS.
+const CLIP_FLOOR_DB = 20 * Math.log10(16 / 32768);
+function clippingOf(st, dc = 0) {
   const H = st.hist;
   let M = 0;
   for (let b = 0; b < 32768; b++) if (H[b] && b < 0x7f80) M = b;     // the top (no inf, no NaN)
@@ -862,27 +1113,74 @@ function clippingOf(st) {
   const binOf = (dbfs) => new Uint32Array(new Float32Array([10 ** (dbfs / 20)]).buffer)[0] >>> 16;
   const peak = 20 * Math.log10(value(M + 1));
   const cnt = (lo, hi) => { let s = 0; for (let b = binOf(lo); b < Math.min(32768, binOf(hi)); b++) s += H[b]; return s; };
+  // The levels are read as the wave's distance from the offset (e: dB of |x| − dc; abs(e) the
+  // sample level there): the same as the samples' own levels without an offset.
+  const P = 10 ** (peak / 20), d = Math.min(Math.abs(dc), P), swing = P - d > 1e-9;
+  const abs = (e) => (d > 0 ? 20 * Math.log10(d + 10 ** (e / 20)) : e);
+  const top = d > 0 ? (swing ? 20 * Math.log10(P - d) : -Infinity) : peak;
   // narrow: ±0.1 dB against 1–3 dB under (PCM, a ceiling exact to the sample); wide: ±0.5 dB
   // against 1.5–4 dB under (a lossy codec or a resampler rings around the ceiling)
-  let best = { c: peak, ratio: 0, half: 0.1 };
+  const occupied = (lo, hi) => { let n = 0; for (let k = lo; k < Math.min(32768, hi); k++) if (H[k]) n++; return n; };
+  let best = { c: top, ratio: 0, half: 0.1 };
   for (const [half, a, b] of [[0.1, 1, 3], [0.5, 1.5, 4]]) {
-    for (let c = peak - 6; c <= peak + 1e-9; c += 0.05) {
-      const below = cnt(c - b, c - a) / (b - a);
-      const ratio = below > 0 ? (cnt(c - half, c + half) / (2 * half)) / below : 0;
+    for (let c = top - 6; swing && c <= top + 1e-9; c += 0.05) {
+      // (a swing far smaller than the offset leaves too few of the histogram's bins, 1/128 of an
+      // octave of the level, for a window: at least 3, as ±0.1 dB has 4 without an offset)
+      if (binOf(abs(c + half)) - binOf(abs(c - half)) < 3 || binOf(abs(c - a)) - binOf(abs(c - b)) < 3) continue;
+      if (abs(c) < CLIP_FLOOR_DB) continue;
+      // (where under half the stretch's bins hold a sample, the recording's own steps are coarser
+      // than the bins: a voice 60 dB down at 16 bits takes a few dozen values, each a spike in
+      // its bin, 2026-11-20. The two are then compared by the samples a value, an occupied bin,
+      // not a dB; where the bins are full that is the same.)
+      const [b0, b1] = [binOf(abs(c - b)), binOf(abs(c - a))], [p0, p1] = [binOf(abs(c - half)), binOf(abs(c + half))];
+      const coarse = occupied(b0, b1) / (b1 - b0) < 0.5;
+      const below = cnt(abs(c - b), abs(c - a)) / (coarse ? Math.max(1, occupied(b0, b1)) : b - a);
+      const ratio = below > 0 ? (cnt(abs(c - half), abs(c + half)) / (coarse ? Math.max(1, occupied(p0, p1)) : 2 * half)) / below : 0;
       if (ratio > best.ratio) best = { c, ratio, half };
     }
   }
-  const ceiling = best.ratio > 1 ? best.c : peak;
-  const from = binOf(ceiling - (best.ratio > 1 ? 2 * best.half : 0.2));
+  const ceiling = best.ratio > 1 ? abs(best.c) : peak;
+  const from = binOf(best.ratio > 1 ? abs(best.c - 2 * best.half) : swing ? abs(top - 0.2) : peak);
   let share = 0, ups = 0;
   for (let b = from; b <= M; b++) share += H[b];
   for (let b = 0; b <= from; b++) ups += st.up[b];
   let ex = 0, exRuns = 0;
-  for (let b = binOf(peak - 0.1); b <= M; b++) { ex += st.runSamples[b]; exRuns += st.runHist[b]; }
+  if (swing) for (let b = binOf(abs(top - 0.1)); b <= M; b++) { ex += st.runSamples[b]; exRuns += st.runHist[b]; }
   return {
     peakDb: r2(peak), ceilingDb: r2(ceiling), pileUp: r2(best.ratio),
     share: Number((share / total).toPrecision(3)), runs: ups, runSamples: ups ? r1(share / ups) : 0,
     exactShare: Number((ex / total).toPrecision(3)), exactRuns: exRuns, exactRunSamples: exRuns ? r1(ex / exRuns) : 0,
+  };
+}
+
+// The voice's two marks, over the frames whose level in 300–3500 Hz lies over the speech's
+// threshold (the floor and its margin, the whole file's; the frames' pitch is counted by their
+// level, pitchFrame): `frames`, the share of them with a pitch (`pitchShare`), and the syllables'
+// rhythm (`rhythmDb`), the level's movement at 2 to 8 Hz (its dB, the floor where it is under,
+// through a high-pass at 2 Hz and a low-pass at 8 Hz, RMS, after the first second). Whether that
+// is a voice is lib/findings.mjs's voiceOf.
+function voiceOf(st, Sp, silent, floor, margin, F) {
+  const qT = Number.isFinite(floor) ? Math.round(floor + margin) + 200 : 300;
+  let n = 0, voiced = 0;
+  for (let q = Math.max(0, qT); q < 300; q++) { n += st.pCount[q]; voiced += st.pVoiced[q]; }
+  const fs = 1 / FRAME_S;
+  const biquad = (f, hp) => {
+    const w = (2 * Math.PI * f) / fs, alpha = Math.sin(w) / Math.SQRT2, c = Math.cos(w), a0 = 1 + alpha;
+    return hp ? { b0: (1 + c) / 2 / a0, b1: -(1 + c) / a0, b2: (1 + c) / 2 / a0, a1: (-2 * c) / a0, a2: (1 - alpha) / a0 }
+      : { b0: (1 - c) / 2 / a0, b1: (1 - c) / a0, b2: (1 - c) / 2 / a0, a1: (-2 * c) / a0, a2: (1 - alpha) / a0 };
+  };
+  const H = biquad(2, true), Lp = biquad(8, false);
+  let h1 = 0, h2 = 0, l1 = 0, l2 = 0, sum = 0, cnt = 0;
+  const base = Number.isFinite(floor) ? floor : -150;
+  for (let f = 0; f < F; f++) {
+    const x = silent[f] ? base : Math.max(base, db(Sp[f]));
+    const y = H.b0 * x + h1; h1 = H.b1 * x - H.a1 * y + h2; h2 = H.b2 * x - H.a2 * y;
+    const z = Lp.b0 * y + l1; l1 = Lp.b1 * y - Lp.a1 * z + l2; l2 = Lp.b2 * y - Lp.a2 * z;
+    if (f >= fs) { sum += z * z; cnt++; }
+  }
+  return {
+    frames: n, pitchShare: n ? r3(voiced / n) : null,
+    rhythmDb: cnt ? r2(Math.sqrt(sum / cnt)) : null,
   };
 }
 
