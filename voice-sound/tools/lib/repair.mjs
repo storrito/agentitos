@@ -151,20 +151,21 @@ export const DECLIP_WINDOW_MS = 55;
 // The redrawing runs in pieces at once, one a core (usableCores, below), each cut on the
 // window's hop (a quarter of it) with a window more on either side and only its own part kept:
 // the joined result is the one-piece result to the sample (clip-20db p004_rainbow_07, 16.9 s, 4
-// and 8 pieces: 0 samples differ; cut off the hop, −27 dB of difference), its wall time a
-// quarter (72 → 27 s with 4), its CPU 21–27 % more (the margins, cores shared). A piece is at
-// least DECLIP_PIECE_MIN_S long.
+// and 8 pieces: 0 samples differ; cut off the hop, −27 dB of difference). A piece is at least
+// DECLIP_PIECE_MIN_S long.
 export const DECLIP_PIECE_MIN_S = 2;
 // The window is chosen before it runs, from the share and the length, never from how a run went:
-// the 55 ms window where its predicted wall time (DECLIP_TIME, its CPU spread over the pieces)
-// stays within DECLIP_LIMIT (baseS + perSecond × the length), else the coarser ones in turn (20,
-// then 10 ms), the step saying why. DECLIP_TIME: adeclip's CPU a second of sound at a clipped
-// share s (from 1 %, the AR model 16 % of the window), fitted on the 126 files (2026-11-20, ffmpeg
-// 9.0.2, the lab's laptop): 55 ms 26.3 × s^1.36, 20 ms 2.51 × s^1.05, 10 ms 0.54 × s^0.79; the
-// measured times lay at 0.47 to 1.76 times the fit (55 ms; 20 and 10 ms up to 2.1), so the
-// prediction is twice the fit, and the pieces' CPU 1.3 times the whole's. Under 1 % (an order of
-// 8 or 12 %) every file took under 0.2 times its length.
-export const DECLIP_TIME = { 55: { c: 26.3, p: 1.36 }, 20: { c: 2.51, p: 1.05 }, 10: { c: 0.54, p: 0.79 }, under: 0.2, safety: 2, pieces: 1.3 };
+// the 55 ms window where its predicted wall time (DECLIP_TIME) stays within DECLIP_LIMIT (baseS +
+// perSecond × the length), else the coarser ones in turn (20, then 10 ms), the step saying why.
+// DECLIP_TIME: adeclip's CPU a second of sound at a clipped share s (from 1 %, the AR model 16 %
+// of the window), fitted on the 126 files (2026-11-20, ffmpeg 9.0.2, the lab's laptop): 55 ms
+// 26.3 × s^1.36, 20 ms 2.51 × s^1.05, 10 ms 0.54 × s^0.79; the measured times lay at 0.47 to
+// 1.76 times the fit (55 ms; 20 and 10 ms up to 2.1), and ffmpeg 8.1.3 took 0.97 to 1.0 times
+// 9.0.2's (10, 20, 40 % clipped), so the prediction is twice the fit. Under 1 % (an order of 8 or
+// 12 %) every file took under 0.2 times its length. Spread over P pieces the wall time is that
+// CPU × spread / P: 7 pieces on 8 threads of 4 cores (taskset 0-7, 8.1.3) ran 2.1 to 2.5 times
+// faster than one (15 and 60 s at 20 and 40 %), 2.8 times on the laptop's 20 threads: spread 3.5.
+export const DECLIP_TIME = { 55: { c: 26.3, p: 1.36 }, 20: { c: 2.51, p: 1.05 }, 10: { c: 0.54, p: 0.79 }, under: 0.2, safety: 2, spread: 3.5 };
 export const DECLIP_LIMIT = { baseS: 150, perSecond: 1 };
 export const DECLIP_WINDOWS = [55, 20, 10];
 // The net, should a piece ever run far over its prediction: stopped after netTimes × its predicted
@@ -202,7 +203,7 @@ export function declipWindow(share, seconds, cores = os.availableParallelism(), 
   const P = declipPieces(seconds, cores), limitS = r1(lim.baseS + lim.perSecond * seconds), tried = [];
   for (const w of DECLIP_WINDOWS) {
     if (w !== DECLIP_WINDOW_MS && share >= DECLIP_FAST_MAX_SHARE) continue;
-    const cpuS = declipCpuS(share, seconds, w), wallS = (cpuS * (P > 1 ? DECLIP_TIME.pieces : 1)) / P;
+    const cpuS = declipCpuS(share, seconds, w), wallS = P > 1 ? (cpuS * DECLIP_TIME.spread) / P : cpuS;
     tried.push({ w, wallS: r1(wallS) });
     if (wallS <= limitS) return { w, cpuS: r1(cpuS), wallS: r1(wallS), pieces: P, limitS, tried };
   }
@@ -1182,7 +1183,8 @@ async function beforeNoise(file, pre, plan, state, tmp) {
   const cuts = [...Array(K + 1).keys()].map((k) => (k === K ? N : Math.round((k * N) / K / hop) * hop));
   // (opts.declipNet: another net, for the tests and the lab)
   const nt = { ...DECLIP_NET, ...state.opts.declipNet };
-  const net = state.unlimited ? null : r1(nt.times * ((step.predicted.cpuS * (K > 1 ? DECLIP_TIME.pieces : 1)) / K) + nt.s);
+  // (a piece's predicted CPU: the whole's spread over the pieces, cores shared)
+  const net = state.unlimited ? null : r1(nt.times * (K > 1 ? (step.predicted.cpuS * DECLIP_TIME.spread) / K : step.predicted.cpuS) + nt.s);
   const stop = new AbortController();
   const piece = (k) => {
     const a = Math.max(0, Math.floor((cuts[k] - win) / hop) * hop), b = Math.min(N, cuts[k + 1] + win);

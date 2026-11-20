@@ -234,13 +234,13 @@ test("plan: declip makes headroom, clicks get adeclick over a plosive's release"
   assert.doesNotMatch(fastMuch.graph, /adeclip/);
   assert.ok(fastMuch.left.some((l) => l.id === "clipped" && /took far longer than foreseen.* it stays as it is\.$/.test(l.why)), JSON.stringify(fastMuch.left));
   // no share is left alone for its own sake: 70 % clipped is redrawn where it fits
-  assert.match(clipped(0.7, {}, 10).graph, /adeclip=w=55:/);
+  assert.match(clipped(0.7, {}, 3).graph, /adeclip=w=55:/);
   const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
   assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
 });
 
 test("plan: adeclip's window is chosen before it runs, from the predicted time on the machine's cores", () => {
-  // the prediction: twice the fit on the clip sets, the pieces' CPU 1.3 times the whole's
+  // the prediction: twice the fit on the clip sets
   near(declipCpuS(0.25, 10, 55), 10 * 2 * 26.3 * 0.25 ** 1.36, 1e-9, "55 ms");
   near(declipCpuS(0.25, 10, 10), 10 * 2 * 0.54 * 0.25 ** 0.79, 1e-9, "10 ms");
   assert.equal(declipCpuS(0.005, 10, 55), 2, "under 1 %: 0.2 times the length");
@@ -256,12 +256,12 @@ test("plan: adeclip's window is chosen before it runs, from the predicted time o
   const over = declipWindow(s, L + 0.05, cores);
   assert.equal(over.w, 20);
   assert.equal(over.limitS, Math.round((150 + L + 0.05) * 10) / 10);
-  // more cores, the same recording: the 55 ms window again (its pieces run at once, their CPU
-  // 1.3 times the whole's spread over them)
+  // more cores, the same recording: the 55 ms window again (its pieces run at once, 8 of them
+  // 8 / 3.5 times as fast as one)
   const eight = declipWindow(s, L + 0.05, 8);
   assert.equal(eight.w, 55);
   assert.equal(eight.pieces, 8);
-  near(eight.wallS, (declipCpuS(s, L + 0.05, 55) * 1.3) / 8, 0.06, "its wall time");
+  near(eight.wallS, (declipCpuS(s, L + 0.05, 55) * 3.5) / 8, 0.06, "its wall time");
   // the machine's cores, one left for the video cut beside it
   assert.equal(usableCores(), Math.max(1, os.availableParallelism() - 1));
   // from 30 % only 55 ms or nothing (the coarse windows do harm there)
