@@ -91,7 +91,9 @@ export const EARLY_S = 3600;
 // out of a file with several streams) at about the source's size. Before the work starts, the free
 // space of that file system (what an ended run left there counted as free) must hold all of it and a
 // margin: a fifth more and 100 MB for what else writes to the disk (a judgement). A full disk on a
-// bot's machine is worse than a refusal.
+// bot's machine is worse than a refusal. Measured (du every 2 s, to .m4a): 2.69 GB at the most for
+// 2 hours with ffmpeg alone, 5.53 GB for 4 hours with the denoiser, 23 MB a minute both; the rule
+// asks 10.5 GB for those 4 hours.
 export const SPACE = { floatBytesPerS: 4 * 48000, floats: 3, margin: 1.2, spareBytes: 100e6 };
 // what dead runs left (a hidden folder or file beside an output, a folder of the older version in
 // the system's temp directory) is removed by the next run once it is older than this
@@ -411,7 +413,12 @@ function move(from, to) {
 // seconds, spread 3.5 times over its pieces as repair.mjs's DECLIP_TIME says). The probe for noise
 // under the voice (the denoiser there, no noise named) is about 40 s of sound through it. The
 // comparison is about one more level stage. Checked against runs of 15 s to 15 min with and
-// without the denoiser: README, "How long it takes".
+// without the denoiser: README, "How long it takes". Past that range (this laptop, the café
+// recording looped, to .m4a, one encoding each): 2 hours with ffmpeg alone took 482 s, the
+// estimate after the measuring 477 more (the level stage 345 s against 361, beside other work);
+// 4 hours with the denoiser (19 at once, 247 pieces) 1554 s against 81 + 1780 (the repair 971
+// against 929; the level stage alone, 398 against 721, ran faster than it does beside other work).
+// Long rather than short, and within a third: left as it was.
 export const ESTIMATE = {
   measure: { c0: 0.2, perS: 0.007 },
   repair: { c0: 0.2, perS: 0.007 },
