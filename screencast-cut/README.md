@@ -101,3 +101,37 @@ The sources are `screen`, `webcam`, `phone` (the phone's camera), `phone-screen`
 | `captions` | written by `captions`: the style and the key words, `"lines": 2` for two lines over a band as before (kept by `captions`; a cut with highlights and no style writes `{"highlight": […], "lines": 2}`, hormozi as on main, and `{"lines": 2}` alone keeps the clean subtitles); `false` for none (default: clean subtitles in one line) |
 | `background` | `plain`: the brand's background behind the shots instead of the blurred screen |
 | `music` | `file`, `volume` (0–1, default 0.35), `from` (seconds into the file) |
+
+## How long it takes
+
+Measured on a Sprite of a bot's size (8 CPUs, 8 GB, no GPU, Node 26, ffmpeg 8) on 2026-11-20, one thing at a time, agentitos at fb83498. The builds are the layout rig's cases: a recording already through `new` and `transcribe` and a `cut.json`, built by `build` as the skill's tool does, with the model's answers kept from an earlier run, so the tools' own work is timed and no model is called. Every Node process was timed by a `--require` hook and every ffmpeg by a wrapper; the traced builds give the same files as untraced ones. Memory is the peak of the summed resident memory of the command's processes, sampled every 50 to 100 ms.
+
+| material | tool | time | share of the material's length | peak memory |
+| --- | --- | --- | --- | --- |
+| 15 s | | not measured: no recording of that length in the test set (the shortest is 45 s) | | |
+| 60 s: a 45 s recording of a screen (2560×1440, 15 s of it), a webcam (720p) and a phone's screen (17 s), cut to 14 s, 9:16 | `build` | 6.7 s | 15 % | 374 MB |
+| 60 s: a 45 s recording of a screen (1080p), a webcam (720p) and a phone's screen (17 s), cut to 35 s, 9:16, two keeps stacked | `build` | 14.1 s | 31 % | 374 MB |
+| 60 s: a 75 s recording of a screen (1080p) and a webcam (720p), the head drifting, cut to 72 s, 4:5 | `build` | 23.5 s | 31 % | 376 MB |
+| 5 min | | not measured: no recording of that length in the test set | | |
+| 15 min | | not measured: no recording of that length in the test set | | |
+
+Of a first build, ffmpeg takes most (4.4 to 12.9 s outside layout, plus 2.4 to 4.1 s inside clips' `frame.mjs`, which follows the head in a face keep: 5.8 to 9.4 s in all); layout's `place.mjs` with platform-zones 0.8 to 1.9 s (7 to 20 keeps). `build` again in the same folder, as after a change: 1.3 to 2.3 s, 176 MB. The cut of 35 s and the one of 72 s took 14.0 s and 22.7 s at 7854462, before the room tone was added: the same within a second.
+
+**The render and HyperFrames' check**, on the same Sprite and day, of the 35 s cut (1080×1920, 30 fps), once each:
+
+| step | time | share of the film's length | peak memory |
+| --- | --- | --- | --- |
+| `hyperframes render` (0.8.221, what a bot's image carries, run as rragent's `render` tool runs it, with the machine's Chrome) | 183 s | 525 % | 2.05 GB |
+| `hfrender render` | 60 s and 56 s (two runs) | 172 % and 159 % | 6.6 to 7.0 GB summed (see below) |
+| HyperFrames' check (platform-zones' `hyperframes-check.mjs`, step 4, with 0.8.221) | 6.8 s | 19 % | 2.02 GB |
+
+HyperFrames 0.8.221 turns its low-memory profile on by itself on a machine of 8 GB or less: one capture worker, frames taken as screenshots one by one ("Low-memory profile, pinning to 1 capture worker"). That is why its render takes five times the film's length here. A first run in which it took a browser of its own cache instead of the machine's took 222 s. hfrender's memory is the sum over its browser processes, which share much of theirs, so it is an upper bound; after one of its runs three processes of its browser were still running and were stopped by hand. The check opened the film, sampled it and answered (`ok`, one warning, `timeline_track_too_dense`); on the laptop below the same check took 70 to 85 s in four runs, twice did not open the film within its 60 s and once looked at it without its timeline loaded.
+
+Not measured on the Sprite, because they call a model and nothing that calls a model runs there: `new` (it finds the webcam face with a model) and `transcribe` (ElevenLabs Scribe). They, `propose`, `sheets`, `check` and `finish` were timed on a laptop (20 CPU threads, 32 GB, its owner working beside, load about 7) in three whole runs on 2026-11-19, on the 45 s recording: `new` 11 to 14 s (1.0 GB), `transcribe` 3 to 5 s, `propose` and `sheets` 2 to 3 s, `check` under 1 s, `finish` 2 s; `build` there 15 to 17 s (465 MB).
+
+### The four waits
+
+- **The first answer** (starting value 30 s): the skill's first step is a message of its own ("getting the recording ready"), before any tool; it is one turn of the model, not measured here.
+- **The first thing to judge** (5 min for a recording of up to 5 min): `new`, `transcribe`, `propose`, `sheets`, the agent's `cut.json`, `build`, `check`, two or three `frame`s and HyperFrames' check, then the preview. The tools' part for the 45 s recording: `build` 14.1 s and HyperFrames' check 6.8 s on the Sprite (21 s), and `new`, `transcribe`, `propose` and `sheets` 17 to 20 s on the laptop above: under the starting value on both machines. Not in that sum: the agent's own turns (reading the brief and the sheets, writing `cut.json`).
+- **A change** (2 min): `cut.json` changed, `build` again and `check`. On the Sprite 1.3 to 2.3 s for the build, `check` under 1 s on the laptop above. The agent's own turns are not in it.
+- **The file** (1.5 times the video's length plus 1 min: 112 s for the 35 s cut): the render and `finish`. On the Sprite `hyperframes render` took 183 s, 71 s over the starting value; `hfrender` took 56 to 60 s, under it; `finish` 2 s on the laptop. What the time buys: HyperFrames' own renderer, held to one browser on a machine of this size. The quicker way is hfrender (AGENTS.md), which made the same 35 s film in under a minute; its frames were not compared with HyperFrames' here.

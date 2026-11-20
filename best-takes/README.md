@@ -133,3 +133,37 @@ Tested in October 2026 on a German 1:46 recording with three retries, fillers an
 | Parakeet (local, HyperFrames) | none | "Pentag Spot Matic" | words touch each other | free |
 
 For the proposal, Gemini 4 Argon found all three retries and both pieces of meta talk, kept the goodbye and marked the silence where a viewfinder is shown (11 s, 3 ¢); Gemini 3.8 Flash missed a retry in one of two runs and split ranges around fillers.
+
+## How long it takes
+
+Measured on a Sprite of a bot's size (8 CPUs, 8 GB, no GPU, Node 26, ffmpeg 8) on 2026-11-20, one build at a time, agentitos at 7854462 and fb83498 (this skill's code is the same in both). The cases are the layout rig's: each runs `build` and `place` as the skill's tools do, from takes whose words, cut and faces were kept from an earlier run, so the tools' own work is timed and no model is called. Every Node process was timed by a `--require` hook and every ffmpeg by a wrapper; the traced builds give the same files as untraced ones.
+
+| material | tool | time | share of the material's length | peak memory |
+| --- | --- | --- | --- | --- |
+| 15 s | | not measured: no material of that length in the test set | | |
+| 60 s: a 57 s take, 720p, one person, cut to 18 s, into 9:16 | `build` and `place` | 2.7 s | 5 % | 195 MB |
+| 60 s: a 50 s take, 720p, one person, cut to 38 s, into 9:16 | `build` and `place` | 4.3 s | 9 % | 194 MB |
+| 60 s: a 50 s upright take, 1080p, cut to 38 s, 9:16 | `build` and `place` | 4.9 s | 10 % | 253 MB |
+| 60 s: a 52 s take, 720p, a zoom and a change of light, cut to 44 s, into 9:16 | `build` and `place` | 5.5 s | 11 % | 191 MB |
+| 5 min | | not measured: no material of that length in the test set | | |
+| 15 min | | not measured: no material of that length in the test set | | |
+
+Of these 2.7 to 5.5 s, ffmpeg takes 1.9 to 4.7 s (cutting and levelling the pieces) and layout's `place.mjs` with platform-zones 0.4 to 0.5 s. `build` and `place` again in the same folder, as after a change: 2.2 to 4.4 s, 190 to 253 MB.
+
+Not measured on the Sprite, because they call a model and nothing that calls a model runs there: `new` (the words by ElevenLabs Scribe), `propose` (Gemini), `faces` (a model on stills). SKILL.md gives a few seconds per minute of video, half a minute, and 40 to 100 s for a take of a minute, without the machine they were measured on.
+
+**The render**, on the same Sprite and day, of the 44 s cut (1080×1920, 30 fps), once each:
+
+| step | time | share of the film's length | peak memory |
+| --- | --- | --- | --- |
+| `hyperframes render` (0.8.221, what a bot's image carries, run as rragent's `render` tool runs it, with the machine's Chrome) | 175 s | 394 % | 1.78 GB |
+| `hfrender render` | 38 s | 85 % | 3.3 GB summed (an upper bound: its browser processes share much of their memory) |
+
+HyperFrames 0.8.221 turns its low-memory profile on by itself on a machine of 8 GB or less: one capture worker, frames taken as screenshots one by one. That is why its render takes four times the film's length here.
+
+### The four waits
+
+- **The first answer** (starting value 30 s): no tool runs before the agent's first message; it is one turn of the model, not measured here.
+- **The first thing to judge** (5 min): `new`, `propose`, the agent's `cut.json`, `build`, `check`, and for a wide take `faces` and `place`, then the preview. The tools' part measured on the Sprite is 2.7 to 5.5 s (`build` and `place`). Not in that sum: `new`, `propose` and `faces`, which call models, and the agent's own turns.
+- **A change** (2 min): `cut.json` changed, `build` and `check` again, and `place` again after a change of the cut. On the Sprite 2.2 to 4.4 s. The agent's own turns are not in it.
+- **The file** (1.5 times the video's length plus 1 min: 127 s for the 44 s cut): the render and `finish` (`finish` not measured here). On the Sprite `hyperframes render` took 175 s, 49 s over the starting value; `hfrender` took 38 s, under it. What the time buys: HyperFrames' own renderer, held to one browser on a machine of this size. The quicker way is hfrender (AGENTS.md); its frames were not compared with HyperFrames' here. SKILL.md has the agent announce about 1.5 times the cut's length, which holds for hfrender on this Sprite and not for `hyperframes render`.

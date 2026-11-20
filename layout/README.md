@@ -216,3 +216,22 @@ Tested on made-up tracks (`test.mjs`: a face high, low, a tight close-up no lift
 ## The code
 
 `tools/place.mjs` is the command line. `tools/lib/`: `placed.mjs` (text over a clip placed already, over time), `area.mjs` (large type in one area over such a clip), `beside.mjs`, `beside-page.mjs` and `caption-area.mjs` (material beside the speaker, its pages, the captions' band from captions), `solve.mjs` (the cases, the ranking and its reasons), `fits.mjs` (the fits of one picture), `parts.mjs` (two people in two halves), `screen.mjs` (a screen and a webcam's circle), `screen-panel.mjs` (the screen above, the speaker's panel down to a fixed caption line), `evaluate.mjs` (one placement judged and costed), `text.mjs` (where the text finds room), `judge.mjs` (the zones' rules on the solver's boxes, and the comparison with the checker), `page.mjs` (a candidate as a page), `png.mjs` (a picture cut back to the frame), `zones.mjs` (platform-zones as a program), `defaults.mjs` (what is assumed, and the weights), `boxes.mjs` (the geometry), `sweep-page.mjs` (the sweep's page).
+
+## How long it takes
+
+Measured on a Sprite of a bot's size (8 CPUs, 8 GB, no GPU, Node 26, ffmpeg 8) on 2026-11-20, one thing at a time, agentitos at 7854462 (the code of this skill is the same at fb83498). Every Node process was timed by a `--require` hook, so each `place.mjs` call has its own time and peak memory.
+
+| material | tool | time | share of the material's length | peak memory |
+| --- | --- | --- | --- | --- |
+| 15 s | `place.mjs` | 0.04 to 0.16 s a call | does not depend on the length | 80 MB |
+| 60 s | `place.mjs` | the same | does not depend on the length | 80 MB |
+| 5 min | `place.mjs` | the same | does not depend on the length | 80 MB |
+| 15 min | `place.mjs` | the same | does not depend on the length | 80 MB |
+
+`place.mjs` reads boxes and times, never the video, so its time does not grow with the material's length; it grows with the number of calls a caller makes (one per keep or shot) and, for a face that moves, with the number of its boxes. The 55 stored cases (`cases/`, each with its caller's arguments: 21 `place`, 28 `text`, 6 `beside`, 1 `captions`) took 56 calls: a call 96 ms in the median, 163 ms at the longest, a whole case 105 ms in the median and 173 ms at the longest, 80 MB at most. All 55 gave what is stored. Each case also runs platform-zones' `zones.mjs` (26 to 37 ms, 52 MB).
+
+In the other skills' builds on the same Sprite, layout's part (its `place.mjs` calls and their `zones.mjs` calls together) was 0.1 to 1.9 s of a build: 0.8 to 1.9 s for a screen recording cut into 7 to 20 keeps, 0.4 to 0.5 s for a cut of best takes, 0.1 to 1.1 s for a narrated short, 0.1 to 0.2 s for a kinetic-lyrics short. Where a build takes longer for the layout, the time is the faces, not this skill: clips' `frame.mjs` follows a head over every frame with its own ffmpeg (2.8 to 29 s a build), and its time is in those skills' sections.
+
+### The four waits
+
+This skill has no conversation of its own: it is called inside the steps of screencast-cut, best-takes, narrated-short, kinetic-lyrics, clips and b-roll, and its share of their four waits is the 0.1 to 1.9 s a build above. It calls no model and costs nothing. A change that moves text or a picture redoes its calls for that piece only when the caller asks for them again (screencast-cut's build again: 0.7 to 1.8 s of `place.mjs` for 7 to 20 keeps).
