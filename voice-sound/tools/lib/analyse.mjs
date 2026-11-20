@@ -695,7 +695,8 @@ function summarise(st) {
     };
   }
 
-  // 5. clipping: from the histogram of the samples' levels. The ceiling: the level within 6 dB
+  // 5. clipping: from the histogram of the samples' levels, read as their distance from the DC
+  // offset (an offset alone is no ceiling; clippingOf). The ceiling: the level within 6 dB
   // under the peak (resampling a file clipped hard at 44.1 kHz overshoots its ceiling by 3 dB)
   // where the samples pile up most against a stretch under it (pileUp: samples a
   // dB within ±0.1 dB of it over samples a dB 1–3 dB under it, or within ±0.5 dB over 1.5–4 dB
@@ -704,11 +705,10 @@ function summarise(st) {
   // the signal rose to there, runSamples: the samples there a rise, on average. exactShare and
   // exactRuns: runs of 3 or more samples of the very same value within 0.1 dB of the peak (PCM
   // clipped, decoded unchanged), exactRunSamples: their mean length.
-  const clipping = clippingOf(st);
-
   // 6. DC: each channel's mean sample
   const dcs = [...st.dc].map((s) => s / Math.max(1, st.samples));
   const dcMax = Math.max(...dcs.map(Math.abs));
+  const clipping = clippingOf(st, dcMax);
 
   // 10. clicks (found in the pass): how many, a minute, how many in the pauses, the strongest
   const clickFrames = st.clicks.map(([j, d]) => ({ t: (j * CLICK_BLOCK) / RATE, overDb: d }));
@@ -1045,7 +1045,14 @@ function wholeHum(L, pauseSeconds, speechPower, dfShort) {
   };
 }
 
-function clippingOf(st) {
+// (dc: the largest channel's offset. The samples' levels gather around an offset: one larger than
+// the voice is a pile-up the histogram would read as a ceiling (dc-large of the lab's faults: 11
+// of 42 called clipped, up to 97 % of the samples, 2026-11-20). A ceiling is an extreme of the
+// wave, so every level below is its distance from the offset: the ceiling within 6 dB under the
+// peak's distance, the stretch it is compared with 1–4 dB under it, the share from it up. On the
+// side of the offset, where an offset larger than the voice puts every sample, that is exact;
+// the other side's samples, at the same level, lie further from it and are counted lower.)
+function clippingOf(st, dc = 0) {
   const H = st.hist;
   let M = 0;
   for (let b = 0; b < 32768; b++) if (H[b] && b < 0x7f80) M = b;     // the top (no inf, no NaN)
@@ -1055,23 +1062,31 @@ function clippingOf(st) {
   const binOf = (dbfs) => new Uint32Array(new Float32Array([10 ** (dbfs / 20)]).buffer)[0] >>> 16;
   const peak = 20 * Math.log10(value(M + 1));
   const cnt = (lo, hi) => { let s = 0; for (let b = binOf(lo); b < Math.min(32768, binOf(hi)); b++) s += H[b]; return s; };
+  // The levels are read as the wave's distance from the offset (e: dB of |x| − dc; abs(e) the
+  // sample level there): the same as the samples' own levels without an offset.
+  const P = 10 ** (peak / 20), d = Math.min(Math.abs(dc), P), swing = P - d > 1e-9;
+  const abs = (e) => (d > 0 ? 20 * Math.log10(d + 10 ** (e / 20)) : e);
+  const top = d > 0 ? (swing ? 20 * Math.log10(P - d) : -Infinity) : peak;
   // narrow: ±0.1 dB against 1–3 dB under (PCM, a ceiling exact to the sample); wide: ±0.5 dB
   // against 1.5–4 dB under (a lossy codec or a resampler rings around the ceiling)
-  let best = { c: peak, ratio: 0, half: 0.1 };
+  let best = { c: top, ratio: 0, half: 0.1 };
   for (const [half, a, b] of [[0.1, 1, 3], [0.5, 1.5, 4]]) {
-    for (let c = peak - 6; c <= peak + 1e-9; c += 0.05) {
-      const below = cnt(c - b, c - a) / (b - a);
-      const ratio = below > 0 ? (cnt(c - half, c + half) / (2 * half)) / below : 0;
+    for (let c = top - 6; swing && c <= top + 1e-9; c += 0.05) {
+      // (a swing far smaller than the offset leaves too few of the histogram's bins, 1/128 of an
+      // octave of the level, for a window: at least 3, as ±0.1 dB has 4 without an offset)
+      if (binOf(abs(c + half)) - binOf(abs(c - half)) < 3 || binOf(abs(c - a)) - binOf(abs(c - b)) < 3) continue;
+      const below = cnt(abs(c - b), abs(c - a)) / (b - a);
+      const ratio = below > 0 ? (cnt(abs(c - half), abs(c + half)) / (2 * half)) / below : 0;
       if (ratio > best.ratio) best = { c, ratio, half };
     }
   }
-  const ceiling = best.ratio > 1 ? best.c : peak;
-  const from = binOf(ceiling - (best.ratio > 1 ? 2 * best.half : 0.2));
+  const ceiling = best.ratio > 1 ? abs(best.c) : peak;
+  const from = binOf(best.ratio > 1 ? abs(best.c - 2 * best.half) : swing ? abs(top - 0.2) : peak);
   let share = 0, ups = 0;
   for (let b = from; b <= M; b++) share += H[b];
   for (let b = 0; b <= from; b++) ups += st.up[b];
   let ex = 0, exRuns = 0;
-  for (let b = binOf(peak - 0.1); b <= M; b++) { ex += st.runSamples[b]; exRuns += st.runHist[b]; }
+  if (swing) for (let b = binOf(abs(top - 0.1)); b <= M; b++) { ex += st.runSamples[b]; exRuns += st.runHist[b]; }
   return {
     peakDb: r2(peak), ceilingDb: r2(ceiling), pileUp: r2(best.ratio),
     share: Number((share / total).toPrecision(3)), runs: ups, runSamples: ups ? r1(share / ups) : 0,

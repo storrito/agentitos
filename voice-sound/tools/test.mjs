@@ -243,6 +243,26 @@ test("a DC offset of 0.05", { skip }, async () => {
   assert.ok(!ids(m).includes("rumble") && !ids(m).includes("thumps"), ids(m).join());
 });
 
+test("an offset larger than the voice is no clipping; a clipped voice with an offset is still clipped", { skip }, async () => {
+  // (the samples gather around the offset: the histogram once read that as a ceiling, 2026-11-20)
+  for (const off of [0.1, -0.1, 0.3]) {
+    const m = await measure(fault(`dc-only${off}.wav`, "-af", `volume=-20dB,aeval=val(0)+${off}`));
+    assert.ok(ids(m).includes("dc"), ids(m).join());
+    assert.ok(!ids(m).includes("clipped"), `${off}: ${JSON.stringify(m.clipping)}`);
+  }
+  const loud = samples(fault("loud-dc.wav", "-af", "volume=6dB"));
+  const abs = Float64Array.from(loud, Math.abs).sort(), ceiling = abs[Math.floor(abs.length * 0.99)];
+  const clip = `aeval='max(-${ceiling},min(${ceiling},val(0)))'`;
+  // the offset after the clipping (the ceiling moved with it) and before it (the clipping lopsided)
+  for (const [name, af] of [["after", `volume=6dB,${clip},aeval=val(0)+0.1`], ["before", `volume=6dB,aeval=val(0)+0.1,${clip}`]]) {
+    const m = await measure(fault(`clipped-dc-${name}.wav`, "-af", af));
+    assert.ok(ids(m).includes("clipped") && ids(m).includes("dc"), `${name}: ${ids(m).join()} ${JSON.stringify(m.clipping)}`);
+    // (after: the two ceilings 0.1 over and under where they were; the one that piles up more)
+    const sides = name === "after" ? [ceiling + 0.1, ceiling - 0.1] : [ceiling];
+    assert.ok(sides.some((c) => Math.abs(m.clipping.ceilingDb - 20 * Math.log10(c)) <= 0.3), `${name}: ceiling ${m.clipping.ceilingDb}, not at ${sides.map((c) => (20 * Math.log10(c)).toFixed(2))}`);
+  }
+});
+
 test("band limits: a 16 kHz source ends at 8 kHz, a telephone's at 3.5 to 4 kHz and over 200 Hz", { skip }, async () => {
   const m16 = await measure(fault("16k.wav", "-af", "aresample=16000,aresample=48000"));
   assert.equal(m16.bandwidth.topHz, 8000);
