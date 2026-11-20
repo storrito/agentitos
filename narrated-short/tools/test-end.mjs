@@ -114,16 +114,20 @@ test("build without \"handle\" (left out, null, \"\"): no name at the end, no el
 test("build: freeze-cutout's refusal of a freeze without room reaches the agent unchanged, in one line, and the plain clip is used; a freeze it takes is used", { skip: buildSkip.skip || (!fs.existsSync(cutoutTool) && "no freeze-cutout beside") }, () => {
   const dir = tmp();
   try {
-    // the reviewer's case: the first beat 0 to 2.5 s, a freeze 1.33 s in (its refusal comes before any model call)
-    const s = short(dir);
+    // the reviewer's case: the first beat 0 to 2.5 s from 0.37 s of its source, cut a frame short
+    // (74 frames), a freeze 1.33 s in: freeze-cutout refuses it for lack of room, before any model.
+    // No way to a model either way: no key, and its gateway (freeze-cutout's lib/openrouter.mjs:
+    // RRAGENT_GATEWAY, else SPRITE_GATEWAY_URL) a port on this machine where nothing listens
+    const offline = { OPENROUTER_API_KEY: "", RRAGENT_GATEWAY: "http://127.0.0.1:9", SPRITE_GATEWAY_URL: "http://127.0.0.1:9" };
+    const s = short(dir, offline);
     const comp = path.join(dir, "composition");
-    s.beats({}, { freeze: 1.33 });
+    s.beats({}, { at: 0.37, freeze: 1.33 });
     let r = s.build(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    const said = spawnSync(process.execPath, [cutoutTool, path.join(comp, "assets", "clips", "a.mp4"), path.join(dir, "pop.mp4"), "--at", "1.33", "--work", dir], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" }, timeout: 60e3 });
+    const said = spawnSync(process.execPath, [cutoutTool, path.join(comp, "assets", "clips", "a.mp4"), path.join(dir, "pop.mp4"), "--at", "1.33", "--work", dir], { encoding: "utf8", env: { ...process.env, ...offline }, timeout: 60e3 });
     assert.equal(said.status, 1, said.stdout + said.stderr);
     const sentence = said.stdout.trim();
-    assert.equal(sentence.split("\n").length, 1);
+    assert.match(sentence, /^A freeze at 1\.33 s does not fit a clip of 2\.4\d s: it needs 0\.2 s before it and 1\.2 s after it\.$/);
     assert.ok(r.stdout.includes(`  ! a: no freeze (${sentence}); the plain clip is used\n`), r.stdout);
     assert.match(html(comp), /src="assets\/clips\/a\.mp4"/);
 
