@@ -6,7 +6,8 @@
 //   voiceTrack(file, pieces, out, { tone })       the voice of every spoken piece at its take's
 //                                                 level and speed with 20 ms fades; the muted
 //                                                 pieces the recording's room (room.mjs) at the
-//                                                 level of the words before them, else silence
+//                                                 level of the words before them, as long as it
+//                                                 lasts, else silence
 //   cameraTrack(file, offset, pieces, out, opts)  the webcam at every piece's moment and speed
 //   backdropTrack(pick, pieces, out, opts)        each piece's screen, small and blurred: the
 //                                                 background behind the shots
@@ -16,6 +17,7 @@
 
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
+import { FADE_OUT } from "./room.mjs";
 
 const n = (x) => +x.toFixed(4);
 // every spoken piece fades in and out this long (seconds): a cut in the quiet does not click, the
@@ -61,10 +63,10 @@ function roomGains(pieces) {
   });
 }
 
-// tone: roomTone()'s answer (its file, or why there is none); without one the muted pieces are
-// silence, as before
+// tone: roomTone()'s answer (its file and how many seconds of room it holds, or why there is
+// none); without one the muted pieces are silence, as before
 export function voiceTrack(file, pieces, out, { tone } = {}) {
-  const room = tone?.file && pieces.some((p) => p.mute) ? tone : null;
+  const room = tone?.file && tone.seconds > 0 && pieces.some((p) => p.mute) ? tone : null;
   const gains = room ? roomGains(pieces) : null;
   const key = JSON.stringify({ file, mtime: fs.statSync(file).mtimeMs, pieces: pieces.map((p) => [n(p.in), n(p.duration), p.mute ? 0 : p.gain, p.rate || 1]),
     ...(room ? { room: [...room.key, gains] } : {}) });
@@ -76,8 +78,11 @@ export function voiceTrack(file, pieces, out, { tone } = {}) {
   const parts = pieces.map((p, i) => {
     const d = n(p.duration);
     if (p.mute && room) {
-      return `[room${r++}]atrim=duration=${d},asetpts=PTS-STARTPTS,volume=${gains[i]}dB,`
-        + `afade=t=in:d=${ROOM_FADE},afade=t=out:st=${n(Math.max(0, d - ROOM_FADE))}:d=${ROOM_FADE},apad=whole_dur=${d},atrim=duration=${d}[a${i}]`;
+      // longer than the room the recording has: it fades out over FADE_OUT where the room ends, and
+      // is silent after it (a stretch heard twice in one piece is a whoosh)
+      const end = Math.min(d, room.seconds), fade = d > room.seconds ? n(Math.min(FADE_OUT, end / 2)) : ROOM_FADE;
+      return `[room${r++}]atrim=duration=${n(end)},asetpts=PTS-STARTPTS,volume=${gains[i]}dB,`
+        + `afade=t=in:d=${ROOM_FADE},afade=t=out:st=${n(Math.max(0, end - fade))}:d=${fade},apad=whole_dur=${d},atrim=duration=${d}[a${i}]`;
     }
     if (p.mute) return `aevalsrc=0:s=48000:c=mono:d=${d}[a${i}]`;
     // a cut played faster (--speed): its voice too, at its own pitch
