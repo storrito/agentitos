@@ -60,7 +60,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-import { Refusal } from "./analyse.mjs";
+import { Refusal, AS_PLAYED } from "./analyse.mjs";
 import {
   findingsOf, CHANNEL_STRONG_DB, INVERTED_SOME_DB, CLIP_STRONG_SHARE, HUM_SOME_DB, RUMBLE_SOME_DB,
 } from "./findings.mjs";
@@ -266,7 +266,8 @@ export function repairPlan(m, opts = {}) {
   // sound a second time and clips its overshoot at full scale: a clean voice 45 dB down at 16 bits
   // came out of `clean --level off` at PESQ 2.78, with this 3.49; at its own level, peaks at full
   // scale, the high-pass's error went from −50 to −88 dB, 2026-11-20)
-  const head = ["aformat=sample_fmts=flt", `aresample=${RATE}`];
+  // (the sound as it plays, its gaps and a late start filled with silence: as measure reads it)
+  const head = ["aformat=sample_fmts=flt", AS_PLAYED, `aresample=${RATE}`];
   let pick = null;           // the pan coefficients of the analysed left and right
   if (inChannels >= 2) {
     const c = m.channels || {};

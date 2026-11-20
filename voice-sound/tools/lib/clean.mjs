@@ -64,7 +64,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./measure.mjs";
-import { Refusal, facts } from "./analyse.mjs";
+import { Refusal, facts, AS_PLAYED } from "./analyse.mjs";
 import { level, LevelError, TARGETS, LIMITER, MAX_GAIN_DB, tooQuiet, NO_LOUDNESS_LUFS, TWO_SPEAKERS_LU, loudness, loudnessAt, ffmpegRun, stopChildren } from "./level.mjs";
 import { targets as platformTargets } from "./targets.mjs";
 
@@ -91,7 +91,9 @@ export const FORMATS = {
   mp4: { kind: "video", codec: AAC, says: "AAC at 192 kbit/s", name: "aac", audio: "m4a", faststart: true },
   m4v: { kind: "video", codec: AAC, says: "AAC at 192 kbit/s", name: "aac", audio: "m4a", faststart: true, muxer: "mp4" },
   mov: { kind: "video", codec: AAC, says: "AAC at 192 kbit/s", name: "aac", audio: "m4a", faststart: true },
-  mkv: { kind: "video", codec: AAC, says: "AAC at 192 kbit/s", name: "aac", audio: "m4a" },
+  // (mkv's sound written as Matroska: AAC copied from an .m4a into it lands 21 ms late, its
+  // encoder's delay counted twice, 2026-11-20, ffmpeg 8.1.3)
+  mkv: { kind: "video", codec: AAC, says: "AAC at 192 kbit/s", name: "aac", audio: "mka" },
   webm: { kind: "video", codec: ["-c:a", "libopus", "-b:a", "192k"], says: "Opus at 192 kbit/s", name: "opus", audio: "webm", encoder: "libopus" },
 };
 const AUDIO_ENDINGS = Object.keys(FORMATS).filter((k) => FORMATS[k].kind === "audio").map((k) => `.${k}`);
@@ -220,7 +222,8 @@ async function comparison(src, dest, { lufs, channels, srcChannels, codec, T, cu
   const chan = channels === 1 ? (srcChannels === 1 ? "anull" : "aformat=channel_layouts=mono")
     : srcChannels === 1 ? "pan=stereo|c0=c0|c1=c0" : srcChannels === 2 ? "anull" : "aformat=channel_layouts=stereo";
   // (float first: a filter fed 16 bits may work in 16 bits and round a quiet voice again)
-  const base = `aformat=sample_fmts=fltp,${chan},aresample=48000`;
+  // (and as it plays, its gaps filled: in step with the output)
+  const base = `aformat=sample_fmts=fltp,${AS_PLAYED},${chan},aresample=48000`;
   const was = await loudnessAt(src, cut ? `${base},${cut}` : base), wasPeak = cut ? (await loudnessAt(src, base)).truePeak : was.truePeak;
   if (was.lufs == null || lufs == null) throw new LevelError("could not measure the source's loudness for --before.");
   let gain = lufs - was.lufs, limited = wasPeak != null && wasPeak + gain > T.peakAccepted, ceiling = T.truePeak, best = null, writes = 0;
@@ -357,9 +360,9 @@ export async function clean(file, out, opts = {}, stages = null) {
     // 0. the voice's stream on its own when it is not the first (measure and repair read the first)
     let src = fileAbs;
     if (o.audio > 1) {
+      // (as it plays, from the file's start: a copy would start at its own first packet; FLAC, lossless)
       src = path.join(work, "voice.mka");
-      let r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-c", "copy", "-map_metadata", "-1", src]);
-      if (r.status !== 0) r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-c:a", "flac", "-map_metadata", "-1", src]);
+      const r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-af", AS_PLAYED, "-c:a", "flac", "-map_metadata", "-1", src]);
       if (r.status !== 0) throw new LevelError(`ffmpeg could not take the ${nth(o.audio)} audio stream out of ${f.name}: ${lastLine(r.stderr)}`);
     }
     const named = (e) => { if (e instanceof Refusal && src !== fileAbs) e.message = e.message.split(rel(src)).join(`${f.name}'s ${nth(o.audio)} audio stream`); return e; };
@@ -408,10 +411,10 @@ export async function clean(file, out, opts = {}, stages = null) {
     if (o.level !== "off" && m.speech?.bursts?.count > 0) burstsNow = (await measureOf(mended, "mended")).speech?.bursts ?? null;
     const lv = await level(mended, sound, { targets: T, mono: o.mono, level: o.level, encode: fmt.codec, tmp: work, removeInput: true, keepLufs: srcAsPlayed, peaks: o.peaks,
       ...(burstsNow && { bursts: burstsNow, burstsBefore: m.speech.bursts }) });
-    // 5. a video: the picture copied with the new sound, in step (the voice's stream started where it started)
+    // 5. a video: the picture copied with the new sound from 0, in step (the sound was read as it
+    // plays, from the file's start: a late start and every gap are in it as silence)
     if (fmt.kind === "video") {
-      const offset = Math.max(0, chosen.start - streams.start);
-      const r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-itsoffset", offset.toFixed(6), "-i", sound,
+      const r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-i", sound,
         "-map", "0:V", "-map", "1:a:0", "-c", "copy", "-map_metadata", "-1", "-map_chapters", "-1",
         ...(fmt.faststart ? ["-movflags", "+faststart"] : []), ...(fmt.muxer ? ["-f", fmt.muxer] : []), outPart]);
       if (r.status !== 0) throw new LevelError(`ffmpeg could not put the new sound to the picture: ${lastLine(r.stderr)}`);

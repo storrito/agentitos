@@ -90,6 +90,10 @@ const L1 = lowpass(900, 0.5412), L2 = lowpass(900, 1.3066);
 // that begins with a dash ("-take.flac") is read as an option, and one with a colon before any
 // slash ("take:1.wav", "pipe:0") as a protocol.
 export const input = (file) => `file:${path.resolve(file)}`;
+// a source's sound as it plays, not as its packets come: gaps in its time stamps (Chrome's Opus in
+// WebM: 380.1 s decoded to 376.3 s, 2026-11-02) and a late start filled with silence, from the
+// file's start. The first filter of every decode of a source (measure, repair, clean's comparison).
+export const AS_PLAYED = "aresample=async=1:first_pts=0";
 
 export function facts(file) {
   // the path as given from here, or whole when it lies outside the working directory
@@ -126,8 +130,11 @@ export function facts(file) {
 export async function analyse(file, f) {
   const C = Math.min(2, f.channels || 1);
   const st = state(C, f.duration);
+  // (the sound as it plays: a gap in its time stamps, as a browser's Opus in WebM has them, and a
+  // late start filled with silence, so that every time measured is the file's own; a file
+  // without gaps decodes to the same samples, 2026-11-20)
   const args = ["-hide_banner", "-nostats", "-nostdin", "-i", input(file), "-map", "0:a:0",
-    "-af", "ebur128=peak=true:framelog=verbose", "-ac", String(C), "-ar", String(RATE), "-f", "f32le", "pipe:1"];
+    "-af", `${AS_PLAYED},ebur128=peak=true:framelog=verbose`, "-ac", String(C), "-ar", String(RATE), "-f", "f32le", "pipe:1"];
   const p = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
   let tail = "";
   p.stderr.setEncoding("utf8");
