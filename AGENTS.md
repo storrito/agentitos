@@ -2,13 +2,14 @@
 
 A collection of agent skills, one top-level folder each. [README.md](README.md) holds the conventions in full; this is what an agent working on the collection must not miss.
 
-## A new skill
+## Before you build a skill
 
 The collection makes videos for social media from raw material of any source and brings them out on the platforms. People use it through rragent, whose bots run on Claude Opus 5.5 on a Sprite of 8 cores and 8 GB, and wait in front of the chat for their video. [docs/standards.md](docs/standards.md) is what a skill is measured by.
 
-- Read `docs/standards.md` before you plan a skill or a larger change to one; the pull request answers its table.
+- Read `docs/standards.md` before you plan a skill or a change to what one does or asks; the pull request answers its table.
 - Read `docs/testing.md` before you look for material to try it on or run anything on a Sprite: the corpus the sessions share, and the test Sprites.
-- Read `docs/lessons.md` before you write the tools and the SKILL.md, and add to it at the end what went wrong and would go wrong again.
+- Read `docs/lessons.md` before you write the tools and the SKILL.md, and add to it when you are done what went wrong and would go wrong again.
+- Ask the skill's owner at the moments of `docs/standards.md`, section 10: before building (examples and the flow), at the first rough result (variants), when the skill works (a run in rragent's chat).
 
 ## Reuse what a skill already does
 
