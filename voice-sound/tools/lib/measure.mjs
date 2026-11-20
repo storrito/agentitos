@@ -4,7 +4,8 @@
 // cleaning (lib/clean.mjs, which measures before and after) both need it.
 //
 //   measure(file)  → { file, duration, sound, analysed, loudness, speech, levels, noise, hum,
-//                      clipping, dc, bandwidth, tone, low, clicks, channels, room, findings }
+//                      clipping, dc, bandwidth, tone, low, clicks, channels, room, voice,
+//                      findings }; voice: { found, why, frames, pitchShare, rhythmDb }
 //                    throws a Refusal (one sentence) for a file that is not there, has no sound
 //                    or is silent all through
 //   lines(m)       → the lines of `measure` without --json
@@ -12,7 +13,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { facts, analyse, Refusal } from "./analyse.mjs";
-import { findingsOf, noiseKind, humHz } from "./findings.mjs";
+import { findingsOf, noiseKind, humHz, voiceOf } from "./findings.mjs";
 
 const TOOL = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "voice.mjs");
 const rel = (p) => { const r = path.relative(process.cwd(), p); return r && !r.startsWith("..") ? r : p; };
@@ -35,6 +36,7 @@ export async function measure(file) {
     analysed: { sampleRate: 48000, channels: m.channelsAnalysed, seconds: m.seconds },
     loudness: m.loudness, speech: m.speech, levels: m.levels, noise: m.noise, hum: m.hum, clipping: m.clipping, dc: m.dc,
     bandwidth: m.bandwidth, tone: m.tone, low: m.low, clicks: m.clicks, channels: m.channels, room: m.room,
+    voice: voiceOf(m.voice),
   };
   out.findings = findingsOf(out);
   return out;
@@ -46,6 +48,7 @@ export function lines(m) {
   const layout = s.channels === 1 ? "mono" : s.channels === 2 ? "stereo" : `${s.channels} channels (measured as two)`;
   const out = [`${m.file}: ${clock(m.analysed.seconds)} of sound${s.video ? " in a video" : ""}, ${s.sampleRate ? `${+(s.sampleRate / 1000).toFixed(1)} kHz ` : ""}${layout}, speech ${Math.round(sp.share * 100)} % of the time.`];
   if (!sp.seconds) out.push("No voice found in it: the level never rises far enough over its floor.");
+  else if (m.voice?.found === false) out.push(`No voice found in it: ${m.voice.why}.`);
   const loud = [lo.integratedLufs != null && `Loudness ${f1(lo.integratedLufs)} LUFS`, L.speechLufs != null && `the speech ${f1(L.speechLufs)} LUFS`,
     lo.rangeLu != null && `range ${f1(lo.rangeLu)} LU`, lo.truePeakDb != null && `true peak ${f1(lo.truePeakDb)} dBTP`].filter(Boolean);
   if (loud.length) out.push(`${loud.join(", ")}.`);

@@ -152,6 +152,29 @@ export const INVERTED_STRONG_DB = -15;
 export const ROOMY_SOME_S = 0.5;
 export const ROOMY_STRONG_S = 0.8;
 
+// A voice: what measure took for speech carries a pitch in VOICE_PITCH_SHARE of its frames (a
+// frame's autocorrelation peaking at VOICE_PITCH_NAC at a lag of 70 to 375 Hz), or moves at a
+// syllable's pace (2–8 Hz) by VOICE_RHYTHM_DB. Tune split, 2026-11-20: of 2473 recordings with
+// a voice (clean, real, pairs and the 54 faults) the fewest frames with a pitch were 25 % (clean
+// speech under DEMAND noise as loud as itself), the least rhythm 1.8 dB, 3.1 dB at the 1st
+// percentile; of 132 recordings without one (cuts of 5 to 60 s of the 9 DEMAND rooms, as they are
+// and 20 dB louder, and made-up noise and hum) the median had a pitch in 7.5 % of its frames, a
+// rhythm of 1.5 dB, and 70 fall under both. The rest hold voices of their own (cafeteria,
+// restaurant, living room) or tonal sounds (a kitchen's, a bus's engine). The rhythm is there for
+// a whisper, which has no pitch (none in the corpus); the threshold of the pitch leaves a voice
+// 2.5 times the share it needs. Where nothing rises over the floor there is no voice either.
+export const VOICE_PITCH_NAC = 0.6;
+export const VOICE_PITCH_SHARE = 0.1;
+export const VOICE_RHYTHM_DB = 3;
+export function voiceOf(v) {
+  if (!v) return null;
+  const pct0 = (x) => `${Math.round(x * 100)} %`;
+  if (!v.frames) return { found: false, why: "nothing in it rises over its floor far enough to be speech", ...v };
+  const found = v.pitchShare >= VOICE_PITCH_SHARE || (v.rhythmDb ?? 0) >= VOICE_RHYTHM_DB;
+  const seen = `a pitch in ${pct0(v.pitchShare)} of the ${v.frames} frames taken for speech, their level moving by ${f1(v.rhythmDb ?? 0)} dB at a syllable's pace`;
+  return { found, why: found ? seen : `${seen}: a voice has a pitch in ${pct0(VOICE_PITCH_SHARE)} of them or more, or moves by ${VOICE_RHYTHM_DB} dB`, ...v };
+}
+
 // The noise's kind, from its numbers (null without noise to measure); low noise that is the
 // hum's harmonics is hum, not rumble
 export function noiseKind(n, hum) {

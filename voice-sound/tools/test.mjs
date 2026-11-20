@@ -263,6 +263,35 @@ test("an offset larger than the voice is no clipping; a clipped voice with an of
   }
 });
 
+test("a voice: found in a voice, a whisper and a voice under noise as loud as itself; not in noise alone", { skip }, async () => {
+  assert.equal(clean.voice.found, true, JSON.stringify(clean.voice));
+  assert.ok(clean.voice.pitchShare >= 0.3, JSON.stringify(clean.voice));
+  // a whisper: VOICE's syllables and formants on noise instead of a pitch
+  const whisper = file("whisper.wav");
+  run(["-filter_complex", `anoisesrc=color=white:amplitude=0.2:r=48000:d=${D}:seed=7,volume='lt(mod(t,3.6),2.5)*pow(sin(12.566*mod(t,3.6)),2)':eval=frame,` +
+    `equalizer=f=500:t=o:w=1:g=10,equalizer=f=1500:t=o:w=1:g=6,equalizer=f=2700:t=o:w=0.8:g=4,lowpass=f=5000[v];anoisesrc=color=pink:amplitude=0.0015:r=48000:d=${D}:seed=5[n];[v][n]amix=inputs=2:normalize=0`, "-ac", "1", "-c:a", "pcm_s16le", whisper]);
+  const w = await measure(whisper);
+  assert.ok(w.voice.pitchShare < 0.1 && w.voice.found === true, JSON.stringify(w.voice));
+  const noise = file("pink-loud.wav");
+  run(["-f", "lavfi", "-i", `anoisesrc=color=pink:amplitude=0.05:r=48000:d=${D}:seed=9`, "-c:a", "pcm_f32le", noise]);
+  const gain = clean.levels.speechLufs - lufsOf(noise);
+  const loud = file("noisy-0db.wav");
+  run(["-i", base, "-i", noise, "-filter_complex", `[1:a]volume=${gain.toFixed(2)}dB[n];[0:a][n]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", loud]);
+  assert.equal((await measure(loud)).voice.found, true);
+  // noise alone: steady pink, a swell of it, brown (traffic's rumble), a hum with harmonics
+  for (const [name, graph] of [["pink", "anoisesrc=color=pink:amplitude=0.05:r=48000:d=20:seed=1"],
+    ["swell", "anoisesrc=color=pink:amplitude=0.05:r=48000:d=20:seed=5,volume='0.2+0.8*pow(sin(0.5*t),2)':eval=frame"],
+    ["brown", "anoisesrc=color=brown:amplitude=0.1:r=48000:d=20:seed=2"],
+    ["hum", `anoisesrc=color=pink:amplitude=0.01:r=48000:d=20:seed=4[p];${humOf(50, 0.02, "1", 20)};[p][hum]amix=inputs=2:normalize=0`]]) {
+    const f = file(`alone-${name}.wav`);
+    run(["-filter_complex", graph, "-ac", "1", "-c:a", "pcm_s16le", f]);
+    const m = await measure(f);
+    assert.equal(m.voice.found, false, `${name}: ${JSON.stringify(m.voice)}`);
+    assert.match(m.voice.why, /^(a pitch in \d+ % of the \d+ frames taken for speech, their level moving by [\d.]+ dB at a syllable's pace: a voice has|nothing in it rises)/);
+    if (m.speech.seconds) assert.ok(lines(m).some((l) => l.startsWith("No voice found in it: ")), lines(m).join("\n"));
+  }
+});
+
 test("band limits: a 16 kHz source ends at 8 kHz, a telephone's at 3.5 to 4 kHz and over 200 Hz", { skip }, async () => {
   const m16 = await measure(fault("16k.wav", "-af", "aresample=16000,aresample=48000"));
   assert.equal(m16.bandwidth.topHz, 8000);

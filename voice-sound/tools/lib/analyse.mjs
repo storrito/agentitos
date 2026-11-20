@@ -28,7 +28,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fftOf, split, hann } from "./fft.mjs";
 import { HUM_MIN_PAUSE_S, HUM_PART_S, HUM_PARTS_MAX, HUM_LINE_DB, HUM_STEADY_DB, HUM_SOME_DB, HUM_OFF_SHARE,
-  HUM_WHOLE_LINE_DB, HUM_WHOLE_SHARE, HUM_WHOLE_STEADY_DB, HUM_WHOLE_MIN_WINDOWS } from "./findings.mjs";
+  HUM_WHOLE_LINE_DB, HUM_WHOLE_SHARE, HUM_WHOLE_STEADY_DB, HUM_WHOLE_MIN_WINDOWS, VOICE_PITCH_NAC } from "./findings.mjs";
 
 export class Refusal extends Error {}
 const refuse = (msg) => { throw new Refusal(msg); };
@@ -53,6 +53,11 @@ const HUM_TOP_HZ = 720;                  // the harmonics looked at: up to 720 H
 // of a hertz, and whether a line is there under the voice.
 const LONG_N = 8192, LONG_HOP = 2048, LONG_K = 2100;
 const LONG_NEAR = 4, LONG_FAR = 12;      // the bins beside a line: 4 to 12 away (1.5–4.4 Hz)
+// A frame's pitch, on the same 3 kHz signal: its last 128 samples (43 ms, the frame's spectrum's
+// span), the normalised autocorrelation at lags of 8 to 43 samples (375 to 70 Hz), its highest
+// peak (a lag whose neighbours are lower: rumble and a 50 Hz hum fall off from the shortest lag);
+// a pitch where that reaches VOICE_PITCH_NAC
+const PITCH_N = 128, PITCH_LO = 8, PITCH_HI = 43;
 export const FRAME_S = HOP / RATE;
 
 // The bands every frame keeps, in Hz: fine enough at the bottom for rumble and thumps (<100 Hz),
@@ -200,6 +205,10 @@ function state(C, duration) {
     lre: new Float64Array(LONG_N), lim: new Float64Array(LONG_N), lP: new Float64Array(LONG_K + 1), lCum: new Float64Array(LONG_K + 2),
     lOver: new Float64Array(LONG_K + 1), lDb: new Float64Array(LONG_K + 1), lDb2: new Float64Array(LONG_K + 1),
     lBuckets: new Float64Array(150 * (LONG_K + 1)), lCount: new Float64Array(150), lWindows: 0, lW2: lw.reduce((s, x) => s + x * x, 0),
+    // the pitch: per 1 dB of the frames' level in 300–3500 Hz, how many frames, and how many
+    // with a pitch (4.8 kB whatever the length)
+    pBuf: new Float64Array(PITCH_N), pCum: new Float64Array(PITCH_N + 1), pR: new Float64Array(PITCH_HI + 2),
+    pCount: new Float64Array(300), pVoiced: new Float64Array(300), lastSp: 0,
     // the clicks: per 1.3 ms the largest |second difference| of any channel, kept for ±16 ms
     ring: new Float64Array(256), blocks: 0, checked: 0, clicks: [], clickCount: 0, bmax: new Float64Array(16),
   };
@@ -280,6 +289,7 @@ function frame(st, x, bits, count) {
   for (let c = 0; c < C; c++) st.lng[c].set(st.dec[c].subarray(st.decFill, st.decFill + nd), st.lngFill);
   st.lngFill += nd;
   if (st.lngFill >= LONG_N) longFrame(st);
+  pitchFrame(st, st.decFill + nd);
   st.decFill += count >> 4;
   if (st.decFill >= HUM_N) humFrame(st);
   // the clicks' blocks of this frame
@@ -310,6 +320,38 @@ function spectrum(st, fi) {
   }
   for (let b = 0; b < NB; b++) st.bands[fi * NB + b] = Math.max(-30000, Math.round(1000 * Math.log10(band[b] || 1e-300)));
   st.aw[fi] = aw;
+  let sp = 0;
+  for (const b of SPEECH_BANDS) sp += band[b];
+  st.lastSp = sp;
+}
+
+// The frame's pitch (PITCH_N): on the louder channel's last 128 samples of the 3 kHz signal,
+// which end at `end` in st.dec; counted into the bucket of the frame's level
+function pitchFrame(st, end) {
+  if (end < PITCH_N) return;
+  let c = 0;
+  if (st.C === 2) {
+    let e0 = 0, e1 = 0;
+    for (let i = end - PITCH_N; i < end; i++) { e0 += st.dec[0][i] ** 2; e1 += st.dec[1][i] ** 2; }
+    c = e1 > e0 ? 1 : 0;
+  }
+  const x = st.dec[c], b = st.pBuf, e = st.pCum, r = st.pR, N = PITCH_N, o = end - N;
+  let m = 0;
+  for (let i = 0; i < N; i++) m += x[o + i];
+  m /= N;
+  e[0] = 0;
+  for (let i = 0; i < N; i++) { b[i] = x[o + i] - m; e[i + 1] = e[i] + b[i] * b[i]; }
+  for (let t = PITCH_LO - 1; t <= PITCH_HI + 1; t++) {
+    let s = 0;
+    for (let i = 0; i < N - t; i++) s += b[i] * b[i + t];
+    const d = Math.sqrt(e[N - t] * (e[N] - e[t]));
+    r[t] = d > 0 ? s / d : 0;
+  }
+  let best = 0;
+  for (let t = PITCH_LO; t <= PITCH_HI; t++) if (r[t] > best && r[t] >= r[t - 1] && r[t] >= r[t + 1]) best = r[t];
+  const q = Math.max(0, Math.min(299, Math.round(10 * Math.log10(st.lastSp || 1e-30)) + 200));
+  st.pCount[q]++;
+  if (best >= VOICE_PITCH_NAC) st.pVoiced[q]++;
 }
 
 // A window of the hum's 3 kHz signal: its power spectrum, added to the bucket of its level in
@@ -748,7 +790,11 @@ function summarise(st) {
   // slower than the room, never faster. rangeDb: the median dB a decay was fitted over.
   const room = roomOf(st, F, lufs(noiseKw) + 0.691, speechKw);
 
+  // 13. a voice: whether what was taken for speech carries a pitch and a syllable's rhythm (voiceOf)
+  const voice = voiceOf(st, Sp, silent, floor, margin, F);
+
   return {
+    voice,
     seconds: r2(seconds), channelsAnalysed: C,
     speech: {
       share: r3(speechFrames / Math.max(1, F)), seconds: r1(speechFrames * FRAME_S), silentShare: r3(silentFrames / Math.max(1, F)),
@@ -1091,6 +1137,37 @@ function clippingOf(st, dc = 0) {
     peakDb: r2(peak), ceilingDb: r2(ceiling), pileUp: r2(best.ratio),
     share: Number((share / total).toPrecision(3)), runs: ups, runSamples: ups ? r1(share / ups) : 0,
     exactShare: Number((ex / total).toPrecision(3)), exactRuns: exRuns, exactRunSamples: exRuns ? r1(ex / exRuns) : 0,
+  };
+}
+
+// The voice's two marks, over the frames whose level in 300–3500 Hz lies over the speech's
+// threshold (the floor and its margin, the whole file's; the frames' pitch is counted by their
+// level, pitchFrame): `frames`, the share of them with a pitch (`pitchShare`), and the syllables'
+// rhythm (`rhythmDb`), the level's movement at 2 to 8 Hz (its dB, the floor where it is under,
+// through a high-pass at 2 Hz and a low-pass at 8 Hz, RMS, after the first second). Whether that
+// is a voice is lib/findings.mjs's voiceOf.
+function voiceOf(st, Sp, silent, floor, margin, F) {
+  const qT = Number.isFinite(floor) ? Math.round(floor + margin) + 200 : 300;
+  let n = 0, voiced = 0;
+  for (let q = Math.max(0, qT); q < 300; q++) { n += st.pCount[q]; voiced += st.pVoiced[q]; }
+  const fs = 1 / FRAME_S;
+  const biquad = (f, hp) => {
+    const w = (2 * Math.PI * f) / fs, alpha = Math.sin(w) / Math.SQRT2, c = Math.cos(w), a0 = 1 + alpha;
+    return hp ? { b0: (1 + c) / 2 / a0, b1: -(1 + c) / a0, b2: (1 + c) / 2 / a0, a1: (-2 * c) / a0, a2: (1 - alpha) / a0 }
+      : { b0: (1 - c) / 2 / a0, b1: (1 - c) / a0, b2: (1 - c) / 2 / a0, a1: (-2 * c) / a0, a2: (1 - alpha) / a0 };
+  };
+  const H = biquad(2, true), Lp = biquad(8, false);
+  let h1 = 0, h2 = 0, l1 = 0, l2 = 0, sum = 0, cnt = 0;
+  const base = Number.isFinite(floor) ? floor : -150;
+  for (let f = 0; f < F; f++) {
+    const x = silent[f] ? base : Math.max(base, db(Sp[f]));
+    const y = H.b0 * x + h1; h1 = H.b1 * x - H.a1 * y + h2; h2 = H.b2 * x - H.a2 * y;
+    const z = Lp.b0 * y + l1; l1 = Lp.b1 * y - Lp.a1 * z + l2; l2 = Lp.b2 * y - Lp.a2 * z;
+    if (f >= fs) { sum += z * z; cnt++; }
+  }
+  return {
+    frames: n, pitchShare: n ? r3(voiced / n) : null,
+    rhythmDb: cnt ? r2(Math.sqrt(sum / cnt)) : null,
   };
 }
 
