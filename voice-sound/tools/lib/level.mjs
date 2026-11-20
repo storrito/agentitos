@@ -353,6 +353,36 @@ function writeCurve(file, gains, seconds) {
   fs.writeFileSync(file, Buffer.from(out.buffer));
 }
 
+// The short loud sounds measure set aside (m.speech.bursts.at: t, seconds, overDb over the voice's
+// loud frames, its 90th percentile), each turned down by its overDb and `underDb` more over its
+// stretch, widened by one of measure's frames (21.3 ms: its spectrum's window reaches a frame on)
+// on either side, with ramps of `rampMs` (no click at the edges), as a gain curve at `rate` a
+// second multiplied in. A knock left to the limiters instead: 30 to 50 dB over the voice, it
+// decides the loudness of the whole file (a voice at −55 LUFS with one 30 ms burst at 0.9 reads
+// −13.7 whole), and the limiters' release ducks the voice after it: on 6 clean readings at −25 to
+// −65 LUFS with a burst, a clap, a thump or five bursts (level/eval-bump.mjs, 2026-11-20) the
+// voice came out up to 41 LU under the target and the 300 ms after a knock up to 46 dB under the
+// same voice without it. `underDb` (a judgement): turned down to the voice's loud frames alone,
+// five knocks in a 5.5 s reading still lifted the whole 0.5 to 0.8 LU over the voice in it
+export const BURSTS = { padS: 1024 / 48000, rampMs: 5, rate: 1000, underDb: 6 };
+async function tameBursts(inWav, out, at, seconds, tmp) {
+  const n = Math.ceil((seconds + 1) * BURSTS.rate), g = new Float32Array(n).fill(0);
+  const ramp = (BURSTS.rampMs / 1000) * BURSTS.rate;
+  for (const b of at) {
+    const a = (b.t - BURSTS.padS) * BURSTS.rate, e = (b.t + b.seconds + BURSTS.padS) * BURSTS.rate;
+    for (let j = Math.max(0, Math.floor(a - ramp)); j < Math.min(n, Math.ceil(e + ramp)); j++) {
+      const w = j < a ? (j - (a - ramp)) / ramp : j > e ? ((e + ramp) - j) / ramp : 1;
+      g[j] = Math.min(g[j], -(b.overDb + BURSTS.underDb) * Math.max(0, Math.min(1, w)));
+    }
+  }
+  const curve = path.join(tmp, "bursts.f32");
+  fs.writeFileSync(curve, Buffer.from(Float32Array.from(g, (d) => 10 ** (d / 20)).buffer));
+  const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-v", "error", "-y", "-i", inWav, "-f", "f32le", "-ar", String(BURSTS.rate), "-ac", "1", "-i", curve,
+    "-filter_complex", "[1:a]aresample=48000[g];[0:a]aformat=sample_fmts=flt:channel_layouts=mono[v];[v][g]amultiply[o]", "-map", "[o]", "-map_metadata", "-1", "-c:a", "pcm_f32le", out]);
+  fs.rmSync(curve, { force: true });
+  return r;
+}
+
 function durationOf(file) {
   const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path.resolve(file)], { encoding: "utf8" });
   if (r.error?.code === "ENOENT") throw missing("ffprobe");
@@ -421,8 +451,28 @@ export async function level(inWav, out, opts = {}) {
   const tmp = opts.tmp ? path.resolve(opts.tmp) : fs.mkdtempSync(path.join(path.dirname(out), ".voice-sound-level-"));
   const ownTmp = !opts.tmp;
   const steps = [], left = [], skipped = [];
-  const dropIn = () => { if (opts.removeInput) fs.rmSync(inWav, { force: true }); };
+  let tamedIn = false;
+  const dropIn = () => { if (opts.removeInput || tamedIn) fs.rmSync(inWav, { force: true }); };
   try {
+    // 0. the short loud sounds measure set aside (a knock, a clap, a bump), turned down to about
+    // the voice's own loud frames before anything is measured (auto and plain; with level off the
+    // recording's dynamics are its own)
+    const B = opts.bursts;
+    if (mode !== "off" && B?.count > 0 && (B.at || []).length === B.count) {
+      const tamed = path.join(tmp, "bursts-down.wav");
+      const len = durationOf(inWav);
+      const r = await tameBursts(inWav, tamed, B.at, len, tmp);
+      if (r.status !== 0) throw new LevelError(`ffmpeg could not turn the short loud sounds down: ${lastLine(r.stderr)}`);
+      if (opts.removeInput) fs.rmSync(inWav, { force: true });
+      inWav = tamed; tamedIn = true;
+      const n = B.count, list = B.at.map((b) => `${b.t.toFixed(2)} s`).join(", ");
+      steps.push({
+        id: "bursts", stage: "level", count: n, at: B.at.map((b) => ({ t: b.t, seconds: b.seconds, downDb: r1(b.overDb + BURSTS.underDb) })), rampMs: BURSTS.rampMs,
+        why: `${n === 1 ? "A short loud sound" : `${n} short loud sounds`} (a knock, a clap, a bump: no voice's) at ${list}, up to ${f1(B.overDb)} dB over the voice's loud frames: each turned down to ${BURSTS.underDb} dB under them over its ${n === 1 ? "stretch" : "stretches"}, with ramps of ${BURSTS.rampMs} ms, before the gain is found, so that ${n === 1 ? "it neither decides" : "they neither decide"} the loudness nor ${n === 1 ? "leaves" : "leave"} the limiters to hold ${n === 1 ? "it" : "them"} down and duck the voice after.`,
+      });
+      left.push({ id: "bursts", stage: "level", count: n,
+        why: `${n === 1 ? "A knock (or a clap, a bump) is" : `${n} knocks (or claps, bumps) are`} in the recording at ${list} and ${n === 1 ? "stays" : "stay"}, a little under the voice's loud frames: cut ${n === 1 ? "it" : "them"} out where the recording is edited if ${n === 1 ? "it is" : "they are"} not wanted.` });
+    }
     // (a sound so quiet that ebur128's gate would hide part of its voice is measured through a
     // gain, `pre`, and its numbers taken back by it; the leveller reads the frames as measured,
     // since it works on their differences)
