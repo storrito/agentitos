@@ -188,7 +188,9 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
     [["two-tracks.mp4", "x.mp4", "--audio", "3"], /^two-tracks\.mp4 has 2 audio streams: --audio takes 1 to 2, not 3\.$/],
     [["voice.wav", "x.m4a", "--audio", "0"], /^--audio needs the number of the audio stream that is the voice, 1 for the first, not 0\.$/],
     [["short.wav", "x.m4a"], /^measure finds (no voice|only 0\.\d s of voice) in short\.wav/],
-    [["room.wav", "x.m4a"], /^measure finds no voice in room\.wav \(its level never rises far enough over its floor\): there is nothing to mend or bring to a loudness, and raising it would only raise its noise\.$/],
+    // (steady noise: measure's own verdict on what it took for speech, m.voice, comes first; a
+    // measurement without it gives the level's reason)
+    [["room.wav", "x.m4a"], /^measure finds no voice in room\.wav \((its level never rises far enough over its floor|a pitch in \d+ % of the \d+ frames taken for speech, their level moving by \d+\.\d dB at a syllable's pace: a voice has a pitch in 10 % of them or more, or moves by 3 dB)\): there is nothing to mend or bring to a loudness, and raising it would only raise its noise\.$/],
     [["far.wav", "x.m4a"], /^The voice lies at −8\d\.\d LUFS as played: bringing it to −14\.0 would take 7\d dB of gain, more than the 70 dB this tool gives, and so little of it stands over the floor of its recording that the gain would raise mostly that floor; record it again closer to the microphone or with the recorder's input turned up\.$/],
     // (the bound is the recording's level: a lower target does not get round it)
     [["far.wav", "x.m4a", "--loudness", "-23"], /^The voice lies at −8\d\.\d LUFS as played: bringing it to −23\.0 would take 6\d dB of gain, more than the 61 dB this tool gives/],
