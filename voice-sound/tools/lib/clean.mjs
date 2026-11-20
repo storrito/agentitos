@@ -35,6 +35,8 @@
 // false) or less than MIN_VOICE_S of it, and one whose voice lies more than level's MAX_GAIN_DB
 // under the master's −14 LUFS (the recorder's own floor comes up then more than the voice). A
 // voice LOW_GAIN_DB or more under the target is delivered, and what is left says it was recorded very low.
+// Where measure could not judge hum, `notJudged` says so; after a notch, the result's measurement
+// decides whether `left` names the hum.
 //
 // Writes <out> and beside it <out>.json: the source, what was measured before and after, every
 // step with its reason, what was left and why, the targets, the settings. Prints what an agent
@@ -243,6 +245,20 @@ function sweep(dirs) {
   }
 }
 
+// measure's hum where it was not judged: one sentence with measure's reason
+export const humNotJudged = (h) => `Whether it has hum could not be judged${h?.why ? ` (${h.why.replace(/\.$/, "")})` : ""}: none is known to be there, and none is known to be gone.`;
+
+// the hum the result's measurement still names (after a notch) → { why, hz, harmonics, overDb, lines } or null
+export function humStill(m2) {
+  const h = m2?.hum;
+  if (!(m2?.findings || []).some((x) => x.id === "hum") || !h?.hz) return null;
+  const lines = ((h.hz === 50 ? h.at50 : h.at60) || []).filter((x) => x.counts).map((x) => x.hz);
+  return {
+    why: `Hum at ${h.hz} Hz is still measured in the result: ${h.harmonics} line${h.harmonics === 1 ? "" : "s"}${lines.length ? ` (${lines.join(", ")} Hz)` : ""}, up to ${f1(h.overDb)} dB over the noise beside ${h.harmonics === 1 ? "it" : "them"}${h.underSpeechDb != null ? `, ${i0(h.underSpeechDb)} dB under the speech` : ""}; the notches did not take ${h.harmonics === 1 ? "it" : "them"} out.`,
+    hz: h.hz, harmonics: h.harmonics, overDb: h.overDb, lines,
+  };
+}
+
 const sameFile = (a, b) => path.resolve(a) === path.resolve(b) ||
   (fs.existsSync(a) && fs.existsSync(b) && (() => { const x = fs.statSync(a), y = fs.statSync(b); return x.dev === y.dev && x.ino === y.ino; })());
 
@@ -383,6 +399,15 @@ export async function clean(file, out, opts = {}, stages = null) {
     const stage = (name, xs) => (xs || []).map((s) => ({ stage: name, ...s }));
     const steps = [...stage("repair", rr.steps), ...stage("tone", tp.steps), ...lv.steps];
     const left = [...stage("repair", rr.left), ...stage("tone", tp.left), ...lv.left];
+    // hum: where it could not be judged, said (nothing is known to be left); after a notch, the
+    // result's own measurement decides what is said of it
+    const notJudged = m.hum?.judged === false ? [{ id: "hum", stage: "measure", why: humNotJudged(m.hum) }] : [];
+    const dehum = steps.find((s) => s.id === "dehum"), still = humStill(m2);
+    if (dehum && still) {
+      dehum.why = `${dehum.why} Measured again on the result, the hum is still there (see what is left).`;
+      dehum.stillThere = true;
+      left.push({ id: "hum", stage: "repair", ...still });
+    }
     const measuredLufs = o.mono ? T.lufs - TWO_SPEAKERS_LU : T.lufs;
     const report = {
       source: f.name,
@@ -391,7 +416,7 @@ export async function clean(file, out, opts = {}, stages = null) {
       audio: { streams: nAudio, used: o.audio, dropped: nAudio - 1 },
       level: o.level,
       measured: { before: numbers(m), after: numbers(m2) },
-      steps, left,
+      steps, left, notJudged,
       skipped: lv.skipped,
       targets: { lufs: o.level === "off" ? lv.settings.aimLufs : T.lufs, asPlayed: "on two speakers", measuredLufs: o.level === "off" ? lv.settings.measuredLufs : +measuredLufs.toFixed(2),
         kept: o.level === "off", truePeak: T.truePeak, peakAccepted: T.peakAccepted, peakAfterEncoding: true, rangeLu: T.rangeLu,
@@ -440,6 +465,7 @@ export function lines(r) {
   out.push(`Before → after: loudness ${f1(b.lufs)}${played(b, b.channels)} → ${f1(a.lufs)}${played(a, fm.channels)} LUFS, range ${f1(b.rangeLu)} → ${f1(a.rangeLu)} LU, true peak ${f1(b.truePeak)} → ${f1(a.truePeak)} dBTP` +
     (b.snrDb != null || a.snrDb != null ? `, noise ${i0(b.snrDb)} → ${i0(a.snrDb)} dB under the speech (A-weighted)` : "") + ".");
   if (r.left.length) out.push(`Not mended: ${r.left.map((x) => `${x.id}: ${x.why}`).join(" ")}`);
+  for (const x of r.notJudged || []) out.push(`Not judged: ${x.id}: ${x.why}`);
   out.push(`Targets: ${f1(T.lufs)} LUFS as played on two speakers${mono ? ` (the one channel ${f1(T.measuredLufs)} LUFS as ffmpeg measures it)` : ""}, true peak ${f1(T.truePeak)} dBTP after the encoding (a check accepts ${f1(T.peakAccepted)}), range ${T.rangeLu} LU or under; ${T.from}${T.overridden?.length ? `, ${T.overridden.join(" and ")} as asked` : ""}.`);
   if (r.before) {
     const g = r.before.gainDb, B = r.before;

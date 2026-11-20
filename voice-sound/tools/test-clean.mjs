@@ -448,6 +448,43 @@ test("measure's word on the voice: where it says none was found, clean refuses w
   near((await clean(base, file("voice-found.m4a"), {}, found)).delivered.lufs, -14, 0.5, "found");
 });
 
+test("hum: where measure could not judge it, the lines and the JSON say so in one line, and nothing is said to be left; after a notch the result's measurement decides", { skip }, async () => {
+  const why = "0.4 s of pause without a voice: a hum is judged from 0.7 s on, never from where someone speaks.";
+  const unjudged = { ...stages, async measure(f, when) { const m = await measure(f); if (when === "before") m.hum = { ...m.hum, judged: false, hz: null, harmonics: 0, overDb: null, why }; return m; } };
+  const r = await clean(base, file("hum-unjudged.m4a"), {}, unjudged);
+  assert.deepEqual(r.notJudged, [{ id: "hum", stage: "measure", why: "Whether it has hum could not be judged (0.4 s of pause without a voice: a hum is judged from 0.7 s on, never from where someone speaks): none is known to be there, and none is known to be gone." }]);
+  assert.ok(!r.left.some((x) => x.id === "hum"));
+  assert.equal(lines(r).filter((l) => /^Not judged: hum: Whether it has hum could not be judged \(0\.4 s of pause/.test(l)).length, 1, lines(r).join("\n"));
+  assert.deepEqual(JSON.parse(fs.readFileSync(file("hum-unjudged.m4a.json"), "utf8")).notJudged, r.notJudged);
+  // judged: no such line
+  const judged = await clean(base, file("hum-judged.m4a"), {}, stages);
+  assert.deepEqual(judged.notJudged, []);
+  assert.ok(!lines(judged).some((l) => /^Not judged/.test(l)));
+  // a repair that notched a hum at 50 Hz, and a result that still measures one line of it
+  const notched = { ...stages, async repair(f, o, m, opts) { const x = await stages.repair(f, o, m, opts); x.steps.push({ id: "dehum", why: "Hum at 50 Hz, steady in the pauses at 50 Hz (up to 18 dB over the noise beside it): that line taken out by a notch 2 Hz wide at its −3 dB points." }); return x; } };
+  const stillThere = { ...notched, async measure(f, when) {
+    const m = await measure(f);
+    if (when === "after") {
+      m.findings = [...(m.findings || []), { id: "hum", strength: "some", text: "Hum at 50 Hz." }];
+      m.hum = { ...m.hum, judged: true, hz: 50, harmonics: 1, overDb: 12.34, underSpeechDb: 41, at50: [{ n: 1, hz: 50, overDb: 12.3, counts: true }, { n: 2, hz: 100, overDb: 2, counts: false }], at60: [] };
+    }
+    return m;
+  } };
+  const s = await clean(base, file("hum-still.m4a"), {}, stillThere);
+  const h = s.left.find((x) => x.id === "hum");
+  assert.ok(h, JSON.stringify(s.left));
+  assert.equal(h.why, "Hum at 50 Hz is still measured in the result: 1 line (50 Hz), up to 12.3 dB over the noise beside it, 41 dB under the speech; the notches did not take it out.");
+  assert.deepEqual([h.hz, h.harmonics, h.lines], [50, 1, [50]]);
+  const step = s.steps.find((x) => x.id === "dehum");
+  assert.equal(step.stillThere, true);
+  assert.match(step.why, /taken out by a notch .* Measured again on the result, the hum is still there \(see what is left\)\.$/);
+  assert.match(lines(s).join("\n"), /Not mended: .*hum: Hum at 50 Hz is still measured in the result/);
+  // the result without hum: the step as repair wrote it, nothing left
+  const gone = await clean(base, file("hum-gone.m4a"), {}, notched);
+  assert.ok(!gone.left.some((x) => x.id === "hum"));
+  assert.ok(!("stillThere" in gone.steps.find((x) => x.id === "dehum")));
+});
+
 test("what dead runs left is removed by the next run once it is older than a day, and only that", { skip }, async () => {
   const old = path.join(dir, ".voice-sound-clean-1-dead"), fresh = path.join(dir, ".voice-sound-clean-2-alive"), oldFile = path.join(dir, ".voice-sound-clean-1-dead-x.m4a");
   fs.mkdirSync(path.join(old, "inner"), { recursive: true });

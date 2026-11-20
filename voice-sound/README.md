@@ -63,6 +63,8 @@ A quiet voice is raised to the target. Gain brings up, with the voice, what lies
 
 It refuses, in one sentence: a recording in which `measure` finds no voice or under half a second of one, and a voice more than 70 dB under −14 LUFS (under −84 as played, whatever the target: `--loudness` does not move it). Twelve clean readings brought to −23 LUFS, turned down and written at 16 bits, then raised: at 47 dB of gain PESQ 3.15, NISQA 3.75 (4.50 and 4.67 at their own level); at 68 dB 1.43 and 1.63, the best NISQA 2.33; at 75 dB none of them scored 2 by NISQA. There the voice stands about 10 dB over the floor of 16 bits, and what comes up is that floor as much as the voice; where between 68 and 75 dB the line is drawn is a judgement.
 
+Hum: where `measure` could not judge it (too little pause), the lines and `notJudged` in the JSON say so, never that it is gone. After a notch the result is measured again; where that still names hum, what is left says so with its numbers.
+
 Beside the output, `<out>.json`: what was measured before and after, every step with its reason, what was left. The output and its report appear together at the end; a run that is ended by a signal stops its ffmpeg at once and leaves neither. While it runs, its working files lie in a hidden folder beside the output, at most 23 MB for a minute of sound.
 
 Ten minutes take about half a minute on one core with ffmpeg alone (110 MB of memory) and about two minutes with the denoiser (285 MB).

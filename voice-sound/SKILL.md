@@ -43,6 +43,8 @@ The tool measures the recording, mends what the numbers give a reason for and no
 
 It refuses, in one sentence, a recording in which it finds no voice or under half a second of one, and a voice so quiet that little of it stands over the floor of its recording (more than 70 dB under the platforms' loudness). Pass the reason on in their words and ask for the recording they meant, or for one made closer to the microphone or with the recorder's input turned up; do not try to get round it (a lower `--loudness` does not: the bound is the recording's own level). A voice recorded very low but over that bound comes out at the target, and its line says that it was very low and that its noise and its room came up with it: pass that on as it is, with how to record it next time.
 
+Where the lines say "Not judged: hum", say that whether it hums could not be told from this recording, never that it has none.
+
 What it cannot mend it says, and you pass that on as it is, never softened:
 
 - **The room** (a hall, an echoing kitchen): it stays. Next time closer to the microphone, a room with soft things in it.
