@@ -46,11 +46,14 @@ export const TARGETS = { lufs: -14, truePeak: -1.5, peakAccepted: -1, rangeLu: 5
 
 // ebur128's integrated loudness at or under this is its sign that nothing passed the gate
 export const NO_LOUDNESS_LUFS = -70;
-// the most gain the level stage gives (the leveller's lift included): a voice at −50 LUFS (the
-// lab's corpus has one, and it came out well) needs 36 dB to −14; a recording that needs more is a
-// floor, a microphone left off or a voice far away, and raising it raises its noise and its room
-// as much
-export const MAX_GAIN_DB = 40;
+// the most gain the level stage gives (the leveller's lift included). Four real recordings of the
+// lab's corpus lie that low (phones held far off, 2026-11-20): at 37 and 44 dB of gain the result
+// scored higher than the recording with ffmpeg's noise method as with the denoiser (DNSMOS
+// overall 2.11 → 2.97 / 3.20 and 2.94 → 3.12 / 3.33), at 40.5 dB the same; at 47 dB it scored
+// lower with ffmpeg's method (3.03 → 2.65) and higher only with the denoiser (3.17). A recording
+// that needs more than this is a floor, a microphone left off or a voice far away, and raising it
+// raises its noise and its room as much
+export const MAX_GAIN_DB = 45;
 
 // ebur128's frames: one every 100 ms, the momentary loudness over the 400 ms before it
 const FRAME_S = 0.1;

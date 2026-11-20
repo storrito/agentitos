@@ -283,7 +283,7 @@ test("the leveller's ramp lies where the level steps: centred within 0.3 s of 14
   near(best.c, 14.4, 0.3, "the ramp's centre");
 });
 
-test("no measurement, no voice, too much gain: −70 LUFS is none; a silent or 0.3 s sound is refused; over 40 dB of gain is refused, 36 dB is given", { skip }, async () => {
+test("no measurement, no voice, too much gain: −70 LUFS is none; a silent or 0.3 s sound is refused; over 45 dB of gain is refused, 36 dB is given", { skip }, async () => {
   // ebur128 prints −70.0 for a sound in which no 400 ms block passes its gate
   const short = intermediate("short.wav", "atrim=start=0.5:duration=0.3");
   const silent = file("silent.wav");
@@ -297,8 +297,8 @@ test("no measurement, no voice, too much gain: −70 LUFS is none; a silent or 0
   assert.ok(!fs.existsSync(file("none.wav")));
   // a voice at −61 LUFS as played would need 47 dB: refused, nothing written
   const far = intermediate("far.wav", "volume=-41dB");
-  await assert.rejects(level(far, file("far.out.wav"), {}), /would take 4\d dB of gain, more than the 40 dB this tool gives/);
-  await assert.rejects(level(far, file("far.out.wav"), { level: "plain" }), /more than the 40 dB this tool gives/);
+  await assert.rejects(level(far, file("far.out.wav"), {}), /would take 4\d dB of gain, more than the 45 dB this tool gives/);
+  await assert.rejects(level(far, file("far.out.wav"), { level: "plain" }), /more than the 45 dB this tool gives/);
   assert.ok(!fs.existsSync(file("far.out.wav")));
   // one at −50 as played needs 36 dB: given, and no pass ever more than the bound
   const quiet = intermediate("q50.wav", "volume=-30dB");

@@ -188,7 +188,7 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
     [["voice.wav", "x.m4a", "--audio", "0"], /^--audio needs the number of the audio stream that is the voice, 1 for the first, not 0\.$/],
     [["short.wav", "x.m4a"], /^measure finds (no voice|only 0\.\d s of voice) in short\.wav/],
     [["room.wav", "x.m4a"], /^measure finds no voice in room\.wav \(its level never rises far enough over its floor\): there is nothing to mend or bring to a loudness, and raising it would only raise its noise\.$/],
-    [["far.wav", "x.m4a"], /^The voice lies at −6\d\.\d LUFS as played: bringing it to −14\.0 would take 4\d dB of gain, more than the 40 dB this tool gives, and would raise its noise and its room as much; record it closer to the microphone, or aim lower with --loudness\.$/],
+    [["far.wav", "x.m4a"], /^The voice lies at −6\d\.\d LUFS as played: bringing it to −14\.0 would take 4\d dB of gain, more than the 45 dB this tool gives, and would raise its noise and its room as much; record it closer to the microphone, or aim lower with --loudness\.$/],
     [["voice.wav"], /^Name the recording and the file to write/],
     [["voice.wav", "x.m4a", "--denoise", "max"], /^--denoise is auto, off, gentle or strong, not max\.$/],
     [["voice.wav", "x.m4a", "--loudness", "loud"], /^--loudness needs a number/],

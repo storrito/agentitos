@@ -66,9 +66,12 @@ import { targets as platformTargets } from "./targets.mjs";
 export const USAGE = "Usage: voice.mjs clean <audio|video> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>] [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>] [--before <file>] [--json]";
 // a check accepts the true peak this much over the one aimed at (−1.5 aimed at, −1 accepted)
 const PEAK_MARGIN_DB = 0.5;
-// the least voice clean works on: under a second, measure's speech is a cough or a click, and
-// ebur128's gated loudness (400 ms blocks) rests on two or three blocks
-export const MIN_VOICE_S = 1;
+// the least voice clean works on: under half a second, measure's speech is a cough or a click
+// and ebur128's gated loudness (400 ms blocks) has one block to rest on. From there it holds:
+// cuts of 0.6 and 0.8 s of clean speech and three corpus clips with 0.5 to 0.9 s of voice landed
+// within 0.2 LU of the target with their peaks under the ceiling (2026-11-20); a first bound of
+// 1 s had refused those clips, a short answer as a person might well bring it
+export const MIN_VOICE_S = 0.5;
 // what dead runs left (a hidden folder or file beside an output, a folder of the older version in
 // the system's temp directory) is removed by the next run once it is older than this
 const LEFTOVER_MS = 24 * 3600 * 1000;

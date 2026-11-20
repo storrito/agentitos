@@ -1,17 +1,17 @@
 # voice-sound
 
-The sound of a spoken voice for social media: a recording is measured, mended where the numbers give a reason, and brought to the loudness the platforms play at. It says what was wrong, what it did, and what it could not mend. No model, no key, no network: Node and ffmpeg. The voice step that the other agents of this collection run as a program instead of keeping filters and loudness numbers of their own.
+The sound of a spoken voice for social media: a recording is measured, mended where the numbers give a reason, and brought to the loudness the platforms play at. It says what was wrong, what it did, and what it could not mend. No key and no network: Node and ffmpeg, and a small neural denoiser where the machine has one. The voice step that the other agents of this collection run as a program instead of keeping filters and loudness numbers of their own.
 
 > Agents: start with [`SKILL.md`](SKILL.md).
 
 ```bash
-node tools/voice.mjs clean talk.mp4 out/talk.m4a --before out/talk-before.m4a   # mended, with the untouched sound as loud beside it
+node tools/voice.mjs clean talk.mp4 out/talk.m4a --before out/talk-before.m4a   # mended, with the sound as it was, as loud, beside it
 node tools/voice.mjs clean talk.mp4 out/talk.mp4 --for reels tiktok              # the picture kept, the sound new
 node tools/voice.mjs measure talk.mp4                                           # what stands out, nothing changed
 node tools/voice.mjs targets tiktok podcast                                     # what the platforms want of sound
 ```
 
-Requirements: Node 20+ and ffmpeg (6.1 or later; the tests run with 9.0). No npm packages.
+Requirements: Node 20+ and ffmpeg (6.1 or later; the tests pass with 8.0.1 and 9.0.2). No npm packages. Optional, and never installed by the tool: the denoiser below.
 
 It is for one voice, or people talking in turn, with nothing laid under it. Music under the voice is taken for noise.
 
@@ -23,8 +23,8 @@ One streamed pass over the first audio stream at 48 kHz, whatever its length (th
 | --- | --- |
 | `quiet`, `loud` | the speech's own loudness (its pauses left out), the true peak |
 | `noise` | the level in the pauses against the speech, A-weighted; its kind: `hiss`, `rumble`, `hum`, `broadband`, or `changing` (traffic, voices, a keyboard) |
-| `hum` | narrow lines at 50 or 60 Hz and their harmonics against their neighbours |
-| `clipped` | samples piled up at a ceiling, also one below full scale (turned down after it clipped) |
+| `hum` | lines at 50 or 60 Hz and their harmonics, in the pauses alone: each must stand over the bins beside it in every part of the pauses and keep its level. With under 0.7 s of pause it is not judged, and the numbers say so (`hum.judged: false`): a voice's own pitch is a line too |
+| `clipped` | samples piled up at a ceiling, also one below full scale (turned down after it clipped), in at least twelve separate runs |
 | `uneven` | how far the level of 3-second phrases spreads; a step between two parts |
 | `dull`, `harsh`, `boomy`, `thin`, `sibilant` | the speech's long-term spectrum against ANSI S3.5's average voice, beyond what voices differ by among themselves (±5 dB a band) |
 | `narrow` | where the voice ends at the top: a 16 kHz source, a call |
@@ -32,32 +32,47 @@ One streamed pass over the first audio stream at 48 kHz, whatever its length (th
 | `one-channel`, `inverted` | two channels against each other: one dead, one the other upside down (a phone's speaker would cancel the voice) |
 | `roomy` | how long the sound hangs on after the voice stops |
 
-Every threshold is a named constant in [`tools/lib/findings.mjs`](tools/lib/findings.mjs) with where its value comes from. Against 520 recordings with known faults (2026-11-19): band limits, codecs, clicks, clipping, an offset, hiss, hum, a quiet recording and the channel faults are named nearly always; mild tone faults in 0 to 38 % of the files, because a voice 6 dB off in one band is often still a normal voice; the room's time is right for small rooms and about half for large ones.
+Every threshold is a named constant in [`tools/lib/findings.mjs`](tools/lib/findings.mjs) with where its value comes from. Against 520 recordings with known faults: band limits, codecs, clicks, clipping, an offset, hiss, a quiet recording and the channel faults are named nearly always; mild tone faults in 0 to 38 % of the files, because a voice 6 dB off in one band is often still a normal voice; the room's time is right for small rooms and about half for large ones. Hum is named on 1 of 43 real recordings (a steady tone) and on none of 42 clean ones; built into short clips it is found in about a third, since most of them have too little pause to judge it.
 
 ## clean
 
-Three stages, each in a file of its own. A step runs only when `measure` gives a reason for it, with its strength taken from the measured numbers; a recording with nothing wrong gets a high-pass and its loudness.
+Three stages, each in a file of its own. A step runs only when the numbers give a reason for it, with its strength taken from them; a recording with nothing wrong gets a high-pass under the voice and its loudness, its peaks held to fit.
 
-**Repair** ([`tools/lib/repair.mjs`](tools/lib/repair.mjs)), one ffmpeg pass, the output in step with the input to the sample:
+**Repair** ([`tools/lib/repair.mjs`](tools/lib/repair.mjs)), the output in step with the input to the sample and exactly as long:
 
 - Two channels become one voice: the live one, one of an inverted pair, else their mean.
 - Clipped peaks are redrawn (`adeclip`), with headroom made first.
 - A high-pass at 80 Hz, steeper when rumble or thumps stand out, never above 90 Hz (a low voice begins there).
-- Hum: a narrow notch on every harmonic that was found, as deep as it stands over its surroundings.
+- Hum: a notch 2 Hz wide on every harmonic that was found. A voice loses under 1 dB in any third-octave band through nine of them; the lines go down by 57 dB and more.
 - Clicks: `adeclick`, set over a plosive's release.
-- Noise: `afftdn` with the shape of the recording's own noise, sampled from its longest pause (laid in front of the recording, sampled, cut off again). The aim is noise 45 dB under the speech; the reduction stops at 12 dB (`--denoise gentle` 6, `strong` 18), where a spectral filter starts to cost the voice more than the noise it removes.
+- Noise, to bring it 45 dB under the speech and no further, by one of two methods:
+  - *The denoiser*, where the machine has it (below). It runs when `measure` named noise in the pauses, or when a probe finds noise under the voice: up to 40 s of the recording are denoised and what was taken out is compared with what was kept; under 21 dB the recording counts as noisy. Its reduction is limited to what the recording needs, at most 18 dB (`--denoise gentle` 12, `strong` 24).
+  - *ffmpeg alone*: `afftdn` with the shape of the recording's own noise, sampled from its longest pause (laid in front of the recording, sampled, cut off again), at most 12 dB (`gentle` 6, `strong` 18), where a spectral filter starts to cost the voice more than the noise it removes. It learns one steady noise and cannot follow one that changes; that is named and left.
 
-**Tone** ([`tools/lib/tone.mjs`](tools/lib/tone.mjs)): a correction of what stands out, never a house sound. Each finding's band takes back half of its distance beyond ±5 dB from the average voice; cuts to 6 dB, boosts to 3 dB. No boost of the highs when the noise is close under the voice or the source is band-limited; a de-esser only for a sibilant voice. Of 42 clean recordings none got a step.
+**Tone** ([`tools/lib/tone.mjs`](tools/lib/tone.mjs)): a correction of what stands out, never a house sound. Each finding's band takes back half of its distance beyond ±5 dB from the average voice; cuts to 6 dB, boosts to 3 dB. No boost of the highs when the noise is close under the voice or the source is band-limited; a de-esser only for a sibilant voice. None of 42 clean studio recordings got a step; of 60 real ones (calls, amateur readers, phones), 18 did.
 
 **Level** ([`tools/lib/level.mjs`](tools/lib/level.mjs)):
 
-- A leveller, only where the phrases are uneven: slow gain towards the level most phrases have, at most ±8 dB and 3 dB a second, held through the pauses so that their noise is never raised on its own.
-- A gentle compressor (2.5:1 from 4 dB over the speech's loudness).
-- The loudness: gain, then a limiter at four times the sample rate, measured and corrected until the delivered file is within 0.3 LU of the target, its true peak measured after the encoding.
+- A leveller, only where the phrases are uneven: slow gain towards the level most phrases have, at most ±8 dB and 3 dB a second, held through the pauses so that their noise is never raised on its own. A ten-minute reading that spread over 11.6 LU came out at 3.0.
+- The loudness: gain, measured on the delivered file and corrected until it is within 0.3 LU of the target.
+- The peaks. A voice at −14 LUFS needs its peaks 5 to 8 dB nearer its loudness than a raw recording has them. A slow limiter (10 ms ahead, 200 ms release) 2 dB over the ceiling takes most of that, a fast one at four times the sample rate the rest (about 2 dB), and the true peak is measured after the encoding, which raises it. There is no compressor: one with a normal attack lets the transients through to the limiter and only flattens the vowels.
 
-`--level plain` is the loudness and the limiter alone; `--level off` leaves the level to a skill that sets it itself. `--before <file>` writes the untouched sound at the output's loudness, to compare by ear. Beside the output, `<out>.json`: what was measured before and after, every step with its reason, what was left.
+Options: `--level plain` is the loudness and the fast limiter alone; `--level off` keeps the loudness the recording came with, for a skill that sets the level itself. `--mono` writes one channel whose loudness is the target as played on two speakers (the file measures 3 LU lower). `--before <file>` writes the sound as it was at the output's loudness, to compare by ear; its peaks are held by a limiter where that gain would push them over the ceiling, and the line says so. `--audio <n>` takes another of a video's audio streams than the first; a video keeps its picture in its own container (.mp4, .mov, .m4v, .mkv, .webm).
 
-Ten minutes take about two minutes on one core and under 100 MB.
+It refuses, in one sentence: a recording in which `measure` finds no voice or under half a second of one, and a voice that would need more than 45 dB of gain (at 47 dB a real recording scored lower afterwards than before).
+
+Beside the output, `<out>.json`: what was measured before and after, every step with its reason, what was left. The output and its report appear together at the end; a run that is ended by a signal stops its ffmpeg at once and leaves neither. While it runs, its working files lie in a hidden folder beside the output, at most 23 MB for a minute of sound.
+
+Ten minutes take about half a minute on one core with ffmpeg alone (110 MB of memory) and about two minutes with the denoiser (285 MB).
+
+## The denoiser
+
+ffmpeg has no filter that follows a changing noise. Where a machine has sherpa-onnx's offline denoiser with the network DPDFNet-2 at 48 kHz, `clean` uses it; rragent's machines have it in their image. The tool finds the program through `VOICE_SOUND_DENOISER`, else as `sherpa-onnx-offline-denoiser` on the PATH, and the model through `VOICE_SOUND_DPDFNET`, else as `models/dpdfnet2_48khz_hr.onnx` beside the folder of the program's real file, else at `/opt/sherpa-onnx/models/`. It downloads neither. (sherpa-onnx and DPDFNet: Apache-2.0; onnxruntime, which runs the network: MIT.)
+
+- It runs after clipping, the high-pass, hum and clicks are mended, and only on a recording that is noisy by the rules above: on recordings without noise it changes nothing, since it is not run.
+- It writes 16 bits, so the sound goes to it at a sensible level and the gain is taken back; its output comes in whole 480-sample blocks, so each piece is padded and cut back; its delay is measured (0 samples on 21 real recordings) and taken out.
+- It holds a recording in memory (about 80 MB a minute), so long ones go in pieces of 150 s cut at pauses, each started 3 s early (the network needs about 2.5 s to settle) and cross-faded over 1 s: under 300 MB whatever the length.
+- When it fails, writes nothing, a wrong length, silence, clipping, numbers that are not finite or sound that does not follow its input, the stage falls back to ffmpeg's method for the whole recording and says so.
 
 ## targets
 
@@ -67,31 +82,35 @@ The master for video follows from that: −14 LUFS as played on two speakers, tr
 
 ## What it was measured on
 
-A lab corpus of 673 recordings (clean studio speech in German and English with 54 faults built in at known strengths, 80 pairs of clean and noisy speech, 60 real recordings: calls, phone takes, amateur readers, headsets in cafés), three quarters to tune on, one quarter kept apart. On the 205 recordings of the tuning part (2026-11-19, ffmpeg 9.0.2), the mean change against the recording as it was, and the share that got worse:
+A lab corpus of 673 recordings: clean studio speech in German and English with 54 faults built in at known strengths, 80 pairs of clean and noisy speech, 60 real recordings (calls, phone takes, amateur readers, headsets in cafés). Three quarters to tune on, one quarter kept apart. On the 205 recordings of the tuning part (2026-11-20, ffmpeg 9.0.2), `clean` with its defaults against what two skills of this collection did to a voice before it. Scores from 1 to 5 by models that judge speech (DNSMOS, NISQA), each recording heard at the same level:
 
-| | DNSMOS overall | NISQA | PESQ (with a reference) | worse by DNSMOS |
-| --- | --- | --- | --- | --- |
-| best-takes' levelling as it was | −0.09 | −0.15 | −0.28 | 31 % |
-| screencast-cut's cleaning as it was | +0.04 | +0.22 | +0.17 | 14 % |
-| `clean --level off` (repair and tone) | +0.11 | +0.35 | +0.23 | 3 % |
-| `clean` | +0.10 | +0.32 | +0.09 | 4 % |
+| | as recorded | best-takes' levelling | screencast-cut's cleaning | `clean`, ffmpeg alone | `clean` with the denoiser |
+| --- | --- | --- | --- | --- | --- |
+| 12 real recordings with a café or a keyboard, background | 2.72 | 2.18 | 2.93 | 2.82 | 3.50 |
+| the same, NISQA | 2.37 | 2.13 | 2.44 | 2.35 | 3.25 |
+| 60 noisy pairs, NISQA | 3.49 | 3.30 | 3.94 | 4.24 | 4.53 |
+| 19 with built-in noise, hiss, wind, mixed, DNSMOS overall | 2.88 | 2.82 | 2.94 | 2.98 | 3.22 |
+| 41 with faults that are not noise, DNSMOS overall | 3.19 | 3.28 | 3.28 | 3.32 | 3.34 |
+| 42 clean recordings, NISQA | 4.67 | 4.58 | 4.66 | 4.70 | 4.70 |
+| clearly worse than as recorded, of 163 that are not clean | – | 50 | 22 | 3 | 0 |
 
-(Levelling changes a voice's dynamics, which PESQ counts as a difference from the reference: the last row's PESQ says that, not that it sounds worse.) All 33 real recordings tried landed within 0.2 LU of −14 LUFS with no true peak over −1 dBTP.
+("Clearly worse": DNSMOS overall down by more than 0.15, which is more than the score moves by itself.) Against the clean reference where there is one, PESQ went from 2.74 to 2.99 with ffmpeg alone and to 3.25 with the denoiser; best-takes' levelling took it to 2.45. Every recording `clean` delivered lay between −14.2 and −13.8 LUFS with its true peak at −1.5 dBTP or under; best-takes' levelling landed within 0.5 LU on 170 of 204 and left 10 over −1 dBTP.
 
-These are models' scores, not ears. Nobody had listened to the results when this was written.
+These are models' scores, not ears, on recordings the settings were tuned on.
 
 ## What it does not do (yet)
 
-- **A room.** No ffmpeg filter takes reverberation out of a voice; it is named and left.
-- **Noise that changes** (a café, traffic, a keyboard). A filter that learns one noise cannot follow it: on twelve real recordings of that kind the background's score moved from 2.72 to 2.74. A neural denoiser moved it to 3.56 (DPDFNet-2 in front of `clean`, in the lab); the skill does not use one.
+- **A room.** No ffmpeg filter takes reverberation out of a voice; it is named and left. The denoiser takes some of it when it runs.
+- **Noise that changes, on a machine without the denoiser** (a café, traffic, a keyboard): named and left.
+- **Noise under the voice that the probe does not find**: two of the twelve café and keyboard recordings stayed over its threshold and got ffmpeg's method.
 - **What was not recorded**: a call's or a 16 kHz source's missing highs stay missing.
 - **A second voice, music.** One voice at a time, nothing under it.
 - **Its ears.** It measures. The person hears.
 
 ## ffmpeg's own faults
 
-Found while building it, in ffmpeg 9.0.2 (4.4, 8.0 and 8.1 do not have them): `anlmdn` ends with a memory error on every input, so it is never used; `arnndn` writes its last 480 samples as invalid numbers unless the input is a whole number of 480-sample blocks, so its input is padded and its output cut back. A test asks every noise method for finite samples to the last one.
+Found while building it, in ffmpeg 9.0.2 (8.0.1 and 8.1.3 do not have them): `anlmdn` ends with a memory error on every input, so it is never used; `arnndn` writes its last 480 samples as invalid numbers unless its input is a whole number of 480-sample blocks, so where it is asked for (a model named in `VOICE_SOUND_RNNOISE`; the skill ships none) its input is padded and its output cut back. A test asks every noise method the machine can run for finite samples to the last one.
 
 ## From another skill
 
-A skill runs the tool as a program, never imports its code: `VOICE_SOUND` naming `tools/voice.mjs`, else `../voice-sound/tools/voice.mjs` beside it, else `/home/sprite/skills/voice-sound/tools/voice.mjs`. `clean <in> <out> --json` prints the report and exits 1 with `{"error": "…"}`; `--level off` for a skill that levels itself, on the whole recording before it is cut (the noise is read in its pauses); `--mono` for a voice mounted as one track; `targets --json` for the numbers to aim at.
+A skill runs the tool as a program, never imports its code: `VOICE_SOUND` naming `tools/voice.mjs`, else `../voice-sound/tools/voice.mjs` beside it, else `/home/sprite/skills/voice-sound/tools/voice.mjs`. `clean <in> <out> --json` prints the report and exits 1 with `{"error": "…"}`, a refusal included; `--level off` for a skill that sets the level itself, on the whole recording before it is cut (the noise is read in its pauses); `--mono` for a voice mounted as one track; `targets --json` for the numbers to aim at.

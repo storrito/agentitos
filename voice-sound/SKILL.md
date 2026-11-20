@@ -41,7 +41,7 @@ The tool measures the recording, mends what the numbers give a reason for and no
 
 `--for` takes the platforms' names as platform-zones has them (`reels`, `tiktok`, `shorts`, `youtube`, `linkedin`, …) and `podcast`; without it the master for video (`targets` below). A video keeps its picture in its own kind of file (`.mp4`, `.mov`, `.m4v`, `.mkv`, `.webm`). When the line says the video has several audio streams, the first was taken: `--audio <n>` takes another.
 
-It refuses, in one sentence, a recording in which it finds no voice or under a second of one, and a voice so quiet that it would need over 40 dB of gain. Pass the reason on in their words and ask for the recording they meant, or for one made closer to the microphone; do not try to get round it.
+It refuses, in one sentence, a recording in which it finds no voice or under half a second of one, and a voice so quiet that it would need over 45 dB of gain. Pass the reason on in their words and ask for the recording they meant, or for one made closer to the microphone; do not try to get round it.
 
 What it cannot mend it says, and you pass that on as it is, never softened:
 
