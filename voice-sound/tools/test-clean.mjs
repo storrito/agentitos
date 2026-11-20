@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { clean, lines, MIN_VOICE_S } from "./lib/clean.mjs";
+import { clean, lines, MIN_VOICE_S, EARLY_S, SPACE, earlyLine, spaceNeeded } from "./lib/clean.mjs";
 import { measure } from "./lib/measure.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -199,11 +199,8 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
   run(["-i", base, "-ss", "0.5", "-t", "0.3", file("short.wav")]);
   run(["-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.03:r=48000:d=20:seed=7,lowpass=f=6000", "-c:a", "pcm_s16le", file("room.wav")]);
   run(["-i", base, "-af", "volume=-67dB", "-c:a", "pcm_f32le", file("far.wav")]);
-  // over an hour: the voice, then 61 minutes of silence, at 8 kHz and 8 bits (29 MB, written in a second)
-  run(["-i", base, "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-filter_complex", "[0:a]aresample=8000[v];[1:a]atrim=duration=3660[s];[v][s]concat=n=2:v=0:a=1", "-c:a", "pcm_u8", file("long-hour.wav")]);
   const cases = [
     [["gone.wav", "x.m4a"], /^There is no gone\.wav\.$/],
-    [["long-hour.wav", "x.m4a"], /^long-hour\.wav is 61:14 long, over the 60 minutes clean takes: cut it into parts of up to 60 minutes \(at pauses\) and clean each, or clean only the part that is used\.$/],
     [["mute.mp4", "x.m4a"], /^mute\.mp4 has no sound\.$/],
     [["voice.wav", "voice.wav"], /^voice\.wav is the recording itself: clean never writes over its input; name another file\.$/],
     [["voice.wav", "./voice.wav"], /is the recording itself/],
@@ -250,6 +247,52 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
   assert.deepEqual(fs.readdirSync(os.tmpdir()).filter((n) => /^voice-sound-clean-[A-Za-z0-9]{6}$/.test(n)).filter((n) => {
     try { return Date.now() - fs.statSync(path.join(os.tmpdir(), n)).mtimeMs < 60000; } catch { return false; }
   }), []);
+});
+
+test("the line before a long source is measured: its length and the whole run's time, from ffmpeg alone to with the denoiser where it is there", () => {
+  assert.equal(EARLY_S, 3600);
+  assert.equal(earlyLine({ name: "talk.flac", seconds: 7200, ending: "m4a" }), "talk.flac is 2:00:00 long: cleaning it takes about 9 min in all, the first 51 s of it measuring.");
+  assert.equal(earlyLine({ name: "talk.flac", seconds: 14400, slots: 7, ending: "m4a" }), "talk.flac is 4:00:00 long: cleaning it takes about 18 min in all with ffmpeg alone and 40 min where the neural denoiser runs, the first 2 min of it measuring.");
+  // (more pieces at once: less time; a comparison and a .wav: their own parts)
+  const minutes = (l) => Number(/about (\d+) min in all/.exec(l)[1]);
+  assert.ok(minutes(earlyLine({ name: "a", seconds: 7200, ending: "m4a", before: true })) > minutes(earlyLine({ name: "a", seconds: 7200, ending: "m4a" })));
+  assert.match(earlyLine({ name: "a", seconds: 3700, slots: 1, ending: "wav" }), /^a is 1:01:40 long: cleaning it takes about \d+ min in all with ffmpeg alone and \d+ min where the neural denoiser runs, the first 27 s of it measuring\.$/);
+});
+
+test("over an hour: not refused, and the first line says what the whole will take before the measuring begins", { skip }, async () => {
+  // the voice, then 61 minutes of silence, at 8 kHz and 8 bits (29 MB, written in a second); the
+  // run is ended once its first two lines are out (the whole takes minutes)
+  run(["-i", base, "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-filter_complex", "[0:a]aresample=8000[v];[1:a]atrim=duration=3660[s];[v][s]concat=n=2:v=0:a=1", "-c:a", "pcm_u8", file("long-hour.wav")]);
+  const p = spawn(process.execPath, [runner, "clean", "long-hour.wav", "long-hour.m4a", "--json"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+  let err = "", out = "";
+  p.stdout.on("data", (d) => { out += d; });
+  const got = await new Promise((resolve) => {
+    p.stderr.on("data", (d) => { err += d; if (err.split("\n").length > 2) { p.kill("SIGTERM"); resolve(err); } });
+    p.on("close", () => resolve(err));
+  });
+  await new Promise((resolve) => (p.exitCode != null || p.signalCode != null ? resolve() : p.on("close", resolve)));
+  const ls = got.trim().split("\n");
+  assert.equal(out, "", `refused or failed: ${out}`);
+  assert.match(ls[0], /^long-hour\.wav is 1:01:14 long: cleaning it takes about 5 min in all, the first 27 s of it measuring\.$/, got);
+  assert.equal(ls[1], "Measuring 1:01:14 of sound (about 27 s).");
+  for (const n of fs.readdirSync(dir).filter((x) => x.startsWith(".voice-sound-clean-"))) fs.rmSync(file(n), { recursive: true, force: true });
+  fs.rmSync(file("long-hour.wav"), { force: true });
+});
+
+test("the room for the working files: refused in one sentence with both numbers where the disk will not hold them, nothing left behind", { skip }, async () => {
+  // (three float WAVs of one channel, the output, a fifth more and 100 MB)
+  assert.equal(spaceNeeded({ seconds: 3600, ending: "m4a" }), Math.round((3 * 192000 + 24000) * 3600 * 1.2 + 100e6));
+  assert.equal(SPACE.floats, 3);
+  assert.ok(spaceNeeded({ seconds: 60, ending: "wav", beforeEnding: "wav" }) > spaceNeeded({ seconds: 60, ending: "m4a" }));
+  assert.ok(spaceNeeded({ seconds: 60, ending: "mp4", extraBytes: 1e9 }) > 1.2e9);
+  // (a free space injected: 5 MB, where 14 s of sound needs about 110)
+  await assert.rejects(clean(base, file("roomless.m4a"), {}, { ...stages, free: () => 5e6 }),
+    (e) => /^There is not room enough beside (\S*\/)?roomless\.m4a to clean 0:14 of sound: its working files need about 110 MB free there, and 5 MB is; free some space on that disk, or write the output to another\.$/.test(e.message) || assert.fail(e.message));
+  assert.ok(!fs.existsSync(file("roomless.m4a")));
+  assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".voice-sound-clean-")), []);
+  // (enough: it runs)
+  const r = await clean(base, file("roomy.m4a"), {}, { ...stages, free: () => 200e6 });
+  assert.equal(r.output.endsWith("roomy.m4a"), true);
 });
 
 test("through voice.mjs itself, with the real stages: clean ends (the command's file and this one do not wait on each other), makes the folders of what it writes, and lands on the loudness", { skip }, () => {

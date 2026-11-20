@@ -35,6 +35,8 @@
 // false) or less than MIN_VOICE_S of it, and one whose voice lies more than level's MAX_GAIN_DB
 // under the master's −14 LUFS (the recorder's own floor comes up then more than the voice). A
 // voice LOW_GAIN_DB or more under the target is delivered, and what is left says it was recorded very low.
+// Never a recording for its length: one over EARLY_S first hears what the whole will take; the run
+// is refused only where the disk beside the output will not hold its working files (SPACE).
 // Where measure could not judge hum, `notJudged` says so; after a notch, the result's measurement
 // decides whether `left` names the hum.
 //
@@ -69,7 +71,7 @@ import { Refusal, facts, AS_PLAYED } from "./analyse.mjs";
 import { level, LevelError, TARGETS, LIMITER, MAX_GAIN_DB, tooQuiet, NO_LOUDNESS_LUFS, TWO_SPEAKERS_LU, loudness, loudnessAt, ffmpegRun, stopChildren } from "./level.mjs";
 import { targets as platformTargets } from "./targets.mjs";
 
-export const USAGE = "Usage: voice.mjs clean <audio|video, up to 60 min> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>] [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>] [--before <file>] [--json]";
+export const USAGE = "Usage: voice.mjs clean <audio|video> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>] [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>] [--before <file>] [--json]";
 // a check accepts the true peak this much over the one aimed at (−1.5 aimed at, −1 accepted)
 const PEAK_MARGIN_DB = 0.5;
 // the least voice clean works on: under half a second, measure's speech is a cough or a click
@@ -78,11 +80,19 @@ const PEAK_MARGIN_DB = 0.5;
 // within 0.2 LU of the target with their peaks under the ceiling (2026-11-20); a first bound of
 // 1 s had refused those clips, a short answer as a person might well bring it
 export const MIN_VOICE_S = 0.5;
-// the longest source clean takes (measure takes any length): the collection's videos run to a
-// quarter of an hour (docs/standards.md), and an hour is four times that with room for a talk to
-// cut from; its working files then hold about 1.4 GB (23 MB a minute), and clean takes about
-// 5 minutes on a laptop with ffmpeg alone, 8 with the denoiser (ESTIMATE below), longer on a Sprite
-export const MAX_SOURCE_S = 3600;
+// a source longer than this hears first, before it is measured, what the whole run will take
+// (earlyLine): the collection's videos run to a quarter of an hour (docs/standards.md), and from an
+// hour on the measuring alone takes half a minute or more on a bot's machine
+export const EARLY_S = 3600;
+// SPACE. What the working folder beside the output holds at once grows with the length: at the
+// most three float WAVs of one channel at 48 kHz (repair's intermediate, the denoiser's output and
+// its pieces' outputs; or the level stage's input, the knocks turned down and the levelled sound),
+// with the output and the comparison as they are written, and a video's picture (or a voice taken
+// out of a file with several streams) at about the source's size. Before the work starts, the free
+// space of that file system (what an ended run left there counted as free) must hold all of it and a
+// margin: a fifth more and 100 MB for what else writes to the disk (a judgement). A full disk on a
+// bot's machine is worse than a refusal.
+export const SPACE = { floatBytesPerS: 4 * 48000, floats: 3, margin: 1.2, spareBytes: 100e6 };
 // what dead runs left (a hidden folder or file beside an output, a folder of the older version in
 // the system's temp directory) is removed by the next run once it is older than this
 const LEFTOVER_MS = 24 * 3600 * 1000;
@@ -120,7 +130,8 @@ const refuse = (msg) => { throw new Refusal(msg); };
 const minus = (s) => s.replace(/^-/, "−");
 const f1 = (x) => (x == null ? "?" : minus((Math.round(x * 10) / 10 || 0).toFixed(1)));
 const i0 = (x) => (x == null ? "?" : minus(String(Math.round(x))));
-const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+const two = (x) => String(Math.floor(x)).padStart(2, "0");
+const clock = (t) => (t >= 3600 ? `${Math.floor(t / 3600)}:${two((t % 3600) / 60)}:${two(t % 60)}` : `${Math.floor(t / 60)}:${two(t % 60)}`);
 const rel = (p) => { const r = path.relative(process.cwd(), path.resolve(p)); return r && !r.startsWith("..") ? r : path.resolve(p); };
 const list = (xs, word = "or") => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} ${word} ${xs.at(-1)}`);
 const nth = (n) => ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"][n - 1] ?? `${n}th`;
@@ -189,7 +200,7 @@ async function realStages() {
     return import(f);
   };
   const r = await load("repair.mjs", "repair"), t = await load("tone.mjs", "tone");
-  return { repair: r.repair, repairPlan: r.repairPlan, tonePlan: t.tonePlan, toneFilters: t.toneFilters, denoiserThere: () => !!r.neuralDenoiser?.() };
+  return { repair: r.repair, repairPlan: r.repairPlan, tonePlan: t.tonePlan, toneFilters: t.toneFilters, denoiserThere: () => !!r.neuralDenoiser?.(), denoiserSlots: () => r.denoiserSlots() };
 }
 
 function encoders() {
@@ -441,8 +452,46 @@ export function estimate({ seconds, plan, probe, ending, video, before, measureS
     parts.level != null && `level ${duration(parts.level)}`, parts.before != null && `the comparison ${duration(parts.before)}`].filter(Boolean).join(", ");
   return { total, parts, says, speed: +speed.toFixed(2) };
 }
-// a time as a person reads it: "40 s", "3 min", "1 h 5 min"
-export const duration = (s) => (s < 90 ? `${Math.max(1, Math.round(s))} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
+// a time as a person reads it: "40 s", "3 min", "1 h 5 min", "2 h"
+export const duration = (s) => {
+  if (s < 90) return `${Math.max(1, Math.round(s))} s`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+};
+
+// The line a source over EARLY_S gets before anything else, from ESTIMATE without a measurement:
+// its length and the whole run, measuring included; where the neural denoiser is there (slots:
+// how many pieces it runs at once), from ffmpeg alone to with the denoiser, since only the
+// measurement decides whether it runs. Unscaled: the speed of this machine is read off the
+// measurement, and the estimate after it says the rest.
+export function earlyLine({ name, seconds, slots = null, ending, video = false, before = false }, E = ESTIMATE) {
+  // (the measuring as the line that begins it says it)
+  const measureS = E.measure.perS * seconds + 1;
+  const whole = (plan) => measureS + estimate({ seconds, plan, probe: false, ending, video, before }, E).total;
+  const alone = whole(null);
+  const neural = slots ? whole({ method: "dpdfnet", steps: [{ id: "denoise", method: "dpdfnet", pieces: Array.from({ length: slots }) }], neural: { tune: { slots } } }) : null;
+  return `${name} is ${clock(seconds)} long: cleaning it takes about ${duration(alone)} in all${neural ? ` with ffmpeg alone and ${duration(neural)} where the neural denoiser runs` : ""}, the first ${duration(measureS)} of it measuring.`;
+}
+
+// the bytes the working folder may hold at once for `seconds` of sound (SPACE above), the margin
+// included; extraBytes: a video's picture or a voice taken out of a file with several streams
+const OUT_BYTES_PER_S = { pcm: 2 * 3 * 48000, coded: 192000 / 8 };
+export function spaceNeeded({ seconds, ending, beforeEnding = null, extraBytes = 0 }, S = SPACE) {
+  const out = (e) => (["wav", "flac"].includes(e) ? OUT_BYTES_PER_S.pcm : OUT_BYTES_PER_S.coded);
+  const perS = S.floats * S.floatBytesPerS + out(ending) + (beforeEnding ? out(beforeEnding) : 0);
+  return Math.round((perS * seconds + extraBytes) * S.margin + S.spareBytes);
+}
+const bytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
+// the free space of the file system `dir` lies on (bytes a user may write)
+function freeBytes(dir) {
+  try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return null; }
+}
+// what a folder holds, its files and those of the folders in it
+function heldBytes(dir) {
+  let n = 0;
+  try { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); n += e.isDirectory() ? heldBytes(p) : fs.statSync(p).size; } } catch { /* gone */ }
+  return n;
+}
 
 // ---------------------------------------------------------------- the run
 
@@ -463,8 +512,6 @@ export async function clean(file, out, opts = {}, stages = null) {
   }
   if (sameFile(out, file)) refuse(`${rel(out)} is the recording itself: clean never writes over its input; name another file.`);
   const f = facts(fileAbs);
-  if ((f.duration ?? 0) > MAX_SOURCE_S + 1)
-    refuse(`${f.name} is ${clock(f.duration)} long, over the ${MAX_SOURCE_S / 60} minutes clean takes: cut it into parts of up to ${MAX_SOURCE_S / 60} minutes (at pauses) and clean each, or clean only the part that is used.`);
   if (fmt.kind === "video") {
     if (!f.video) refuse(`${f.name} has no picture: write its sound as ${list(AUDIO_ENDINGS)}.`);
     if (srcEnding !== ending) refuse(FORMATS[srcEnding]?.kind === "video"
@@ -544,7 +591,20 @@ export async function clean(file, out, opts = {}, stages = null) {
     return v;
   };
   try {
+    // the room for the working files (SPACE above), before anything is written; what an ended
+    // run left in the working folder is counted as free, since this run takes it up or replaces it
+    const need = spaceNeeded({ seconds: f.duration ?? 0, ending, beforeEnding: beforeAbs && path.extname(beforeAbs).slice(1).toLowerCase(),
+      extraBytes: fmt.kind === "video" || o.audio > 1 ? fs.statSync(fileAbs).size : 0 });
+    // (stages.free(dir): the tests' stand-in for the free space)
+    const free = (st.free ?? freeBytes)(work), room = free == null ? null : free + heldBytes(work);
+    if (room != null && room < need)
+      refuse(`There is not room enough beside ${rel(outAbs)} to clean ${clock(f.duration ?? 0)} of sound: its working files need about ${bytes(need)} free there, and ${bytes(room)} is; free some space on that disk, or write the output to another.`);
     if (job.from.length) say(`Going on from the run before, which was ended: ${list(job.from.map((n) => STAGE_SAYS[n]), "and")} ${job.from.length === 1 ? "was" : "were"} finished and ${job.from.length === 1 ? "is" : "are"} taken up.`);
+    // a long source: what the whole will take, before the measuring (EARLY_S above)
+    if (state.done.measure === undefined && (f.duration ?? 0) > EARLY_S) {
+      const denoiser = !!st.denoiserThere?.() && o.denoise !== "off" && [undefined, "", "dpdfnet"].includes(process.env.VOICE_SOUND_DENOISE);
+      say(earlyLine({ name: f.name, seconds: f.duration, slots: denoiser ? (st.denoiserSlots?.() ?? 1) : null, ending, video: fmt.kind === "video", before: o.before != null }));
+    }
     // 0. the voice's stream on its own when it is not the first (measure and repair read the first)
     let src = fileAbs;
     if (o.audio > 1) {

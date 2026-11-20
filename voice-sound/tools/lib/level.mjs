@@ -261,7 +261,9 @@ function summaries(log) {
   return at.map((m, i) => ({ n: Number(m[1]), s: summary(log.slice(m.index, at[i + 1]?.index ?? log.length)) })).sort((a, b) => a.n - b.n).map((x) => x.s);
 }
 
-const measureArgs = (file, af = "") => ["-hide_banner", "-nostats", "-nostdin", "-i", path.resolve(file), "-map", "0:a:0", "-af", `${af ? `${af},` : ""}ebur128=peak=true`, "-f", "null", "-"];
+// (its frames logged at verbose, so not printed: only the summary. At info, ebur128 writes 1.5 kB
+// a second of sound, and loudnessOf's buffer of 16 MB ran over at about three hours)
+const measureArgs = (file, af = "") => ["-hide_banner", "-nostats", "-nostdin", "-i", path.resolve(file), "-map", "0:a:0", "-af", `${af ? `${af},` : ""}ebur128=peak=true:framelog=verbose`, "-f", "null", "-"];
 
 export function loudnessOf(file) {
   const r = spawnSync("ffmpeg", measureArgs(file), { encoding: "utf8", maxBuffer: 1 << 24 });
