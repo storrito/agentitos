@@ -229,9 +229,15 @@ test("through voice.mjs itself, with the real stages: clean ends (the command's 
   assert.equal(r.stderr, "", r.stderr);
   assert.match(r.stdout, /Measured, not heard: say so\./);
   for (const f of ["made/here/x.m4a", "made/here/x.m4a.json", "made/there/before.m4a"]) assert.ok(fs.existsSync(file(f)), `${f} is not there`);
-  near(loudness(file("made/here/x.m4a")).lufs, -14, 0.5, "the loudness");
-  near(loudness(file("made/there/before.m4a")).lufs, loudness(file("made/here/x.m4a")).lufs, 0.6, "before against after");
+  // (what the tool claims: within 0.3 LU of the target as delivered, the true peak at the −1.5 aimed
+  // at or, where `left` says the peak gave way, never over the −1.0 a check accepts)
+  const got = loudness(file("made/here/x.m4a"));
+  near(got.lufs, -14, 0.3, "the loudness");
   const j = JSON.parse(fs.readFileSync(file("made/here/x.m4a.json"), "utf8"));
+  assert.ok(got.truePeak <= -1, `true peak ${got.truePeak}`);
+  if (got.truePeak > -1.45) assert.ok(j.left.some((x) => x.id === "peak"), `true peak ${got.truePeak} and nothing left says so: ${JSON.stringify(j.left)}`);
+  assert.deepEqual([j.delivered.lufs, j.delivered.truePeak], [got.lufs, got.truePeak], "the report's numbers are the file's");
+  near(loudness(file("made/there/before.m4a")).lufs, got.lufs, 0.6, "before against after");
   assert.ok(j.steps.length > 0 && j.steps.every((s) => s.id && s.why), "every step has its reason");
 });
 

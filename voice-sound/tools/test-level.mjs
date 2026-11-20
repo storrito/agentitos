@@ -320,14 +320,53 @@ test("no measurement, no voice, too quiet: −70 LUFS is none; a silent or 0.3 s
   await assert.rejects(level(far, file("far.out.wav"), { level: "plain" }), /more than the 70 dB this tool gives/);
   await assert.rejects(level(far, file("far.out.wav"), { targets: { lufs: -23 } }), /bringing it to −23\.0 would take 6\d dB of gain, more than the 61 dB this tool gives/);
   assert.ok(!fs.existsSync(file("far.out.wav")));
-  // one at −50 as played needs 36 dB: given, nothing said of it, and no pass ever more than the bound
+  // one at −50 as played needs 36 dB (and some 4 more for what the limiters take): given, nothing
+  // said of it, and no pass ever more than the bound
   const quiet = intermediate("q50.wav", "volume=-30dB");
   const r = await level(quiet, file("q50.out.wav"), {});
-  near(loudnessOf(file("q50.out.wav")).lufs, -14, 0.5, "−50 brought to −14");
+  near(loudnessOf(file("q50.out.wav")).lufs, -14, 0.3, "−50 brought to −14");
   assert.ok(!r.left.some((x) => x.id === "quiet"), JSON.stringify(r.left));
-  assert.ok(r.passes.every((p) => p.gainDb <= 40), JSON.stringify(r.passes));
+  assert.ok(r.passes.every((p) => p.gainDb <= 70), JSON.stringify(r.passes));
   // nothing left beside the outputs
   assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".")), []);
+});
+
+test("encoded as delivered (.m4a, .mp3): within 0.3 LU of the target and the true peak at the aim, whatever order the two corrections need; what is claimed is what the file has; the rounds bounded and said", { skip }, async () => {
+  // (the made-up voice's peaks lie 20 dB over its loudness: the encoders raise its true peak by
+  // 0.5 to 1 dB, the ceiling is lowered, and each lowering takes loudness the gain must win back)
+  const has = spawnSync("ffmpeg", ["-hide_banner", "-encoders"], { encoding: "utf8" }).stdout;
+  const kinds = [["m4a", ["-c:a", "aac", "-b:a", "192k"]], ...(/libmp3lame/.test(has) ? [["mp3", ["-c:a", "libmp3lame", "-b:a", "192k"]]] : [])];
+  for (const [ext, encode] of kinds) for (const lufs of [-14, -16]) {
+    const out = file(`encoded${lufs}.${ext}`);
+    const r = await level(base, out, { encode, targets: { lufs } });
+    const got = loudnessOf(out), what = `${ext} at ${lufs}`;
+    assert.deepEqual([r.delivered.lufs, r.delivered.truePeak], [got.lufs, got.truePeak], `${what}: the report's numbers are the file's`);
+    assert.ok(got.truePeak <= TARGETS.peakAccepted, `${what}: true peak ${got.truePeak}`);
+    if (got.truePeak > TARGETS.truePeak + 0.05) assert.ok(r.left.some((x) => x.id === "peak"), `${what}: true peak ${got.truePeak} and nothing left says so`);
+    // the loudness step says "within 0.3 LU" only where the file is
+    const loud = r.steps.find((s) => s.id === "loudness");
+    assert.equal(/corrected until within 0\.3 LU/.test(loud.why), Math.abs(got.lufs - lufs) <= 0.3, `${what}: ${loud.why}`);
+    const lim = r.steps.find((s) => s.id === "limiter");
+    assert.ok(lim.encodings >= 1 && lim.encodings <= 6, JSON.stringify(lim));
+    assert.equal(r.passes.filter((p) => p.kind === "delivered").length, lim.encodings);
+    if (lim.loweredTimes) assert.match(lim.why, /lowered (once|twice|\d times) because the encoded file came over the −1\.5 dBTP aimed at/);
+    // (this voice can have both)
+    near(got.lufs, lufs, 0.3, `${what}: loudness`);
+  }
+});
+
+test("where the loudness cannot be had under the ceiling, `left` says that it gave way and by how much", { skip }, async () => {
+  // (−6 LUFS plain under a ceiling of −6 dBTP: the made-up voice's peaks would need far more
+  // limiting than that; the limiter holds it down)
+  const r = await level(base, file("gave-way.m4a"), { level: "plain", encode: ["-c:a", "aac", "-b:a", "192k"], targets: { lufs: -6, truePeak: -6, peakAccepted: -5.5 } });
+  const got = loudnessOf(file("gave-way.m4a"));
+  assert.ok(got.lufs < -6.3, `${got.lufs}`);
+  const q = r.left.find((x) => x.id === "loudness");
+  assert.ok(q, JSON.stringify(r.left));
+  assert.match(q.why, /^The loudness came to −\d+\.\d LUFS as played, \d+\.\d LU under the −6\.0 aimed at: the loudness gave way to the true peak: to hold it under −\d+\.\d dB the two limiters take \d+\.\d LU off the loudness/);
+  near(q.offLu, got.lufs + 6, 0.06, "by how much");
+  assert.ok(got.truePeak <= -5.5, `true peak ${got.truePeak}`);
+  assert.match(r.steps.find((s) => s.id === "loudness").why, /^Brought towards −6\.0 LUFS .*: it came to −\d+\.\d, see what is left\.$/);
 });
 
 test("the gain search never passes the bound: where the limiter takes loudness and the search asks for more, it stops at the bound and says so", { skip }, async () => {
