@@ -106,8 +106,10 @@ function parse(args, valued = VALUED) {
     if (!a.startsWith("--")) { pos.push(a); continue; }
     const k = a.slice(2);
     if (FLAGS.includes(k)) { opts[k] = true; continue; }
-    if (!valued.includes(k)) fail(`Unknown option ${a}. Options: ${[...VALUED, ...FLAGS].map((o) => "--" + o).join(" ")}`);
+    if (!valued.includes(k)) fail(`Unknown option ${a}. Options: ${[...valued, ...FLAGS].map((o) => "--" + o).join(" ")}`);
     if (i + 1 >= args.length) fail(`${a} needs a value.`);
+    if (opts[k] !== undefined && ROLES.includes(k)) fail(`${a} is given twice: give each role one file.`);
+    if (opts[k] !== undefined && k === "offset") fail(`${a} is given twice: give every role's seconds in one, as --offset webcam=1.5,phone-screen=-0.3.`);
     opts[k] = NUMBERS.includes(k) ? Number(args[++i]) : String(args[++i]);
     if (NUMBERS.includes(k) && !Number.isFinite(opts[k])) fail(`${a} needs a number.`);
   }
@@ -120,6 +122,9 @@ const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null
 const rel = (p) => path.relative(process.cwd(), p) || ".";
 const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : rel(process.argv[1]));
 const cmd = (rest) => `node ${self()} ${rest}`;
+// an uploaded picture that could not be lined up by its sound (it has none, or no match): it
+// starts where its file starts, as given, which can be seconds off
+const unsynced = (meta, k) => !!meta.uploaded && k !== meta.mic && !!meta.sources[k].video && !(meta.sources[k].sync >= 0.5);
 
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
@@ -207,7 +212,12 @@ async function prepareRecording(sdir, folder, s, opts) {
 
   // every source converted at once, its activity measured from the same decoding
   const sources = {}, grids = {}, counted = {}, done = {}, lengths = {};
-  const todo = names.filter((k) => !fs.existsSync(at(`${k}.prepared.json`)));
+  // an upload's conversion is kept with the file it came from (its path, size and time) and used
+  // again only for that file
+  const keyOf = (k) => { const st = fs.statSync(fileOf(k)); return { file: fs.realpathSync(fileOf(k)), size: st.size, mtime: st.mtimeMs }; };
+  const stale = loose ? names.filter((k) => fs.existsSync(at(`${k}.prepared.json`)) && JSON.stringify(read(at(`${k}.prepared.json`)).upload) !== JSON.stringify(keyOf(k))) : [];
+  for (const k of stale) console.log(`${k}: converted again: the conversion in ${rel(sdir)} was made from another file, or from ${rel(fileOf(k))} before it changed`);
+  const todo = names.filter((k) => !fs.existsSync(at(`${k}.prepared.json`)) || stale.includes(k));
   console.log(`${loose ? "The uploaded files" : folder}: ${names.length} sources${todo.length < names.length ? `, ${names.length - todo.length} converted before` : ""}, preparing ${todo.length ? todo.join(", ") : "nothing"} …`);
   // how far each source is, every ten seconds, for the person watching the chat
   const ticker = setInterval(() => {
@@ -232,7 +242,7 @@ async function prepareRecording(sdir, folder, s, opts) {
         fs.writeFileSync(at(`${k}.counts`), Buffer.from(all.buffer));
       }
       fs.renameSync(part, at(file));
-      write(at(`${k}.prepared.json`), p);
+      write(at(`${k}.prepared.json`), loose ? { ...p, upload: keyOf(k) } : p);
     } else p = read(at(`${k}.prepared.json`));
     if (p0.video) {
       const raw = fs.readFileSync(at(`${k}.counts`)), cells = grids[k].cells;
@@ -272,7 +282,7 @@ async function prepareRecording(sdir, folder, s, opts) {
   // uploaded files: what a recorder's recording.json would have said, and what its lack changes
   if (loose) {
     console.log(`Uploaded files have no recording.json, so no start times and no pauses: they start together${Object.values(rec.started).some(Boolean) ? " but for --offset" : ""} and each one with sound is laid onto the voice by its sound within 1.5 s; one without sound, or that began further apart, can run off by that much.`);
-    for (const k of names.filter((x) => x !== mic && sources[x].video && !(sources[x].sync >= 0.5)))
+    for (const k of names.filter((x) => unsynced({ uploaded: true, mic, sources }, x)))
       console.log(`${k}: ${sources[k].audio ? "its sound does not match the voice" : "no sound to lay it by"}, so it starts at ${sources[k].offset.toFixed(2)} s; if it began earlier or later than the others, start over with --offset ${k}=<seconds> (later: positive).`);
   }
 
@@ -302,7 +312,7 @@ async function prepareRecording(sdir, folder, s, opts) {
   write(at("activity.json"), activity);
   // the recording's length: its voice, or a picture that runs longer
   const duration = Math.max(vp.duration, ...Object.values(sources).map((x) => x.offset + x.duration));
-  const meta = { folder: loose ? label : rel(folder), t0, mic, voice, duration: +duration.toFixed(3), sources };
+  const meta = { folder: loose ? label : rel(folder), t0, mic, voice, duration: +duration.toFixed(3), ...(loose ? { uploaded: true } : {}), sources };
   write(at("sources.json"), meta);
   return { meta, activity };
 }
@@ -381,20 +391,35 @@ function looseFiles(opts) {
     if (opts.offset !== undefined) fail("--offset is for uploaded files named by their roles (--screen <file> --webcam <file>); a recorder's folder has its start times in recording.json.");
     return null;
   }
-  const files = {};
+  const files = {}, info = {};
   for (const k of roles) {
-    const f = opts[k];
-    if (!fs.existsSync(f) || !fs.statSync(f).isFile()) fail(`--${k} ${f}: no such file; give the path of the uploaded file as it is from here (uploads/…).`);
-    let p;
-    try { p = probe(f); } catch { fail(`--${k} ${f}: ffmpeg cannot read it as a video or a sound; give the ${k}'s recording.`); }
-    if (k !== "audio" && !p.video) fail(`--${k} ${f} has no picture: give it as --audio, or give the ${k}'s video.`);
+    // a name with a leading dash would reach ffprobe as an option: given as ./-name
+    const f = opts[k].startsWith("-") ? `.${path.sep}${opts[k]}` : opts[k];
+    if (!fs.existsSync(f) || !fs.statSync(f).isFile()) fail(`--${k} ${opts[k]}: no such file; give the path of the uploaded file as it is from here (uploads/…).`);
+    const same = Object.keys(files).find((j) => fs.realpathSync(files[j]) === fs.realpathSync(f));
+    if (same) fail(`--${same} and --${k} name the same file ${opts[k]}: each role is a file of its own; look at a frame of each upload and give each role its file.`);
+    try { info[k] = probe(f); } catch { fail(`--${k} ${opts[k]}: ffmpeg cannot read it as a video or a sound; give the ${k}'s recording.`); }
+    if (k !== "audio" && !info[k].video) fail(`--${k} ${opts[k]} has no picture: give it as --audio, or give the ${k}'s video.`);
     files[k] = f;
   }
   const started = Object.fromEntries(roles.map((k) => [k, 0]));
+  const set = new Set();
   for (const part of opts.offset === undefined ? [] : String(opts.offset).split(",")) {
     const [k, v] = part.split("=");
-    if (!roles.includes(k) || !Number.isFinite(Number(v)) || v.trim() === "") fail(`--offset is <role>=<seconds> for a file given here (${roles.join(", ")}), as --offset ${roles.at(-1)}=1.5 when that one began 1.5 s after the others (earlier: negative).`);
+    if (!roles.includes(k) || !/^-?\d+(\.\d+)?$/.test(v ?? "")) fail(`--offset is <role>=<seconds> for a file given here (${roles.join(", ")}), as --offset ${roles.at(-1)}=1.5 when that one began 1.5 s after the others (earlier: negative).`);
+    if (set.has(k)) fail(`--offset names ${k} twice: give each role's seconds once.`);
+    set.add(k);
     started[k] = Math.round(Number(v) * 1000);
+  }
+  // each file has to run while another does, and one with sound cannot open the recording with
+  // more silence than it is long
+  const t0 = Math.min(...Object.values(started));
+  for (const k of set) {
+    const from = (started[k] - t0) / 1000, to = from + info[k].duration;
+    const others = roles.filter((j) => j !== k).map((j) => [(started[j] - t0) / 1000, (started[j] - t0) / 1000 + info[j].duration]);
+    const span = others.length ? [Math.min(...others.map((o) => o[0])), Math.max(...others.map((o) => o[1]))] : null;
+    if (span && !others.some(([a, b]) => from < b && a < to)) fail(`--offset ${k}=${(started[k] / 1000)} puts the ${k}'s ${info[k].duration.toFixed(1)} s at ${from.toFixed(1)}–${to.toFixed(1)} s, where none of the others runs (they run ${span[0].toFixed(1)}–${span[1].toFixed(1)} s): give how many seconds after the others it began, within that.`);
+    if (info[k].audio && from > info[k].duration) fail(`--offset ${k}=${(started[k] / 1000)} opens the recording with ${from.toFixed(1)} s before the ${k}'s sound, longer than its ${info[k].duration.toFixed(1)} s: give how many seconds after the others it began, at most ${info[k].duration.toFixed(1)}.`);
   }
   return { files, started };
 }
@@ -561,7 +586,7 @@ function brief(dir) {
   const lines = [];
   lines.push(`# The screencast of ${meta.folder}
 
-${meta.sessions ? `${meta.sessions.length} recordings one after the other: ${meta.sessions.map((x) => `**${x.n}** ${x.folder} from ${clock(x.from)}`).join(", ")}. A keep never runs from one into the next: the cut goes between them. ` : ""}${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources).map(([k, s]) => `**${k}** (${s.video ? `${s.width}×${s.height}` : "sound"}, from ${s.offset.toFixed(2)} s${s.sync != null ? `, laid onto the voice: match ${s.sync}` : ""})`).join(", ")}. The voice is ${meta.mic}'s microphone, cleaned.
+${meta.sessions ? `${meta.sessions.length} recordings one after the other: ${meta.sessions.map((x) => `**${x.n}** ${x.folder} from ${clock(x.from)}`).join(", ")}. A keep never runs from one into the next: the cut goes between them. ` : ""}${clock(meta.duration)} on one clock. The sources: ${Object.entries(meta.sources).map(([k, s]) => `**${k}** (${s.video ? `${s.width}×${s.height}` : "sound"}, from ${s.offset.toFixed(2)} s${unsynced(meta, k) ? `, not lined up by sound (${s.sync != null ? `match ${s.sync}` : "it has none"}): it starts where its file starts, as given` : s.sync != null ? `, laid onto the voice: match ${s.sync}` : ""})`).join(", ")}. The voice is ${meta.mic}'s microphone, cleaned.
 
 ## A good screencast cut
 
@@ -1209,7 +1234,8 @@ function cmdCheck(dir) {
 
   // the sources are on one clock
   for (const [k, s] of Object.entries(meta.sources)) {
-    if (s.sync != null && s.sync < 0.5 && e.pieces.some((p) => p.source === k)) warnings.push(`${k} could not be laid onto the voice by its sound (match ${s.sync}): it follows recording.json's start, which can be some 100 ms off; watch the lips and the clicks`);
+    if (unsynced(meta, k) && e.pieces.some((p) => p.source === k)) warnings.push(`${k} was not lined up by sound (${s.sync != null ? `match ${s.sync}` : "it has none"}): uploaded files have no start times, so it starts where its file starts and can be seconds off; watch the lips and the clicks, and where it is off start over with new … --offset ${k}=<seconds> (later than the others: positive)`);
+    else if (s.sync != null && s.sync < 0.5 && e.pieces.some((p) => p.source === k)) warnings.push(`${k} could not be laid onto the voice by its sound (match ${s.sync}): it follows recording.json's start, which can be some 100 ms off; watch the lips and the clicks`);
   }
 
   // every claim gets its proof: the shot after the words that say it is there shows a screen,
