@@ -819,10 +819,15 @@ function summarise(st) {
     speech: {
       share: r3(speechFrames / Math.max(1, F)), seconds: r1(speechFrames * FRAME_S), silentShare: r3(silentFrames / Math.max(1, F)),
       floorDb: r1(floor), marginDb: r1(margin), loudDb: r1(loud), confidence,
-      // the bursts set aside from the voice's numbers (burstsOf): how many, the first ten (from,
-      // seconds, how far over the voice's 90th percentile), and how far over the strongest stood
+      // where it took speech: every run of the frames behind `seconds`, [from, to] in seconds, in
+      // time order, a burst's frames left out (a few thousand pairs for three hours of talk)
+      spans: spansOf(speech, F),
+      // the bursts set aside from the voice's numbers (burstsOf): how many, every one (from,
+      // seconds, how far over the voice's 90th percentile; `listed` of them, all up to
+      // BURSTS_LISTED), and how far over the strongest stood
       bursts: { count: bursts.length, seconds: r2(bursts.reduce((a, b) => a + (b.to - b.from), 0) * FRAME_S), overDb: bursts.length ? r1(Math.max(...bursts.map((b) => b.overDb))) : null,
-        at: bursts.slice(0, 10).map((b) => ({ t: t(b.from), seconds: r2((b.to - b.from) * FRAME_S), overDb: r1(b.overDb) })) },
+        listed: Math.min(bursts.length, BURSTS_LISTED),
+        at: bursts.slice(0, BURSTS_LISTED).map((b) => ({ t: t(b.from), seconds: r2((b.to - b.from) * FRAME_S), overDb: r1(b.overDb) })) },
       pauses: { count: long.length, seconds: r1(long.reduce((a, s) => a + (s.to - s.from), 0) * FRAME_S) },
       longest: [...long].sort((a, b) => b.to - b.from - (a.to - a.from)).slice(0, 5)
         .map((s) => ({ from: t(s.from), to: t(s.to), seconds: r2((s.to - s.from) * FRAME_S), db: r1(db(s.p)), lufs: r1(lufs(s.k)), silent: s.silent })),
@@ -869,6 +874,20 @@ const REFERENCE = TONE.map(([lo, hi]) => (lo < 100 || hi > 8000 ? null : 10 * Ma
 // the voice's own loud vowels beside it stay.
 // → [{ from, to, core: [frames], overDb }]
 const BURST_NEAR_DB = 6, BURST_OVER_DB = 12, BURST_ALONE_DB = 6, BURST_MAX_FRAMES = 10;
+// (bursts listed one by one up to a thousand: a file with more is a file of noise, and says so)
+const BURSTS_LISTED = 1000;
+
+// the runs of a mask's frames as [from, to] in seconds (to the millisecond)
+function spansOf(mask, F) {
+  const out = [];
+  for (let f = 0; f < F;) {
+    if (!mask[f]) { f++; continue; }
+    let e = f; while (e < F && mask[e]) e++;
+    out.push([r3(f * FRAME_S), r3(e * FRAME_S)]);
+    f = e;
+  }
+  return out;
+}
 function burstsOf(st, Sp, Tp, active, F) {
   const levels = [(f) => db(st.kw[f]), (f) => db(Tp[f]), (f) => db(Sp[f])];
   let n = 0;

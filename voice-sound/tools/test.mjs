@@ -348,6 +348,24 @@ test("a knock, a clap, a thump: set aside from the voice's numbers, named, the p
   }
 });
 
+test("where measure took speech: its spans, in time order, as long as its seconds, the bursts left out; every burst listed", { skip }, async () => {
+  const s = clean.speech.spans;
+  assert.ok(s.length >= 8, JSON.stringify(s));
+  for (let i = 0; i < s.length; i++) {
+    assert.ok(s[i][0] < s[i][1] && (i === 0 || s[i - 1][1] < s[i][0]), JSON.stringify(s.slice(Math.max(0, i - 1), i + 1)));
+  }
+  near(s.reduce((a, [x, y]) => a + y - x, 0), clean.speech.seconds, 0.06, "the spans' seconds");
+  // (each phrase of 2.5 s every 3.6 s is in one span)
+  for (const p of [0.5, 4.1, 7.7, 11.3]) assert.ok(s.some(([x, y]) => x <= p + 0.5 && y >= p + 1.5), `phrase at ${p}: ${JSON.stringify(s)}`);
+  // twelve bursts in the voice at −45 LUFS, in its phrases: every one listed, none inside a span
+  const times = [0.6, 1.4, 4.4, 5.2, 8.0, 8.8, 11.6, 12.4, 15.2, 16.0, 18.8, 19.6];
+  const m = await measure(withBursts("twelve.wav", -45, times.map((t) => [WHITE, t])));
+  assert.equal(m.speech.bursts.count, 12, JSON.stringify(m.speech.bursts));
+  assert.equal(m.speech.bursts.at.length, 12);
+  assert.equal(m.speech.bursts.listed, 12);
+  for (const b of m.speech.bursts.at) assert.ok(!m.speech.spans.some(([x, y]) => x < b.t + 0.02 && y > b.t + 0.01), `${b.t} in ${JSON.stringify(m.speech.spans)}`);
+});
+
 test("a shouted word is the voice, no burst: raised by 12 and by 20 dB it is in the speech's numbers", { skip }, async () => {
   const plain = await measure(withBursts("word-plain.wav", -35));
   for (const up of [12, 20]) {
