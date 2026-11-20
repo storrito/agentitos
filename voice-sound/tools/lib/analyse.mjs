@@ -859,21 +859,25 @@ const REFERENCE = TONE.map(([lo, hi]) => (lo < 100 || hi > 8000 ? null : 10 * Ma
 // K-weighted, the flat, the one in 300–3500 Hz) is read against its 90th percentile over the
 // frames taken for speech (the voice's own upper level, which a few bursts do not move). A burst
 // is a stretch of frames over it by BURST_NEAR_DB or more in any of the three (gaps of up to 2
-// frames joined), at most BURST_MAX_FRAMES long, whose core (its frames BURST_OVER_DB over) is no
-// voice's: fewer than half its frames a voice's, under half their power over 4 kHz and either a
-// pitch (pitchFrame) or a level in 300–3500 Hz risen within 6 dB of the whole's (a voice louder;
-// reverberation and a strong EQ hide some loud vowels' pitch: 3 of 2473 recordings of the tune
-// split, 2026-11-20). White noise and a clap put 40 to 86 % over 4 kHz, a thump raises the whole
-// far more than the speech band; the 3 kHz signal the pitch is read on hears a voice under white
-// noise 17 dB over it. Its top must stand BURST_ALONE_DB over the 10 frames either side. A shout, a
-// laugh, an emphatic word may stand as far over the voice, but with its pitch, or beside its own
-// loud vowels: a word raised by 12 dB breaks into stretches of 3 to 10 frames over BURST_NEAR_DB
-// (4 of 6 clean voices, 2026-11-20), and a shouted "sch" has no pitch but shouted vowels beside
-// it. A knock, a clap, a bump on the microphone has neither. Set aside are the core and the
-// stretch's other frames BURST_NEAR_DB over that are no voice's (a frame the burst half covers);
-// the voice's own loud vowels beside it stay.
+// frames joined), at most BURST_MAX_FRAMES long, that is either
+//   - loud and short, whatever its spectrum: its top BURST_LOUD_DB over, and no more than
+//     BURST_TOP_FRAMES (64 ms) of it within 10 dB of its top. Nothing a person says is that loud
+//     for that short: of 300 loud stretches of speech (shouted words +12 and +20 dB over 450 ms,
+//     first words +15 dB, laughs, coughs, fricatives struck by 10 and 14 dB, in 10 clean voices),
+//     those 14 dB over kept 4 frames and more near their top; knocks through 200–5000 Hz, white
+//     noise, claps and thumps 1 to 3 (347 laid in, 2026-11-20). Struck fricatives with 3 frames
+//     or fewer near their top stood at most 13.9 dB over.
+//   - or a thump: its core (its frames BURST_OVER_DB over) mostly frames whose whole level rose
+//     more than 6 dB beyond the one in 300–3500 Hz, with under half their power over 4 kHz and
+//     no pitch (pitchFrame): a low bump, a pop on the microphone, which no voice makes.
+// A shout, a laugh, an emphatic word may stand as far over the voice, but for longer near its top;
+// a struck "s" has its power over 4 kHz. Set aside are the core and the stretch's other frames
+// BURST_NEAR_DB over that are no voice's (a frame the burst half covers: no pitch, or half its
+// power over 4 kHz); the voice's own loud vowels beside it stay. (The test of 2026-11-20 that a
+// burst's top stand 6 dB over the loudest of the 10 frames either side hid both knocks of a
+// knock-knock 150 ms apart; the frames near the top do its work now.)
 // → [{ from, to, core: [frames], overDb }]
-const BURST_NEAR_DB = 6, BURST_OVER_DB = 12, BURST_ALONE_DB = 6, BURST_MAX_FRAMES = 10;
+const BURST_NEAR_DB = 6, BURST_OVER_DB = 12, BURST_MAX_FRAMES = 10, BURST_LOUD_DB = 14, BURST_TOP_FRAMES = 3;
 // (bursts listed one by one up to a thousand: a file with more is a file of noise, and says so)
 const BURSTS_LISTED = 1000;
 
@@ -908,14 +912,19 @@ function burstsOf(st, Sp, Tp, active, F) {
       if (g >= F || g >= e + 3) break;
       e = g + 1; top = Math.max(top, over(g));
     }
-    let voiced = 0, n12 = 0, around = -Infinity;
-    const core = [], voice = (g) => high(g) < 0.5 && (((st.pitched[g >> 3] >> (g & 7)) & 1) === 1 || Math.abs(levels[2](g) - ref[2] - (levels[1](g) - ref[1])) <= 6);
+    const pitched = (g) => ((st.pitched[g >> 3] >> (g & 7)) & 1) === 1;
+    const low = (g) => high(g) < 0.5 && !pitched(g) && levels[1](g) - ref[1] - (levels[2](g) - ref[2]) > 6;
+    const voice = (g) => pitched(g) && high(g) < 0.5;
+    let lows = 0, n12 = 0, nearTop = 0;
+    const core = [];
     for (let g = f; g < e; g++) {
-      if (over(g) >= BURST_OVER_DB) { n12++; voiced += voice(g) ? 1 : 0; }
-      if (over(g) >= BURST_OVER_DB || (over(g) >= BURST_NEAR_DB && !voice(g))) core.push(g);
+      const o = over(g);
+      if (o >= BURST_OVER_DB) { n12++; lows += low(g) ? 1 : 0; }
+      if (o >= top - 10) nearTop++;
+      if (o >= BURST_OVER_DB || (o >= BURST_NEAR_DB && !voice(g))) core.push(g);
     }
-    for (let g = Math.max(0, f - 10); g < Math.min(F, e + 10); g++) if (g < f || g >= e) around = Math.max(around, over(g));
-    if (e - f <= BURST_MAX_FRAMES && n12 && voiced < n12 / 2 && top - around >= BURST_ALONE_DB) out.push({ from: f, to: e, core, overDb: top });
+    const loudShort = top >= BURST_LOUD_DB && nearTop <= BURST_TOP_FRAMES, thump = n12 > 0 && lows > n12 / 2;
+    if (e - f <= BURST_MAX_FRAMES && (loudShort || thump)) out.push({ from: f, to: e, core, overDb: top });
     f = e;
   }
   return out;
