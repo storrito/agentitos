@@ -798,23 +798,24 @@ export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
 // (20 s: a minute in three of them took 15.8 s, in one 22.3), as many as there are slots where
 // the recording is long enough, else as few as pieceS allows, in whole rounds of the slots.
 export const NEURAL = { pieceS: 60, minPieceS: 20, shiftS: 15, warmS: 10, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1, timeoutS: 120, timeoutPerS: 4 };
-// How many run at once: the cores less one (the video cut that runs beside it), and no more than
-// half the memory the system says is available holds (MemAvailable; a judgement: the rest for
-// the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB and 1.45 MB a second of
-// it with its overlaps; at least one. Read at run time; t.slots (and, for the lab and the tests,
-// VOICE_SOUND_SLOTS) fixes it.
+// How many run at once: the cores the redrawing of clipped peaks uses too (usableCores: all but
+// one, for the video cut that runs beside it; the two run one after the other, so one rule for
+// both), and no more than half the memory the system says is available holds (MemAvailable; a
+// judgement: the rest for the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB
+// and 1.45 MB a second of it with its overlaps; at least one. Read at run time; t.slots (and, for
+// the lab and the tests, VOICE_SOUND_SLOTS) fixes it.
 export const SLOTS = { spareCores: 1, memShare: 0.5, baseMb: 47, mbPerS: 1.45 };
 export function denoiserSlots(t = NEURAL, sys = null) {
   if (Number.isFinite(t.slots)) return Math.max(1, Math.floor(t.slots));
   if (!sys && Number(process.env.VOICE_SOUND_SLOTS) > 0) return Math.floor(Number(process.env.VOICE_SOUND_SLOTS));
-  const cores = sys?.cores ?? (os.availableParallelism ? os.availableParallelism() : os.cpus().length);
+  const usable = sys?.cores != null ? sys.cores - SLOTS.spareCores : usableCores();
   let availMb = sys?.availMb;
   if (availMb == null) {
     try { const m = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+) kB/m); availMb = m ? Number(m[1]) / 1024 : null; } catch { availMb = null; }
     if (availMb == null) availMb = os.freemem() / 2 ** 20;
   }
   const pieceMb = SLOTS.baseMb + SLOTS.mbPerS * (t.pieceS + t.warmS + t.fadeS + t.tailS + 2 * t.shiftS);
-  return Math.max(1, Math.min(cores - SLOTS.spareCores, Math.floor((SLOTS.memShare * availMb) / pieceMb)));
+  return Math.max(1, Math.min(usable, Math.floor((SLOTS.memShare * availMb) / pieceMb)));
 }
 // its delay at 48 kHz in samples (0 measured) and how far either side it is looked for
 const DPDFNET_DELAY = 0;
