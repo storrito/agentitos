@@ -45,7 +45,7 @@ People use the skills through rragent, whose bots run on Claude Opus 5.5 unless 
 
 A bot's Sprite has 8 cores and 8 GB of memory and no GPU; the agent, Chrome and the renderer run on it at the same time as the skill's tools.
 
-- Each tool's time and peak memory are measured on a Sprite of that size, on the longest material the skill takes. The skill says that limit and refuses longer material with a sentence.
+- Each tool's time and peak memory are measured on a Sprite of that size, on the longest material the skill was tried on, and the skill says up to which length that is. Longer material is not refused for its length (the owner, 2026-11-20): the tool says at its start how long the material is and about how long it will take, cuts the work into pieces where that keeps it within the machine, and refuses only what the machine cannot hold, with the numbers (the disk space it needs and what is free).
 - rragent's shell ends a command after a few minutes (180 s on 2026-11-02): a longer step runs in the background with a log the agent reads, and goes on where it stopped when it is called again.
 - rragent ends a render after 30 minutes (`RRAGENT_RENDER_TIMEOUT_MIN`): a skill that makes longer videos says how it stays under that.
 - Larger machines are for building and measuring a skill, never what it needs to run.
