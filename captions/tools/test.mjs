@@ -527,6 +527,22 @@ test("--follow: the word being said lights up where no style lit it, in the bran
   assert.equal(branded(t, "clean", "#FF404C").data.motion.active, "none");
 });
 
+test("--edge: a style's box gets an edge of the other lightness (label's light boxes a dark ring, clean's dark box a light one); a style without a box stays as it is", { skip: noZones }, (t) => {
+  const label = branded(t, "label", "#FF404C", "Brand Sans", WORDS, ["--follow", "--edge"]);
+  assert.match(label.html, /#root \.cap-box \{ box-shadow: 0 0 0 3px rgba\(17,24,39,0\.30\), 0 6px 18px rgba\(17,24,39,0\.16\); \}/);
+  assert.match(label.said, /\(--edge: the box of every line has a 3 px edge, dark, with a soft shadow, for a light ground\)/);
+  // --follow works as without the edge
+  assert.equal(label.data.motion.active, "fill");
+  const clean = branded(t, "clean", "#FF404C", "Brand Sans", WORDS, ["--edge"]);
+  assert.match(clean.html, /#root \.cap-group\.boxed \{ box-shadow: 0 0 0 2px rgba\(255,255,255,0\.45\); \}/);
+  // bold has no box: the file is the one without --edge, and the tool says so
+  const bold = branded(t, "bold", "#FF404C", "Brand Sans", WORDS, ["--edge"]), plain = branded(t, "bold", "#FF404C");
+  assert.equal(bold.html, plain.html);
+  assert.match(bold.said, /--edge: Bold words has no box: nothing changed/);
+  // without --edge no box has one
+  assert.doesNotMatch(branded(t, "label", "#FF404C").html, /box-shadow: 0 0 0/);
+});
+
 test("single: one word a caption, each on screen until the next is said; a word too short to be read shares its caption", { skip: noZones }, (t) => {
   const b = built(t, ["--style", "single", "--size", "1080x1920"]), brief = STYLES.single.group.brief;
   assert.equal(texts(b.data).join(" "), SAID);

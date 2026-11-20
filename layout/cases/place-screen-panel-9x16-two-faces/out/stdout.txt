@@ -1,0 +1,48 @@
+$ place.mjs place out --frame 9:16 --platform reels --source 1920x1080 --region 0,0,1920,1080 --min-text-height 12 --source 1280x720 --face 200,160,220,300 --face 860,160,220,300 --caption-area 120,840,1410,1500,52,1 --screen-panel
+9:16 1080×1920 for Instagram Reels
+screen 1920×1080, region x 0–1920, y 0–1080 (1920×1080), smallest text 12 px (reads from 24 px in this frame); text: 1 caption line
+captions: fixed in x 120–960, y 1410–1500 (the six values given, 1 line at 52 px): there or nowhere, the picture placed around them
+note: at the size that reads (2×) the region would be 3840×2160 px, larger than the room the frame leaves it (900×1136 or 960×790 px): at most 0.5×, the text then 6 px tall. A narrower region reads: at most 480×395 px of the source (this one is 1920×1080); give the part that matters at this moment, and another region for the next
+
+1. – screen-panel  score 0
+   part 1  x 60–1020, y 250–790: source 1 at scale 0.5, left 60, top 250
+   part 2  x 0–1080, y 814–1500: source 2 at scale 0.9677, left -105.1, top 803.3
+   39 % ground
+   screen  x 60–1020, y 250–790 at 0.5×, smallest text 6 px
+   panel   x 0–1080, y 814–1500 (across the frame); the webcam at 0.9677×, its crop x 109–1225, y 11–720 of the webcam's picture
+   face    x 88–940, y 958–1248, 290 px (15.1 % of the frame's height)
+   change  from full-frame (2.6667× at -1166.7, 0, assumed): the face moves 26 px to the left and 277 px down, and becomes 0.36× as large (the speaker before assumed covering the frame: give --before)
+   region  x 60–1020, y 250–790 (960×540), smallest text 6 px
+   webcam  x 88–301, y 958–1248 (213×290)
+   webcam  x 727–940, y 958–1248 (213×290)
+   caption below-chin, x 120–960, y 1410–1500, 1 line at 52 px
+   ! region: 6 % cut where the Instagram feed shows 4:5
+   – screen text: the smallest text is 6 px tall in the frame, under the 24 px that read
+   why: no hard problem; every text need met: 1 caption line below-chin; the screen's smallest text does not read; the source's pixels are not enlarged (0.97×); the region is 960×540 px, its smallest text 6 px tall; 39 % of the frame is ground; soft: region 6 % cut where the Instagram feed shows 4:5; the screen's region 960×540 at 0.5× inside the wide stretch above the buttons across, y 250–790, its smallest text 6 px tall; the speaker's panel across the frame, 1080×686 from y 814 down to the caption line's foot, the face 290 px (15 % of the frame's height), under its aim of 346 px: the panel holds no more with the head inside it and the chin above the captions; from the speaker full-frame (assumed: give --before): the face moves 26 px left, 277 px down, ×0.36; cost 5.294 (ground +3.93, subject +0.864, soft problems +0.5)
+
+2. – screen-fit  scale 0.5 (0.28× of covering) at left 60, top 423  score 0
+   picture x 60–1020, y 423–963, 75 % ground
+   region  x 60–1020, y 423–963 (960×540), smallest text 6 px
+   webcam  circle 238 px bottom-left, x 60–298, y 1148–1386; shows x 0–720, y 0–720 of the webcam's picture at 0.33×, the face 99 px tall
+   caption band-below, x 120–960, y 1410–1500, 1 line at 52 px
+   – screen text: the smallest text is 6 px tall in the frame, under the 24 px that read
+   ground  behind the caption: no face: the blur of the picture's rest (the ground is a blurred, darker copy of the picture, 2.08× the source, centred)
+   the same to the eye as screen-whole at 0.495× (10 px from it): listed once
+   why: no hard problem; every text need met: 1 caption line band-below; the screen's smallest text does not read; the source's pixels are not enlarged (0.5×); the region is 960×540 px, its smallest text 6 px tall; the webcam's circle (238 px) bottom-left; 75 % of the frame is ground; cost 7.5 (ground +7.5); behind the first by 2.206 points (ground +3.57)
+
+3. ✗ screen-stacked  score 0
+   part 1  x 60–960, y 385–891: source 1 at scale 0.4687, left 60, top 384.8
+   part 2  x 0–1080, y 960–1772: source 2 at scale 1.152, left 0, top 942.4
+   36 % ground
+   region  x 60–960, y 385–891 (900×506), smallest text 5.6 px
+   webcam  x 230–484, y 1127–1472 (253×346)
+   webcam  x 991–1244, y 1127–1472 (253×346)
+   ✗ webcam: 65 % outside the frame
+   ✗ webcam: under like, comment, share, save and the audio's cover (instagram-reels)
+   – caption: no free place for the 1 caption line
+   – screen text: the smallest text is 5.6 px tall in the frame, under the 24 px that read
+   why: fails: webcam 65 % outside the frame; webcam under like, comment, share, save and the audio's cover (instagram-reels); text without a place: caption; the screen's smallest text does not read; the source's pixels are enlarged 1.15×, not over the 1.5× from where it shows; the region is 900×506 px, its smallest text 5.6 px tall; 36 % of the frame is ground; cost 3.57 (ground +3.57); behind the first because it has a hard problem
+
+out/placement.json: 3 candidates, 0 without a hard problem and with every need met (✓, or ! with a soft problem); – leaves a need unmet, ✗ fails.
+None passes because the screen's text does not read at any size the frame leaves the region: take a narrower region (at most 480×395 px of the source), not less text.
+The order is a suggestion from measurements. Look before you choose: place.mjs page out --still <video|image> writes the first three as pictures and has platform-zones check them.

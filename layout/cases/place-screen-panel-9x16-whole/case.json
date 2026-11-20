@@ -1,0 +1,28 @@
+{
+ "guards": "a whole 1080p screen with a 720p webcam into 9:16 for Reels, the captions fixed at the safe box's bottom, the screen above and the speaker's panel across the frame (--screen-panel) with the face keep before (--before)",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--platform",
+   "reels",
+   "--source",
+   "1920x1080",
+   "--region",
+   "0,0,1920,1080",
+   "--min-text-height",
+   "12",
+   "--source",
+   "1280x720",
+   "--face",
+   "500,140,280,350",
+   "--caption-area",
+   "120,840,1410,1500,52,1",
+   "--screen-panel",
+   "--before",
+   "2.667,-1167,0"
+  ]
+ ]
+}

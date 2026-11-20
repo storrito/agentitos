@@ -597,7 +597,8 @@ test("without a HyperFrames CLI on the PATH, the version this skill was last tri
 // "show" (lib/show.mjs): another video plays instead of the recording over a keep's words, pauses
 // and hold; its long pauses cut; with "sound" its sound rises to its level by the last word. On
 // the made-up words above (a pause of 3.6 s after word 13) and a made-up video's ffprobe answer.
-import { showOf, showProblem, placeShows, soundPoints, RISE, FADE } from "./lib/show.mjs";
+import { soundOf, soundRead } from "./lib/show.mjs";
+import { showOf, showProblem, placeShows, soundPoints, soundSaid as soundLine, heardSaid as heardLine, RISE, FADE, HOLD_HEARD } from "./lib/show.mjs";
 import { writeComposition } from "./lib/composition.mjs";
 import { areas, fit } from "./lib/layout.mjs";
 
@@ -631,7 +632,9 @@ test("show: the video plays over the keep's words, pauses and hold, from \"from\
   const ps = r.pieces.filter((p) => p.keep === 0), start = ps[0].start, end = keepEnd(r, 0);
   assert.ok(ps.some((p) => p.hold), "the hold is a piece of the keep");
   const long = placeShows(twoKeeps({ show: { file: "result.mp4", from: 2 }, hold: 2 }), r.pieces, r.words, () => VIDEO_INFO(60));
-  assert.deepEqual(long.warnings, []);
+  // its hold without the shown video's sound is silence: said, with the two ways out
+  assert.equal(long.warnings.length, 1);
+  assert.match(long.warnings[0], /^keep 1: its "hold" after the last word is [\d.]+ s of silence \(the recording's sound stops with the words there\) while result\.mp4 plays on: let its sound play there, "sound": \{"hold": 0\.8\} \(silent under the words\), or end the keep at its last word, "hold": 0$/);
   assert.deepEqual(long.inserts, [], "no \"sound\": no track of its sound");
   assert.equal(long.sources["show-1"].path, path.resolve("result.mp4"));
   assert.equal(long.sources["show-1"].file, "show-1.mp4");
@@ -720,7 +723,7 @@ test("show: a missing file, a file that is no video, a sound asked of a video wi
     [say("notes.txt", { error: "Invalid data found when processing input" }), /notes\.txt is no video ffprobe can read \(Invalid data found when processing input\); give a video file/],
     [say("song.mp3", { duration: 30, video: false, audio: true }), /song\.mp3 has no picture \(a sound or a still\); give a video file/],
     [say({ file: "a.mp4", from: 12 }, VIDEO_INFO(10)), /"from" is the second of a\.mp4 to start at, 0–10\.0; set it within that or leave it out/],
-    [say({ file: "a.mp4", sound: 2 }, VIDEO_INFO(10)), /"sound" is the level of its sound, 0–1 .*; leave it out for none/],
+    [say({ file: "a.mp4", sound: 2 }, VIDEO_INFO(10)), /"sound" is 2, which is no level: write a number 0–1 .*; leave it out for none/],
     [say({ file: "story.mp4", sound: 0.8 }, VIDEO_INFO(10, false)), /story\.mp4 has no sound; leave "sound" out, or ask the person for the file with the sound/],
   ];
   for (const [said, re] of cases) {
@@ -729,6 +732,133 @@ test("show: a missing file, a file that is no video, a sound asked of a video wi
     assert.equal(said.split(/[.;:]\s+(?=[A-Z])/).length, 1, `one sentence: ${said}`);
   }
   assert.deepEqual(showOf({ show: "x.mp4" }), { file: "x.mp4" });
+});
+
+test("show with \"sound\": {\"hold\": level}: silent under the keep's words, up over 0.25 s from the last word to its level in the hold; no listening needed, no silent hold said; the number form as before", () => {
+  // the points: nothing under the words, up after the last word, held, out at the end
+  assert.deepEqual(soundPoints({ sound: 0.8, duration: 8.4, spoken: 6.9, hold: true }), [{ t: 0, v: 0 }, { t: 6.9, v: 0 }, { t: 7.15, v: 0.8 }, { t: 8.15, v: 0.8 }, { t: 8.4, v: 0 }]);
+  assert.ok(soundPoints({ sound: 0.8, duration: 8.4, spoken: 6.9, hold: true }).filter((p) => p.t <= 6.9).every((p) => p.v === 0), "nothing under the words");
+  // a keep without words: up at once, as the number form
+  assert.deepEqual(soundPoints({ sound: 0.6, duration: 4, spoken: 0, hold: true }), soundPoints({ sound: 0.6, duration: 4, spoken: 0 }));
+  for (const x of [{ sound: 1, duration: 1, spoken: 0.7, hold: true }, { sound: 1, duration: 7.1, spoken: 6.9, hold: true }]) {
+    const pts = soundPoints(x);
+    assert.ok(pts.every((q, j) => j === 0 || q.t > pts[j - 1].t), JSON.stringify(pts));
+  }
+  const cut = twoKeeps({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 2 });
+  const r = plan(words, cut, settings, voices);
+  const shown = placeShows(cut, r.pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(shown.warnings, [], "its hold has the clip's sound: not silent");
+  assert.equal(shown.inserts.length, 1);
+  assert.equal(shown.inserts[0].hold, true);
+  assert.equal(shown.inserts[0].sound, 0.8);
+  const i = { ...shown.inserts[0], lufs: -13.7, gain: -0.3 };
+  const clock = (t) => `0:${t.toFixed(1).padStart(4, "0")}`;
+  assert.equal(soundSaid(i, -14, clock), `keep 1: the sound of result.mp4 is silent under the keep's words and plays at 0.8 in its hold, from ${clock(i.start + i.spoken)} for ${(i.duration - i.spoken).toFixed(1)} s; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
+  // the number form keeps its insert and its points exactly
+  const numCut = twoKeeps({ show: { file: "result.mp4", sound: 0.8 }, hold: 2 });
+  const num = placeShows(numCut, plan(words, numCut, settings, voices).pieces, r.words, () => VIDEO_INFO(60)).inserts[0];
+  assert.equal(num.hold, undefined);
+  assert.deepEqual(Object.keys(num), ["k", "key", "file", "src", "from", "start", "duration", "sound", "spoken", "room"]);
+  // the form checked: a level 0–1 under "hold", nothing else in it
+  const say = (sound) => showProblem({ words: "0-5", show: { file: "a.mp4", sound } }, 0, VIDEO_INFO(10));
+  assert.equal(say({ hold: 0.8 }), null);
+  assert.equal(say(0.8), null); assert.equal(say(0), null); assert.equal(say("0.8"), null, "a number written as text, as main took it");
+  // what main builds builds the same (main read "sound" by Number()): no ✗, the same level, and a line
+  // that says how a value that is no number was read (the review of pull request 110, round two)
+  for (const [value, level] of [[true, 1], ["", 0], [null, 0], [[0.8], 0.8], ["0.8", 0.8], [false, 0]]) {
+    assert.equal(say(value), null, JSON.stringify(value));
+    assert.deepEqual(soundOf({ sound: value }), { level, hold: false }, JSON.stringify(value));
+    assert.equal(soundRead(value, 1), `! keep 2: "sound": ${JSON.stringify(value)} is read as ${level}${level === 1 ? ", the voice's level" : level === 0 ? ", no sound" : ""}: ${level === 0 ? "leave it out for none, " : ""}write a number 0–1 ("sound": ${level || 0.8}), or {"hold": 0.8} for its sound only in the "hold" after the last word.`);
+  }
+  for (const value of [0.8, 0, undefined, { hold: 0.8 }]) assert.equal(soundRead(value, 0), null);
+  const readCut = twoKeeps({ show: { file: "result.mp4", sound: true } }), rr = plan(words, readCut, settings, voices);
+  const read = placeShows(readCut, rr.pieces, rr.words, () => VIDEO_INFO(60));
+  assert.equal(read.inserts[0].sound, 1, "true plays at 1, as on main");
+  assert.match(read.notes[0], /^! keep 1: "sound": true is read as 1, the voice's level: write a number 0–1/);
+  // the hold form's level as text is taken as the plain one is
+  assert.equal(say({ hold: "0.8" }), null);
+  assert.deepEqual(soundOf({ sound: { hold: "0.8" } }), { level: 0.8, hold: true });
+  // ✗ only for what main refuses too, and for misuse of the new form
+  for (const bad of [2, -1, "loud", { hold: 2 }, { hold: -1 }, { hold: true }, { hold: "loud" }, { hold: "" }, { level: 0.8 }, { hold: 0.8, under: 0.2 }, {}]) {
+    const said = say(bad);
+    assert.ok(said?.startsWith(`✗ keep 1: "show" "sound" is ${JSON.stringify(bad)}, which is no level: write a number 0–1`), `${JSON.stringify(bad)}: ${said}`);
+    assert.match(said, /, or \{"hold": 0\.8\} for it only in the "hold" after the last word, silent under the words; leave it out for none\.$/);
+  }
+  assert.match(showProblem({ words: "0-5", show: { file: "a.mp4", sound: { hold: 0.8 } } }, 0, VIDEO_INFO(10, false)), /a\.mp4 has no sound; leave "sound" out/);
+  // a clip without sound in a keep with a hold: only the way out that is left
+  const mute = placeShows(twoKeeps({ show: "result.mp4", hold: 2 }), plan(words, twoKeeps({ show: "result.mp4", hold: 2 }), settings, voices).pieces, r.words, () => VIDEO_INFO(60, false));
+  assert.match(mute.warnings[0], /plays on, which has no sound: end the keep at its last word, "hold": 0$/);
+  // the hold form with no hold to play in: said, with the hold to give
+  const shortCut = twoKeeps({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 0 });
+  const short = placeShows(shortCut, plan(words, shortCut, settings, voices).pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(short.inserts, []);
+  assert.match(short.notes[0], /^! keep 1: "sound": \{"hold": 0\.8\} plays only after the last word and needs 1 s there to be heard, so it stays silent; the keep holds [\d.]+ s after the last word: give it "hold": 1\.5\.$/);
+  // no hold (0): nothing said
+  const none = placeShows(twoKeeps({ show: "result.mp4", hold: 0 }), plan(words, twoKeeps({ show: "result.mp4", hold: 0 }), settings, voices).pieces, r.words, () => VIDEO_INFO(60));
+  assert.deepEqual(none.warnings, []);
+});
+
+test("show, the review of pull request 110: the silent-hold line only for a \"hold\" the keep sets, from 1 s of muted hold; the hold form needs 1 s of hold to be heard, and its sentence says what holds it short (the keep's hold, the shown video's end, the recording's end)", () => {
+  const build = (first, info = VIDEO_INFO(60), v = voices) => { const cut = twoKeeps(first), r = plan(words, cut, settings, v); return placeShows(cut, r.pieces, r.words, () => info); };
+  // the default tail (no "hold"): nothing said, with or without the clip's sound (show-mute-45's keep 2)
+  for (const info of [VIDEO_INFO(60), VIDEO_INFO(60, false)]) assert.deepEqual(build({ show: "result.mp4" }, info).warnings, []);
+  // a hold the keep sets, but under 1 s of it muted: nothing said
+  assert.deepEqual(build({ show: "result.mp4", hold: 0.5 }).warnings, []);
+  // 1.5 s: said; without sound only "hold": 0
+  assert.match(build({ show: "result.mp4", hold: 1.5 }).warnings[0], /^keep 1: its "hold" after the last word is 1\.\d s of silence .*: let its sound play there, "sound": \{"hold": 0\.8\} \(silent under the words\), or end the keep at its last word, "hold": 0$/);
+  assert.match(build({ show: "result.mp4", hold: 1.5 }, VIDEO_INFO(60, false)).warnings[0], /plays on, which has no sound: end the keep at its last word, "hold": 0$/);
+  // a clip that ends before 1 s of hold: the hold form is not named
+  const spokenAt = build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 1.5 }).inserts[0].spoken;
+  const ends = build({ show: "result.mp4", hold: 1.5 }, VIDEO_INFO(spokenAt + 0.5));
+  // (its hold under 1 s while it plays: no silent-hold line, only that it ends early; the hold form not named)
+  assert.equal(ends.warnings.length, 1);
+  assert.match(ends.warnings[0], /^keep 1: result\.mp4 ends [\d.]+ s before the keep does/);
+  assert.ok(!/"sound": \{"hold"/.test(ends.warnings[0]));
+  // the hold form: holds of 0, 0.2 and 0.5 s are too short (no sound track, the sentence), 1.5 s plays
+  for (const hold of [0, 0.2, 0.5]) {
+    const got = build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold });
+    assert.deepEqual(got.inserts, [], `hold ${hold}`);
+    assert.deepEqual(got.warnings, [], `hold ${hold}: no silent-hold line beside the hold form's own`);
+    assert.match(got.notes[0], /^! keep 1: "sound": \{"hold": 0\.8\} plays only after the last word and needs 1 s there to be heard, so it stays silent; the keep holds [\d.]+ s after the last word: give it "hold": 1\.5\.$/, `hold ${hold}`);
+  }
+  const played = build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 1.5 });
+  assert.equal(played.inserts.length, 1); assert.deepEqual(played.notes, []); assert.deepEqual(played.warnings, []);
+  assert.ok(played.inserts[0].duration - played.inserts[0].spoken >= HOLD_HEARD);
+  // the shown video ending before the last word
+  assert.match(build({ show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 1.5 }, VIDEO_INFO(10)).notes[0], /; result\.mp4 ends before the last word: an earlier "from" so that it plays 1 s on after it, or drop "sound"\.$/);
+  // the cut's last keep, where the recording ends 0.3 s after the last word: what is true, not "give it 1.5"
+  const lastCut = { keep: [{ words: "0-20" }, { words: "21-25", show: { file: "result.mp4", sound: { hold: 0.8 } }, hold: 2.5 }] };
+  const short = { 1: { ...voices[1], duration: 18.2 } };
+  const lastPlan = plan(words, lastCut, settings, short);
+  const last = placeShows(lastCut, lastPlan.pieces, lastPlan.words, () => VIDEO_INFO(60));
+  assert.deepEqual(last.inserts, []);
+  assert.match(last.notes[0], /; the recording ends 0\.\d s after the last word, so the keep holds that, not the 2\.5 s asked: end the cut on an earlier sentence with a pause after it, or drop "sound"\.$/);
+  // the listening line names the hold form only where it can be given room
+  const clock = (t) => `0:${t.toFixed(1).padStart(4, "0")}`;
+  const i = { k: 0, file: "c.mp4", sound: 0.8, start: 0, duration: 7.2, spoken: 7, lufs: -14, gain: 0 };
+  const h = { words: [{ start: 1, end: 6 }], cost: 0, seconds: 1, kept: false }, said = [{ start: 0.5, end: 7 }];
+  assert.match(heardLine({ ...i, room: "keep" }, h, said, clock), /"sound": \{"hold": 0\.8\} \(silent under your words, with "hold": 1\.5 on the keep: its hold is 0\.2 s now\), or drop "sound"/);
+  for (const room of ["end", "clip"]) {
+    assert.match(heardLine({ ...i, room }, h, said, clock), /\): drop "sound", or show it where you do not speak \(/, room);
+    assert.match(soundLine({ ...i, room }, -14, clock), /heard only in the "hold" after the last word \(here the keep's hold after the last word is 0\.2 s, under the 1 s it needs\)/, room);
+  }
+});
+
+test("show: a small shown video is enlarged at most 2× of its own pixels, centred in the room it would have taken; up to 2× it fills the room as before", () => {
+  const zone = { safe: [50, 200, 880, 1300], margins: { top: 200, bottom: 420, left: 50, right: 150 }, wide: [50, 200, 980, 700] };
+  const a = areas(1080, 1920, zone);
+  const piece = { keep: 0, start: 0, duration: 3, in: 0, out: 3, rate: 1, view: "screen", source: "screen", pip: false, show: { source: "show-1", in: 0, until: 3 } };
+  const layer = (w, h) => shots([piece], { screen: { width: 1920, height: 1080, offset: 0 }, "show-1": { width: w, height: h, offset: 0 } }, 1080, 1920, a)[0].layers[0];
+  const room = fit(a.whole, 270 / 480);
+  // 270×480 would take room[2] / 270 (over 2×): 540×960 in the middle of that room
+  const small = layer(270, 480);
+  assert.ok(room[2] / 270 > 2);
+  assert.deepEqual(small.box.map((v) => +v.toFixed(3)), [room[0] + (room[2] - 540) / 2, room[1] + (room[3] - 960) / 2, 540, 960].map((v) => +v.toFixed(3)));
+  assert.equal(small.wanted, room[2]);
+  // 480×854 (the review's 1.53×): the room as before, no "wanted"
+  const mid = layer(480, 854);
+  assert.deepEqual(mid.box, fit(a.whole, 480 / 854));
+  assert.equal(mid.wanted, undefined);
 });
 
 test("show on a keep that names a face view, a zoom or a layout: the shown video wins, those are left out, said in a sentence; the circle stays unless \"circle\": false", () => {
@@ -1512,7 +1642,7 @@ test("a shown video without the circle takes the room a whole picture gets: as l
 test("the build's line for a shown video with sound says it runs under the words and when \"sound\" is right (the run's keep 6)", () => {
   const clock = (s) => `0:${s.toFixed(1).padStart(4, "0")}`;
   const i = { k: 5, file: "uploads/result.mp4", sound: 0.8, start: 25.8, duration: 8.4, spoken: 6.9, lufs: -13.7, gain: -0.3 };
-  assert.equal(soundSaid(i, -14, clock), `keep 6: the sound of uploads/result.mp4 runs under the keep's words (at a quarter of its level under the first, up to 0.8 by the last at 0:32.7), so speech in it is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point, not for a clip that speaks; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
+  assert.equal(soundSaid(i, -14, clock), `keep 6: the sound of uploads/result.mp4 runs under the keep's words (at a quarter of its level under the first, up to 0.8 by the last at 0:32.7), so if it speaks, its speech is heard under the speaker's, two voices at once: "sound" is for music, ambience or a result whose sound is the point; a clip that speaks gets "sound": {"hold": 0.8}, heard only in the "hold" after the last word; measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`);
   assert.match(soundSaid({ ...i, duration: 4.1 }, -14, clock), /at a quarter of its level, the video ending before the last word/);
   assert.equal(soundSaid({ ...i, spoken: 0 }, -14, clock), `keep 6: the sound of uploads/result.mp4 measured -13.7 LUFS, brought -0.3 dB to the voice's -14 LUFS ("sound": 1 is the voice's level), through the voice's bus.`, "a keep without words: as before");
 });
@@ -1599,7 +1729,9 @@ test("show with sound: the clip is heard once through the transcribe skill, kept
     const h = await ask();
     assert.deepEqual(h.words, [{ start: 4.2, end: 4.5 }, { start: 4.6, end: 6.9 }]);
     assert.equal(h.kept, false);
-    assert.equal(heardSaid(i, h, said, clock).replace(/heard in [\d.]+ s/, "heard in T s"), `two voices at once from 0:30.0 to 0:32.7 (2.7 s: the clip speaks 0:30.0 to 0:32.7, the speaker 0:26.0 to 0:32.7): drop "sound", or show it where you do not speak, or let it speak in the "hold" after your last word (heard in T s, 0.06 cents)`);
+    assert.equal(heardSaid(i, h, said, clock).replace(/heard in [\d.]+ s/, "heard in T s"), `two voices at once from 0:30.0 to 0:32.7 (2.7 s: the clip speaks 0:30.0 to 0:32.7, the speaker 0:26.0 to 0:32.7): let it speak only in the "hold" after your last word, "sound": {"hold": 0.8} (silent under your words), or drop "sound", or show it where you do not speak (heard in T s, 0.06 cents)`);
+    // a hold under a second: the line says to lengthen it too
+    assert.match(heardSaid({ ...i, duration: 7.3, room: "keep" }, h, said, clock), /"sound": \{"hold": 0\.8\} \(silent under your words, with "hold": 1\.5 on the keep: its hold is 0\.4 s now\)/);
     assert.match(soundSaid(i, -14, clock, heardSaid(i, h, said, clock)), /^keep 6: the sound of uploads\/result\.mp4 runs under the keep's words \(at a quarter of its level under the first, up to 0\.8 by the last at 0:32\.7\); two voices at once from 0:30\.0/);
     // kept: a second build does not ask again; another stretch or another clip does
     const again = await ask();
@@ -1617,7 +1749,7 @@ test("show with sound: the clip is heard once through the transcribe skill, kept
     assert.match(heardSaid(i, await ask(), said, clock), /^it has no words \(heard in [\d.]+ s, 0\.06 cents\)$/);
     // missing, failing, nonsense, slow: no sentence of its own (the general one stays), nothing kept
     const general = soundSaid(i, -14, clock);
-    assert.match(general, /so speech in it is heard under the speaker's, two voices at once/);
+    assert.match(general, /so if it speaks, its speech is heard under the speaker's, two voices at once/);
     for (const [name, got] of [
       ["missing", (fs.writeFileSync(src, "clip missing"), await ask({ tool: null }))],
       ["failing", (process.env.TRANSCRIBE = standIn("fails", `console.log("no key"); process.exit(1);`), fs.writeFileSync(src, "clip five"), await ask())],
@@ -1634,4 +1766,278 @@ test("show with sound: the clip is heard once through the transcribe skill, kept
     if (before === undefined) delete process.env.TRANSCRIBE; else process.env.TRANSCRIBE = before;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ------------------------------------------------- the screen's "!" says why (the run of 2026-11-19b)
+import { pictureOf as screenPictureOf } from "./lib/screenview.mjs";
+test("a screen picture of the layout skill's marked ! carries its reason (\"enlarged 2×: soft\"), which the build's line prints; a ✓ carries none", () => {
+  const c = { fit: "screen-zoom", scale: 2, left: -100, top: 200, window: [0, 200, 1080, 1100], faceInFrame: [[79, 300, 922, 600]], hard: 0, unmet: [], soft: 1,
+    problems: [{ level: "soft", code: "enlarged", what: "the source's pixels are enlarged 2× (over 1.5×: soft)" }] };
+  const pic = screenPictureOf(c);
+  assert.equal(pic.mark, "!");
+  assert.equal(pic.soft, "enlarged 2×: soft");
+  const ok = screenPictureOf({ ...c, soft: 0, problems: [] });
+  assert.equal(ok.mark, "✓");
+  assert.equal("soft" in ok, false);
+});
+
+// ------------------------------------------------------------------ the stack (stack-916, stack-panel)
+import { STACK, CIRCLE, stackPicture, stackQuestion, webcamPeople, stackWindow } from "./lib/screenview.mjs";
+const LABEL_TEXT = "02 · The mission";
+// screen keeps through screenView with one caption line (as captions built it) and the webcam's
+// face known; the first keep is the face view with its picture, so the stack hears where it was
+function stackRun({ width, height, keeps, tool, face = CAM16.face, faceAt = null, line = LINE[`${width}x${height}`], dir = null, timeout }) {
+  const own = !dir;
+  dir = dir || fs.mkdtempSync(path.join(os.tmpdir(), "stack-"));
+  const z = realZones(width, height, ["reels"]), labelled = keeps.some((k) => k.label);
+  const a = areas(width, height, z, { captions: true, labels: labelled, line });
+  const area = path.join(dir, "area.json");
+  fs.writeFileSync(area, JSON.stringify(line || { ...BANDS[`${width}x${height}`] }));
+  const sources = { screen: { width: 1920, height: 1080, offset: 0, video: true }, webcam: { ...CAM16, face, ...(faceAt ? { faceAt } : {}) } };
+  const cut = { keep: [{ view: "face" }, ...keeps] };
+  const ps = cut.keep.map((k, i) => ({ keep: i, view: i ? "screen" : "face", source: i ? "screen" : "webcam", start: i * 4, duration: 4, in: i * 4, out: i * 4 + 4, ...(i ? { crop: Array.isArray(k.zoom) ? k.zoom : [0, 0, 1, 1] } : { picture: { fit: "crop 4:5", scale: 1.875, left: -660, top: 0, window: [0, 0, width, height] } }) }));
+  const labels = cut.keep.flatMap((k, i) => (k.label ? [{ text: k.label, start: i * 4, duration: 4 }] : []));
+  const said = screenView(dir, cut, ps, sources, { width, height, zones: z, areas: a, labels, area, platforms: ["reels"], ...(tool !== undefined ? { tool } : {}), ...(timeout ? { timeout } : {}) }).join("\n");
+  const placed = shots(ps, sources, width, height, a, labels);
+  const result = { dir, said, ps, a, z, placed, sources, labels };
+  if (own) result.done = () => fs.rmSync(dir, { recursive: true, force: true });
+  return result;
+}
+const camLayers = (s) => s.layers.filter((l) => l.source === "webcam");
+
+test("the stack: a whole screen in 9:16 and 4:5, with and without a label, is drawn as the screen above inside the margins and the speaker in a panel across the frame down to the caption line; no circle; the screen at main's scale; the face above the captions; what was chosen in placement.json", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [w, h] of [[1080, 1920], [1080, 1350]]) for (const label of [null, LABEL_TEXT]) {
+    const r = stackRun({ width: w, height: h, keeps: [{ zoom: "off", ...(label ? { label } : {}) }] });
+    try {
+      const p = r.ps[1], pic = p.screenPic, f = p.screen, line = LINE[`${w}x${h}`];
+      assert.equal(pic?.fit, STACK, `${w}x${h} ${label}: ${r.said}`);
+      assert.match(r.said, new RegExp(`keep 2 \\([^)]*the whole screen\\): [✓!] screen-panel \\(the layout skill's stack[^)]*\\): the screen \\d+×\\d+ at [\\d.]+× \\(y \\d+–\\d+\\), the speaker in a panel \\d+×\\d+ across the frame below it \\(y \\d+–${line.bottom}\\), the face \\d+ px \\(\\d+ % of the frame's height\\), \\d+ % ground; with the circle \\("layout": "screen-circle"\\) screen-fit at [\\d.]+×, \\d+ % ground`));
+      // the sentence about text that does not read stays
+      assert.match(r.said, /text: the screen \(1920×1080\) at [\d.]+×: a line 18 px tall/);
+      // the screen inside the safe box across (or the wide stretch above the buttons), at main's scale or more
+      const sb = pic.window, wide = r.z.wide || r.z.safe;
+      assert.ok(sb[0] >= Math.min(r.z.safe[0], wide[0]) - 0.5 && sb[0] + sb[2] <= Math.max(r.z.safe[0] + r.z.safe[2], wide[0] + wide[2]) + 0.5, JSON.stringify(sb));
+      assert.ok(f.scale >= f.instead.scale - 0.005, JSON.stringify(f));
+      // with a label the stack starts under it
+      if (label) { const lb = r.labels.length && r.a.label[1] + labelBoxHeight(w, h); assert.ok(sb[1] >= lb, `${sb[1]} under ${lb}`); }
+      // the panel below the screen down to the caption line's foot, (nearly) across the frame; the face above the captions
+      const pb = pic.stack.panel;
+      assert.ok(pb[1] > sb[1] + sb[3] && Math.abs(pb[1] + pb[3] - line.bottom) < 1 && pb[0] <= 0.5 && pb[2] >= w - 1, JSON.stringify(pb));
+      const fb = pic.stack.face.box;
+      assert.ok(fb[1] + fb[3] < line.top, `the chin at ${fb[1] + fb[3]}, the captions from ${line.top}`);
+      assert.ok(pic.stack.face.height >= 230, String(pic.stack.face.height));
+      // drawn: the screen at the stack's scale in its box, the webcam as the panel, no circle, no ring
+      const s = r.placed[1], cams = camLayers(s);
+      assert.deepEqual(s.layers[0].at, { ...geometry(pic, r.sources.screen), box: sb });
+      assert.equal(cams.length, 1); assert.equal(cams[0].panel, true); assert.ok(!cams[0].pip);
+      assert.deepEqual(cams[0].at, geometry(pic.stack.camera, r.sources.webcam));
+      // the face keep before it told the stack where the speaker was
+      assert.match(r.said, /at the cut from the face view before: the face moves/);
+      const kept = JSON.parse(fs.readFileSync(path.join(r.dir, "placement", "screen-2", "stack", "placement.json"), "utf8"));
+      assert.equal(kept.chosen.picture, STACK); assert.equal(kept.chosen.instead, f.instead.fit);
+      assert.equal(f.stack.face, Math.round(pic.stack.face.height));
+    } finally { r.done(); }
+  }
+});
+const labelBoxHeight = (w, h) => Math.round(Math.min(w, h) * 0.036) * 1.25 + 24;
+
+test("the stack: a tight zoom keeps the circle at main's place and size, the line says why in the layout skill's sentence; the keeps around a stacked keep keep their circle (circle-still)", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [w, h] of [[1080, 1920], [1080, 1350]]) {
+    const r = stackRun({ width: w, height: h, keeps: [{ zoom: [0.36, 0.22, 0.6, 0.56], text: 12 }, { zoom: "off" }, { zoom: [0.36, 0.22, 0.6, 0.56], text: 12, layout: CIRCLE }, { zoom: [0.046, 0.038, 0.954, 0.085] }] });
+    try {
+      assert.notEqual(r.ps[1].screenPic?.fit, STACK, r.said);
+      assert.match(r.said, /keep 2 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): the region at 2× is 736 px tall, over the 640 px a screen above the speaker may take/);
+      assert.equal(r.ps[2].screenPic.fit, STACK);
+      // the tight zoom drawn with the circle exactly as the keep that names main's form
+      assert.deepEqual(r.placed[1].layers, r.placed[3].layers.map((l) => l));
+      for (const k of [1, 3]) { const c = camLayers(r.placed[k]); assert.equal(c.length, 1); assert.ok(c[0].pip); }
+      assert.match(r.said, /keep 4 [^\n]*; not the stack \(the screen above, the speaker in a panel below\): the keep names "screen-circle"/);
+      assert.ok(!fs.existsSync(path.join(r.dir, "placement", "screen-4", "stack")), "a keep that names main's form asks nothing more");
+      assert.equal(r.ps[1].screen.notStacked.startsWith("the region at 2×"), true);
+      // a flat strip (a tab bar) is stacked as the screen around it, 16:9 of its width, at the strip's own scale (stack-window)
+      const sp = r.ps[4].screenPic;
+      assert.equal(sp?.fit, STACK, r.said);
+      assert.match(r.said, /keep 5 [^\n]*the screen's part shows the screen around the region \(its 1744×51 px grown to 1744×981, 16:9 at most\)/);
+      assert.ok(Math.abs(sp.window[3] - sp.window[2] * 9 / 16) < 2 && sp.region[3] < 60, JSON.stringify([sp.window, sp.region]));
+      assert.ok(sp.region[1] >= sp.window[1] - 0.5 && sp.region[1] + sp.region[3] <= sp.window[1] + sp.window[3] + 0.5);
+    } finally { r.done(); }
+  }
+});
+
+test("the stack's two names: \"screen-circle\" draws main's form where the stack would come, \"screen-panel\" where it is refused or in 16:9 keeps main's form with a sentence; a name this frame does not have lists both", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const r = stackRun({ width: 1080, height: 1920, keeps: [{ zoom: "off", layout: CIRCLE }, { zoom: [0.36, 0.22, 0.6, 0.56], layout: STACK }, { zoom: "off", layout: STACK }, { zoom: "off", layout: "nonesuch" }] });
+  try {
+    assert.notEqual(r.ps[1].screenPic?.fit, STACK); assert.ok(camLayers(r.placed[1])[0].pip);
+    assert.match(r.said, /! "layout": "screen-panel" is not drawn here \(the region at 2× is 736 px tall[^\n]*\), so the keep keeps the circle/);
+    assert.equal(r.ps[3].screenPic.fit, STACK); assert.equal(r.ps[3].screen.named, true);
+    assert.match(r.said, /screen-panel \(the layout skill's stack, as the keep names it/);
+    assert.match(r.said, /! "layout": "nonesuch" is not among this screen's pictures in this frame \(1080×1920\), so it takes the rule's; its names here: "as before", [^\n]*"screen-panel", "screen-circle"/);
+  } finally { r.done(); }
+  const wide = stackRun({ width: 1920, height: 1080, line: LINE["1920x1080"], keeps: [{ zoom: "off", layout: STACK }] });
+  try {
+    assert.notEqual(wide.ps[1].screenPic?.fit, STACK);
+    assert.match(wide.said, /! "layout": "screen-panel" \(the screen above, the speaker in a panel below\) is for 9:16 and 4:5 with the webcam shown, so the keep keeps the circle/);
+  } finally { wide.done(); }
+});
+
+test("the stack is not asked in 16:9 and 1:1, without the circle, with two caption lines or without a known face: no second call, the keep as main draws it (with a clause where the frame is upright)", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [w, h] of [[1920, 1080], [1080, 1080]]) {
+    const r = stackRun({ width: w, height: h, keeps: [{ zoom: "off" }, { zoom: [0.24, 0, 1, 0.76] }] });
+    try {
+      assert.ok(!/the stack|screen-panel|stack\/placement/.test(r.said), r.said);
+      assert.ok(!fs.existsSync(path.join(r.dir, "placement", "screen-2", "stack")));
+      assert.equal(r.ps[1].screen.stack, undefined);
+      assert.ok(camLayers(r.placed[1])[0].pip);
+    } finally { r.done(); }
+  }
+  const two = stackRun({ width: 1080, height: 1920, line: null, keeps: [{ zoom: "off" }] });
+  try {
+    assert.match(two.said, /not the stack \(the screen above, the speaker in a panel below\): the captions are not one line as the captions skill built it/);
+    assert.ok(!fs.existsSync(path.join(two.dir, "placement", "screen-2", "stack")));
+  } finally { two.done(); }
+  assert.deepEqual(stackQuestion({ width: 1080, height: 1920, areas: { line: {} }, cam: { face: null }, pip: true, asked: null }), { why: "the webcam's face is not known: the panel is cut around it" });
+  assert.match(stackQuestion({ width: 1080, height: 1920, areas: { line: {} }, cam: { face: [0.4, 0.4, 0.45, 0.47] }, pip: true, asked: null }).why, /7 % of its height, under the 12 % of a speaker at the camera/);
+  assert.equal(stackQuestion({ width: 1080, height: 1920, areas: { line: {} }, cam: { face: [0.4, 0.2, 0.6, 0.7] }, pip: false, asked: null }), null);
+  assert.equal(stackQuestion({ width: 1080, height: 1920, areas: { line: {} }, cam: { face: [0.4, 0.2, 0.6, 0.7] }, pip: true, asked: "screen-fit" }), null);
+});
+
+test("the stack's call fails, runs over its time or answers nonsense: the keep as main draws it, byte for byte, with one clause; main's own call is untouched", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stack-fake-"));
+  try {
+    // a layout skill that answers main's call as the real one does and the stack's in its own way
+    const fake = (name, body) => { const f = path.join(dir, `${name}.mjs`); fs.writeFileSync(f, `import { spawnSync } from "node:child_process";\nif (process.argv.includes("--screen-panel")) { ${body} }\nelse { const r = spawnSync(process.execPath, [${JSON.stringify(LAYOUT)}, ...process.argv.slice(2)], { stdio: "inherit" }); process.exit(r.status ?? 1); }\n`); return f; };
+    const base = stackRun({ width: 1080, height: 1920, keeps: [{ zoom: "off", layout: CIRCLE }] });
+    const want = base.placed[1].layers; base.done();
+    for (const [tool, why] of [
+      [fake("fails", "console.error('unknown option --screen-panel'); process.exit(1);"), /not the stack \([^)]*\): layout's place gave no candidates for the stack \(its words in .*stack\/place\.log\)/],
+      [fake("hangs", "setTimeout(() => {}, 60000);"), /not the stack \([^)]*\): layout's place ran over 2 s for the stack and was stopped/],
+      [fake("junk", "console.log('not json');"), /not the stack \([^)]*\): the placement stopped/],
+      [fake("old", "console.log(JSON.stringify({ candidates: [] }));"), /not the stack \([^)]*\): the layout skill's answer has no verdict on it/],
+      [fake("nonsense", "console.log(JSON.stringify({ screenPanel: { offered: true }, candidates: [{ fit: 'screen-panel', parts: [{ scale: -1 }], stack: { screen: { box: ['a'] } } }] }));"), /not the stack \([^)]*\): the layout skill's answer for it could not be read/],
+      [fake("outside", "console.log(JSON.stringify({ screenPanel: { offered: true }, candidates: [{ fit: 'screen-panel', parts: [{ scale: 0.5, left: 60, top: 250 }], stack: { screen: { box: [60, 250, 960, 540] }, panel: { box: [0, 814, 1080, 3000] }, camera: { scale: 1, left: 0, top: 800, window: [0, 814, 1080, 600] }, face: { height: 300 }, ground: 0.4 } }] }));"), /could not be read/],
+    ]) {
+      const r = stackRun({ width: 1080, height: 1920, keeps: [{ zoom: "off" }], tool, timeout: 2 });
+      try {
+        assert.match(r.said, why, path.basename(tool));
+        assert.notEqual(r.ps[1].screenPic?.fit, STACK);
+        assert.deepEqual(r.placed[1].layers, want, path.basename(tool));
+      } finally { r.done(); }
+    }
+    // without the layout skill at all: as before, as main, and the clause
+    const none = stackRun({ width: 1080, height: 1920, keeps: [{ zoom: "off" }], tool: null });
+    try { assert.match(none.said, /as before, because the layout skill is missing; [^\n]*; not the stack \([^)]*\): the layout skill is missing/); } finally { none.done(); }
+    assert.equal(stackPicture(null, { width: 1080, height: 1920 }).why, "the layout skill's answer has no verdict on it (an older layout skill?)");
+    assert.equal(stackPicture({ screenPanel: { offered: false, code: "tall", why: "too tall" } }, { width: 1080, height: 1920 }).why, "too tall");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the stack: a rebuild in the same folder says and draws the same as the fresh build", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stack-again-"));
+  try {
+    const keeps = [{ zoom: "off", label: LABEL_TEXT }, { zoom: [0.36, 0.22, 0.6, 0.56] }];
+    const a = stackRun({ width: 1080, height: 1350, keeps, dir }), b = stackRun({ width: 1080, height: 1350, keeps, dir });
+    assert.equal(a.said, b.said);
+    assert.deepEqual(a.placed.map((s) => s.layers), b.placed.map((s) => s.layers));
+    assert.equal(a.ps[1].screenPic.fit, STACK);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the stack in the composition: the one webcam element is set to the panel at the stacked keep (no circle, no ring there) and back to main's circle after it", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const r = stackRun({ width: 1080, height: 1920, keeps: [{ zoom: "off" }, { zoom: [0.36, 0.22, 0.6, 0.56] }] });
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "stack-comp-"));
+  try {
+    for (const k of Object.keys(r.sources)) { r.sources[k].file = `${k}.mp4`; r.sources[k].path = path.join(out, `${k}-src.mp4`); fs.writeFileSync(r.sources[k].path, ""); }
+    writeComposition(out, { title: "t", width: 1080, height: 1920, fps: 30, pieces: r.ps, sources: r.sources, dir: out, voice: "v.m4a", camera: "camera.mp4", labels: [], areas: r.a });
+    const html = fs.readFileSync(path.join(out, "index.html"), "utf8");
+    const sets = [...html.matchAll(/tl\.set\("#cam", (\{[^}]*\}), ([\d.]+)\);/g)].map((m) => ({ t: +m[2], s: JSON.parse(m[1]) }));
+    const at4 = sets.find((x) => x.t === 4), at8 = sets.find((x) => x.t === 8);
+    const cam = r.ps[1].screenPic.stack.camera, g = geometry(cam, r.sources.webcam);
+    assert.equal(at4.s.left, `${g.left}px`); assert.ok(!/round/.test(at4.s.clipPath), at4.s.clipPath);
+    assert.match(at8.s.clipPath, /round 119px/);
+    assert.equal(at8.s.left, camLayers(r.placed[2])[0].at?.left != null ? `${camLayers(r.placed[2])[0].at.left}px` : at8.s.left);
+    // the rings: only the circle's piece has one
+    const rings = [...html.matchAll(/class="clip ring" data-start="([\d.]+)"/g)].map((m) => +m[1]);
+    assert.deepEqual(rings, [8]);
+  } finally { r.done(); fs.rmSync(out, { recursive: true, force: true }); }
+});
+
+test("the stack with two people in the webcam (the rig's two-mix webcam, the model's answers left, right, left): both go to the layout skill, which stands them in the panel together or refuses with its sentence; main's own call keeps the one face", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const face = [0.174, 0.126, 0.339, 0.498], faceAt = [{ t: 0, box: [0.198, 0.111, 0.334, 0.463] }, { t: 2, box: [0.625, 0.111, 0.729, 0.482] }, { t: 4, box: [0.198, 0.111, 0.334, 0.463] }];
+  assert.deepEqual(webcamPeople({ face, faceAt }), [face, faceAt[1].box]);
+  assert.equal(webcamPeople({ face: CAM16.face, faceAt: [{ t: 1, box: [0.39, 0.2, 0.61, 0.68] }] }), null);
+  assert.equal(webcamPeople({ face: null, faceAt }), null);
+  const r = stackRun({ width: 1080, height: 1920, face, faceAt, keeps: [{ zoom: "off" }] });
+  try {
+    const stack = JSON.parse(fs.readFileSync(path.join(r.dir, "placement", "screen-2", "stack", "placement.json"), "utf8"));
+    const main = JSON.parse(fs.readFileSync(path.join(r.dir, "placement", "screen-2", "placement.json"), "utf8"));
+    assert.equal(stack.sources[1].faces.length, 2, JSON.stringify(stack.sources[1]));
+    assert.equal(main.sources[1].faces.length, 1);
+    if (r.ps[1].screenPic?.fit === STACK) {
+      const fb = r.ps[1].screenPic.stack.face.box, pb = r.ps[1].screenPic.stack.panel;
+      assert.ok(fb[0] >= pb[0] - 0.5 && fb[0] + fb[2] <= pb[0] + pb[2] + 0.5, "both faces inside the panel");
+    } else assert.match(r.said, /not the stack \([^)]*\): /);
+  } finally { r.done(); }
+});
+
+test("the stack's window: a region flatter than 16:9 of its width is shown with the screen around it at its own width, grown both ways and shifted at the screen's edges; a taller one stays as it is", () => {
+  const src = { width: 1920, height: 1080 };
+  // a strip in the middle: grown both ways
+  const a = stackWindow([0.1, 0.5, 0.9, 0.55], src);
+  assert.ok(a.grown); assert.deepEqual(a.region, [192, 540, 1536, 54]); assert.deepEqual(a.window, [192, 135, 1536, 864]);
+  // a strip at the top edge: grown downwards only
+  const b = stackWindow([0.046, 0.038, 0.954, 0.085], src);
+  assert.equal(b.window[1], 0); assert.equal(b.window[3], 981); assert.equal(b.window[2], b.region[2]);
+  // at the bottom edge: grown upwards; the whole screen and a tall card: unchanged
+  const c = stackWindow([0, 0.9, 1, 1], src);
+  assert.deepEqual(c.window, [0, 0, 1920, 1080]);
+  assert.equal(stackWindow([0, 0, 1, 1], src).grown, false);
+  assert.equal(stackWindow([0.4, 0.3, 0.6, 0.7], src).grown, false);
+});
+
+test("the stacked keeps of one cut stand still: where one has a label, every stacked keep keeps that label's room above its screen; without a label in the cut, none does", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  for (const [w, h] of [[1080, 1920], [1080, 1350]]) {
+    const r = stackRun({ width: w, height: h, keeps: [{ zoom: "off", label: LABEL_TEXT }, { zoom: [0.24, 0, 1, 0.76] }] });
+    try {
+      const [a, b] = [r.ps[1].screenPic, r.ps[2].screenPic];
+      assert.equal(a?.fit, STACK, r.said); assert.equal(b?.fit, STACK, r.said);
+      assert.equal(a.window[1], b.window[1], `${w}x${h}: the screens' tops`);
+      // (the zoom's picture is 0.2 px taller than the whole screen's: the panels' tops within a pixel)
+      assert.ok(Math.abs(a.stack.panel[1] - b.stack.panel[1]) <= 1, `${w}x${h}: the panels' tops ${a.stack.panel[1]} ${b.stack.panel[1]}`);
+      assert.match(r.said, /keep 3 [^\n]*; under the room of the cut's label \(from y \d+\), as every stacked keep of this cut/);
+      assert.equal(r.ps[2].screen.stack.labelRoom, Math.round(r.a.label[1] + labelBoxHeight(w, h)));
+    } finally { r.done(); }
+    const n = stackRun({ width: w, height: h, keeps: [{ zoom: "off" }, { zoom: [0.24, 0, 1, 0.76] }] });
+    try {
+      assert.ok(!/under the room of the cut's label/.test(n.said));
+      assert.equal(n.ps[2].screen.stack.labelRoom, undefined);
+    } finally { n.done(); }
+  }
+});
+
+test("the label's room only where it does not cost the stack: an unlabelled stacked keep refused under the room is the stack it gets on its own, its screen higher, said; refused on its own too, it keeps the circle", { skip: !LAYOUT && "no layout skill beside this one" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stack-room-"));
+  try {
+    // a layout skill that refuses the stack of the zoom [0.24, 0, 1, 0.76] (region 460,0,1460,821) under a label's room, or always
+    const fake = (name, always) => { const f = path.join(dir, `${name}.mjs`); fs.writeFileSync(f, `import { spawnSync } from "node:child_process";\nconst a = process.argv, region = a[a.indexOf("--region") + 1];\nif (a.includes("--screen-panel") && region.startsWith("460,") && (${always} || a.includes("--label-bottom"))) console.log(JSON.stringify({ screenPanel: { offered: false, code: "small", why: "the panel is too small here (stand-in)" }, candidates: [] }));\nelse { const r = spawnSync(process.execPath, [${JSON.stringify(LAYOUT)}, ...a.slice(2)], { stdio: "inherit" }); process.exit(r.status ?? 1); }\n`); return f; };
+    const keeps = [{ zoom: "off", label: LABEL_TEXT }, { zoom: [0.24, 0, 1, 0.76] }];
+    // with the room: both stand alike (the real layout skill)
+    const a = stackRun({ width: 1080, height: 1920, keeps });
+    try { assert.equal(a.ps[2].screenPic.fit, STACK); assert.ok(Number.isFinite(a.ps[2].screen.stack.labelRoom)); assert.equal(a.ps[1].screenPic.window[1], a.ps[2].screenPic.window[1]); } finally { a.done(); }
+    // refused under the room: its own stack, higher, said
+    const b = stackRun({ width: 1080, height: 1920, keeps, tool: fake("room", false) });
+    try {
+      assert.equal(b.ps[2].screenPic?.fit, STACK, b.said);
+      assert.ok(b.ps[2].screenPic.window[1] < b.ps[1].screenPic.window[1] - 50, "its screen stands higher");
+      assert.match(b.said, /keep 3 [^\n]*; its screen stands higher than the cut's labelled stacks: under their label's room \(from y \d+\) the panel is too small here \(stand-in\)/);
+      assert.equal(b.ps[2].screen.stack.labelRoom, undefined);
+      assert.equal(b.ps[1].screenPic.fit, STACK);
+    } finally { b.done(); }
+    // refused on its own too: the circle
+    const c = stackRun({ width: 1080, height: 1920, keeps, tool: fake("always", true) });
+    try {
+      assert.notEqual(c.ps[2].screenPic?.fit, STACK);
+      assert.ok(camLayers(c.placed[2])[0].pip);
+      assert.match(c.said, /keep 3 [^\n]*; not the stack \([^)]*\): the panel is too small here \(stand-in\)/);
+    } finally { c.done(); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

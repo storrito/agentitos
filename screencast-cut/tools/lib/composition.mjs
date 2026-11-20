@@ -33,6 +33,9 @@ const n = (x) => +x.toFixed(3);
 const n4 = (x) => +x.toFixed(4);
 const px = (v) => `${+v.toFixed(1)}px`;
 
+// the most a shown video is enlarged over its own pixels
+export const SHOW_MOST = 2;
+
 const BUS = {
   version: 1,
   nodes: [
@@ -85,10 +88,15 @@ export function shots(pieces, sources, width, height, a, labels = []) {
     // the circle at the areas' place, or where a screen's picture moved it off its region
     // (screenview.mjs): one circle for the piece, or one per part of a piece that spans a scene
     // change where the parts' circles differ, each over its part's stretch of the piece's time
-    const pip = (parts = [{ at: p.screenPic?.circle }]) => {
+    // a screen's part drawn as the stack (screenview.mjs, decided 2026-11-19: stack-916) has the
+    // webcam as a panel below the screen instead: the camera's picture at the stack's scale,
+    // clipped to the panel, no circle and no ring
+    const pip = (parts = [{ at: p.screenPic?.circle, panel: p.screenPic?.stack?.camera }]) => {
       if (!sources.webcam || p.pip === false) return;
-      const one = parts.every((x) => JSON.stringify(x.at || a.pip) === JSON.stringify(parts[0].at || a.pip));
+      const key = (x) => JSON.stringify(x.panel || x.at || a.pip);
+      const one = parts.every((x) => key(x) === key(parts[0]));
       for (const x of one ? [parts[0]] : parts) {
+        if (x.panel) { out.push({ source: "webcam", box: x.panel.window, at: geometry(x.panel, sources.webcam), panel: true, ...(one ? {} : x.timed) }); continue; }
         const [cx, cy, d] = x.at || a.pip;
         out.push({ source: "webcam", box: [cx, cy, d, d], crop: circle(sources.webcam), pip: true, ...(one ? {} : x.timed) });
       }
@@ -105,7 +113,11 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         ? (tallShown ? [a.tall, ...(a.solo || []), ...whole(shown.width / shown.height)] : [...(a.solo || a.content), ...whole(shown.width / shown.height)])
         : (tallShown ? a.tall : [...a.content, ...(a.beside || [])]);
       const duration = Math.min(p.duration, p.show.until - p.start);
-      if (duration > 0.001) out.push({ source: p.show.source, box: fit(room, shown.width / shown.height), crop: [0, 0, 1, 1], main: true, show: true, round, start: p.start, duration, in: p.show.in, rate: 1 });
+      // at most twice its own pixels (decided 2026-11-19, show-whole's addition), centred in the room
+      // it would have taken; wanted: the width that room gives, for the build's line
+      const roomBox = fit(room, shown.width / shown.height), most = shown.width * SHOW_MOST;
+      const box = roomBox[2] > most + 1e-6 ? [roomBox[0] + (roomBox[2] - most) / 2, roomBox[1] + (roomBox[3] - (most * shown.height) / shown.width) / 2, most, (most * shown.height) / shown.width] : roomBox;
+      if (duration > 0.001) out.push({ source: p.show.source, box, crop: [0, 0, 1, 1], main: true, show: true, round, start: p.start, duration, in: p.show.in, rate: 1, ...(box !== roomBox ? { wanted: roomBox[2] } : {}) });
       pip();
     } else if (p.view === "face" || !src) {
       const cam = sources.webcam || src;
@@ -141,7 +153,7 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         // (screenview.mjs: the region past the safe box's margins, the circle or a label on it, its
         // text too small) is drawn as layout placed it: at its scale, clipped to its window
         const pic = p.segments?.length ? seg.screenPic : p.screenPic;
-        circles.push({ at: pic?.circle, timed: parts.length > 1 ? timed : {} });
+        circles.push({ at: pic?.circle, panel: pic?.stack?.camera, timed: parts.length > 1 ? timed : {} });
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
         // (a picture as before whose circle alone moved keeps the screen exactly as before)
         const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });

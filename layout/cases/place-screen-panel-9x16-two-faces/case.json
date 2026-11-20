@@ -1,0 +1,28 @@
+{
+ "guards": "two people in a 720p webcam beside each other with --screen-panel in 9:16: the panel holds both faces whole, nothing hard, or it is not offered",
+ "from": "made-up geometry (made up)",
+ "run": [
+  [
+   "place",
+   "--frame",
+   "9:16",
+   "--platform",
+   "reels",
+   "--source",
+   "1920x1080",
+   "--region",
+   "0,0,1920,1080",
+   "--min-text-height",
+   "12",
+   "--source",
+   "1280x720",
+   "--face",
+   "200,160,220,300",
+   "--face",
+   "860,160,220,300",
+   "--caption-area",
+   "120,840,1410,1500,52,1",
+   "--screen-panel"
+  ]
+ ]
+}
