@@ -123,6 +123,19 @@ test("a video keeps its picture stream bit for bit, its length and none of its t
   assert.equal(probe(m4a).streams.length, 1);
 });
 
+test("the report's lines say where the noise could not be measured, never a bare question mark", () => {
+  const r = (b, a) => ({
+    output: "o.m4a", source: "in.wav", level: "auto", steps: [], left: [], format: { channels: 2, says: "AAC" },
+    targets: { lufs: -14, measuredLufs: -14, truePeak: -1.5, peakAccepted: -1, rangeLu: 8, from: "the default" },
+    measured: { before: { lufs: -20, rangeLu: 5, truePeak: -3, channels: 1, snrDb: b }, after: { seconds: 10, lufs: -14, rangeLu: 4, truePeak: -1.5, snrDb: a } },
+  });
+  const said = (b, a) => lines(r(b, a)).find((l) => l.startsWith("Before → after"));
+  assert.match(said(67, null), /, noise 67 dB under the speech \(A-weighted\), in the result not measurable \(no pause left to measure it in\)\.$/);
+  assert.match(said(null, 30), /, noise not measurable before \(no pause\), 30 dB under the speech after \(A-weighted\)\.$/);
+  assert.match(said(20, 30), /, noise 20 → 30 dB under the speech \(A-weighted\)\.$/);
+  for (const [b, a] of [[67, null], [null, 30]]) assert.doesNotMatch(said(b, a), /\?/);
+});
+
 test("the report: the file beside the output, the same object with --json, the lines an agent passes on", { skip }, () => {
   const out = file("report.m4a");
   const r = cli("clean", "voice.wav", "report.m4a", "--for", "tiktok", "youtube", "--json");

@@ -126,8 +126,24 @@ export const LIMITER = { rate: 192000, attack: 5, release: 60 };
 // as does a loudness off the target; ROUNDS at most. A gain that moves the loudness by less than
 // SATURATED_LU_PER_DB is the limiters holding it down: more gain is not tried. Before
 // 2026-11-20 the ceiling was lowered after the loudness was settled and nothing settled it again,
-// which left an .m4a 0.5 to 0.6 LU under the target
+// which left an .m4a 0.5 to 0.6 LU under the target.
+// The search is bounded so that no round costs the voice much more than the first: the ceiling
+// is lowered for the encoder to at most CEILING_SPAN_DB under the aim, the gain never goes more
+// than GAIN_SPAN_DB over the first round's, and where a lowered ceiling does not bring the
+// encoded true peak down by at least a fifth as much (CHASE_SHARE: the encoder's own overshoot
+// at one spot, which does not follow the ceiling) it is not lowered further. A fifth, not more:
+// the encoder's overshoot moves by a few tenths of a dB from round to round, and in the knock
+// cases a ceiling 0.4 dB lower with 0.8 dB more gain brought the peak down by only 0.1 dB, and
+// a half there stopped the loop at −1.3 dBTP. A round over those bounds is never made, so never
+// delivered. Before
+// 2026-11-20 nothing bounded it: on the review's café recording (5 min, the denoiser in 6
+// pieces) the encoder's peak at one spot rose from −1.0 to +1.3 dBTP while the ceiling went from
+// −2.5 to −3.1, the loop chased it to −8.5 dB with 54 dB of gain, and the slow limiter took 37 LU:
+// the voice crushed, the noise in the pauses 5 dB under the speech. In its rounds what a lower
+// ceiling bought, it bought within about 1.5 dB (review-voice-4/r5); 3 dB of gain covers that
+// ceiling and the limiters' share of it
 const LUFS_TOLERANCE = 0.3, TRY_TOLERANCE = 0.1, TRIES = 6, ROUNDS = 6, PEAK_MARGIN_DB = 0.1, SATURATED_LU_PER_DB = 0.05;
+export const CEILING_SPAN_DB = 1.5, GAIN_SPAN_DB = 3, CHASE_SHARE = 0.2;
 // a file with one channel plays on both speakers: 10·log10(2) louder
 export const TWO_SPEAKERS_LU = 3.01;
 
@@ -177,6 +193,30 @@ export function ffmpegRun(args, { bin = "ffmpeg", onLine = null } = {}) {
     });
     p.on("error", (e) => { if (done) return; done = true; live.delete(p); reject(e.code === "ENOENT" ? missing(bin) : e); });
     p.on("close", (code, signal) => { if (done) return; done = true; live.delete(p); resolve({ status: code, signal, stderr: (err + buf).slice(-65536) }); });
+  });
+}
+
+// where a file's loudest sample lies (all its channels, decoded at 48 kHz and streamed: nothing
+// held) → { t, clock, db } or null
+export function peakAt(file) {
+  return new Promise((resolve) => {
+    const p = spawn("ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-i", path.resolve(file), "-map", "0:a:0", "-ar", "48000", "-f", "f32le", "-"], { stdio: ["ignore", "pipe", "ignore"] });
+    live.add(p);
+    let ch = 2, n = 0, best = 0, at = 0, rest = Buffer.alloc(0);
+    const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "csv=p=0", path.resolve(file)], { encoding: "utf8" });
+    ch = Number((probe.stdout || "").trim()) || 2;
+    p.stdout.on("data", (d) => {
+      const b = rest.length ? Buffer.concat([rest, d]) : d, k = b.length >> 2;
+      for (let i = 0; i < k; i++) { const v = Math.abs(b.readFloatLE(i * 4)); if (v > best) { best = v; at = n + i; } }
+      n += k; rest = b.subarray(k << 2);
+    });
+    p.on("error", () => { live.delete(p); resolve(null); });
+    p.on("close", () => {
+      live.delete(p);
+      if (!best) return resolve(null);
+      const t = Math.floor(at / ch) / 48000;
+      resolve({ t: r2(t), clock: `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, "0")}`, db: r1(20 * Math.log10(best)) });
+    });
   });
 }
 
@@ -483,6 +523,8 @@ function compressorChain(P, oneChannel, limit) {
 //         removeInput: remove inWav as soon as it is read for the last time,
 //         bursts: the knocks measure finds in inWav (m.speech.bursts), burstsBefore: those of the
 //         recording as it came (what repair took out is said),
+//         encodeStep: async (file, { gain, limit, round }), the tests' stand-in for an encoder
+//         that does something of its own to each delivered round's file,
 //         peaks: another peak compressor (the lab's tries), or { kind: "none" } }
 //   auto   leveller (where uneven), gain to the target, the slow limiter, the limiter
 //   plain  gain to the target and the limiter only: the recording's own dynamics kept
@@ -599,7 +641,12 @@ export async function level(inWav, out, opts = {}) {
     // threshold lies the same few dB under the limiter's ceiling on every recording.
     let limit = T.truePeak, peakFixes = 0, capped = false, saturated = false, got, C = null, lastTry = null, offset = 0, rounds = 0, raised = 0;
     const passes = [];
-    const cap = () => { if (gain + lift > maxGain) { gain = maxGain - lift; capped = true; } };
+    // (the gain: never beyond the bound, nor GAIN_SPAN_DB over the first round's)
+    let firstGain = null, bounded = false, chased = false;
+    const cap = () => {
+      if (gain + lift > maxGain) { gain = maxGain - lift; capped = true; }
+      if (firstGain != null && gain > firstGain + GAIN_SPAN_DB) { gain = firstGain + GAIN_SPAN_DB; bounded = true; }
+    };
     const chain = (meter = false) => {
       const af = [`volume=${gain.toFixed(2)}dB`];
       if (tamer) { C = compressorChain(P, oneChannel, limit); af.push(C.chain); }
@@ -625,7 +672,7 @@ export async function level(inWav, out, opts = {}) {
       let prev = null;
       for (let i = 0; ; i++) {
         const g = await tryGain();
-        if (g.lufs == null || Math.abs(g.lufs - want) <= TRY_TOLERANCE || i === TRIES - 1 || capped) return;
+        if (g.lufs == null || Math.abs(g.lufs - want) <= TRY_TOLERANCE || i === TRIES - 1 || capped || bounded) return;
         const moved = prev && Math.abs(gain - prev.gain) > 0.05 ? (g.lufs - prev.lufs) / (gain - prev.gain) : 1;
         if (g.lufs < want && moved < SATURATED_LU_PER_DB) { saturated = true; return; }
         prev = { gain, lufs: g.lufs };
@@ -641,6 +688,8 @@ export async function level(inWav, out, opts = {}) {
       await settle(measuredAim == null ? null : measuredAim - offset);
       const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-y", "-i", dyn, "-map", "0:a:0", "-af", chain(true), "-map_metadata", "-1", "-ar", "48000", ...encode, out]);
       if (r.status !== 0) throw new LevelError(`ffmpeg could not make the finished sound: ${lastLine(r.stderr, 2)}`);
+      // (the tests' stand-in for an encoder that does something of its own to the file)
+      if (opts.encodeStep) await opts.encodeStep(out, { gain, limit, round: rounds });
       meter = summary(r.stderr);
       got = await loudness(out);
       if (voiceCut) { const v = await loudness(out, voiceCut); got.voiceLufs = v.lufs; got.voiceTruePeak = v.truePeak; }
@@ -654,14 +703,22 @@ export async function level(inWav, out, opts = {}) {
       const key = [got.truePeak != null && got.truePeak > T.peakAccepted ? 1 : 0, loudOk ? 0 : 1, peakOk ? 0 : 1,
         measuredAim == null || L(got) == null ? 0 : Math.abs(L(got) - measuredAim), Math.max(0, (got.truePeak ?? -99) - T.truePeak)];
       if (!best || ahead(key, best.key)) { fs.copyFileSync(out, bestFile); best = { key, got, meter, gain, limit, loudOk, peakOk, saturated, capped, round: rounds }; }
+      if (rounds === 1) firstGain = gain;
       if ((loudOk && peakOk) || rounds === ROUNDS) break;
-      if (!peakOk) { if (limit <= -24) break; limit = Math.max(-24, limit - (got.truePeak - T.truePeak) - PEAK_MARGIN_DB); peakFixes++; continue; }
+      if (!peakOk) {
+        // (the encoder's overshoot did not come down with the ceiling: its doing at one spot, not chased)
+        const prev = passes.filter((p) => p.kind === "delivered").at(-2);
+        if (prev && prev.limitDb - limit >= 0.3 && prev.truePeak - got.truePeak < CHASE_SHARE * (prev.limitDb - limit)) { chased = true; break; }
+        const floor = T.truePeak - CEILING_SPAN_DB;
+        if (limit <= floor + 0.05) break;
+        limit = Math.max(floor, limit - (got.truePeak - T.truePeak) - PEAK_MARGIN_DB); peakFixes++; continue;
+      }
       // (too quiet with room under the aim, after a lowering went too far: the ceiling raised again)
       if (L(got) < measuredAim && limit < T.truePeak && got.truePeak < T.truePeak - 3 * PEAK_MARGIN_DB) {
         limit = Math.min(T.truePeak, limit + (T.truePeak - got.truePeak) - PEAK_MARGIN_DB); raised++; continue;
       }
       // (the loudness off: another round with the encoding's offset, unless more gain cannot help)
-      if ((capped || saturated) && L(got) < measuredAim) break;
+      if ((capped || saturated || bounded) && L(got) < measuredAim) break;
     }
     // (a later round that came out worse: the best one delivered)
     if (best.round !== rounds) {
@@ -735,6 +792,7 @@ export async function level(inWav, out, opts = {}) {
       const off = aimedLufs - measuredAim;
       const why = capped && off < 0 ? `the gain stops at ${maxGain} dB.`
         : saturated && off < 0 ? `the loudness gave way to the true peak: to hold it under ${f1(limit)} dB the two limiters take ${f1(Math.max(0, (dynLufs ?? 0) + gain + (mono ? 0 : TWO_SPEAKERS_LU) - delivered.lufs))} LU off the loudness, and more gain moves it by less than ${SATURATED_LU_PER_DB} LU a dB: its peaks would need more limiting than the slow and the fast limiter give; a lower --loudness spares them.`
+        : bounded && off < 0 ? `the loudness gave way to the true peak: to hold it under ${f1(limit)} dB the two limiters take ${f1(Math.max(0, (dynLufs ?? 0) + gain + (mono ? 0 : TWO_SPEAKERS_LU) - delivered.lufs))} LU off the loudness, and the gain stops ${GAIN_SPAN_DB} dB over the first round's, so that the whole voice is not pressed for it; a lower --loudness spares it.`
         : `the corrections did not reach it in ${encodings(rounds)}.`;
       left.push({ id: "loudness", stage: "level", offLu: r2(off), why: `The loudness${voiceCut ? " of the voice" : ""} came to ${f1(aimedAsPlayed)} LUFS as played, ${f1(Math.abs(off))} LU ${off < 0 ? "under" : "over"} the ${f1(aim)} aimed at: ${why}` });
     }
@@ -752,10 +810,13 @@ export async function level(inWav, out, opts = {}) {
     if (underDb != null && underDb >= lowGain)
       left.push({ id: "quiet", stage: "level", underDb: r2(underDb), gainDb: r2(gain + lift), lowGainDb: lowGain,
         why: `It was recorded very low, ${f1(fr.lufs + TWO_SPEAKERS_LU)} LUFS as played, ${Math.round(underDb)} dB under the ${f1(T.lufs)} it was brought to all the same: its noise and its room came up with the voice by as much; next time closer to the microphone, or with the recorder's input turned up.` });
-    if (delivered.truePeak != null && delivered.truePeak > T.peakAccepted)
-      left.push({ id: "peak", stage: "level", why: `The true peak after the encoding is ${f1(delivered.truePeak)} dBTP, over the ${f1(T.peakAccepted)} dBTP a check accepts${peakFixes ? `, after the limiter was lowered ${times(peakFixes)}` : ""} in ${encodings(rounds)}: the peak gave way.`, overDb: r2(delivered.truePeak - T.peakAccepted) });
-    else if (delivered.truePeak != null && delivered.truePeak > T.truePeak + 0.05)
-      left.push({ id: "peak", stage: "level", why: `The true peak after the encoding is ${f1(delivered.truePeak)} dBTP, ${f1(delivered.truePeak - T.truePeak)} dB over the ${f1(T.truePeak)} aimed at and under the ${f1(T.peakAccepted)} a check accepts: the peak gave way, since in ${encodings(rounds)} a lower ceiling took the loudness off the target.`, overDb: r2(delivered.truePeak - T.truePeak) });
+    // (why the ceiling was not lowered further, where it was not)
+    const stopped = chased ? `the encoder's overshoot at one spot did not come down with a lower ceiling, and is not chased` : limit <= T.truePeak - CEILING_SPAN_DB + 0.05 ? `the ceiling is lowered for the encoder by ${CEILING_SPAN_DB} dB at most, so that it never presses the whole voice` : `a lower ceiling took the loudness off the target`;
+    if (delivered.truePeak != null && delivered.truePeak > T.peakAccepted) {
+      const at = await peakAt(out);
+      left.push({ id: "peak", stage: "level", why: `The true peak after the encoding is ${f1(delivered.truePeak)} dBTP${at ? ` (at ${at.clock}, the loudest sample)` : ""}, over the ${f1(T.peakAccepted)} dBTP a check accepts, in ${encodings(rounds)}: the peak gave way, since ${stopped}.`, overDb: r2(delivered.truePeak - T.peakAccepted), ...(at && { atS: at.t }) });
+    } else if (delivered.truePeak != null && delivered.truePeak > T.truePeak + 0.05)
+      left.push({ id: "peak", stage: "level", why: `The true peak after the encoding is ${f1(delivered.truePeak)} dBTP, ${f1(delivered.truePeak - T.truePeak)} dB over the ${f1(T.truePeak)} aimed at and under the ${f1(T.peakAccepted)} a check accepts: the peak gave way, since ${stopped}.`, overDb: r2(delivered.truePeak - T.truePeak) });
     if (auto && delivered.rangeLu != null && delivered.rangeLu > T.rangeLu)
       left.push({ id: "range", stage: "level", why: `The loudness range is ${f1(delivered.rangeLu)} LU, over the ${T.rangeLu} LU aimed at for a phone in a noisy place: the leveller corrects only phrases far off the middle, so that it is never heard pulling the voice around.` });
     if (mode === "off") skipped.push({ id: "level", why: "Level off: the recording's own dynamics and loudness are kept, only its peaks made safe." });

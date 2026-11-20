@@ -397,14 +397,16 @@ test("a quiet voice with a knock: the gain is the voice's, the knock turned down
 test("where the loudness cannot be had under the ceiling, `left` says that it gave way and by how much", { skip }, async () => {
   // (−6 LUFS plain under a ceiling of −6 dBTP: the made-up voice's peaks would need far more
   // limiting than that; the limiter holds it down)
-  const r = await level(base, file("gave-way.m4a"), { level: "plain", encode: ["-c:a", "aac", "-b:a", "192k"], targets: { lufs: -6, truePeak: -6, peakAccepted: -5.5 } });
+  // (encoded as clean encodes .m4a: ffmpeg's aac with its fast coder)
+  const r = await level(base, file("gave-way.m4a"), { level: "plain", encode: ["-c:a", "aac", "-b:a", "192k", "-aac_coder", "fast"], targets: { lufs: -6, truePeak: -6, peakAccepted: -5.5 } });
   const got = loudnessOf(file("gave-way.m4a"));
   assert.ok(got.lufs < -6.3, `${got.lufs}`);
   const q = r.left.find((x) => x.id === "loudness");
   assert.ok(q, JSON.stringify(r.left));
   assert.match(q.why, /^The loudness came to −\d+\.\d LUFS as played, \d+\.\d LU under the −6\.0 aimed at: the loudness gave way to the true peak: to hold it under −\d+\.\d dB the two limiters take \d+\.\d LU off the loudness/);
   near(q.offLu, got.lufs + 6, 0.06, "by how much");
-  assert.ok(got.truePeak <= -5.5, `true peak ${got.truePeak}`);
+  // (the ceiling is lowered for the encoder by 1.5 dB at most: where that is not enough, `left` says so)
+  assert.ok(got.truePeak <= -5.5 || r.left.some((x) => x.id === "peak"), `true peak ${got.truePeak}: ${JSON.stringify(r.left)}`);
   assert.match(r.steps.find((s) => s.id === "loudness").why, /^Brought towards −6\.0 LUFS .*: it came to −\d+\.\d, see what is left\.$/);
 });
 
@@ -418,6 +420,29 @@ test("a knock on a word: brought down to the speech beside it and no lower, the 
   const y = Float32Array.from(x, (v, i) => (i > 24000 && i < 24000 + 2400 ? v : v * 0.001));
   const q = burstPlan({ t: 0.5, seconds: 0.05, overDb: 30 }, y, 0);
   near(q.targetDb, q.loudDb - BURSTS.underDb, 0.05, "in a pause");
+});
+
+test("an encoder that overshoots at one spot whatever the ceiling is not chased: the ceiling at most 1.5 dB under the aim, the gain at most 3 dB over the first round's, a few encodings, and `left` says where the peak is", { skip }, async () => {
+  // (the stand-in: after each encoding a 2 ms tone burst at +1.3 dBFS at 10.000 s, as an encoder
+  // that lifts one spot whatever the limiter's ceiling; the review's café case did that, and the
+  // loop chased it to a ceiling of −8.5 dB and 54 dB of gain)
+  const spike = async (f) => {
+    const tmpf = `${f}.spike.wav`;
+    run(["-i", f, "-filter_complex", "aevalsrc=exprs='1.16*sin(2*PI*3000*t)*lt(t,0.002)':s=48000:d=0.002:c=stereo,adelay=10000:all=1[s];[0:a][s]amix=inputs=2:normalize=0:duration=first", "-c:a", "pcm_f32le", tmpf]);
+    fs.renameSync(tmpf, f);
+  };
+  const r = await level(base, file("spot.wav"), { encode: ["-c:a", "pcm_f32le"], encodeStep: spike });
+  const lim = r.steps.find((s) => s.id === "limiter"), dl = r.passes.filter((p) => p.kind === "delivered");
+  assert.ok(lim.limitDb >= TARGETS.truePeak - 1.5 - 0.01, `the ceiling went to ${lim.limitDb}`);
+  assert.ok(r.passes.every((p) => p.gainDb <= dl[0].gainDb + 3 + 0.01), JSON.stringify(r.passes));
+  assert.ok(dl.length <= 3, `${dl.length} encodings: ${JSON.stringify(dl)}`);
+  near(r.delivered.lufs, TARGETS.lufs, 0.3, "the loudness");
+  // (the slow limiter took no more than the first round's would: its share of the loudness small)
+  assert.ok(r.steps.find((s) => s.id === "peaks").loudnessTakenLu < 6, JSON.stringify(r.steps.find((s) => s.id === "peaks")));
+  const p = r.left.find((x) => x.id === "peak");
+  assert.ok(p, JSON.stringify(r.left));
+  assert.match(p.why, /^The true peak after the encoding is 1\.\d dBTP \(at 0:10\.00, the loudest sample\), over the −1\.0 dBTP a check accepts, in \d encodings?: the peak gave way, since the encoder's overshoot at one spot did not come down with a lower ceiling, and is not chased\.$/);
+  near(p.atS, 10, 0.01, "where");
 });
 
 test("the gain search never passes the bound: where the limiter takes loudness and the search asks for more, it stops at the bound and says so", { skip }, async () => {

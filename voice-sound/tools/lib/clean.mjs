@@ -82,7 +82,18 @@ export const MIN_VOICE_S = 0.5;
 const LEFTOVER_MS = 24 * 3600 * 1000;
 const WORK_PREFIX = ".voice-sound-clean-";
 
-const AAC = ["-c:a", "aac", "-b:a", "192k"];
+// ffmpeg's aac with its fast coder: its default (twoloop) codes the two equal channels apart at
+// some spots and lifts the true peak there, by 0.9 to 4.4 dB over the limiter's ceiling on the
+// review's café recording (−0.6, −1.0, +1.3 dBTP under ceilings of −1.5, −2.5, −3.1 dB, not
+// following them), where the fast coder stayed 0.0 to 0.1 dB over (−1.5, −2.4, −3.0); against the
+// same sound unencoded it also scored higher (PESQ 4.62 and 4.61 against 4.61 and 4.44, SI-SDR 43
+// and 48 against 37 and 35 dB, the café recording and a clean reading, level/aac-quality.sh,
+// 2026-11-20). The same encoder, one option
+const AAC = ["-c:a", "aac", "-b:a", "192k", "-aac_coder", "fast"];
+// the repair stage's forecast of the noise left ("it ends about N dB under") is said as the
+// delivered file measures it where the two differ by more than this (a judgement: measure's own
+// noise numbers move by a dB or two between a recording and its encoded copy)
+const NOISE_SAID_DB = 3;
 export const FORMATS = {
   m4a: { kind: "audio", codec: AAC, says: "AAC at 192 kbit/s", name: "aac" },
   wav: { kind: "audio", codec: ["-c:a", "pcm_s24le"], says: "24-bit PCM", name: "pcm_s24le" },
@@ -441,6 +452,15 @@ export async function clean(file, out, opts = {}, stages = null) {
       dehum.stillThere = true;
       left.push({ id: "hum", stage: "repair", ...still });
     }
+    // the noise: what repair forecast ("it ends about N dB under") is said as the delivered file
+    // measures it, where the two lie more than NOISE_SAID_DB apart
+    const noiseAfter = numbers(m2).snrDb;
+    for (const x of left) {
+      const fc = x.id === "noise" && /ends about (\d+) dB under/.exec(x.why);
+      if (!fc || noiseAfter == null || Math.abs(Number(fc[1]) - noiseAfter) <= NOISE_SAID_DB) continue;
+      x.why = x.why.replace(/so it ends about \d+ dB under/, `so it would end about ${fc[1]} dB under; the delivered file measures it ${i0(noiseAfter)} dB under the speech`);
+      x.measuredDb = noiseAfter;
+    }
     const measuredLufs = o.mono ? T.lufs - TWO_SPEAKERS_LU : T.lufs;
     const report = {
       source: f.name,
@@ -496,7 +516,9 @@ export function lines(r) {
   for (const s of r.skipped || []) out.push(`Not done: ${s.why}`);
   const played = (x, ch) => (ch === 1 && x.lufs != null ? ` (one channel; ${f1(x.lufs + TWO_SPEAKERS_LU)} as played)` : "");
   out.push(`Before → after: loudness ${f1(b.lufs)}${played(b, b.channels)} → ${f1(a.lufs)}${played(a, fm.channels)} LUFS, range ${f1(b.rangeLu)} → ${f1(a.rangeLu)} LU, true peak ${f1(b.truePeak)} → ${f1(a.truePeak)} dBTP` +
-    (b.snrDb != null || a.snrDb != null ? `, noise ${i0(b.snrDb)} → ${i0(a.snrDb)} dB under the speech (A-weighted)` : "") + ".");
+    (b.snrDb != null && a.snrDb != null ? `, noise ${i0(b.snrDb)} → ${i0(a.snrDb)} dB under the speech (A-weighted)`
+      : b.snrDb != null ? `, noise ${i0(b.snrDb)} dB under the speech (A-weighted), in the result not measurable (no pause left to measure it in)`
+      : a.snrDb != null ? `, noise not measurable before (no pause), ${i0(a.snrDb)} dB under the speech after (A-weighted)` : "") + ".");
   if (r.left.length) out.push(`Not mended: ${r.left.map((x) => `${x.id}: ${x.why}`).join(" ")}`);
   for (const x of r.notJudged || []) out.push(`Not judged: ${x.id}: ${x.why}`);
   out.push(`Targets: ${f1(T.lufs)} LUFS as played on two speakers${mono ? ` (the one channel ${f1(T.measuredLufs)} LUFS as ffmpeg measures it)` : ""}, true peak ${f1(T.truePeak)} dBTP after the encoding (a check accepts ${f1(T.peakAccepted)}), range ${T.rangeLu} LU or under; ${T.from}${T.overridden?.length ? `, ${T.overridden.join(" and ")} as asked` : ""}.`);
