@@ -51,6 +51,11 @@ What it cannot mend it says, and you pass that on as it is, never softened:
 - **Noise that changes** (traffic, voices, a keyboard, wind): with the denoiser on the machine it is taken down, by as much as the line says, and what remains remains; without the denoiser it stays nearly as it was.
 - **A narrow source** (a call, a 16 kHz recording): what was not recorded is not brought back.
 
+Two lines of the tool need a word of their own:
+
+- A step that reads "the neural denoiser failed (…)": the result was made all the same, by ffmpeg's simpler method, and the noise may be less reduced than it could be. Say so in one sentence, and ask them to pass on to whoever runs this machine that voice-sound's neural denoiser fails on it (every recording falls back until it is mended; the reason stands in the `.json` beside the result, the `denoise` step's `fallback.reason`). Not the reason itself: it is a raw error. Do not run it again to try: it fails the same way until the machine is mended.
+- A refusal of a video in a kind of file clean cannot put new sound into (`.avi`, `.ts`, `.3gp`, `.flv`, …): offer what the refusal names, its sound alone, cleaned, as `.m4a`, to lay under the picture where they edit the video, with a button for it; on their yes run `clean uploads/<video> artifacts/<name>.m4a --before artifacts/<name>-before.m4a`. Never turn their video into another kind of file yourself to get round it.
+
 ### 2. Let them hear it
 
 You measured it, you did not hear it. Show both, the result first, with what you did in their words (from the steps' reasons, at most four points, no number they did not ask for), what stays as it is, and the question:
@@ -77,7 +82,8 @@ Run `clean` again on the upload (never on a result) with the option, and show bo
 | they say | option |
 | --- | --- |
 | watery, tinny, robotic, "under water", syllables swallowed | `--denoise gentle`; still so: `--denoise off` |
-| still noisy | `--denoise strong`, and say that it may cost the voice some of its body |
+| still noisy | `--denoise strong`, once: the noise step then runs even where the numbers named no noise, and may take up to 24 dB off with the denoiser (18 with ffmpeg alone) instead of 18 (12). Say that it may cost the voice some of its body |
+| still noisy after `strong`, or its line says the noise stays, or that the denoiser's result was thrown away because it took the voice down too, or the noise before → after did not move | nothing more here: say plainly that this recording's noise cannot be taken out further with this tool, and how to record it next time (closer to the microphone, a quieter room). Never run it again with another option to try, never promise that more is possible |
 | "that is not my voice", too sharp, too dull | `--tone off` |
 | it pumps, it breathes, too flat, "like the radio" | `--level plain`: as loud, with the recording's own dynamics (no evening out of its phrases) |
 | too loud, too quiet beside other videos | `--loudness <LUFS>` (a platform's own figure: `targets`) |
@@ -103,7 +109,7 @@ A skill runs the tool as a program, never imports its code: `VOICE_SOUND` naming
 
 - `clean <in> <out> --json` writes `<out>` and `<out>.json` (what was measured before and after, every step with its `why`, what was `left`) together at its end; stdout is that JSON; a refusal or an error is exit 1 with `{"error": "…"}` and no output file. While it runs, its working files lie in a hidden folder beside `<out>`, about 23 MB for a minute of sound, gone at the end.
 - A skill that sets the level itself (best-takes, take by take): `clean <in> <out.wav> --level off` mends and keeps the loudness the recording came with (`--level plain`: the target loudness by gain and the limiter alone). Clean the whole recording before it is cut: the noise is read in its pauses, which a cut removes.
-- Loudness is always as played on two speakers. `--mono` writes one channel for a voice that is mounted as one track of a film: at a target of −14 LUFS that file measures −17 as ffmpeg measures a file of one channel, and plays at −14.
+- Loudness is always as played on two speakers. `--mono` writes one channel for a voice that is mounted as one track of a film: at a target of −14 LUFS that file measures −17.0 as ffmpeg measures a file of one channel, and plays at −14.0 where both speakers get the channel whole: mount it with `pan=stereo|c0=c0|c1=c0` (or `asplit,amerge`). ffmpeg's own upmix of one channel to two (`-ac 2`, `aformat=channel_layouts=stereo`, `amix` onto a stereo track) gives each speaker the channel 3 dB down: −17.0, 3 LU under the target.
 - Loudness, peak and range numbers come from `targets --json` (`master.lufs`, `master.truePeakDbtp.aim` and `.max`, `master.rangeLu`), never from a number written into the skill.
 - `measure <file> --json` for a check of its own (`findings`: `quiet`, `noise`, `hum`, `clipped`, `uneven`, `roomy`, …, each `some` or `strong`).
 
@@ -115,4 +121,5 @@ Write a ```hiccup block into your answer; it becomes part of the page. EDN hiccu
 
 - One question per block, with buttons for the likely answers when a click is the whole answer, and a line under them saying that they can type anything else.
 - A button only where a click makes you act at once. Never one that only leads to your next question ("Change something"): they type what to change.
-- The button that moves on gets `:class "primary"`; the others stay plain. A button's text says what happens; its `:send` reads as the person's answer ("The sound is good").
+- The button that moves on gets `:class "primary"`; the others stay plain. A button's text says what happens; its `:send` reads as the person's answer ("The sound is good"). A button that opens an artifact ends its text with " ↗".
+- Several picks from one list are checkboxes with one button. Several questions that must all be answered, none depending on another's answer, are one block: a group of radio buttons per question (own `:name`, every `:value` saying what it answers, at most four groups) and one button whose `:send` holds `{checked}`.
