@@ -828,6 +828,24 @@ test("a signal to clean ends a running denoiser and leaves none of its files", {
   const e = await ended;
   assert.equal(e.code, 143);
   await new Promise((r) => setTimeout(r, 300));
-  assert.throws(() => process.kill(pid, 0), "the denoiser is gone");
+  assert.ok(gone(pid), "the denoiser is gone");
   assert.deepEqual(fs.readdirSync(path.dirname(out)), []);
+});
+
+// a process is gone where no signal reaches it, or (Linux) where it has ended and only waits to
+// be reaped: a zombie, as an ended child stays in a container without an init process
+function gone(pid) {
+  try { process.kill(pid, 0); } catch { return true; }
+  try { return /^\d+ \(.*\) [ZX]/s.test(fs.readFileSync(`/proc/${pid}/stat`, "utf8")); } catch { return false; }
+}
+
+test("gone: a zombie counts as gone, a running process does not", { skip: process.platform !== "linux" && "Linux only" }, async () => {
+  // (sh starts a child that ends at once and becomes sleep, which never reaps it)
+  const p = spawn("sh", ["-c", "sleep 0 & echo $!; exec sleep 3"], { stdio: ["ignore", "pipe", "ignore"] });
+  const zpid = Number(await new Promise((r) => p.stdout.once("data", (d) => r(String(d).trim()))));
+  await new Promise((r) => setTimeout(r, 500));
+  assert.doesNotThrow(() => process.kill(zpid, 0), "a zombie still takes a signal");
+  assert.equal(gone(zpid), true);
+  assert.equal(gone(p.pid), false);
+  p.kill("SIGKILL");
 });
