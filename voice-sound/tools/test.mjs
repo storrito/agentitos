@@ -236,6 +236,24 @@ test("clipping in a short cut: one loud crest is not clipped, a cut held at a ce
   assert.ok(ids(c).includes("clipped"), ids(c).join());
 });
 
+test("a voice turned down 40 to 70 dB at 16 bits is not clipped (its few values are no ceiling); clipped, then turned down 20 and 40 dB, it is", { skip }, async () => {
+  for (const down of [40, 50, 60, 70]) {
+    const m = await measure(fault(`down${down}.wav`, "-af", `volume=-${down}dB`));
+    assert.ok(!ids(m).includes("clipped"), `−${down} dB: ${JSON.stringify(m.clipping)}`);
+  }
+  // (at 44.1 and 22.05 kHz, so that measure's resampler smears each 16-bit step into a clump)
+  for (const rate of [44100, 22050]) {
+    const m = await measure(fault(`down70-${rate}.wav`, "-af", `volume=-70dB,aresample=${rate}`));
+    assert.ok(!ids(m).includes("clipped"), `−70 dB at ${rate}: ${JSON.stringify(m.clipping)}`);
+  }
+  const x = samples(fault("loud-q.wav", "-af", "volume=6dB")), abs = Float64Array.from(x, Math.abs).sort();
+  const ceiling = abs[Math.floor(abs.length * 0.99)];
+  for (const down of [20, 40]) {
+    const m = await measure(fault(`clipped-down${down}.wav`, "-af", `volume=6dB,aeval='max(-${ceiling},min(${ceiling},val(0)))',volume=-${down}dB`));
+    assert.ok(ids(m).includes("clipped"), `clipped, −${down} dB: ${JSON.stringify(m.clipping)}`);
+  }
+});
+
 test("a DC offset of 0.05", { skip }, async () => {
   const m = await measure(fault("dc.wav", "-af", "aeval=val(0)+0.05"));
   near(m.dc.values[0], 0.05, 0.002, "dc");

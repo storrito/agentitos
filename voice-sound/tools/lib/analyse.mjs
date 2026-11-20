@@ -1098,6 +1098,11 @@ function wholeHum(L, pauseSeconds, speechPower, dfShort) {
 // peak's distance, the stretch it is compared with 1–4 dB under it, the share from it up. On the
 // side of the offset, where an offset larger than the voice puts every sample, that is exact;
 // the other side's samples, at the same level, lie further from it and are counted lower.)
+// A ceiling under 16 steps of 16 bits (−66.2 dBFS) is not read: there a voice's own steps pile up
+// as a ceiling would, also where a resampler has smeared each into a clump (clean speech of the
+// tune split turned down by 70 dB at 16 bits: 3 of 42 called clipped at −74.7 to −78.2 dBFS,
+// 2026-11-20); the lowest ceiling the lab's clip faults reach turned down by 40 dB is −60 dBFS.
+const CLIP_FLOOR_DB = 20 * Math.log10(16 / 32768);
 function clippingOf(st, dc = 0) {
   const H = st.hist;
   let M = 0;
@@ -1115,14 +1120,22 @@ function clippingOf(st, dc = 0) {
   const top = d > 0 ? (swing ? 20 * Math.log10(P - d) : -Infinity) : peak;
   // narrow: ±0.1 dB against 1–3 dB under (PCM, a ceiling exact to the sample); wide: ±0.5 dB
   // against 1.5–4 dB under (a lossy codec or a resampler rings around the ceiling)
+  const occupied = (lo, hi) => { let n = 0; for (let k = lo; k < Math.min(32768, hi); k++) if (H[k]) n++; return n; };
   let best = { c: top, ratio: 0, half: 0.1 };
   for (const [half, a, b] of [[0.1, 1, 3], [0.5, 1.5, 4]]) {
     for (let c = top - 6; swing && c <= top + 1e-9; c += 0.05) {
       // (a swing far smaller than the offset leaves too few of the histogram's bins, 1/128 of an
       // octave of the level, for a window: at least 3, as ±0.1 dB has 4 without an offset)
       if (binOf(abs(c + half)) - binOf(abs(c - half)) < 3 || binOf(abs(c - a)) - binOf(abs(c - b)) < 3) continue;
-      const below = cnt(abs(c - b), abs(c - a)) / (b - a);
-      const ratio = below > 0 ? (cnt(abs(c - half), abs(c + half)) / (2 * half)) / below : 0;
+      if (abs(c) < CLIP_FLOOR_DB) continue;
+      // (where under half the stretch's bins hold a sample, the recording's own steps are coarser
+      // than the bins: a voice 60 dB down at 16 bits takes a few dozen values, each a spike in
+      // its bin, 2026-11-20. The two are then compared by the samples a value, an occupied bin,
+      // not a dB; where the bins are full that is the same.)
+      const [b0, b1] = [binOf(abs(c - b)), binOf(abs(c - a))], [p0, p1] = [binOf(abs(c - half)), binOf(abs(c + half))];
+      const coarse = occupied(b0, b1) / (b1 - b0) < 0.5;
+      const below = cnt(abs(c - b), abs(c - a)) / (coarse ? Math.max(1, occupied(b0, b1)) : b - a);
+      const ratio = below > 0 ? (cnt(abs(c - half), abs(c + half)) / (coarse ? Math.max(1, occupied(p0, p1)) : 2 * half)) / below : 0;
       if (ratio > best.ratio) best = { c, ratio, half };
     }
   }
