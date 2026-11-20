@@ -36,7 +36,8 @@ const VOICE = `aevalsrc=exprs='st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.44
 const STAGES = `import { spawnSync } from "node:child_process";
 export function repairPlan() { return { steps: [], left: [], method: "stand-in", graph: "" }; }
 export async function repair(file, outWav, m, opts = {}) {
-  const args = ["-v", "error", "-y", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", "48000", ...(opts.after ? ["-af", opts.after] : []), "-c:a", "pcm_f32le", outWav];
+  // (the sound as it plays, from the file's start, as the real repair reads it)
+  const args = ["-v", "error", "-y", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-af", ["aresample=async=1:first_pts=0", opts.after].filter(Boolean).join(","), "-c:a", "pcm_f32le", outWav];
   const r = spawnSync("ffmpeg", args, { encoding: "utf8" });
   if (r.status !== 0) throw new Error(r.stderr);
   return { steps: [{ id: "stand-in", why: "The tests' stand-in for repair: the sound as one channel at 48 kHz." }], left: [{ id: "roomy", why: "The stand-in leaves a room." }], method: "stand-in", graph: "" };
