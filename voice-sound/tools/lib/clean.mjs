@@ -378,7 +378,13 @@ export async function clean(file, out, opts = {}, stages = null) {
     // 4. level, encoded as delivered (the intermediate removed once read); with level off, the
     // loudness it came in at kept
     const sound = fmt.kind === "video" ? path.join(work, `sound.${fmt.audio}`) : outPart;
-    const lv = await level(mended, sound, { targets: T, mono: o.mono, level: o.level, encode: fmt.codec, tmp: work, removeInput: true, keepLufs: srcAsPlayed, peaks: o.peaks, bursts: m.speech?.bursts });
+    // (where the recording had short loud sounds, the mended sound is measured again: repair may
+    // have taken them out, the high-pass a thump, the offset's removal its step, and the level
+    // stage turns down only what is still there)
+    let burstsNow = null;
+    if (o.level !== "off" && m.speech?.bursts?.count > 0) burstsNow = (await measureOf(mended, "mended")).speech?.bursts ?? null;
+    const lv = await level(mended, sound, { targets: T, mono: o.mono, level: o.level, encode: fmt.codec, tmp: work, removeInput: true, keepLufs: srcAsPlayed, peaks: o.peaks,
+      ...(burstsNow && { bursts: burstsNow, burstsBefore: m.speech.bursts }) });
     // 5. a video: the picture copied with the new sound, in step (the voice's stream started where it started)
     if (fmt.kind === "video") {
       const offset = Math.max(0, chosen.start - streams.start);

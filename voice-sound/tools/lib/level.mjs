@@ -353,34 +353,83 @@ function writeCurve(file, gains, seconds) {
   fs.writeFileSync(file, Buffer.from(out.buffer));
 }
 
-// The short loud sounds measure set aside (m.speech.bursts.at: t, seconds, overDb over the voice's
-// loud frames, its 90th percentile), each turned down by its overDb and `underDb` more over its
-// stretch, widened by one of measure's frames (21.3 ms: its spectrum's window reaches a frame on)
-// on either side, with ramps of `rampMs` (no click at the edges), as a gain curve at `rate` a
-// second multiplied in. A knock left to the limiters instead: 30 to 50 dB over the voice, it
-// decides the loudness of the whole file (a voice at −55 LUFS with one 30 ms burst at 0.9 reads
-// −13.7 whole), and the limiters' release ducks the voice after it: on 6 clean readings at −25 to
-// −65 LUFS with a burst, a clap, a thump or five bursts (level/eval-bump.mjs, 2026-11-20) the
-// voice came out up to 41 LU under the target and the 300 ms after a knock up to 46 dB under the
-// same voice without it. `underDb` (a judgement): turned down to the voice's loud frames alone,
-// five knocks in a 5.5 s reading still lifted the whole 0.5 to 0.8 LU over the voice in it
-export const BURSTS = { padS: 1024 / 48000, rampMs: 5, rate: 1000, underDb: 6 };
-async function tameBursts(inWav, out, at, seconds, tmp) {
-  const n = Math.ceil((seconds + 1) * BURSTS.rate), g = new Float32Array(n).fill(0);
-  const ramp = (BURSTS.rampMs / 1000) * BURSTS.rate;
-  for (const b of at) {
-    const a = (b.t - BURSTS.padS) * BURSTS.rate, e = (b.t + b.seconds + BURSTS.padS) * BURSTS.rate;
-    for (let j = Math.max(0, Math.floor(a - ramp)); j < Math.min(n, Math.ceil(e + ramp)); j++) {
-      const w = j < a ? (j - (a - ramp)) / ramp : j > e ? ((e + ramp) - j) / ramp : 1;
-      g[j] = Math.min(g[j], -(b.overDb + BURSTS.underDb) * Math.max(0, Math.min(1, w)));
+// The short loud sounds measure finds in the mended sound (m.speech.bursts.at: t, seconds, overDb
+// over the voice's loud frames, its 90th percentile; clean measures the mended sound again, so a
+// knock repair took out is not here). Each is turned down where it is loud, not over its whole
+// stretch: the stretch (widened by one of measure's frames, 21.3 ms, on either side: its
+// spectrum's window reaches a frame on) is read in windows of `winMs` every `hopMs`, and each
+// window over the stretch's target is brought down to it, a window under it left alone; the gain
+// moves no faster than its whole depth over `rampMs` (no click at the edges). The target: the
+// voice's loud frames `underDb` under (the stretch's loudest window less overDb), but where the
+// knock lies on a word never under the speech of the `besideS` before or after the stretch (the
+// power mean of its windows within 20 dB of its loudest: the word is not left with a hole), and
+// never over the voice's loud frames by more than `capDb`. A knock left to the limiters instead: 30 to 50 dB over the
+// voice, it decides the loudness of the whole file (a voice at −55 LUFS with one 30 ms burst at
+// 0.9 reads −13.7 whole), and the limiters' release ducks the voice after it: on 6 clean readings
+// at −25 to −65 LUFS with a burst, a clap, a thump or five bursts (level/eval-bump.mjs, 2026-11-20)
+// the voice came out up to 41 LU under the target and the 300 ms after a knock up to 46 dB under
+// the same voice without it. `underDb` (a judgement): turned down to the voice's loud frames
+// alone, five knocks in a 5.5 s reading still lifted the whole 0.5 to 0.8 LU over the voice in it.
+// Before 2026-11-20 the bursts of the recording as it came were turned down by their whole depth
+// over their whole stretch: where repair had taken the knock out (a 40 Hz thump the high-pass
+// removes, an offset's step) that took 18 to 24 dB out of the voice for 40 to 100 ms
+export const BURSTS = { padS: 1024 / 48000, rampMs: 5, rate: 1000, underDb: 6, besideS: 0.2, capDb: 3, winMs: 20, hopMs: 5 };
+
+// the plan for one burst from the decoded sound around it (`x`, mono at 48 kHz, starting at `x0`
+// seconds) → { from, to, targetDb, loudDb, besideDb, points: [[t, dB]] } (the gain at each
+// window's middle in the stretch, ≤ 0)
+export function burstPlan(b, x, x0, o = BURSTS) {
+  const W = Math.round((o.winMs / 1000) * 48000), H = Math.round((o.hopMs / 1000) * 48000);
+  const level = (i) => { let s = 0; for (let k = i; k < i + W; k++) s += x[k] * x[k]; return 10 * Math.log10(s / W + 1e-30); };
+  const from = b.t - o.padS, to = b.t + b.seconds + o.padS;
+  const wins = [];
+  for (let i = 0; i + W <= x.length; i += H) wins.push({ t: x0 + (i + W / 2) / 48000, db: level(i) });
+  const inside = wins.filter((w) => w.t >= from && w.t <= to);
+  const max = (ws) => (ws.length ? Math.max(...ws.map((w) => w.db)) : -Infinity);
+  const top = max(inside);
+  const loudDb = top - b.overDb;
+  // (the voice on a side: the power mean of its windows within 20 dB of the side's loudest, its
+  // speech and not its pauses; the louder side's)
+  const speechOf = (ws) => { const m = max(ws); const s = ws.filter((w) => w.db >= m - 20); return s.length ? 10 * Math.log10(s.reduce((a, w) => a + 10 ** (w.db / 10), 0) / s.length) : -Infinity; };
+  const besideDb = Math.max(speechOf(wins.filter((w) => w.t < from - o.winMs / 2000 && w.t >= from - o.besideS)), speechOf(wins.filter((w) => w.t > to + o.winMs / 2000 && w.t <= to + o.besideS)));
+  const targetDb = Math.min(loudDb + o.capDb, Math.max(loudDb - o.underDb, besideDb));
+  return { from, to, targetDb: r1(targetDb), loudDb: r1(loudDb), besideDb: Number.isFinite(besideDb) ? r1(besideDb) : null, topDb: r1(top), points: inside.map((w) => [w.t, Math.min(0, targetDb - w.db)]) };
+}
+
+// the gain (dB) at `rate` a second over `n` points from the plans: between window middles
+// interpolated, outside the stretches 0, and no faster than a point's depth over rampMs (each
+// point's dip widened by a linear ramp on either side; the deepest wins)
+export function burstCurve(plans, n, o = BURSTS) {
+  const g = new Float32Array(n).fill(0), ramp = (o.rampMs / 1000) * o.rate;
+  for (const p of plans) {
+    const pts = p.points.map(([t, d]) => [t * o.rate, d]);
+    for (let q = 0; q < pts.length; q++) {
+      const [c, d] = pts[q], next = pts[q + 1];
+      // between this middle and the next: interpolated
+      if (next) for (let j = Math.ceil(c); j <= Math.floor(next[0]) && j < n; j++) if (j >= 0) g[j] = Math.min(g[j], d + ((next[1] - d) * (j - c)) / (next[0] - c));
+      // the ramps round the point
+      for (let j = Math.max(0, Math.floor(c - ramp)); j <= Math.min(n - 1, Math.ceil(c + ramp)); j++) g[j] = Math.min(g[j], d * Math.max(0, 1 - Math.abs(j - c) / ramp));
     }
   }
+  return g;
+}
+
+async function tameBursts(inWav, out, at, seconds, tmp) {
+  const n = Math.ceil((seconds + 1) * BURSTS.rate);
+  // each burst's surroundings decoded on their own (the recording is never held whole)
+  const plans = at.map((b) => {
+    const x0 = Math.max(0, b.t - BURSTS.padS - BURSTS.besideS - 0.05), len = b.seconds + 2 * (BURSTS.padS + BURSTS.besideS) + 0.1;
+    const r = spawnSync("ffmpeg", ["-hide_banner", "-nostdin", "-v", "error", "-ss", x0.toFixed(4), "-t", len.toFixed(4), "-i", inWav, "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], { maxBuffer: 1 << 26 });
+    const x = new Float32Array(r.stdout.buffer, r.stdout.byteOffset, r.stdout.length >> 2);
+    return { b, ...burstPlan(b, x, x0) };
+  });
+  const g = burstCurve(plans, n);
   const curve = path.join(tmp, "bursts.f32");
   fs.writeFileSync(curve, Buffer.from(Float32Array.from(g, (d) => 10 ** (d / 20)).buffer));
   const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-v", "error", "-y", "-i", inWav, "-f", "f32le", "-ar", String(BURSTS.rate), "-ac", "1", "-i", curve,
     "-filter_complex", "[1:a]aresample=48000[g];[0:a]aformat=sample_fmts=flt:channel_layouts=mono[v];[v][g]amultiply[o]", "-map", "[o]", "-map_metadata", "-1", "-c:a", "pcm_f32le", out]);
   fs.rmSync(curve, { force: true });
-  return r;
+  return { ...r, plans };
 }
 
 function durationOf(file) {
@@ -432,6 +481,8 @@ function compressorChain(P, oneChannel, limit) {
 //         keepLufs: with level off, the loudness to keep (as played; by default the intermediate's),
 //         maxGainDb, lowGainDb (MAX_GAIN_DB and LOW_GAIN_DB moved with the target),
 //         removeInput: remove inWav as soon as it is read for the last time,
+//         bursts: the knocks measure finds in inWav (m.speech.bursts), burstsBefore: those of the
+//         recording as it came (what repair took out is said),
 //         peaks: another peak compressor (the lab's tries), or { kind: "none" } }
 //   auto   leveller (where uneven), gain to the target, the slow limiter, the limiter
 //   plain  gain to the target and the limiter only: the recording's own dynamics kept
@@ -457,7 +508,12 @@ export async function level(inWav, out, opts = {}) {
     // 0. the short loud sounds measure set aside (a knock, a clap, a bump), turned down to about
     // the voice's own loud frames before anything is measured (auto and plain; with level off the
     // recording's dynamics are its own)
-    const B = opts.bursts;
+    const B = opts.bursts, B0 = opts.burstsBefore;
+    const atTimes = (xs) => xs.map((b) => `${b.t.toFixed(2)} s`).join(", ");
+    // (named in the recording as it came, not found in the mended sound: repair took them out)
+    const gone = B0?.at && B ? B0.at.filter((a) => !(B.at || []).some((b) => Math.abs(b.t - a.t) <= 0.15)) : [];
+    const goneSays = gone.length ? `${gone.length === 1 ? "The short loud sound" : `${gone.length} of the short loud sounds`} measure named in the recording (at ${atTimes(gone)}) ${gone.length === 1 ? "was" : "were"} gone after repair, measured again on the mended sound` : "";
+    let tamedAt = [];
     if (mode !== "off" && B?.count > 0 && (B.at || []).length === B.count) {
       const tamed = path.join(tmp, "bursts-down.wav");
       const len = durationOf(inWav);
@@ -465,13 +521,16 @@ export async function level(inWav, out, opts = {}) {
       if (r.status !== 0) throw new LevelError(`ffmpeg could not turn the short loud sounds down: ${lastLine(r.stderr)}`);
       if (opts.removeInput) fs.rmSync(inWav, { force: true });
       inWav = tamed; tamedIn = true;
-      const n = B.count, list = B.at.map((b) => `${b.t.toFixed(2)} s`).join(", ");
+      tamedAt = r.plans.map((p) => ({ t: p.b.t, seconds: p.b.seconds, from: r2(p.from), to: r2(p.to), downDb: r1(-Math.min(0, ...p.points.map((q) => q[1]))), targetDb: p.targetDb, loudDb: p.loudDb, besideDb: p.besideDb }));
+      const n = B.count, deepest = Math.max(...tamedAt.map((x) => x.downDb));
       steps.push({
-        id: "bursts", stage: "level", count: n, at: B.at.map((b) => ({ t: b.t, seconds: b.seconds, downDb: r1(b.overDb + BURSTS.underDb) })), rampMs: BURSTS.rampMs,
-        why: `${n === 1 ? "A short loud sound" : `${n} short loud sounds`} (a knock, a clap, a bump: no voice's) at ${list}, up to ${f1(B.overDb)} dB over the voice's loud frames: each turned down to ${BURSTS.underDb} dB under them over its ${n === 1 ? "stretch" : "stretches"}, with ramps of ${BURSTS.rampMs} ms, before the gain is found, so that ${n === 1 ? "it neither decides" : "they neither decide"} the loudness nor ${n === 1 ? "leaves" : "leave"} the limiters to hold ${n === 1 ? "it" : "them"} down and duck the voice after.`,
+        id: "bursts", stage: "level", count: n, at: tamedAt, gone: gone.map((b) => b.t), rampMs: BURSTS.rampMs,
+        why: `${n === 1 ? "A short loud sound" : `${n} short loud sounds`} (a knock, a clap, a bump: no voice's) at ${atTimes(B.at)}, up to ${f1(B.overDb)} dB over the voice's loud frames in the mended sound: where loud, ${n === 1 ? "it was" : "each was"} brought down, by up to ${f1(deepest)} dB, to ${BURSTS.underDb} dB under the voice's loud frames, or to the level of the voice beside it where it lies on a word, with ramps of ${BURSTS.rampMs} ms, before the gain is found, so that ${n === 1 ? "it neither decides" : "they neither decide"} the loudness nor ${n === 1 ? "leaves" : "leave"} the limiters to hold ${n === 1 ? "it" : "them"} down and duck the voice after${goneSays ? `. ${goneSays}` : ""}.`,
       });
       left.push({ id: "bursts", stage: "level", count: n,
-        why: `${n === 1 ? "A knock (or a clap, a bump) is" : `${n} knocks (or claps, bumps) are`} in the recording at ${list} and ${n === 1 ? "stays" : "stay"}, a little under the voice's loud frames: cut ${n === 1 ? "it" : "them"} out where the recording is edited if ${n === 1 ? "it is" : "they are"} not wanted.` });
+        why: `${n === 1 ? "A knock (or a clap, a bump) is" : `${n} knocks (or claps, bumps) are`} in the recording at ${atTimes(B.at)} and ${n === 1 ? "stays" : "stay"}, at about the voice's level: cut ${n === 1 ? "it" : "them"} out where the recording is edited if ${n === 1 ? "it is" : "they are"} not wanted.` });
+    } else if (mode !== "off" && gone.length) {
+      steps.push({ id: "bursts", stage: "level", count: 0, at: [], gone: gone.map((b) => b.t), why: `${goneSays}: nothing to turn down.` });
     }
     // (a sound so quiet that ebur128's gate would hide part of its voice is measured through a
     // gain, `pre`, and its numbers taken back by it; the leveller reads the frames as measured,
@@ -549,8 +608,12 @@ export async function level(inWav, out, opts = {}) {
       if (!mono) af.push("pan=stereo|c0=c0|c1=c0");
       return af.join(",");
     };
+    // (where knocks stay at the voice's level, the loudness aimed at is the voice's: their
+    // stretches left out of the measure; the true peak is the whole file's)
+    const voiceCut = tamedAt.length ? `aselect='not(${tamedAt.map((x) => `between(t,${x.from.toFixed(3)},${x.to.toFixed(3)})`).join("+")})',asetpts=N/SR/TB` : null;
+    const L = (x) => (voiceCut ? x.voiceLufs : x.lufs);
     const tryGain = async () => {
-      const g = await loudness(dyn, chain());
+      const g = await loudness(dyn, voiceCut ? `${chain()},${voiceCut}` : chain());
       passes.push({ kind: "tried", gainDb: r2(gain), limitDb: r2(limit), lufs: g.lufs, truePeak: g.truePeak });
       lastTry = { gain, limit, lufs: g.lufs };
       return g;
@@ -580,24 +643,25 @@ export async function level(inWav, out, opts = {}) {
       if (r.status !== 0) throw new LevelError(`ffmpeg could not make the finished sound: ${lastLine(r.stderr, 2)}`);
       meter = summary(r.stderr);
       got = await loudness(out);
-      passes.push({ kind: "delivered", gainDb: r2(gain), limitDb: r2(limit), lufs: got.lufs, truePeak: got.truePeak });
+      if (voiceCut) { const v = await loudness(out, voiceCut); got.voiceLufs = v.lufs; got.voiceTruePeak = v.truePeak; }
+      passes.push({ kind: "delivered", gainDb: r2(gain), limitDb: r2(limit), lufs: got.lufs, truePeak: got.truePeak, ...(voiceCut && { voiceLufs: got.voiceLufs }) });
       // what the encoding moved the loudness by, against the try at these settings
-      if (lastTry && lastTry.gain === gain && lastTry.limit === limit && lastTry.lufs != null && got.lufs != null) offset = got.lufs - lastTry.lufs;
-      loudOk = measuredAim == null || got.lufs == null || Math.abs(got.lufs - measuredAim) <= LUFS_TOLERANCE;
+      if (lastTry && lastTry.gain === gain && lastTry.limit === limit && lastTry.lufs != null && L(got) != null) offset = L(got) - lastTry.lufs;
+      loudOk = measuredAim == null || L(got) == null || Math.abs(L(got) - measuredAim) <= LUFS_TOLERANCE;
       peakOk = got.truePeak == null || got.truePeak <= T.truePeak + 0.05;
       // the best encoding so far is kept: the true peak never over what a check accepts, then the
       // loudness within its tolerance, then the true peak at the aim, then the nearest
       const key = [got.truePeak != null && got.truePeak > T.peakAccepted ? 1 : 0, loudOk ? 0 : 1, peakOk ? 0 : 1,
-        measuredAim == null || got.lufs == null ? 0 : Math.abs(got.lufs - measuredAim), Math.max(0, (got.truePeak ?? -99) - T.truePeak)];
+        measuredAim == null || L(got) == null ? 0 : Math.abs(L(got) - measuredAim), Math.max(0, (got.truePeak ?? -99) - T.truePeak)];
       if (!best || ahead(key, best.key)) { fs.copyFileSync(out, bestFile); best = { key, got, meter, gain, limit, loudOk, peakOk, saturated, capped, round: rounds }; }
       if ((loudOk && peakOk) || rounds === ROUNDS) break;
       if (!peakOk) { if (limit <= -24) break; limit = Math.max(-24, limit - (got.truePeak - T.truePeak) - PEAK_MARGIN_DB); peakFixes++; continue; }
       // (too quiet with room under the aim, after a lowering went too far: the ceiling raised again)
-      if (got.lufs < measuredAim && limit < T.truePeak && got.truePeak < T.truePeak - 3 * PEAK_MARGIN_DB) {
+      if (L(got) < measuredAim && limit < T.truePeak && got.truePeak < T.truePeak - 3 * PEAK_MARGIN_DB) {
         limit = Math.min(T.truePeak, limit + (T.truePeak - got.truePeak) - PEAK_MARGIN_DB); raised++; continue;
       }
       // (the loudness off: another round with the encoding's offset, unless more gain cannot help)
-      if ((capped || saturated) && got.lufs < measuredAim) break;
+      if ((capped || saturated) && L(got) < measuredAim) break;
     }
     // (a later round that came out worse: the best one delivered)
     if (best.round !== rounds) {
@@ -607,6 +671,9 @@ export async function level(inWav, out, opts = {}) {
     fs.rmSync(bestFile, { force: true });
     if (dyn === inWav) dropIn(); else fs.rmSync(dyn, { force: true });
     const delivered = { ...got, asPlayedLufs: got.lufs == null ? null : r2(got.lufs + (mono ? TWO_SPEAKERS_LU : 0)) };
+    // (the loudness the search aimed at: the voice's where knocks stay, else the file's)
+    const aimedLufs = L(delivered), aimedAsPlayed = aimedLufs == null ? null : r2(aimedLufs + (mono ? TWO_SPEAKERS_LU : 0));
+    const ofVoice = voiceCut ? " (the voice: the knocks' stretches left out of the measure)" : "";
     const asWhat = mono ? `as played on two speakers (the one channel ${f1(measuredAim ?? 0)} LUFS as ffmpeg measures it)` : "as played on two speakers";
     // the sound before the compressor (the gain only: its numbers moved by the gain) and after it
     // (measured on the way): what the compressor did to the peaks, the loudness and the range
@@ -622,9 +689,9 @@ export async function level(inWav, out, opts = {}) {
       steps.push({
         id: "loudness", stage: "level",
         why: loudOk
-          ? `Brought to ${f1(T.lufs)} LUFS ${asWhat}, measured on the delivered file as it is encoded and corrected until within ${LUFS_TOLERANCE} LU (${encodings(rounds)}): where the platforms play speech.`
-          : `Brought towards ${f1(T.lufs)} LUFS ${asWhat}, measured on the delivered file as it is encoded (${encodings(rounds)}): it came to ${f1(delivered.asPlayedLufs ?? 0)}, see what is left.`,
-        gainDb: r2(gain), targetLufs: T.lufs, measuredLufs: r2(measuredAim), deliveredLufs: delivered.lufs, rounds,
+          ? `Brought to ${f1(T.lufs)} LUFS ${asWhat}${ofVoice}, measured on the delivered file as it is encoded and corrected until within ${LUFS_TOLERANCE} LU (${encodings(rounds)}): where the platforms play speech.`
+          : `Brought towards ${f1(T.lufs)} LUFS ${asWhat}${ofVoice}, measured on the delivered file as it is encoded (${encodings(rounds)}): it came to ${f1(aimedAsPlayed ?? 0)}, see what is left.`,
+        gainDb: r2(gain), targetLufs: T.lufs, measuredLufs: r2(measuredAim), deliveredLufs: delivered.lufs, ...(voiceCut && { voiceLufs: aimedLufs }), rounds,
       });
     } else if (aim != null) {
       steps.push({
@@ -664,12 +731,20 @@ export async function level(inWav, out, opts = {}) {
     });
     if (mode === "plain" && peaksTaken != null && peaksTaken > PLAIN_PEAKS_DB && (limTaken ?? 0) >= PLAIN_LOUDNESS_LU)
       left.push({ id: "peaks", stage: "level", why: `To reach ${f1(T.lufs)} LUFS the limiter took ${f1(peaksTaken)} dB off the loudest peaks and ${f1(limTaken)} LU off the loudness: the target is too loud for this recording's own dynamics, and the limiter may be heard on its loudest words; --level auto tames its peaks first, a lower --loudness spares them.` });
-    if (measuredAim != null && delivered.lufs != null && Math.abs(delivered.lufs - measuredAim) > LUFS_TOLERANCE) {
-      const off = delivered.lufs - measuredAim;
+    if (measuredAim != null && aimedLufs != null && Math.abs(aimedLufs - measuredAim) > LUFS_TOLERANCE) {
+      const off = aimedLufs - measuredAim;
       const why = capped && off < 0 ? `the gain stops at ${maxGain} dB.`
         : saturated && off < 0 ? `the loudness gave way to the true peak: to hold it under ${f1(limit)} dB the two limiters take ${f1(Math.max(0, (dynLufs ?? 0) + gain + (mono ? 0 : TWO_SPEAKERS_LU) - delivered.lufs))} LU off the loudness, and more gain moves it by less than ${SATURATED_LU_PER_DB} LU a dB: its peaks would need more limiting than the slow and the fast limiter give; a lower --loudness spares them.`
         : `the corrections did not reach it in ${encodings(rounds)}.`;
-      left.push({ id: "loudness", stage: "level", offLu: r2(off), why: `The loudness came to ${f1(delivered.asPlayedLufs)} LUFS as played, ${f1(Math.abs(off))} LU ${off < 0 ? "under" : "over"} the ${f1(aim)} aimed at: ${why}` });
+      left.push({ id: "loudness", stage: "level", offLu: r2(off), why: `The loudness${voiceCut ? " of the voice" : ""} came to ${f1(aimedAsPlayed)} LUFS as played, ${f1(Math.abs(off))} LU ${off < 0 ? "under" : "over"} the ${f1(aim)} aimed at: ${why}` });
+    }
+    // the knocks kept at the voice's level may lift the whole file over the voice in it
+    if (voiceCut && delivered.lufs != null && aimedLufs != null) {
+      const lift = delivered.lufs - aimedLufs;
+      const bs = steps.find((s) => s.id === "bursts");
+      bs.voiceLufs = aimedLufs;
+      if (lift > LUFS_TOLERANCE)
+        left.push({ id: "bursts", stage: "level", liftLu: r2(lift), why: `With the knocks kept at the voice's level the whole file measures ${f1(lift)} LU louder than the voice in it, ${f1(delivered.asPlayedLufs)} LUFS as played, the voice itself ${f1(aimedAsPlayed)}.` });
     }
     // (how far under the target it lay, not the gain given: the gain also makes up for what the
     // limiters take, more with plain than with auto)

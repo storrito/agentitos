@@ -45,7 +45,7 @@ It refuses, in one sentence, a recording in which it finds no voice or under hal
 
 Where the lines say "Not judged: hum", say that whether it hums could not be told from this recording, never that it has none.
 
-Where a step says a short loud sound (a knock, a clap, a bump) was turned down, say that it is still in the recording, a little under the voice, and that it can be cut where the video is edited; the voice itself was brought to the loudness without it.
+Where what is left says a knock (a clap, a bump) stays, say that it is still in the recording, at about the voice's level, and that it can be cut where the video is edited; the voice itself was brought to the loudness without it. Where the step says repair took one out, say that it is gone; never that one stays where what is left does not say so.
 
 What it cannot mend it says, and you pass that on as it is, never softened:
 

@@ -459,6 +459,33 @@ test("a quiet voice with one knock: clean hands measure's bursts to the level st
   assert.match(lines(r).join("\n"), /Not mended: .*bursts: A knock \(or a clap, a bump\) is in the recording at 1\.9\d s and stays/);
 });
 
+test("a thump on a word that the real repair takes out: measured again after repair, nothing is turned down, no 20 ms of the voice lies 3 dB under the voice without it, and nothing says a knock stays", { skip }, async () => {
+  // the made-up voice 15 dB down, two 40 Hz thumps of 100 ms (24 dB over the voice) in its phrases:
+  // measure names them bursts; the high-pass (steeper for thumps) takes them out
+  const plainIn = file("thump-plain.wav"), thumpIn = file("thump.wav");
+  run(["-i", base, "-af", "volume=-15dB", "-c:a", "pcm_f32le", plainIn]);
+  run(["-i", plainIn, "-filter_complex", "aevalsrc=exprs='0.9*sin(2*PI*40*t)*exp(-t/0.04)':s=48000:d=0.1,asplit[t1][t2];[t1]adelay=1200[b1];[t2]adelay=4900[b2];[0:a][b1][b2]amix=inputs=3:normalize=0:duration=first", "-c:a", "pcm_f32le", thumpIn]);
+  // (the real stages: repair and tone of lib/)
+  const r = await clean(thumpIn, file("thump.out.wav"), {});
+  const p = await clean(plainIn, file("thump-plain.out.wav"), {});
+  assert.equal(r.measured.before.findings.some((x) => x.id === "bursts"), true, "measure names the thumps in the recording as it came");
+  const s = r.steps.find((x) => x.id === "bursts");
+  assert.ok(s, JSON.stringify(r.steps.map((x) => x.id)));
+  assert.deepEqual(s.at, [], "nothing turned down");
+  assert.equal(s.gone.length, 2, JSON.stringify(s));
+  assert.match(s.why, /^2 of the short loud sounds measure named in the recording \(at 1\.\d\d s, 4\.\d\d s\) were gone after repair, measured again on the mended sound: nothing to turn down\.$/);
+  assert.ok(!r.left.some((x) => x.id === "bursts"), JSON.stringify(r.left));
+  // every 20 ms of the voice (within 25 dB of its loud frames) against the voice without the thumps
+  const frames = (f) => { const x = (() => { const q = spawnSync("ffmpeg", ["-v", "error", "-i", f, "-ac", "1", "-f", "f32le", "-"], { maxBuffer: 1 << 28 }); return new Float32Array(q.stdout.buffer, q.stdout.byteOffset, q.stdout.length >> 2); })(); const o = []; for (let i = 0; i + 960 <= x.length; i += 960) { let e = 0; for (let k = i; k < i + 960; k++) e += x[k] * x[k]; o.push(10 * Math.log10(e / 960 + 1e-20)); } return o; };
+  const T = frames(file("thump.out.wav")), R = frames(file("thump-plain.out.wav"));
+  const top = [...R].sort((a, b) => a - b)[Math.floor(R.length * 0.95)];
+  const voice = R.map((v, i) => i).filter((i) => R[i] >= top - 25 && i < T.length);
+  const d = voice.map((i) => T[i] - R[i]).sort((a, b) => a - b), med = d[d.length >> 1];
+  const worst = Math.min(...voice.map((i) => T[i] - R[i] - med));
+  assert.ok(worst >= -3, `a 20 ms of the voice ${worst.toFixed(1)} dB under the voice without the thumps`);
+  void p;
+});
+
 test("delivered together, the report last: the output, then the comparison, then <out>.json, so that a skill which finds the JSON finds the sound beside it", { skip }, async () => {
   const order = [], rename = fs.renameSync;
   fs.renameSync = (a, b) => { order.push(path.basename(b)); return rename(a, b); };
