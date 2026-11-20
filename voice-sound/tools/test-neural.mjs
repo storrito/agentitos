@@ -420,6 +420,41 @@ test("each failure falls back to ffmpeg's method for the whole recording and say
   assert.match(r.steps.find((s) => s.id === "denoise").fallback.reason, /could not be started|exited with/);
 });
 
+test("clipped and noisy: adeclip within its limit in the pass before the denoiser and in the probe's, else again with the 10 ms window, said", { skip }, async () => {
+  // the noisy voice and a quiet-noised one (the probe's case), 9 dB up and clipped where 3 % lie over
+  const clipOf = (src, name) => {
+    run(["-i", src, "-af", "volume=9dB", "-c:a", "pcm_f32le", file(`${name}.loud.wav`)]);
+    const loud = samples(file(`${name}.loud.wav`));
+    const c = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.97)];
+    run(["-i", src, "-af", `volume=9dB,aeval='max(-${c},min(${c},val(0)))'`, "-c:a", "pcm_s16le", file(name)]);
+    return file(name);
+  };
+  const tight = { declipLimit: { baseS: 0.3, perSecond: 0 } };
+  for (const [src, name, probed] of [[noisy, "noisy-clipped.wav", false], [file("quiet-noise.wav"), "quiet-clipped.wav", true]]) {
+    const f = clipOf(src, name), m = await measure(f);
+    assert.ok(m.findings.some((x) => x.id === "clipped"), name);
+    assert.equal(m.findings.some((x) => x.id === "noise"), !probed, name);
+    const log = file(`${name}.log`);
+    fs.rmSync(log, { force: true });
+    const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log }, () => repair(f, file(`${name}.out.wav`), m, tight));
+    assert.equal(r.probe != null, probed, name);
+    // (the probe's own stretches ran out of time first: the stage's pass then starts with 10 ms)
+    if (probed) assert.deepEqual(r.probe.declipSlow, { windowMs: 55, cpuLimitS: 0.3 });
+    assert.ok(fs.existsSync(log), `${name}: the denoiser ran`);
+    const st = r.steps.find((s) => s.id === "declip");
+    assert.equal(st.windowMs, 10, `${name}: ${st.why}`);
+    assert.match(st.why, /\(a 10 ms window[^;]*; the 55 ms window took over 0\.3 s of CPU, so it ran again with the coarser 10 ms one\.$/, name);
+    assert.equal(st.why.split("took over").length, 2, `said once: ${st.why}`);
+    assert.equal(samples(file(`${name}.out.wav`)).length, samples(f).length, name);
+    if (probed) continue;
+    assert.equal(r.method, "dpdfnet");
+    // an ample limit: the 55 ms window, nothing said
+    const ample = await withEnv(STANDIN_ENV(), () => repair(f, file(`${name}.ample.wav`), m));
+    assert.equal(ample.steps.find((s) => s.id === "declip").windowMs, 55);
+    assert.equal(ample.steps.find((s) => s.id === "declip").slow, undefined);
+  }
+});
+
 test("clean never fails because of it: the report says what stood in", { skip }, async () => {
   const r = await withEnv({ ...STANDIN_ENV(), STANDIN_FAIL: 1 }, () => clean(noisy, file("cleaned.m4a"), { level: "off" }));
   const st = r.steps.find((s) => s.id === "denoise");
