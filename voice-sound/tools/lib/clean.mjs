@@ -62,6 +62,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { measure } from "./measure.mjs";
 import { Refusal, facts } from "./analyse.mjs";
@@ -119,7 +120,7 @@ const f1 = (x) => (x == null ? "?" : minus((Math.round(x * 10) / 10 || 0).toFixe
 const i0 = (x) => (x == null ? "?" : minus(String(Math.round(x))));
 const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 const rel = (p) => { const r = path.relative(process.cwd(), path.resolve(p)); return r && !r.startsWith("..") ? r : path.resolve(p); };
-const list = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
+const list = (xs, word = "or") => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} ${word} ${xs.at(-1)}`);
 const nth = (n) => ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"][n - 1] ?? `${n}th`;
 const lufsOrNull = (x) => (x != null && Number.isFinite(x) && x > NO_LOUDNESS_LUFS ? x : null);
 const lastLine = (s) => (s || "").trim().split("\n").slice(-1)[0];
@@ -186,7 +187,7 @@ async function realStages() {
     return import(f);
   };
   const r = await load("repair.mjs", "repair"), t = await load("tone.mjs", "tone");
-  return { repair: r.repair, repairPlan: r.repairPlan, tonePlan: t.tonePlan, toneFilters: t.toneFilters };
+  return { repair: r.repair, repairPlan: r.repairPlan, tonePlan: t.tonePlan, toneFilters: t.toneFilters, denoiserThere: () => !!r.neuralDenoiser?.() };
 }
 
 function encoders() {
@@ -296,6 +297,150 @@ export function humStill(m2) {
 const sameFile = (a, b) => path.resolve(a) === path.resolve(b) ||
   (fs.existsSync(a) && fs.existsSync(b) && (() => { const x = fs.statSync(a), y = fs.statSync(b); return x.dev === y.dev && x.ino === y.ino; })());
 
+// ---------------------------------------------------------------- going on where it stopped
+//
+// RESUME. A bot's shell ends a command after a few minutes (rragent: 180 s, 2026-11-02, by a
+// signal); a person waits. So each stage keeps what it made in the working folder beside the
+// output, and the same command on the same source called again goes on from there. The folder is
+// named by a key of the command (the source's path, size and time, the output, every option, the
+// denoiser named): a changed option or source has another folder and starts afresh, and the
+// old one goes as any dead run's once it is a day old. state.json says which stages are done, with
+// what they made (the measurement, the repair's and the tone's steps, the level stage's report,
+// the result's measurement, the comparison's numbers) and the files they left (voice.mka,
+// mended.wav, the level stage's sound, the video, the comparison), each moved into place only
+// once it was whole. A stage that was running when the run was ended starts again; an attempt's
+// own files lie in a-<pid>/, so that an ffmpeg a SIGKILL left running writes only into its own.
+// A second run on the same work while the first runs (its lock's process alive) works in a folder
+// of its own, which it does not keep. Every signal (SIGTERM, SIGINT, SIGHUP) ends every child at
+// once and keeps what was finished; a refusal, an error and a finished run leave nothing.
+const STATE_VERSION = 1;
+const STAGE_SAYS = { voice: "the voice's stream", measure: "the measurement", repair: "the repair", level: "the level stage", mux: "the picture's new sound", after: "the result's measurement", before: "the comparison" };
+const STAGE_ORDER = ["voice", "measure", "repair", "level", "mux", "after", "before"];
+
+const alive = (pid) => {
+  if (!pid || pid === process.pid) return pid === process.pid;
+  try { process.kill(pid, 0); } catch { return false; }
+  try { return !/^\d+ \(.*\) Z/.test(fs.readFileSync(`/proc/${pid}/stat`, "utf8")); } catch { return true; }
+};
+
+// → { work, state, from: [stages taken up], resumable }
+function workFor(outAbs, fileAbs, o, beforeAbs, stages) {
+  const s = fs.statSync(fileAbs);
+  const key = JSON.stringify({ v: STATE_VERSION, source: fileAbs, size: s.size, mtimeMs: Math.round(s.mtimeMs), out: outAbs, before: beforeAbs,
+    for: o.for, loudness: o.loudness ?? null, peak: o.peak ?? null, denoise: o.denoise, tone: o.tone, level: o.level, mono: o.mono, audio: o.audio, peaks: o.peaks ?? null,
+    denoiser: [process.env.VOICE_SOUND_DENOISER ?? null, process.env.VOICE_SOUND_DPDFNET ?? null, process.env.VOICE_SOUND_DENOISE ?? null], stages: stages ? "given" : "lib" });
+  const hash = createHash("sha1").update(key).digest("hex").slice(0, 12);
+  let work = path.join(path.dirname(outAbs), `${WORK_PREFIX}${hash}`);
+  fs.mkdirSync(work, { recursive: true });
+  // the lock: this run's; another run's that is alive sends this one to a folder of its own
+  const lock = path.join(work, "lock");
+  let held = null;
+  try { held = Number(fs.readFileSync(lock, "utf8")); } catch { /* none */ }
+  if (held && alive(held)) {
+    work = fs.mkdtempSync(path.join(path.dirname(outAbs), `${WORK_PREFIX}${hash}-${process.pid}-`));
+    return { work, state: { key, done: {}, seconds: {} }, from: [], resumable: false };
+  }
+  fs.writeFileSync(lock, String(process.pid));
+  // what dead attempts left in it
+  for (const n of fs.readdirSync(work)) { const p = /^a-(\d+)$/.exec(n); if (p && !alive(Number(p[1]))) fs.rmSync(path.join(work, n), { recursive: true, force: true }); }
+  let state = null;
+  try { state = JSON.parse(fs.readFileSync(path.join(work, "state.json"), "utf8")); } catch { /* none, or broken */ }
+  if (!state || state.key !== key) state = { key, done: {}, seconds: {} };
+  // a stage counts as done only where what it made is still there for the stages after it
+  const has = (n) => fs.existsSync(path.join(work, n));
+  const ending = path.extname(outAbs).slice(1).toLowerCase(), fmt = FORMATS[ending];
+  const sound = fmt.kind === "video" ? `sound.${fmt.audio}` : `out.${ending}`;
+  const D = state.done, undo = (from) => { for (const n of STAGE_ORDER.slice(STAGE_ORDER.indexOf(from))) if (n !== "before") delete D[n]; };
+  if (D.voice !== undefined && !has("voice.mka") && (D.repair === undefined || (beforeAbs && D.before === undefined))) delete D.voice;
+  if (D.repair !== undefined && D.level === undefined && !has("mended.wav")) undo("repair");
+  if (D.level !== undefined && !(fmt.kind === "video" && D.mux !== undefined) && !has(sound)) undo("level");
+  if (D.mux !== undefined && !has(`out.${ending}`)) undo("mux");
+  if (D.before !== undefined && !has(`before${path.extname(beforeAbs || "").toLowerCase()}`)) delete D.before;
+  return { work, state, from: STAGE_ORDER.filter((n) => D[n] !== undefined), resumable: true };
+}
+
+// a file into its place: a rename, or a copy where the place lies on another file system
+function move(from, to) {
+  try { fs.renameSync(from, to); } catch (e) {
+    if (e.code !== "EXDEV") throw e;
+    fs.copyFileSync(from, `${to}.voice-sound-part`); fs.renameSync(`${to}.voice-sound-part`, to); fs.rmSync(from, { force: true });
+  }
+}
+
+// ---------------------------------------------------------------- how long it takes
+//
+// ESTIMATE. Printed once the measurement is done, from the length, the repair's plan, the
+// machine and the output's kind; each stage's line says its part. What it rests on (2026-11-20,
+// ffmpeg 8.1.3, a noisy recording to .m4a: dns cafeteria looped, level/calib.mjs):
+// - a bot's Sprite (8 cores, 0.9 GB free, the coordinator's runs): clean in all 2.2 / 8.7 / 36 /
+//   104 s for 15 s / 60 s / 5 min / 15 min with ffmpeg alone, 5.8 / 17 / 74 / 216 s with the
+//   denoiser, still with aac's twoloop coder (two encodings on the longer ones). The denoiser's
+//   part (112 s more for 15 minutes) ran there in 2 pieces at once (its slots: half of 0.9 GB over
+//   194 MB a piece)
+// - this laptop (20 cores, shared with other work), each stage, after .m4a took aac's fast coder
+//   (one encoding where twoloop needed two, level/calib-fast.txt): measure 0.3 / 0.7 / 2.1 to 2.7 /
+//   6.1 s for 15 s / 60 s / 5 / 15 min; repair with ffmpeg alone 0.2 / 0.4 / 1.9 / 4.3; the level
+//   stage to .m4a 0.8 to 1.3 / 3.2 to 3.9 / 10.5 to 14.6 / 29 to 39, to .wav 0.025 a second (a
+//   reading, level/time-level.mjs); the result's measurement 0.3 / 0.8 / 2.4 to 2.7 / 7.4; the
+//   repair stage with the denoiser 5.2 / 11 / 24 / 57 s, with up to 19 pieces at once
+// So: each part's c0 + perS × seconds, a little over the laptop's; the denoiser's part model
+// start-up and perS × seconds over the square root of the pieces it runs at once (2 → 15 at once
+// took 112 → 48 s on 15 minutes: not in proportion), its perS a fifth over what meets the laptop's,
+// so that the Sprite's 2 at once stay under it; the parts that are ffmpeg's and
+// measure's own scaled by how much slower this run's measurement went than the laptop's (from
+// 60 s on; up to twice), so that a busy or a slower machine is read off the run itself. Never
+// scaled down: a measurement a third quicker than the laptop's came with the other stages only a
+// little quicker, and an estimate scaled by it came out short (0.82 of the run, calib-fast2).
+// The denoiser's start-up varies most: 15 s of sound took 3.9 and 6.6 s in all on two runs, so
+// under a minute the estimate can be some seconds long.
+// Clipping adds the repair stage's own prediction of adeclip's time (its step's `predicted`: CPU
+// seconds, spread 3.5 times over its pieces as repair.mjs's DECLIP_TIME says). The probe for noise
+// under the voice (the denoiser there, no noise named) is about 40 s of sound through it. The
+// comparison is about one more level stage. Checked against runs of 15 s to 15 min with and
+// without the denoiser: README, "How long it takes".
+export const ESTIMATE = {
+  measure: { c0: 0.2, perS: 0.007 },
+  repair: { c0: 0.2, perS: 0.007 },
+  denoiser: { c0: 2, perS: 0.25 }, probeS: 40,
+  level: { aac: { c0: 1, perS: 0.05 }, pcm: { c0: 0.3, perS: 0.035 } },
+  after: { c0: 0.3, perS: 0.009 }, mux: { c0: 0.3, perS: 0.002 },
+  speed: { fromS: 60, min: 1, max: 2 },
+  declipSpread: 3.5,
+};
+// the measurement of a long source says it is at it from this length on (seconds)
+const LONG_S = 300;
+const MEASURE_S_PER_S = ESTIMATE.measure.perS;
+
+// → { total, parts: { repair, level, mux, after, before }, says, speed }
+// plan: the repair stage's (its steps, method, neural.tune.slots); measureS: how long this run's
+// measurement took (null: no scaling); probe: the denoiser is there for a probe
+export function estimate({ seconds, plan, probe, ending, video, before, measureS = null, done = {} }, E = ESTIMATE) {
+  const lin = (c) => c.c0 + c.perS * seconds;
+  const speed = measureS != null && seconds >= E.speed.fromS ? Math.min(E.speed.max, Math.max(E.speed.min, measureS / lin(E.measure))) : 1;
+  const steps = plan?.steps || [];
+  const dn = steps.find((s) => s.id === "denoise" && s.method === "dpdfnet");
+  const neural = !!dn || plan?.method === "dpdfnet";
+  const atOnce = Math.max(1, Math.min(plan?.neural?.tune?.slots ?? 1, dn?.pieces?.length ?? 1));
+  const clip = steps.find((s) => s.id === "declip")?.predicted;
+  const declipS = clip ? (clip.pieces > 1 ? (clip.cpuS * E.declipSpread) / clip.pieces : clip.cpuS) : 0;
+  const pcm = ["wav", "flac"].includes(ending) && !video;
+  const levelS = lin(pcm ? E.level.pcm : E.level.aac) * speed;
+  const parts = {
+    repair: lin(E.repair) * speed + (neural ? E.denoiser.c0 + (E.denoiser.perS * seconds) / Math.sqrt(atOnce) : probe ? E.denoiser.c0 + E.denoiser.perS * Math.min(seconds, E.probeS) : 0) + declipS,
+    level: levelS,
+    ...(video && { mux: lin(E.mux) * speed }),
+    after: lin(E.after) * speed,
+    ...(before && { before: levelS }),
+  };
+  for (const n of Object.keys(parts)) if (done[n] !== undefined) delete parts[n]; else parts[n] = +parts[n].toFixed(1);
+  const total = +Object.values(parts).reduce((a, b) => a + b, 0).toFixed(1);
+  const says = [parts.repair != null && `repair ${neural ? "with the neural denoiser " : ""}${duration(parts.repair)}${declipS ? `, ${duration(declipS)} of it redrawing clipped peaks` : ""}`,
+    parts.level != null && `level ${duration(parts.level)}`, parts.before != null && `the comparison ${duration(parts.before)}`].filter(Boolean).join(", ");
+  return { total, parts, says, speed: +speed.toFixed(2) };
+}
+// a time as a person reads it: "40 s", "3 min", "1 h 5 min"
+export const duration = (s) => (s < 90 ? `${Math.max(1, Math.round(s))} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
+
 // ---------------------------------------------------------------- the run
 
 // opts: { for: [names], loudness, peak, denoise, tone, level, mono, audio, before, peaks (the lab's) }
@@ -359,31 +504,62 @@ export async function clean(file, out, opts = {}, stages = null) {
   const places = [outAbs, beforeAbs].filter(Boolean);
   for (const p of places) fs.mkdirSync(path.dirname(p), { recursive: true });
   sweep([...new Set(places.map((p) => path.dirname(p)))].map((d) => [d, /^\.voice-sound-clean-/]).concat([[os.tmpdir(), /^voice-sound-clean-[A-Za-z0-9]{6}$/]]));
-  // the working folder beside the output; what is delivered, under hidden names beside its place
-  const work = fs.mkdtempSync(path.join(path.dirname(outAbs), `${WORK_PREFIX}${process.pid}-`));
-  const tag = path.basename(work);
-  const partial = (p) => path.join(path.dirname(p), `${tag}-${path.basename(p)}`);
-  const outPart = partial(outAbs), jsonPart = partial(`${outAbs}.json`), beforePart = beforeAbs && partial(beforeAbs);
+  // the working folder beside the output, named by the run (the same command on the same source
+  // finds it again and goes on where it stopped: RESUME above); its scratch for this attempt
+  const job = workFor(outAbs, fileAbs, o, beforeAbs, stages);
+  const { work, state } = job;
+  const scratch = path.join(work, `a-${process.pid}`);
+  fs.mkdirSync(scratch, { recursive: true });
+  const saveState = () => { fs.writeFileSync(path.join(work, "state.tmp"), JSON.stringify(state)); fs.renameSync(path.join(work, "state.tmp"), path.join(work, "state.json")); };
+  // what is delivered lies in the working folder until the very end
+  const done = (name) => path.join(work, name);
+  let outPart = done(`out.${ending}`);
+  const jsonPart = done("report.json"), beforePart = beforeAbs && done(`before${path.extname(beforeAbs).toLowerCase()}`);
+  // (a finished run, a refusal or an error leaves nothing; a signal keeps what was finished)
+  let keep = false;
   const gone = () => {
+    fs.rmSync(scratch, { recursive: true, force: true });
+    if (keep) { fs.rmSync(path.join(work, "lock"), { force: true }); return; }
     fs.rmSync(work, { recursive: true, force: true });
-    for (const p of [outPart, jsonPart, beforePart]) if (p) fs.rmSync(p, { force: true });
   };
-  const onSignal = (sig) => { stopChildren(); gone(); process.exit(sig === "SIGINT" ? 130 : sig === "SIGHUP" ? 129 : 143); };
+  const onSignal = (sig) => { stopChildren(); keep = job.resumable; gone(); process.exit(sig === "SIGINT" ? 130 : sig === "SIGHUP" ? 129 : 143); };
   for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(s, onSignal);
   const t0 = Date.now();
+  // the stages' lines: as each begins, with its estimate, and ends, with the time it took
+  const say = typeof opts.progress === "function" ? opts.progress : () => {};
+  let est = null;
+  // (`quiet`: no lines, for the measurement, whose refusals must stay the one line printed)
+  const stageRun = async (name, what, fn, quiet = false) => {
+    if (state.done[name] !== undefined) return state.done[name];
+    const t = Date.now(), e = est?.parts?.[name];
+    if (!quiet) say(`${what} begins${e ? ` (about ${duration(e)})` : ""}.`);
+    const v = await fn();
+    state.done[name] = v ?? null;
+    state.seconds[name] = +((Date.now() - t) / 1000).toFixed(1);
+    if (job.resumable) saveState();
+    if (!quiet) say(`${what} done in ${duration(state.seconds[name])}.`);
+    return v;
+  };
   try {
+    if (job.from.length) say(`Going on from the run before, which was ended: ${list(job.from.map((n) => STAGE_SAYS[n]), "and")} ${job.from.length === 1 ? "was" : "were"} finished and ${job.from.length === 1 ? "is" : "are"} taken up.`);
     // 0. the voice's stream on its own when it is not the first (measure and repair read the first)
     let src = fileAbs;
     if (o.audio > 1) {
-      src = path.join(work, "voice.mka");
-      let r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-c", "copy", "-map_metadata", "-1", src]);
-      if (r.status !== 0) r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-c:a", "flac", "-map_metadata", "-1", src]);
-      if (r.status !== 0) throw new LevelError(`ffmpeg could not take the ${nth(o.audio)} audio stream out of ${f.name}: ${lastLine(r.stderr)}`);
+      src = done("voice.mka");
+      await stageRun("voice", `Taking out the ${nth(o.audio)} audio stream`, async () => {
+        const part = path.join(scratch, "voice.mka");
+        let r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-c", "copy", "-map_metadata", "-1", part]);
+        if (r.status !== 0) r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-map", `0:a:${o.audio - 1}`, "-c:a", "flac", "-map_metadata", "-1", part]);
+        if (r.status !== 0) throw new LevelError(`ffmpeg could not take the ${nth(o.audio)} audio stream out of ${f.name}: ${lastLine(r.stderr)}`);
+        fs.renameSync(part, src);
+        return true;
+      });
     }
     const named = (e) => { if (e instanceof Refusal && src !== fileAbs) e.message = e.message.split(rel(src)).join(`${f.name}'s ${nth(o.audio)} audio stream`); return e; };
-    // 1. what is wrong with it, and whether there is a voice to work on
+    // 1. what is wrong with it, and whether there is a voice to work on (a long one says it is at it)
     let m;
-    try { m = await measureOf(src, "before"); } catch (e) { throw named(e); }
+    if (state.done.measure === undefined && (f.duration ?? 0) > LONG_S) say(`Measuring ${clock(f.duration)} of sound (about ${duration(MEASURE_S_PER_S * f.duration + 1)}).`);
+    try { m = await stageRun("measure", "Measuring", () => measureOf(src, "before"), true); } catch (e) { throw named(e); }
     const voiceS = m.speech?.seconds ?? 0;
     const what = src === fileAbs ? f.name : `${f.name}'s ${nth(o.audio)} audio stream`;
     // (a file with more audio streams: the voice may be in another, and the sentence says how to take it)
@@ -411,40 +587,67 @@ export async function clean(file, out, opts = {}, stages = null) {
     // (asked again by repair where its noise step turned out otherwise: the denoiser's probe found
     // noise under the voice, or the denoiser failed and ffmpeg's method took its place)
     const retone = (d) => { tp = toneFor(d); return st.toneFilters(tp) || ""; };
-    // 3. repair (with the tone's filters) to the intermediate, its working files in ours
-    const mended = path.join(work, "mended.wav");
-    const rr = await st.repair(src, mended, m, { denoise: o.denoise, after, retone, tmp: work });
-    // (the voice's stream on its own stays for the comparison, compressed as it came)
+    // the estimate, from the length and the plan (ESTIMATE above), once the work is known
+    est = estimate({ seconds: m.analysed?.seconds ?? f.duration ?? 0, plan: rp, probe: !!st.denoiserThere?.() && o.denoise !== "off", ending, video: fmt.kind === "video", before: o.before != null, measureS: job.from.includes("measure") ? null : state.seconds.measure, done: state.done });
+    say(`${state.seconds.measure != null && !job.from.includes("measure") ? `Measured ${clock(m.analysed?.seconds ?? 0)} of sound in ${duration(state.seconds.measure)}. ` : ""}About ${duration(est.total)} more${est.says ? ` (${est.says})` : ""}.`);
+    // 3. repair (with the tone's filters) to the intermediate, its working files in this attempt's scratch
+    const mended = done("mended.wav");
+    const rep = await stageRun("repair", "Repair", async () => {
+      const part = path.join(scratch, "mended.wav");
+      const rr = await st.repair(src, part, m, { denoise: o.denoise, after, retone, tmp: scratch });
+      fs.renameSync(part, mended);
+      return { rr, tp };
+    });
+    const rr = rep.rr;
+    tp = rep.tp;
+    // 4. level, encoded as delivered. Where the recording had short loud sounds, the mended sound is
+    // measured again first: repair may have taken them out (the high-pass a thump, the offset's
+    // removal its step), and the level stage turns down only what is still there
+    const soundName = fmt.kind === "video" ? `sound.${fmt.audio}` : `out.${ending}`;
+    const lv = await stageRun("level", "Level", async () => {
+      let burstsNow = null;
+      if (o.level !== "off" && m.speech?.bursts?.count > 0) burstsNow = (await measureOf(mended, "mended")).speech?.bursts ?? null;
+      const part = path.join(scratch, soundName);
+      const r = await level(mended, part, { targets: T, mono: o.mono, level: o.level, encode: fmt.codec, tmp: scratch, keepLufs: srcAsPlayed, peaks: o.peaks,
+        ...(burstsNow && { bursts: burstsNow, burstsBefore: m.speech.bursts }) });
+      fs.renameSync(part, done(soundName));
+      return r;
+    });
+    // (the intermediate is not needed once the level stage is through)
+    fs.rmSync(mended, { force: true });
     if (src !== fileAbs && o.before == null) fs.rmSync(src, { force: true });
-    // 4. level, encoded as delivered (the intermediate removed once read); with level off, the
-    // loudness it came in at kept
-    const sound = fmt.kind === "video" ? path.join(work, `sound.${fmt.audio}`) : outPart;
-    // (where the recording had short loud sounds, the mended sound is measured again: repair may
-    // have taken them out, the high-pass a thump, the offset's removal its step, and the level
-    // stage turns down only what is still there)
-    let burstsNow = null;
-    if (o.level !== "off" && m.speech?.bursts?.count > 0) burstsNow = (await measureOf(mended, "mended")).speech?.bursts ?? null;
-    const lv = await level(mended, sound, { targets: T, mono: o.mono, level: o.level, encode: fmt.codec, tmp: work, removeInput: true, keepLufs: srcAsPlayed, peaks: o.peaks,
-      ...(burstsNow && { bursts: burstsNow, burstsBefore: m.speech.bursts }) });
+    const sound = done(soundName);
     // 5. a video: the picture copied with the new sound, in step (the voice's stream started where it started)
     if (fmt.kind === "video") {
-      const offset = Math.max(0, chosen.start - streams.start);
-      const r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-itsoffset", offset.toFixed(6), "-i", sound,
-        "-map", "0:V", "-map", "1:a:0", "-c", "copy", "-map_metadata", "-1", "-map_chapters", "-1",
-        ...(fmt.faststart ? ["-movflags", "+faststart"] : []), ...(fmt.muxer ? ["-f", fmt.muxer] : []), outPart]);
-      if (r.status !== 0) throw new LevelError(`ffmpeg could not put the new sound to the picture: ${lastLine(r.stderr)}`);
+      const final = outPart;
+      await stageRun("mux", "Putting the sound to the picture", async () => {
+        outPart = path.join(scratch, `out.${ending}`);
+        const offset = Math.max(0, chosen.start - streams.start);
+        const r = await ffmpegRun(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i", fileAbs, "-itsoffset", offset.toFixed(6), "-i", sound,
+          "-map", "0:V", "-map", "1:a:0", "-c", "copy", "-map_metadata", "-1", "-map_chapters", "-1",
+          ...(fmt.faststart ? ["-movflags", "+faststart"] : []), ...(fmt.muxer ? ["-f", fmt.muxer] : []), outPart]);
+        if (r.status !== 0) throw new LevelError(`ffmpeg could not put the new sound to the picture: ${lastLine(r.stderr)}`);
+        fs.renameSync(outPart, final);
+        return true;
+      });
+      outPart = final;
       fs.rmSync(sound, { force: true });
     }
     // 6. measured again, as delivered
-    const m2 = await measureOf(outPart, "after");
+    const m2 = await stageRun("after", "Measuring the result", () => measureOf(outPart, "after"));
     // 7. the untouched sound beside it, as loud as the output, to compare by ear
     let before = null;
     if (o.before != null) {
-      // (where knocks were turned down in the output and stay as they came in the comparison, both
-      // are matched on the voice: the knocks' stretches left out of the loudness)
-      const kn = lv.steps.find((s) => s.id === "bursts" && s.at?.length && s.voiceLufs != null);
-      const cut = kn ? `aselect='not(${kn.at.map((x) => `between(t,${x.from.toFixed(3)},${x.to.toFixed(3)})`).join("+")})',asetpts=N/SR/TB` : null;
-      before = await comparison(src, beforePart, { lufs: kn ? kn.voiceLufs : lv.delivered.lufs, channels: o.mono ? 1 : 2, srcChannels: chosen.channels ?? f.channels, codec: bfmt.codec, T, cut, tmp: work });
+      before = await stageRun("before", "The comparison", async () => {
+        // (where knocks were turned down in the output and stay as they came in the comparison, both
+        // are matched on the voice: the knocks' stretches left out of the loudness)
+        const kn = lv.steps.find((s) => s.id === "bursts" && s.at?.length && s.voiceLufs != null);
+        const cut = kn ? `aselect='not(${kn.at.map((x) => `between(t,${x.from.toFixed(3)},${x.to.toFixed(3)})`).join("+")})',asetpts=N/SR/TB` : null;
+        const part = path.join(scratch, path.basename(beforePart));
+        const b = await comparison(src, part, { lufs: kn ? kn.voiceLufs : lv.delivered.lufs, channels: o.mono ? 1 : 2, srcChannels: chosen.channels ?? f.channels, codec: bfmt.codec, T, cut, tmp: scratch });
+        fs.renameSync(part, beforePart);
+        return b;
+      });
       before.file = rel(beforeAbs);
     }
     const stage = (name, xs) => (xs || []).map((s) => ({ stage: name, ...s }));
@@ -488,12 +691,14 @@ export async function clean(file, out, opts = {}, stages = null) {
       settings: { for: o.for, loudness: o.loudness ?? null, peak: o.peak ?? null, denoise: o.denoise, tone: o.tone, level: o.level, mono: o.mono, audio: o.audio, before: o.before ?? null,
         repairStage: { method: rr.method ?? null, ...(rr.probe && { probe: rr.probe }) }, levelStage: lv.settings, passes: lv.passes },
       seconds: +((Date.now() - t0) / 1000).toFixed(1),
+      // (each stage's time; a run that went on from an ended one: what it took up)
+      stages: { seconds: state.seconds, ...(job.from.length && { takenUp: job.from }), estimate: est && { total: est.total, parts: est.parts } },
     };
     fs.writeFileSync(jsonPart, JSON.stringify(report, null, 1) + "\n");
     // 8. delivered together: the sound, the comparison, the report (no signal comes between these)
-    fs.renameSync(outPart, outAbs);
-    if (beforePart) fs.renameSync(beforePart, beforeAbs);
-    fs.renameSync(jsonPart, `${outAbs}.json`);
+    move(outPart, outAbs);
+    if (beforePart) move(beforePart, beforeAbs);
+    move(jsonPart, `${outAbs}.json`);
     return report;
   } finally {
     for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) process.removeListener(s, onSignal);
@@ -549,7 +754,10 @@ export async function cleanCommand(args, stages = null) {
   let p;
   try { p = parse(args); } catch (e) { return say(e.message); }
   try {
-    const r = await clean(p.file, p.out, p.opts, stages);
+    // (the estimate and each stage's lines: on stdout, or with --json on stderr, so that stdout
+    // stays the one JSON object)
+    const progress = (line) => { if (json) process.stderr.write(`${line}\n`); else console.log(line); };
+    const r = await clean(p.file, p.out, { ...p.opts, progress }, stages);
     console.log(json ? JSON.stringify(r, null, 1) : lines(r).join("\n"));
     return r;
   } catch (e) {

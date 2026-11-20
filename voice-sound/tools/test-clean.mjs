@@ -33,11 +33,12 @@ const VOICE = `aevalsrc=exprs='st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.44
   `anoisesrc=color=pink:amplitude=0.0015:r=48000:d=${D}:seed=5[n];[v][s][n]amix=inputs=3:normalize=0`;
 
 // the stand-ins, as a module (the command-line runs load it from a file)
-const STAGES = `import { spawnSync } from "node:child_process";
+const STAGES = `import { spawn } from "node:child_process";
 export function repairPlan() { return { steps: [], left: [], method: "stand-in", graph: "" }; }
 export async function repair(file, outWav, m, opts = {}) {
   const args = ["-v", "error", "-y", "-i", file, "-map", "0:a:0", "-ac", "1", "-ar", "48000", ...(opts.after ? ["-af", opts.after] : []), "-c:a", "pcm_f32le", outWav];
-  const r = spawnSync("ffmpeg", args, { encoding: "utf8" });
+  // (a child the run can end at once, as the real stage's are)
+  const r = await new Promise((res) => { const p = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] }); let e = ""; p.stderr.on("data", (d) => { e += d; }); p.on("close", (status) => res({ status, stderr: e })); });
   if (r.status !== 0) throw new Error(r.stderr);
   return { steps: [{ id: "stand-in", why: "The tests' stand-in for repair: the sound as one channel at 48 kHz." }], left: [{ id: "roomy", why: "The stand-in leaves a room." }], method: "stand-in", graph: "" };
 }
@@ -157,9 +158,21 @@ test("the report: the file beside the output, the same object with --json, the l
   assert.deepEqual(j.audio, { streams: 1, used: 1, dropped: 0 });
   assert.deepEqual(j.settings.for, ["tiktok", "youtube"]);
   assert.equal(j.settings.denoise, "auto");
+  // (with --json the stages' lines go to stderr: the estimate first, each stage's beginning and end)
+  const progress = r.stderr.trim().split("\n");
+  assert.match(progress[0], /^Measured 0:14 of sound in \d+ s\. About \d+ s more \(repair \d+ s, level \d+ s\)\.$/, r.stderr);
+  for (const s of ["Repair", "Level", "Measuring the result"]) {
+    assert.ok(progress.some((l) => new RegExp(`^${s} begins \\(about \\d+ s\\)\\.$`).test(l)), `${s} begins: ${r.stderr}`);
+    assert.ok(progress.some((l) => new RegExp(`^${s} done in \\d+ s\\.$`).test(l)), `${s} done: ${r.stderr}`);
+  }
+  assert.deepEqual(Object.keys(j.stages.seconds).sort(), ["after", "level", "measure", "repair"]);
+  assert.ok(j.stages.estimate.total > 0, JSON.stringify(j.stages));
   const text = cli("clean", "voice.wav", "report.m4a", "--loudness", "-16", "--peak", "-2");
   assert.equal(text.status, 0, text.stdout);
-  const ls = text.stdout.trim().split("\n");
+  // (without --json the same lines come first on stdout, then the report)
+  const all = text.stdout.trim().split("\n"), first = all.findIndex((l) => /^report\.m4a: /.test(l));
+  assert.match(all[0], /^Measured 0:14 of sound in \d+ s\. About \d+ s more/);
+  const ls = all.slice(first);
   assert.match(ls[0], /^report\.m4a: 0:14 of the voice, AAC at 192 kbit\/s, 48 kHz, two channels with the same voice in both; from voice\.wav, level auto \(.*\)\.$/);
   assert.match(text.stdout, /\n {2}stand-in \(repair\): /);
   assert.match(text.stdout, /\n {2}limiter \(level\): /);
@@ -417,39 +430,90 @@ test("a video with two audio streams: the line says which was taken and that the
   assert.ok(!/voice-sound-clean|voice\.mka/.test(t.stdout), t.stdout);
 });
 
-test("a signal ends the running ffmpeg at once and leaves nothing: no output, no JSON, no comparison, no working folder", { skip }, async () => {
-  // four minutes of voice, so that the run is still in its level stage when the signal comes
+test("a run ended by a signal in each stage stops its ffmpeg at once and keeps what was finished; the same command goes on from there, says what it took up, and gives the same files as a run that was never ended; another option starts afresh; a finished run leaves nothing", { skip }, async () => {
+  // four minutes of voice, so that every stage runs long enough to be caught in
   const long = file("long.wav");
   run(["-stream_loop", "16", "-i", base, "-c:a", "pcm_s16le", long]);
+  const args = ["clean", "long.wav", "sig.wav", "--before", "sig.before.wav"];
+  const md5 = (f) => spawnSync("md5sum", [file(f)], { encoding: "utf8" }).stdout.split(" ")[0];
+  const works = () => fs.readdirSync(dir).filter((n) => n.startsWith(".voice-sound-clean-"));
+  // the files of a run that was never ended
+  const whole = cli(...args);
+  assert.equal(whole.status, 0, whole.stdout);
+  const want = [md5("sig.wav"), md5("sig.before.wav")];
+  for (const f of ["sig.wav", "sig.wav.json", "sig.before.wav"]) fs.rmSync(file(f));
+  assert.deepEqual(works(), [], "a finished run leaves nothing");
   const childrenOf = (pid) => fs.readdirSync("/proc").filter((d) => /^\d+$/.test(d)).filter((d) => {
     try { const s = fs.readFileSync(`/proc/${d}/stat`, "utf8"); return Number(s.slice(s.lastIndexOf(")") + 2).split(" ")[1]) === pid; } catch { return false; }
   });
   const alive = (k) => { try { return !/State:\s*Z/.test(fs.readFileSync(`/proc/${k}/status`, "utf8")); } catch { return false; } };
-  // (SIGHUP: the terminal an agent ran it from closed)
-  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
-    const p = spawn(process.execPath, [runner, "clean", "long.wav", "sig.m4a", "--before", "sig.before.m4a"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
-    let said = "";
-    p.stdout.on("data", (d) => { said += d; });
+  const cmd = (k) => { try { return fs.readFileSync(`/proc/${k}/cmdline`, "utf8").split("\0").join(" "); } catch { return ""; } };
+  // each stage by its ffmpeg: measure decodes the source, the stand-in repair writes the mended
+  // sound, level limits, the result's measurement decodes out.wav, the comparison limits before.wav
+  const cases = [
+    ["measure", "SIGINT", (c) => /f32le/.test(c) && /long\.wav/.test(c), [], "measure"],
+    ["repair", "SIGTERM", (c) => /a-\d+\/mended\.wav/.test(c), ["measure"], "repair"],
+    ["level", "SIGHUP", (c) => /alimiter/.test(c) && !/before/.test(c), ["measure", "repair"], "level"],
+    ["after", "SIGTERM", (c) => /out\.wav/.test(c) && /f32le/.test(c), ["measure", "repair", "level"], "after"],
+    ["before", "SIGTERM", (c) => /before\.wav/.test(c), ["measure", "repair", "level", "after"], "before"],
+  ];
+  for (const [stage, sig, catches, kept] of cases) {
+    const p = spawn(process.execPath, [runner, ...args], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
     const closed = new Promise((resolve) => p.on("close", (code, signal) => resolve({ code, signal })));
-    // (the level stage's ffmpeg: a child of the run with a limiter in its chain)
     const t0 = Date.now();
     let kids = [];
     while (Date.now() - t0 < 60000 && !kids.length) {
-      kids = childrenOf(p.pid).filter((k) => { try { return /alimiter/.test(fs.readFileSync(`/proc/${k}/cmdline`, "utf8")); } catch { return false; } });
-      if (!kids.length) await new Promise((r) => setTimeout(r, 20));
+      kids = childrenOf(p.pid).filter((k) => catches(cmd(k)));
+      if (!kids.length) await new Promise((r) => setTimeout(r, 5));
     }
-    assert.ok(kids.length, `${sig}: the level stage never began`);
+    assert.ok(kids.length, `${stage}: never caught`);
     const sent = Date.now();
     p.kill(sig);
     const end = await closed;
-    assert.ok(Date.now() - sent < 1500, `${sig}: ended ${Date.now() - sent} ms after the signal`);
-    assert.equal(end.code, { SIGINT: 130, SIGHUP: 129, SIGTERM: 143 }[sig], `${sig}: ${JSON.stringify(end)} ${said}`);
-    assert.equal(said, "", `${sig}: printed ${said}`);
+    assert.ok(Date.now() - sent < 1500, `${stage}: ended ${Date.now() - sent} ms after ${sig}`);
+    assert.equal(end.code, { SIGINT: 130, SIGHUP: 129, SIGTERM: 143 }[sig], `${stage}: ${JSON.stringify(end)}`);
     await new Promise((r) => setTimeout(r, 200));
-    for (const k of kids) assert.ok(!alive(k), `${sig}: its ffmpeg ${k} still runs`);
-    for (const f of ["sig.m4a", "sig.m4a.json", "sig.before.m4a"]) assert.ok(!fs.existsSync(file(f)), `${sig}: ${f} is there`);
-    assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".voice-sound-clean-")), [], sig);
+    for (const k of kids) assert.ok(!alive(k), `${stage}: its ffmpeg ${k} still runs`);
+    for (const f of ["sig.wav", "sig.wav.json", "sig.before.wav"]) assert.ok(!fs.existsSync(file(f)), `${stage}: ${f} is there`);
+    // what was finished is kept, in the one working folder
+    const w = works();
+    assert.equal(w.length, 1, `${stage}: ${w}`);
+    const sf = path.join(dir, w[0], "state.json"), st = fs.existsSync(sf) ? JSON.parse(fs.readFileSync(sf, "utf8")) : { done: {} };
+    assert.deepEqual(Object.keys(st.done).sort(), [...kept].sort(), `${stage}: kept ${Object.keys(st.done)}`);
+    assert.ok(!fs.existsSync(path.join(dir, w[0], "lock")), `${stage}: the lock is left`);
+    if (stage === "level") {
+      // another option is another run: it starts afresh in a folder of its own and takes nothing up
+      const other = cli("clean", "long.wav", "sig.wav", "--before", "sig.before.wav", "--loudness", "-16");
+      assert.equal(other.status, 0, other.stdout);
+      assert.ok(!/Going on from the run before/.test(other.stdout), other.stdout);
+      for (const f of ["sig.wav", "sig.wav.json", "sig.before.wav"]) fs.rmSync(file(f));
+      assert.deepEqual(works(), w, "the other run left nothing, and the ended run's folder is still there");
+    }
+    // the same command again: goes on from there
+    const again = cli(...args);
+    assert.equal(again.status, 0, again.stdout);
+    if (kept.length) {
+      assert.match(again.stdout, new RegExp(`^Going on from the run before, which was ended: .* (was|were) finished and (is|are) taken up\\.$`, "m"), again.stdout);
+      assert.doesNotMatch(again.stdout, /^Going on from .* or /m, again.stdout);
+    }
+    else assert.ok(!/Going on from the run before/.test(again.stdout), again.stdout);
+    const j = JSON.parse(fs.readFileSync(file("sig.wav.json"), "utf8"));
+    assert.deepEqual(j.stages.takenUp ?? [], kept, stage);
+    assert.deepEqual([md5("sig.wav"), md5("sig.before.wav")], want, `${stage}: the files differ from a run never ended`);
+    for (const f of ["sig.wav", "sig.wav.json", "sig.before.wav"]) fs.rmSync(file(f));
+    assert.deepEqual(works(), [], `${stage}: the finished run left its folder`);
   }
+});
+
+test("a second run on the same work while the first runs works in a folder of its own and keeps nothing", { skip }, async () => {
+  const p = spawn(process.execPath, [runner, "clean", "long.wav", "twice.wav"], { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+  const closed = new Promise((resolve) => p.on("close", (code) => resolve(code)));
+  await new Promise((r) => setTimeout(r, 300));
+  const b = cli("clean", "long.wav", "twice.wav");
+  assert.equal(b.status, 0, b.stdout);
+  assert.equal(await closed, 0);
+  assert.ok(fs.existsSync(file("twice.wav")));
+  assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".voice-sound-clean-")), []);
 });
 
 test("a voice recorded very low (−61 LUFS as played, 47 dB of gain) is delivered at the target, and the lines say plainly that its noise and its room came up with it; its comparison as loud", { skip }, async () => {
@@ -647,8 +711,10 @@ test("the working files lie in a hidden folder beside the output, never in the s
   const watching = { ...stages, async repair(f, o, m, opts) { seen.push(o); return stages.repair(f, o, m, opts); } };
   fs.mkdirSync(file("deep/er"), { recursive: true });
   await clean(base, file("deep/er/w.m4a"), {}, watching);
-  assert.equal(path.dirname(path.dirname(seen[0])), file("deep/er"));
-  assert.match(path.basename(path.dirname(seen[0])), /^\.voice-sound-clean-\d+-/);
+  // (the run's folder, and in it this attempt's: .voice-sound-clean-<key>/a-<pid>/)
+  assert.equal(path.dirname(path.dirname(path.dirname(seen[0]))), file("deep/er"));
+  assert.match(path.basename(path.dirname(path.dirname(seen[0]))), /^\.voice-sound-clean-[0-9a-f]{12}$/);
+  assert.equal(path.basename(path.dirname(seen[0])), `a-${process.pid}`);
   assert.deepEqual(fs.readdirSync(file("deep/er")).sort(), ["w.m4a", "w.m4a.json"]);
 });
 

@@ -18,7 +18,9 @@
 //             the loudest peaks and a true-peak ceiling on the file as delivered). It refuses a
 //             recording without a voice, one over 60 minutes (to be cut into parts), and one
 //             whose voice stands too little over the floor of its recording to be raised;
-//             lib/clean.mjs says all of it.
+//             lib/clean.mjs says all of it. Once it has measured it says how long the rest
+//             takes, then each stage as it begins and ends (on stderr with --json); a run ended
+//             by a signal goes on where it stopped when the same command is run again.
 //   measure   the first audio stream, decoded once (ffmpeg, streamed, 48 kHz): ebur128's
 //             loudness, range and true peak; where the voice speaks and the noise floor in its
 //             pauses; the speech's level, the noise's level, kind and bands, their distance;

@@ -912,10 +912,11 @@ test("a signal to clean ends every running piece of the denoiser and leaves none
   assert.equal(started(), 3, "three pieces run at once");
   await new Promise((r) => setTimeout(r, 300));
   const all = fs.readFileSync(pids, "utf8").trim().split("\n").map(Number), pid = all[0];
-  // (its files lie in clean's working folder beside the output)
+  // (its files lie in clean's working folder beside the output, in this attempt's own a-<pid>/)
   const work = fs.readdirSync(path.dirname(out)).filter((n) => n.startsWith(".voice-sound-clean-"));
   assert.equal(work.length, 1);
-  assert.ok(fs.readdirSync(path.join(path.dirname(out), work[0])).some((n) => n.startsWith(".voice-sound-neural-")));
+  const inWork = () => { const d = path.join(path.dirname(out), work[0]); return fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() && /^a-\d+$/.test(e.name) ? [e.name, ...fs.readdirSync(path.join(d, e.name))] : [e.name])); };
+  assert.ok(inWork().some((n) => n.startsWith(".voice-sound-neural-")), JSON.stringify(inWork()));
   const ended = new Promise((r) => p.on("exit", (code, sig) => r({ code, sig })));
   p.kill("SIGTERM");
   const e = await ended;
@@ -923,7 +924,11 @@ test("a signal to clean ends every running piece of the denoiser and leaves none
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(gone(pid), "the denoiser is gone");
   for (const q of all) assert.ok(gone(q), `piece ${q} is gone`);
-  assert.deepEqual(fs.readdirSync(path.dirname(out)), []);
+  // (what was finished is kept for the same command to go on from, in the working folder alone;
+  // none of the denoiser's files, nor the ended attempt's folder)
+  assert.deepEqual(fs.readdirSync(path.dirname(out)).filter((n) => n !== work[0]), []);
+  if (fs.existsSync(path.join(path.dirname(out), work[0])))
+    assert.ok(!inWork().some((n) => n.startsWith(".voice-sound-neural-") || /^a-\d+$/.test(n)), JSON.stringify(inWork()));
 });
 
 // a process is gone where no signal reaches it, or (Linux) where it has ended and only waits to
