@@ -69,6 +69,7 @@ Only what a strong model cannot know or infer: our facts (Storrito's API and zon
 
 - The flow the person sees is steps, never left to the model: which questions and in what order, a reference or sketch frames before building, a preview before a render, what needs their yes. Models do not ask for these on their own.
 - A bot takes the body of its SKILL.md as its definition, which is in its context on every turn: detail one step needs goes into `references/`. Name the file in that step, as "read `references/<file>.md` before …": models skim other files, and a reference only mentioned somewhere is never opened.
+- A SKILL.md reaches the agent in one piece, and so does every file in `references/`. An agent that reads a skill as the output of a call, as the harness after rragent does, is shown only so much of an output, its head and its tail: 10,000 characters there by default, a setting that can change. A longer text costs the agent a step to read its middle, or it works without it. Count the characters; what does not fit goes into `references/`, named at the step that needs it.
 - A new bot reads the frontmatter of every SKILL.md to find its job: the `description` is one sentence of what the skill does and when it fits.
 
 ## Decisions belong to the agent, mechanics to the tools
