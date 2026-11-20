@@ -46,14 +46,41 @@ export const TARGETS = { lufs: -14, truePeak: -1.5, peakAccepted: -1, rangeLu: 5
 
 // ebur128's integrated loudness at or under this is its sign that nothing passed the gate
 export const NO_LOUDNESS_LUFS = -70;
-// the most gain the level stage gives (the leveller's lift included). Four real recordings of the
-// lab's corpus lie that low (phones held far off, 2026-11-20): at 37 and 44 dB of gain the result
-// scored higher than the recording with ffmpeg's noise method as with the denoiser (DNSMOS
-// overall 2.11 → 2.97 / 3.20 and 2.94 → 3.12 / 3.33), at 40.5 dB the same; at 47 dB it scored
-// lower with ffmpeg's method (3.03 → 2.65) and higher only with the denoiser (3.17). A recording
-// that needs more than this is a floor, a microphone left off or a voice far away, and raising it
-// raises its noise and its room as much
-export const MAX_GAIN_DB = 45;
+// How far a quiet voice is raised. The scores hear every recording at one level and cannot see
+// gain; what gain does is bring up, with the voice, whatever lies under it: the room, the noise,
+// and at the end the recorder's own steps (16 bits: about −98 LUFS). Measured on 12 clean
+// readings of the tune split (6 German, 6 English), each brought to −23 LUFS, turned down by 0
+// to 70 dB, written at 16 bits by rounding, then through clean with ffmpeg's methods, scored
+// against the original (2026-11-20; level/exp1.mjs, the means):
+//   gain (dB)         7     47    52    57    63    68    75    82
+//   PESQ             4.50  3.15  2.81  2.48  1.95  1.43  1.17  1.04
+//   STOI             0.99  0.98  0.97  0.96  0.93  0.89  0.83  0.73
+//   DNSMOS overall   3.43  3.32  3.30  3.19  2.98  2.78  2.51  2.02
+//   NISQA            4.67  3.75  3.43  2.98  2.20  1.63  1.41  1.14
+//   NISQA, the best  5.00  4.92  4.72  4.20  3.48  2.33  1.88  1.34
+// MAX_GAIN_DB: at the master's −14 LUFS, the most gain given (the leveller's lift included); a
+// voice under −14 − MAX_GAIN_DB LUFS as played is refused whatever the target (the bound is the
+// recording's own level: a lower --loudness does not move it), and the gain search never passes
+// it. From 75 dB on not one of the twelve scored 2 by NISQA, at 68 the best 2.33 (the turned-down
+// recordings themselves, scored as they were, as low: NISQA 1.44 and 1.67; the floor is theirs):
+// the voice then stands about 10 dB over 16 bits' floor, and what is raised is that floor as
+// much as the voice (where between 68 and 75 the line lies is a judgement). LOW_GAIN_DB: a voice
+// that lies this far under the target or more (as played, before the gain) is delivered at the
+// target all the same, and `left` says plainly that it was recorded very low and that its noise
+// and its room came up with it: at 32 dB NISQA was still 4.59 (4.67 at 7), at 42 dB 4.16, at 47
+// dB 3.75 (12 readings at 25 and 35 dB down, level/exp1.mjs). Four real recordings of the corpus
+// need 41 to 48 dB (phones held far off; their noise 29 to 38 dB under the speech) and are
+// delivered with that line; DNSMOS overall before → after 2.94 → 3.12 / 3.33, 3.15 → 3.23 /
+// 3.30, 3.35 → 3.34 / 3.34, 3.03 → 2.65 / 3.17 (ffmpeg's methods / the denoiser)
+export const MAX_GAIN_DB = 70;
+export const LOW_GAIN_DB = 40;
+
+// a sound under `underLufs` is measured through a gain that brings its true peak to `peakDb`
+// (the intermediate is float: nothing clips), its numbers taken back by that gain. ebur128 drops
+// every 400 ms block under −70 LUFS, and the leveller reads speech down to 25 dB under the loud
+// speech (its gate), which lies 3 to 5 dB over the integrated loudness: from about −48 LUFS on,
+// part of a voice would fall under ebur128's gate; under −67 none of it is measured at all
+export const MEASURE_GAIN = { underLufs: -45, peakDb: -6 };
 
 // ebur128's frames: one every 100 ms, the momentary loudness over the 400 ms before it
 const FRAME_S = 0.1;
@@ -108,6 +135,10 @@ const quantile = (sorted, q) => {
 };
 
 export class LevelError extends Error {}
+
+// the refusal of a voice under the far bound, in one sentence (clean says it before repair, the
+// level stage after it): `asPlayed` its loudness, `aim` the target, `gain` what it would take
+export const tooQuiet = (asPlayed, aim, gain, maxGain) => `The voice lies at ${f1(asPlayed)} LUFS as played: bringing it to ${f1(aim)} would take ${Math.round(gain)} dB of gain, more than the ${f1(maxGain).replace(/\.0$/, "")} dB this tool gives, and so little of it stands over the floor of its recording that the gain would raise mostly that floor; record it again closer to the microphone or with the recorder's input turned up.`;
 const missing = (bin = "ffmpeg") => new LevelError(`${bin} is missing: this tool needs ffmpeg on the PATH.`);
 const lastLine = (s, n = 1) => (s || "").trim().split("\n").slice(-n).join(" ");
 
@@ -191,10 +222,21 @@ export async function loudness(file, af = "") {
   return summary(r.stderr);
 }
 
+// the same at any level: a sound under MEASURE_GAIN.underLufs measured again through a gain and
+// its numbers taken back by it → { lufs, rangeLu, truePeak, gainDb (the gain measured through) }
+export async function loudnessAt(file, af = "") {
+  const a = await loudness(file, af);
+  if (!((a.lufs == null || a.lufs < MEASURE_GAIN.underLufs) && a.truePeak != null && a.truePeak < MEASURE_GAIN.peakDb)) return { ...a, gainDb: 0 };
+  const pre = MEASURE_GAIN.peakDb - a.truePeak;
+  const g = await loudness(file, `${af ? `${af},` : ""}volume=${pre.toFixed(2)}dB`);
+  return { lufs: g.lufs == null ? null : g.lufs - pre, rangeLu: g.rangeLu, truePeak: g.truePeak == null ? null : g.truePeak - pre, gainDb: r2(pre) };
+}
+
 const FRAME_RE = /t:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+|-?inf|nan)/;
-export async function framesOf(file) {
+// `af` a chain measured on the way (a gain for a very quiet sound: see level())
+export async function framesOf(file, af = "") {
   let M = new Float32Array(1 << 12), n = 0;
-  const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-i", path.resolve(file), "-map", "0:a:0", "-af", "ebur128=peak=true:framelog=info", "-f", "null", "-"], {
+  const r = await ffmpegRun(["-hide_banner", "-nostats", "-nostdin", "-i", path.resolve(file), "-map", "0:a:0", "-af", `${af ? `${af},` : ""}ebur128=peak=true:framelog=info`, "-f", "null", "-"], {
     onLine: (line) => {
       const m = FRAME_RE.exec(line);
       if (!m) return false;
@@ -343,7 +385,8 @@ function compressorChain(P, oneChannel, limit) {
 
 // opts: { targets, mono, level: "auto" | "plain" | "off", encode: [ffmpeg's codec arguments], tmp: a folder,
 //         keepLufs: with level off, the loudness to keep (as played; by default the intermediate's),
-//         maxGainDb (MAX_GAIN_DB), removeInput: remove inWav as soon as it is read for the last time,
+//         maxGainDb, lowGainDb (MAX_GAIN_DB and LOW_GAIN_DB moved with the target),
+//         removeInput: remove inWav as soon as it is read for the last time,
 //         peaks: another peak compressor (the lab's tries), or { kind: "none" } }
 //   auto   leveller (where uneven), gain to the target, the slow limiter, the limiter
 //   plain  gain to the target and the limiter only: the recording's own dynamics kept
@@ -354,7 +397,9 @@ export async function level(inWav, out, opts = {}) {
   if (!MODES.includes(mode)) throw new LevelError(`--level is auto, plain or off, not ${mode}.`);
   const mono = !!opts.mono, auto = mode === "auto";
   const P = { ...PEAKS, ...(opts.peaks || {}) };
-  const maxGain = opts.maxGainDb ?? MAX_GAIN_DB;
+  // (both bounds are the recording's own level: at another target they move with it)
+  const maxGain = opts.maxGainDb ?? r2(MAX_GAIN_DB + T.lufs - TARGETS.lufs);
+  const lowGain = opts.lowGainDb ?? r2(LOW_GAIN_DB + T.lufs - TARGETS.lufs);
   inWav = path.resolve(inWav);
   out = path.resolve(out);
   const encode = opts.encode || ["-c:a", "pcm_s24le"];
@@ -363,7 +408,15 @@ export async function level(inWav, out, opts = {}) {
   const steps = [], left = [], skipped = [];
   const dropIn = () => { if (opts.removeInput) fs.rmSync(inWav, { force: true }); };
   try {
-    const fr = await framesOf(inWav);
+    // (a sound so quiet that ebur128's gate would hide part of its voice is measured through a
+    // gain, `pre`, and its numbers taken back by it; the leveller reads the frames as measured,
+    // since it works on their differences)
+    let fr = await framesOf(inWav), pre = 0;
+    if ((fr.lufs == null || fr.lufs < MEASURE_GAIN.underLufs) && fr.truePeak != null && fr.truePeak < MEASURE_GAIN.peakDb) {
+      pre = MEASURE_GAIN.peakDb - fr.truePeak;
+      const g = await framesOf(inWav, `volume=${pre.toFixed(2)}dB`);
+      fr = { ...g, lufs: g.lufs == null ? null : g.lufs - pre, truePeak: g.truePeak == null ? null : g.truePeak - pre };
+    }
     const before = { lufs: fr.lufs, rangeLu: fr.rangeLu, truePeak: fr.truePeak };
     const seconds = durationOf(inWav);
     if (mode !== "off" && fr.lufs == null)
@@ -375,7 +428,7 @@ export async function level(inWav, out, opts = {}) {
     // the delivered file measures (two channels: the aim; one channel: the one channel's)
     const oneChannel = aim == null ? null : aim - TWO_SPEAKERS_LU;
     const measuredAim = aim == null ? null : mono ? oneChannel : aim;
-    const tooMuch = (g) => new LevelError(`The voice lies at ${f1(fr.lufs + TWO_SPEAKERS_LU)} LUFS as played: bringing it to ${f1(aim)} would take ${Math.round(g)} dB of gain, more than the ${maxGain} dB this tool gives, and would raise its noise and its room as much; record it closer to the microphone, or aim lower with --loudness.`);
+    const tooMuch = (g) => new LevelError(tooQuiet(fr.lufs + TWO_SPEAKERS_LU, aim, g, maxGain));
 
     let dyn = inWav, gain = 0, dynLufs = fr.lufs, dynPeak = fr.truePeak, dynRange = fr.rangeLu, leveller = null, lift = 0;
     const tamer = auto && P.kind !== "none";
@@ -401,6 +454,7 @@ export async function level(inWav, out, opts = {}) {
         dropIn();
         fs.rmSync(curve, { force: true });
         ({ lufs: dynLufs, truePeak: dynPeak, rangeLu: dynRange } = summary(r.stderr));
+        if (pre) ({ lufs: dynLufs, truePeak: dynPeak, rangeLu: dynRange } = await loudnessAt(dyn));
         const because = leveller.uneven === "phrases" ? `Its phrases spread over ${f1(leveller.spreadLu)} LU` : `Its loudness range is ${f1(fr.rangeLu)} LU`;
         steps.push({
           id: "leveller", stage: "level",
@@ -525,6 +579,12 @@ export async function level(inWav, out, opts = {}) {
       left.push({ id: "peaks", stage: "level", why: `To reach ${f1(T.lufs)} LUFS the limiter took ${f1(peaksTaken)} dB off the loudest peaks and ${f1(limTaken)} LU off the loudness: the target is too loud for this recording's own dynamics, and the limiter may be heard on its loudest words; --level auto tames its peaks first, a lower --loudness spares them.` });
     if (measuredAim != null && delivered.lufs != null && Math.abs(delivered.lufs - measuredAim) > LUFS_TOLERANCE)
       left.push({ id: "loudness", stage: "level", why: `The loudness came to ${f1(delivered.asPlayedLufs)} LUFS as played, not ${f1(aim)}: ${capped ? `the gain stops at ${maxGain} dB.` : delivered.truePeak != null && delivered.truePeak > limit - 0.5 ? "the limiter holds it down." : "the corrections did not converge."}` });
+    // (how far under the target it lay, not the gain given: the gain also makes up for what the
+    // limiters take, more with plain than with auto)
+    const underDb = mode !== "off" && fr.lufs != null ? aim - (fr.lufs + TWO_SPEAKERS_LU) : null;
+    if (underDb != null && underDb >= lowGain)
+      left.push({ id: "quiet", stage: "level", underDb: r2(underDb), gainDb: r2(gain + lift), lowGainDb: lowGain,
+        why: `It was recorded very low, ${f1(fr.lufs + TWO_SPEAKERS_LU)} LUFS as played, ${Math.round(underDb)} dB under the ${f1(T.lufs)} it was brought to all the same: its noise and its room came up with the voice by as much; next time closer to the microphone, or with the recorder's input turned up.` });
     if (delivered.truePeak != null && delivered.truePeak > T.peakAccepted)
       left.push({ id: "peak", stage: "level", why: `The true peak after the encoding is ${f1(delivered.truePeak)} dBTP, over the ${f1(T.peakAccepted)} dBTP a check accepts${peakFixes ? `, after the limiter was lowered ${peakFixes === 1 ? "once" : "twice"}` : ""}.` });
     if (auto && delivered.rangeLu != null && delivered.rangeLu > T.rangeLu)
@@ -533,7 +593,7 @@ export async function level(inWav, out, opts = {}) {
     return {
       mode, steps, left, skipped, before, delivered, passes,
       leveller: leveller && { needed: leveller.needed, spreadLu: leveller.spreadLu, spreadAfterLu: leveller.spreadAfterLu, minDb: leveller.minDb, maxDb: leveller.maxDb },
-      settings: { targets: T, mono, level: mode, aimLufs: r2(aim), measuredLufs: r2(measuredAim), maxGainDb: maxGain, leveller: LEVELLER, peaks: auto ? P : null,
+      settings: { targets: T, mono, level: mode, aimLufs: r2(aim), measuredLufs: r2(measuredAim), maxGainDb: maxGain, lowGainDb: lowGain, measuredThroughDb: r2(pre), leveller: LEVELLER, peaks: auto ? P : null,
         limiter: { ...LIMITER, limitDb: r2(limit), plainPeaksDb: PLAIN_PEAKS_DB, plainLoudnessLu: PLAIN_LOUDNESS_LU } },
     };
   } finally {

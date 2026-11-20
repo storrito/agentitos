@@ -283,7 +283,7 @@ test("the leveller's ramp lies where the level steps: centred within 0.3 s of 14
   near(best.c, 14.4, 0.3, "the ramp's centre");
 });
 
-test("no measurement, no voice, too much gain: −70 LUFS is none; a silent or 0.3 s sound is refused; over 45 dB of gain is refused, 36 dB is given", { skip }, async () => {
+test("no measurement, no voice, too quiet: −70 LUFS is none; a silent or 0.3 s sound is refused; 47 and 61 dB of gain are given and said to be very low, more than 70 is refused whatever the target, 36 is given and said nothing of", { skip }, async () => {
   // ebur128 prints −70.0 for a sound in which no 400 ms block passes its gate
   const short = intermediate("short.wav", "atrim=start=0.5:duration=0.3");
   const silent = file("silent.wav");
@@ -295,15 +295,36 @@ test("no measurement, no voice, too much gain: −70 LUFS is none; a silent or 0
     await assert.rejects(level(f, file("none.wav"), { level: "plain" }), /no voice to bring to a loudness/);
   }
   assert.ok(!fs.existsSync(file("none.wav")));
-  // a voice at −61 LUFS as played would need 47 dB: refused, nothing written
-  const far = intermediate("far.wav", "volume=-41dB");
-  await assert.rejects(level(far, file("far.out.wav"), {}), /would take 4\d dB of gain, more than the 45 dB this tool gives/);
-  await assert.rejects(level(far, file("far.out.wav"), { level: "plain" }), /more than the 45 dB this tool gives/);
+  // a voice at −61 LUFS as played needs 47 dB: delivered at the target, and said to be very low
+  const low = intermediate("low.wav", "volume=-41dB");
+  for (const mode of ["auto", "plain"]) {
+    const r = await level(low, file(`low.${mode}.wav`), { level: mode });
+    near(loudnessOf(file(`low.${mode}.wav`)).lufs, -14, 0.5, `${mode}: −61 brought to −14`);
+    const q = r.left.find((x) => x.id === "quiet");
+    assert.ok(q, `${mode}: ${JSON.stringify(r.left)}`);
+    assert.match(q.why, /^It was recorded very low, −6\d\.\d LUFS as played, 4\d dB under the −14\.0 it was brought to all the same: its noise and its room came up with the voice by as much; next time closer to the microphone, or with the recorder's input turned up\.$/);
+    near(q.underDb, 46.3, 1, "how far under the target it lay");
+    assert.ok(q.gainDb >= q.underDb - 0.5, JSON.stringify(q));
+  }
+  // −75 as played (61 dB): under ebur128's gate of −70 LUFS, measured through a gain, delivered
+  const lower = intermediate("lower.wav", "volume=-56dB");
+  assert.equal(loudnessOf(lower).lufs, null, "ebur128 sees no loudness in it");
+  const rl = await level(lower, file("lower.out.wav"), {});
+  near(loudnessOf(file("lower.out.wav")).lufs, -14, 0.5, "−75 brought to −14");
+  assert.ok(rl.settings.measuredThroughDb > 20, JSON.stringify(rl.settings.measuredThroughDb));
+  assert.ok(rl.left.some((x) => x.id === "quiet"));
+  // −86 as played needs 72 dB: refused, nothing written; at −23 LUFS it would need 63, still
+  // refused (the bound is the recording's level: 70 dB under −14, 61 under −23)
+  const far = intermediate("far.wav", "volume=-67dB");
+  await assert.rejects(level(far, file("far.out.wav"), {}), /^Error: The voice lies at −8\d\.\d LUFS as played: bringing it to −14\.0 would take 7\d dB of gain, more than the 70 dB this tool gives, and so little of it stands over the floor of its recording that the gain would raise mostly that floor; record it again closer to the microphone or with the recorder's input turned up\.$/);
+  await assert.rejects(level(far, file("far.out.wav"), { level: "plain" }), /more than the 70 dB this tool gives/);
+  await assert.rejects(level(far, file("far.out.wav"), { targets: { lufs: -23 } }), /bringing it to −23\.0 would take 6\d dB of gain, more than the 61 dB this tool gives/);
   assert.ok(!fs.existsSync(file("far.out.wav")));
-  // one at −50 as played needs 36 dB: given, and no pass ever more than the bound
+  // one at −50 as played needs 36 dB: given, nothing said of it, and no pass ever more than the bound
   const quiet = intermediate("q50.wav", "volume=-30dB");
   const r = await level(quiet, file("q50.out.wav"), {});
   near(loudnessOf(file("q50.out.wav")).lufs, -14, 0.5, "−50 brought to −14");
+  assert.ok(!r.left.some((x) => x.id === "quiet"), JSON.stringify(r.left));
   assert.ok(r.passes.every((p) => p.gainDb <= 40), JSON.stringify(r.passes));
   // nothing left beside the outputs
   assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".")), []);

@@ -31,8 +31,10 @@
 //                and then the line says so), as many channels as the output, sound only: before
 //                and after to compare by ear
 //
-// Refuses, in one sentence: a recording in which measure finds less than MIN_VOICE_S of voice,
-// and one whose voice would need more than level's MAX_GAIN_DB of gain.
+// Refuses, in one sentence: a recording in which measure finds no voice (or says so: m.voice.found
+// false) or less than MIN_VOICE_S of it, and one whose voice lies more than level's MAX_GAIN_DB
+// under the master's −14 LUFS (the recorder's own floor comes up then more than the voice). A
+// voice LOW_GAIN_DB or more under the target is delivered, and what is left says it was recorded very low.
 //
 // Writes <out> and beside it <out>.json: the source, what was measured before and after, every
 // step with its reason, what was left and why, the targets, the settings. Prints what an agent
@@ -42,7 +44,8 @@
 //   clean(file, out, opts, stages)   → the report; throws a Refusal (one sentence)
 //
 // `stages`: { repair, repairPlan, tonePlan, toneFilters } to run instead of lib/repair.mjs and
-// lib/tone.mjs (the tests' stand-ins); without it those files are loaded.
+// lib/tone.mjs (the tests' stand-ins), and `measure(file, "before" | "after")` for a made-up
+// measurement; without it those files are loaded.
 //
 // The working files lie in a hidden folder beside the output (`.voice-sound-clean-<pid>-…`), each
 // removed as soon as the next stage has read it (two float WAVs of one channel at the most: 23 MB
@@ -60,7 +63,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./measure.mjs";
 import { Refusal, facts } from "./analyse.mjs";
-import { level, LevelError, TARGETS, LIMITER, MAX_GAIN_DB, NO_LOUDNESS_LUFS, TWO_SPEAKERS_LU, loudness, ffmpegRun, stopChildren } from "./level.mjs";
+import { level, LevelError, TARGETS, LIMITER, MAX_GAIN_DB, tooQuiet, NO_LOUDNESS_LUFS, TWO_SPEAKERS_LU, loudness, loudnessAt, ffmpegRun, stopChildren } from "./level.mjs";
 import { targets as platformTargets } from "./targets.mjs";
 
 export const USAGE = "Usage: voice.mjs clean <audio|video> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>] [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>] [--before <file>] [--json]";
@@ -207,8 +210,9 @@ function numbers(m) {
 async function comparison(src, dest, { lufs, channels, srcChannels, codec, T }) {
   const chan = channels === 1 ? (srcChannels === 1 ? "anull" : "aformat=channel_layouts=mono")
     : srcChannels === 1 ? "pan=stereo|c0=c0|c1=c0" : srcChannels === 2 ? "anull" : "aformat=channel_layouts=stereo";
-  const base = `${chan},aresample=48000`;
-  const was = await loudness(src, base);
+  // (float first: a filter fed 16 bits may work in 16 bits and round a quiet voice again)
+  const base = `aformat=sample_fmts=fltp,${chan},aresample=48000`;
+  const was = await loudnessAt(src, base);
   if (was.lufs == null || lufs == null) throw new LevelError("could not measure the source's loudness for --before.");
   let gain = lufs - was.lufs, limited = was.truePeak != null && was.truePeak + gain > T.peakAccepted, got;
   for (let pass = 0; pass < 4; pass++) {
@@ -295,6 +299,8 @@ export async function clean(file, out, opts = {}, stages = null) {
   if (o.loudness != null) T.lufs = o.loudness;
   if (o.peak != null) { T.truePeak = o.peak; T.peakAccepted = o.peak + PEAK_MARGIN_DB; }
   const st = stages ?? await realStages();
+  // (a test's made-up measurement where it gives one: measure(file, "before" | "after"))
+  const measureOf = st.measure ?? measure;
 
   // the folders of what is written are made, as the collection's other tools make theirs
   // (`artifacts/<name>.m4a`, `voice/<name>/…` of a first run); what dead runs left there goes
@@ -325,16 +331,20 @@ export async function clean(file, out, opts = {}, stages = null) {
     const named = (e) => { if (e instanceof Refusal && src !== fileAbs) e.message = e.message.split(rel(src)).join(`${f.name}'s ${nth(o.audio)} audio stream`); return e; };
     // 1. what is wrong with it, and whether there is a voice to work on
     let m;
-    try { m = await measure(src); } catch (e) { throw named(e); }
+    try { m = await measureOf(src, "before"); } catch (e) { throw named(e); }
     const voiceS = m.speech?.seconds ?? 0;
     const what = src === fileAbs ? f.name : `${f.name}'s ${nth(o.audio)} audio stream`;
+    if (m.voice?.found === false) refuse(`measure finds no voice in ${what} (${String(m.voice.why || "nothing in it is speech").replace(/\.$/, "")}): there is nothing to mend or bring to a loudness, and raising it would only raise its noise.`);
     if (!voiceS) refuse(`measure finds no voice in ${what} (its level never rises far enough over its floor): there is nothing to mend or bring to a loudness, and raising it would only raise its noise.`);
     if (voiceS < MIN_VOICE_S) refuse(`measure finds only ${voiceS.toFixed(1)} s of voice in ${what}, under the ${MIN_VOICE_S} s clean needs to measure a voice's loudness: give it a longer recording.`);
     // the loudness it came in at, as played (a file with one channel plays on both speakers)
     const srcLufs = lufsOrNull(m.loudness?.integratedLufs);
     const srcAsPlayed = srcLufs == null ? null : srcLufs + ((m.analysed?.channels ?? 1) === 1 ? TWO_SPEAKERS_LU : 0);
-    if (o.level !== "off" && srcAsPlayed != null && T.lufs - srcAsPlayed > MAX_GAIN_DB)
-      refuse(`The voice lies at ${f1(srcAsPlayed)} LUFS as played: bringing it to ${f1(T.lufs)} would take ${Math.round(T.lufs - srcAsPlayed)} dB of gain, more than the ${MAX_GAIN_DB} dB this tool gives, and would raise its noise and its room as much; record it closer to the microphone, or aim lower with --loudness.`);
+    // (the far bound is the recording's own level, whatever the target: under it, refused before
+    // repair runs; where ebur128's gate hides the voice, measure's level of its speech frames)
+    const srcLevel = srcAsPlayed ?? (m.levels?.speechLufs != null ? m.levels.speechLufs + ((m.analysed?.channels ?? 1) === 1 ? TWO_SPEAKERS_LU : 0) : null);
+    const maxGain = MAX_GAIN_DB + T.lufs - TARGETS.lufs;
+    if (o.level !== "off" && srcLevel != null && T.lufs - srcLevel > maxGain) refuse(tooQuiet(srcLevel, T.lufs, T.lufs - srcLevel, maxGain));
     // 2. the tone's plan (it needs to know whether repair takes noise out), run at the end of repair's pass
     const rp = st.repairPlan ? st.repairPlan(m, { denoise: o.denoise }) : { steps: [] };
     const den = (rp.steps || []).find((s) => s.id === "denoise");
@@ -363,7 +373,7 @@ export async function clean(file, out, opts = {}, stages = null) {
       fs.rmSync(sound, { force: true });
     }
     // 6. measured again, as delivered
-    const m2 = await measure(outPart);
+    const m2 = await measureOf(outPart, "after");
     // 7. the untouched sound beside it, as loud as the output, to compare by ear
     let before = null;
     if (o.before != null) {
@@ -371,6 +381,8 @@ export async function clean(file, out, opts = {}, stages = null) {
       before.file = rel(beforeAbs);
     }
     const stage = (name, xs) => (xs || []).map((s) => ({ stage: name, ...s }));
+    const steps = [...stage("repair", rr.steps), ...stage("tone", tp.steps), ...lv.steps];
+    const left = [...stage("repair", rr.left), ...stage("tone", tp.left), ...lv.left];
     const measuredLufs = o.mono ? T.lufs - TWO_SPEAKERS_LU : T.lufs;
     const report = {
       source: f.name,
@@ -379,8 +391,7 @@ export async function clean(file, out, opts = {}, stages = null) {
       audio: { streams: nAudio, used: o.audio, dropped: nAudio - 1 },
       level: o.level,
       measured: { before: numbers(m), after: numbers(m2) },
-      steps: [...stage("repair", rr.steps), ...stage("tone", tp.steps), ...lv.steps],
-      left: [...stage("repair", rr.left), ...stage("tone", tp.left), ...lv.left],
+      steps, left,
       skipped: lv.skipped,
       targets: { lufs: o.level === "off" ? lv.settings.aimLufs : T.lufs, asPlayed: "on two speakers", measuredLufs: o.level === "off" ? lv.settings.measuredLufs : +measuredLufs.toFixed(2),
         kept: o.level === "off", truePeak: T.truePeak, peakAccepted: T.peakAccepted, peakAfterEncoding: true, rangeLu: T.rangeLu,

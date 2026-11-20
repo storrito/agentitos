@@ -14,6 +14,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { clean, lines } from "./lib/clean.mjs";
+import { measure } from "./lib/measure.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
@@ -169,7 +170,7 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
   // would take more gain than clean gives
   run(["-i", base, "-ss", "0.5", "-t", "0.3", file("short.wav")]);
   run(["-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.03:r=48000:d=20:seed=7,lowpass=f=6000", "-c:a", "pcm_s16le", file("room.wav")]);
-  run(["-i", base, "-af", "volume=-42dB", "-c:a", "pcm_f32le", file("far.wav")]);
+  run(["-i", base, "-af", "volume=-67dB", "-c:a", "pcm_f32le", file("far.wav")]);
   const cases = [
     [["gone.wav", "x.m4a"], /^There is no gone\.wav\.$/],
     [["mute.mp4", "x.m4a"], /^mute\.mp4 has no sound\.$/],
@@ -188,7 +189,9 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
     [["voice.wav", "x.m4a", "--audio", "0"], /^--audio needs the number of the audio stream that is the voice, 1 for the first, not 0\.$/],
     [["short.wav", "x.m4a"], /^measure finds (no voice|only 0\.\d s of voice) in short\.wav/],
     [["room.wav", "x.m4a"], /^measure finds no voice in room\.wav \(its level never rises far enough over its floor\): there is nothing to mend or bring to a loudness, and raising it would only raise its noise\.$/],
-    [["far.wav", "x.m4a"], /^The voice lies at −6\d\.\d LUFS as played: bringing it to −14\.0 would take 4\d dB of gain, more than the 45 dB this tool gives, and would raise its noise and its room as much; record it closer to the microphone, or aim lower with --loudness\.$/],
+    [["far.wav", "x.m4a"], /^The voice lies at −8\d\.\d LUFS as played: bringing it to −14\.0 would take 7\d dB of gain, more than the 70 dB this tool gives, and so little of it stands over the floor of its recording that the gain would raise mostly that floor; record it again closer to the microphone or with the recorder's input turned up\.$/],
+    // (the bound is the recording's level: a lower target does not get round it)
+    [["far.wav", "x.m4a", "--loudness", "-23"], /^The voice lies at −8\d\.\d LUFS as played: bringing it to −23\.0 would take 6\d dB of gain, more than the 61 dB this tool gives/],
     [["voice.wav"], /^Name the recording and the file to write/],
     [["voice.wav", "x.m4a", "--denoise", "max"], /^--denoise is auto, off, gentle or strong, not max\.$/],
     [["voice.wav", "x.m4a", "--loudness", "loud"], /^--loudness needs a number/],
@@ -415,6 +418,34 @@ test("a signal ends the running ffmpeg at once and leaves nothing: no output, no
     for (const f of ["sig.m4a", "sig.m4a.json", "sig.before.m4a"]) assert.ok(!fs.existsSync(file(f)), `${sig}: ${f} is there`);
     assert.deepEqual(fs.readdirSync(dir).filter((n) => n.startsWith(".voice-sound-clean-")), [], sig);
   }
+});
+
+test("a voice recorded very low (−61 LUFS as played, 47 dB of gain) is delivered at the target, and the lines say plainly that its noise and its room came up with it; its comparison as loud", { skip }, async () => {
+  const low = file("low.wav");
+  run(["-i", base, "-af", "volume=-42dB", "-c:a", "pcm_f32le", low]);
+  const r = await clean(low, file("low.m4a"), { before: file("low.before.m4a") }, stages);
+  near(loudness(file("low.m4a")).lufs, -14, 0.5, "delivered at the target");
+  near(loudness(file("low.before.m4a")).lufs, loudness(file("low.m4a")).lufs, 0.4, "the comparison as loud");
+  const q = r.left.find((x) => x.id === "quiet");
+  assert.ok(q && q.stage === "level", JSON.stringify(r.left));
+  assert.match(lines(r).find((l) => l.startsWith("Not mended:")), /quiet: It was recorded very low, −6\d\.\d LUFS as played, 4\d dB under the −14\.0 it was brought to all the same: its noise and its room came up with the voice by as much/);
+  // a voice under ebur128's gate (−75 as played, 61 dB): measured through a gain, delivered, its comparison too
+  const lower = file("lower.wav");
+  run(["-i", base, "-af", "volume=-56dB", "-c:a", "pcm_f32le", lower]);
+  const r2 = await clean(lower, file("lower.m4a"), { before: file("lower.before.m4a") }, stages);
+  near(loudness(file("lower.m4a")).lufs, -14, 0.5, "under the gate, delivered");
+  near(loudness(file("lower.before.m4a")).lufs, loudness(file("lower.m4a")).lufs, 0.4, "its comparison");
+  assert.ok(r2.left.some((x) => x.id === "quiet"));
+});
+
+test("measure's word on the voice: where it says none was found, clean refuses with measure's reason", { skip }, async () => {
+  const made = { ...stages, async measure(f, when) { const m = await measure(f); if (when === "before") m.voice = { found: false, why: "its level rises over its floor only in clicks under 30 ms." }; return m; } };
+  await assert.rejects(clean(base, file("novoice.m4a"), {}, made),
+    /^Error: measure finds no voice in \S*voice\.wav \(its level rises over its floor only in clicks under 30 ms\): there is nothing to mend or bring to a loudness, and raising it would only raise its noise\.$/);
+  assert.ok(!fs.existsSync(file("novoice.m4a")));
+  // (found: delivered as before)
+  const found = { ...stages, async measure(f, when) { const m = await measure(f); m.voice = { found: true, why: "12 s of speech over its floor." }; return m; } };
+  near((await clean(base, file("voice-found.m4a"), {}, found)).delivered.lufs, -14, 0.5, "found");
 });
 
 test("what dead runs left is removed by the next run once it is older than a day, and only that", { skip }, async () => {

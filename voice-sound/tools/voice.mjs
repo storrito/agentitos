@@ -6,15 +6,18 @@
 // agents: it prints what it measured or did and what to do next.
 //
 //   node tools/voice.mjs clean <audio|video> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>]
-//        [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--before <file>] [--json]
+//        [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>]
+//        [--before <file>] [--json]
 //   node tools/voice.mjs measure <audio|video> [--json]
 //   node tools/voice.mjs targets [platform…] [--json]
 //   node tools/voice.mjs targets list [--json]
 //
 //   clean     measures, then mends only what the numbers give a reason for, in three stages:
 //             repair (channels, clipping, rumble, hum, clicks, noise), tone (what stands out in
-//             the spectrum, sibilance), level (an even level, a gentle compressor, the loudness
-//             and a true-peak ceiling on the file as delivered). lib/clean.mjs says all of it.
+//             the spectrum, sibilance), level (an even level, the loudness, a slow limiter for
+//             the loudest peaks and a true-peak ceiling on the file as delivered). It refuses a
+//             recording without a voice and one whose voice stands too little over the floor of
+//             its recording to be raised; lib/clean.mjs says all of it.
 //   measure   the first audio stream, decoded once (ffmpeg, streamed, 48 kHz): ebur128's
 //             loudness, range and true peak; where the voice speaks and the noise floor in its
 //             pauses; the speech's level, the noise's level, kind and bands, their distance;
