@@ -222,6 +222,23 @@ test("plan: declip makes headroom, clicks get adeclick over a plosive's release"
   // the ceiling lifted to full scale for adeclip (with the 0.1 dB under it), then the old ceiling at −6 dBFS
   assert.equal(st.gainDb, -5);
   assert.match(p.graph, /volume=1\.1dB,adeclip=[^,]+,volume=-6\.1dB/);
+  // the window 55 ms, its AR model a share of it by how much is clipped; 10 ms where asked (the
+  // stage's second try after DECLIP_LIMIT)
+  const clipped = (share, o) => repairPlan(made({ clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share, exactShare: share }, findings: [finding("clipped")] }), o);
+  assert.deepEqual([0.0005, 0.004, 0.02, 0.45].map((s) => clipped(s).steps[0].arOrder), [8, 12, 16, 16]);
+  assert.match(clipped(0.02).graph, /adeclip=w=55:o=75:a=16:t=3:n=1000/);
+  assert.match(clipped(0.02).steps[0].why, /\(a 55 ms window, its model 16 % of it\)/);
+  assert.match(clipped(0.02, { declipFast: true }).graph, /adeclip=w=10:o=75:a=16:/);
+  // the second try from DECLIP_FAST_MAX_SHARE on: not redrawn (the 10 ms window does harm there)
+  const fastMuch = clipped(0.35, { declipFast: true });
+  assert.doesNotMatch(fastMuch.graph, /adeclip/);
+  assert.ok(fastMuch.left.some((l) => l.id === "clipped" && /took longer than its limit .* it stays as it is\.$/.test(l.why)), JSON.stringify(fastMuch.left));
+  assert.match(clipped(0.35).graph, /adeclip=w=55:/);
+  // past DECLIP_MAX_SHARE: not redrawn, said in left
+  const most = clipped(0.7);
+  assert.deepEqual(ids(most.steps), ["highpass"]);
+  assert.doesNotMatch(most.graph, /adeclip/);
+  assert.ok(most.left.some((l) => l.id === "clipped" && /^Clipped on 70 % of the samples, too much to redraw/.test(l.why)), JSON.stringify(most.left));
   const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
   assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
 });
@@ -477,6 +494,25 @@ test("clipped: the peaks are redrawn over the old ceiling", { skip }, async () =
   const truth = through(file("loud.wav"), "loud.hp.wav"), clipped = through(file("clipped.wav"), "clipped.hp.wav");
   const err = (z) => { let s = 0; for (let i = 0; i < z.length; i++) s += (z[i] - truth[i]) ** 2; return s; };
   assert.ok(err(y) < err(clipped) * 0.8, `error ${(10 * Math.log10(err(y) / err(clipped))).toFixed(1)} dB against the clipped one's`);
+});
+
+test("clipped: a redrawing that takes longer than its limit is stopped and run again with the 10 ms window, and says so", { skip }, async () => {
+  const loud = samples(fault("loud2.wav", "[0:a]volume=9dB[o]"));
+  const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.97)];
+  fault("clipped2.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)))'[o]`, "pcm_s16le");
+  const m = await measure(file("clipped2.wav"));
+  // (a limit of 0.3 s of CPU: the 55 ms window on 28.8 s takes more)
+  const { r, x, y } = await mended("clipped2.wav", m, { declipLimit: { baseS: 0.3, perSecond: 0 } });
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.equal(st.windowMs, 10);
+  assert.match(r.graph, /adeclip=w=10:/);
+  assert.match(st.why, /; the 55 ms window took over 0\.3 s of CPU, so it ran again with the coarser 10 ms one\.$/);
+  assert.deepEqual(st.slow, { windowMs: 55, cpuLimitS: 0.3 });
+  assert.equal(y.length, x.length);
+  // without a limit that small: the 55 ms window, nothing said
+  const plain = await repair(file("clipped2.wav"), file("clipped2.plain.wav"), m);
+  assert.equal(plain.steps.find((s) => s.id === "declip").windowMs, 55);
+  assert.ok(!plain.steps.find((s) => s.id === "declip").slow);
 });
 
 test("clipped at full scale with a DC offset before it: both sides redrawn, the offset taken out after adeclip", { skip }, async () => {

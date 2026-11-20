@@ -6,7 +6,7 @@
 //   channels   two channels to one: the other when one is silent, one when one is the other
 //              inverted (a sum would cancel the voice) or the same signal twice or one is 20 dB
 //              and more under the other (dead but for noise), else their mean
-//   declip     adeclip on the peaks at the measured ceiling
+//   declip     adeclip on the peaks at the measured ceiling, within a limit of time (DECLIP_LIMIT)
 //   highpass   a high-pass at 80 Hz for every recording, steeper when rumble or thumps stand
 //              out; a DC offset subtracted before it
 //   dehum      a narrow notch on every mains harmonic that was found, on its line as measured
@@ -138,6 +138,33 @@ export const DECLIP_T = 3;
 // (The whole graph is 32-bit float and nothing in it clips; the headroom is for whoever reads the
 // intermediate with integer samples.)
 const DECLIP_HEADROOM_DB = -6;
+// adeclip's window (ms) and its AR model's order (a % of the window) by the share of clipped
+// samples. Its time grows with that share, about as its square, and with the window (CPU, ffmpeg
+// 9.0.2 on the lab's laptop, 2026-11-20; tune split's clip-6db, -12db and -20db, 126 files, 0.05
+// to 47 % clipped): at 55 ms under 0.25 times the sound's length below 3 %, up to 3.8 times at
+// 15–20 %, 12 times at 30–47 % (127 s for 14.8 s), 55 times on a stretch clipped through; with 10
+// ms 1.6 times on that stretch. The window is not cheapened by the share: against 55 ms the
+// redrawing scored lower with 20 ms on 32 of the 126 and with 10 ms on 51 (by 0.15 and more on
+// PESQ or DNSMOS overall; PESQ 2.04 → 1.79 at 20–30 % with 10 ms), and better than none at every
+// share there (PESQ 1.41 → 2.04 at 20–30 % with 55 ms).
+export const DECLIP_WINDOW_MS = 55;
+// So the time is bounded where the pass runs: the stage stops after DECLIP_LIMIT's CPU seconds
+// (baseS and perSecond of sound; the 126 files took at most 127 s for 14.8 s, under 165) and runs
+// again with DECLIP_FAST_MS, and says so: under DECLIP_FAST_MAX_SHARE that takes at most half the
+// sound's length more (0.3 of it clipped through at 1.6 times; the clip sets at 20–30 %: 0.3
+// times). The stage's CPU time with clipping is so at most 150 s + 1.5 times the sound's length.
+export const DECLIP_LIMIT = { baseS: 150, perSecond: 1 };
+export const DECLIP_FAST_MS = 10;
+// ... but not from this share on: there the 10 ms window scored under no redrawing at all on
+// DNSMOS overall (clip sets at 30–47 %: 2.85 against 3.14; clean voices clipped to 36–65 %: 0.09
+// to 0.31 lower), so where the 55 ms one ran out of time it is left as it is
+export const DECLIP_FAST_MAX_SHARE = 0.3;
+// Over this share too little of the wave is left to draw from. Three clean tune voices clipped by
+// 26, 32 and 40 dB (2026-11-20): redrawn against left, PESQ +0.21 to +0.31 at 31–37 %, +0.08 to
+// +0.11 at 46–51 %, +0.03 at 62–65 %; DNSMOS overall there −0.05 to +0.17, NISQA +0.25 to +0.59;
+// adeclip took 22 to 23 times their length. A judgement: where PESQ no longer moves, the time
+// (which the limit would spend before leaving it anyway) is not spent. Named in `left`.
+export const DECLIP_MAX_SHARE = 0.6;
 
 // ---------------------------------------------------------------- ffmpeg
 
@@ -239,16 +266,22 @@ export function repairPlan(m, opts = {}) {
     const exact = (c.exactShare ?? 0) >= 1e-4;
     const level = c.ceilingDb - (exact ? CLIP_BELOW_DB.exact : CLIP_BELOW_DB.smeared);
     const share = Math.max(c.pileUp >= 3 ? c.share : 0, c.exactShare ?? 0);
-    // the AR model's order: the longer the runs, the more of the signal around them it needs
+    // the AR model's order, a % of the window: the longer the runs, the more of the signal around
+    // them it needs
     const order = share >= 0.01 ? 16 : share >= CLIP_STRONG_SHARE ? 12 : 8;
+    const w = opts.declipFast ? DECLIP_FAST_MS : DECLIP_WINDOW_MS;
     const up = -level, back = Math.min(0, DECLIP_HEADROOM_DB - c.ceilingDb);
-    chain.push(`volume=${r2(up)}dB`, `adeclip=w=55:o=75:a=${order}:t=${DECLIP_T}:n=1000`, `volume=${r2(back - up)}dB`);
-    gain *= 10 ** (back / 20);
-    steps.push({
-      id: "declip", why: `Clipped on ${pct(share)} of the samples at ${db1(c.ceilingDb)} dBFS: adeclip redraws the peaks from ${db1(level)} dBFS up (order ${order}), the old ceiling then at ${db1(c.ceilingDb + back)} dBFS.`,
-      share, ceilingDb: c.ceilingDb, fromDb: r2(level), arOrder: order, threshold: DECLIP_T, gainDb: r2(back),
-    });
-    if (share >= CLIP_STRONG_SHARE) left.push({ id: "clipped", why: `Clipped hard (${pct(share)} of the samples): the peaks are redrawn, but the distortion of long flat runs is not undone; some roughness stays.` });
+    if (opts.declipFast && share >= DECLIP_FAST_MAX_SHARE) left.push({ id: "clipped", why: `Clipped on ${pct(share)} of the samples: redrawing it took longer than its limit (${DECLIP_WINDOW_MS} ms window), and the faster ${DECLIP_FAST_MS} ms one does more harm than good this far: it stays as it is.` });
+    else if (share > DECLIP_MAX_SHARE) left.push({ id: "clipped", why: `Clipped on ${pct(share)} of the samples, too much to redraw (over ${pct(DECLIP_MAX_SHARE)} too little of the wave is left to draw from): it stays as it is.` });
+    else {
+      chain.push(`volume=${r2(up)}dB`, `adeclip=w=${w}:o=75:a=${order}:t=${DECLIP_T}:n=1000`, `volume=${r2(back - up)}dB`);
+      gain *= 10 ** (back / 20);
+      steps.push({
+        id: "declip", why: `Clipped on ${pct(share)} of the samples at ${db1(c.ceilingDb)} dBFS: adeclip redraws the peaks from ${db1(level)} dBFS up (a ${w} ms window, its model ${order} % of it), the old ceiling then at ${db1(c.ceilingDb + back)} dBFS.`,
+        share, ceilingDb: c.ceilingDb, fromDb: r2(level), windowMs: w, arOrder: order, threshold: DECLIP_T, gainDb: r2(back),
+      });
+      if (share >= CLIP_STRONG_SHARE) left.push({ id: "clipped", why: `Clipped hard (${pct(share)} of the samples): the peaks are redrawn, but the distortion of long flat runs is not undone; some roughness stays.` });
+    }
   }
 
   // 3. DC and the low end
@@ -526,27 +559,47 @@ export async function repair(file, outWav, m, opts = {}) {
   // (the filters of opts.after are the tone stage's to check)
   checkFilters(plan.filters);
   fs.mkdirSync(path.dirname(path.resolve(outWav)), { recursive: true });
-  const args = ["-hide_banner", "-nostdin", "-v", "error", "-nostats", ...(opts.progress ? ["-progress", "pipe:2"] : []), "-y", "-i", ffPath(file)];
-  const pause = plan.inputs.find((i) => i.input === 1);
-  if (pause) args.push("-ss", String(pause.from), "-t", String(pause.seconds), "-i", ffPath(file));
-  args.push("-filter_complex", plan.graph, "-map", "[out]", "-map_metadata", "-1", "-fflags", "+bitexact",
-    "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav", ffPath(outWav));
-  const code = await new Promise((resolve) => {
-    const p = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "", partial = "";
-    p.stderr.setEncoding("utf8");
-    p.stderr.on("data", (d) => {
-      const lines = (partial + d).split("\n");
-      partial = lines.pop();
-      for (const line of lines) {
-        const t = line.match(/^out_time_us=(\d+)/);
-        if (t) opts.progress?.(Number(t[1]) / 1e6);
-        else if (!/^[a-z0-9_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
-      }
+  const runPass = (plan, cpuLimitS) => {
+    const args = ["-hide_banner", "-nostdin", "-v", "error", "-nostats", ...(opts.progress ? ["-progress", "pipe:2"] : []), "-y", "-i", ffPath(file)];
+    const pause = plan.inputs.find((i) => i.input === 1);
+    if (pause) args.push("-ss", String(pause.from), "-t", String(pause.seconds), "-i", ffPath(file));
+    args.push("-filter_complex", plan.graph, "-map", "[out]", "-map_metadata", "-1", "-fflags", "+bitexact",
+      "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav", ffPath(outWav));
+    return new Promise((resolve) => {
+      const p = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+      let err = "", partial = "", late = false;
+      const t0 = Date.now();
+      const watch = cpuLimitS ? setInterval(() => { if ((cpuSecondsOf(p.pid) ?? (Date.now() - t0) / 1000) > cpuLimitS) { late = true; p.kill("SIGKILL"); } }, 1000) : null;
+      p.stderr.setEncoding("utf8");
+      p.stderr.on("data", (d) => {
+        const lines = (partial + d).split("\n");
+        partial = lines.pop();
+        for (const line of lines) {
+          const t = line.match(/^out_time_us=(\d+)/);
+          if (t) opts.progress?.(Number(t[1]) / 1e6);
+          else if (!/^[a-z0-9_]+=/.test(line) && line.trim()) err = (err + line + "\n").slice(-2000);
+        }
+      });
+      p.on("error", (e) => { clearInterval(watch); resolve(e.code === "ENOENT" ? "missing" : String(e.message)); });
+      p.on("close", (c) => { clearInterval(watch); resolve(late ? "late" : c === 0 ? 0 : err.trim().split("\n").pop() || `exit ${c}`); });
     });
-    p.on("error", (e) => resolve(e.code === "ENOENT" ? "missing" : String(e.message)));
-    p.on("close", (c) => resolve(c === 0 ? 0 : err.trim().split("\n").pop() || `exit ${c}`));
-  });
+  };
+  // adeclip's full window within DECLIP_LIMIT, else again with the fast one (the pass's CPU time;
+  // its wall time where the system does not tell it)
+  const fb = plan.steps.find((s) => s.fallback)?.fallback;
+  const replan = (extra) => { const o = { ...opts, ...extra, ...(probe && { underVoice: probe }) }; return fb ? fallbackPlan(m, o, new NeuralFailure(fb.reason)) : withTone(m, o); };
+  const declipping = plan.steps.some((s) => s.id === "declip" && s.windowMs !== DECLIP_FAST_MS);
+  // (opts.declipLimit: another limit, for the tests and the lab)
+  const lim = { ...DECLIP_LIMIT, ...opts.declipLimit };
+  const cpuLimitS = declipping ? r1(lim.baseS + lim.perSecond * (m.analysed?.seconds ?? m.duration ?? 0)) : null;
+  let code = await runPass(plan, cpuLimitS);
+  if (code === "late") {
+    fs.rmSync(outWav, { force: true });
+    plan = replan({ declipFast: true });
+    const st = plan.steps.find((s) => s.id === "declip");
+    if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; the ${DECLIP_WINDOW_MS} ms window took over ${cpuLimitS} s of CPU, so it ran again with the coarser ${DECLIP_FAST_MS} ms one.`, slow: { windowMs: DECLIP_WINDOW_MS, cpuLimitS } });
+    code = await runPass(plan, null);
+  }
   if (code === "missing") refuse("ffmpeg is missing: this tool needs ffmpeg on the PATH.");
   if (code !== 0) refuse(`ffmpeg could not repair ${path.basename(file)} (${code}): check that it plays (ffprobe ${path.basename(file)}).`);
   // a filter that writes garbage (arnndn's last block in 9.0.2) must not reach a person's file
@@ -592,6 +645,16 @@ export async function invalidSample(wav, bound = 16) {
 // a file's name as ffmpeg's file protocol takes it: one that begins with a dash is no option, one
 // with a colon no other protocol
 const ffPath = (p) => `file:${path.resolve(p)}`;
+
+// the CPU seconds a running process has used (Linux's /proc, 100 ticks a second), or null
+export function cpuSecondsOf(pid) {
+  try {
+    // (after the name in parentheses, from the third field on: utime and stime are the 14th and 15th)
+    const s = fs.readFileSync(`/proc/${pid}/stat`, "utf8"), f = s.slice(s.lastIndexOf(")") + 2).split(" ");
+    const t = (Number(f[11]) + Number(f[12])) / 100;
+    return Number.isFinite(t) ? t : null;
+  } catch { return null; }
+}
 
 // ---------------------------------------------------------------- the neural denoiser
 //
