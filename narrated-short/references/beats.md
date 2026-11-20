@@ -24,7 +24,7 @@
 }
 ```
 
-- `credit`: the footage's owner, on screen the whole time (two owners: `"Boston Dynamics · NASA"`). `handle`: the account's @name, shown at the end; ask when you do not know it.
+- `credit`: the footage's owner, on screen the whole time (two owners: `"Boston Dynamics · NASA"`). `handle`: the account's @name, shown at the end; ask when you do not know it. When the person wants no name in the video, leave `handle` out: nothing stands at the end then.
 - `footage`: the folder of the footage skill; a beat's `source` is a stem of it (`sources.json`), or the path of a video file.
 - May be left out: `platforms` (where it goes, as `--platform`: `"tiktok"`, `"reels,tiktok"`), `captions` (their style, as `--style`: `hormozi` by default, or another of captions' styles: `bold`, `outline`, `subtitle`, `clean`, `karaoke`, `wipe`, …), `lang` (the film's language, `en` by default).
 
@@ -64,7 +64,7 @@ Without `faces` (or with `build --no-faces`) the short is built exactly as befor
 - **Motion in the first frame** where there is any: mid-jump, mid-fall, sparks, water; not a subject standing still.
 - Its band is 1.6 times larger by itself, its middle kept (`build` says so); a subject that already fills the width: `"zoom": 1`; one that stands left or right: `"pan"`.
 - `hook.text`: two to five words in capitals that open a question, on screen for the first 2.5 s; `hook.key`: the one word of them in colour. Take the moment the text stands on a clear picture as the cover when the video is published.
-- **The freeze** (`"freeze": 1.2`, with agentitos' freeze-cutout beside this skill): at that second of the beat the picture stops for 0.7 s, the background turns black and white, the subject pops out with an outline, and the clip runs on at its old length. Give one whenever the first seconds hold a moment with the subject **big, sharp and whole**, nothing in front of it, 0.2 s or more into the beat and 1.1 s before its end; no such moment: no `freeze`. `subject` (beside `hook`) names what pops, as you would point at it. `"pop": "soft"` makes it shorter and smaller. `build` says `freezes at …` with the picture to look at, or why there is none and that the plain clip is used. The freeze at its largest is the cover.
+- **The freeze** (`"freeze": 1.2`, with agentitos' freeze-cutout beside this skill): at that second of the beat the picture stops for 0.7 s, the background turns black and white, the subject pops out with an outline, and the clip runs on at its old length. Give one whenever the first seconds hold a moment with the subject **big, sharp and whole**, nothing in front of it, 0.2 s or more into the beat and 1.2 s before its end (1 s with `"pop": "soft"`); no such moment: no `freeze`. `subject` (beside `hook`) names what pops, as you would point at it. `"pop": "soft"` makes it shorter and smaller. `build` says `freezes at …` with the picture to look at, or why there is none and that the plain clip is used. The freeze at its largest is the cover.
 
 ## The key words
 

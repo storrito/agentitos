@@ -18,7 +18,8 @@
 //        inside), the captions built by agentitos' captions (paused under the comparison card,
 //        the key words marked, the beats' "boxes" as cards of their own), the first beat's freeze
 //        by agentitos' freeze-cutout when the beat asks for one, and <composition>/index.html:
-//        clips, voice, music (measured, 17 LU under the voice), hook text, card, credit, handle.
+//        clips, voice, music (measured, 17 LU under the voice), hook text, card, credit, and the
+//        handle at the end where beats.json names one (none: nothing stands there).
 //        Changed beats: build again; a clip whose beat and source did not change is kept.
 //        Where faces of a beat are known: a fill shows their eyes, nose and mouth (moved, or
 //        raised over the ground), else a 4:5 or 1:1 crop placed high (agentitos' layout), else the
@@ -40,6 +41,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
 import { counted, planWindow, framed, bandOf, onOf, measureFault, measureSaid, inkOf, sane, looking, shownShare, talksIn, WEIGHT, TALK_FACE } from "./lib/faces.mjs";
+import { freezeRoom } from "./lib/freeze.mjs";
 
 const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] [--again] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
@@ -447,7 +449,9 @@ function build(args) {
   // ---- what the beats must say
   const text = (v) => typeof v === "string" && v.trim() !== "";
   if (!text(cfg.credit)) fail(`${rel(beatsFile)} needs "credit": the footage's owner, on screen the whole time.`);
-  if (!text(cfg.handle)) fail(`${rel(beatsFile)} needs "handle": the account's @name, shown at the end.`);
+  // the account's @name at the end; left out, null or "": none, and nothing stands in its place
+  if (cfg.handle != null && typeof cfg.handle !== "string") fail(`"handle" is the account's @name as text, shown at the end; leave it out for none.`);
+  const handle = text(cfg.handle) ? cfg.handle.trim() : null;
   const hook = cfg.hook && typeof cfg.hook === "object" ? cfg.hook : {};
   if (!text(hook.text) || !text(hook.key)) fail(`${rel(beatsFile)} needs "hook": {"text": two to five words in capitals, "key": the one word of them in colour}.`);
   for (const k of ["keys", "boxes"]) if (cfg[k] != null && !(Array.isArray(cfg[k]) && cfg[k].every(text))) fail(`"${k}" is a list of phrases as the voice says them: ["one foot", "NASA's"].`);
@@ -490,7 +494,7 @@ function build(args) {
     if (card.for < 2.5) warn.push(`the comparison card stands ${card.for} s; the sentence under it should run 2.5 s or longer`);
   }
   const endAt = r2(Math.max(voiceEnd - 1.2, last.from, HOOK_SECONDS));
-  if (card && card.at + card.for > endAt) warn.push(`the comparison card stands until ${r2(card.at + card.for)} s, the handle comes at ${endAt} s in the same place: end the card earlier`);
+  if (handle && card && card.at + card.for > endAt) warn.push(`the comparison card stands until ${r2(card.at + card.for)} s, the handle comes at ${endAt} s in the same place: end the card earlier`);
 
   // ---- everything it needs, before a clip is cut
   const zonesTool = tool("PLATFORM_ZONES", "platform-zones", "zones.mjs");
@@ -868,7 +872,10 @@ function build(args) {
       const cut = tool("FREEZE_CUTOUT", "freeze-cutout", "cutout.mjs");
       const pop = path.join(clipsDir, `${b.id}-pop.mp4`), popNote = path.join(clipsDir, `${b.id}-pop.json`);
       const popHow = JSON.stringify({ how, freeze: b.freeze, subject: cfg.subject || null, pop: b.pop || "strong" });
+      // the room it needs, asked before freeze-cutout runs (its own refusal stays for a clip cut shorter than its beat)
+      const room = freezeRoom(b.freeze, seconds, b.pop || "strong", FPS);
       if (!cut) report.push(`  ! ${b.id}: the freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs); the plain clip is used`);
+      else if (room) { fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true }); report.push(`  ! ${b.id}: no freeze, the plain clip is used: ${room}`); }
       else if (fs.existsSync(pop) && fs.statSync(pop).size && fs.existsSync(popNote) && fs.readFileSync(popNote, "utf8") === popHow) popped[b.id] = true;
       else {
         fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true });
@@ -907,9 +914,9 @@ function build(args) {
     overlays += `      <div id="compare" class="clip layer" data-start="${card.at}" data-duration="${card.for}" data-track-index="11">\n        <div id="cmp-in" class="compare">\n          <div class="cmp-title">${esc(text(card.title) ? card.title : "SIZE CHECK")}</div>\n${rows}        </div>\n      </div>\n`;
     tweens += `      tl.fromTo("#cmp-in", { autoAlpha: 0, y: -24 }, { autoAlpha: 1, y: 0, duration: 0.3, ease: "power2.out" }, ${card.at});\n      tl.to("#cmp-in", { autoAlpha: 0, duration: 0.25 }, ${r2(card.at + card.for - 0.25)});\n`;
   }
-  overlays += `      <div id="handle" class="clip layer" data-start="${endAt}" data-duration="${r2(total - endAt)}" data-track-index="12"><div id="handle-in" class="pill handle">${esc(cfg.handle.trim())}</div></div>\n`
-    + `      <div id="credit" class="clip pill credit" data-start="0" data-duration="${total}" data-track-index="6">${esc(/^\p{Extended_Pictographic}/u.test(cfg.credit.trim()) ? cfg.credit.trim() : `🎬 ${cfg.credit.trim()}`)}</div>\n`;
-  tweens += `      tl.fromTo("#handle-in", { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)" }, ${endAt});\n`;
+  if (handle) overlays += `      <div id="handle" class="clip layer" data-start="${endAt}" data-duration="${r2(total - endAt)}" data-track-index="12"><div id="handle-in" class="pill handle">${esc(handle)}</div></div>\n`;
+  overlays += `      <div id="credit" class="clip pill credit" data-start="0" data-duration="${total}" data-track-index="6">${esc(/^\p{Extended_Pictographic}/u.test(cfg.credit.trim()) ? cfg.credit.trim() : `🎬 ${cfg.credit.trim()}`)}</div>\n`;
+  if (handle) tweens += `      tl.fromTo("#handle-in", { autoAlpha: 0, scale: 0.8 }, { autoAlpha: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)" }, ${endAt});\n`;
 
   // the voice: each line from just before its first word (data-media-start), never into the next
   let audio = "";
@@ -956,8 +963,7 @@ function build(args) {
       /* the text of this film stands in the stretch platform-zones leaves free above the apps' buttons */
       .pill { position: absolute; left: 0; right: 0; margin: 0 auto; width: fit-content; max-width: ${w}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 999px; }
       .credit { top: ${y}px; font-size: 28px; font-weight: 700; background: rgba(10,14,20,.72); padding: 10px 24px; }
-      .handle { top: ${y + 66}px; font-size: 40px; font-weight: 900; letter-spacing: 2px; color: #0a0e14; background: ${accent}; padding: 14px 36px; }
-      .hook {
+${handle ? `      .handle { top: ${y + 66}px; font-size: 40px; font-weight: 900; letter-spacing: 2px; color: #0a0e14; background: ${accent}; padding: 14px 36px; }\n` : ""}      .hook {
         position: absolute; left: ${x}px; width: ${w}px; top: ${y + 66}px; text-align: center; text-wrap: balance;
         font-weight: 900; line-height: 1.02; color: #fff; transform-origin: 50% 0;
         -webkit-text-stroke: 4px rgba(6,8,12,.92); paint-order: stroke fill; text-shadow: 0 6px 26px rgba(0,0,0,.85);
@@ -989,7 +995,7 @@ ${tweens}      window.__timelines["main"] = tl;
   fs.mkdirSync(comp, { recursive: true });
   fs.writeFileSync(path.join(comp, "index.html"), html);
 
-  console.log(`${rel(path.join(comp, "index.html"))}: ${total} s, ${beats.length} beats (${cutAnew} cut anew), the voice in ${ck.lines.length} lines${hasMusic ? `, music${musicSaid}` : ", no music yet (assets/music.mp3)"}${mount ? `, captions (${shown.length} of ${words.length} words${card ? ", paused under the card" : ""}${boxes.n ? `, ${boxes.n} as cards` : ""})` : ", no captions"}; text placed for ${zones.platforms?.map((p) => p.name).join(", ") || "the usual apps"}.`);
+  console.log(`${rel(path.join(comp, "index.html"))}: ${total} s, ${beats.length} beats (${cutAnew} cut anew), the voice in ${ck.lines.length} lines${hasMusic ? `, music${musicSaid}` : ", no music yet (assets/music.mp3)"}${mount ? `, captions (${shown.length} of ${words.length} words${card ? ", paused under the card" : ""}${boxes.n ? `, ${boxes.n} as cards` : ""})` : ", no captions"}${handle ? "" : ", no handle at the end"}; text placed for ${zones.platforms?.map((p) => p.name).join(", ") || "the usual apps"}.`);
   for (const l of report) console.log(l);
   for (const wn of warn) console.log(`  ! ${wn}`);
   if (failed) fail(`${failed} clip(s) cannot go out as they are (✗): change their beats and build again.`);
