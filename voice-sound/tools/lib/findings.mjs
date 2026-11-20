@@ -33,10 +33,11 @@ export const HUM_SOME_DB = 10;
 export const HUM_STRONG_DB = 20;
 export const HUM_STRONG_UNDER_DB = 35;
 // How lib/analyse.mjs tells a hum (its humOf), leaning towards none: a missed weak hum costs
-// little, a notch in a voice's fundamental costs the voice. It reads the pauses alone, and with
-// under 0.7 s of them (two windows of 341 ms that do not overlap, the fewest between which a
-// line's level can be compared) there is no hum to name, whatever the voiced frames hold: a
-// voice's pitch stands as a line in them as well as a hum does (a 6-second cut of clean speech
+// little, a notch in a voice's fundamental costs the voice. It reads the pauses' short windows,
+// and with under 0.7 s of them (two windows of 341 ms that do not overlap, the fewest between
+// which a line's level can be compared) it never reads them where a voice is (it reads the long
+// windows below instead): in windows that short a voice's pitch stands as a line as well as a
+// hum does (a 6-second cut of clean speech
 // without a pause showed "60 Hz" at its speaker's fundamental, 2026-11-19). On the lab's corpus
 // that day: with 1 s the built-in hum was found on 29 of 168 short files, with 0.7 s on 51,
 // with 0.5 s on 87 but from one window, where a voice's tail ringing on in a room has nothing
@@ -52,6 +53,22 @@ export const HUM_PARTS_MAX = 4;
 // it spreads it by 3 dB (pink noise alone: no line over 0 dB; 2026-11-19).
 export const HUM_LINE_DB = 6;
 export const HUM_STEADY_DB = 6;
+// Where the mains hum lies: the grid's frequency within 2.5 % (48.75–51.25 Hz, 58.5–61.5 Hz; the
+// two never overlap). Mains holds 50 or 60 Hz to 0.2 Hz, but a recording played back at another
+// speed moves it: the lab's fleurs-de-05 has its line at 50.96 Hz (1.9 %, 2026-11-20). A judgement.
+export const HUM_OFF_SHARE = 0.025;
+// Hum under the voice, where the pauses are too few (humOf's `from: "whole"`): windows of 2.7 s
+// over the whole recording (0.37 Hz a bin), every 0.68 s. Mains hum is one line there, a voice's
+// pitch, wandering by several hertz a second, is smeared over many bins. A harmonic counts when
+// it stands HUM_WHOLE_LINE_DB over the bins 1.5 to 4.4 Hz beside it in HUM_WHOLE_SHARE of the
+// windows, in the quietest quarter of the windows by HUM_LINE_DB, and its level spreads by at most
+// HUM_WHOLE_STEADY_DB (standard deviation over the windows); from HUM_WHOLE_MIN_WINDOWS windows
+// (5.5 s) on. The counted harmonics must not all be multiples of one of them but the first (a
+// voice held on one pitch, 100 or 120 Hz, is a series of lines on the grid without its odd ones).
+export const HUM_WHOLE_LINE_DB = 3;
+export const HUM_WHOLE_SHARE = 0.8;
+export const HUM_WHOLE_STEADY_DB = 3;
+export const HUM_WHOLE_MIN_WINDOWS = 5;
 
 // clipped: a pile-up at the ceiling 3 times the density 1–3 dB under it (a voice's levels thin
 // out towards its peak: about 0.1 to 0.5 there), on 1 in 10 000 samples; strong from 1 in 1000
@@ -146,6 +163,8 @@ export function noiseKind(n, hum) {
 }
 
 const f1 = (x) => { const r = Math.round(x * 10) / 10; return (r < 0 ? "−" : "") + Math.abs(r).toFixed(1); };
+// the hum's grid, and where its line lies when that is a tenth of a hertz or more off it
+export const humHz = (h) => (h.fundamentalHz != null && Math.abs(h.fundamentalHz - h.hz) >= 0.1 ? `${h.hz} Hz (its line at ${h.fundamentalHz.toFixed(2)} Hz)` : `${h.hz} Hz`);
 const i0 = (x) => { const r = Math.round(x); return (r < 0 ? "−" : "") + Math.abs(r); };
 const kHz = (hz) => (hz >= 1000 ? `${+(hz / 1000).toFixed(1)} kHz` : `${hz} Hz`);
 const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -165,7 +184,7 @@ export function findingsOf(m) {
   const h = m.hum;
   if (h?.judged !== false && h?.hz && h.overDb >= HUM_SOME_DB)
     add("hum", h.overDb >= HUM_STRONG_DB || (h.underSpeechDb != null && h.underSpeechDb <= HUM_STRONG_UNDER_DB),
-      `Hum at ${h.hz} Hz, ${h.harmonics} harmonic${h.harmonics === 1 ? "" : "s"}, ${i0(h.overDb)} dB over the noise beside it${h.underSpeechDb != null ? `, ${i0(h.underSpeechDb)} dB under the speech` : ""}.`);
+      `Hum at ${humHz(h)}, ${h.harmonics} harmonic${h.harmonics === 1 ? "" : "s"}, ${i0(h.overDb)} dB over the noise beside it${h.underSpeechDb != null ? `, ${i0(h.underSpeechDb)} dB under the speech` : ""}${h.from === "whole" ? " (found under the voice: too few pauses)" : ""}.`);
   const c = m.clipping;
   if (c) {
     const repeated = (runs, samples) => runs >= CLIP_MIN_RUNS && samples >= CLIP_MIN_RUN_SAMPLES;

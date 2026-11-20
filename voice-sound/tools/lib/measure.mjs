@@ -12,7 +12,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { facts, analyse, Refusal } from "./analyse.mjs";
-import { findingsOf, noiseKind } from "./findings.mjs";
+import { findingsOf, noiseKind, humHz } from "./findings.mjs";
 
 const TOOL = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "voice.mjs");
 const rel = (p) => { const r = path.relative(process.cwd(), p); return r && !r.startsWith("..") ? r : p; };
@@ -54,7 +54,7 @@ export function lines(m) {
     out.push(`Noise in the pauses ${f1(n.lufs)} LUFS, ${i0(L.snrDb)} dB under the speech (${i0(L.snrADb ?? L.snrDb)} dB A-weighted), ${n.kind}${n.fluctuationDb != null ? ` (it moves by ${f1(n.fluctuationDb)} dB)` : ""}; ${f1(sp.pauses.seconds)} s of pauses${longest ? `, the longest ${f1(longest.seconds)} s at ${clock(longest.from)}` : ""}.` +
       (sp.confidence === "low" ? " Few pauses: the floor is uncertain." : ""));
   } else if (sp.silentShare > 0.03) out.push("The pauses are digital silence: no noise to measure.");
-  if (m.hum?.hz) out.push(`Hum at ${m.hum.hz} Hz, ${m.hum.harmonics} harmonic${m.hum.harmonics === 1 ? "" : "s"}, ${i0(m.hum.overDb)} dB over the noise beside it${m.hum.underSpeechDb != null ? `, ${i0(m.hum.underSpeechDb)} dB under the speech` : ""}.`);
+  if (m.hum?.hz) out.push(`Hum at ${humHz(m.hum)}, ${m.hum.harmonics} harmonic${m.hum.harmonics === 1 ? "" : "s"}, ${i0(m.hum.overDb)} dB over the noise beside it${m.hum.underSpeechDb != null ? `, ${i0(m.hum.underSpeechDb)} dB under the speech` : ""}${m.hum.from === "whole" ? `, judged under the voice (${f1(m.hum.pauseSeconds)} s of pause)` : ""}.`);
   // (said, so that "no hum" is never read out of a recording that could not show one)
   else if (m.hum?.judged === false && m.hum.why) out.push(`Hum not judged: ${m.hum.why}`);
   if (m.tone) {

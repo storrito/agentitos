@@ -120,24 +120,63 @@ test("hum: 50 Hz told from 60 Hz, ten harmonics each judged in the pauses", { sk
   }
 });
 
-test("hum: a voice without a pause is never taken for hum, nor judged for it", { skip }, async () => {
-  // its pitch held at 120 Hz, held at 180 Hz, gliding from 80 to 120 Hz through 100 Hz
-  for (const [name, phase] of [["at120", "120*t"], ["at180", "180*t"], ["glide", "80*t+2.5*t*t"]]) {
+test("hum off the grid: each line where it lies (50.96 and 61.1 Hz), the fundamental to a few hundredths of a hertz", { skip }, async () => {
+  for (const [hz, grid] of [[50.96, 50], [61.1, 60]]) {
+    const f = file(`hum-off-${hz}.wav`);
+    run(["-i", base, "-filter_complex", `${humOf(hz)};[0:a][hum]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", f]);
+    const m = await measure(f);
+    assert.equal(m.hum.hz, grid);
+    assert.equal(m.hum.from, "pauses");
+    near(m.hum.fundamentalHz, hz, 0.05, "fundamental");
+    const counted = (grid === 50 ? m.hum.at50 : m.hum.at60).filter((x) => x.counts);
+    assert.ok(counted.length >= 8, `${counted.length} harmonics counted`);
+    // (the notch is 2 Hz wide at its −3 dB points: a line 0.2 Hz off its middle loses 0.1 dB of its cut)
+    for (const x of counted) near(x.lineHz, x.n * hz, 0.2, `harmonic ${x.n}`);
+    for (const x of grid === 50 ? m.hum.at50 : m.hum.at60) assert.ok(Number.isFinite(x.lineHz), JSON.stringify(x));
+    assert.ok(ids(m).includes("hum"), ids(m).join());
+  }
+  assert.equal(clean.hum.fundamentalHz, null);
+});
+
+test("hum under a voice without a pause: judged from the whole recording, named where it is steady, never a held pitch", { skip }, async () => {
+  // its pitch held at 120 Hz, held at 180 Hz (lines on the 60 Hz grid without its odd harmonics),
+  // gliding from 80 to 120 Hz through 100 Hz. (A held pitch is made of its harmonics to 1.4 kHz:
+  // the sawtooth's aliases, computed at 48 kHz, fold onto multiples of 60 Hz for a pitch of 180,
+  // and so would its peaks clipped, a period of 266⅔ samples repeating every 800, 1/60 s; and
+  // the hum's 3 kHz signal folds what its filter leaves over 1.5 kHz, 3000 − k·180 = 60·(50 − 3k).
+  // No voice holds its pitch to a tenth of a hertz for seconds, which these lines need.)
+  const held = (hz) => `aevalsrc=exprs='0.1*(0.7+0.3*sin(12.566*t))*(${[...Array(Math.floor(1400 / hz)).keys()].map((k) => `sin(${(2 * Math.PI * hz * (k + 1)).toFixed(4)}*t)/${k + 1}`).join("+")})':s=48000:d=8,` +
+    `equalizer=f=500:t=o:w=1:g=10,equalizer=f=1500:t=o:w=1:g=6,equalizer=f=2700:t=o:w=0.8:g=4[v];anoisesrc=color=pink:amplitude=0.0015:r=48000:d=8:seed=5[n];[v][n]amix=inputs=2:normalize=0`;
+  for (const [name, graph] of [["at120", held(120)], ["at180", held(180)], ["glide", steady("80*t+2.5*t*t")]]) {
     const f = file(`steady-${name}.wav`);
-    run(["-filter_complex", steady(phase), "-ac", "1", "-c:a", "pcm_s16le", f]);
+    run(["-filter_complex", graph, "-ac", "1", "-c:a", "pcm_s16le", f]);
     const m = await measure(f);
     assert.ok(m.speech.share > 0.95, `${name}: speech ${m.speech.share}`);
-    assert.equal(m.hum.judged, false, name);
-    assert.equal(m.hum.hz, null, name);
+    assert.equal(m.hum.judged, true, name);
+    assert.equal(m.hum.from, "whole", name);
+    assert.equal(m.hum.hz, null, `${name}: ${JSON.stringify(m.hum.at60.filter((x) => x.counts))}`);
     assert.ok(!ids(m).includes("hum"), `${name}: ${ids(m).join()}`);
   }
-  // and real hum under it is not named either: without a pause there is nothing to judge it by
-  const f = file("steady-hum.wav");
-  run(["-filter_complex", `${steady("120*t")}[v];${humOf(50, 0.006, "1", 8)};[v][hum]amix=inputs=2:normalize=0`, "-ac", "1", "-c:a", "pcm_s16le", f]);
-  const m = await measure(f);
-  assert.equal(m.hum.judged, false);
-  assert.match(m.hum.why, /judged from 0\.7 s on/);
-  assert.ok(!ids(m).includes("hum"), ids(m).join());
+  // hum under it, at 50 and off the grid at 49.6 Hz: named, where it lies, and not called rumble
+  for (const hz of [50, 49.6]) {
+    const f = file(`steady-hum-${hz}.wav`);
+    run(["-filter_complex", `${steady("120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t))")}[v];${humOf(hz, 0.006, "1", 8)};[v][hum]amix=inputs=2:normalize=0`, "-ac", "1", "-c:a", "pcm_s16le", f]);
+    const m = await measure(f);
+    assert.equal(m.hum.judged, true);
+    assert.equal(m.hum.from, "whole");
+    assert.equal(m.hum.hz, 50, JSON.stringify(m.hum.at50.slice(0, 4)));
+    near(m.hum.fundamentalHz, hz, 0.05, "fundamental");
+    for (const x of m.hum.at50.filter((y) => y.counts)) near(x.lineHz, x.n * hz, 0.2, `harmonic ${x.n}`);
+    assert.ok(ids(m).includes("hum") && !ids(m).includes("rumble"), ids(m).join());
+  }
+  // under 5.5 s without a pause: nothing to judge it by, and the numbers say so
+  const short = file("steady-short.wav");
+  run(["-filter_complex", `${steady("120*t", 4)}[v];${humOf(50, 0.006, "1", 4)};[v][hum]amix=inputs=2:normalize=0`, "-ac", "1", "-c:a", "pcm_s16le", short]);
+  const s = await measure(short);
+  assert.equal(s.hum.judged, false);
+  assert.equal(s.hum.from, null);
+  assert.match(s.hum.why, /judged from 0\.7 s of pause, or under the voice from 5\.5 s of sound on/);
+  assert.ok(!ids(s).includes("hum"), ids(s).join());
 });
 
 test("hum: a voice with pauses and its pitch held at 120 Hz is no hum; a hum in the first half only is named intermittent, not hum", { skip }, async () => {
