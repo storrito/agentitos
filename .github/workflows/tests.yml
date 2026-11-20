@@ -53,7 +53,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: "*/package-lock.json"
-      # ffmpeg and ffprobe: the build an rragent machine has (FFmpeg 9.0, .github/ffmpeg.sh names
+      # ffmpeg and ffprobe: the build an rragent machine has (FFmpeg 8.1, .github/ffmpeg.sh names
       # it with its checksum), kept in GitHub's cache under that file's hash and put in front of
       # whatever the runner has
       - uses: actions/cache@v4
@@ -103,7 +103,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      # ffmpeg and ffprobe: the build an rragent machine has (FFmpeg 9.0, .github/ffmpeg.sh names
+      # ffmpeg and ffprobe: the build an rragent machine has (FFmpeg 8.1, .github/ffmpeg.sh names
       # it with its checksum), kept in GitHub's cache under that file's hash and put in front of
       # whatever the runner has
       - uses: actions/cache@v4
