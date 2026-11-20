@@ -141,8 +141,22 @@ test("plan: each finding alone gives its step and no other", () => {
     assert.deepEqual(st.notches.map((x) => x.hz), [50, 100]);
     assert.deepEqual(p.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50:t=h:w=2:r=f64", "bandreject=f=100:t=h:w=2:r=f64"]);
     assert.equal(st.widthHz, 2);
-    assert.match(st.why, /^Hum at 50 Hz, steady in the pauses at 50, 100 Hz \(up to 18 dB over the noise beside it\): each of the 2 lines taken out by a notch 2 Hz wide at its −3 dB points\.$/);
+    assert.match(st.why, /^Hum at 50 Hz, steady in the pauses \(up to 18 dB over the noise beside it\): notched at 50, 100 Hz, each 2 Hz wide at its −3 dB points\.$/);
   }
+  // each notch on its line as measured (lineHz), not on the multiple of the mains: a line at
+  // 50.96 Hz loses 3.2 dB to a notch at 50 (fleurs-de-05, 2026-11-20); the step keeps both
+  // numbers and says where it notched, never that the line is gone
+  const off = { judged: true, hz: 50, fundamentalHz: 50.963, harmonics: 2, overDb: 27, at50: [{ n: 1, hz: 50, lineHz: 50.963, overDb: 27, counts: true }, { n: 2, hz: 100, lineHz: 101.93, overDb: 12, counts: true }, { n: 3, hz: 150, lineHz: 152.9, overDb: 4, counts: false }], at60: [] };
+  const po = repairPlan(made({ hum: off, findings: [finding("hum")] }));
+  assert.deepEqual(po.graph.match(/bandreject=[^,;[]+/g), ["bandreject=f=50.96:t=h:w=2:r=f64", "bandreject=f=101.93:t=h:w=2:r=f64"]);
+  const so = po.steps.find((s) => s.id === "dehum");
+  assert.deepEqual(so.notches.map((x) => [x.n, x.hz, x.lineHz, x.notchHz]), [[1, 50, 50.963, 50.96], [2, 100, 101.93, 101.93]]);
+  assert.equal(so.fundamentalHz, 50.963);
+  assert.match(so.why, /^Hum at 50\.96 Hz \(mains of 50 Hz\), steady in the pauses \(up to 27 dB over the noise beside it\): notched at 50\.96, 101\.93 Hz, each 2 Hz wide at its −3 dB points\.$/);
+  assert.doesNotMatch(so.why, /taken out|gone|removed/);
+  // a lineHz that is no number: the multiple of the mains
+  const odd = repairPlan(made({ hum: { ...off, at50: [{ n: 1, hz: 50, lineHz: null, overDb: 27, counts: true }] }, findings: [finding("hum")] }));
+  assert.deepEqual(odd.graph.match(/bandreject=f=[\d.]+/g), ["bandreject=f=50"]);
   // hum that was not judged (too little pause) or counts nowhere: no notch
   for (const hum of [{ judged: false, hz: null, harmonics: 0, overDb: null, at50: [], at60: [] }, { judged: true, hz: 50, harmonics: 0, overDb: 12, at50: [{ n: 1, hz: 50, overDb: 12, counts: false }], at60: [] }])
     assert.deepEqual(ids(repairPlan(made({ hum, findings: [finding("hum")] })).steps), ["highpass"]);
@@ -282,8 +296,8 @@ test("hum of ten harmonics: every harmonic found down by 20 dB and more, the voi
     const dehum = r.steps.find((s) => s.id === "dehum");
     assert.ok(dehum, ids(r.steps).join());
     assert.equal(dehum.hz, hz);
-    assert.ok(dehum.notches.length >= 8 && dehum.notches.every((n) => n.hz % hz === 0 && n.widthHz === 2), JSON.stringify(dehum.notches));
-    assert.match(dehum.why, new RegExp(`^Hum at ${hz} Hz, steady in the pauses at [\\d, ]+ Hz .*: each of the ${dehum.notches.length} lines taken out by a notch 2 Hz wide at its −3 dB points\\.$`));
+    assert.ok(dehum.notches.length >= 8 && dehum.notches.every((n) => n.hz % hz === 0 && Math.abs(n.notchHz - n.hz) <= 0.2 && n.widthHz === 2), JSON.stringify(dehum.notches));
+    assert.match(dehum.why, new RegExp(`^Hum at ${hz}(\\.\\d+)? Hz.*, steady in the pauses \\(.*\\): notched at [\\d., ]+ Hz, each 2 Hz wide at its −3 dB points\\.$`));
     // the hum alone, through the graph with its notches and without them (after the first
     // second: a notch 2 Hz wide settles in about half of one)
     run(["-filter_complex", `${humTones(hz, 0.01)}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("humonly.wav")]);
@@ -313,6 +327,28 @@ test("hum of ten harmonics: every harmonic found down by 20 dB and more, the voi
   }
 });
 
+test("hum off the mains (50.96 Hz): each notch on its measured line takes it down by 20 dB and more", { skip }, async () => {
+  // (lineHz is `measure`'s number for each harmonic; made up here as it will give it)
+  const f0 = 50.96, N = 9;
+  const tones = `${HUM_AMPS.slice(0, N).map((a, i) => `sine=f=${(f0 * (i + 1)).toFixed(3)}:r=48000:d=${D},volume=${(0.01 * a).toPrecision(3)}[h${i}]`).join(";")};` +
+    `${HUM_AMPS.slice(0, N).map((_, i) => `[h${i}]`).join("")}amix=inputs=${N}:normalize=0`;
+  run(["-i", base, "-filter_complex", `${tones}[hum];[0:a][hum]amix=inputs=2:normalize=0[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("hum5096.wav")]);
+  const m = await measure(file("hum5096.wav"));
+  m.hum = { ...m.hum, judged: true, hz: 50, fundamentalHz: f0, harmonics: N, overDb: 25, at50: [...Array(N).keys()].map((i) => ({ n: i + 1, hz: 50 * (i + 1), lineHz: +(f0 * (i + 1)).toFixed(2), overDb: 25, counts: true })), at60: [] };
+  if (!m.findings.some((f) => f.id === "hum")) m.findings.push(finding("hum"));
+  const { r, x, y } = await mended("hum5096.wav", m);
+  assert.equal(y.length, x.length);
+  const dehum = r.steps.find((s) => s.id === "dehum");
+  assert.deepEqual(dehum.notches.map((q) => q.notchHz), [...Array(N).keys()].map((i) => +(f0 * (i + 1)).toFixed(2)));
+  run(["-filter_complex", `${tones}[o]`, "-map", "[o]", "-c:a", "pcm_f32le", file("hum5096only.wav")]);
+  const through = (graph, z) => { run(["-i", file("hum5096only.wav"), "-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_f32le", file(z)]); return samples(file(z)).subarray(48000); };
+  const hy = through(r.graph, "hum5096.out2.wav"), hx = through(unnotched(r.graph), "hum5096.ref2.wav");
+  for (let i = 0; i < N; i++) {
+    const f = f0 * (i + 1), down = lineDb(hx, f) - lineDb(hy, f);
+    assert.ok(down >= 20, `${f.toFixed(2)} Hz down by ${down.toFixed(1)} dB`);
+  }
+});
+
 test("the notch, measured through ffmpeg: 2 Hz wide at its −3 dB points on every harmonic, deep at its line", { skip }, async () => {
   const p = repairPlan(made({ hum: { judged: true, hz: 50, harmonics: 2, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }, { n: 9, hz: 450, overDb: 12, counts: true }], at60: [] }, findings: [finding("hum")] }));
   const notches = p.graph.match(/bandreject=[^,;[]+/g);
@@ -325,6 +361,8 @@ test("the notch, measured through ffmpeg: 2 Hz wide at its −3 dB points on eve
       return lineDb(samples(file("sine.wav")).subarray(48000), f) - db((0.125 / 2) ** 2);
     };
     for (const d of [-1, 1]) near(gain(f0 + d), -3, 0.2, `${f0} Hz notch at ${d > 0 ? "+" : ""}${d} Hz`);
+    // how well a line must be known (HUM_NOTCH_HZ): 0.1 Hz off −20 dB, 0.2 Hz −14, 0.5 Hz −7
+    for (const [d, want] of [[0.1, -20], [0.2, -14.1], [0.5, -7]]) near(gain(f0 + d), want, 0.3, `${f0} Hz notch at +${d} Hz`);
     for (const d of [-3, 3]) assert.ok(gain(f0 + d) > -0.7, `${f0 + d} Hz`);
     assert.ok(gain(f0) < -60, `${f0} Hz itself: ${gain(f0).toFixed(1)} dB`);
   }

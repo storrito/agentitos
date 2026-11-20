@@ -9,7 +9,7 @@
 //   declip     adeclip on the peaks at the measured ceiling
 //   highpass   a high-pass at 80 Hz for every recording, steeper when rumble or thumps stand
 //              out; a DC offset subtracted before it
-//   dehum      a narrow notch on every mains harmonic that was found, as deep as it stands out
+//   dehum      a narrow notch on every mains harmonic that was found, on its line as measured
 //   declick    adeclick, its threshold set over a plosive's release
 //   denoise    as much reduction as it takes to bring the noise 45 dB under the speech, never
 //              more than the method takes without artefacts, by one of:
@@ -115,7 +115,11 @@ const BUTTERWORTH = { 2: [0.7071], 4: [0.5412, 1.3066], 6: [0.5176, 0.7071, 1.93
 // a voice loses: a notch takes π/2 × 2 = 3.1 Hz of a smooth spectrum, which in the narrowest third
 // octave with a mains harmonic in it (100 Hz: 89–112 Hz) is 0.6 dB (3 Hz wide: 1.0 dB). A mains
 // line wanders by a few hundredths of a Hz, times the harmonic's number; 0.1 Hz off it still
-// takes 20 dB.
+// takes 20 dB. So each notch sits on its line as `measure` found it (lineHz), not on the multiple
+// of 50 or 60: a real recording's line at 50.96 Hz (fleurs-de-05, 2026-11-20) lost 3.2 dB to a
+// notch at 50.00, 49 dB to one at 50.96. Beside its centre (sines through ffmpeg 9.0.2 at 50, 100
+// and 450 Hz alike, 2026-11-20): 0.05 Hz off −26 dB, 0.1 Hz −20, 0.2 Hz −14, 0.3 Hz −11, 0.5 Hz
+// −7, 1 Hz −3; the line must be known to 0.1 Hz for 20 dB.
 export const HUM_NOTCH_HZ = 2;
 
 // declick: adeclick's threshold (the AR model's residual against its spread). ffmpeg's default 2
@@ -265,12 +269,17 @@ export function repairPlan(m, opts = {}) {
   // (only the harmonics that count, each on its own: none is notched because another was found)
   const humLines = has("hum") && h?.hz ? ((h.hz === 50 ? h.at50 : h.at60) || []).filter((x) => x.counts) : [];
   if (humLines.length) {
-    const notches = humLines.map((x) => ({ hz: x.hz, n: x.n, overDb: x.overDb, widthHz: HUM_NOTCH_HZ }));
-    for (const x of notches) chain.push(`bandreject=f=${x.hz}:t=h:w=${HUM_NOTCH_HZ}:r=f64`);
+    // each notch on its line as measured (lineHz: the mains run off 50 or 60 Hz by up to a few
+    // tenths, times the harmonic's number), else on the multiple of the mains (see HUM_NOTCH_HZ
+    // for what a notch takes beside its centre)
+    const lineOf = (x) => (Number.isFinite(x.lineHz) && x.lineHz > 0 ? r2(x.lineHz) : x.hz);
+    const notches = humLines.map((x) => ({ hz: x.hz, n: x.n, ...(Number.isFinite(x.lineHz) && { lineHz: x.lineHz }), notchHz: lineOf(x), overDb: x.overDb, widthHz: HUM_NOTCH_HZ }));
+    for (const x of notches) chain.push(`bandreject=f=${x.notchHz}:t=h:w=${HUM_NOTCH_HZ}:r=f64`);
     const n = notches.length;
+    const base = Number.isFinite(h.fundamentalHz) && h.fundamentalHz > 0 && r2(h.fundamentalHz) !== h.hz ? `${r2(h.fundamentalHz)} Hz (mains of ${h.hz} Hz)` : `${h.hz} Hz`;
     steps.push({
-      id: "dehum", why: `Hum at ${h.hz} Hz, steady in the pauses at ${notches.map((x) => x.hz).join(", ")} Hz (up to ${dB(h.overDb)} dB over the noise beside it): ${n === 1 ? "that line" : `each of the ${n} lines`} taken out by a notch ${HUM_NOTCH_HZ} Hz wide at its −3 dB points.`,
-      hz: h.hz, overDb: h.overDb, filter: "bandreject", widthHz: HUM_NOTCH_HZ, notches,
+      id: "dehum", why: `Hum at ${base}, steady in the pauses (up to ${dB(h.overDb)} dB over the noise beside it): notched at ${notches.map((x) => x.notchHz).join(", ")} Hz, ${n === 1 ? "" : "each "}${HUM_NOTCH_HZ} Hz wide at its −3 dB points.`,
+      hz: h.hz, ...(Number.isFinite(h.fundamentalHz) && { fundamentalHz: h.fundamentalHz }), overDb: h.overDb, filter: "bandreject", widthHz: HUM_NOTCH_HZ, notches,
     });
   }
 
