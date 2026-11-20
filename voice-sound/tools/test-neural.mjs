@@ -19,7 +19,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept, denoiserSlots, SLOTS } from "./lib/repair.mjs";
+import { repair, repairPlan, probeNoise, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept, denoiserSlots, SLOTS } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
@@ -589,6 +589,31 @@ test("no noise in the pauses: the probe, unlimited, on the mended sound; quiet w
     assert.equal(x.probe, undefined, JSON.stringify(o));
     assert.ok(!fs.existsSync(log), JSON.stringify(o));
   }
+});
+
+test("the probe leaves a knock measure set aside out of its estimate, as the check does: a clean clip with one knock does not fire", { skip }, async () => {
+  // a knock (30 ms of noise at 0.9) at 5 s of a quietly noised voice; a stand-in that takes most of
+  // it off (10 dB from 4.98 to 5.05 s; what stays is still loud) and leaves the rest
+  run(["-i", file("quiet-noise.wav"), "-filter_complex", "anoisesrc=color=white:amplitude=0.9:r=48000:d=28.8:seed=11,volume='between(t,5,5.03)':eval=frame[k];[0:a][k]amix=inputs=2:normalize=0[o]", "-map", "[o]", "-c:a", "pcm_f32le", file("knock.wav")]);
+  const m = await measure(file("knock.wav"));
+  const low = { STANDIN_LOW_DB: -10, STANDIN_LOW_FROM: 4.98, STANDIN_LOW_TO: 5.05 };
+  // (the knock as measure sets it aside: made up here, so that the test is of the probe alone)
+  const withKnock = { ...m, speech: { ...m.speech, bursts: { count: 1, at: [{ t: 5, seconds: 0.03 }] } } };
+  const without = { ...m, speech: { ...m.speech, bursts: { count: 0, at: [] } } };
+  const set = await withEnv({ ...STANDIN_ENV(), ...low }, () => probeNoise(file("knock.wav"), withKnock, {}, file("probe-work")));
+  const kept = await withEnv({ ...STANDIN_ENV(), ...low }, () => probeNoise(file("knock.wav"), without, {}, file("probe-work")));
+  // counted, the knock taken off reads as noise under the voice; left out, the clip reads clean
+  assert.ok(kept.underDb < PROBE_FIRES_DB, `with the knock counted: ${kept.underDb} dB`);
+  assert.ok(set.underDb > 40 && !set.fires, `with the knock left out: ${set.underDb} dB, fires ${set.fires}`);
+});
+
+test("the probe's estimate is the same however many slots the machine has: its windows cut the same, only run at once or not", { skip }, async () => {
+  // (pieces of at least 10 s here, so that 28.8 s is cut in two)
+  const m = await measure(file("quiet-noise.wav"));
+  const est = async (slots) => (await withEnv({ ...STANDIN_ENV(), STANDIN_STEP_DB: -0.5 }, () => probeNoise(file("quiet-noise.wav"), m, { tune: { minPieceS: 10, slots } }, file("probe-work")))).underDb;
+  const one = await est(1), two = await est(2), four = await est(4);
+  assert.equal(one, two);
+  assert.equal(one, four);
 });
 
 test("the probe fires where the denoiser took much out: the whole recording denoised, the step says it was found under the voice", { skip }, async () => {
