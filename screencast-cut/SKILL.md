@@ -27,7 +27,7 @@ Node 20+, ffmpeg, the HyperFrames CLI, agentitos' `platform-zones`, `captions` a
 
 ## From the recording to the video
 
-A recording arrives as a message like `New recording in artifacts/recordings/2026-10-23T11-04-56: screen.webm (the screen), webcam.webm (the webcam)`. When the person asks for a video of it, do the steps on your own, show a preview, change it until they like it, then render. Before the preview ask nothing: what they asked for (a length, a format) goes in, the rest you decide and say in a line.
+A recording arrives as a message like `New recording in artifacts/recordings/2026-10-23T11-04-56: screen.webm (the screen), webcam.webm (the webcam)`. Uploaded video files instead carry no roles: look at one frame of each to see which is the screen and which the webcam (or the phone's screen). Then step 1's `new` takes them in place of the folder, `new screencast/<name> --screen uploads/<file> --webcam uploads/<file>` (`--phone-screen`, `--phone`, `--audio` for more; `--offset webcam=<s>` where its output asks for one). When the person asks for a video of it, do the steps on your own, show a preview, change it until they like it, then render. Before the preview ask nothing: what they asked for (a length, a format) goes in, the rest you decide and say in a line.
 
 Messages: one or two sentences and a hiccup block, in their language. Files: `screencast/<name>/` (`<name>` a short slug); the project `artifacts/<name>/`; at the end `artifacts/<name>.mp4`.
 

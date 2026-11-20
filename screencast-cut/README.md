@@ -6,6 +6,7 @@ Cuts a screencast recorded from **several sources at the same time** (the screen
 
 ```bash
 node tools/screencast.mjs new screencast/demo artifacts/recordings/2026-10-23T11-04-56   # sources on one clock, voice, activity
+node tools/screencast.mjs new screencast/demo --screen uploads/a.mp4 --webcam uploads/b.mp4   # or uploaded files, each named by its role
 node tools/screencast.mjs transcribe screencast/demo                                    # the words, checked against the voice → source/brief.md
 node tools/screencast.mjs propose screencast/demo                                       # every sentence → proposal.json
 node tools/screencast.mjs sheets screencast/demo --proposal                             # each keep's frames → sheets/keep-NN.jpg
@@ -34,6 +35,8 @@ A folder with the sources and a `recording.json`:
 ```
 
 The sources are `screen`, `webcam`, `phone` (the phone's camera), `phone-screen` and `audio` (the microphone alone), any of them; `started` is when each began, in milliseconds. When the person paused the recording, `pauses` lists when (`[{"from": …, "to": …}]`, milliseconds of the same clock): every source paused at once and the files leave that time out, so a source started after a pause starts that much sooner on the recording's clock. The phone's camera holds a moment later, when the word reaches it; its own times are `phone-pauses`. This tool does not use them yet: after a pause the phone's camera can be off by that moment (up to a few seconds when its page missed the word), so watch its pieces after a pause.
+
+**Uploaded files** (no recorder's folder: a person uploads a screen recording and a webcam recording in the chat) go in by their roles in place of the folder: `new <dir> --screen <file> --webcam <file>`, and `--phone-screen`, `--phone`, `--audio` as the folder's file names give them. The tool does not guess which file is which: files given without roles are refused with the sentence to look at a frame of each and name them. Without `recording.json` there are no start times and no pauses: the files start together, `--offset <role>=<seconds>` (comma-separated for several, negative for earlier) sets where one starts, and each file with sound is then laid onto the voice by its sound within ±1.5 s as a recording's sources are. A file without sound, or one that began further apart and was given no `--offset`, keeps the start given, and `new` says so with the option to set. The files are read where they are, never moved or changed; for the same files, `source/` holds the same bytes as from a folder of them, but for `sources.json`'s `folder`, `t0` (0) and each source's `from`.
 
 ## How it works
 

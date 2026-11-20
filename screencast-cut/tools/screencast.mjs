@@ -10,6 +10,12 @@
 //                                     into <dir>/source/: on one clock, the voice cleaned, where
 //                                     each picture moves; several recordings one after the other
 //                                     (sessions); run again after it was cut off, it goes on
+//   node tools/screencast.mjs new <dir> --screen <file> --webcam <file> [--phone-screen <file>]
+//                                     [--phone <file>] [--audio <file>] [--offset webcam=1.5]
+//                                     or files uploaded on their own, each named by its role (look
+//                                     at a frame of each first): no recorder's clock, so they start
+//                                     together (--offset <role>=<seconds>: that one began later),
+//                                     laid onto the voice by their sound
 //   node tools/screencast.mjs transcribe <dir>              the words of source/voice.m4a by
 //                                     ElevenLabs Scribe (agentitos' transcribe skill): every word
 //                                     with its start and end, checked against the voice
@@ -85,20 +91,22 @@ const VIEWS = ["screen", "phone-screen", "phone", "face"];
 const CAMERAS = ["phone", "webcam"];
 // what says that something is there now: a result that needs its proof on screen
 const CLAIM = /\b(posted|published|live|there it is|here it is|arrived|it's there|online|gepostet|veröffentlicht|da ist (es|er|sie)|angekommen)\b/i;
+// new's uploaded files, each named by the role a recorder's folder gives it by its file's name
+const ROLES = [...VIDEO, "audio"];
 
 function fail(message) {
   console.log(message);
   process.exit(1);
 }
 
-function parse(args) {
+function parse(args, valued = VALUED) {
   const pos = [], opts = {};
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (!a.startsWith("--")) { pos.push(a); continue; }
     const k = a.slice(2);
     if (FLAGS.includes(k)) { opts[k] = true; continue; }
-    if (!VALUED.includes(k)) fail(`Unknown option ${a}. Options: ${[...VALUED, ...FLAGS].map((o) => "--" + o).join(" ")}`);
+    if (!valued.includes(k)) fail(`Unknown option ${a}. Options: ${[...VALUED, ...FLAGS].map((o) => "--" + o).join(" ")}`);
     if (i + 1 >= args.length) fail(`${a} needs a value.`);
     opts[k] = NUMBERS.includes(k) ? Number(args[++i]) : String(args[++i]);
     if (NUMBERS.includes(k) && !Number.isFinite(opts[k])) fail(`${a} needs a number.`);
@@ -173,20 +181,25 @@ const loadEnv = (file) => {
 // One recording into `sdir`: every source converted (resumed: a source converted before, its
 // activity counts beside it, is not converted again), on one clock, the voice cleaned, where each
 // picture moves. Writes sdir/sources.json last; returns it with the activity.
+// `folder` is the recorder's folder, or uploaded files ({ files: { role: file }, started: { role:
+// ms } }): read where they are, never moved or changed, on the clock their starts give.
 async function prepareRecording(sdir, folder, s, opts) {
   const at = (file = "") => path.join(sdir, file);
-  const facts = path.join(folder, "recording.json");
-  if (!fs.existsSync(facts)) fail(`${folder} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
-  if (fs.existsSync(at("sources.json"))) {
+  const loose = typeof folder === "object" ? folder : null;
+  const facts = loose ? null : path.join(folder, "recording.json");
+  if (!loose && !fs.existsSync(facts)) fail(`${folder} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
+  if (!loose && fs.existsSync(at("sources.json"))) {
     const meta = read(at("sources.json"));
     if (path.resolve(meta.folder) !== path.resolve(folder)) fail(`${rel(sdir)} holds ${meta.folder}, not ${folder}: give the recordings in the order of the first run, or start over: rm -r ${rel(path.dirname(sdir))}`);
     return { meta, activity: read(at("activity.json")) };
   }
   fs.mkdirSync(sdir, { recursive: true });
-  const rec = read(facts);
-  const names = (rec.files || fs.readdirSync(folder)).map((f) => path.basename(f).replace(/\.[^.]+$/, ""))
+  const rec = loose || read(facts);
+  const names = loose ? Object.keys(loose.files) : (rec.files || fs.readdirSync(folder)).map((f) => path.basename(f).replace(/\.[^.]+$/, ""))
     .filter((k) => [...VIDEO, "audio"].includes(k) && fs.readdirSync(folder).some((f) => f.startsWith(`${k}.`)));
   if (!names.length) fail(`${folder} holds none of screen, webcam, phone, phone-screen, audio.`);
+  const fileOf = (k) => (loose ? loose.files[k] : path.join(folder, fs.readdirSync(folder).find((f) => f.startsWith(`${k}.`))));
+  const label = loose ? names.map((k) => `${rel(loose.files[k])} (${k})`).join(", ") : folder;
   const started = rec.started || {};
   const t0 = Math.min(...names.map((k) => started[k]).filter(Number.isFinite));
   // the recorder's pauses (clock times) are not in the files: a source that began after one starts that much sooner
@@ -195,13 +208,13 @@ async function prepareRecording(sdir, folder, s, opts) {
   // every source converted at once, its activity measured from the same decoding
   const sources = {}, grids = {}, counted = {}, done = {}, lengths = {};
   const todo = names.filter((k) => !fs.existsSync(at(`${k}.prepared.json`)));
-  console.log(`${folder}: ${names.length} sources${todo.length < names.length ? `, ${names.length - todo.length} converted before` : ""}, preparing ${todo.length ? todo.join(", ") : "nothing"} …`);
+  console.log(`${loose ? "The uploaded files" : folder}: ${names.length} sources${todo.length < names.length ? `, ${names.length - todo.length} converted before` : ""}, preparing ${todo.length ? todo.join(", ") : "nothing"} …`);
   // how far each source is, every ten seconds, for the person watching the chat
   const ticker = setInterval(() => {
     console.log(`  preparing: ${todo.map((k) => `${k} ${Math.min(99, Math.round((100 * (done[k] || 0)) / (lengths[k] || 1)))} %`).join(", ")}`);
   }, 10000);
   await Promise.all(names.map(async (k) => {
-    const from = path.join(folder, fs.readdirSync(folder).find((f) => f.startsWith(`${k}.`)));
+    const from = fileOf(k);
     const p0 = probe(from);
     lengths[k] = p0.duration;
     const file = p0.video ? `${k}.mp4` : `${k}.m4a`;
@@ -253,8 +266,14 @@ async function prepareRecording(sdir, folder, s, opts) {
     const a = align(mainEnv, sources[mic].offset, loadEnv(at(`${k}.env`)), sources[k].offset);
     sources[k].sync = a.score;
     if (a.moved) console.log(`${k}: laid onto the voice, ${a.moved > 0 ? "+" : ""}${a.moved} s (match ${a.score})`);
-    else if (a.score < 0.5) console.log(`${k}: its sound does not match the voice (${a.score}): its start stays as recorded`);
+    else if (a.score < 0.5) console.log(`${k}: its sound does not match the voice (${a.score}): its start stays as ${loose ? "given" : "recorded"}`);
     sources[k].offset = a.offset;
+  }
+  // uploaded files: what a recorder's recording.json would have said, and what its lack changes
+  if (loose) {
+    console.log(`Uploaded files have no recording.json, so no start times and no pauses: they start together${Object.values(rec.started).some(Boolean) ? " but for --offset" : ""} and each one with sound is laid onto the voice by its sound within 1.5 s; one without sound, or that began further apart, can run off by that much.`);
+    for (const k of names.filter((x) => x !== mic && sources[x].video && !(sources[x].sync >= 0.5)))
+      console.log(`${k}: ${sources[k].audio ? "its sound does not match the voice" : "no sound to lay it by"}, so it starts at ${sources[k].offset.toFixed(2)} s; if it began earlier or later than the others, start over with --offset ${k}=<seconds> (later: positive).`);
   }
 
   // the voice on the recording's timeline: the main microphone from 0, cleaned (rumble and hiss out)
@@ -283,7 +302,7 @@ async function prepareRecording(sdir, folder, s, opts) {
   write(at("activity.json"), activity);
   // the recording's length: its voice, or a picture that runs longer
   const duration = Math.max(vp.duration, ...Object.values(sources).map((x) => x.offset + x.duration));
-  const meta = { folder: rel(folder), t0, mic, voice, duration: +duration.toFixed(3), sources };
+  const meta = { folder: loose ? label : rel(folder), t0, mic, voice, duration: +duration.toFixed(3), sources };
   write(at("sources.json"), meta);
   return { meta, activity };
 }
@@ -354,14 +373,45 @@ function joinRecordings(dir, parts) {
   return meta;
 }
 
+// Uploaded files named by their roles (--screen <file> …), checked before anything is written:
+// { files, started } for prepareRecording, the starts from --offset <role>=<seconds>,…
+function looseFiles(opts) {
+  const roles = ROLES.filter((k) => opts[k] !== undefined);
+  if (!roles.length) {
+    if (opts.offset !== undefined) fail("--offset is for uploaded files named by their roles (--screen <file> --webcam <file>); a recorder's folder has its start times in recording.json.");
+    return null;
+  }
+  const files = {};
+  for (const k of roles) {
+    const f = opts[k];
+    if (!fs.existsSync(f) || !fs.statSync(f).isFile()) fail(`--${k} ${f}: no such file; give the path of the uploaded file as it is from here (uploads/…).`);
+    let p;
+    try { p = probe(f); } catch { fail(`--${k} ${f}: ffmpeg cannot read it as a video or a sound; give the ${k}'s recording.`); }
+    if (k !== "audio" && !p.video) fail(`--${k} ${f} has no picture: give it as --audio, or give the ${k}'s video.`);
+    files[k] = f;
+  }
+  const started = Object.fromEntries(roles.map((k) => [k, 0]));
+  for (const part of opts.offset === undefined ? [] : String(opts.offset).split(",")) {
+    const [k, v] = part.split("=");
+    if (!roles.includes(k) || !Number.isFinite(Number(v)) || v.trim() === "") fail(`--offset is <role>=<seconds> for a file given here (${roles.join(", ")}), as --offset ${roles.at(-1)}=1.5 when that one began 1.5 s after the others (earlier: negative).`);
+    started[k] = Math.round(Number(v) * 1000);
+  }
+  return { files, started };
+}
+
 async function cmdNew(dir, folders, opts) {
-  if (!dir || !folders.length) fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …]");
+  const loose = looseFiles(opts);
+  for (const k of [...ROLES, "offset"]) delete opts[k]; // the files are not settings of the later steps
+  if (!dir || !(folders.length || loose)) fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …], or for uploaded files new <dir> --screen <file> --webcam <file> [--phone-screen <file>] [--phone <file>] [--audio <file>]");
+  if (loose && folders.length) fail(`Give either the recorder's folder or the uploaded files with their roles, not both: ${folders.join(" ")} is left over.`);
   if (fs.existsSync(source(dir, "sources.json"))) fail(`${rel(source(dir))} is in use already. To start over: rm -r ${rel(source(dir))}`);
+  for (const f of folders) if (fs.existsSync(f) && fs.statSync(f).isFile()) fail(`${f} is a file, not a recorder's folder: look at a frame of each uploaded file to see which is the screen and which the webcam, then name them: ${cmd(`new ${rel(dir)} --screen <file> --webcam <file>`)}`);
   for (const f of folders) if (!fs.existsSync(path.join(f, "recording.json"))) fail(`${f} has no recording.json: give the folder rragent's recorder wrote (artifacts/recordings/<time>).`);
   fs.mkdirSync(source(dir), { recursive: true });
   const s = settings(dir, opts);
   let meta;
-  if (folders.length === 1) meta = (await prepareRecording(source(dir), folders[0], s, opts)).meta;
+  if (loose) meta = (await prepareRecording(source(dir), loose, s, opts)).meta;
+  else if (folders.length === 1) meta = (await prepareRecording(source(dir), folders[0], s, opts)).meta;
   else {
     const parts = [];
     for (const [i, f] of folders.entries()) parts.push(await prepareRecording(source(dir, `session-${i + 1}`), f, s, opts));
@@ -1365,7 +1415,7 @@ function help() {
 // -------------------------------------------------------------------------------------- main
 const [command, ...rest] = process.argv.slice(2);
 const asksHelp = command === "help" || process.argv.slice(2).some((a) => a === "--help" || a === "-h");
-const [pos, opts] = asksHelp ? [[], {}] : parse(rest);
+const [pos, opts] = asksHelp ? [[], {}] : parse(rest, command === "new" ? [...VALUED, ...ROLES, "offset"] : VALUED);
 if (asksHelp) help();
 else if (command === "new") await cmdNew(pos[0], pos.slice(1), opts);
 else if (command === "words") cmdWords(pos[0], pos[1]);
@@ -1378,4 +1428,4 @@ else if (command === "captions") await cmdCaptions(pos[0], opts);
 else if (command === "finish") cmdFinish(pos[0], pos[1]);
 else if (command === "frame") cmdFrame(pos[0], pos[1], opts);
 else if (command === "sheets") cmdSheets(pos[0], opts);
-else fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …] | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (every option: --help)");
+else fail("Usage: screencast.mjs new <dir> <recording-folder> [<recording-folder> …] | new <dir> --screen <file> --webcam <file> | words <dir> <words.json> | transcribe <dir> | propose <dir> | build <dir> | check <dir> | sheets <dir> | at <dir> <m:ss> | frame <dir> <m:ss> | captions <dir> --style … | finish <dir> <video.mp4>   (every option: --help)");
