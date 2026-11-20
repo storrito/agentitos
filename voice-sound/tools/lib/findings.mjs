@@ -124,6 +124,10 @@ export const CLICKS_STRONG = 10;
 // a click counts when it stands 30 dB over its neighbourhood: clean read speech (the lab's
 // corpus, 2026-11-19) has 1 to 8 plosive releases and lip smacks a file at 15 to 25 dB
 export const CLICK_OVER_DB = 30;
+// bursts: short loud sounds that are no voice's (a knock, a clap for sync, a door), set aside from
+// the voice's numbers by lib/analyse.mjs (burstsOf) and left in the recording; any one is heard,
+// one 20 dB over the voice's loud frames startles (a judgement)
+export const BURSTS_STRONG_DB = 20;
 
 // narrow: where the voice ends at the top. 16 kHz and more is a full recording (AAC at 128 kbit/s
 // cuts at about 16 kHz); under 12 kHz it sounds muffled beside other videos; 8 kHz and under is
@@ -186,6 +190,8 @@ export function noiseKind(n, hum) {
 }
 
 const f1 = (x) => { const r = Math.round(x * 10) / 10; return (r < 0 ? "−" : "") + Math.abs(r).toFixed(1); };
+// the bursts in words: how many, where the first lie, how far over the voice's loud frames
+export const burstsText = (b) => `${b.count === 1 ? "A short loud sound" : `${b.count} short loud sounds`} (a knock, a clap, a bump) at ${b.at.slice(0, 3).map((x) => clock(x.t)).join(", ")}${b.count > 3 ? ", …" : ""}, up to ${i0(b.overDb)} dB over the voice's loud frames`;
 // the hum's grid, and where its line lies when that is a tenth of a hertz or more off it
 export const humHz = (h) => (h.fundamentalHz != null && Math.abs(h.fundamentalHz - h.hz) >= 0.1 ? `${h.hz} Hz (its line at ${h.fundamentalHz.toFixed(2)} Hz)` : `${h.hz} Hz`);
 const i0 = (x) => { const r = Math.round(x); return (r < 0 ? "−" : "") + Math.abs(r); };
@@ -244,6 +250,9 @@ export function findingsOf(m) {
   const k = m.clicks, loudClicks = k?.over?.[CLICK_OVER_DB] ?? 0, perMinute = loudClicks / Math.max(1 / 60, (m.analysed?.seconds ?? 60) / 60);
   if (k && perMinute >= CLICKS_SOME && loudClicks >= 2)
     add("clicks", perMinute >= CLICKS_STRONG, `${loudClicks} clicks (${+perMinute.toFixed(1)} a minute), the strongest at ${k.at.slice(0, 3).map((x) => clock(x.t)).join(", ")}.`);
+  const bu = m.speech?.bursts;
+  if (bu?.count)
+    add("bursts", bu.overDb >= BURSTS_STRONG_DB, `${burstsText(bu)}: left in the recording, kept out of the voice's numbers.`);
   const bw = m.bandwidth;
   const cut = bw?.topHz != null && bw.topHz <= NARROW_SOME_HZ && (bw.cliffDb ?? 0) >= NARROW_CLIFF_DB;
   if (cut)
