@@ -281,7 +281,7 @@ async function prepareRecording(sdir, folder, s, opts) {
   }
   // uploaded files: what a recorder's recording.json would have said, and what its lack changes
   if (loose) {
-    console.log(`Uploaded files have no recording.json, so no start times and no pauses: they start together${Object.values(rec.started).some(Boolean) ? " but for --offset" : ""} and each one with sound is laid onto the voice by its sound within 1.5 s; one without sound, or that began further apart, can run off by that much.`);
+    console.log(`Uploaded files have no recording.json, so no start times and no pauses: they start together${Object.values(rec.started).some(Boolean) ? " but for --offset" : ""}, and each one with sound is lined up with the voice by its sound only within 1.5 s of that; files that started further apart need --offset <role>=<seconds> (that one began so many seconds after the others), else their match by sound can be false, and one without sound stays where it starts.`);
     for (const k of names.filter((x) => unsynced({ uploaded: true, mic, sources }, x)))
       console.log(`${k}: ${sources[k].audio ? "its sound does not match the voice" : "no sound to lay it by"}, so it starts at ${sources[k].offset.toFixed(2)} s; if it began earlier or later than the others, start over with --offset ${k}=<seconds> (later: positive).`);
   }
@@ -411,15 +411,13 @@ function looseFiles(opts) {
     set.add(k);
     started[k] = Math.round(Number(v) * 1000);
   }
-  // each file has to run while another does, and one with sound cannot open the recording with
-  // more silence than it is long
+  // each file has to run while another does
   const t0 = Math.min(...Object.values(started));
   for (const k of set) {
     const from = (started[k] - t0) / 1000, to = from + info[k].duration;
     const others = roles.filter((j) => j !== k).map((j) => [(started[j] - t0) / 1000, (started[j] - t0) / 1000 + info[j].duration]);
     const span = others.length ? [Math.min(...others.map((o) => o[0])), Math.max(...others.map((o) => o[1]))] : null;
     if (span && !others.some(([a, b]) => from < b && a < to)) fail(`--offset ${k}=${(started[k] / 1000)} puts the ${k}'s ${info[k].duration.toFixed(1)} s at ${from.toFixed(1)}–${to.toFixed(1)} s, where none of the others runs (they run ${span[0].toFixed(1)}–${span[1].toFixed(1)} s): give how many seconds after the others it began, within that.`);
-    if (info[k].audio && from > info[k].duration) fail(`--offset ${k}=${(started[k] / 1000)} opens the recording with ${from.toFixed(1)} s before the ${k}'s sound, longer than its ${info[k].duration.toFixed(1)} s: give how many seconds after the others it began, at most ${info[k].duration.toFixed(1)}.`);
   }
   return { files, started };
 }

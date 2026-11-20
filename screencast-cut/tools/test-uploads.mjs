@@ -51,7 +51,7 @@ test("uploaded files named by their roles give what the same files in a recorder
     assert.doesNotMatch(folder.stdout, /recording\.json/, "the folder form says nothing of uploads");
     const loose = run(cwd, "out/loose", "--screen", "uploads/a.mp4", "--webcam", "uploads/b.mp4");
     assert.equal(loose.status, 0, loose.stdout + loose.stderr);
-    assert.match(loose.stdout, /Uploaded files have no recording\.json, so no start times and no pauses: they start together and each one with sound is laid onto the voice by its sound within 1\.5 s/);
+    assert.match(loose.stdout, /^Uploaded files have no recording\.json, so no start times and no pauses: they start together, and each one with sound is lined up with the voice by its sound only within 1\.5 s of that; files that started further apart need --offset <role>=<seconds> \(that one began so many seconds after the others\), else their match by sound can be false, and one without sound stays where it starts\.$/m);
     assert.match(loose.stdout, /^The uploaded files: 2 sources/m);
     assert.match(loose.stdout, /Next, the words of/);
 
@@ -196,7 +196,7 @@ test("a file whose name begins with a dash is read as a file", { skip: !hasFfmpe
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test("--offset: plain decimal seconds only; one that puts a file where no other runs, or opens the recording with more than its sound's length before it, is refused with the numbers", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
+test("--offset: plain decimal seconds only; one that puts a file where no other runs is refused with the numbers; a short source with sound well inside a long screen is taken where it is given", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "uploads-"));
   try {
     media(path.join(cwd, "uploads"));
@@ -206,12 +206,17 @@ test("--offset: plain decimal seconds only; one that puts a file where no other 
     const far = run(cwd, "out/x", "--screen", "uploads/a.mp4", "--webcam", "uploads/b.mp4", "--offset", "webcam=100");
     assert.equal(far.status, 1);
     assert.equal(far.stdout, "--offset webcam=100 puts the webcam's 6.0 s at 100.0–106.0 s, where none of the others runs (they run 0.0–6.0 s): give how many seconds after the others it began, within that.\n");
-    // a long screen without sound and a short webcam with it, 7 s in: the voice would open with 7 s of nothing
-    ffmpeg("-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=12", "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(cwd, "uploads/long.mp4"));
-    const late = run(cwd, "out/x", "--screen", "uploads/long.mp4", "--webcam", "uploads/b.mp4", "--offset", "webcam=7");
-    assert.equal(late.status, 1);
-    assert.equal(late.stdout, "--offset webcam=7 opens the recording with 7.0 s before the webcam's sound, longer than its 6.0 s: give how many seconds after the others it began, at most 6.0.\n");
     assert.ok(!fs.existsSync(path.join(cwd, "out")), "nothing written");
+    // a 10 s webcam with sound that began 20 s into a 60 s screen recording without sound
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=60", "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(cwd, "uploads/long.mp4"));
+    ffmpeg("-f", "lavfi", "-i", "mandelbrot=s=160x120:r=30", "-f", "lavfi", "-i", VOICE.replace("d=6", "d=10"), "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", path.join(cwd, "uploads/cam10.mp4"));
+    const inside = run(cwd, "out/x", "--screen", "uploads/long.mp4", "--webcam", "uploads/cam10.mp4", "--offset", "webcam=20");
+    assert.equal(inside.status, 0, inside.stdout + inside.stderr);
+    const meta = JSON.parse(fs.readFileSync(path.join(cwd, "out/x/source/sources.json"), "utf8"));
+    assert.equal(meta.mic, "webcam");
+    assert.equal(meta.sources.webcam.offset, 20);
+    assert.equal(meta.sources.screen.offset, 0);
+    assert.ok(Math.abs(meta.duration - 60) < 0.2, `duration ${meta.duration}`);
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });
 
