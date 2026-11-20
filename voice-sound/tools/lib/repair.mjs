@@ -309,7 +309,10 @@ export function repairPlan(m, opts = {}) {
     // its attenuation limit: what the aim needs, never more than --denoise allows (DPDFNET_LIMITS)
     const est = under ? under.underDb : snr;
     const cap = DPDFNET_LIMITS[strength];
-    const needed = named ? cap : DENOISE_AIM_DB - est;
+    // (strong where measure named noise: the person's word that auto was not enough, so its cap
+    // whatever the aim would need; gentle stays at the aim's need, never more than auto)
+    const aim = DENOISE_AIM_DB - est, past = noisy && strength === "strong" && aim < cap;
+    const needed = named || past ? cap : aim;
     const limit = r1(Math.max(0, Math.min(needed, cap)));
     if (limit >= DENOISE_MIN_DB) {
       method = "dpdfnet";
@@ -317,7 +320,8 @@ export function repairPlan(m, opts = {}) {
       const pauses = m.speech?.longest || [];
       const cut = piecesOf(Math.round((m.analysed?.seconds ?? m.duration ?? 0) * RATE), pauses, t);
       neural = { ...dn, limit, tune: t, pauses };
-      const tail = needed > cap ? `, the most --denoise ${strength} allows (the aim needed ${dB(needed)})` : "";
+      const tail = needed > cap ? `, the most --denoise ${strength} allows (the aim needed ${dB(needed)})`
+        : past ? `, more than the ${dB(Math.max(0, aim))} dB the ${DENOISE_AIM_DB} dB aim needs, as --denoise strong asks` : "";
       const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${Math.ceil(Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE / 60)} minutes` : "";
       const said = under
         ? `Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of ${Math.round(under.sampleS)} s of it: about ${dB(est)} dB under the speech; DPDFNet-2 asked to take at most ${dB(limit)} dB off`
@@ -326,7 +330,7 @@ export function repairPlan(m, opts = {}) {
       steps.push({
         id: "denoise", why: `${said}${named ? "" : tail}${many}.`,
         method, snrDb: est, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: limit, limitDb: limit, model: path.basename(dn.model),
-        ...(under && { underVoiceDb: est, probe: under }), ...(named && { asked: true }),
+        ...(under && { underVoiceDb: est, probe: under }), ...(named && { asked: true }), ...(past && { pastAim: true }),
         pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })), seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
       });
       if (noisy && n?.kind === "changing")
@@ -342,12 +346,14 @@ export function repairPlan(m, opts = {}) {
     if (method === "arnndn" && !fs.existsSync(model)) refuse(`VOICE_SOUND_RNNOISE names ${model}, which is not there.`);
     const level = strength === "auto" ? "auto" : strength;
     const cap = DENOISE_CAPS[method][level];
-    const needed = named ? cap : DENOISE_AIM_DB - snr;
+    const aim = DENOISE_AIM_DB - snr, past = noisy && strength === "strong" && aim < cap;
+    const needed = named || past ? cap : aim;
     const reduce = r1(Math.max(0, Math.min(needed, cap)));
     if (reduce >= DENOISE_MIN_DB) {
       const ends = r1(snr + reduce);
       den = { method, reduce };
-      const tail = needed > cap ? `, as much as ${method} takes without artefacts` : "";
+      const tail = needed > cap ? `, as much as ${method} takes without artefacts`
+        : past ? `, more than the ${dB(Math.max(0, aim))} dB the ${DENOISE_AIM_DB} dB aim needs, as --denoise strong asks` : "";
       const what = named ? `Asked for with --denoise ${strength}, although measure found no noise in the pauses${snr != null ? ` (they lie ${dB(snr)} dB under the speech)` : ""}` : `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}`;
       if (method.startsWith("afftdn")) {
         // afftdn's noise is its floor (nf) plus a shape around it: a sampled profile, or `bn`,
@@ -357,7 +363,7 @@ export function repairPlan(m, opts = {}) {
         const lv = afftdnLevels(n, (f) => highpassDb(f, hz, poles) + 20 * Math.log10(gain));
         const fl = afftdnFloor(lv, sampled, tune.nfOffsetDb);
         Object.assign(den, fl, { gs: tune.gs, tn: method === "afftdn-track" ? 1 : 0 });
-        const numbers = { method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, floorDb: fl.nf, ...(fl.lift && { liftDb: fl.lift }), ...(named && { asked: true }) };
+        const numbers = { method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, floorDb: fl.nf, ...(fl.lift && { liftDb: fl.lift }), ...(named && { asked: true }), ...(past && { pastAim: true }) };
         if (sampled) {
           const from = r2(pause.from), seconds = r2(Math.min(PAUSE_MAX_S, pause.seconds - 0.03));
           den.pause = { from, seconds };
@@ -369,7 +375,7 @@ export function repairPlan(m, opts = {}) {
       } else {
         den.mix = r2(1 - 10 ** (-reduce / 20));
         den.model = model;
-        steps.push({ id: "denoise", why: `${what}: RNNoise (${path.basename(model)}), mixed so that ${dB(reduce)} dB of it goes${tail}.`, method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, mix: den.mix, model: path.basename(model), ...(named && { asked: true }) });
+        steps.push({ id: "denoise", why: `${what}: RNNoise (${path.basename(model)}), mixed so that ${dB(reduce)} dB of it goes${tail}.`, method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, mix: den.mix, model: path.basename(model), ...(named && { asked: true }), ...(past && { pastAim: true }) });
       }
       if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${dB(snr)} dB under the speech; ${dB(reduce)} dB less is what ${method} takes without watery artefacts, so it ends about ${dB(ends)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
     } else method = "off";
