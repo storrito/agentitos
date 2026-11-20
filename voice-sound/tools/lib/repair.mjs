@@ -196,7 +196,28 @@ export const usableCores = () => Math.max(1, os.availableParallelism() - 1);
 // (an adeclip ffmpeg held 54 MB on 17 s, 2026-11-20), DECLIP_RESERVE_MB kept free. It changes
 // when they run, never what they give: the pieces are cut the same way whatever runs at once.
 export const DECLIP_PIECE_MB = 100, DECLIP_RESERVE_MB = 512;
-const atOnce = (K) => Math.max(1, Math.min(K, Math.floor((os.freemem() / 2 ** 20 - DECLIP_RESERVE_MB) / DECLIP_PIECE_MB)));
+export const atOnce = (K, mb = availableMb()) => Math.max(1, Math.min(K, Math.floor((mb - DECLIP_RESERVE_MB) / DECLIP_PIECE_MB)));
+// The memory that can be had, MB: MemAvailable, and what a balloon holds back where /proc/vmstat
+// shows one (balloon_inflate − balloon_deflate, pages of 4 kB, never negative), at most MemTotal;
+// os.freemem() where /proc is missing. (A Sprite of a bot's size, 8 cores and 8 GB, nothing else
+// running, 2026-11-20: MemTotal 8155 MB, MemAvailable 932 MB, all processes 41 MB resident;
+// balloon_inflate 4557312, balloon_deflate 2829568, 6.6 GB held back. The host hands that memory
+// out as it is used, as was seen there, not documented: seven of the denoiser's pieces held 878 MB
+// at most and ran, where MemAvailable alone allowed one.) memoryMb takes the two files' texts.
+export function memoryMb(meminfo, vmstat = "") {
+  const kb = (k) => { const m = String(meminfo).match(new RegExp(`^${k}:\\s+(\\d+) kB`, "m")); return m ? Number(m[1]) : null; };
+  const avail = kb("MemAvailable"), total = kb("MemTotal");
+  if (avail == null) return null;
+  const pg = (k) => { const m = String(vmstat).match(new RegExp(`^${k}\\s+(\\d+)`, "m")); return m ? Number(m[1]) : 0; };
+  const balloonKb = Math.max(0, pg("balloon_inflate") - pg("balloon_deflate")) * 4;
+  return Math.min(total ?? Infinity, avail + balloonKb) / 1024;
+}
+export function availableMb() {
+  let meminfo = null, vmstat = "";
+  try { meminfo = fs.readFileSync("/proc/meminfo", "utf8"); } catch { /* not Linux */ }
+  try { vmstat = fs.readFileSync("/proc/vmstat", "utf8"); } catch { /* none */ }
+  return (meminfo && memoryMb(meminfo, vmstat)) ?? os.freemem() / 2 ** 20;
+}
 // → { w (ms), cpuS, wallS, pieces, limitS, tried: [{ w, wallS }] } or { w: null, … } where none
 // may run (only a window that does harm at this share would fit)
 export function declipWindow(share, seconds, cores = os.availableParallelism(), lim = DECLIP_LIMIT) {
@@ -801,8 +822,8 @@ export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
 export const NEURAL = { pieceS: 60, minPieceS: 20, shiftS: 15, warmS: 10, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1, timeoutS: 120, timeoutPerS: 4 };
 // How many run at once: the cores the redrawing of clipped peaks uses too (usableCores: all but
 // one, for the video cut that runs beside it; the two run one after the other, so one rule for
-// both), and no more than half the memory the system says is available holds (MemAvailable; a
-// judgement: the rest for the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB
+// both), and no more than half the memory that can be had holds (availableMb: MemAvailable and a
+// balloon's; a judgement: the rest for the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB
 // and 1.45 MB a second of it with its overlaps; at least one. Read at run time; t.slots (and, for
 // the lab and the tests, VOICE_SOUND_SLOTS) fixes it.
 export const SLOTS = { spareCores: 1, memShare: 0.5, baseMb: 47, mbPerS: 1.45 };
@@ -810,11 +831,7 @@ export function denoiserSlots(t = NEURAL, sys = null) {
   if (Number.isFinite(t.slots)) return Math.max(1, Math.floor(t.slots));
   if (!sys && Number(process.env.VOICE_SOUND_SLOTS) > 0) return Math.floor(Number(process.env.VOICE_SOUND_SLOTS));
   const usable = sys?.cores != null ? sys.cores - SLOTS.spareCores : usableCores();
-  let availMb = sys?.availMb;
-  if (availMb == null) {
-    try { const m = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+) kB/m); availMb = m ? Number(m[1]) / 1024 : null; } catch { availMb = null; }
-    if (availMb == null) availMb = os.freemem() / 2 ** 20;
-  }
+  const availMb = sys?.availMb ?? availableMb();
   const pieceMb = SLOTS.baseMb + SLOTS.mbPerS * (t.pieceS + t.warmS + t.fadeS + t.tailS + 2 * t.shiftS);
   return Math.max(1, Math.min(usable, Math.floor((SLOTS.memShare * availMb) / pieceMb)));
 }

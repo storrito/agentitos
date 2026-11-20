@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample, declipCpuS, declipPieces, declipWindow, usableCores } from "./lib/repair.mjs";
+import { repair, repairPlan, checkFilters, afftdnLevels, afftdnFloor, invalidSample, declipCpuS, declipPieces, declipWindow, usableCores, memoryMb, atOnce, denoiserSlots, NEURAL } from "./lib/repair.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 import { clean } from "./lib/clean.mjs";
 import { fftOf } from "./lib/fft.mjs";
@@ -238,6 +238,27 @@ test("plan: declip makes headroom, clicks get adeclick over a plosive's release"
   assert.match(clipped(0.7, {}, 3).graph, /adeclip=w=55:/);
   const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
   assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
+});
+
+test("the memory that can be had: MemAvailable and what a balloon holds back, at most MemTotal", () => {
+  // a Sprite of a bot's size, nothing else running (2026-11-20): 8155 MB in all, 932 available,
+  // 6.6 GB in the balloon (pages of 4 kB), handed out as it is used
+  const sprite = "MemTotal:        8350720 kB\nMemFree:          600000 kB\nMemAvailable:     954368 kB\n";
+  const balloon = "nr_free_pages 150000\nballoon_inflate 4557312\nballoon_deflate 2829568\n";
+  const mb = memoryMb(sprite, balloon);
+  near(mb, 932 + (4557312 - 2829568) * 4 / 1024, 0.5, "MB");
+  // seven pieces at once on 8 cores, for the denoiser and the redrawing alike
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: mb }), 7);
+  assert.equal(atOnce(7, mb), 7);
+  // never more than MemTotal; a balloon that gave back more than it took counts for nothing
+  near(memoryMb(sprite, "balloon_inflate 9000000\nballoon_deflate 0\n"), 8155, 0.5, "capped");
+  near(memoryMb(sprite, "balloon_inflate 10\nballoon_deflate 20\n"), 932, 0.5, "no balloon");
+  // a machine without a balloon and with little memory free: few
+  const tight = memoryMb("MemTotal: 8350720 kB\nMemAvailable: 614400 kB\n", "nr_free_pages 1\n");
+  near(tight, 600, 0.5, "tight");
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: tight }), 1);
+  assert.equal(atOnce(7, tight), 1);
+  assert.equal(memoryMb("no such lines"), null);
 });
 
 test("plan: adeclip's window is chosen before it runs, from the predicted time on the machine's cores", () => {
