@@ -1002,6 +1002,17 @@ function withTone(m, opts) {
 // gave 3.49 there and nothing else that differed: not taken. The estimate is coarse: on the
 // VoiceBank pairs (true SNR 7.5, 12.5, 17.5 dB) its medians were 21, 27.5 and 29.5.
 export const PROBE = { wholeS: 40, windows: 6, windowS: 5, skipS: 0.5, frameS: 0.02, speechDb: 20 };
+// The events in the probe's sample (see probeNoise): frames where what the denoiser took out lies
+// within levelDb of the loud kept frames and over what it kept (overDb), touching frames one
+// event; no more than `max` a minute are a knock or a pop that measure did not set aside, and are
+// left out. Chosen 2026-11-20 on the probe's frames of the review's clips and the tune split: 22
+// clean clips with a knock or a pop had 0 to 9 a minute (17 of them fired, the knock taken for
+// noise), the 11 without none; the 12 café and keyboard recordings 0 to 146 (two that fire with 5
+// and 6 a minute are read without those and still fire), the 20 noisy pairs none. With 10 a
+// minute: 0 of the 17 fire, 10 of the 12 still do, the pairs' estimates move by 0.0 dB. A thin
+// margin (9 against 10), and a café whose few events are its loudest clatter is read as without
+// them.
+export const PROBE_EVENTS = { levelDb: 10, overDb: 0, max: 10 };
 export const PROBE_FIRES_DB = 21;
 // Under PROBE_MIN_DB the estimate is no noise but the voice taken for noise: what came out is
 // nearly as loud as what was kept. On the second review's cases (2026-11-20) every estimate under
@@ -1197,22 +1208,35 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), pre 
     // keyboard recordings, 6 of 12 firing instead of 10)
     const F = Math.round(P.frameS * RATE), skip = Math.round(P.skipS * RATE);
     const frames = [], inBurst = burstsOf(m.speech?.bursts?.at);
+    let idx = 0;
     for (const [start, len, w, off] of segs) {
-      for (let a = start + skip; a + F <= start + len; a += F) {
+      for (let a = start + skip; a + F <= start + len; a += F, idx++) {
         if (inBurst(spans[w][0] + (off + a - start) / RATE, P.frameS)) continue;
         let k = 0, r = 0;
         for (let i = a; i < a + F; i++) { const v = y[i], d = xi[i] - v; if (!Number.isFinite(v)) return done({ failed: "not finite" }); k += v * v; r += d * d; }
-        frames.push({ k, r });
+        frames.push({ k, r, i: idx });
       }
+      idx += 2;     // (frames of two stretches never touch)
     }
     if (frames.length < 10) return done({ failed: "too short" });
     const lv = frames.map((f) => 10 * Math.log10(f.k / F + 1e-20)).sort((a, b) => a - b);
     const loud = lv[Math.floor(lv.length * 0.95)];
+    // events (PROBE_EVENTS): touching frames where what was taken out is loud and over what was
+    // kept. Where there are no more than E.max of them a minute, they are a knock or a pop that
+    // measure did not set aside, and are left out with a frame either side; more is a noise of
+    // many events (a keyboard's keys, a café's clatter), kept
+    const E = { ...PROBE_EVENTS, ...opts.probeEvents };
+    const isEv = (f) => 10 * Math.log10(f.r / F + 1e-20) >= loud - E.levelDb && f.r >= f.k * 10 ** (E.overDb / 10);
+    const events = [];
+    for (const f of frames) if (isEv(f)) { const last = events.at(-1); if (last && f.i - last.to <= 1) last.to = f.i; else events.push({ from: f.i, to: f.i }); }
+    const minutes = (frames.length * P.frameS) / 60, few = events.length > 0 && events.length <= E.max * minutes;
+    const out = few ? (f) => events.some((e) => f.i >= e.from - 1 && f.i <= e.to + 1) : () => false;
     let K = 0, Rm = 0, sp = 0;
-    for (const f of frames) if (10 * Math.log10(f.k / F + 1e-20) >= loud - P.speechDb) { K += f.k; Rm += f.r; sp++; }
+    for (const f of frames) if (!out(f) && 10 * Math.log10(f.k / F + 1e-20) >= loud - P.speechDb) { K += f.k; Rm += f.r; sp++; }
     if (!(K > 0)) return done({ failed: "no speech kept" });
     const underDb = r1(Math.min(99, Rm > 0 ? 10 * Math.log10(K / Rm) : 99));
-    const found = { underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length, voice: voice.numbers };
+    const found = { underDb, sampleS: r1(n / RATE), speechS: r1((sp * F) / RATE), windows: spans.length, voice: voice.numbers, events: { count: events.length, leftOut: few },
+      ...(opts.probeDiag && { diag: { frames: frames.map((f) => [f.k, f.r, f.i]), loud, F } }) };
     // (a denoiser that takes the voice for noise: what it took out is no noise, nothing is denoised)
     if (underDb <= probeThreshold() && voice.down)
       return done({ ...found, declined: "voice", why: `The neural denoiser took the voice itself down in its sample (${voice.said}), so what it took out is no noise under the voice: nothing denoised.` });

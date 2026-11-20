@@ -601,10 +601,22 @@ test("the probe leaves a knock measure set aside out of its estimate, as the che
   const withKnock = { ...m, speech: { ...m.speech, bursts: { count: 1, at: [{ t: 5, seconds: 0.03 }] } } };
   const without = { ...m, speech: { ...m.speech, bursts: { count: 0, at: [] } } };
   const set = await withEnv({ ...STANDIN_ENV(), ...low }, () => probeNoise(file("knock.wav"), withKnock, {}, file("probe-work")));
-  const kept = await withEnv({ ...STANDIN_ENV(), ...low }, () => probeNoise(file("knock.wav"), without, {}, file("probe-work")));
+  // (the rule for few events off here, so that the burst alone is tested)
+  const kept = await withEnv({ ...STANDIN_ENV(), ...low }, () => probeNoise(file("knock.wav"), without, { probeEvents: { max: 0 } }, file("probe-work")));
   // counted, the knock taken off reads as noise under the voice; left out, the clip reads clean
   assert.ok(kept.underDb < PROBE_FIRES_DB, `with the knock counted: ${kept.underDb} dB`);
   assert.ok(set.underDb > 40 && !set.fires, `with the knock left out: ${set.underDb} dB, fires ${set.fires}`);
+  // a knock measure did not set aside: one event in 28 s, few, left out as well
+  const own = await withEnv({ ...STANDIN_ENV(), ...low }, () => probeNoise(file("knock.wav"), without, {}, file("probe-work")));
+  assert.deepEqual(own.events, { count: 1, leftOut: true });
+  assert.ok(own.underDb > 40 && !own.fires, `the knock as one event: ${own.underDb} dB`);
+  // many events (the stand-in takes 10 dB off everything from 2 to 20 s: every syllable there): a
+  // noise of many events, nothing left out, the estimate as without the rule
+  const wide = { STANDIN_LOW_DB: -10, STANDIN_LOW_FROM: 2, STANDIN_LOW_TO: 20 };
+  const many = await withEnv({ ...STANDIN_ENV(), ...wide }, () => probeNoise(file("knock.wav"), without, {}, file("probe-work")));
+  const off = await withEnv({ ...STANDIN_ENV(), ...wide }, () => probeNoise(file("knock.wav"), without, { probeEvents: { max: 0 } }, file("probe-work")));
+  assert.ok(many.events.count > 10 && !many.events.leftOut, JSON.stringify(many.events));
+  assert.equal(many.underDb, off.underDb);
 });
 
 test("the probe's estimate is the same however many slots the machine has: its windows cut the same, only run at once or not", { skip }, async () => {
