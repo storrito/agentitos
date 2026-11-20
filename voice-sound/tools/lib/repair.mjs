@@ -610,7 +610,9 @@ const ffPath = (p) => `file:${path.resolve(p)}`;
 //   however long the recording; it takes about a seventh to a fifth of the sound's length on one
 //   core, one thread (four were 17 % faster for four times the CPU)
 // - its 16-bit output would cost a quiet recording its resolution and clip a hot one: its input
-//   is brought to a peak of −6 dBFS (float) and that gain taken back after it
+//   is brought to a level by the voice (levelFor: the speech frames at voiceDb), the gain held
+//   lower round any peak that would then pass peakDb, and that gain taken back after it, sample
+//   for sample
 //
 // Where it fails (a non-zero exit, a signal, no output, another length, silence, numbers that are
 // not finite, clipping, an output that does not follow its input, longer than its time, the voice
@@ -624,8 +626,13 @@ const OPT_MODEL = `/opt/sherpa-onnx/models/${DPDFNET_MODEL}`;
 // some of the room and scored nearly as well as no limit; gentle takes off what afftdn's strong
 // did, strong 6 dB more than auto (a voice in a café: DNSMOS's background 3.56 at 18)
 export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
-// the pieces (seconds) and the level for it (dBFS); the lab's knobs through opts.tune
-export const NEURAL = { pieceS: 150, shiftS: 15, warmS: 3, fadeS: 1, tailS: 0.5, peakDb: -6 };
+// the pieces (seconds) and the level for it (dBFS); the lab's knobs through opts.tune. voiceDb:
+// −26 dBFS is the speech level DNSMOS and the lab's scores hear a recording at (ITU-T P.56
+// practice); peakDb: the peak the lab ran it at (2026-11-19), with 6 dB for its output to rise
+// over its input; holdS: how fast the gain goes down before a peak and back after it (a
+// judgement: slower than a syllable's onset, so that the gain does not follow the voice's own
+// peaks)
+export const NEURAL = { pieceS: 150, shiftS: 15, warmS: 3, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1 };
 // its delay at 48 kHz in samples (0 measured) and how far either side it is looked for
 const DPDFNET_DELAY = 0;
 const DELAY_SEARCH = 2400;
@@ -671,6 +678,48 @@ export function piecesOf(n, pauses = [], t = NEURAL) {
   for (let k = 0; k < count; k++)
     pieces.push({ from: k ? Math.max(0, seams[k - 1].at - half - warm) : 0, to: k < count - 1 ? Math.min(n, seams[k].at + half + tail) : n });
   return { pieces, seams, fade: 2 * half };
+}
+
+// The level for its 16-bit input, from the frames' energies (VOICE_FRAME) and the blocks' peaks
+// (BLOCK): one gain that brings the speech frames (as voiceKept picks them, their power mean) to
+// t.voiceDb, and,
+// round a block whose peak would then pass t.peakDb, as much less as that block needs, reached
+// and left over t.holdS (a minimum over holdS and a block either side, then a mean over holdS:
+// never more than any block in reach needs). → { gainDb, heldDb, speechDb, at(i) } (at: the
+// linear gain at sample i, the same for every piece and for the way back)
+export function levelFor(frameE, blockPeak, t = NEURAL) {
+  // (their power mean, each frame counted at most at the 95th percentile's level: one bump does
+  // not set the level of a whole recording)
+  // (a recording without quiet frames, all voice or all noise: its loud frames)
+  const speech = speechFrames(frameE), most = 10 ** (speech.top / 10) * VOICE_FRAME;
+  let e = 0, k = 0;
+  for (let i = 0; i < frameE.length; i++) if (speech.is(i)) { e += Math.min(most, frameE[i]); k++; }
+  if (!k) for (let i = 0; i < frameE.length; i++) if (speech.loud(i)) { e += Math.min(most, frameE[i]); k++; }
+  const speechDb = k && e > 0 ? 10 * Math.log10(e / k / VOICE_FRAME) : null;
+  const gainDb = speechDb == null ? 0 : Math.max(-40, Math.min(60, t.voiceDb - speechDb));
+  const G = 10 ** (gainDb / 20), ceil = 10 ** (t.peakDb / 20), n = blockPeak.length;
+  const need = Float64Array.from(blockPeak, (p) => (p > 0 ? Math.min(G, ceil / p) : G));
+  const H = Math.max(1, Math.round((t.holdS * RATE) / BLOCK));
+  // the minimum over H + 1 blocks either side, then the mean over H either side
+  const lo = new Float64Array(n), dq = [];
+  for (let i = 0, j = 0; i < n; i++) {
+    for (; j < n && j <= i + H + 1; j++) { while (dq.length && need[dq[dq.length - 1]] >= need[j]) dq.pop(); dq.push(j); }
+    while (dq[0] < i - H - 1) dq.shift();
+    lo[i] = need[dq[0]];
+  }
+  const sum = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) sum[i + 1] = sum[i] + lo[i];
+  const g = new Float64Array(n);
+  let least = G;
+  for (let i = 0; i < n; i++) { const a = Math.max(0, i - H), b = Math.min(n, i + H + 1); g[i] = (sum[b] - sum[a]) / (b - a); least = Math.min(least, g[i]); }
+  const at = (i) => {
+    if (!n) return G;
+    const c = (i - BLOCK / 2) / BLOCK, b0 = Math.floor(c);
+    if (b0 < 0) return g[0];
+    if (b0 >= n - 1) return g[n - 1];
+    return g[b0] + (g[b0 + 1] - g[b0]) * (c - b0);
+  };
+  return { gainDb: r2(gainDb), heldDb: r1(20 * Math.log10(least / G)), speechDb: speechDb == null ? null : r1(speechDb), at };
 }
 
 // the two passes round it: [0:a] the file to the denoiser's input; [0:a] its output to the end
@@ -792,7 +841,7 @@ function speechFrames(energy, t = VOICE_KEPT) {
   const sorted = [...lv].sort((a, b) => a - b);
   const top = sorted[Math.floor(0.95 * (n - 1))] ?? -200, floor = sorted[Math.floor(0.1 * (n - 1))] ?? -200;
   const from = Math.max(top - t.topDb, floor + t.floorDb);
-  return { is: (i) => lv[i] >= from && energy[i] > 0 };
+  return { is: (i) => lv[i] >= from && energy[i] > 0, loud: (i) => lv[i] >= top - t.topDb && energy[i] > 0, top };
 }
 
 // inE, outE: the frames' energies in and out → { down, numbers, said }
@@ -865,11 +914,14 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir()) {
     for (const p of parts) { x.set(p, o); o += p.length; }
     for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(x[i]));
     if (!(peak > 0)) return done({ failed: "silent" });
-    const g = 10 ** ((NEURAL.peakDb - 20 * Math.log10(peak)) / 20);
+    // the level for its 16-bit output, as in the real run (levelFor)
+    const frameE = new Float64Array(Math.ceil(n / VOICE_FRAME)), blockPeak = new Float64Array(Math.ceil(n / BLOCK));
+    for (let i = 0; i < n; i++) { const v = x[i]; frameE[Math.floor(i / VOICE_FRAME)] += v * v; const b = Math.floor(i / BLOCK); if (Math.abs(v) > blockPeak[b]) blockPeak[b] = Math.abs(v); }
+    const L = levelFor(frameE, blockPeak, { ...NEURAL, ...opts.tune });
     const padded = Math.ceil(n / BLOCK) * BLOCK + 24000;
     const inW = path.join(tmp, "probe.wav"), outW = path.join(tmp, "probe.out.wav");
     const xi = new Float32Array(padded);
-    for (let i = 0; i < n; i++) xi[i] = x[i] * g;
+    for (let i = 0; i < n; i++) xi[i] = x[i] * L.at(i);
     fs.writeFileSync(inW, Buffer.concat([floatHeader(padded), Buffer.from(xi.buffer)]));
     const failed = await runDenoiser({ ...dn, limit: 0 }, inW, outW, padded / RATE);
     if (failed) return done({ failed });
@@ -1015,14 +1067,17 @@ function readRange(fd, info, from, count) {
   return out;
 }
 
-// the largest absolute sample of a float WAV, streamed; its frames' energies added into energy
-function peakOf(fd, info, energy) {
-  let peak = 0;
+// a float WAV, streamed: its frames' energies (VOICE_FRAME) added into energy, its blocks' peaks
+// (BLOCK) into peaks
+function peakOf(fd, info, energy, peaks) {
   for (let p = 0; p < info.samples; p += CHUNK) {
     const x = readRange(fd, info, p, Math.min(CHUNK, info.samples - p));
-    for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > peak) peak = v; energy[Math.floor((p + i) / VOICE_FRAME)] += v * v; }
+    for (let i = 0; i < x.length; i++) {
+      const v = Math.abs(x[i]), b = Math.floor((p + i) / BLOCK);
+      energy[Math.floor((p + i) / VOICE_FRAME)] += v * v;
+      if (v > peaks[b]) peaks[b] = v;
+    }
   }
-  return peak;
 }
 
 // The lag (0…DELAY_SEARCH samples) at which the output y follows the input x best, x a window of
@@ -1069,15 +1124,17 @@ async function neuralRepair(file, outWav, plan, opts) {
     const N = info.samples;
     const den = path.join(tmp, "denoised.wav");
     const st = { ...plan.steps.find((s) => s.id === "denoise") };
-    let delay = DPDFNET_DELAY, gainDb = 0, voice = null;
+    let delay = DPDFNET_DELAY, gainDb = 0, voice = null, level = null;
     const cut = piecesOf(N, nr.pauses, t);
     try {
       // 2. the level for its 16-bit output; the speech frames' energies, to check what it did to them
       const fdPre = open(pre, "r");
       const inE = new Float64Array(Math.ceil(N / VOICE_FRAME)), outE = new Float64Array(inE.length);
-      const peak = peakOf(fdPre, info, inE);
-      gainDb = r2(peak > 0 ? Math.max(-40, Math.min(60, t.peakDb - 20 * Math.log10(peak))) : 0);
-      const g = 10 ** (gainDb / 20);
+      const blockPeak = new Float64Array(Math.ceil(N / BLOCK));
+      peakOf(fdPre, info, inE, blockPeak);
+      level = levelFor(inE, blockPeak, t);
+      gainDb = level.gainDb;
+      const g = level.at;
       // 3. piece by piece, each output in step and cross-faded into the one before
       const fdDen = open(den, "w");
       fs.writeSync(fdDen, floatHeader(N));
@@ -1101,7 +1158,7 @@ async function neuralRepair(file, outWav, plan, opts) {
         const blocks = new Float64Array(Math.ceil(len / 4800));
         for (let p = from; p < to; p += CHUNK) {
           const x = readRange(fdPre, info, p, Math.min(CHUNK, to - p));
-          for (let i = 0; i < x.length; i++) { x[i] *= g; const e = x[i] * x[i]; sumIn += e; blocks[Math.floor((p - from + i) / 4800)] += e; }
+          for (let i = 0; i < x.length; i++) { x[i] *= g(p + i); const e = x[i] * x[i]; sumIn += e; blocks[Math.floor((p - from + i) / 4800)] += e; }
           fs.writeSync(fdIn, Buffer.from(x.buffer, 0, x.length * 4));
         }
         fs.writeSync(fdIn, Buffer.alloc((padded - len) * 4));
@@ -1136,7 +1193,7 @@ async function neuralRepair(file, outWav, plan, opts) {
               let s = 0; for (let j = b; j < b + per && j < blocks.length; j++) s += blocks[j];
               if (s > top) { top = s; at = b * 4800; }
             }
-            const x = readRange(fdPre, info, from + at, W).map((v) => v * g);
+            const x = readRange(fdPre, info, from + at, W).map((v, i) => v * g(from + at + i));
             const y = readRange(fdOut, oi, at, W + DELAY_SEARCH);
             const lag = lagOf(x, y);
             if (lag.c < 0.2) throw say(`its output does not follow its input (correlation ${lag.c.toFixed(2)})`);
@@ -1144,7 +1201,7 @@ async function neuralRepair(file, outWav, plan, opts) {
           }
         }
         // its part of the output: the fade into it, then it alone up to the next fade
-        const take = (a, b) => { const y = readRange(fdOut, oi, a - from + delay, b - a); for (let i = 0; i < y.length; i++) y[i] /= g; return y; };
+        const take = (a, b) => { const y = readRange(fdOut, oi, a - from + delay, b - a); for (let i = 0; i < y.length; i++) y[i] /= g(a + i); return y; };
         if (k > 0) {
           const a = seams[k - 1].at - half, y = take(a, a + fade);
           for (let j = 0; j < fade; j++) { const w = Math.sin((Math.PI / 2) * ((j + 0.5) / fade)) ** 2; y[j] = w * y[j] + (1 - w) * pending[j]; }
@@ -1176,7 +1233,7 @@ async function neuralRepair(file, outWav, plan, opts) {
       refuse(`ffmpeg's filters wrote ${bad2.value} at ${clockOf(bad2.at)} of the repaired sound (after dpdfnet): run it again with --denoise off or another method, and tell the skill's authors.`);
     }
     Object.assign(st, {
-      gainDb, delaySamples: delay, voice: voice.numbers,
+      gainDb, ...(level.heldDb < 0 && { heldDb: level.heldDb }), delaySamples: delay, voice: voice.numbers,
       pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })),
       seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
       ...(delay !== DPDFNET_DELAY && { why: `${st.why.replace(/\.$/, "")}; its output came ${delay} samples late, taken out.` }),

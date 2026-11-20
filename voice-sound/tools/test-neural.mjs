@@ -16,7 +16,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, neuralDenoiser, piecesOf, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept } from "./lib/repair.mjs";
+import { repair, repairPlan, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
@@ -139,7 +139,7 @@ function maxDiff(x, y, k = 1, a = 0, b = x.length) {
   for (let i = a; i < b; i++) d = Math.max(d, Math.abs(y[i] - k * x[i]));
   return d;
 }
-const step = (st) => (0.5 / 32768) / 10 ** (st.gainDb / 20) * 1.01 + 1e-7;
+const step = (st) => (0.5 / 32768) / 10 ** ((st.gainDb + (st.heldDb ?? 0)) / 20) * 1.01 + 1e-7;
 // the lag (samples) at which y matches x best around `at`
 function lagOf(x, y, at, lag = 600) {
   let best = -Infinity, bl = null;
@@ -501,6 +501,8 @@ test("after a fallback the tone stage hears what ffmpeg's method did, not what t
 
 // ---------------------------------------------------------------- what it did to the voice
 
+// the longest run of exact zeros in x from a on
+function zeroRun(x, a = 0) { let run = 0, best = 0; for (let i = a; i < x.length; i++) { if (x[i] === 0) { run++; if (run > best) best = run; } else run = 0; } return best; }
 const callsOf = (log) => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").length : 0);
 
 test("voiceKept: the share of speech frames down, and their level, each a bound of its own", () => {
@@ -608,6 +610,43 @@ test("the probe fired, the run then took the voice down: no noise step, said in 
   const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("pd-plain.out.wav"), m));
   assert.ok(fs.readFileSync(file("pd.out.wav")).equals(fs.readFileSync(file("pd-plain.out.wav"))));
   assert.equal(plain.method, "off");
+});
+
+// ---------------------------------------------------------------- the level for its 16 bits
+
+test("a very quiet voice with one loud bump: the level follows the voice, the bump is held, no run of zeros", { skip }, async () => {
+  // the voice 60 dB down (its noise near −94 dBFS), and 30 ms of a burst at 0.9 at 0.3 s
+  run(["-i", noisy, "-filter_complex", `[0:a]volume=-60dB[v];aevalsrc=exprs='0.9*exp(-t/0.008)*sin(2*PI*300*t)':s=48000:d=0.03,adelay=300,apad[b];[v][b]amix=inputs=2:normalize=0:duration=first`, "-c:a", "pcm_f32le", file("bump.wav")]);
+  // (measure, its speech level taken from the bump, names no noise here: the plan is told it lies
+  // under the voice, as the probe would)
+  const m = await measure(file("bump.wav"));
+  const r = await withEnv(STANDIN_ENV(), () => repair(file("bump.wav"), file("bump.out.wav"), m, { underVoice: { fires: true, underDb: 22, sampleS: 10 } }));
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.equal(r.method, "dpdfnet");
+  // the voice brought to about −26 dBFS (60 dB more than the peak would have allowed), the gain
+  // held round the bump only
+  assert.ok(st.gainDb > 45, JSON.stringify(st));
+  assert.ok(st.heldDb < -20, JSON.stringify(st));
+  const x = reference("bump.wav", m), y = samples(file("bump.out.wav"));
+  assert.equal(y.length, x.length);
+  const a = 48000;
+  const e = errorDb(x, y, 1, a);
+  assert.ok(e < -60, `error ${e.toFixed(1)} dB`);
+  assert.ok(zeroRun(y, a) <= Math.max(5, zeroRun(x, a)), `${zeroRun(y, a)} zeros in a row`);
+  // the bump itself comes back as it went in, within half a step at the held gain
+  assert.ok(maxDiff(x, y, 1, 14000, 16000) <= step(st), `${maxDiff(x, y, 1, 14000, 16000)}`);
+});
+
+test("levelFor: never more gain than a block's peak allows, the steady gain elsewhere", () => {
+  // (frames of voice at −50.5 dBFS and pauses 40 dB under it, one block's peak at 0.9)
+  const n = 400, peaks = new Float64Array(n).fill(0.01), energy = Float64Array.from({ length: Math.ceil((n * 480) / 4800) }, (_, i) => 4800 * (i % 2 ? 0.00003 : 0.003) ** 2);
+  peaks[200] = 0.9;
+  const L = levelFor(energy, peaks, { ...NEURAL, voiceDb: -26, peakDb: -6, holdS: 0.1 });
+  near(L.gainDb, -26 - 20 * Math.log10(0.003), 0.01, "the steady gain");
+  const G = 10 ** (L.gainDb / 20), ceil = 10 ** (-6 / 20);
+  for (let i = 0; i < n * 480; i++) assert.ok(L.at(i) * peaks[Math.floor(i / 480)] <= ceil * (1 + 1e-9), `sample ${i}`);
+  for (const i of [0, 60000, n * 480 - 1]) near(20 * Math.log10(L.at(i)), L.gainDb, 0.01, `the gain at ${i}`);
+  near(L.heldDb, 20 * Math.log10(ceil / 0.9 / G), 0.1, "held");
 });
 
 // ---------------------------------------------------------------- the real one
