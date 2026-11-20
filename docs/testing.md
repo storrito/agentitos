@@ -29,10 +29,11 @@ What a pass in the lab does not say: how the page looks, whether buttons work, w
 
 ## 3. A Sprite: the machine a bot has
 
-A skill has to run where the bots run: 8 cores, 8 GB of memory. The lab's `sprites.md` says which test Sprites there are and how large each is, how the sessions agree who holds which, how files get onto one and back, and how a composition is rendered there quickly with Storrito's renderer.
+A skill has to run where the bots run: 8 cores, 8 GB of memory. The lab's `sprites.md` says which test Sprites are in the pool and how large each is, how one is taken and given back, how files get onto one and back, and how a composition is rendered there with hfrender.
 
 - Where a test Sprite is free, a skill's tools are tried on one before its pull request is ready, with their time and peak memory, and the whole run as a bot (standards.md, section 3) renders there.
 - The larger test Sprites (16 cores, 32 GB) are there to be used in full while a skill is built: many variants rendered at once, a measurement over the whole corpus. What is measured for standards.md's sections 4 and 5 is measured on a Sprite of a bot's size.
 - Renders and other heavy work run on a Sprite, not on the machine the sessions share. While you work, check from the built composition; render once for a pull request, at the end.
 - A test Sprite's ffmpeg, fonts and HyperFrames are not always a bot's, which come with rragent's image: loudness, emoji and snapshots are checked against the bot's.
-- A Sprite is taken only after the sessions that are running have agreed who holds which, the way `sprites.md` says. Use only what you were given, say which you hold, and say when you are done. Never start anything on a Sprite another session holds.
+- A test Sprite is taken from the pool the way `sprites.md` says: a hold is marked on the Sprite itself, for every session to see. Give it back when you are done, with nothing of yours left on it. Never start anything on a Sprite that another holds or that is not in the pool.
+- The pool can shrink at any time: keep nothing on a Sprite that you need again.

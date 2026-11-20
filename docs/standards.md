@@ -2,6 +2,8 @@
 
 agentitos turns raw material into videos for social media, short ones first and somewhat longer ones such as a YouTube video of under a quarter of an hour, and brings them out on the platforms. [AGENTS.md](../AGENTS.md) holds the collection's rules. This page is the bar: what a new skill, or a change to what a skill does or asks, has to show before it goes in, and how it shows it. A pull request answers the table at the end.
 
+The skills that exist are held to this page as well. Before one of them is rebuilt to meet it, the owner is told which skill, what falls short and what would change.
+
 ## The bar: good enough for an ordinary clip, and quick
 
 The skills serve clips for social media: a person waits for the result, and music usually lies under it. A skill is a quick 80 % solution, not a 100 % one (the owner, 2026-11-20). Every point below is read with that.
@@ -88,7 +90,10 @@ Each is measured once, and again only after a change to what it measures.
 
 ## 7. Videos
 
-A video is a HyperFrames composition: a preview first, the render after the person's yes (AGENTS.md, "Videos"). A skill's steps render with rragent's `render` tool, never with `hyperframes render`. While you build a skill, render as the lab's `sprites.md` says.
+A video is a HyperFrames composition: a preview first, the render after the person's yes (AGENTS.md, "Videos"). It is rendered with hfrender, Storrito's renderer for HyperFrames compositions, which was two to four times as fast as `hyperframes render` on the same machine (2026-11-19).
+
+- A skill's steps render with rragent's `render` tool, never with a renderer's own command, so that the renderer is chosen in one place.
+- An agent that builds a skill renders on a Sprite with `hfrender render <composition folder> --output <file.mp4>`; the lab's `sprites.md` says where it is installed.
 
 ## 8. Out to the platforms, and to other services
 

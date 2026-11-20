@@ -77,6 +77,7 @@ Tools do what can be measured (sync, cuts between words, levels, sizes, what the
 
 ## Videos
 
+- Rendering is hfrender's, Storrito's renderer for HyperFrames compositions: a skill's steps name rragent's `render` tool, and on a Sprite of your own it is `hfrender render <composition folder> --output <file.mp4>`.
 - In rragent: a HyperFrames preview first, the render only after the person's yes. Change the inputs and build again; never edit a built `index.html` by hand.
 - A page plays only about 75 media elements (Chrome): one element per source for the whole cut (a voice track, a webcam track), not one per piece.
 - Sprites have little memory: never decode a whole recording at once to cut many pieces from it; one ffmpeg per piece, joined afterwards.
