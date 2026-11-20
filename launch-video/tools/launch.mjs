@@ -1169,6 +1169,22 @@ async function cmdImage(out, opts) {
 
 // ------------------------------------------------------------------------------- the video
 
+// a file's sound as a platform's meter reads it: its loudness and its true peak
+export function meterOf(file) {
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", file, "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"], { encoding: "utf8" });
+  const s = (r.stderr || "").slice((r.stderr || "").lastIndexOf("Summary"));
+  const i = s.match(/I:\s+(-?[\d.]+) LUFS/), p = s.match(/Peak:\s+(-?[\d.]+) dBFS/);
+  return i && p ? { lufs: Number(i[1]), peak: Number(p[1]) } : null;
+}
+
+// what `finish` says of the file it wrote: the numbers measured on it, and why they are not −14 and −1
+export function finishLine(name, before, got, down) {
+  const lower = down ? ` The encoder lifted a peak over −1 dBTP, so the whole sound is ${down.toFixed(1)} dB lower.` : "";
+  const short = got.lufs < -14.5 - down ? ` Not −14: its peaks stand far over its loudness, and louder would press them.` : "";
+  const over = got.peak > -1 ? `\n  ! Its true peak is still over −1 dBTP: a platform may clip it.` : "";
+  return `${name}: ${lufs(before)} → ${lufs(got.lufs)} LUFS, true peak ${lufs(got.peak)} dBTP, measured on the finished file.${lower}${short} Not heard: say so.${over}`;
+}
+
 function cmdFinish(video) {
   if (!video || !fs.existsSync(video)) fail(`Usage: ${cmd("finish <video.mp4>")} (the rendered video)`);
   const p = probe(video);
@@ -1181,15 +1197,22 @@ function cmdFinish(video) {
   if (!(Number(m.input_i) > -70)) return console.log(`${rel(video)}: its sound is silent, nothing to level.`);
   // hidden beside it, so a half-written file never shows as an artifact
   const tmp = path.join(path.dirname(video), `.${path.basename(video, path.extname(video))}.levelled.mp4`);
+  const level = (down) => ffmpeg(["-i", video, "-map", "0", "-map_metadata", "-1", "-c:v", "copy", "-af",
+    `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true${down ? `,volume=${(-down).toFixed(2)}dB` : ""}`,
+    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
+  let got, down = 0;
   try {
-    ffmpeg(["-i", video, "-map", "0", "-map_metadata", "-1", "-c:v", "copy", "-af",
-      `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`,
-      "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
+    level(0);
+    got = meterOf(tmp);
+    // the encoder can lift a peak over what was levelled: again from the render, the whole sound lower by what is
+    // over (how far it lifts changes with the level, so up to four times)
+    for (let pass = 0; pass < 4 && got && got.peak > -1; pass++) { down += got.peak + 1 + 0.2; level(down); got = meterOf(tmp); }
+    if (!got) fail(`✗ ffmpeg could not measure the levelled ${rel(video)}: it stays as rendered.`);
     fs.renameSync(tmp, video);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
-  console.log(`${rel(video)}: ${Number(m.input_i).toFixed(1)} → −14 LUFS, peaks under −1 dBTP. Measured, not heard: say so.`);
+  console.log(finishLine(rel(video), Number(m.input_i), got, down));
 }
 
 // ------------------------------------------------------------------------------- main
