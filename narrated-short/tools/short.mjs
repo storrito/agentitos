@@ -787,9 +787,11 @@ function build(args) {
 
   // a beat whose "frame" was left out and whose faces layout's measure could not place: as before
   if (measureBroke && plans.some((p) => p.silent)) {
-    const ids = beats.filter((b, i) => plans[i].silent).map((b) => b.id);
-    plans = plans.map((p, i) => (p.silent ? planOf(beats[i], i, true) : p));
-    warn.push(`the beat${ids.length > 1 ? "s" : ""} ${ids.join(", ")} without "frame" stay${ids.length > 1 ? "" : "s"} the band, as before: a larger picture of their faces needs agentitos' layout's measure, and it failed`);
+    const pic = (p) => JSON.stringify([p.frame, p.zoom, p.pan, p.x, p.box]);
+    const again = plans.map((p, i) => (p.silent ? planOf(beats[i], i, true) : p));
+    const ids = beats.filter((b, i) => pic(again[i]) !== pic(plans[i])).map((b) => b.id);
+    plans = again;
+    if (ids.length) warn.push(`the beat${ids.length > 1 ? "s" : ""} ${ids.join(", ")} without "frame" stay${ids.length > 1 ? "" : "s"} the band, as before: a larger picture of their faces needs agentitos' layout's measure, and it failed`);
   }
   const placed = report.splice(0);   // the captions' and the hook's lines, said after the beats'
 
