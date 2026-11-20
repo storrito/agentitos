@@ -942,3 +942,36 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(path.join(here, "..",
     assert.deepEqual([noteOf(comp, "b").frame, noteOf(comp, "b").zoom], ["whole", 1]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// 2026-11-20, decided from the pair passerby-sheet: a picture chosen for a beat without "frame" cuts
+// no face through that the source shows whole; one that does not count may be left out whole
+test("no \"frame\": a face that does not count is held whole or left out, never cut through (r1's h1: the fill from the middle cut Jessica Watkins, 62 % as tall, 1.1 s; a fill moved to both holds both at the same size)", () => {
+  const sam = [...Array.from({ length: 17 }, (_, k) => ({ t: +(k * 0.1).toFixed(1), box: [1816, 508, 476, 602], feat: [1828, 660, 288, 366] })),
+    ...Array.from({ length: 11 }, (_, k) => ({ t: +((17 + k) * 0.1).toFixed(1), box: [1958, 576, 216, 270], feat: [1998, 680, 138, 130] }))];
+  const jess = Array.from({ length: 11 }, (_, k) => ({ t: +((17 + k) * 0.1).toFixed(1), box: [2404 + 6 * k, 594, 276 - 3 * k, 306], feat: [2454 + 5 * k, 710, 176 - 2 * k, 148] }));
+  const h1 = counted(listWith(["Samantha Cristoforetti", sam], ["Jessica Watkins", jess]), SIZE4K, 2.83);
+  assert.deepEqual([h1.held.map((p) => p.who), h1.small.map((p) => p.who)], [["Samantha Cristoforetti"], ["Jessica Watkins"]]);
+  const p = planWindow({ frame: "whole", zoom: 1.6, size: SIZE4K, people: h1, captions: CAPTIONS, crop: () => assert.fail("no crop where a fill holds both"), silent: true });
+  assert.equal(p.frame, "fill");
+  const win = shown({ ...p, size: SIZE4K });
+  assert.ok(win[0] <= 1816 && win[1] >= 2712, `the fill ${win} holds both whole`);
+  assert.match(p.said, /^no "frame", so the largest picture that holds Samantha Cristoforetti whole: a fill, moved to them \(the face \d+ px; .*\); a fill would have cut Jessica Watkins at the frame's side: the picture is moved/);
+  // a fill written: as on main, from the middle (she is cut there, said as the one at the side)
+  assert.equal(planWindow({ frame: "fill", size: SIZE4K, people: h1, captions: CAPTIONS }).x, null);
+});
+
+test("no \"frame\": a pair that counts and a third face too far for one fill with them, which every fill on the pair would cut through: the 1:1 instead, nobody cut", () => {
+  const trio = counted(listOf(["A", person("A", [1300, 1700, 170, 200], 30)], ["B", person("B", [2180, 1700, 170, 200], 30)], ["C", person("C", [2390, 1720, 200, 124], 30)]), SIZE4K, 3);
+  assert.deepEqual([trio.held.map((p) => p.who), trio.small.map((p) => p.who)], [["A", "B"], ["C"]]);
+  const square = { fit: "crop", crop: "1:1", scale: 0.5, left: -0.5 * 900, top: 100, window: [0, 100, 1080, 1080] };
+  const p = planWindow({ frame: "whole", size: SIZE4K, people: trio, captions: CAPTIONS, crop: () => square, silent: true });
+  assert.equal(p.frame, "crop");
+  assert.deepEqual(p.box.src, [900, 0, 2160, 2160]);
+  assert.match(p.said, /a 1:1 crop placed high .*; a fill would have cut C at the frame's side: the 1:1 instead/);
+  // without the third: the fill on the pair, as before
+  const pair = counted(listOf(["A", person("A", [1300, 1700, 170, 200], 30)], ["B", person("B", [2180, 1700, 170, 200], 30)]), SIZE4K, 3);
+  assert.equal(planWindow({ frame: "whole", size: SIZE4K, people: pair, captions: CAPTIONS, crop: () => square, silent: true }).frame, "fill");
+  // a face the source's edge cuts is no reason: it is cut in every picture
+  const edge = counted(listOf(["A", person("A", [1300, 1700, 170, 200], 30)], ["B", person("B", [2180, 1700, 170, 200], 30)], ["C", person("C", [3740, 1720, 200, 124], 30)]), SIZE4K, 3);
+  assert.equal(planWindow({ frame: "whole", size: SIZE4K, people: edge, captions: CAPTIONS, crop: () => square, silent: true }).frame, "fill");
+});

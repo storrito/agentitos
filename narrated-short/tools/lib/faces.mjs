@@ -251,33 +251,55 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
     const asBand = `as the band ${heights(held, (Math.round((SIZE[0] * old.zoom) / 2) * 2) / cw)} over ${groundOf(old, [cw, ch])} % ground; "frame": "whole" for the band`;
     const lead = `no "frame", so the largest picture that holds ${names(held)} whole`;
     const k = SIZE[1] / ch, ws = 2 * Math.round((cw * k) / 2), mid = shown({ frame: "fill", size: [cw, ch] }), width = mid[1] - mid[0];
-    const raw = [Math.max(0, Math.min(...held.flatMap((p) => p.boxes.map((b) => b[0])))), Math.min(cw, Math.max(...held.flatMap((p) => p.boxes.map((b) => b[0] + b[2]))))];
+    // (2026-11-20, decision after the pair passerby-sheet: no face the source shows whole is cut
+    // through by a picture chosen here; one that does not count may be left out whole)
+    const others = people.small || [];
+    let ruled = null;   // what the picture whole for the faces that count alone would have cut through, and who
+    const whom = (ps) => ps.map((p) => (p.who && p.who !== "a face" ? p.who : "a second person")).join(", ");
+    const ok = (place, what) => {
+      if (!seenWhole(place, held, [cw, ch])) return false;
+      const through = cutThrough(place, others, [cw, ch]);
+      if (through.length && !ruled) ruled = `${what} would have cut ${whom(through)}`;
+      return !through.length;
+    };
+    const because = (instead) => (ruled ? `; ${ruled} at the frame's side: ${instead}` : "");
+    const xsOf = (ps) => [Math.max(0, Math.min(...ps.flatMap((p) => p.boxes.map((b) => b[0])))), Math.min(cw, Math.max(...ps.flatMap((p) => p.boxes.map((b) => b[0] + b[2]))))];
+    const raw = xsOf(held), every = xsOf([...held, ...others]);
+    const centre = (span) => { const room = hullOf(held), around = room[1] - room[0] <= width && room[0] >= span[0] - 1 && room[1] <= span[1] + 1 ? room : span; return Math.max(0, Math.min(ws - SIZE[0] - 2, Math.round(((around[0] + around[1]) / 2 - width / 2) * k))); };
     if (raw[1] - raw[0] <= width) {
-      // from the middle where that shows them whole, else moved to them
-      const room = hullOf(held), around = room[1] - room[0] <= width ? room : raw;
-      const moved = Math.max(0, Math.min(ws - SIZE[0] - 2, Math.round(((around[0] + around[1]) / 2 - width / 2) * k)));
-      for (const x of within(mid, raw) ? [null, moved] : [moved]) {
+      // the fill that holds every known face whole first (from the middle where it does, else moved
+      // to them all), then from the middle, then moved to the faces that count
+      const xs = [];
+      if (every[1] - every[0] <= width) xs.push(within(mid, every) ? null : centre(every));
+      if (within(mid, raw)) xs.push(null);
+      xs.push(centre(raw));
+      const fillAt = (x) => raiseFill({ ...out, frame: "fill", zoom: 1, pan: 0.5, x, said: "" }, x == null ? mid : shown({ frame: "fill", x, size: [cw, ch] }), held, [cw, ch], captions);
+      // the fill the faces that count alone would get (from the middle, else moved to them): said where it would cut another through
+      const plain = [...(within(mid, raw) ? [null] : []), centre(raw)].find((x) => seenWhole(fillAt(x), held, [cw, ch]));
+      if (plain !== undefined) ok(fillAt(plain), "a fill");
+      for (const x of xs.filter((v, j) => xs.indexOf(v) === j)) {
         const fill = { ...out, frame: "fill", zoom: 1, pan: 0.5, x, changed: true };
         const win = x == null ? mid : shown({ frame: "fill", x, size: [cw, ch] });
-        fill.said = [`${lead}: a fill${x != null ? ", moved to them" : ""} (the ${held.length > 1 ? "faces" : "face"} ${heights(held, k)}; ${asBand})`, ...notes(win).filter((n) => !/^(an ear|ears or)/.test(n))].join("; ");
-        const r = raiseFill(fill, win, held, [cw, ch], captions);
-        if (seenWhole(r, held, [cw, ch])) return r;
+        if (!ok(fillAt(x), "a fill")) continue;
+        fill.said = [`${lead}: a fill${x != null ? ", moved to them" : ""} (the ${held.length > 1 ? "faces" : "face"} ${heights(held, k)}; ${asBand})${because("the picture is moved")}`, ...notes(win).filter((n) => !/^(an ear|ears or)/.test(n))].join("; ");
+        return raiseFill(fill, win, held, [cw, ch], captions);
       }
     }
     // the band: as large as holds them whole while the clip grows (from bandPlan's zoom down), never under the band before
     const band = bandPlan(held, [cw, ch], captions, 3);
     let z = old.zoom;
-    for (let v = band.zoom; v > old.zoom + 0.005; v = Math.round((v - 0.01) * 100) / 100) if (seenWhole(placePan({ frame: "whole", zoom: v }, hullOf(held), cw), held, [cw, ch])) { z = v; break; }
+    const bandAt = (v) => placePan({ frame: "whole", zoom: v }, hullOf(held), cw);
+    for (let v = band.zoom; v > old.zoom + 0.005; v = Math.round((v - 0.01) * 100) / 100) if (ok(bandAt(v), "a larger band")) { z = v; break; }
     const c = crop ? crop(held) : null;
     if (c && ["4:5", "1:1"].includes(c.crop) && c.scale >= (SIZE[0] * z) / cw - 1e-6) {
       const box = cropOf(c, [cw, ch]);
-      if (cropHolds(box, held, captions) && seenWhole({ frame: "crop", box }, held, [cw, ch])) {
+      if (cropHolds(box, held, captions) && ok({ frame: "crop", box }, `the ${c.crop}`)) {
         const ground = Math.round((1 - (box.at[2] * box.at[3]) / (SIZE[0] * SIZE[1])) * 100);
-        return { ...out, frame: "crop", zoom: 1, box, changed: true, said: [`${lead}: a ${c.crop} crop placed high (the ${held.length > 1 ? "faces" : "face"} ${heights(held, box.at[3] / box.src[3])}, ${ground} % ground; a fill would cut ${held.length > 1 ? "one of them" : "it"}; ${asBand})`, ...passing([box.src[0], box.src[0] + box.src[2]])].join("; ") };
+        return { ...out, frame: "crop", zoom: 1, box, changed: true, said: [`${lead}: a ${c.crop} crop placed high (the ${held.length > 1 ? "faces" : "face"} ${heights(held, box.at[3] / box.src[3])}, ${ground} % ground; a fill would cut ${held.length > 1 ? "one of them" : "it"}; ${asBand})${because(`the ${c.crop} instead`)}`, ...passing([box.src[0], box.src[0] + box.src[2]])].join("; ") };
       }
     }
     const share = Math.min(100, Math.round(((hullOf(held)[1] - hullOf(held)[0]) / cw) * 100));
-    const cost = `${lead} is the band${z > 1 ? `, ${z} times larger` : ""} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): ${bandCost(held, [cw, ch], z, at, "\"frame\": \"fill\" with a \"pan\"")}`;
+    const cost = `${lead} is the band${z > 1 ? `, ${z} times larger` : ""} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width)${because("the band instead")}: ${bandCost(held, [cw, ch], z, at, "\"frame\": \"fill\" with a \"pan\"")}`;
     if (z === old.zoom) return { ...old, flag: smallBand(main, [cw, ch], z), said: [cost, ...(old.said && !/in the picture as it is/.test(old.said) ? [old.said] : [])].join("; ") };
     const banded = placePan({ ...out, zoom: z, changed: true, flag: smallBand(main, [cw, ch], z) }, hullOf(held), cw);
     banded.said = [cost, ...passing(shown({ frame: "whole", zoom: banded.zoom, pan: banded.pan, size: [cw, ch] }))].join("; ");
@@ -348,6 +370,32 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
 
 // a band marked `!`: a close-up shown in it, or more of the frame blurred ground than picture
 const smallBand = (main, [cw, ch], zoom) => main.h >= CLOSE * ch || groundOf({ frame: "whole", zoom }, [cw, ch]) >= 50;
+// The faces among `ps` that a place cuts through: some but not all of their eyes, nose and mouth in
+// the sharp picture, or their box cut by more than a tenth while more than a tenth of it is in it,
+// at the clip's smallest or largest moment, for more than 0.3 s of the beat; only at moments where
+// the source shows the face whole (one the source's edge cuts is cut in every picture). A face
+// wholly outside is left out, not cut.
+function cutThrough(place, ps, [cw, ch]) {
+  const map = mapper({ ...place, size: [cw, ch] });
+  const ts = ps.flatMap((p) => p.ts).sort((a, b) => a - b), gaps = ts.slice(1).map((t, j) => t - ts[j]).filter((d) => d > 1e-6);
+  const step = gaps.length ? Math.min(...gaps) : 0.1;
+  const sharp = place.frame === "crop" ? place.box.at : place.frame === "whole" ? ((t) => [0, t[0], SIZE[0], t[1] - t[0]])(bandOf({ ...place, size: [cw, ch] })) : [0, 0, SIZE[0], SIZE[1]];
+  const grow = (b, m) => [SIZE[0] / 2 + (b[0] - SIZE[0] / 2) * m, SIZE[1] / 2 + (b[1] - SIZE[1] / 2) * m, b[2] * m, b[3] * m];
+  const share = (b, a) => (Math.max(0, Math.min(b[0] + b[2], a[0] + a[2]) - Math.max(b[0], a[0])) * Math.max(0, Math.min(b[1] + b[3], a[1] + a[3]) - Math.max(b[1], a[1]))) / Math.max(1e-6, b[2] * b[3]);
+  return ps.filter((p) => {
+    let n = 0;
+    p.boxes.forEach((b, j) => {
+      if (b[0] < -2 || b[1] < -2 || b[0] + b[2] > cw + 2 || b[1] + b[3] > ch + 2) return;
+      const cut = [1, MOVE].some((m) => {
+        const g = grow(sharp, m), area = [Math.max(0, g[0]), Math.max(0, g[1]), Math.min(SIZE[0], g[0] + g[2]) - Math.max(0, g[0]), Math.min(SIZE[1], g[1] + g[3]) - Math.max(0, g[1])];
+        const fb = share(grow(map(b), m), area), ff = share(grow(map(p.feats[j]), m), area);
+        return (ff > 0.001 && ff < 0.999) || (fb > 0.1 && fb < 0.9);
+      });
+      if (cut) n++;
+    });
+    return n * step > 0.3 + 1e-6;
+  });
+}
 // whether every box of the faces (the part inside the source) is seen whole in the sharp picture
 // of a place (a fill's frame, a crop's box, a band's rows), also when the clip has grown by MOVE
 // about the frame's middle, as it does by its end or start
