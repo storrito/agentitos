@@ -1,8 +1,8 @@
 // The end of a short and its first beat's freeze, on a made-up short (two tones over a test
 // picture, built without captions): a build without "handle" (left out, null, "") shows no name and
-// leaves nothing in its place, one with it is as before; the room a freeze needs, as the text says it
-// and as freeze-cutout counts it, and the line where it is missing. No request, no key; build needs
-// platform-zones beside.
+// leaves nothing in its place, one with it is as before; a freeze without room: freeze-cutout's own
+// sentence passed on in one line (its refusal comes before any model call). No request, no key;
+// build needs platform-zones beside.
 //
 //   node --test tools/test-end.mjs
 
@@ -14,7 +14,6 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { freezeNeeds, freezeRoom } from "./lib/freeze.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ffmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -108,76 +107,39 @@ test("build without \"handle\" (left out, null, \"\"): no name at the end, no el
     s.beats({ handle: 42 });
     r = s.build(path.join(dir, "number"));
     assert.equal(r.status, 1);
-    assert.equal(r.stdout.trim(), "\"handle\" is the account's @name as text, shown at the end; leave it out for none.");
+    assert.equal(r.stdout.trim(), `${path.join("work", "beats.json")}: "handle" is the account's @name as text, shown at the end; leave it out for none.`);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("the freeze's room: 0.2 s before it and 1.2 s after it (1 s soft) as the text says, counted in frames as freeze-cutout counts them", () => {
-  assert.deepEqual(freezeNeeds("strong", 30), { lead: 6, tail: 35, before: 0.2, after: 1.2 });
-  assert.deepEqual(freezeNeeds("soft", 30), { lead: 6, tail: 28, before: 0.2, after: 1 });
-  // the text the agent reads says the same numbers
-  const beats = fs.readFileSync(path.join(here, "..", "references", "beats.md"), "utf8");
-  assert.ok(beats.includes(`${freezeNeeds().before} s or more into the beat and ${freezeNeeds().after} s before its end (${freezeNeeds("soft").after} s with \`"pop": "soft"\`)`));
-  // a 2.5 s beat: 1.17 s after it is enough (35 frames), a frame less is not
-  assert.equal(freezeRoom(1.33, 2.5), null);
-  assert.equal(freezeRoom(0.2, 2.5), null);
-  assert.equal(freezeRoom(1.5, 2.5, "soft"), null);
-  assert.equal(freezeRoom(1.5, 2.5), "the freeze at 1.5 s has 1 s of the 2.5 s beat after it, 0.2 s short of the 1.2 s it needs: \"freeze\" at 1.3 s or earlier, or a longer first beat");
-  assert.equal(freezeRoom(3, 2.5), "the freeze at 3 s has 0 s of the 2.5 s beat after it, 1.2 s short of the 1.2 s it needs: \"freeze\" at 1.3 s or earlier, or a longer first beat");
-  assert.equal(freezeRoom(0.1, 2.5), "the freeze at 0.1 s has 0.1 s of the beat before it, 0.1 s short of the 0.2 s it needs: \"freeze\" at 0.2 s or later");
-  assert.equal(freezeRoom(0.5, 1.2), "the first beat is 1.2 s long, 0.2 s short of the 1.4 s a freeze needs (0.2 s before it, 1.2 s after it): a longer first beat, or no \"freeze\"");
-  // the latest second it names fits, in every beat length of a frame's steps
-  for (let n = 45; n <= 300; n++) {
-    const seconds = n / 30, said = freezeRoom(9, seconds).match(/"freeze" at ([\d.]+) s or earlier/)[1];
-    assert.equal(freezeRoom(Number(said), seconds), null, `${seconds} s: ${said}`);
-  }
-});
-
-test("freeze-cutout refuses a freeze with the same numbers, one frame past the latest that fits (its check comes before any model call)", { skip: (!ffmpeg && "no ffmpeg") || (!fs.existsSync(cutoutTool) && "no freeze-cutout beside") }, () => {
+test("build: freeze-cutout's refusal of a freeze without room reaches the agent unchanged, in one line, and the plain clip is used; a freeze it takes is used", { skip: buildSkip.skip || (!fs.existsSync(cutoutTool) && "no freeze-cutout beside") }, () => {
   const dir = tmp();
   try {
-    const clip = path.join(dir, "clip.mp4");
-    run(["-f", "lavfi", "-i", "testsrc2=s=320x568:r=30:d=2.5", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", clip]);
-    for (const [pop, at] of [["strong", 1.36], ["soft", 1.6], ["strong", 0.1]]) {
-      assert.notEqual(freezeRoom(at, 2.5, pop), null);
-      const r = spawnSync(process.execPath, [cutoutTool, clip, path.join(dir, "out.mp4"), "--at", String(at), "--style", pop, "--work", dir], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" }, timeout: 60e3 });
-      assert.equal(r.status, 1, r.stdout + r.stderr);
-      const need = freezeNeeds(pop);
-      assert.match(r.stdout, new RegExp(`does not fit a clip of 2\\.50 s: it needs ${need.before.toFixed(1)} s before it and ${need.after.toFixed(1)} s after it`));
-    }
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("build: a freeze without room is said in one line (what is missing, by how much, what to do) and freeze-cutout is not run; one with room runs it", buildSkip, () => {
-  const dir = tmp();
-  try {
-    // a stand-in for freeze-cutout: notes that it ran and hands the clip back as the frozen one
-    const stand = path.join(dir, "cutout.mjs"), ran = path.join(dir, "ran.txt");
-    fs.writeFileSync(stand, `import fs from "node:fs";\nconst a = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(ran)}, a.join(" ") + "\\n");\nfs.copyFileSync(a[0], a[1]);\n`);
-    const s = short(dir, { FREEZE_CUTOUT: stand });
+    // the reviewer's case: the first beat 0 to 2.5 s, a freeze 1.33 s in (its refusal comes before any model call)
+    const s = short(dir);
     const comp = path.join(dir, "composition");
-    s.beats({}, { freeze: 1.5 });
+    s.beats({}, { freeze: 1.33 });
     let r = s.build(comp);
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.ok(r.stdout.includes("  ! a: no freeze, the plain clip is used: the freeze at 1.5 s has 1 s of the 2.5 s beat after it, 0.2 s short of the 1.2 s it needs: \"freeze\" at 1.3 s or earlier, or a longer first beat\n"), r.stdout);
-    assert.equal(fs.existsSync(ran), false);
+    const said = spawnSync(process.execPath, [cutoutTool, path.join(comp, "assets", "clips", "a.mp4"), path.join(dir, "pop.mp4"), "--at", "1.33", "--work", dir], { encoding: "utf8", env: { ...process.env, OPENROUTER_API_KEY: "" }, timeout: 60e3 });
+    assert.equal(said.status, 1, said.stdout + said.stderr);
+    const sentence = said.stdout.trim();
+    assert.equal(sentence.split("\n").length, 1);
+    assert.ok(r.stdout.includes(`  ! a: no freeze (${sentence}); the plain clip is used\n`), r.stdout);
     assert.match(html(comp), /src="assets\/clips\/a\.mp4"/);
 
-    s.beats({}, { freeze: 0.1 });
-    r = s.build(comp);
-    assert.ok(r.stdout.includes("  ! a: no freeze, the plain clip is used: the freeze at 0.1 s has 0.1 s of the beat before it, 0.1 s short of the 0.2 s it needs: \"freeze\" at 0.2 s or later\n"), r.stdout);
-    assert.equal(fs.existsSync(ran), false);
-
-    // the second it names fits, and so does a soft pop with 1 s after it
-    s.beats({}, { freeze: 1.3 });
-    r = s.build(comp);
+    // a stand-in that takes the freeze: the frozen clip is used, and said
+    const stand = path.join(dir, "cutout.mjs");
+    fs.writeFileSync(stand, `import fs from "node:fs";\nconst a = process.argv.slice(2);\nfs.copyFileSync(a[0], a[1]);\n`);
+    const t = short(path.join(dir, "taken"), { FREEZE_CUTOUT: stand }), comp2 = path.join(dir, "taken", "composition");
+    t.beats({}, { freeze: 1.2 });
+    r = t.build(comp2);
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /  a: freezes at 1\.3 s; look at /);
-    assert.match(html(comp), /src="assets\/clips\/a-pop\.mp4"/);
-    s.beats({}, { freeze: 1.5, pop: "soft" });
-    r = s.build(comp);
-    assert.match(r.stdout, /  a: freezes at 1\.5 s; look at /);
-    assert.deepEqual(fs.readFileSync(ran, "utf8").trim().split("\n").map((l) => l.match(/--at (\S+)/)[1]), ["1.3", "1.5"]);
-    assert.match(fs.readFileSync(ran, "utf8"), /--style soft/);
+    assert.match(r.stdout, /  a: freezes at 1\.2 s; look at /);
+    assert.match(html(comp2), /src="assets\/clips\/a-pop\.mp4"/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the freeze's room as the agent reads it: 1.2 s before the beat's end (1 s soft), not the 1.1 s it said before", () => {
+  const beats = fs.readFileSync(path.join(here, "..", "references", "beats.md"), "utf8");
+  assert.ok(beats.includes("0.2 s or more into the beat and 1.2 s before its end (1 s with `\"pop\": \"soft\"`)"));
 });

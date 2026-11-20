@@ -41,7 +41,6 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loudness, musicVolume } from "./lib/level.mjs";
 import { counted, planWindow, framed, bandOf, onOf, measureFault, measureSaid, inkOf, sane, looking, shownShare, talksIn, WEIGHT, TALK_FACE } from "./lib/faces.mjs";
-import { freezeRoom } from "./lib/freeze.mjs";
 
 const USAGE = "Usage: short.mjs clock <work> [--gap 0.3] | faces <work> [--all] [--again] | build <work> <composition> [--platform tiktok] [--style hormozi] [--no-captions] [--under 17] [--no-faces] | sheet <work> <composition>";
 const fail = (msg) => { console.log(msg); process.exit(1); };
@@ -450,7 +449,7 @@ function build(args) {
   const text = (v) => typeof v === "string" && v.trim() !== "";
   if (!text(cfg.credit)) fail(`${rel(beatsFile)} needs "credit": the footage's owner, on screen the whole time.`);
   // the account's @name at the end; left out, null or "": none, and nothing stands in its place
-  if (cfg.handle != null && typeof cfg.handle !== "string") fail(`"handle" is the account's @name as text, shown at the end; leave it out for none.`);
+  if (cfg.handle != null && typeof cfg.handle !== "string") fail(`${rel(beatsFile)}: "handle" is the account's @name as text, shown at the end; leave it out for none.`);
   const handle = text(cfg.handle) ? cfg.handle.trim() : null;
   const hook = cfg.hook && typeof cfg.hook === "object" ? cfg.hook : {};
   if (!text(hook.text) || !text(hook.key)) fail(`${rel(beatsFile)} needs "hook": {"text": two to five words in capitals, "key": the one word of them in colour}.`);
@@ -872,10 +871,7 @@ function build(args) {
       const cut = tool("FREEZE_CUTOUT", "freeze-cutout", "cutout.mjs");
       const pop = path.join(clipsDir, `${b.id}-pop.mp4`), popNote = path.join(clipsDir, `${b.id}-pop.json`);
       const popHow = JSON.stringify({ how, freeze: b.freeze, subject: cfg.subject || null, pop: b.pop || "strong" });
-      // the room it needs, asked before freeze-cutout runs (its own refusal stays for a clip cut shorter than its beat)
-      const room = freezeRoom(b.freeze, seconds, b.pop || "strong", FPS);
       if (!cut) report.push(`  ! ${b.id}: the freeze needs agentitos' freeze-cutout skill beside this one (or FREEZE_CUTOUT naming its tools/cutout.mjs); the plain clip is used`);
-      else if (room) { fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true }); report.push(`  ! ${b.id}: no freeze, the plain clip is used: ${room}`); }
       else if (fs.existsSync(pop) && fs.statSync(pop).size && fs.existsSync(popNote) && fs.readFileSync(popNote, "utf8") === popHow) popped[b.id] = true;
       else {
         fs.rmSync(pop, { force: true }); fs.rmSync(popNote, { force: true });
