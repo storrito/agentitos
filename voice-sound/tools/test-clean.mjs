@@ -185,8 +185,11 @@ test("the refusals: one sentence each, exit 1, {error} with --json", { skip }, (
   run(["-i", base, "-ss", "0.5", "-t", "0.3", file("short.wav")]);
   run(["-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.03:r=48000:d=20:seed=7,lowpass=f=6000", "-c:a", "pcm_s16le", file("room.wav")]);
   run(["-i", base, "-af", "volume=-67dB", "-c:a", "pcm_f32le", file("far.wav")]);
+  // over an hour: the voice, then 61 minutes of silence, at 8 kHz and 8 bits (29 MB, written in a second)
+  run(["-i", base, "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-filter_complex", "[0:a]aresample=8000[v];[1:a]atrim=duration=3660[s];[v][s]concat=n=2:v=0:a=1", "-c:a", "pcm_u8", file("long-hour.wav")]);
   const cases = [
     [["gone.wav", "x.m4a"], /^There is no gone\.wav\.$/],
+    [["long-hour.wav", "x.m4a"], /^long-hour\.wav is 61:14 long, over the 60 minutes clean takes: cut it into parts of up to 60 minutes \(at pauses\) and clean each, or clean only the part that is used\.$/],
     [["mute.mp4", "x.m4a"], /^mute\.mp4 has no sound\.$/],
     [["voice.wav", "voice.wav"], /^voice\.wav is the recording itself: clean never writes over its input; name another file\.$/],
     [["voice.wav", "./voice.wav"], /is the recording itself/],

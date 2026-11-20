@@ -68,7 +68,7 @@ import { Refusal, facts } from "./analyse.mjs";
 import { level, LevelError, TARGETS, LIMITER, MAX_GAIN_DB, tooQuiet, NO_LOUDNESS_LUFS, TWO_SPEAKERS_LU, loudness, loudnessAt, ffmpegRun, stopChildren } from "./level.mjs";
 import { targets as platformTargets } from "./targets.mjs";
 
-export const USAGE = "Usage: voice.mjs clean <audio|video> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>] [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>] [--before <file>] [--json]";
+export const USAGE = "Usage: voice.mjs clean <audio|video, up to 60 min> <out> [--for <platform…>] [--loudness <LUFS>] [--peak <dBTP>] [--denoise auto|off|gentle|strong] [--tone auto|off] [--level auto|plain|off] [--mono] [--audio <n>] [--before <file>] [--json]";
 // a check accepts the true peak this much over the one aimed at (−1.5 aimed at, −1 accepted)
 const PEAK_MARGIN_DB = 0.5;
 // the least voice clean works on: under half a second, measure's speech is a cough or a click
@@ -77,6 +77,11 @@ const PEAK_MARGIN_DB = 0.5;
 // within 0.2 LU of the target with their peaks under the ceiling (2026-11-20); a first bound of
 // 1 s had refused those clips, a short answer as a person might well bring it
 export const MIN_VOICE_S = 0.5;
+// the longest source clean takes (measure takes any length): the collection's videos run to a
+// quarter of an hour (docs/standards.md), and an hour is four times that with room for a talk to
+// cut from; its working files then hold about 1.4 GB (23 MB a minute), and clean takes about
+// 5 minutes on a laptop with ffmpeg alone, 8 with the denoiser (ESTIMATE below), longer on a Sprite
+export const MAX_SOURCE_S = 3600;
 // what dead runs left (a hidden folder or file beside an output, a folder of the older version in
 // the system's temp directory) is removed by the next run once it is older than this
 const LEFTOVER_MS = 24 * 3600 * 1000;
@@ -310,6 +315,8 @@ export async function clean(file, out, opts = {}, stages = null) {
   }
   if (sameFile(out, file)) refuse(`${rel(out)} is the recording itself: clean never writes over its input; name another file.`);
   const f = facts(fileAbs);
+  if ((f.duration ?? 0) > MAX_SOURCE_S + 1)
+    refuse(`${f.name} is ${clock(f.duration)} long, over the ${MAX_SOURCE_S / 60} minutes clean takes: cut it into parts of up to ${MAX_SOURCE_S / 60} minutes (at pauses) and clean each, or clean only the part that is used.`);
   if (fmt.kind === "video") {
     if (!f.video) refuse(`${f.name} has no picture: write its sound as ${list(AUDIO_ENDINGS)}.`);
     if (srcEnding !== ending) refuse(FORMATS[srcEnding]?.kind === "video"
