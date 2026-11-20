@@ -98,12 +98,12 @@ The whole run as a bot, from the person's message to the file (2026-11-20; the a
 
 | run | machine | what it took | ended |
 | --- | --- | --- | --- |
-| as a plugin on an nchat machine, a stand-in agent with that machine's own system prompt and its REPL as its only way to act: a café recording | an nchat test Sprite (8 cores, 4 GB, ffmpeg 8.1.3, no denoiser) | 5 evaluations of 30 allowed (the machine's log), 88 s | handed over, −14.1 LUFS, −1.5 dBTP |
+| as a plugin on the machine of another chat host than rragent, a stand-in agent with that machine's own system prompt and its REPL as its only way to act: a café recording | a test Sprite of that host (8 cores, 4 GB, ffmpeg 8.1.3, no denoiser) | 5 evaluations of 30 allowed (the machine's log), 88 s | handed over, −14.1 LUFS, −1.5 dBTP |
 | the same: a video of 20 s | the same | 5 evaluations, 76 s | handed over, −14.0 LUFS, the picture's stream unchanged |
 | the lab's case `voice-sound/talk-yes`: a phone video of 43 s, the person says yes | the laptop, the tools there too | 2 turns, 7 tool calls, 0.8 min | passed |
 | the lab's case `voice-sound/cafe-still-noisy`: the person wants more noise out | the same, the denoiser named | 3 turns, 8 tool calls, 1.1 min | passed |
 
-The first answer and the first thing to judge came within the first turn in each (under a minute); a change took one turn more. What the stand-in runs showed and is not mended here: SKILL.md is written for rragent (its `artifacts/` folder, its buttons, its `remember`), which an nchat machine does not have, and it is longer than the 10,000 characters such a machine shows its agent at once, so its middle was cut and cost each run a step; with a text written for that machine the job is three evaluations.
+The first answer and the first thing to judge came within the first turn in each (under a minute); a change took one turn more. What the stand-in runs showed and is not mended here: SKILL.md is written for rragent (its `artifacts/` folder, its buttons, its `remember`), which that other host does not have, and it is longer than the 10,000 characters such a machine shows its agent at once, so its middle was cut and cost each run a step; with a text written for that machine the job is three evaluations.
 
 ## The denoiser
 
