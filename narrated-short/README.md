@@ -62,3 +62,37 @@ The form is that of a pilot account that posted three such videos a day and meas
 ## In rragent
 
 The project is made with the `project` tool (kind `hyperframes`); the person sees every build in the player beside the chat and says yes to it before the `render` tool makes `artifacts/<name>.mp4`. On a Sprite (4 GB) a 25 s short renders in about a minute and a half.
+
+## How long it takes
+
+Measured on a Sprite of a bot's size (8 CPUs, 8 GB, no GPU, Node 26, ffmpeg 8) on 2026-11-20, one thing at a time, agentitos at 7854462 and fb83498 (this skill's code is the same in both). The builds are the layout rig's cases: a short's beats, clock and voice from an earlier run, then `faces` and `build` as the skill's tool runs them, with the face model's answers kept from that run (read back, not asked again), without the music and without the first beat's freeze. So the tools' own work is timed and no model is called. Every Node process was timed by a `--require` hook and every ffmpeg by a wrapper; the traced builds give the same files as untraced ones. Memory is the peak of the summed resident memory of the command's processes, sampled every 50 to 100 ms.
+
+| material | tool | time | share of the material's length | peak memory |
+| --- | --- | --- | --- | --- |
+| 15 s: a 15 s short, 4 beats with people, sources 720p and 4K | `faces` (answers kept) and `build` | 6.2 s and 21.1 s, 27.3 s in all | 187 % | 1.11 GB |
+| 31 s: a 31 s short, 8 beats with people, 4K sources | `faces` (answers kept) and `build` | 27.6 s and 57.4 s, 85.0 s in all | 274 % | 1.12 GB |
+| 60 s | | not measured: no material of that length in the test set | | |
+| 5 min | | not measured: no material of that length in the test set | | |
+| 15 min | | not measured: no material of that length in the test set | | |
+
+ffmpeg takes most of it: 24.0 s of the 27.3 s, 75.4 s of the 85.0 s (cutting a clip per beat from the 4K sources, and clips' `frame.mjs` following the faces). layout's `place.mjs` with platform-zones takes 0.1 to 1.0 s. `build` again in the same folder, as after a change of the beats: 2.5 s and 12.9 s, 0.41 GB.
+
+**The render and the steps that open the film in a browser**, on the same Sprite and day, of the 31 s short (1080×1920, 30 fps; built as above, so without the music and the freeze), once each:
+
+| step | time | share of the film's length | peak memory |
+| --- | --- | --- | --- |
+| `hyperframes render` (0.8.221, what a bot's image carries, run as rragent's `render` tool runs it, with the machine's Chrome) | 139 s | 446 % | 2.05 GB |
+| `hfrender render` | 30 s | 97 % | 3.7 GB summed (see below) |
+| launch-video's `check` (step 6) | 74.6 s | 240 % | 3.94 GB |
+| `sheet` (step 6, 25 stills) | 30.3 s | 97 % | 1.76 GB |
+
+HyperFrames 0.8.221 turns its low-memory profile on by itself on a machine of 8 GB or less: one capture worker, frames taken as screenshots one by one. hfrender's memory is the sum over its browser processes, which share much of theirs, so it is an upper bound; after its runs three processes of its browser were still running and were stopped by hand. On 8 cores both browser steps finished and answered: `check` opened the film (once for each band the apps cover) and found one `!` (the hook's box past the safe box for its first quarter second), `sheet` wrote its 25 stills. On the laptop below `check` never got to look at the film and `sheet` failed once.
+
+Not measured on the Sprite, because they call a model: the voice, the faces' model calls, the music and the freeze. They and the other steps were timed on a laptop (20 CPU threads, 32 GB, its owner working beside, load about 7) in three whole runs on 2026-11-19, on shorts of the same story (8 beats sent to `faces`): footage `fetch` 2 to 3 s and `look` 32 to 35 s (four local public files), `zones` and `voice` 4 to 5 s, `clock` under 1 s, `faces` 143 to 176 s (8 beats, with the model), `faces` again for one changed beat 28 to 50 s, the first `build` with the freeze 60 to 77 s (1.4 GB), `music` 20 to 33 s, the second `build` 9 to 14 s, `lint` under 1 s, launch-video's `check` 83 to 84 s (in none of the three runs did it get to look at the film: twice it stopped at an error lint did not find, once its browser did not open the page), `sheet` 101 s (in the second run it made no stills, after 79 s), `finish` 2 to 3 s. The models' calls are network-bound: on a Sprite they go through the same services.
+
+### The four waits
+
+- **The first answer** (starting value 30 s): no tool of this skill has to run before the agent's first message; it is one turn of the model, not measured here.
+- **The first thing to judge** (5 min, the short being under 5 min): the footage (`find`, `fetch`, `look`), the brief, the script, `zones`, `voice`, `clock`, the beats, `faces`, `build`, `music`, `build` again, `lint`, `check` and `sheet`, the agent's round through the sheet, then the preview. The tools' part alone was 404 to 471 s (6.7 to 7.9 min) in the three runs on the laptop above, over the starting value before any turn of the agent is counted. On the Sprite, the steps that call no model took 202.8 s together: `faces` with its answers kept 27.6 s, `build` 57.4 s, `build` again 12.9 s, `check` 74.6 s, `sheet` 30.3 s; the voice, the faces' model calls, the music, the freeze and the footage's `look` come on top of that. Where it goes: `faces` 143 to 176 s, a model looking at stills of every beat with people, so that the crop keeps the people and the captions and the hook stay off their faces (8.4 to 10.2 cents for 8 beats; a beat is stopped after 90 s, all beats after 6 minutes); `check` 83 to 84 s on the laptop and 74.6 s on the Sprite, HyperFrames opening the film in a browser once for each band the apps cover, to find text under them; `sheet` 101 s on the laptop and 30.3 s on the Sprite, the stills the agent judges the short by; the first `build` with the freeze 60 to 77 s. The quicker way: a short whose beats mark no people needs no `faces` (its captions then stand as without faces). Not in the sum: the agent's own turns (the sources, the script, the beats, the round through the sheet).
+- **A change** (2 min): the beats changed, `build` again and `sheet` again; a changed script also `voice`, `clock`, the beats moved and `faces` for the beats whose stretch moved. On the Sprite `build` again and `sheet` took 43.2 s for the 31 s short (12.9 s and 30.3 s), 74.6 s more where `check` is run again; on the laptop above `faces` again for one beat took 28 to 50 s with the model. The agent's own turns are not in it.
+- **The file** (1.5 times the video's length plus 1 min: 107 s for the 31 s short): the render and `finish` (2 to 3 s on the laptop). On the Sprite `hyperframes render` took 139 s, 32 s over the starting value; `hfrender` took 30 s, under it. What the time buys: HyperFrames' own renderer, held to one browser on a machine of this size. The quicker way is hfrender (AGENTS.md), which made the same 31 s short in 30 s; its frames were not compared with HyperFrames' here, and the short had no music, whose levels the two mixed differently on 2026-11-19 (HyperFrames 0.8.172 inside hfrender then).

@@ -418,3 +418,35 @@ Only use footage and audio you have the rights to. Build output (`videos/`, `ren
 ## Requirements
 
 Beside this skill: agentitos' clips (the episode, the framing, the faces), layout (`short.mjs place`), platform-zones and transcribe. Node.js 20+, ffmpeg, the HyperFrames CLI (pinned in `package.json`, run via `npx`). OpenRouter for transcription and speakers, through agentitos' [transcribe](../transcribe/) beside this skill: `OPENROUTER_API_KEY`, or on a Sprite the gateway's `openrouter` connection (`tools/openrouter.mjs` asks `http://sprite.internal/v1/gateway/list`; through it the sound always goes as MP3). No local speech or speaker model, nothing to install for them. Optional: Claude Code or an Anthropic API key (`--llm`).
+
+## How long it takes
+
+Measured on a Sprite of a bot's size (8 CPUs, 8 GB, no GPU, Node 26, ffmpeg 8) on 2026-11-20, one build at a time, agentitos at 7854462 and fb83498 (this skill's code is the same in both). The cases are the layout rig's: each runs `short.mjs build` and `short.mjs place` as the skill's steps do, from a clip with its transcript, staging and the model's answers kept from an earlier run, so the tools' own work is timed and no model is called. Every Node process was timed by a `--require` hook and every ffmpeg by a wrapper.
+
+| material | tool | time | share of the material's length | peak memory |
+| --- | --- | --- | --- | --- |
+| 15 s: a 15 s clip, 4K, 16:9, a close-up of one speaker, into 9:16 | `build` and `place` | 32.0 s | 209 % | 1.07 GB |
+| 23 s: a 23 s clip, 4K, 16:9, a medium shot of one speaker, into 9:16 | `build` and `place` | 18.4 s | 81 % | 1.09 GB |
+| 60 s | | not measured: no material of that length in the test set | | |
+| 5 min | | not measured: no material of that length in the test set (a moment is at most 59 s) | | |
+| 15 min | | not measured: no material of that length in the test set | | |
+
+Most of it is clips' `frame.mjs`, which follows the speaker's head over every frame with its own ffmpeg on the 4K picture: 29.0 s of the 32.0 s (two runs of it, ffmpeg 23.5 s of that) and 16.0 s of the 18.4 s. layout's `place.mjs` with platform-zones takes 0.1 to 0.2 s. `build` and `place` again in the same folder, as after a change of the staging: 2.0 to 2.5 s, 0.45 to 0.72 GB.
+
+Not measured on the Sprite: `new` (the words by agentitos' transcribe), the first build's question to Gemini who sits where (half a minute, a cent, by SKILL.md), and clips' episode and moments for a YouTube episode.
+
+**The render**, on the same Sprite and day, of the 16 s short from the 15 s clip (1080×1920, 30 fps), once each:
+
+| step | time | share of the film's length | peak memory |
+| --- | --- | --- | --- |
+| `short.mjs render` (HyperFrames 0.8.221 on the PATH, what a bot's image carries, with the machine's Chrome) | 216 s | 1317 % | 2.20 GB |
+| `hfrender render` of the same composition | 44 s | 269 % | 3.6 GB summed (an upper bound: its browser processes share much of their memory) |
+
+HyperFrames 0.8.221 turns its low-memory profile on by itself on a machine of 8 GB or less: one capture worker, frames taken as screenshots one by one, and every frame draws the world behind the type. It also warned that this project expects 0.9.70 (`package.json`). An earlier measurement on a laptop with 8 CPU cores (the date is not recorded): a 25 s 16:9 demo in 109 s, a 13 s 9:16 short in 68 s (see "Render speed" above).
+
+### The four waits
+
+- **The first answer** (starting value 30 s): no tool runs before the agent's first message; it is one turn of the model, not measured here.
+- **The first thing to judge** (5 min): for an episode, the list of moments (clips' tools, not measured here); for one clip, `new`, `brief`, the agent's `staging.json`, `build`, `place` and `check`, then the preview. The tools' part measured on the Sprite is 18.4 to 32.0 s (`build` and `place`). Not in that sum: `new` and the build's question to Gemini, which call models, `check`, and the agent's own turns.
+- **A change** (2 min): `staging.json` or a setting changed, `build` again and `place` again. On the Sprite 2.0 to 2.5 s. The agent's own turns are not in it.
+- **The file** (1.5 times the video's length plus 1 min: 85 s for the 16 s short): `short.mjs render`. On the Sprite it took 216 s, 131 s over the starting value; `hfrender` made the same composition in 44 s, under it. What the time buys: the world behind the type drawn on the CPU for every frame (10 to 37 ms a frame, "Render speed" above), through HyperFrames' own renderer held to one browser on a machine of this size. The quicker way is hfrender (AGENTS.md); its frames were not compared with HyperFrames' here. On the 8-core laptop above the 13 s short took 68 s (under its 80 s) and the 25 s demo 109 s (11 s over its 98 s).
