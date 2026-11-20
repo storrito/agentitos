@@ -61,6 +61,8 @@ export const MAX_LIFT = 640;
 // clip): no hard line where the picture ends (crew4 b3, raised 90 px: a line at y 1830, below the
 // captions, where the apps write the post's description)
 export const FADE = 96;
+// the most a picture chosen for a beat without "frame" enlarges the source's pixels
+export const UPSCALE = 2;
 // the margin kept between a nose line and the captions' top, px of the frame (layout's least margin)
 const MARGIN = 24;
 // every clip grows by a twenty-fifth while it runs, about the frame's middle (the composition's move)
@@ -207,7 +209,7 @@ export const cropOf = (c, size) => cropBox([(c.window[0] - c.left) / c.scale, (c
 // smaller where they need it. Nothing changes where the picture shows them already.
 // captions: their box in the frame, or null.
 // → { frame, zoom, pan, x (a fill's crop in px of the scaled source, or null), box (a crop's), changed, said, cut: [who], flag }
-export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet = false, size: [cw, ch], people, captions = null, crop = null }) {
+export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet = false, size: [cw, ch], people, captions = null, crop = null, silent = false, at = 0 }) {
   const out = { frame, zoom, pan, x: null, box: null, changed: false, said: "", cut: [], flag: false };
   const held = people?.held || [], main = people?.main;
   if (!held.length || frame === "native") return out;
@@ -240,6 +242,75 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   };
   const notes = (win) => [boxCut(win, held) ? (held.length > 1 ? "ears or the backs of heads cut" : "an ear cut") : "", cutOf(win, "behind").length ? `${cutOf(win, "behind").length > 1 ? "faces" : "a face"} in the background cut (${few(cutOf(win, "behind"))})` : "", ...beside(win), ...passing(win)].filter(Boolean);
   const now = shown({ frame, zoom, pan, size: [cw, ch] });
+  // A beat whose "frame" is left out (2026-11-20, decision `short-band`): the largest picture that
+  // holds every face that counts whole, its box inside the picture and not only its eyes, nose and
+  // mouth: a fill (from the middle, else moved to them; raised where the captions would lie on eyes
+  // or noses), else layout's 4:5 or 1:1 placed high, else the band, as large as holds them, with what
+  // it costs and the ways out. Never a fill on one of several people (that is the agent's "pan"),
+  // never a smaller picture than the band the beat had before (`zoom`: 1, or the first beat's own).
+  if (silent) {
+    const old = planWindow({ frame: "whole", zoom, size: [cw, ch], people, captions });   // the band it had before
+    const asBand = `as the band ${heights(held, (Math.round((SIZE[0] * old.zoom) / 2) * 2) / cw)} over ${groundOf(old, [cw, ch])} % ground; "frame": "whole" for the band`;
+    const lead = `no "frame", so the largest picture that holds ${names(held)} whole`;
+    const k = SIZE[1] / ch, ws = 2 * Math.round((cw * k) / 2), mid = shown({ frame: "fill", size: [cw, ch] }), width = mid[1] - mid[0];
+    // (2026-11-20, decision after the pair passerby-sheet: no face the source shows whole is cut
+    // through by a picture chosen here; one that does not count may be left out whole)
+    const others = people.small || [];
+    let ruled = null;   // what the picture whole for the faces that count alone would have cut through, and who
+    const whom = (ps) => ps.map((p) => (p.who && p.who !== "a face" ? p.who : "a second person")).join(", ");
+    const ok = (place, what) => {
+      if (!seenWhole(place, held, [cw, ch])) return false;
+      const through = cutThrough(place, others, [cw, ch]);
+      if (through.length && !ruled) ruled = `${what} would have cut ${whom(through)}`;
+      return !through.length;
+    };
+    // (2026-11-20, decision after the review of pull request 115: a picture chosen here enlarges the
+    // source's pixels at most UPSCALE times, as close-45, show-whole and the stack's limits do)
+    const soft = k > UPSCALE + 1e-6 ? `a fill would enlarge the source ${r2(k)}×` : null;
+    const because = (instead) => (ruled ? `; ${ruled} at the frame's side: ${instead}` : soft ? `; ${soft}: ${instead}` : "");
+    const xsOf = (ps) => [Math.max(0, Math.min(...ps.flatMap((p) => p.boxes.map((b) => b[0])))), Math.min(cw, Math.max(...ps.flatMap((p) => p.boxes.map((b) => b[0] + b[2]))))];
+    const raw = xsOf(held), every = xsOf([...held, ...others]);
+    const centre = (span) => { const room = hullOf(held), around = room[1] - room[0] <= width && room[0] >= span[0] - 1 && room[1] <= span[1] + 1 ? room : span; return Math.max(0, Math.min(ws - SIZE[0] - 2, Math.round(((around[0] + around[1]) / 2 - width / 2) * k))); };
+    if (!soft && raw[1] - raw[0] <= width) {
+      // the fill that holds every known face whole first (from the middle where it does, else moved
+      // to them all), then from the middle, then moved to the faces that count
+      const xs = [];
+      if (every[1] - every[0] <= width) xs.push(within(mid, every) ? null : centre(every));
+      if (within(mid, raw)) xs.push(null);
+      xs.push(centre(raw));
+      const fillAt = (x) => raiseFill({ ...out, frame: "fill", zoom: 1, pan: 0.5, x, said: "" }, x == null ? mid : shown({ frame: "fill", x, size: [cw, ch] }), held, [cw, ch], captions);
+      // the fill the faces that count alone would get (from the middle, else moved to them): said where it would cut another through
+      const plain = [...(within(mid, raw) ? [null] : []), centre(raw)].find((x) => seenWhole(fillAt(x), held, [cw, ch]));
+      if (plain !== undefined) ok(fillAt(plain), "a fill");
+      for (const x of xs.filter((v, j) => xs.indexOf(v) === j)) {
+        const fill = { ...out, frame: "fill", zoom: 1, pan: 0.5, x, changed: true };
+        const win = x == null ? mid : shown({ frame: "fill", x, size: [cw, ch] });
+        if (!ok(fillAt(x), "a fill")) continue;
+        fill.said = [`${lead}: a fill${x != null ? ", moved to them" : ""} (the ${held.length > 1 ? "faces" : "face"} ${heights(held, k)}; ${asBand})${because("the picture is moved")}`, ...notes(win).filter((n) => !/^(an ear|ears or)/.test(n))].join("; ");
+        return raiseFill(fill, win, held, [cw, ch], captions);
+      }
+    }
+    // the band: as large as holds them whole while the clip grows (from bandPlan's zoom down), never under the band before
+    const band = bandPlan(held, [cw, ch], captions, 3);
+    let z = old.zoom;
+    const bandAt = (v) => placePan({ frame: "whole", zoom: v }, hullOf(held), cw);
+    for (let v = Math.min(band.zoom, Math.max(old.zoom, Math.floor(((UPSCALE * cw) / SIZE[0]) * 100) / 100)); v > old.zoom + 0.005; v = Math.round((v - 0.01) * 100) / 100) if (ok(bandAt(v), "a larger band")) { z = v; break; }
+    const c = crop ? crop(held) : null;
+    // (where the fill would enlarge past UPSCALE, the crop comes next as the chain has it, if it is no smaller than the band before)
+    if (c && ["4:5", "1:1"].includes(c.crop) && c.scale >= (SIZE[0] * (soft ? old.zoom : z)) / cw - 1e-6 && c.scale <= UPSCALE + 1e-6) {
+      const box = cropOf(c, [cw, ch]);
+      if (cropHolds(box, held, captions) && ok({ frame: "crop", box }, `the ${c.crop}`)) {
+        const ground = Math.round((1 - (box.at[2] * box.at[3]) / (SIZE[0] * SIZE[1])) * 100);
+        return { ...out, frame: "crop", zoom: 1, box, changed: true, said: [`${lead}: a ${c.crop} crop placed high (the ${held.length > 1 ? "faces" : "face"} ${heights(held, box.at[3] / box.src[3])}, ${ground} % ground; ${soft ? "" : `a fill would cut ${held.length > 1 ? "one of them" : "it"}; `}${asBand})${because(`the ${c.crop} instead`)}`, ...passing([box.src[0], box.src[0] + box.src[2]])].join("; ") };
+      }
+    }
+    const share = Math.min(100, Math.round(((hullOf(held)[1] - hullOf(held)[0]) / cw) * 100));
+    const cost = `${lead} is the band${z > 1 ? `, ${z} times larger` : ""} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width)${because("the band instead")}: ${bandCost(held, [cw, ch], z, "\"frame\": \"fill\" with a \"pan\"")}`;
+    if (z === old.zoom) return { ...old, flag: smallBand(main, [cw, ch], z), said: [cost, ...(old.said && !/in the picture as it is/.test(old.said) ? [old.said] : [])].join("; ") };
+    const banded = placePan({ ...out, zoom: z, changed: true, flag: smallBand(main, [cw, ch], z) }, hullOf(held), cw);
+    banded.said = [cost, ...passing(shown({ frame: "whole", zoom: banded.zoom, pan: banded.pan, size: [cw, ch] }))].join("; ");
+    return banded;
+  }
   if (panSet || (frame === "whole" && zoomSet)) {
     const cut = featsCut(now, held);
     out.cut = cut.map((p) => p.who);
@@ -281,10 +352,8 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
         return out;
       }
     }
-    Object.assign(out, { frame: "whole", zoom: band.zoom, pan: 0.5, changed: true });
-    const small = main.h >= CLOSE * ch ? Math.round(((main.h * SIZE[0] * band.zoom) / cw / SIZE[1]) * 100) : null;
-    out.flag = small != null;
-    out.said = `a fill would cut ${names(featsCut(now, held))} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): the whole picture as a band${out.zoom > 1 ? `, ${out.zoom} times larger` : ""}${band.limited ? `, ${held.length > 1 ? "their eyes" : "the eyes"} above the captions` : ""}${small != null ? `; close-up became a small band (the face ${small} % of the frame's height): another stretch?` : ""}`;
+    Object.assign(out, { frame: "whole", zoom: band.zoom, pan: 0.5, changed: true, flag: smallBand(main, [cw, ch], band.zoom) });
+    out.said = `a fill would cut ${names(featsCut(now, held))} (${held.length > 1 ? "they stand" : "the face takes"} ${share} % of the width): the whole picture as a band${out.zoom > 1 ? `, ${out.zoom} times larger` : ""}${band.limited ? `, ${held.length > 1 ? "their eyes" : "the eyes"} above the captions` : ""}; ${bandCost(held, [cw, ch], band.zoom, "a \"pan\"")}`;
     const banded = placePan(out, hullOf(held), cw);
     banded.said = [banded.said, ...passing(shown({ frame: "whole", zoom: banded.zoom, pan: banded.pan, size: [cw, ch] }))].join("; ");
     return banded;
@@ -305,6 +374,70 @@ export function planWindow({ frame, zoom = 1, pan = 0.5, zoomSet = false, panSet
   return placePan(out, hull, cw);
 }
 
+// a band marked `!`: a close-up shown in it, or more of the frame blurred ground than picture
+const smallBand = (main, [cw, ch], zoom) => main.h >= CLOSE * ch || groundOf({ frame: "whole", zoom }, [cw, ch]) >= 50;
+// The faces among `ps` that a place cuts through: some but not all of their eyes, nose and mouth in
+// the sharp picture, or their box cut by more than a tenth while more than a tenth of it is in it,
+// at the clip's smallest or largest moment, for more than 0.3 s of the beat; only at moments where
+// the source shows the face whole (one the source's edge cuts is cut in every picture). A face
+// wholly outside is left out, not cut.
+function cutThrough(place, ps, [cw, ch]) {
+  const map = mapper({ ...place, size: [cw, ch] });
+  const ts = ps.flatMap((p) => p.ts).sort((a, b) => a - b), gaps = ts.slice(1).map((t, j) => t - ts[j]).filter((d) => d > 1e-6);
+  const step = gaps.length ? Math.min(...gaps) : 0.1;
+  const sharp = place.frame === "crop" ? place.box.at : place.frame === "whole" ? ((t) => [0, t[0], SIZE[0], t[1] - t[0]])(bandOf({ ...place, size: [cw, ch] })) : [0, 0, SIZE[0], SIZE[1]];
+  const grow = (b, m) => [SIZE[0] / 2 + (b[0] - SIZE[0] / 2) * m, SIZE[1] / 2 + (b[1] - SIZE[1] / 2) * m, b[2] * m, b[3] * m];
+  const share = (b, a) => (Math.max(0, Math.min(b[0] + b[2], a[0] + a[2]) - Math.max(b[0], a[0])) * Math.max(0, Math.min(b[1] + b[3], a[1] + a[3]) - Math.max(b[1], a[1]))) / Math.max(1e-6, b[2] * b[3]);
+  return ps.filter((p) => {
+    let n = 0;
+    p.boxes.forEach((b, j) => {
+      if (b[0] < -2 || b[1] < -2 || b[0] + b[2] > cw + 2 || b[1] + b[3] > ch + 2) return;
+      const cut = [1, MOVE].some((m) => {
+        const g = grow(sharp, m), area = [Math.max(0, g[0]), Math.max(0, g[1]), Math.min(SIZE[0], g[0] + g[2]) - Math.max(0, g[0]), Math.min(SIZE[1], g[1] + g[3]) - Math.max(0, g[1])];
+        const fb = share(grow(map(b), m), area), ff = share(grow(map(p.feats[j]), m), area);
+        return (ff > 0.001 && ff < 0.999) || (fb > 0.1 && fb < 0.9);
+      });
+      if (cut) n++;
+    });
+    return n * step > 0.3 + 1e-6;
+  });
+}
+// whether every box of the faces (the part inside the source) is seen whole in the sharp picture
+// of a place (a fill's frame, a crop's box, a band's rows), also when the clip has grown by MOVE
+// about the frame's middle, as it does by its end or start
+function seenWhole(place, ps, [cw, ch]) {
+  const map = mapper({ ...place, size: [cw, ch] });
+  const grow = (b) => [SIZE[0] / 2 + (b[0] - SIZE[0] / 2) * MOVE, SIZE[1] / 2 + (b[1] - SIZE[1] / 2) * MOVE, b[2] * MOVE, b[3] * MOVE];
+  const sharp = place.frame === "crop" ? place.box.at : place.frame === "whole" ? ((t) => [0, t[0], SIZE[0], t[1] - t[0]])(bandOf({ ...place, size: [cw, ch] })) : [0, 0, SIZE[0], SIZE[1]];
+  const g = grow(sharp), area = [Math.max(0, g[0]), Math.max(0, g[1]), Math.min(SIZE[0], g[0] + g[2]), Math.min(SIZE[1], g[1] + g[3])];
+  return ps.every((p) => p.boxes.every((b) => {
+    const x0 = Math.max(0, b[0]), y0 = Math.max(0, b[1]), in0 = [x0, y0, Math.min(cw, b[0] + b[2]) - x0, Math.min(ch, b[1] + b[3]) - y0];
+    const f = grow(map(in0));
+    return f[0] >= area[0] - 1 && f[1] >= area[1] - 1 && f[0] + f[2] <= area[2] + 1 && f[1] + f[3] <= area[3] + 1;
+  }));
+}
+// the faces' heights in the frame at a scale k: "235 and 256 px", "108 to 177 px"
+function heights(ps, k) {
+  const hs = ps.map((p) => Math.round(p.h * k)).sort((a, b) => a - b);
+  return hs.length === 1 ? `${hs[0]} px` : hs.length === 2 ? `${hs[0]} and ${hs[1]} px` : `${hs[0]} to ${hs.at(-1)} px`;
+}
+// the share of the frame a band or crop leaves to the blurred ground, in %
+function groundOf(place, size) {
+  if (place.frame === "fill") return 0;
+  const [t, b] = bandOf({ ...place, size });
+  return Math.round((1 - (place.frame === "crop" ? (place.box.at[2] * (b - t)) / SIZE[0] : b - t) / SIZE[1]) * 100);
+}
+// What a band of the held faces costs and the ways out: the ground's share, their heights, a "pan"
+// (the agent's choice of whom the words are about) or another stretch. No seconds are named: the
+// faces are known only inside the beat's own stretch, and a moment there in which a 1:1 would hold
+// them is no stretch as long as the beat (the review of pull request 115: 0.4 s of caves b9, a man's
+// back over both women)
+export function bandCost(held, [cw, ch], zoom, pan = "a \"pan\"") {
+  const k = (Math.round((SIZE[0] * zoom) / 2) * 2) / cw;
+  const two = held.length > 1;
+  let said = `${groundOf({ frame: "whole", zoom }, [cw, ch])} % of the frame blurred ground, ${two ? "the faces" : "the face"} ${heights(held, k)}; to show ${two ? "them" : "it"} larger: ${pan} on ${two ? `the one the words are about (it cuts the other${held.length > 2 ? "s" : ""})` : "it"}, or another stretch where ${two ? "they stand closer" : "it is smaller or nearer the middle"}`;
+  return said;
+}
 // a band's largest zoom (at most `upTo`) that holds the faces across and keeps their eyes and noses above the captions
 function bandPlan(held, [cw, ch], captions, upTo) {
   const h = hullOf(held), need = Math.min(cw, h[1]) - Math.max(0, h[0]);
