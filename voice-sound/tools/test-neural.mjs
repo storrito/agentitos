@@ -19,7 +19,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept } from "./lib/repair.mjs";
+import { repair, repairPlan, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept, denoiserSlots, SLOTS } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
@@ -53,11 +53,18 @@ const a = Object.fromEntries(process.argv.slice(2).map((s) => s.replace(/^--/, "
 const E = process.env;
 if (E.STANDIN_LOG) fs.appendFileSync(E.STANDIN_LOG, JSON.stringify(a) + "\\n");
 if (E.STANDIN_PID) fs.appendFileSync(E.STANDIN_PID, process.pid + "\\n");
-if (E.STANDIN_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(E.STANDIN_SLEEP) * 1000);
+const t0 = Date.now();
+// (the call's number: from STANDIN_COUNT, a file counted up; with STANDIN_BY_PIECE, the piece's
+// own number from its file's name, 1 for the first: pieces that start at once count in any order)
 let count = 1;
-if (E.STANDIN_COUNT) { count = (Number(fs.existsSync(E.STANDIN_COUNT) ? fs.readFileSync(E.STANDIN_COUNT, "utf8") : 0) || 0) + 1; fs.writeFileSync(E.STANDIN_COUNT, String(count)); }
+const piece = String(a["input-wav"] || "").match(/piece-(\\d+)\\.wav$/);
+if (E.STANDIN_BY_PIECE && piece) count = Number(piece[1]) + 1;
+else if (E.STANDIN_COUNT) { count = (Number(fs.existsSync(E.STANDIN_COUNT) ? fs.readFileSync(E.STANDIN_COUNT, "utf8") : 0) || 0) + 1; fs.writeFileSync(E.STANDIN_COUNT, String(count)); }
 if (!fs.existsSync(a["speech-denoiser-dpdfnet-model"] || "")) { console.error("no model"); process.exit(2); }
-if (E.STANDIN_FAIL && count > Number(E.STANDIN_FAIL_AFTER || 0)) process.exit(Number(E.STANDIN_FAIL));
+if (E.STANDIN_FAIL && count > Number(E.STANDIN_FAIL_AFTER || 0) && (!E.STANDIN_FAIL_ONLY || count === Number(E.STANDIN_FAIL_ONLY))) process.exit(Number(E.STANDIN_FAIL));
+if (E.STANDIN_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(E.STANDIN_SLEEP) * 1000);
+// (STANDIN_TIMES: when each call ran, appended at its end)
+process.on("exit", () => { if (E.STANDIN_TIMES) fs.appendFileSync(E.STANDIN_TIMES, JSON.stringify({ count, t0, t1: Date.now() }) + "\\n"); });
 if (E.STANDIN_NOTHING) process.exit(0);
 const b = fs.readFileSync(a["input-wav"]);
 let off = 12, fmt, data;
@@ -107,7 +114,7 @@ fs.writeFileSync(a["output-wav"], Buffer.concat([h, o]));
 let dir, standin, model, noisy;
 const file = (name) => path.join(dir, name);
 const SWITCHES = ["STANDIN_PID", "STANDIN_SLEEP", "STANDIN_LOG","STANDIN_COUNT", "STANDIN_FAIL", "STANDIN_FAIL_AFTER", "STANDIN_NOTHING", "STANDIN_LENGTH", "STANDIN_GAIN_DB", "STANDIN_DELAY", "STANDIN_SILENCE", "STANDIN_NAN",
-  "STANDIN_STEP_DB", "STANDIN_LOW_DB", "STANDIN_LOW_CALL", "STANDIN_LOW_FROM", "STANDIN_LOW_TO", "STANDIN_JUNK", "STANDIN_ADD_DB"];
+  "STANDIN_STEP_DB", "STANDIN_LOW_DB", "STANDIN_LOW_CALL", "STANDIN_LOW_FROM", "STANDIN_LOW_TO", "STANDIN_JUNK", "STANDIN_ADD_DB", "STANDIN_BY_PIECE", "STANDIN_FAIL_ONLY", "STANDIN_TIMES"];
 const ENV = ["VOICE_SOUND_DENOISER", "VOICE_SOUND_DPDFNET", "VOICE_SOUND_DENOISE", "PATH", ...SWITCHES];
 // runs fn with the environment set as given (null: unset), and puts it back after
 async function withEnv(vars, fn) {
@@ -227,7 +234,10 @@ test("plan: dpdfnet where both files are there and noise was measured, never wit
     assert.equal(st.limitDb, 18);
     assert.equal(st.reduceDb, 18);
     assert.match(st.why, /neural denoiser \(DPDFNet-2\) asked to take at most 18 dB off, the most --denoise auto allows/);
-    assert.equal(st.pieces.length, 1);
+    // (a minute: one piece on one slot, three of 20 s where four can run at once)
+    const piecesBy = (slots) => repairPlan(made(), { tune: { slots } }).steps.find((s) => s.id === "denoise").pieces.length;
+    assert.equal(piecesBy(1), 1);
+    assert.equal(piecesBy(4), 3);
     assert.deepEqual(p.inputs, [{ input: 0, what: "the file" }]);
     assert.equal(p.graphs.length, 2);
     assert.doesNotMatch(p.graphs[0], /afftdn|arnndn/);
@@ -276,10 +286,13 @@ test("plan: without the denoiser exactly what ffmpeg's method gives with it", as
 
 test("pieces: bounded whatever the length, overlapping, cut at a pause near the cut", () => {
   const R = 48000;
-  assert.deepEqual(piecesOf(100 * R).pieces, [{ from: 0, to: 100 * R }]);
+  // how many: none longer than pieceS, as many as the slots while each is minPieceS, whole rounds
+  const count = (s, slots) => piecesOf(s * R, [], { ...NEURAL, slots }).pieces.length;
+  assert.deepEqual(piecesOf(15 * R, [], { ...NEURAL, slots: 7 }).pieces, [{ from: 0, to: 15 * R }]);
+  assert.deepEqual([count(15, 7), count(60, 7), count(60, 2), count(100, 1), count(300, 7), count(900, 7), count(900, 1)], [1, 3, 2, 2, 7, 21, 15]);
   const n = 3 * 3600 * R;
   const pauses = [{ from: 299.5, to: 301.5 }, { from: 1000, to: 1001 }];
-  const { pieces, seams, fade } = piecesOf(n, pauses);
+  const { pieces, seams, fade } = piecesOf(n, pauses, { ...NEURAL, slots: 7 });
   const longest = Math.max(...pieces.map((p) => p.to - p.from)) / R;
   assert.ok(longest <= NEURAL.pieceS + 2 * NEURAL.shiftS + NEURAL.warmS + NEURAL.fadeS + NEURAL.tailS, `${longest} s`);
   assert.equal(pieces[0].from, 0);
@@ -288,6 +301,8 @@ test("pieces: bounded whatever the length, overlapping, cut at a pause near the 
     const s = seams[k - 1].at;
     // the next piece starts warmS before the fade, the one before ends after it
     assert.equal(pieces[k].from, s - fade / 2 - NEURAL.warmS * R);
+    // (on the program's grid of 480 samples, as one run over the whole file is)
+    assert.equal(pieces[k].from % 480, 0, `piece ${k}`);
     assert.ok(pieces[k - 1].to >= s + fade / 2);
     assert.ok(seams[k - 1].at > (k > 1 ? seams[k - 2].at : 0));
   }
@@ -344,7 +359,7 @@ test("longer than a piece: as long, in step, each seam a cross-fade (a stand-in 
   fs.rmSync(count, { force: true });
   // (piece k lowered by k × 0.25 dB: a hard cut between two pieces would step by 0.25 dB)
   const STEP = -0.25;
-  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log, STANDIN_STEP_DB: STEP, STANDIN_COUNT: count }, () => repair(file("tone.wav"), file("tone.out.wav"), m, { tune }));
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log, STANDIN_STEP_DB: STEP, STANDIN_BY_PIECE: 1 }, () => repair(file("tone.wav"), file("tone.out.wav"), m, { tune }));
   const st = r.steps.find((s) => s.id === "denoise");
   assert.equal(r.method, "dpdfnet");
   assert.equal(st.pieces.length, 5);
@@ -384,12 +399,67 @@ test("longer than a piece: as long, in step, each seam a cross-fade (a stand-in 
   }
 });
 
+test("the pieces run at once, as many as the slots; one that fails ends the others", { skip }, async () => {
+  const m = await measure(noisy);
+  const tune = { pieceS: 6, minPieceS: 5, shiftS: 1, warmS: 0.5, fadeS: 0.4, tailS: 0.2 };
+  const spans = (times) => fs.readFileSync(times, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  // five slots: the five pieces' runs all overlap (each sleeps 1.5 s), one slot: none does
+  for (const slots of [5, 1]) {
+    const times = file(`times-${slots}`);
+    fs.rmSync(times, { force: true });
+    const r = await withEnv({ ...STANDIN_ENV(), STANDIN_SLEEP: 1.5, STANDIN_TIMES: times }, () => repair(noisy, file(`at-once-${slots}.out.wav`), m, { tune: { ...tune, slots } }));
+    assert.equal(r.method, "dpdfnet");
+    const s = spans(times).sort((a, b) => a.t0 - b.t0);
+    assert.equal(s.length, 5);
+    if (slots === 5) assert.ok(Math.max(...s.map((x) => x.t0)) < Math.min(...s.map((x) => x.t1)), JSON.stringify(s));
+    else for (let k = 1; k < 5; k++) assert.ok(s[k].t0 >= s[k - 1].t1 - 50, JSON.stringify(s));
+    // and the result is the same as one after another gives
+    if (slots === 1) assert.ok(fs.readFileSync(file("at-once-5.out.wav")).equals(fs.readFileSync(file("at-once-1.out.wav"))));
+  }
+  // the second piece fails at once while the others would run 20 s: they are ended, ffmpeg's
+  // method stands in, well before them
+  const pids = file("fail.pids");
+  fs.rmSync(pids, { force: true });
+  const t0 = Date.now();
+  const f = await withEnv({ ...STANDIN_ENV(), STANDIN_SLEEP: 20, STANDIN_FAIL: 3, STANDIN_FAIL_ONLY: 2, STANDIN_BY_PIECE: 1, STANDIN_PID: pids }, () => repair(noisy, file("fail-once.out.wav"), m, { tune: { ...tune, slots: 5 } }));
+  assert.ok(Date.now() - t0 < 15000, `${Date.now() - t0} ms`);
+  assert.equal(f.method, "afftdn-sample");
+  assert.match(f.steps.find((s) => s.id === "denoise").fallback.reason, /^it exited with 3, on piece 2 of 5$/);
+  for (const q of fs.readFileSync(pids, "utf8").trim().split("\n").map(Number)) assert.ok(gone(q), `piece ${q} is gone`);
+});
+
+test("the probe's windows run at once too", { skip }, async () => {
+  // (57.6 s without noise in the pauses: six windows of 5 s)
+  run(["-i", file("quiet-noise.wav"), "-i", file("quiet-noise.wav"), "-filter_complex", "concat=n=2:v=0:a=1", "-c:a", "pcm_f32le", file("quiet2.wav")]);
+  const m = await measure(file("quiet2.wav"));
+  const times = file("probe-times");
+  fs.rmSync(times, { force: true });
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_SLEEP: 1.5, STANDIN_TIMES: times }, () => repair(file("quiet2.wav"), file("quiet2.out.wav"), m, { tune: { slots: 6 } }));
+  assert.equal(r.probe.windows, 6);
+  const s = fs.readFileSync(times, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(s.length, 6);
+  assert.ok(Math.max(...s.map((x) => x.t0)) < Math.min(...s.map((x) => x.t1)), JSON.stringify(s));
+  assert.equal(r.probe.fires, false);
+});
+
+test("denoiserSlots: the cores less one, no more than half the memory available holds, at least one", () => {
+  const per = SLOTS.baseMb + SLOTS.mbPerS * (NEURAL.pieceS + NEURAL.warmS + NEURAL.fadeS + NEURAL.tailS + 2 * NEURAL.shiftS);
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: 2900 }), Math.min(7, Math.floor(1450 / per)));
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: 64000 }), 7);
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: per * 2 * 3 + 1 }), 3);
+  assert.equal(denoiserSlots(NEURAL, { cores: 8, availMb: 100 }), 1);
+  assert.equal(denoiserSlots(NEURAL, { cores: 1, availMb: 64000 }), 1);
+  assert.equal(denoiserSlots({ ...NEURAL, slots: 4 }, { cores: 1, availMb: 100 }), 4);
+  // on this machine: within its cores
+  assert.ok(denoiserSlots() >= 1 && denoiserSlots() <= Math.max(1, os.cpus().length - 1));
+});
+
 test("each failure falls back to ffmpeg's method for the whole recording and says so", { skip }, async () => {
   const m = await measure(noisy);
   const tune = { pieceS: 6, shiftS: 1, warmS: 0.5, fadeS: 0.4, tailS: 0.2 };
   const cases = [
     [{ STANDIN_FAIL: 3 }, /it exited with 3/],
-    [{ STANDIN_FAIL: 3, STANDIN_FAIL_AFTER: 1, STANDIN_COUNT: file("count") }, /it exited with 3, on piece 2 of 5/],
+    [{ STANDIN_FAIL: 3, STANDIN_FAIL_AFTER: 1, STANDIN_BY_PIECE: 1 }, /it exited with 3, on piece 2 of 5/],
     [{ STANDIN_NOTHING: 1 }, /it wrote nothing/],
     [{ STANDIN_LENGTH: -480 }, /samples long for/],
     [{ STANDIN_SILENCE: 1 }, /silent/],
@@ -643,7 +713,7 @@ test("after the run: one stretch of the voice taken down is caught where the who
   fs.rmSync(count, { force: true });
   // the third of five pieces: 3 s of its own sound 20 dB down (a tenth of the recording), the
   // stretches 3 s long (as 30 s are to a long recording)
-  const sw = { STANDIN_LOW_DB: -20, STANDIN_LOW_CALL: 3, STANDIN_LOW_FROM: 1, STANDIN_LOW_TO: 4, STANDIN_COUNT: count };
+  const sw = { STANDIN_LOW_DB: -20, STANDIN_LOW_CALL: 3, STANDIN_LOW_FROM: 1, STANDIN_LOW_TO: 4, STANDIN_BY_PIECE: 1 };
   const voiceKept = { windowS: 3, hopS: 0.5, minFrames: 8 };
   const r = await withEnv({ ...STANDIN_ENV(), ...sw }, () => repair(noisy, file("stretch.out.wav"), m, { tune, voiceKept }));
   const st = r.steps.find((s) => s.id === "denoise");
@@ -826,18 +896,21 @@ test("the real denoiser, where the machine has it: it takes this made-up voice f
   assert.equal(samples(file("real-q.out.wav")).length, samples(file("quiet-noise.wav")).length);
 });
 
-test("a signal to clean ends a running denoiser and leaves none of its files", { skip }, async () => {
+test("a signal to clean ends every running piece of the denoiser and leaves none of its files", { skip }, async () => {
   const out = file("sig/out.m4a"), pids = file("sig.pids");
   fs.mkdirSync(path.dirname(out), { recursive: true });
+  // (86 s, three slots: three pieces at once)
+  run(["-i", noisy, "-i", noisy, "-i", noisy, "-filter_complex", "concat=n=3:v=0:a=1", "-c:a", "pcm_f32le", file("long3.wav")]);
   const tool = path.join(path.dirname(fileURLToPath(import.meta.url)), "voice.mjs");
-  const env = { ...process.env, VOICE_SOUND_DENOISER: standin, VOICE_SOUND_DPDFNET: model, STANDIN_SLEEP: 60, STANDIN_PID: pids };
+  const env = { ...process.env, VOICE_SOUND_DENOISER: standin, VOICE_SOUND_DPDFNET: model, VOICE_SOUND_SLOTS: 3, STANDIN_SLEEP: 60, STANDIN_PID: pids };
   delete env.VOICE_SOUND_DENOISE;
-  const p = spawn(process.execPath, [tool, "clean", noisy, out], { env, stdio: "ignore" });
+  const p = spawn(process.execPath, [tool, "clean", file("long3.wav"), out], { env, stdio: "ignore" });
   const t0 = Date.now();
-  while (!fs.existsSync(pids) && Date.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 100));
-  assert.ok(fs.existsSync(pids), "the denoiser started");
+  const started = () => (fs.existsSync(pids) ? fs.readFileSync(pids, "utf8").trim().split("\n").length : 0);
+  while (started() < 3 && Date.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(started(), 3, "three pieces run at once");
   await new Promise((r) => setTimeout(r, 300));
-  const pid = Number(fs.readFileSync(pids, "utf8").trim().split("\n")[0]);
+  const all = fs.readFileSync(pids, "utf8").trim().split("\n").map(Number), pid = all[0];
   // (its files lie in clean's working folder beside the output)
   const work = fs.readdirSync(path.dirname(out)).filter((n) => n.startsWith(".voice-sound-clean-"));
   assert.equal(work.length, 1);
@@ -848,6 +921,7 @@ test("a signal to clean ends a running denoiser and leaves none of its files", {
   assert.equal(e.code, 143);
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(gone(pid), "the denoiser is gone");
+  for (const q of all) assert.ok(gone(q), `piece ${q} is gone`);
   assert.deepEqual(fs.readdirSync(path.dirname(out)), []);
 });
 

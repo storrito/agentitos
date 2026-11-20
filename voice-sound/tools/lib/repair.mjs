@@ -369,7 +369,8 @@ export function repairPlan(m, opts = {}) {
     const limit = r1(Math.max(0, Math.min(needed, cap)));
     if (limit >= DENOISE_MIN_DB) {
       method = "dpdfnet";
-      const t = { ...NEURAL, ...opts.tune };
+      // (the slots read once, here: the plan's pieces are the run's)
+      const t0 = { ...NEURAL, ...opts.tune }, t = { ...t0, slots: denoiserSlots(t0) };
       const pauses = m.speech?.longest || [];
       const cut = piecesOf(Math.round((m.analysed?.seconds ?? m.duration ?? 0) * RATE), pauses, t);
       // (bursts: measure's, which the check of its run leaves out of the voice)
@@ -674,14 +675,17 @@ export function cpuSecondsOf(pid) {
 //   build cannot put the voice out of step with the picture
 // - a piece starts without the network's history: its output differs from the whole file's by
 //   −11 to −24 dB in its first 0.2 s, −30 to −45 dB to about 2.5 s, and from about 3 s on no more
-//   than two equally valid runs differ (the same input as 16-bit and as float). So each piece
-//   after the first starts warmS (3 s) before the cross-fade and that part is thrown away; the
-//   cross-fade (fadeS, 1 s, raised cosine, the two weights summing to one) sits on a pause where
-//   `measure` knows one within shiftS of the cut
-// - it holds the whole file in memory: about 55 MB and 78 MB a minute; pieces of pieceS
-//   (150 s), at most 185 s with the overlaps and a cut moved to a pause, keep it under 300 MB
-//   however long the recording; it takes about a seventh to a fifth of the sound's length on one
-//   core, one thread (four were 17 % faster for four times the CPU)
+//   than two equally valid runs differ (the same input as 16-bit and as float); on recordings
+//   whose noise changes it takes longer (2026-11-20, 15 minutes joined from real noisy ones, 20
+//   pieces: −30 to −45 dB to about 17 s, then −50 to −60). So each piece after the first starts
+//   warmS before the cross-fade and that part is thrown away: with 3 s the level stepped by up
+//   to 0.60 dB (5 minutes) and 6.8 dB (15 minutes, at −48 dBFS) at a seam against one run over
+//   the whole file, with 6 s 0.24 and 2.3, with 10 s 0.08 and 0.17 (and 15 s no better than 10),
+//   for 4 % more CPU than 3 s: so 10 s. The cross-fade (fadeS, 1 s, raised cosine, the two
+//   weights summing to one) sits on a pause where `measure` knows one within shiftS of the cut
+// - it holds the whole file in memory (47 MB and 1.45 MB a second); it takes about a quarter of
+//   the sound's length on one core, one thread (four threads were 17 % faster for four times the
+//   CPU), and pieces at the same time do nearly all a machine's cores can: see NEURAL
 // - its 16-bit output would cost a quiet recording its resolution and clip a hot one: its input
 //   is brought to a level by the voice (levelFor: the speech frames at voiceDb), the gain held
 //   lower round any peak that would then pass peakDb, and that gain taken back after it, sample
@@ -705,7 +709,34 @@ export const DPDFNET_LIMITS = { gentle: 12, auto: 18, strong: 24 };
 // (2026-11-19), with 6 dB for its output to rise over its input; holdS: how fast the gain goes
 // down before a peak and back after it (a judgement: slower than a syllable's onset, so that
 // the gain does not follow the voice's own peaks)
-export const NEURAL = { pieceS: 150, shiftS: 15, warmS: 3, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1, timeoutS: 120, timeoutPerS: 4 };
+//
+// The pieces run at the same time (denoiserSlots). Measured 2026-11-20 on this laptop, the run
+// held to 8 cores (taskset -c 0-7), pieces of a noisy recording: one at a time it takes 0.24 of
+// a piece's length whatever the length (10 to 120 s: no cost of its own to start), 4 at once 0.08
+// of their sound together, 7 at once 0.072–0.077; it holds 61, 78, 89, 135, 221 MB for 10, 20,
+// 30, 60, 120 s (47 MB and 1.45 MB a second). A piece after the first computes warmS + fadeS +
+// tailS (11.5 s) twice. So pieces of at most pieceS (60 s: 135 MB each) and at least minPieceS
+// (20 s: a minute in three of them took 15.8 s, in one 22.3), as many as there are slots where
+// the recording is long enough, else as few as pieceS allows, in whole rounds of the slots.
+export const NEURAL = { pieceS: 60, minPieceS: 20, shiftS: 15, warmS: 10, fadeS: 1, tailS: 0.5, peakDb: -6, voiceDb: -26, holdS: 0.1, timeoutS: 120, timeoutPerS: 4 };
+// How many run at once: the cores less one (the video cut that runs beside it), and no more than
+// half the memory the system says is available holds (MemAvailable; a judgement: the rest for
+// the cut, ffmpeg and the page cache), a piece of pieceS taken at 47 MB and 1.45 MB a second of
+// it with its overlaps; at least one. Read at run time; t.slots (and, for the lab and the tests,
+// VOICE_SOUND_SLOTS) fixes it.
+export const SLOTS = { spareCores: 1, memShare: 0.5, baseMb: 47, mbPerS: 1.45 };
+export function denoiserSlots(t = NEURAL, sys = null) {
+  if (Number.isFinite(t.slots)) return Math.max(1, Math.floor(t.slots));
+  if (!sys && Number(process.env.VOICE_SOUND_SLOTS) > 0) return Math.floor(Number(process.env.VOICE_SOUND_SLOTS));
+  const cores = sys?.cores ?? (os.availableParallelism ? os.availableParallelism() : os.cpus().length);
+  let availMb = sys?.availMb;
+  if (availMb == null) {
+    try { const m = fs.readFileSync("/proc/meminfo", "utf8").match(/^MemAvailable:\s+(\d+) kB/m); availMb = m ? Number(m[1]) / 1024 : null; } catch { availMb = null; }
+    if (availMb == null) availMb = os.freemem() / 2 ** 20;
+  }
+  const pieceMb = SLOTS.baseMb + SLOTS.mbPerS * (t.pieceS + t.warmS + t.fadeS + t.tailS + 2 * t.shiftS);
+  return Math.max(1, Math.min(cores - SLOTS.spareCores, Math.floor((SLOTS.memShare * availMb) / pieceMb)));
+}
 // its delay at 48 kHz in samples (0 measured) and how far either side it is looked for
 const DPDFNET_DELAY = 0;
 const DELAY_SEARCH = 2400;
@@ -732,20 +763,29 @@ export function neuralDenoiser(env = process.env) {
   return model ? { program, model } : null;
 }
 
-// The pieces of n samples: as many of at most pieceS + shiftS as it takes, equally long, each cut
-// moved to the middle of the nearest pause `measure` knows within shiftS. Piece k starts warmS
-// before the cross-fade into it and ends tailS after the cross-fade out of it.
+// The pieces of n samples: as many as it takes for none to be longer than pieceS, and as many as
+// there are slots (denoiserSlots) where each can still be minPieceS long, in whole rounds of the
+// slots; equally long, each cut moved to the middle of the nearest pause `measure` knows within
+// shiftS (at most a quarter of a piece). Piece k starts warmS before the cross-fade into it and
+// ends tailS after the cross-fade out of it.
 // → { pieces: [{ from, to }] (samples), seams: [{ at, pause }] (the fades' middles), fade (samples) }
 export function piecesOf(n, pauses = [], t = NEURAL) {
-  const L = t.pieceS * RATE, R = t.shiftS * RATE;
+  const L = t.pieceS * RATE, min = (t.minPieceS ?? t.pieceS) * RATE, slots = denoiserSlots(t);
   const half = Math.round((t.fadeS * RATE) / 2), warm = Math.round(t.warmS * RATE), tail = Math.round(t.tailS * RATE);
-  const count = n <= L + R ? 1 : Math.ceil(n / L);
+  const most = Math.max(1, Math.floor(n / Math.min(min, L)));
+  let count = Math.max(Math.ceil(n / L), Math.min(slots, most));
+  if (count > slots) count = Math.min(Math.max(count, slots * Math.ceil(count / slots)), Math.max(count, most));
+  const R = Math.min(t.shiftS * RATE, n / count / 4);
   const mids = (pauses || []).filter((p) => p && Number.isFinite(p.from) && Number.isFinite(p.to)).map((p) => Math.round(((p.from + p.to) / 2) * RATE));
+  // (every piece starts on the program's grid of BLOCK samples from the file's start: one off it
+  // came out other than one run over the whole file, 2026-11-20, 5 minutes in 7 pieces: −35 dB
+  // against it and 50 ms frames up to 8 dB apart, where pieces on it gave −68 dB and 0.17 dB)
+  const onGrid = (x) => Math.round((x - half - warm) / BLOCK) * BLOCK + half + warm;
   const seams = [];
   for (let k = 1; k < count; k++) {
     const aim = Math.round((k * n) / count);
     const near = mids.filter((x) => Math.abs(x - aim) <= R).sort((a, b) => Math.abs(a - aim) - Math.abs(b - aim))[0];
-    seams.push(near != null ? { at: near, pause: true } : { at: aim, pause: false });
+    seams.push(near != null ? { at: onGrid(near), pause: true } : { at: onGrid(aim), pause: false });
   }
   const pieces = [];
   for (let k = 0; k < count; k++)
@@ -1010,42 +1050,56 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), stat
     const frameE = new Float64Array(Math.ceil(n / VOICE_FRAME)), blockPeak = new Float64Array(Math.ceil(n / BLOCK));
     for (let i = 0; i < n; i++) { const v = x[i]; frameE[Math.floor(i / VOICE_FRAME)] += v * v; const b = Math.floor(i / BLOCK); if (Math.abs(v) > blockPeak[b]) blockPeak[b] = Math.abs(v); }
     const L = levelFor(frameE, blockPeak, { ...NEURAL, ...opts.tune });
-    const padded = Math.ceil(n / BLOCK) * BLOCK + 24000;
-    const inW = path.join(tmp, "probe.wav"), outW = path.join(tmp, "probe.out.wav");
-    const xi = new Float32Array(padded);
+    const xi = new Float32Array(n);
     for (let i = 0; i < n; i++) xi[i] = x[i] * L.at(i);
-    fs.writeFileSync(inW, Buffer.concat([floatHeader(padded), Buffer.from(xi.buffer)]));
-    const failed = await runDenoiser({ ...dn, limit: 0 }, inW, outW, padded / RATE);
+    // the program on each stretch at once (as many as there are slots: denoiserSlots), a stretch
+    // longer than two of minPieceS cut in as many of that as the slots allow; each starts afresh,
+    // so each one's first skipS is left out of the sums below. segs: [where in x, how long, its
+    // stretch, where in it]
+    const tn = { ...NEURAL, ...opts.tune }, slots = denoiserSlots(tn), segs = [];
+    let at0 = 0;
+    for (const [w, p] of parts.entries()) {
+      const k = Math.max(1, Math.min(slots, Math.floor(p.length / (tn.minPieceS * RATE))));
+      for (let j = 0; j < k; j++) { const a = Math.round((j * p.length) / k), b = Math.round(((j + 1) * p.length) / k); segs.push([at0 + a, b - a, w, a]); }
+      at0 += p.length;
+    }
+    const y = new Float32Array(n), stop = new Set();
+    const ran = await runPool(segs.map(([a, len], j) => async () => {
+      const padded = Math.ceil(len / BLOCK) * BLOCK + 24000;
+      const inW = path.join(tmp, `probe-${j}.wav`), outW = path.join(tmp, `probe-${j}.out.wav`);
+      const xs = new Float32Array(padded); xs.set(xi.subarray(a, a + len));
+      fs.writeFileSync(inW, Buffer.concat([floatHeader(padded), Buffer.from(xs.buffer)]));
+      const failed = await runDenoiser({ ...dn, limit: 0, tune: opts.tune }, inW, outW, padded / RATE, stop);
+      if (failed) return failed;
+      const oi = wavInfo(outW);
+      if (!oi || oi.samples !== padded || oi.rate !== RATE || oi.channels !== 1) return "its output is not as long as its input";
+      const fd = fs.openSync(outW, "r");
+      y.set(readRange(fd, oi, 0, len), a);
+      fs.closeSync(fd);
+      return null;
+    }), slots, stop);
+    const failed = ran.find((r) => r && !/^it was ended/.test(r));
     if (failed) return done({ failed });
-    const oi = wavInfo(outW);
-    if (!oi || oi.samples !== padded || oi.rate !== RATE || oi.channels !== 1) return done({ failed: "its output is not as long as its input" });
-    const fd = fs.openSync(outW, "r");
-    const y = readRange(fd, oi, 0, n);
-    fs.closeSync(fd);
     // what it did to the voice itself: the speech frames' level kept against what went in
     const VF = VOICE_FRAME, inE = [], outE = [], times = [];
-    let s0 = 0;
-    for (const [w, p] of parts.entries()) {
-      for (let a = s0 + Math.round(P.skipS * RATE); a + VF <= s0 + p.length; a += VF) {
+    for (const [s0, len, w, off] of segs) {
+      for (let a = s0 + Math.round(P.skipS * RATE); a + VF <= s0 + len; a += VF) {
         let e = 0, k = 0;
         for (let i = a; i < a + VF; i++) { e += xi[i] * xi[i]; k += y[i] * y[i]; }
-        inE.push(e); outE.push(k); times.push(spans[w][0] + (a - s0) / RATE);
+        inE.push(e); outE.push(k); times.push(spans[w][0] + (off + a - s0) / RATE);
       }
-      s0 += p.length;
     }
     const voice = voiceKept(Float64Array.from(inE), Float64Array.from(outE), { ...VOICE_KEPT, ...PROBE_KEPT, ...opts.probeKept }, { bursts: m.speech?.bursts?.at, times: Float64Array.from(times) });
     // per frame: what it kept and what it took out; speech: the frames whose kept level lies within
     // speechDb of the loud kept frames (the 95th percentile), past each stretch's start
     const F = Math.round(P.frameS * RATE), skip = Math.round(P.skipS * RATE);
     const frames = [];
-    let start = 0;
-    for (const p of parts) {
-      for (let a = start + skip; a + F <= start + p.length; a += F) {
+    for (const [start, len] of segs) {
+      for (let a = start + skip; a + F <= start + len; a += F) {
         let k = 0, r = 0;
         for (let i = a; i < a + F; i++) { const v = y[i], d = xi[i] - v; if (!Number.isFinite(v)) return done({ failed: "not finite" }); k += v * v; r += d * d; }
         frames.push({ k, r });
       }
-      start += p.length;
     }
     if (frames.length < 10) return done({ failed: "too short" });
     const lv = frames.map((f) => 10 * Math.log10(f.k / F + 1e-20)).sort((a, b) => a - b);
@@ -1119,8 +1173,26 @@ function slowed(plan, slow) {
   return plan;
 }
 
-// the program on one piece; → null, or what went wrong in a few words
-function runDenoiser(nr, inWav, outWav, seconds) {
+// jobs (functions that start a piece and resolve to null or what went wrong) at most `slots` at
+// once, in order; where one goes wrong no other is started and the running ones are ended
+// (stop(): each job's way to end its program). → [result of each started job]
+async function runPool(jobs, slots, stop = new Set()) {
+  const res = new Array(jobs.length).fill(undefined);
+  let next = 0, failed = false;
+  const lane = async () => {
+    while (!failed && next < jobs.length) {
+      const k = next++;
+      res[k] = await jobs[k]();
+      if (res[k] && !failed) { failed = true; for (const s of stop) s(); }
+    }
+  };
+  await Promise.all([...Array(Math.min(slots, jobs.length))].map(lane));
+  return res;
+}
+
+// the program on one piece; → null, or what went wrong in a few words. stop: a set the way to end
+// it is put into while it runs
+function runDenoiser(nr, inWav, outWav, seconds, stop = null) {
   const args = [`--speech-denoiser-dpdfnet-model=${nr.model}`, "--num-threads=1", "--print-args=false",
     `--speech-denoiser-dpdfnet-attenuation-limit-db=${nr.limit}`, `--input-wav=${inWav}`, `--output-wav=${outWav}`];
   const t = { ...NEURAL, ...nr.tune };
@@ -1128,12 +1200,15 @@ function runDenoiser(nr, inWav, outWav, seconds) {
   return new Promise((resolve) => {
     let p;
     try { p = spawn(nr.program, args, { stdio: ["ignore", "ignore", "ignore"] }); } catch (e) { resolve(`it could not be started (${e.code || e.message})`); return; }
-    let late = false;
+    let late = false, ended = false;
     const timer = setTimeout(() => { late = true; p.kill("SIGKILL"); }, limit * 1000);
-    p.on("error", (e) => { clearTimeout(timer); resolve(`it could not be started (${e.code || e.message})`); });
+    const end = () => { ended = true; try { p.kill("SIGKILL"); } catch { /* gone */ } };
+    stop?.add(end);
+    p.on("error", (e) => { clearTimeout(timer); stop?.delete(end); resolve(`it could not be started (${e.code || e.message})`); });
     p.on("close", (code, sig) => {
       clearTimeout(timer);
-      resolve(late ? `it took longer than ${limit} s` : sig ? `it ended on ${sig}` : code ? `it exited with ${code}` : null);
+      stop?.delete(end);
+      resolve(late ? `it took longer than ${limit} s` : ended ? "it was ended: another piece failed" : sig ? `it ended on ${sig}` : code ? `it exited with ${code}` : null);
     });
   });
 }
@@ -1273,26 +1348,37 @@ async function neuralRepair(file, outWav, plan, opts, state) {
       };
       const { pieces, seams, fade } = cut, half = fade / 2, K = pieces.length;
       let pending = null;
-      for (let k = 0; k < K; k++) {
-        const { from, to } = pieces[k], len = to - from;
-        const padded = Math.ceil(len / BLOCK) * BLOCK + Math.ceil((t.tailS * RATE) / BLOCK) * BLOCK + BLOCK;
+      const padOf = (len) => Math.ceil(len / BLOCK) * BLOCK + Math.ceil((t.tailS * RATE) / BLOCK) * BLOCK + BLOCK;
+      const say = (k, what) => new NeuralFailure(K > 1 ? `${what}, on piece ${k + 1} of ${K}` : what);
+      // 3a. the pieces through the program, as many at once as there are slots (denoiserSlots);
+      // each piece at the level for it, its energy and its blocks' (where the delay is looked for)
+      const sums = new Array(K).fill(0), blocksOf = [], stop = new Set();
+      const jobs = pieces.map(({ from, to }, k) => async () => {
+        const len = to - from, padded = padOf(len);
         const inW = path.join(tmp, `piece-${k}.wav`), outW = path.join(tmp, `piece-${k}.out.wav`);
-        const say = (what) => new NeuralFailure(K > 1 ? `${what}, on piece ${k + 1} of ${K}` : what);
-        // the piece at the level for it, its blocks' energy (where the delay is looked for)
         const fdIn = open(inW, "w");
         fs.writeSync(fdIn, floatHeader(padded));
-        let sumIn = 0;
         const blocks = new Float64Array(Math.ceil(len / 4800));
         for (let p = from; p < to; p += CHUNK) {
           const x = readRange(fdPre, info, p, Math.min(CHUNK, to - p));
-          for (let i = 0; i < x.length; i++) { x[i] *= g(p + i); const e = x[i] * x[i]; sumIn += e; blocks[Math.floor((p - from + i) / 4800)] += e; }
+          for (let i = 0; i < x.length; i++) { x[i] *= g(p + i); const e = x[i] * x[i]; sums[k] += e; blocks[Math.floor((p - from + i) / 4800)] += e; }
           fs.writeSync(fdIn, Buffer.from(x.buffer, 0, x.length * 4));
         }
         fs.writeSync(fdIn, Buffer.alloc((padded - len) * 4));
         close(fdIn);
-        const failed = await runDenoiser(nr, inW, outW, len / RATE);
+        blocksOf[k] = k === 0 ? blocks : null;
+        const failed = await runDenoiser(nr, inW, outW, len / RATE, stop);
         fs.rmSync(inW, { force: true });
-        if (failed) throw say(failed);
+        return failed;
+      });
+      const ran = await runPool(jobs, denoiserSlots(t), stop);
+      const bad = ran.findIndex((r) => r && !/^it was ended/.test(r));
+      if (bad >= 0) throw say(bad, ran[bad]);
+      // 3b. each output in turn: checked, in step, cross-faded into the one before
+      for (let k = 0; k < K; k++) {
+        const { from, to } = pieces[k], len = to - from, padded = padOf(len), sumIn = sums[k], blocks = blocksOf[k];
+        const outW = path.join(tmp, `piece-${k}.out.wav`);
+        const say = (what) => new NeuralFailure(K > 1 ? `${what}, on piece ${k + 1} of ${K}` : what);
         const oi = wavInfo(outW);
         if (!oi) throw say(isFile(outW) ? "its output is no WAV" : "it wrote nothing");
         if (oi.rate !== RATE || oi.channels !== 1 || !((oi.tag === 1 && oi.bits === 16) || (oi.tag === 3 && oi.bits === 32))) throw say(`its output is ${oi.bits}-bit ${oi.rate} Hz with ${oi.channels} channels, not 16-bit 48 kHz mono`);
