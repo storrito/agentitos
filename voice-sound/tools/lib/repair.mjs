@@ -226,6 +226,13 @@ export function repairPlan(m, opts = {}) {
   // runs (clipped by 12 dB and more, 1 % of the samples and more) come back smoother but not
   // as they were: the harshness drops, the distortion's damage to the vowels' spectrum stays.
   // Clipping a codec has since smoothed (the flat runs gone) is out of its reach.
+  // A DC offset stays in until after adeclip, which marks the samples at the top of |x|: where an
+  // offset came before the clipping (a microphone's preamp, the converter clipping at full scale)
+  // both sides sit at the same |x| only with the offset in (+0.1, then clipped at ±1: the error
+  // against the voice before it −17.4 dB clipped, −25.8 redrawn so, −24.9 with the offset taken
+  // out first). Clipped first and shifted after, the two sides differ by twice the offset and only
+  // the upper is redrawn (−15.8, −16.9; −24.5 with it out first): rarer, and not told apart by
+  // what `measure` gives (2026-11-20, a de voice of the tune split, 9 dB over).
   const clip = has("clipped");
   if (clip && m.clipping?.ceilingDb != null) {
     const c = m.clipping;

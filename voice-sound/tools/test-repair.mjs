@@ -479,6 +479,26 @@ test("clipped: the peaks are redrawn over the old ceiling", { skip }, async () =
   assert.ok(err(y) < err(clipped) * 0.8, `error ${(10 * Math.log10(err(y) / err(clipped))).toFixed(1)} dB against the clipped one's`);
 });
 
+test("clipped at full scale with a DC offset before it: both sides redrawn, the offset taken out after adeclip", { skip }, async () => {
+  // (a preamp's offset, then the converter clipping at ±1: both sides at the same |x| only with
+  // the offset in)
+  // (as the test above: the ceiling where 0.5 % of the samples, the offset in, lie over it)
+  const loud = samples(fault("dcloud.wav", "[0:a]volume=9dB,aeval=val(0)+0.1[o]"));
+  const ceiling = Float64Array.from(loud, Math.abs).sort()[Math.floor(loud.length * 0.995)];
+  fault("dcclipped.wav", `[0:a]volume=9dB,aeval='max(-${ceiling},min(${ceiling},val(0)+0.1))'[o]`);
+  const m = await measure(file("dcclipped.wav"));
+  // (the ceiling as measure gives it from 2111e94 on, read from the offset)
+  m.clipping = { ...m.clipping, ceilingDb: 20 * Math.log10(ceiling) };
+  const { r, y } = await mended("dcclipped.wav", m);
+  const st = r.steps.find((s) => s.id === "declip");
+  assert.ok(st && r.graph.indexOf("adeclip") < r.graph.indexOf("dcshift"), r.graph);
+  const through = (src, name) => { run(["-i", src, "-af", `${highpasses(r.graph)},volume=${st.gainDb}dB`, "-c:a", "pcm_f32le", file(name)]); return samples(file(name)); };
+  const truth = through(file("dcloud.wav"), "dcloud.hp.wav"), clipped = through(file("dcclipped.wav"), "dcclipped.hp.wav");
+  const err = (z) => { let s = 0; for (let i = 48000; i < z.length; i++) s += (z[i] - truth[i]) ** 2; return s; };
+  // nearer the voice before it clipped than the clipped one is (here by 3.1 dB)
+  assert.ok(db(err(y) / err(clipped)) < -2, `error ${db(err(y) / err(clipped)).toFixed(1)} dB against the clipped one's`);
+});
+
 test("two channels: a dead one and an inverted one give a single channel at full level", { skip }, async () => {
   const level = rms(samples(base));
   for (const [name, pan] of [["dead.wav", "c0=c0|c1=0*c0"], ["inverted.wav", "c0=c0|c1=-1*c0"], ["offcentre.wav", "c0=c0|c1=0.5*c0"]]) {
