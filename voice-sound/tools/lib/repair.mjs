@@ -296,9 +296,12 @@ export function repairPlan(m, opts = {}) {
   // noise under the voice that the pauses do not show, as the denoiser's probe found it (repair
   // runs the probe and plans again with opts.underVoice)
   const under = !noisy && opts.underVoice?.fires ? opts.underVoice : null;
+  // a strength the person named where neither found noise: their word that it is noisy, so the
+  // noise step runs at that strength's limit, not at what the aim needs
+  const named = !noisy && !under && (strength === "gentle" || strength === "strong") && wants !== "off";
   // the neural denoiser: asked for, or the default where the machine has it
-  const dn = (noisy || under) && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
-  if (wants === "dpdfnet" && noisy && strength !== "off" && !dn) refuse(`dpdfnet needs sherpa-onnx's offline denoiser and the DPDFNet-2 model (${DPDFNET_MODEL}): name them in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET (the skill ships neither).`);
+  const dn = (noisy || under || named) && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
+  if (wants === "dpdfnet" && (noisy || named) && strength !== "off" && !dn) refuse(`dpdfnet needs sherpa-onnx's offline denoiser and the DPDFNet-2 model (${DPDFNET_MODEL}): name them in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET (the skill ships neither).`);
   let neural = null;
   if (noisy && n?.kind === "changing" && !dn)
     left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB)${model && (wants ?? "arnndn") === "arnndn" ? ": RNNoise follows some of it, not all" : ": a filter that learns one noise cannot follow it, so some of it stays"}.` });
@@ -306,7 +309,7 @@ export function repairPlan(m, opts = {}) {
     // its attenuation limit: what the aim needs, never more than --denoise allows (DPDFNET_LIMITS)
     const est = under ? under.underDb : snr;
     const cap = DPDFNET_LIMITS[strength];
-    const needed = DENOISE_AIM_DB - est;
+    const needed = named ? cap : DENOISE_AIM_DB - est;
     const limit = r1(Math.max(0, Math.min(needed, cap)));
     if (limit >= DENOISE_MIN_DB) {
       method = "dpdfnet";
@@ -318,30 +321,34 @@ export function repairPlan(m, opts = {}) {
       const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${Math.ceil(Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE / 60)} minutes` : "";
       const said = under
         ? `Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of ${Math.round(under.sampleS)} s of it: about ${dB(est)} dB under the speech; DPDFNet-2 asked to take at most ${dB(limit)} dB off`
+        : named ? `Asked for with --denoise ${strength}, although measure found no noise in the pauses${snr != null ? ` (they lie ${dB(snr)} dB under the speech)` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off`
         : `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off`;
       steps.push({
-        id: "denoise", why: `${said}${tail}${many}.`,
+        id: "denoise", why: `${said}${named ? "" : tail}${many}.`,
         method, snrDb: est, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: limit, limitDb: limit, model: path.basename(dn.model),
-        ...(under && { underVoiceDb: est, probe: under }),
+        ...(under && { underVoiceDb: est, probe: under }), ...(named && { asked: true }),
         pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })), seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
       });
-      if (!under && n?.kind === "changing")
+      if (noisy && n?.kind === "changing")
         left.push({ id: "noise", why: `The noise changes (traffic, voices, a keyboard: it moves by ${db1(n.fluctuationDb ?? n.spreadDb ?? 0)} dB): the neural denoiser took up to ${dB(limit)} dB off it, and what is left of it stays.` });
       if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${under ? "about " : ""}${dB(est)} dB under the speech; ${dB(limit)} dB less is as far as --denoise ${strength} lets the neural denoiser go, so it ends about ${dB(est + limit)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
     }
-  } else if (noisy && strength !== "off" && wants !== "off") {
-    method = wants ?? (n?.kind === "changing" && model ? "arnndn" : pause ? "afftdn-sample" : "afftdn-profile");
+  } else if (named && !wants && !(pause && n?.bands?.length)) {
+    left.push({ id: "noise", why: `--denoise ${strength} was asked for, but measure found no noise in the pauses and no pause of ${PAUSE_MIN_S} s to learn one from, and ffmpeg's methods need one: nothing denoised.` });
+  } else if ((noisy || named) && strength !== "off" && wants !== "off") {
+    method = wants ?? (noisy && n?.kind === "changing" && model ? "arnndn" : pause ? "afftdn-sample" : "afftdn-profile");
     if (method === "afftdn-sample" && !pause) refuse(`afftdn-sample needs a pause of at least ${PAUSE_MIN_S} s without speech to take the noise from, and this recording has none: use afftdn-profile.`);
     if (method === "arnndn" && !model) refuse("arnndn needs an RNNoise model: name its file in VOICE_SOUND_RNNOISE (the skill ships none).");
     if (method === "arnndn" && !fs.existsSync(model)) refuse(`VOICE_SOUND_RNNOISE names ${model}, which is not there.`);
     const level = strength === "auto" ? "auto" : strength;
     const cap = DENOISE_CAPS[method][level];
-    const needed = DENOISE_AIM_DB - snr;
+    const needed = named ? cap : DENOISE_AIM_DB - snr;
     const reduce = r1(Math.max(0, Math.min(needed, cap)));
     if (reduce >= DENOISE_MIN_DB) {
       const ends = r1(snr + reduce);
       den = { method, reduce };
       const tail = needed > cap ? `, as much as ${method} takes without artefacts` : "";
+      const what = named ? `Asked for with --denoise ${strength}, although measure found no noise in the pauses${snr != null ? ` (they lie ${dB(snr)} dB under the speech)` : ""}` : `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}`;
       if (method.startsWith("afftdn")) {
         // afftdn's noise is its floor (nf) plus a shape around it: a sampled profile, or `bn`,
         // gives only the shape (its mean taken out), never the level. The floor is the mean of
@@ -350,19 +357,19 @@ export function repairPlan(m, opts = {}) {
         const lv = afftdnLevels(n, (f) => highpassDb(f, hz, poles) + 20 * Math.log10(gain));
         const fl = afftdnFloor(lv, sampled, tune.nfOffsetDb);
         Object.assign(den, fl, { gs: tune.gs, tn: method === "afftdn-track" ? 1 : 0 });
-        const numbers = { method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, floorDb: fl.nf, ...(fl.lift && { liftDb: fl.lift }) };
+        const numbers = { method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, floorDb: fl.nf, ...(fl.lift && { liftDb: fl.lift }), ...(named && { asked: true }) };
         if (sampled) {
           const from = r2(pause.from), seconds = r2(Math.min(PAUSE_MAX_S, pause.seconds - 0.03));
           den.pause = { from, seconds };
-          steps.push({ id: "denoise", why: `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: ${dB(reduce)} dB less${tail}, its profile from the pause at ${clockOf(from)} (${seconds.toFixed(1)} s).`, ...numbers, pause: den.pause });
+          steps.push({ id: "denoise", why: `${what}: ${dB(reduce)} dB less${tail}, its profile from the pause at ${clockOf(from)} (${seconds.toFixed(1)} s).`, ...numbers, pause: den.pause });
           inputs.push({ input: 1, what: "the pause", from, seconds });
         } else {
-          steps.push({ id: "denoise", why: `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: ${dB(reduce)} dB less${tail}, afftdn with the pauses' spectrum as its noise${method === "afftdn-track" ? ", tracking it" : ""}${pause ? "" : " (no pause long enough to sample)"}.`, ...numbers, bands: fl.bn });
+          steps.push({ id: "denoise", why: `${what}: ${dB(reduce)} dB less${tail}, afftdn with the pauses' spectrum as its noise${method === "afftdn-track" ? ", tracking it" : ""}${pause ? "" : " (no pause long enough to sample)"}.`, ...numbers, bands: fl.bn });
         }
       } else {
         den.mix = r2(1 - 10 ** (-reduce / 20));
         den.model = model;
-        steps.push({ id: "denoise", why: `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: RNNoise (${path.basename(model)}), mixed so that ${dB(reduce)} dB of it goes${tail}.`, method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, mix: den.mix, model: path.basename(model) });
+        steps.push({ id: "denoise", why: `${what}: RNNoise (${path.basename(model)}), mixed so that ${dB(reduce)} dB of it goes${tail}.`, method, snrDb: snr, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: reduce, mix: den.mix, model: path.basename(model), ...(named && { asked: true }) });
       }
       if (needed > cap + 3) left.push({ id: "noise", why: `The noise was ${dB(snr)} dB under the speech; ${dB(reduce)} dB less is what ${method} takes without watery artefacts, so it ends about ${dB(ends)} dB under, short of the ${DENOISE_AIM_DB} dB aimed for.` });
     } else method = "off";
@@ -878,7 +885,8 @@ function probeWanted(m, opts) {
   const strength = opts.denoise ?? "auto";
   const asked = opts.method || process.env.VOICE_SOUND_DENOISE || null;
   const findings = m.findings ?? findingsOf(m);
-  return strength !== "off" && (asked == null || asked === "dpdfnet") && !findings.some((f) => f.id === "noise") &&
+  // (a strength named, gentle or strong, runs the noise step anyway: no probe needed)
+  return strength === "auto" && (asked == null || asked === "dpdfnet") && !findings.some((f) => f.id === "noise") &&
     (m.speech?.seconds ?? 0) > 0 && !!neuralDenoiser();
 }
 

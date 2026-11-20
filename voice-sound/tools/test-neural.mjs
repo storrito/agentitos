@@ -16,7 +16,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept } from "./lib/repair.mjs";
+import { repair, repairPlan, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
@@ -610,6 +610,61 @@ test("the probe fired, the run then took the voice down: no noise step, said in 
   const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("pd-plain.out.wav"), m));
   assert.ok(fs.readFileSync(file("pd.out.wav")).equals(fs.readFileSync(file("pd-plain.out.wav"))));
   assert.equal(plain.method, "off");
+});
+
+// ---------------------------------------------------------------- a strength named
+
+test("--denoise gentle or strong where nothing found noise: the noise step runs at that strength, and says it was asked for", { skip }, async () => {
+  const m = await measure(file("quiet-noise.wav"));
+  assert.ok(!m.findings.some((f) => f.id === "noise"), "measure names no noise");
+  for (const strength of ["gentle", "strong"]) {
+    const log = file(`asked-${strength}.log`);
+    fs.rmSync(log, { force: true });
+    const r = await withEnv({ ...STANDIN_ENV(), STANDIN_LOG: log }, () => repair(file("quiet-noise.wav"), file(`asked-${strength}.out.wav`), m, { denoise: strength }));
+    const st = r.steps.find((s) => s.id === "denoise");
+    assert.equal(r.method, "dpdfnet", strength);
+    assert.equal(st.asked, true);
+    assert.equal(st.limitDb, DPDFNET_LIMITS[strength]);
+    assert.match(st.why, new RegExp(`^Asked for with --denoise ${strength}, although measure found no noise in the pauses \\(they lie \\d+ dB under the speech\\): a neural denoiser \\(DPDFNet-2\\) asked to take at most ${DPDFNET_LIMITS[strength]} dB off\\.$`));
+    // no probe: one call, the run itself, at that limit
+    assert.equal(r.probe, undefined);
+    const calls = fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]["speech-denoiser-dpdfnet-attenuation-limit-db"], String(DPDFNET_LIMITS[strength]));
+    // without the denoiser: ffmpeg's method from the pause, at that strength's cap
+    const f = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file(`asked-${strength}-ff.out.wav`), m, { denoise: strength }));
+    const sf = f.steps.find((s) => s.id === "denoise");
+    assert.equal(f.method, "afftdn-sample", strength);
+    assert.equal(sf.asked, true);
+    assert.equal(sf.reduceDb, DENOISE_CAPS["afftdn-sample"][strength]);
+    assert.match(sf.why, new RegExp(`^Asked for with --denoise ${strength}, although measure found no noise in the pauses \\(they lie \\d+ dB under the speech\\): ${DENOISE_CAPS["afftdn-sample"][strength]} dB less, its profile from the pause at 0:\\d\\d \\(\\d\\.\\d s\\)\\.$`));
+    assert.equal(samples(file(`asked-${strength}-ff.out.wav`)).length, samples(file("quiet-noise.wav")).length);
+  }
+  // auto and off as they were: nothing where nothing was found
+  for (const strength of ["auto", "off"]) {
+    const r = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("asked-auto.out.wav"), m, { denoise: strength }));
+    assert.equal(r.method, "off", strength);
+    assert.deepEqual(ids(r.steps), ["highpass"], strength);
+  }
+  // the voice taken down: ffmpeg's method in its place, still asked for
+  const d = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -20 }, () => repair(file("quiet-noise.wav"), file("asked-down.out.wav"), m, { denoise: "strong" }));
+  const sd = d.steps.find((s) => s.id === "denoise");
+  assert.equal(d.method, "afftdn-sample");
+  assert.equal(sd.asked, true);
+  assert.equal(sd.fallback.voice.downShare, 1);
+  assert.ok(d.left.some((l) => /took this voice for noise/.test(l.why)));
+});
+
+test("--denoise strong with nothing to work from: left says why", async () => {
+  // no noise named, no pause, no denoiser
+  const plan = await withEnv(NONE_ENV(), () => repairPlan(made({ findings: [], speech: { share: 0.9, longest: [] } }), { denoise: "strong" }));
+  assert.equal(plan.method, "off");
+  assert.deepEqual(ids(plan.steps), ["highpass"]);
+  assert.deepEqual(plan.left, [{ id: "noise", why: "--denoise strong was asked for, but measure found no noise in the pauses and no pause of 0.4 s to learn one from, and ffmpeg's methods need one: nothing denoised." }]);
+  // with the denoiser it needs none
+  const p = await withEnv(STANDIN_ENV(), () => repairPlan(made({ findings: [], speech: { share: 0.9, longest: [] } }), { denoise: "strong" }));
+  assert.equal(p.method, "dpdfnet");
+  assert.equal(p.steps.find((s) => s.id === "denoise").asked, true);
 });
 
 // ---------------------------------------------------------------- the level for its 16 bits
