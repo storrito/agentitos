@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { level, levellerOf, framesOf, loudnessOf, TARGETS } from "./lib/level.mjs";
+import { level, levellerOf, framesOf, loudnessOf, TARGETS, BURSTS, burstPlan } from "./lib/level.mjs";
 import { measure } from "./lib/measure.mjs";
 
 // the machines have the neural denoiser on the PATH; these tests are of ffmpeg's methods, so it is hidden here (test-neural.mjs tests it)
@@ -382,8 +382,8 @@ test("a quiet voice with a knock: the gain is the voice's, the knock turned down
     near(levelWhere(samples(knock, 0), (t) => t > 2.18 && t < 2.48), levelWhere(samples(plain, 0), (t) => t > 2.18 && t < 2.48), 1.5, `${ext}: the 300 ms after the knock`);
     const s = r.steps.find((x) => x.id === "bursts");
     assert.ok(s, `${ext}: ${r.steps.map((x) => x.id)}`);
-    assert.match(s.why, /^A short loud sound \(a knock, a clap, a bump: no voice's\) at 1\.9\d s, up to \d+\.\d dB over the voice's loud frames: each turned down to 6 dB under them/);
-    assert.match(r.left.find((x) => x.id === "bursts")?.why ?? "", /^A knock \(or a clap, a bump\) is in the recording at 1\.9\d s and stays, a little under the voice's loud frames/);
+    assert.match(s.why, /^A short loud sound \(a knock, a clap, a bump: no voice's\) at 1\.9\d s, up to \d+\.\d dB over the voice's loud frames in the mended sound: where loud, it was brought down, by up to \d+\.\d dB, to 6 dB under the voice's loud frames/);
+    assert.match(r.left.find((x) => x.id === "bursts")?.why ?? "", /^A knock \(or a clap, a bump\) is in the recording at 1\.9\d s and stays, at about the voice's level/);
     assert.ok(!r.left.some((x) => x.id === "loudness"), JSON.stringify(r.left));
   }
   // more knocks than measure lists (it lists ten): as before, nothing turned down
@@ -406,6 +406,18 @@ test("where the loudness cannot be had under the ceiling, `left` says that it ga
   near(q.offLu, got.lufs + 6, 0.06, "by how much");
   assert.ok(got.truePeak <= -5.5, `true peak ${got.truePeak}`);
   assert.match(r.steps.find((s) => s.id === "loudness").why, /^Brought towards −6\.0 LUFS .*: it came to −\d+\.\d, see what is left\.$/);
+});
+
+test("a knock on a word: brought down to the speech beside it and no lower, the knock itself far down", { skip }, () => {
+  const x = new Float32Array(48000);
+  for (let i = 0; i < x.length; i++) x[i] = 0.1 * Math.sin(i / 7) * (i > 24000 && i < 24000 + 2400 ? 30 : 1);
+  const p = burstPlan({ t: 0.5, seconds: 0.05, overDb: 30 }, x, 0);
+  assert.ok(p.targetDb >= p.besideDb - 0.05, JSON.stringify(p));
+  assert.ok(Math.min(...p.points.map((q) => q[1])) < -20, "the knock itself turned down");
+  // (in a pause: to the voice's loud frames 6 dB under)
+  const y = Float32Array.from(x, (v, i) => (i > 24000 && i < 24000 + 2400 ? v : v * 0.001));
+  const q = burstPlan({ t: 0.5, seconds: 0.05, overDb: 30 }, y, 0);
+  near(q.targetDb, q.loudDb - BURSTS.underDb, 0.05, "in a pause");
 });
 
 test("the gain search never passes the bound: where the limiter takes loudness and the search asks for more, it stops at the bound and says so", { skip }, async () => {

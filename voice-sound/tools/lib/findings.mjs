@@ -170,13 +170,23 @@ export const ROOMY_STRONG_S = 0.8;
 export const VOICE_PITCH_NAC = 0.6;
 export const VOICE_PITCH_SHARE = 0.1;
 export const VOICE_RHYTHM_DB = 3;
-export function voiceOf(v) {
+// …and where the noise lies within VOICE_MASKED_DB of what was taken for speech (A-weighted), a
+// pitch cannot be read under it and nothing can be told: found. A low voice under café and pink
+// noise 5 dB louder had a pitch in 9 and 8 % of its frames and was refused (the third review,
+// 2026-11-20), at 0.6 and −4.9 dB; the voices whose pitch only just carried them lay at −4 to
+// 5.3 dB. Of 132 recordings without a voice 17 are still not found (70 before), of the review's
+// 21, 4 (11 before): a noise loud against its own quiet moments, which a voice under it would be.
+export const VOICE_MASKED_DB = 6;
+export function voiceOf(v, levels) {
   if (!v) return null;
   const pct0 = (x) => `${Math.round(x * 100)} %`;
   if (!v.frames) return { found: false, why: "nothing in it rises over its floor far enough to be speech", ...v };
-  const found = v.pitchShare >= VOICE_PITCH_SHARE || (v.rhythmDb ?? 0) >= VOICE_RHYTHM_DB;
   const seen = `a pitch in ${pct0(v.pitchShare)} of the ${v.frames} frames taken for speech, their level moving by ${f1(v.rhythmDb ?? 0)} dB at a syllable's pace`;
-  return { found, why: found ? seen : `${seen}: a voice has a pitch in ${pct0(VOICE_PITCH_SHARE)} of them or more, or moves by ${VOICE_RHYTHM_DB} dB`, ...v };
+  if (v.pitchShare >= VOICE_PITCH_SHARE || (v.rhythmDb ?? 0) >= VOICE_RHYTHM_DB) return { found: true, why: seen, ...v };
+  const snr = levels?.snrADb ?? null;
+  if (snr != null && snr < VOICE_MASKED_DB)
+    return { found: true, why: `${seen}, but the noise in the pauses lies ${snr < 0 ? `${f1(-snr)} dB over` : `only ${f1(snr)} dB under`} them: too loud to read a pitch under, so a voice may be there`, ...v };
+  return { found: false, why: `${seen}: a voice has a pitch in ${pct0(VOICE_PITCH_SHARE)} of them or more, or moves by ${VOICE_RHYTHM_DB} dB`, ...v };
 }
 
 // The noise's kind, from its numbers (null without noise to measure); low noise that is the

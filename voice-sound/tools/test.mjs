@@ -138,6 +138,18 @@ test("hum off the grid: each line where it lies (50.96 and 61.1 Hz), the fundame
   assert.equal(clean.hum.fundamentalHz, null);
 });
 
+test("hum in the pauses holds its line within 2.5 % of the mains: 59 Hz is a 60 Hz hum, 57.9 Hz none", { skip }, async () => {
+  for (const [hz, named] of [[59, true], [57.9, false]]) {
+    const f = file(`hum-near-${hz}.wav`);
+    run(["-i", base, "-filter_complex", `${humOf(hz)};[0:a][hum]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", f]);
+    const m = await measure(f);
+    assert.equal(m.hum.from, "pauses");
+    for (const x of [...m.hum.at50, ...m.hum.at60].filter((y) => y.counts)) assert.ok(Math.abs(x.lineHz - x.hz) <= x.hz * 0.025, `${hz}: ${JSON.stringify(x)}`);
+    assert.equal(ids(m).includes("hum"), named, `${hz}: ${ids(m).join()} ${JSON.stringify(m.hum.at60.slice(0, 2))}`);
+    if (named) near(m.hum.fundamentalHz, hz, 0.1, "fundamental");
+  }
+});
+
 test("hum under a voice without a pause: judged from the whole recording, named where it is steady, never a held pitch", { skip }, async () => {
   // its pitch held at 120 Hz, held at 180 Hz (lines on the 60 Hz grid without its odd harmonics),
   // gliding from 80 to 120 Hz through 100 Hz. (A held pitch is made of its harmonics to 1.4 kHz:
@@ -296,6 +308,13 @@ test("a voice: found in a voice, a whisper and a voice under noise as loud as it
   const loud = file("noisy-0db.wav");
   run(["-i", base, "-i", noise, "-filter_complex", `[1:a]volume=${gain.toFixed(2)}dB[n];[0:a][n]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", loud]);
   assert.equal((await measure(loud)).voice.found, true);
+  // under noise 10 dB louder than itself its pitch is lost (9 % of the frames): a voice may be
+  // there, and it cannot be told otherwise
+  const drowned = file("noisy-10db-over.wav");
+  run(["-i", base, "-i", noise, "-filter_complex", `[1:a]volume=${(gain + 10).toFixed(2)}dB[n];[0:a][n]amix=inputs=2:normalize=0`, "-c:a", "pcm_s16le", drowned]);
+  const d = await measure(drowned);
+  assert.ok(d.voice.pitchShare < 0.1 && d.voice.found === true, JSON.stringify(d.voice));
+  assert.match(d.voice.why, /noise in the pauses lies [\d.]+ dB over them: too loud to read a pitch under/);
   // noise alone: steady pink, a swell of it, brown (traffic's rumble), a hum with harmonics
   for (const [name, graph] of [["pink", "anoisesrc=color=pink:amplitude=0.05:r=48000:d=20:seed=1"],
     ["swell", "anoisesrc=color=pink:amplitude=0.05:r=48000:d=20:seed=5,volume='0.2+0.8*pow(sin(0.5*t),2)':eval=frame"],
@@ -337,6 +356,8 @@ test("a knock, a clap, a thump: set aside from the voice's numbers, named, the p
       assert.equal(rest(m), rest(plain), what);
       // (at −25 LUFS a clap 12 dB over the voice may stay in its numbers: they hold either way)
       if (lufs === -45) assert.equal(m.speech.bursts?.count, list.length, what);
+      // (strong from 20 dB over the voice's loud frames: a white burst at 0.9 over a voice at −45 LUFS)
+      if (lufs === -45 && kind === "white") assert.ok(m.speech.bursts.overDb >= 20 && m.findings.find((f) => f.id === "bursts")?.strength === "strong", what);
       if (m.speech.bursts?.count) {
         assert.ok(m.findings.some((f) => f.id === "bursts"), what);
         assert.ok(lines(m).some((l) => /^(A short loud sound|\d+ short loud sounds) \(a knock, a clap, a bump\) at /.test(l)), lines(m).join("\n"));
@@ -348,6 +369,24 @@ test("a knock, a clap, a thump: set aside from the voice's numbers, named, the p
   }
 });
 
+test("where measure took speech: its spans, in time order, as long as its seconds, the bursts left out; every burst listed", { skip }, async () => {
+  const s = clean.speech.spans;
+  assert.ok(s.length >= 8, JSON.stringify(s));
+  for (let i = 0; i < s.length; i++) {
+    assert.ok(s[i][0] < s[i][1] && (i === 0 || s[i - 1][1] < s[i][0]), JSON.stringify(s.slice(Math.max(0, i - 1), i + 1)));
+  }
+  near(s.reduce((a, [x, y]) => a + y - x, 0), clean.speech.seconds, 0.06, "the spans' seconds");
+  // (each phrase of 2.5 s every 3.6 s is in one span)
+  for (const p of [0.5, 4.1, 7.7, 11.3]) assert.ok(s.some(([x, y]) => x <= p + 0.5 && y >= p + 1.5), `phrase at ${p}: ${JSON.stringify(s)}`);
+  // twelve bursts in the voice at −45 LUFS, in its phrases: every one listed, none inside a span
+  const times = [0.6, 1.4, 4.4, 5.2, 8.0, 8.8, 11.6, 12.4, 15.2, 16.0, 18.8, 19.6];
+  const m = await measure(withBursts("twelve.wav", -45, times.map((t) => [WHITE, t])));
+  assert.equal(m.speech.bursts.count, 12, JSON.stringify(m.speech.bursts));
+  assert.equal(m.speech.bursts.at.length, 12);
+  assert.equal(m.speech.bursts.listed, 12);
+  for (const b of m.speech.bursts.at) assert.ok(!m.speech.spans.some(([x, y]) => x < b.t + 0.02 && y > b.t + 0.01), `${b.t} in ${JSON.stringify(m.speech.spans)}`);
+});
+
 test("a shouted word is the voice, no burst: raised by 12 and by 20 dB it is in the speech's numbers", { skip }, async () => {
   const plain = await measure(withBursts("word-plain.wav", -35));
   for (const up of [12, 20]) {
@@ -355,6 +394,41 @@ test("a shouted word is the voice, no burst: raised by 12 and by 20 dB it is in 
     assert.equal(m.speech.bursts.count, 0, JSON.stringify(m.speech.bursts));
     // (450 ms of 21 s of speech 12 dB louder: the speech's power by a quarter more, 1 LU)
     assert.ok(m.levels.speechLufs >= plain.levels.speechLufs + (up === 12 ? 0.8 : 3), `+${up}: ${m.levels.speechLufs} against ${plain.levels.speechLufs}`);
+  }
+});
+
+// a knock in the voice's band: 30 ms of noise through 200–5000 Hz, dying away in 7.5 ms
+const KNOCK = (seed) => `anoisesrc=d=0.03:amplitude=0.9:color=white:r=48000:seed=${seed},highpass=f=200,lowpass=f=5000,volume='exp(-t/0.0075)':eval=frame`;
+
+test("a knock in the voice's band is set aside whatever its spectrum; short loud speech, a cough and a gust stay", { skip }, async () => {
+  const PEAK = new Set(["loud", "clicks", "thumps", "bursts", "clipped"]);
+  const rest = (m) => m.findings.map((f) => f.id).filter((i) => !PEAK.has(i)).sort().join();
+  const plain = await measure(withBursts("k-plain.wav", -35));
+  // (13.9 and 14.05: a knock-knock, 150 ms apart)
+  const times = [1.2, 3.0, 5.0, 6.7, 9.0, 13.9, 14.05];
+  const k = await measure(withBursts("knocks.wav", -35, times.map((t, i) => [KNOCK(20 + i), t])));
+  assert.equal(k.speech.bursts.count, times.length, JSON.stringify(k.speech.bursts));
+  near(k.levels.speechLufs, plain.levels.speechLufs, 1, "speechLufs with the knocks");
+  assert.equal(rest(k), rest(plain), JSON.stringify(k.findings.map((f) => f.id)));
+  // a pop on the microphone at 45 Hz, 200 ms, in a word: four frames near its top, a thump
+  const pop = await measure(withBursts("pop.wav", -35, [["aevalsrc=exprs='0.3*sin(2*PI*45*t)*exp(-t/0.06)':s=48000:d=0.2", 5.0]]));
+  assert.equal(pop.speech.bursts.count, 1, JSON.stringify(pop.speech.bursts));
+  // (named: strong from 20 dB over the voice's loud frames)
+  assert.equal(k.findings.find((f) => f.id === "bursts")?.strength, k.speech.bursts.overDb >= 20 ? "strong" : "some");
+  assert.equal(pop.findings.find((f) => f.id === "bursts")?.strength, "some");
+  const keep = {
+    // an "s" struck 15 dB over the voice: noise through 4–10 kHz, 120 ms
+    hiss: withBursts("struck-s.wav", -45, [["anoisesrc=d=0.12:amplitude=0.16:color=white:r=48000:seed=41,highpass=f=4000,highpass=f=4000,lowpass=f=10000,volume='sin(PI*t/0.12)':eval=frame", 7.6]]),
+    // a word of 200 ms shouted 26 dB over a boomy voice (its pitch low and strong)
+    boomy: withBursts("short-shout-boomy.wav", -50, [], "equalizer=f=120:t=o:w=1:g=18,volume='if(between(t,7.475,7.675),20,1)':eval=frame"),
+    // a cough in a pause: noise through 250–3500 Hz, 180 ms, about 20 dB over the voice
+    cough: withBursts("cough.wav", -35, [["anoisesrc=d=0.18:amplitude=0.9:color=white:r=48000:seed=31,highpass=f=250,lowpass=f=3500,volume='min(1,t/0.002)*exp(-t/0.05)':eval=frame", 10.0]]),
+    // a gust of wind under the voice: 500 ms at 40 Hz
+    gust: withBursts("gust.wav", -35, [["aevalsrc=exprs='0.5*sin(2*PI*40*t)*sin(PI*t/0.5)':s=48000:d=0.5", 5.0]]),
+  };
+  for (const [name, f] of Object.entries(keep)) {
+    const m = await measure(f);
+    assert.equal(m.speech.bursts.count, 0, `${name}: ${JSON.stringify(m.speech.bursts)}`);
   }
 });
 
