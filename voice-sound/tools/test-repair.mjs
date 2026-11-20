@@ -187,6 +187,37 @@ test("plan: two channels become one as measured", () => {
   const real = two({ correlation: 0.4, levelDifferenceDb: 2, monoLossDb: -1.6, identical: false, silentChannel: null });
   assert.equal(real.steps[0].take, "mean");
   assert.match(real.graph, /pan=mono\|c0=0\.5\*c0\+0\.5\*c1/);
+  // one channel 20 dB and more under the other is dead but for noise: the louder alone
+  const faint = two({ correlation: 0.9, levelDifferenceDb: -24, monoLossDb: -0.4, identical: false, silentChannel: null });
+  assert.equal(faint.steps[0].take, "right");
+  assert.match(faint.graph, /pan=mono\|c0=c1,/);
+  // more than two: ffmpeg's downmix to two first, as measure reads them
+  assert.match(repairPlan(made({ sound: { channels: 6 }, channels: { correlation: 1, levelDifferenceDb: 0, monoLossDb: 0, identical: true, silentChannel: null } })).graph, /aformat=channel_layouts=stereo,pan=mono\|c0=c0,/);
+});
+
+test("plan: the high-pass's slope follows the rumble, the DC offset is taken at declip's gain", () => {
+  // need: the rumble over speech's −28 dB under 80 Hz; over 9 dB 4 poles, over 16 dB 6, over 25 dB 90 Hz
+  const lowOf = (below80Db, pauses80Db = below80Db, over = {}) => repairPlan(made({ low: { below80Db, pauses80Db, thumps: { count: 0, perMinute: 0, at: [] } }, findings: [finding("rumble")], ...over })).steps.find((s) => s.id === "highpass");
+  assert.deepEqual([-20, -18, -10, 0].map((v) => [lowOf(v).poles, lowOf(v).hz]), [[2, 80], [4, 80], [6, 80], [6, 90]]);
+  // the pauses' low end counts as rumble, unless hum stands in them (its lines are no rumble)
+  assert.equal(lowOf(-30, -10).poles, 6);
+  const hum = { judged: true, hz: 50, harmonics: 1, overDb: 20, at50: [{ n: 1, hz: 50, overDb: 20, counts: true }], at60: [] };
+  assert.equal(lowOf(-30, -10, { hum, findings: [finding("rumble"), finding("hum")] }).poles, 2);
+  // a DC offset is subtracted at declip's gain, after it and before the high-pass
+  const both = repairPlan(made({ dc: { values: [0.05], db: -26 }, clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 }, findings: [finding("clipped"), finding("dc")] }));
+  const gain = both.steps.find((s) => s.id === "declip").gainDb;
+  near(Number(both.graph.match(/dcshift=shift=([-\d.e]+)/)[1]), -0.05 * 10 ** (gain / 20), 1e-4, "the offset at declip's gain");
+  assert.ok(both.graph.indexOf("adeclip") < both.graph.indexOf("dcshift") && both.graph.indexOf("dcshift") < both.graph.indexOf("highpass"));
+});
+
+test("plan: declip makes headroom, clicks get adeclick over a plosive's release", () => {
+  const p = repairPlan(made({ clipping: { peakDb: -1, ceilingDb: -1, pileUp: 40, share: 0.004, exactShare: 0.004 }, findings: [finding("clipped")] }));
+  const st = p.steps.find((s) => s.id === "declip");
+  // the ceiling lifted to full scale for adeclip (with the 0.1 dB under it), then the old ceiling at −6 dBFS
+  assert.equal(st.gainDb, -5);
+  assert.match(p.graph, /volume=1\.1dB,adeclip=[^,]+,volume=-6\.1dB/);
+  const k = repairPlan(made({ clicks: { count: 30, over: { 20: 30, 30: 12, 40: 4 }, at: [] }, findings: [finding("clicks")] }));
+  assert.deepEqual(k.graph.match(/adeclick=[^,;[]+/g), ["adeclick=w=55:o=75:a=2:t=8:b=1"]);
 });
 
 test("plan: the denoise method, its strength, and what is left", () => {
@@ -467,6 +498,46 @@ test("after: the tone stage's filters run at the end of the same pass", { skip }
 test("a filter ffmpeg lacks is one sentence naming it", { skip }, () => {
   assert.throws(() => checkFilters(["afftdn", "nosuchfilter"]), (e) => e instanceof Refusal && /no nosuchfilter filter/.test(e.message) && !e.message.includes("\n"));
   checkFilters(["afftdn", "adeclip", "adeclick", "asendcmd", "concat", "amix", "equalizer", "highpass", "dcshift", "pan"]);
+});
+
+test("a file whose name begins with a dash or holds a colon is repaired, not read as an option or a protocol", { skip }, async () => {
+  // (named relative to the working folder, as a person types them)
+  fs.copyFileSync(base, file("take:1.wav"));
+  const m = await measure(base), was = process.cwd();
+  process.chdir(dir);
+  try {
+    const r = await repair("take:1.wav", "-out.wav", m);
+    assert.deepEqual(ids(r.steps), ["highpass"]);
+  } finally { process.chdir(was); }
+  assert.equal(samples(file("-out.wav")).length, samples(base).length);
+});
+
+test("more than two channels: mixed to two as measure reads them, then to one (a voice in the centre channel alone)", { skip }, async () => {
+  fault("centre.wav", "[0:a]pan=5.1|FC=c0[o]");
+  const m = await measure(file("centre.wav"));
+  const { r, out } = await mended("centre.wav", m);
+  assert.equal(r.steps[0].id, "channels");
+  // (ffmpeg's downmix puts the centre into both at −3 dB; the front left alone would be silent)
+  near(20 * Math.log10(rms(samples(out)) / rms(samples(base))), -3, 1, "level");
+});
+
+test("what ffmpeg wrote is checked: a sample beyond ±16 or a failed run is a refusal, and no file is left", { skip }, async () => {
+  // a sample of 1e11 (ffmpeg 9.0.2's arnndn wrote such values) is found like a NaN
+  const raw = new Float32Array(48000).fill(0.1);
+  raw[30000] = 1e11;
+  fs.writeFileSync(file("big.raw"), Buffer.from(raw.buffer));
+  run(["-f", "f32le", "-ar", "48000", "-ac", "1", "-i", file("big.raw"), "-c:a", "pcm_f32le", file("big.wav")]);
+  const found = await invalidSample(file("big.wav"));
+  assert.match(found?.value ?? "", /^a sample of 1\.0e\+11$/);
+  near(found.at, 30000 / 48000, 1e-6, "where");
+  // filters that write such a sample (here the tone stage's `after`, 60 dB up): refused, the output removed
+  const m = await measure(base);
+  const out = file("loud.out.wav");
+  await assert.rejects(repair(base, out, m, { after: "volume=60dB" }), (e) => e instanceof Refusal && /^ffmpeg's filters wrote a sample of /.test(e.message) && !e.message.includes("\n"));
+  assert.equal(fs.existsSync(out), false);
+  // a file ffmpeg cannot read: one sentence that says what to check
+  fs.writeFileSync(file("not-sound.wav"), "no sound here\n");
+  await assert.rejects(repair(file("not-sound.wav"), file("not-sound.out.wav"), m), (e) => e instanceof Refusal && /^ffmpeg could not repair not-sound\.wav .*check that it plays/.test(e.message) && !e.message.includes("\n"));
 });
 
 function near(x, y, by, what = "") { assert.ok(Math.abs(x - y) <= by, `${what} ${x} is not within ${by} of ${y}`); }
