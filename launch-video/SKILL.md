@@ -23,7 +23,7 @@ This skill is a thin layer over **HyperFrames' own guides**, adding the platform
 
 ## What it needs
 
-Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `platform-zones`, `captions`, `transcribe` and (for a brand without a kit) `brand-kit` beside this skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (the tool finds it). No HeyGen account, nothing to `npm install`. Something missing: say so in one sentence, never install it.
+Node 20+, ffmpeg, the HyperFrames CLI (the `hyperframes` template needs it too), agentitos' `platform-zones`, `captions`, `transcribe`, `voice-sound` and (for a brand without a kit) `brand-kit` beside this skill, and OpenRouter: `OPENROUTER_API_KEY`, or on a Sprite the gateway's connection (the tool finds it). No HeyGen account, nothing to `npm install`. Something missing: say so in one sentence, never install it.
 
 ## The guides
 
@@ -98,7 +98,7 @@ node <skill>/tools/launch.mjs board launch/<name> launch/<name>/board
 
 A film over about 15 s gets music and sound effects on its visible actions (sound.md); a voice only when the person asked for one or the storyline is narrated.
 
-- **Voice:** read `<skill>/references/voice-and-captions.md` before writing the script (`script.json`, choosing the voice, `voice`, then `captions`). The person's own recorded voice (a narration cut by best-takes) is the voice instead, and the film follows it: the same file says how (`narration`, and `--gap` where footage plays its own sound between two of its words).
+- **Voice:** read `<skill>/references/voice-and-captions.md` before writing the script (`script.json`, choosing the voice, `voice`, then `captions`). The person's own voice (a narration cut by best-takes, or a recording with transcribe's words) is the voice instead, and the film follows it: that file says how (`narration`, its sound, `--gap` for footage with its own sound).
 - **Music:** `node <skill>/tools/launch.mjs music launch/<name> artifacts/<name>/composition --prompt "<feel, tempo, instruments, from the storyline's sound line>" --seconds <the film's length: with a voice, its last word and about 3 s more>` composes it with Google's Lyria 3 into `assets/music.mp3`, faded at the end. Once the film has its `<audio id="music">` (step 7), `hyperframes beats artifacts/<name>/composition` finds its beats; the payoff and the mark land on strong ones. The person's own track always comes first. With a voice, once voice and music are placed: `node <skill>/tools/launch.mjs level launch/<name> artifacts/<name>/composition` lays the music level under the voice while it speaks and through short pauses, and lets it come up in pauses of a second or more and after the last word (a volume lane, never a compressor keyed by the voice: that brings the music up in every breath), and takes it out while footage plays its own sound. Again after the voice or the music moved. Lyria 3 Pro composes about three minutes at most (175 s for 236 asked, twice, 2026-11-19), and a take winds down a few seconds before its end: for a longer film a second take for the rest (`music` into another work folder), joined with ffmpeg where footage takes the music out or in a long pause, each take's own ending on a film's end or a footage's start.
 - **Sound effects:** `hyperframes media-use resolve --type sfx --intent "<soft mouse click>" --project artifacts/<name>/composition` (free, Openverse), only where something happens on screen (sound.md §4).
 
@@ -125,7 +125,7 @@ They name a moment ("at 0:07 the text is too small", "another voice", "more ener
 
 ### 11. The video
 
-Only after their "looks good": say in one sentence that you are rendering, render with the `render` tool, name `<name>` (writes `artifacts/<name>.mp4`), then `node <skill>/tools/launch.mjs finish artifacts/<name>.mp4` brings it to −14 LUFS, the platforms' loudness. Say in one sentence that it is ready, with the download link, and offer a button "Publish it": then follow agentitos' **publish-video** (beside this skill) with the video; it checks it, writes the texts with video-descriptions and schedules through Storrito. Never call Storrito's schedule procedures yourself.
+Only after their "looks good": say in one sentence that you are rendering, render with the `render` tool, name `<name>` (writes `artifacts/<name>.mp4`), then `node <skill>/tools/launch.mjs finish artifacts/<name>.mp4` levels it for the platforms. Say in one sentence that it is ready, with the download link, and offer a button "Publish it": then follow agentitos' **publish-video** (beside this skill) with the video; it checks it, writes the texts with video-descriptions and schedules through Storrito. Never call Storrito's schedule procedures yourself.
 
 `remember` the person's platforms, voice and caption style for the next film.
 
