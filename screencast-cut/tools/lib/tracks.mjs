@@ -7,7 +7,10 @@
 //                                                 level and speed with 20 ms fades; the muted
 //                                                 pieces the recording's room (room.mjs) at the
 //                                                 level of the words before them, as long as it
-//                                                 lasts, else silence
+//                                                 lasts, else silence; a float WAV for .wav
+//   levelledVoice(wav, out, { target, ceiling }, level)   that voice at its loudness, its peaks
+//                                                 held, by voice-sound's level stage: the file
+//                                                 the composition mounts
 //   cameraTrack(file, offset, pieces, out, opts)  the webcam at every piece's moment and speed
 //   backdropTrack(pick, pieces, out, opts)        each piece's screen, small and blurred: the
 //                                                 background behind the shots
@@ -95,9 +98,42 @@ export function voiceTrack(file, pieces, out, { tone } = {}) {
   // a cut of silence alone still needs an input for ffmpeg: the file, unused
   const ins = spoken.length ? inputs(file, spoken, (p) => [p.in, p.duration * (p.rate || 1)]) : room ? [] : ["-i", file];
   if (room) ins.push("-i", room.file);
-  run(["-v", "error", "-y", ...ins, "-filter_complex", graph, "-map", "[out]", "-ac", "1", "-c:a", "aac", "-b:a", "192k", out], "the voice's track");
+  // 32-bit float in .wav: a take raised past full scale stays whole for the level stage after it
+  const codec = /\.wav$/i.test(out) ? ["-c:a", "pcm_f32le"] : ["-c:a", "aac", "-b:a", "192k"];
+  run(["-v", "error", "-y", ...ins, "-filter_complex", graph, "-map", "[out]", "-ac", "1", ...codec, out], "the voice's track");
   fs.writeFileSync(`${out}.json`, key);
   return out;
+}
+
+// The cut's voice (`wav`, voiceTrack's, its takes evened, the room in its muted pieces) at its
+// loudness as `out`, by voice-sound's level stage (voicesound.levelVoice): `--loudness <target>`
+// as played on two speakers (one channel, which the composition plays whole on both: the file
+// measures 3 LU lower), `--peak <ceiling>` the bus's ceiling, measured on `out` as encoded; a
+// leveller only where the phrases are uneven, held through the pauses, a slow limiter for the
+// loudest peaks. Made again only when the cut or the numbers changed (`<out>.level.json`).
+// level: the levelVoice of voicesound.mjs. Where voice-sound refuses or fails, the cut's voice as
+// it is, said: the bus's ceiling and finish then do the rest.
+// → { lufs (as played), measured (the file's), peak, steps, levelled, said }
+export function levelledVoice(wav, out, { target, ceiling }, level) {
+  const key = JSON.stringify({ cut: fs.readFileSync(`${wav}.json`, "utf8"), target, ceiling });
+  const mark = `${out}.level.json`;
+  try {
+    const done = JSON.parse(fs.readFileSync(mark, "utf8"));
+    if (done.key === key && fs.existsSync(out)) return done.result;
+  } catch {}
+  fs.rmSync(mark, { force: true });
+  const r = level(wav, out, ["--loudness", String(target), "--peak", String(ceiling)]);
+  let result;
+  if (r.report) {
+    const d = r.report.delivered || {};
+    result = { lufs: d.asPlayedLufs ?? d.lufs, measured: d.lufs, peak: d.truePeak, steps: (r.report.steps || []).map((s) => s.id).filter(Boolean),
+      left: (r.report.left || []).map((x) => x.why).filter(Boolean), levelled: true };
+  } else {
+    run(["-v", "error", "-y", "-i", wav, "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", out], "the voice's track");
+    result = { levelled: false, why: r.error };
+  }
+  fs.writeFileSync(mark, JSON.stringify({ key, result }));
+  return result;
 }
 
 // The webcam piece by piece: each an ffmpeg of its own that seeks to the piece's moment, decodes

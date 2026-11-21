@@ -54,6 +54,9 @@ test("uploaded files named by their roles give what the same files in a recorder
     assert.match(loose.stdout, /^Uploaded files have no recording\.json, so no start times and no pauses: they start together, and each one with sound is lined up with the voice by its sound only within 1\.5 s of that; files that started further apart need --offset <role>=<seconds> \(that one began so many seconds after the others\), else their match by sound can be false, and one without sound stays where it starts\.$/m);
     assert.match(loose.stdout, /^The uploaded files: 2 sources/m);
     assert.match(loose.stdout, /Next, the words of/);
+    // the voice went through voice-sound, and new says what it mended
+    assert.match(loose.stdout, /^voice: voice-sound mended: highpass: /m);
+    assert.ok(Array.isArray(JSON.parse(fs.readFileSync(path.join(cwd, "out/loose/source/sources.json"), "utf8")).sound.steps));
 
     // the same files, byte for byte, but sources.json's names of where they came from and the clock's zero
     const a = path.join(cwd, "out/folder/source"), b = path.join(cwd, "out/loose/source");
@@ -250,5 +253,42 @@ test("two uploads that began 5 s apart: the match fails and the output names --o
     assert.ok(lined.sources[o].sync >= 0.5, `matched: ${JSON.stringify(lined.sources[o])}`);
     assert.ok(Math.abs(lined.sources.webcam.offset - lined.sources.screen.offset - 5) < 0.05, `5 s apart: ${lined.sources.screen.offset}, ${lined.sources.webcam.offset}`);
     assert.doesNotMatch(given.stdout, /start over with --offset/);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test("the voice goes through voice-sound as a program: clean <the microphone> <a .wav> --level off --mono --json; its refusal and its failure are passed on in a sentence, the voice then as recorded", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "uploads-"));
+  try {
+    media(path.join(cwd, "uploads"));
+    // a stand-in for voice-sound's tool: it writes down how it was called, then does what MODE says
+    const fake = path.join(cwd, "voice.mjs"), calls = path.join(cwd, "calls.json");
+    fs.writeFileSync(fake, `import fs from "node:fs"; import { spawnSync } from "node:child_process";
+const a = process.argv.slice(2); fs.writeFileSync(${JSON.stringify(calls)}, JSON.stringify(a));
+if (process.env.MODE === "refuse") { console.log(JSON.stringify({ error: "No voice was found in this recording." })); process.exit(1); }
+if (process.env.MODE === "crash") { console.error("boom"); process.exit(3); }
+spawnSync("ffmpeg", ["-v", "error", "-y", "-i", a[1], "-vn", "-ac", "1", a[2]]);
+console.log(JSON.stringify({ steps: [{ stage: "repair", id: "denoise", why: "Noise 20 dB under the speech: 12 dB less." }, { stage: "level", id: "loudness", why: "kept" }], left: [{ stage: "repair", id: "noise", why: "It changes (a keyboard): left." }], notJudged: [] }));
+`);
+    const go = (name, mode) => spawnSync(process.execPath, [TOOL, "new", `out/${name}`, "--screen", "uploads/a.mp4"], { cwd, encoding: "utf8", env: { ...ENV, VOICE_SOUND: fake, MODE: mode }, timeout: 120000 });
+
+    const ok = go("ok", "ok");
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    const args = JSON.parse(fs.readFileSync(calls, "utf8"));
+    assert.equal(args[0], "clean");
+    assert.match(args[1], /out\/ok\/source\/screen\.mp4$/, "the whole microphone, before anything is cut");
+    assert.match(args[2], /\.wav$/);
+    assert.deepEqual(args.slice(3), ["--level", "off", "--mono", "--json"]);
+    assert.match(ok.stdout, /^voice: voice-sound mended: denoise: Noise 20 dB under the speech: 12 dB less\.$/m, "its level stage is not said: it kept the loudness");
+    assert.match(ok.stdout, /^voice: voice-sound could not mend: noise: It changes \(a keyboard\): left\.$/m);
+    assert.ok(!fs.readdirSync(path.join(cwd, "out/ok/source")).some((f) => f.startsWith("voice.sound")), "its file is not kept beside the voice");
+
+    for (const [mode, said] of [["refuse", "No voice was found in this recording."], ["crash", "voice-sound stopped (exit 3): boom"]]) {
+      const r = go(mode, mode);
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.ok(r.stdout.split("\n").some((l) => l.startsWith(`⚠ voice: not mended, voice-sound said: ${said}`) && l.includes(" The voice is screen's microphone as recorded")), r.stdout);
+      const meta = JSON.parse(fs.readFileSync(path.join(cwd, `out/${mode}/source/sources.json`), "utf8"));
+      assert.equal(meta.sound.error, said);
+      assert.ok(fs.statSync(path.join(cwd, `out/${mode}/source/voice.m4a`)).size > 1000, "the voice as recorded");
+    }
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });
