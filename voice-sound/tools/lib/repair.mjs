@@ -426,8 +426,12 @@ export function repairPlan(m, opts = {}) {
   // a strength the person named where neither found noise: their word that it is noisy, so the
   // noise step runs at that strength's limit, not at what the aim needs
   const named = !noisy && !under && (strength === "gentle" || strength === "strong") && wants !== "off";
+  // a clearly reverberant room (roomDenoise), at --denoise auto: the neural denoiser takes its tail
+  // (opts.room: the lab's bound, for a comparison)
+  const room = roomDenoise(m, { ...ROOM_DENOISE, ...opts.room });
+  const forRoom = room.fires && strength === "auto" && (wants === "dpdfnet" || asked == null);
   // the neural denoiser: asked for, or the default where the machine has it
-  const dn = (noisy || under || named) && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
+  const dn = (noisy || under || named || forRoom) && strength !== "off" && (wants === "dpdfnet" || asked == null) ? neuralDenoiser() : null;
   if (wants === "dpdfnet" && (noisy || named) && strength !== "off" && !dn) refuse(`dpdfnet needs sherpa-onnx's offline denoiser and the DPDFNet-2 model (${DPDFNET_MODEL}): name them in VOICE_SOUND_DENOISER and VOICE_SOUND_DPDFNET (the skill ships neither).`);
   let neural = null;
   // (the denoiser would have run but the machine has none: not the person's choice of a method or
@@ -439,11 +443,12 @@ export function repairPlan(m, opts = {}) {
   if (dn) {
     // its attenuation limit: what the aim needs, never more than --denoise allows (DPDFNET_LIMITS)
     const est = under ? under.underDb : snr;
-    const cap = DPDFNET_LIMITS[strength];
+    // (a room: the strong cap whatever the noise needs; the denoiser takes the room's tail as noise)
+    const cap = DPDFNET_LIMITS[forRoom ? "strong" : strength];
     // (strong where measure named noise: the person's word that auto was not enough, so its cap
     // whatever the aim would need; gentle stays at the aim's need, never more than auto)
     const aim = DENOISE_AIM_DB - est, past = noisy && strength === "strong" && aim < cap;
-    const needed = named || past ? cap : aim;
+    const needed = named || past || forRoom ? cap : aim;
     const limit = r1(Math.max(0, Math.min(needed, cap)));
     if (limit >= DENOISE_MIN_DB) {
       method = "dpdfnet";
@@ -457,14 +462,16 @@ export function repairPlan(m, opts = {}) {
         : past ? `, more than the ${dB(Math.max(0, aim))} dB the ${DENOISE_AIM_DB} dB aim needs, as --denoise strong asks` : "";
       const longest = Math.max(...cut.pieces.map((p) => p.to - p.from)) / RATE;
       const many = cut.pieces.length > 1 ? `, in ${cut.pieces.length} overlapping pieces of up to ${longest < 120 ? `${Math.round(longest)} s` : `${Math.ceil(longest / 60)} minutes`}` : "";
-      const said = under
+      const roomSaid = forRoom && `A reverberant room: the voice's decays last about ${room.medianS.toFixed(1)} s (the median of ${room.decays}), so much of the room stands beside the voice${noisy ? `, and noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}` : under ? `, and noise about ${dB(est)} dB under the voice` : ""}: a neural denoiser (DPDFNet-2), which takes the room's tail for noise, asked to take at most ${dB(limit)} dB off`;
+      const said = forRoom ? roomSaid : under
         ? `Noise under the voice, which the pauses do not show, found by what the neural denoiser took out of ${Math.round(under.sampleS)} s of it: about ${dB(est)} dB under the speech; DPDFNet-2 asked to take at most ${dB(limit)} dB off`
         : named ? `Asked for with --denoise ${strength}, although measure found no noise in the pauses${snr != null ? ` (they lie ${dB(snr)} dB under the speech)` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off`
         : `Noise ${dB(snr)} dB under the speech${n?.kind ? `, ${n.kind}` : ""}: a neural denoiser (DPDFNet-2) asked to take at most ${dB(limit)} dB off`;
       steps.push({
-        id: "denoise", why: `${said}${named ? "" : tail}${many}.`,
+        id: "denoise", why: `${said}${named || forRoom ? "" : tail}${many}.`,
         method, snrDb: est, aimDb: DENOISE_AIM_DB, capDb: cap, reduceDb: limit, limitDb: limit, model: path.basename(dn.model),
         ...(under && { underVoiceDb: est, probe: under }), ...(named && { asked: true }), ...(past && { pastAim: true }),
+        ...(forRoom && { room: { medianS: room.medianS, decays: room.decays, rt60: m.room?.rt60 ?? null } }),
         pieces: cut.pieces.map((p) => ({ from: r2(p.from / RATE), to: r2(p.to / RATE) })), seams: cut.seams.map((s) => ({ at: r2(s.at / RATE), pause: s.pause })),
       });
       if (noisy && n?.kind === "changing")
@@ -521,7 +528,9 @@ export function repairPlan(m, opts = {}) {
   } else if (noisy) left.push({ id: "noise", why: `The noise stays ${dB(snr)} dB under the speech: denoising is off.` });
 
   // what no filter here takes away
-  if (has("roomy")) left.push({ id: "roomy", why: `The room's reverberation (about ${m.room?.rt60?.toFixed(1) ?? "half a"} s) stays: none of ffmpeg's filters removes it; a closer microphone or a softer room next time.` });
+  if (method === "dpdfnet" && forRoom) left.push({ id: "roomy", why: "Some of the room stays: the neural denoiser takes its tail between the words, not the reverberation within them; a closer microphone or a softer room next time." });
+  else if (forRoom && strength !== "off" && asked == null && !dn) left.push({ id: "roomy", why: `The room's reverberation (its decays about ${room.medianS.toFixed(1)} s) stays: none of ffmpeg's filters removes it; a machine with the neural denoiser takes much of its tail; a closer microphone or a softer room next time.` });
+  else if (has("roomy") || (room.fires && method !== "dpdfnet")) left.push({ id: "roomy", why: `The room's reverberation (about ${(has("roomy") ? m.room?.rt60 : room.medianS)?.toFixed(1) ?? "half a"} s) stays: none of ffmpeg's filters removes it; a closer microphone or a softer room next time.` });
 
   const after = (opts.after || "").trim();
   // (the stage's passes are built from these, see repair: the channels; adeclip and the gains round
@@ -962,9 +971,10 @@ function fallbackPlan(m, opts, e) {
   const what = e.voice ? `the neural denoiser ${e.message.replace(/^it /, "")} and its result was thrown away` : `the neural denoiser failed (${e.message})`;
   const said = `${what}, so ffmpeg's ${plan.method} did this for the whole recording`;
   const st = plan.steps.find((s) => s.id === "denoise");
-  const u = opts.underVoice;
+  const u = opts.underVoice, room = roomDenoise(m, { ...ROOM_DENOISE, ...opts.room });
   const fallback = { from: "dpdfnet", reason: e.message, ...(e.voice && { voice: e.voice }) };
   if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; ${said}.`, fallback });
+  else if (room.fires && (opts.denoise ?? "auto") === "auto") plan.steps.push({ id: "denoise", why: `A reverberant room (the voice's decays about ${room.medianS.toFixed(1)} s), but ${e.voice ? `the neural denoiser ${e.message.replace(/^it /, "")}, so its result was thrown away` : `the neural denoiser failed (${e.message})`}, and none of ffmpeg's filters takes a room: it stays.`, method: "off", room: { medianS: room.medianS, decays: room.decays }, fallback });
   else if (u?.fires) plan.steps.push({ id: "denoise", why: `Noise lies under the voice, about ${dB(u.underDb)} dB under the speech as the neural denoiser's probe found it, but ${e.voice ? `on the whole recording ${what.replace(/^the neural denoiser/, "the denoiser")}` : `the denoiser then failed (${e.message})`}, and ffmpeg's methods learn a noise from the pauses, where there is too little of it: it stays.`, method: "off", underVoiceDb: u.underDb, probe: u, fallback });
   else plan.steps.push({ id: "denoise", why: `The ${what.replace(/^the /, "")}, and ffmpeg's method has nothing to take off here.`, method: "off", fallback });
   if (e.voice) plan.left.push({ id: "noise", why: `The neural denoiser took this voice for noise (${e.message.replace(/^it took the voice itself down \((.*)\)$/, "$1")}), so its result was thrown away${st ? `; ffmpeg's ${plan.method} took off what it could` : " and any noise under the voice stays"}.` });
@@ -1039,8 +1049,47 @@ export const PROBE_MIN_DB = 8;
 // band at 12.8 dB lost 0.23 and 1.5 dB, and PESQ fell from 3.62 to 3.13 (scored with the lab's
 // score.py, 2026-11-20). So 0.2 and 1.5 dB.
 export const PROBE_KEPT = { shareMax: 0.2, levelMaxDb: 1.5 };
+// Where the pauses (or the quietest stretches of a recording without them) lie PROBE_QUIET.snrDb
+// and more under the speech, the recording has no steady noise at all: a phone that gates its
+// pauses to near silence. Noise under such a voice must stand out clearly to count, at most
+// PROBE_QUIET.firesDb under it. A dry voice spoken straight through on a phone (2026-11-21, its
+// pauses 68 dB under) read 17.1 dB: the denoiser took 13 to 21 dB under each band of the voice
+// itself between 80 Hz and 8 kHz, most in its low end, and the speaker, hearing it, wanted it
+// left as it was. A café under a voice with its pauses 70 dB under (a headset's) read 13.9 dB and
+// still fires; nothing else on the tune split has its pauses that far under and would fire. A thin
+// margin both ways.
+export const PROBE_QUIET = { snrDb: 60, firesDb: 15 };
 // (for the lab only: VOICE_SOUND_PROBE_DB another threshold)
 const probeThreshold = () => Number(process.env.VOICE_SOUND_PROBE_DB) || PROBE_FIRES_DB;
+// whether the probe declines an estimate that would fire, the recording's pauses lying snrDb under
+// its speech (PROBE_QUIET)
+export const quietDeclines = (underDb, snrDb, threshold = PROBE_FIRES_DB, t = PROBE_QUIET) =>
+  Number.isFinite(snrDb) && snrDb >= t.snrDb && underDb > t.firesDb && underDb <= threshold;
+
+// ---------------------------------------------------------------- the room
+//
+// A clearly reverberant room, at --denoise auto, where the machine has the neural denoiser: it
+// runs at its strong cap (DPDFNET_LIMITS.strong), which takes the room's tail between the words
+// for noise (a study of 2026-11-21: on six built-in rooms of RT60 over 1 s DNSMOS overall rose
+// from 1.98 to 2.57 with none worse; ffmpeg's filters and a late-reverberation filter of its own
+// did not help). The reading is measure's room.medianS, the median of the voice's free decays
+// (the room's rt60 is their 25th percentile, which a voice that fades does not raise): a decay
+// stays long in most of them only where much of the room stands beside the voice. The bound, from
+// the tune split (2026-11-21): 42 clean readers 0.09 to 0.20 s, 40 other real recordings up to
+// 0.59 (a speakerphone with noise, which the noise step takes anyway; a council meeting through a
+// video call at 0.55, whose voice the denoiser takes down, which its check throws away), 42 small
+// built-in rooms (RT60 0.2 to 0.6 s) 0.20 to 0.93 with 10 of them at 0.55 and over (true RT60
+// 0.42 to 0.6; 8 of them named roomy), 42 large ones (1.0 to 2.5 s) 0.27 to 1.99 with 30 over;
+// a phone in a very reverberant room 0.58 (its rt60 0.45; the speaker, hearing it, chose the
+// denoiser at 24 dB on it), the same phone and voice in a small furnished room 0.40 (the speaker
+// wanted its little room kept). So 0.55: between the two of the same voice, under the large
+// rooms' median. Where it fires the probe does not run: the denoiser runs anyway, at the cap.
+export const ROOM_DENOISE = { medianS: 0.55, decays: 1 };
+export function roomDenoise(m, t = ROOM_DENOISE) {
+  const r = m.room || {};
+  const fires = Number.isFinite(r.medianS) && (r.decays ?? 0) >= t.decays && r.medianS >= t.medianS;
+  return { fires, medianS: r.medianS ?? null, decays: r.decays ?? 0 };
+}
 
 // ---------------------------------------------------------------- what it did to the voice
 //
@@ -1251,6 +1300,9 @@ export async function probeNoise(file, m, opts = {}, workDir = os.tmpdir(), pre 
       return done({ ...found, declined: "voice", why: `The neural denoiser took the voice itself down in its sample (${voice.said}), so what it took out is no noise under the voice: nothing denoised.` });
     if (underDb < PROBE_MIN_DB)
       return done({ ...found, declined: "voice", why: `What the neural denoiser took out of its sample is nearly as loud as what it kept (about ${dB(underDb)} dB under it): that is the voice taken for noise, not noise under it, so nothing is denoised.` });
+    const snr = m.levels?.snrADb ?? m.levels?.snrDb;
+    if (quietDeclines(underDb, snr, probeThreshold(), { ...PROBE_QUIET, ...opts.probeQuiet }))
+      return done({ ...found, declined: "quiet", why: `The pauses lie ${dB(snr)} dB under the speech, so there is no steady noise, and what the neural denoiser took out of its sample lies ${dB(underDb)} dB under the voice, further than the ${PROBE_QUIET.firesDb} dB at which noise counts in so quiet a recording: that is some of the voice itself, so nothing is denoised.` });
     return done({ fires: underDb <= probeThreshold(), ...found });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -1349,9 +1349,11 @@ function roomOf(st, F, floorDb, speechKw) {
     if (slope >= 0 || r2v < 0.8) continue;
     rts.push(-60 / slope); ranges.push(peak - 5 - low);
   }
-  if (!rts.length) return { rt60: null, decays: 0, rangeDb: null, confidence: "none" };
+  if (!rts.length) return { rt60: null, medianS: null, decays: 0, rangeDb: null, confidence: "none" };
   const range = quantile(ranges, 0.5);
   // (confidence: low under 6 decays or a median range under 12 dB, high from 40 decays over 20 dB)
   const confidence = rts.length < 6 || range < 12 ? "low" : rts.length < 40 || range < 20 ? "medium" : "high";
-  return { rt60: r2(quantile(rts, 0.25)), decays: rts.length, rangeDb: r1(range), confidence };
+  // (medianS: the decays' median, for the room step of repair: the 25th percentile keeps a voice
+  // that fades out of the estimate, the median shows how much of the room stands in most of them)
+  return { rt60: r2(quantile(rts, 0.25)), medianS: r2(quantile(rts, 0.5)), decays: rts.length, rangeDb: r1(range), confidence };
 }
