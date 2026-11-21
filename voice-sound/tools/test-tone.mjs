@@ -75,14 +75,16 @@ test("each finding alone: its band, a gain of the right sign within the bounds",
     assert.deepEqual(plan.left, []);
     assert.ok(toneFilters(plan).split(",").every((f) => ONLY.test(f)), toneFilters(plan));
   }
-  // the share: half of the distance beyond the tolerance, measured as the measure would see it
+  // the share: the whole distance beyond the tolerance, measured as the measure would see it
+  assert.equal(SHARE, 1);
   const harsh = tonePlan(made({ diffs: { 2000: 10 } })).steps[0];
-  near(harsh.changeDb, -SHARE * (10 - TOLERANCE_DB), 0.15, "harsh: change aimed at");
-  // bounded: far beyond the tolerance still at most the bounds
+  near(harsh.changeDb, -(10 - TOLERANCE_DB), 0.15, "harsh: change aimed at");
+  // bounded: far beyond the tolerance at the bounds and no further
   const far = tonePlan(made({ diffs: { 100: 40, 2000: 40 } }));
   assert.ok(eqBands(far).every((b) => b.gainDb >= -MAX_CUT_DB), JSON.stringify(eqBands(far)));
+  assert.ok(eqBands(far).some((b) => b.gainDb === -MAX_CUT_DB), JSON.stringify(eqBands(far)));
   const dark = tonePlan(made({ diffs: { 2000: -30, 4000: -30 } }));
-  assert.ok(boosts(dark).every((b) => b.gainDb <= MAX_BOOST_DB), JSON.stringify(eqBands(dark)));
+  assert.deepEqual(boosts(dark).map((b) => b.gainDb), [MAX_BOOST_DB], JSON.stringify(eqBands(dark)));
   // boom with mud: both bands cut where the measure finds them
   const muddy = tonePlan(made({ diffs: { 100: 12, 250: 9 } })).steps[0];
   assert.deepEqual(muddy.bands.map((b) => b.hz), [160, 350]);
