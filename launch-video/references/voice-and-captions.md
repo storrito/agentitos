@@ -29,13 +29,16 @@ The voice's lines are `<audio>` elements in the root `index.html`, each with an 
 
 ## A voice the person recorded
 
-A narration the person read themselves, cut by agentitos' best-takes (its voice alone: `takes/<take>/voice.cut.m4a` with every kept word's time in `takes/<take>/edit.json`), is the film's voice instead of a script spoken by a model: no `script.json`, no `voice`.
+A narration the person read themselves is the film's voice instead of a script spoken by a model: no `script.json`, no `voice`. Cut by agentitos' best-takes, it is its voice alone, `takes/<take>/voice.cut.m4a` with every kept word's time in `takes/<take>/edit.json`. A recording taken as it came gets its words from agentitos' transcribe first (`node <skill>/../transcribe/tools/transcribe.mjs uploads/<file> --out launch/<name>/narration.words.json`).
 
 ```bash
 node <skill>/tools/launch.mjs narration launch/<name> takes/<take>/voice.cut.m4a takes/<take>/edit.json artifacts/<name>/composition
+node <skill>/tools/launch.mjs narration launch/<name> uploads/<file> launch/<name>/narration.words.json artifacts/<name>/composition
 ```
 
-copies the voice into `assets/voice/narration.m4a` (without the file's tags) and writes it into `launch/<name>/voice.json` as one line with every word's time, so that `words`, `captions`, `music`, `level` and `check` take it as they take a spoken line. Place it at the film's start as the line it prints says; every beat starts on the word that says it. A new cut of the narration: `narration` again, then move the beats to the new times.
+puts the voice into `assets/voice/narration.m4a` (without the file's tags) and writes it into `launch/<name>/voice.json` as one line with every word's time, so that `words`, `captions`, `music`, `level` and `check` take it as they take a spoken line. Place it at the film's start as the line it prints says; every beat starts on the word that says it. A new cut of the narration: `narration` again, then move the beats to the new times.
+
+**Its sound.** Best-takes' cut keeps the sound best-takes gave it. A recording that is no cut gets its sound from agentitos' voice-sound first, the whole recording, as one channel at the platforms' loudness: about a tenth of its length, so a recording over a quarter of an hour runs in the background with a log (`nohup … > logs/<name>-narration.log 2>&1 &`, its end read every minute); the same recording again keeps what it made. Its line says what voice-sound did and what it left: pass on what it left in a sentence (a room, noise that changes, a knock that stays), and never say that was mended; a line about the neural denoiser failing is passed on as it says. A refusal (no voice found in it, a voice recorded far too quietly) is one sentence: pass it on in their words and ask for the recording they meant.
 
 **Footage with its own sound** (a clip that is the proof: a recording, a demo with its sound) plays where the voice stops, never under it: `--gap <s>+<len>,…` (seconds of the voice, after the last word that ends by then, and the footage's length) prints the voice as several `<audio>` of the same file (`data-media-start`, `data-duration`) and each footage's `data-start` in the gap between them, a quarter second clear of the voice on both sides. The footage is a `<video data-has-audio="true">` (or a muted `<video>` and its `<audio>`); `words` and `captions` then show nothing while it plays, and `level` takes the music out under it, with no swell beside it. A still of the footage's first frame before it (annotated as the voice explains it) lets it start where the picture already is.
 

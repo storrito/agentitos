@@ -178,6 +178,15 @@ test("check: how far under the voice the music sits, from the composition's own 
 const TOOL = path.join(path.dirname(new URL(import.meta.url).pathname), "launch.mjs");
 const drawtext = ffmpeg && /\sdrawtext\s/.test(spawnSync("ffmpeg", ["-hide_banner", "-filters"], { encoding: "utf8" }).stdout || "");
 const launch = (cwd, ...args) => spawnSync(process.execPath, [TOOL, ...args], { cwd, encoding: "utf8" });
+// voice-sound beside this skill, as the tool finds it
+const VOICE_SOUND = path.join(path.dirname(TOOL), "..", "..", "voice-sound", "tools", "voice.mjs");
+const SPRITE_VOICE_SOUND = fs.existsSync("/home/sprite/skills/voice-sound/tools/voice.mjs");
+// this skill copied alone into <dir>/alone: no voice-sound beside it
+function loneSkill(dir) {
+  const to = path.join(dir, "alone", "launch-video");
+  fs.cpSync(path.dirname(path.dirname(TOOL)), to, { recursive: true, filter: (f) => !f.includes("node_modules") });
+  return to;
+}
 const COLOURS = { red: [255, 0, 0], lime: [0, 255, 0], blue: [0, 0, 255], yellow: [255, 255, 0], magenta: [255, 0, 255], cyan: [0, 255, 255], black: [0, 0, 0] };
 
 // stills as `hyperframes snapshot --at … --no-end` names them, one flat colour each, written last first
@@ -311,12 +320,39 @@ test("finish: sharp peaks: the numbers are those of the finished file, its true 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("finishLine: what was lowered and why −14 was not reached are said, a peak left over −1 is a warning", () => {
-  assert.equal(finishLine("film.mp4", -20.3, { lufs: -14.1, peak: -1.2 }, 0), "film.mp4: −20.3 → −14.1 LUFS, true peak −1.2 dBTP, measured on the finished file. Not heard: say so.");
-  const lowered = finishLine("film.mp4", -13.4, { lufs: -18.4, peak: -1.2 }, 1);
-  assert.match(lowered, /the whole sound is 1\.0 dB lower\. Not −14: its peaks stand far over its loudness/);
-  assert.doesNotMatch(finishLine("film.mp4", -20, { lufs: -14.6, peak: -1.1 }, 0.6), /Not −14/);
-  assert.match(finishLine("film.mp4", -20, { lufs: -14, peak: -0.4 }, 0.8), /\n  ! Its true peak is still over −1 dBTP/);
+test("finishLine: what was lowered and why the target was not reached are said, a peak left over its ceiling is a warning", () => {
+  // the numbers as voice-sound's targets give them (a made-up master, to show they are not written in)
+  const t = { lufs: -14, truePeakDbtp: { aim: -1.5, max: -1 } };
+  assert.equal(finishLine("film.mp4", -20.3, { lufs: -14.1, peak: -1.2 }, 0, t), "film.mp4: −20.3 → −14.1 LUFS, true peak −1.2 dBTP, measured on the finished file. Not heard: say so.");
+  const lowered = finishLine("film.mp4", -13.4, { lufs: -18.4, peak: -1.2 }, 1, t);
+  assert.match(lowered, /over −1\.0 dBTP, so the whole sound is 1\.0 dB lower\. Not −14\.0: its peaks stand far over its loudness/);
+  assert.doesNotMatch(finishLine("film.mp4", -20, { lufs: -14.6, peak: -1.1 }, 0.6, t), /Not −14/);
+  assert.match(finishLine("film.mp4", -20, { lufs: -14, peak: -0.4 }, 0.8, t), /\n  ! Its true peak is still over −1\.0 dBTP/);
+  const other = { lufs: -16, truePeakDbtp: { aim: -2, max: -1.5 } };
+  assert.match(finishLine("film.mp4", -20, { lufs: -17, peak: -1.2 }, 0, other), /Not −16\.0: .*\n  ! Its true peak is still over −1\.5 dBTP/);
+});
+
+test("finish takes the loudness and the true peak from voice-sound's targets", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const t = JSON.parse(spawnSync(process.execPath, [VOICE_SOUND, "targets", "--json"], { encoding: "utf8" }).stdout).master;
+    const video = path.join(dir, "film.mp4");
+    run(["-f", "lavfi", "-i", "color=c=gray:s=320x180:r=30:d=3", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=3", "-af", "volume=-20dB",
+      "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", video]);
+    const r = launch(dir, "finish", "film.mp4");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const got = meterOf(video);
+    near(got.lufs, t.lufs, 0.5);
+    assert.ok(got.peak <= t.truePeakDbtp.max, `true peak ${got.peak}`);
+    // without voice-sound: one sentence, the video as rendered (a machine's clone of the skills has it)
+    if (SPRITE_VOICE_SOUND) return;
+    const alone = loneSkill(dir);
+    const before = fs.readFileSync(video);
+    const missing = spawnSync(process.execPath, [path.join(alone, "tools", "launch.mjs"), "finish", "film.mp4"], { cwd: dir, encoding: "utf8", env: { ...process.env, VOICE_SOUND: "" } });
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /^✗ The video was not levelled: The voice's sound needs agentitos' voice-sound skill beside this one/);
+    assert.ok(fs.readFileSync(video).equals(before));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("storyboardFrames: both of HyperFrames' headings, times from a range or the durations", () => {
@@ -340,16 +376,20 @@ test("recordedWords: best-takes' edit.json and transcribe's words.json, without 
   assert.equal(recordedWords({ lines: [] }), null);
 });
 
-test("narration: the recorded voice becomes a line of voice.json, its file copied without tags", { skip: !ffmpeg && "no ffmpeg" }, () => {
+test("narration: best-takes' cut becomes a line of voice.json, its file copied without tags, not cleaned again", { skip: !ffmpeg && "no ffmpeg" }, () => {
   const dir = tmp();
   try {
     const voice = path.join(dir, "voice.cut.m4a");
     run(["-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=3", "-af", "volume=-14dB", "-c:a", "aac", "-metadata", "location=+12.3456-012.3456/", voice]);
-    fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({ words: [{ i: 0, text: "One", start: 0.2, end: 0.6 }, { i: 1, text: "line.", start: 0.7, end: 1.4 }] }));
+    fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({ audio: true, voice: "voice.cut.m4a", words: [{ i: 0, text: "One", start: 0.2, end: 0.6 }, { i: 1, text: "line.", start: 0.7, end: 1.4 }] }));
     fs.mkdirSync(path.join(dir, "work"));
     fs.writeFileSync(path.join(dir, "work", "voice.json"), JSON.stringify({ model: "x", lines: [{ id: "hook", file: "assets/voice/hook.mp3", words: [] }] }));
-    const r = launch(dir, "narration", "work", "voice.cut.m4a", "edit.json", "comp");
+    // a voice-sound that is never to be called for a cut
+    const never = path.join(dir, "never.mjs");
+    fs.writeFileSync(never, `process.stdout.write(JSON.stringify({ error: "called" })); process.exit(1);\n`);
+    const r = spawnSync(process.execPath, [TOOL, "narration", "work", "voice.cut.m4a", "edit.json", "comp"], { cwd: dir, encoding: "utf8", env: { ...process.env, VOICE_SOUND: never } });
     assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /Its sound is best-takes', made from the whole recording: not cleaned again\./);
     assert.match(r.stdout, /<audio id="vo-narration" src="assets\/voice\/narration.m4a" data-start="0"/);
     const meta = JSON.parse(fs.readFileSync(path.join(dir, "work", "voice.json"), "utf8"));
     assert.deepEqual(meta.lines.map((l) => l.id), ["hook", "narration"]);
@@ -364,6 +404,106 @@ test("narration: the recorded voice becomes a line of voice.json, its file copie
     const bad = launch(dir, "narration", "work", "voice.cut.m4a", "long.json", "comp");
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /run to 9.50 s, the voice is 3.0\d s long/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// a voice made up with ffmpeg's lavfi, as voice-sound's own tests make it: a pitch that moves,
+// syllables, pauses, a little noise
+const SPEECH_S = 14.4;
+const SPEECH = `aevalsrc=exprs='st(0,120*t+3.41*(1-cos(4.398*t))+6.92*(1-cos(1.445*t)));st(1,mod(t,3.6));` +
+  `0.25*lt(ld(1),2.5)*pow(sin(12.566*ld(1)),2)*(0.6+0.4*sin(5.655*t))*2*(ld(0)-floor(ld(0)+0.5))':s=48000:d=${SPEECH_S},` +
+  `equalizer=f=500:t=o:w=1:g=10,equalizer=f=1500:t=o:w=1:g=6,equalizer=f=2700:t=o:w=0.8:g=4,lowpass=f=5000[v];` +
+  `anoisesrc=color=pink:amplitude=0.0015:r=48000:d=${SPEECH_S}:seed=5[n];[v][n]amix=inputs=2:normalize=0,volume=-12dB`;
+const TALK_WORDS = { words: [{ text: "One", start: 0.2, end: 0.6, kind: "word" }, { text: "line.", start: 0.7, end: 1.4, kind: "word" }, { text: "End.", start: 13.0, end: 13.5, kind: "word" }] };
+
+test("narration: a recording that is no best-takes cut gets its sound from voice-sound, one channel at the target as the film plays it, as long as it came, without tags", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    const t = JSON.parse(spawnSync(process.execPath, [VOICE_SOUND, "targets", "--json"], { encoding: "utf8" }).stdout).master;
+    // stereo, as a phone records it, with a place in its tags
+    run(["-filter_complex", SPEECH, "-ac", "2", "-c:a", "aac", "-metadata", "location=+12.3456-012.3456/", path.join(dir, "talk.m4a")]);
+    fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(TALK_WORDS));
+    // ffmpeg's methods only: the same on every machine
+    const env = { ...process.env, VOICE_SOUND_DENOISER: "/nonexistent/no-denoiser" };
+    const r = spawnSync(process.execPath, [TOOL, "narration", "work", "talk.m4a", "words.json", "comp"], { cwd: dir, encoding: "utf8", env });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /Its sound by voice-sound \(work\/sound\/narration\.m4a\.json\): [a-z, -]*loudness[a-z, -]*, at −1\d\.\d LUFS as the film plays it\./);
+    const dest = path.join(dir, "comp", "assets", "voice", "narration.m4a");
+    const a = JSON.parse(spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", dest], { encoding: "utf8" }).stdout);
+    assert.equal(a.streams[0].channels, 1);
+    near(Number(a.format.duration), SPEECH_S, 0.06);
+    // as the film plays it: the one channel on both speakers
+    near(loudness([dest]), t.lufs, 0.5);
+    assert.deepEqual(tagsOf(dest).filter((k) => /location|gps/i.test(k)), []);
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, "work", "voice.json"), "utf8"));
+    assert.equal(meta.lines[0].file, "assets/voice/narration.m4a");
+    assert.equal(meta.lines[0].sound.by, "voice-sound");
+    assert.deepEqual(meta.lines[0].words.map((w) => w.text), ["One", "line.", "End."]);
+    // the report stays in the work folder, the cleaned file only in the composition
+    assert.ok(fs.existsSync(path.join(dir, "work", "sound", "narration.m4a.json")));
+    assert.ok(!fs.existsSync(path.join(dir, "work", "sound", "narration.m4a")));
+    assert.deepEqual(fs.readdirSync(path.join(dir, "comp", "assets", "voice")), ["narration.m4a"]);
+    // the same recording again: what voice-sound made is kept, not made again
+    const made = fs.statSync(dest).mtimeMs;
+    const again = spawnSync(process.execPath, [TOOL, "narration", "work", "talk.m4a", "words.json", "comp"], { cwd: dir, encoding: "utf8", env });
+    assert.equal(again.status, 0, again.stdout + again.stderr);
+    assert.equal(fs.statSync(dest).mtimeMs, made);
+    assert.match(again.stdout, /Its sound by voice-sound/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// a stand-in for voice-sound's tool: it writes down how it was called and answers as `mode` says
+const STAND_IN = `import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.STAND_IN_CALLS, JSON.stringify(args) + "\\n");
+const mode = process.env.STAND_IN_MODE;
+if (mode === "refuse") { process.stdout.write(JSON.stringify({ error: "No voice was found in talk.m4a: bring a recording in which someone speaks." }) + "\\n"); process.exit(1); }
+if (mode === "crash") { process.stderr.write("something broke\\n"); process.exit(3); }
+const [, input, out] = args;
+const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-i", input, "-ac", "1", "-c:a", "aac", "-map_metadata", "-1", out]);
+if (r.status) process.exit(4);
+const report = { steps: [{ id: "highpass", why: "80 Hz." }, { id: "denoise", why: "ffmpeg's method.", fallback: { from: "dpdfnet", reason: "it broke" } }, { id: "loudness", why: "−14." }],
+  left: [{ id: "roomy", why: "The room stays: next time closer to the microphone." }], delivered: { asPlayedLufs: -14.02 } };
+fs.writeFileSync(out + ".json", JSON.stringify(report));
+process.stdout.write(JSON.stringify(report) + "\\n");
+`;
+
+test("narration calls voice-sound as a program (clean <recording> <out> --mono --json) and passes on its report, its refusal and its failure in a sentence", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = tmp();
+  try {
+    run(["-f", "lavfi", "-i", "sine=frequency=300:sample_rate=48000:duration=15", "-ac", "2", "-c:a", "aac", path.join(dir, "talk.m4a")]);
+    fs.writeFileSync(path.join(dir, "words.json"), JSON.stringify(TALK_WORDS));
+    const standIn = path.join(dir, "stand-in.mjs"), calls = path.join(dir, "calls.jsonl");
+    fs.writeFileSync(standIn, STAND_IN);
+    const narration = (mode) => spawnSync(process.execPath, [TOOL, "narration", "work", "talk.m4a", "words.json", "comp"], { cwd: dir, encoding: "utf8", env: { ...process.env, VOICE_SOUND: standIn, STAND_IN_CALLS: calls, STAND_IN_MODE: mode } });
+    const called = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+    const dest = path.join(dir, "comp", "assets", "voice", "narration.m4a");
+    // a refusal: its sentence, nothing placed, voice.json untouched
+    const refused = narration("refuse");
+    assert.equal(refused.status, 1);
+    assert.equal(refused.stderr.trim(), "✗ The recorded voice was not taken: No voice was found in talk.m4a: bring a recording in which someone speaks.");
+    assert.ok(!fs.existsSync(dest));
+    assert.ok(!fs.existsSync(path.join(dir, "work", "voice.json")));
+    // a failure without an answer: said, never swallowed
+    const crashed = narration("crash");
+    assert.equal(crashed.status, 1);
+    assert.match(crashed.stderr, /something broke\n✗ The recorded voice was not taken: voice-sound stopped \(exit 3\)\.?\n?$/);
+    assert.ok(!fs.existsSync(dest));
+    // its report: what it did, the denoiser's failure and what it left, in the line
+    const ok = narration("ok");
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    assert.deepEqual(called().at(-1), ["clean", "talk.m4a", path.join("work", "sound", "narration.m4a"), "--mono", "--json"]);
+    assert.match(ok.stdout, /Its sound by voice-sound \(work\/sound\/narration\.m4a\.json\): highpass, denoise, loudness, at −14\.0 LUFS as the film plays it\. Its neural denoiser failed on this machine.* Not mended, tell them in a sentence: The room stays: next time closer to the microphone\./);
+    assert.ok(fs.existsSync(dest));
+    assert.equal(called().length, 3);
+    // without voice-sound: one sentence (a machine's clone of the skills has it)
+    if (SPRITE_VOICE_SOUND) return;
+    const alone = loneSkill(dir);
+    fs.rmSync(path.join(dir, "work"), { recursive: true, force: true });
+    const missing = spawnSync(process.execPath, [path.join(alone, "tools", "launch.mjs"), "narration", "work", "talk.m4a", "words.json", "comp"], { cwd: dir, encoding: "utf8", env: { ...process.env, VOICE_SOUND: "" } });
+    assert.equal(missing.status, 1);
+    assert.equal(missing.stderr.trim(), "✗ The recorded voice was not taken: The voice's sound needs agentitos' voice-sound skill beside this one (or VOICE_SOUND naming its tools/voice.mjs).");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
