@@ -7,16 +7,19 @@
 //   voiceTrack(fileOf, pieces, out)   the sound of every spoken piece at its take's level with
 //                                     10 ms fades, silence for the pieces that only show
 //                                     something (muted); fileOf(piece) is the piece's video.
-//                                     The room's quiet of a cut of sound alone is a piece too
-//   levelled(file, target)            the voice of sound alone at its final loudness, in place
+//                                     The room's quiet of a cut of sound alone is a piece too.
+//                                     AAC in .m4a, 32-bit float in .wav (a take raised past full
+//                                     scale stays whole)
+//   levelledVoice(wav, out, target)   the voice of sound alone at its final loudness, by voice-sound
 //   loudnessOf(file)                  { lufs, peak }: integrated loudness, true peak
 //
 // It runs on the cut's frames: each piece takes exactly its duration, so the file is as long as
 // the cut and a word's time in edit.json is its time in the file. The levels are the takes'
-// gains alone: the bus of the composition (rumble, compressor, ceiling) and `finish` come after.
+// gains alone: the composition's ceiling and `finish` come after.
 
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
+import { cleanVoiceSync, voiceSaid, NEEDS_VOICE_SOUND } from "./voicesound.mjs";
 
 const n = (x) => +x.toFixed(4);
 // as the composition fades its pieces (lib/composition.mjs)
@@ -54,7 +57,8 @@ export function voiceTrack(fileOf, pieces, out) {
   // every spoken piece an input of its own, opened at its moment: ffmpeg decodes only that stretch
   const ins = spoken.flatMap((p) => ["-ss", String(n(Math.max(0, p.in))), "-t", String(n(p.duration + 0.5)), "-i", fileOf(p)]);
   // without the recordings' tags: a phone writes the place into its file, and the voice may be published
-  run(["-v", "error", "-y", ...ins, "-filter_complex", graph, "-map", "[out]", "-map_metadata", "-1", "-ac", "1", "-c:a", "aac", "-b:a", "192k", out], "the cut's voice");
+  const codec = /\.wav$/i.test(out) ? ["-c:a", "pcm_f32le"] : ["-c:a", "aac", "-b:a", "192k"];
+  run(["-v", "error", "-y", ...ins, "-filter_complex", graph, "-map", "[out]", "-map_metadata", "-1", "-ac", "1", ...codec, out], "the cut's voice");
   fs.writeFileSync(`${out}.json`, key);
   return out;
 }
@@ -66,36 +70,32 @@ export function loudnessOf(file) {
   return { lufs: Number(summary.match(/I:\s*(-?[\d.]+) LUFS/)?.[1]), peak: Number(summary.match(/Peak:\s*(-?[\d.]+) dBFS/)?.[1]) };
 }
 
-// The cut's voice of sound alone brought to `target` LUFS in place: rumble filtered out at 75 Hz
-// (as the composition's bus does for a video), a compressor (3:1 from −20 dBFS) and a limiter
-// 3 dB under full scale, the gain measured and corrected up to three times. Speech raised by
-// 15 dB has peaks far over full scale: with finish's gain and limiter alone a six-minute
-// narration (its takes raised 13 to 16 dB) came to −14.8 LUFS and −0.8 dBTP (AAC overshoots a
-// hard limit), with this to −14.5 and −1.4 (2026-11-18). A file at the level already stays as it is, so that building twice
-// changes nothing. → { lufs, peak, was }
-const CHAIN = "highpass=f=75,acompressor=threshold=0.1:ratio=3:attack=5:release=100:knee=4";
-// (`${file}.level.json` says which pieces were levelled to which target: a voice levelled
-// already is never run through the chain a second time; levelledTo(file) reads it)
-export const levelledTo = (file) => { try { return JSON.parse(fs.readFileSync(`${file}.level.json`, "utf8")); } catch { return null; } };
-export function levelled(file, target) {
-  const key = fs.existsSync(`${file}.json`) ? fs.readFileSync(`${file}.json`, "utf8") : null;
-  const done = levelledTo(file);
-  if (done && done.target === target && done.key === key) return done.result;
-  const mark = (result) => { fs.writeFileSync(`${file}.level.json`, JSON.stringify({ target, key, result })); return result; };
-  const before = loudnessOf(file);
-  if (Math.abs(before.lufs - target) <= 0.5 && before.peak <= -1) return mark({ ...before, was: before.lufs });
-  const tmp = `${file}.part.m4a`;
-  const level = (gain) => {
-    run(["-v", "error", "-y", "-i", file, "-map_metadata", "-1", "-af", `${CHAIN},volume=${gain.toFixed(2)}dB,alimiter=limit=0.7:attack=5:release=60:level=disabled`,
-      "-ac", "1", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", tmp], "the voice at its loudness");
-    return loudnessOf(tmp).lufs;
-  };
+// The cut's voice of sound alone (`wav`, voiceTrack's, its takes evened) at `target` LUFS, as
+// `out`: voice-sound's level stage, `clean <wav> <out> --denoise off --tone off --mono --loudness
+// <target> --json`. Its recordings were mended whole before they were cut (takes.mjs new); here
+// only a leveller where the phrases are uneven, the loudness as played on two speakers (one
+// channel: the file measures 3 LU lower), the peaks and the true peak after the encoding. Made
+// again only when the cut or the target changed (`<out>.level.json`), so that building twice
+// changes nothing. Without voice-sound, or where it refuses or fails, the cut's voice as it is,
+// not levelled, and `said` says why. → { lufs, measured, peak, said, levelled }
+export function levelledVoice(wav, out, target) {
+  const key = JSON.stringify({ cut: fs.readFileSync(`${wav}.json`, "utf8"), target });
+  const mark = `${out}.level.json`;
   try {
-    let gain = target - before.lufs;
-    for (let pass = 0, got = level(gain); pass < 3 && Math.abs(got - target) > 0.3; pass++) { gain += target - got; got = level(gain); }
-    fs.renameSync(tmp, file);
-  } finally {
-    fs.rmSync(tmp, { force: true });
+    const done = JSON.parse(fs.readFileSync(mark, "utf8"));
+    if (done.key === key && fs.existsSync(out)) return done.result;
+  } catch {}
+  fs.rmSync(mark, { force: true });
+  const r = target == null ? { error: NEEDS_VOICE_SOUND } : cleanVoiceSync(wav, out, ["--denoise", "off", "--tone", "off", "--mono", "--loudness", String(target)]);
+  let result;
+  if (r.report) {
+    const d = r.report.delivered || {};
+    result = { lufs: d.asPlayedLufs ?? d.lufs, measured: d.lufs, peak: d.truePeak, said: voiceSaid(r.report, "brought to the loudness, its peaks held"), levelled: true };
+  } else {
+    run(["-v", "error", "-y", "-i", wav, "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", out], "the cut's voice");
+    const l = loudnessOf(out);
+    result = { lufs: l.lufs, measured: l.lufs, peak: l.peak, said: `not levelled (${r.error.replace(/\.$/, "")}): the takes are even, the whole as they came`, levelled: false };
   }
-  return mark({ ...loudnessOf(file), was: before.lufs });
+  fs.writeFileSync(mark, JSON.stringify({ key, result }));
+  return result;
 }

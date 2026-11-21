@@ -60,7 +60,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { probe, playable, samples, hyperframes, clock, copyName } from "./lib/media.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
-import { voiceTrack, levelled, levelledTo } from "./lib/tracks.mjs";
+import { voiceTrack, levelledVoice } from "./lib/tracks.mjs";
+import { cleanVoice, voiceSaid, voiceSoundTool, master, NEEDS_VOICE_SOUND } from "./lib/voicesound.mjs";
 import { envelope, threshold, retime, ghosts, loudnessBlocks, loudness, HOP } from "./lib/voice.mjs";
 import { plan, range } from "./lib/cut.mjs";
 import { activity } from "./lib/motion.mjs";
@@ -80,7 +81,6 @@ const FLAGS = ["off", "grid", "again"];
 // given more than once: each value kept
 const MANY = ["eye", "grid-at", "picture", "lift"];
 const NUMBERS = ["target", "pause", "loudness", "fps"];
-const TAKE_LEVEL = -14; // each take before the bus; finish brings the rendered whole to --loudness
 const TIGHT = 0.4; // --pauses tight: every pause over this goes
 
 function fail(message) {
@@ -113,15 +113,18 @@ const self = () => (rel(process.argv[1]).startsWith("..") ? process.argv[1] : re
 function settings(dir, opts) {
   const file = source(dir, "settings.json");
   const kept = fs.existsSync(file) ? read(file) : {};
-  const merged = { aspect: "source", fit: "cover", pauses: "picture", loudness: -14, fps: 30, ...kept, ...opts };
+  const merged = { aspect: "source", fit: "cover", pauses: "picture", fps: 30, ...kept, ...opts };
   if (!["picture", "tight"].includes(merged.pauses)) fail("--pauses is picture or tight.");
   if (merged.punch !== undefined && !["on", "off"].includes(merged.punch)) fail("--punch is on or off.");
   // where the video goes, for its captions: a platform platform-zones does not know is not kept,
   // every later build would fail on it
   if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
-  // the pause from which a pause is cut: as given, else 1 s (picture) or TIGHT
-  return { ...merged, pause: merged.pause ?? (merged.pauses === "tight" ? TIGHT : 1), final: merged.loudness, loudness: TAKE_LEVEL };
+  // the pause from which a pause is cut: as given, else 1 s (picture) or TIGHT. The loudness: as
+  // given, else voice-sound's master for video; each take is brought to it, and the whole (finish,
+  // a voice alone's build). Without voice-sound none: the takes go to the loudest one's level
+  const final = merged.loudness ?? master()?.lufs ?? null;
+  return { ...merged, pause: merged.pause ?? (merged.pauses === "tight" ? TIGHT : 1), final, loudness: final };
 }
 
 // how close each piece is: at a jump cut inside a take (the same video, a stretch left out) the
@@ -166,6 +169,31 @@ function newLike(dir, like, files, opts) {
   console.log(`\nNext: read ${rel(source(dir, "brief.md"))} (all of it) and write ${rel(path.join(dir, "cut.json"))} for this cut (\`propose\` asks the model afresh, when you want its view), then: node ${self()} build ${rel(dir)}${own.out ? "" : " --out <its own file or folder>"}`);
 }
 
+// A recording's voice mended whole by agentitos' voice-sound, before anything is cut (it reads the
+// noise in the pauses a cut removes): repair and tone, its loudness and dynamics kept (`--level
+// off`: the build evens the takes, finish sets the film's level), sound alone as one channel (its
+// cut is one track). The mended file takes the copy's place, voice-sound's report beside it
+// (NN.voice.json). A refusal or a failure is said, and the recording is cut as it came.
+// mendVoice cleans into a hidden file; placeVoice, once the words are heard, puts it in place.
+const mendedName = (n, audio) => `.${String(n).padStart(2, "0")}.voice.${audio ? "wav" : "mp4"}`;
+function mendVoice(dir, n, file, audio) {
+  return cleanVoice(file, source(dir, mendedName(n, audio)), ["--level", "off", ...(audio ? ["--mono"] : [])]);
+}
+function placeVoice(dir, n, file, audio, r) {
+  const k = String(n).padStart(2, "0"), ext = audio ? "wav" : "mp4";
+  const tmp = source(dir, mendedName(n, audio));
+  fs.rmSync(`${tmp}.json`, { force: true });
+  if (r.error) {
+    fs.rmSync(tmp, { force: true });
+    return { file: path.basename(file), said: `not mended (${r.error.replace(/\.$/, "")}); it is cut with its sound as recorded.` };
+  }
+  const name = `${k}.${ext}`;
+  fs.renameSync(tmp, source(dir, name));
+  if (path.basename(file) !== name) fs.rmSync(file, { force: true });
+  fs.writeFileSync(source(dir, `${k}.voice.json`), JSON.stringify(r.report, null, 1));
+  return { file: name, said: voiceSaid(r.report) };
+}
+
 async function cmdNew(dir, files, opts) {
   if (opts.like) return newLike(dir, String(opts.like), files, opts);
   if (!dir || !files.length) fail("Usage: takes.mjs new <dir> <video> [<video> …]");
@@ -188,15 +216,27 @@ async function cmdNew(dir, files, opts) {
 
   const clips = {}, words = [];
   let asr = null, unmarked = false;
+  const mending = !!voiceSoundTool();
+  if (!mending) console.log(`${NEEDS_VOICE_SOUND}: the ${kind}s are cut with their sound as it was recorded, evened to the loudest take.`);
   for (const [k, c] of list.entries()) {
-    const n = k + 1, name = copyName(n, c.from, audio), file = source(dir, name);
+    const n = k + 1;
+    let name = copyName(n, c.from, audio), file = source(dir, name);
     const how = playable(c.from, file);
     const p = probe(file);
     console.log(`${kind} ${n}: ${c.from} (${clock(p.duration, false)}, ${audio ? "sound alone" : `${p.width}×${p.height}`}${how.startsWith("transcoded") ? `, ${how} to H.264` : ""}) – listening …`);
-    const env = envelope(samples(file));
-    fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.env`), Buffer.from(env.buffer));
+    // the voice mended by voice-sound while the words are heard (the words' times hold: it keeps
+    // the sound in step to the sample); the copy then has the mended sound
+    const mended = mending ? mendVoice(dir, n, file, audio) : null;
     let heard, edges, gaps;
     try { ({ words: heard, model: asr, edges, unwritten: gaps } = await transcribeFile(file, { log: console.log })); } catch (e) { fail(e.message); }
+    if (mended) {
+      const v = placeVoice(dir, n, file, audio, await mended);
+      name = v.file;
+      file = source(dir, name);
+      console.log(`  The voice (voice-sound): ${v.said}`);
+    }
+    const env = envelope(samples(file));
+    fs.writeFileSync(source(dir, `${String(n).padStart(2, "0")}.env`), Buffer.from(env.buffer));
     // words whose times the transcribe skill has set by the sound (edges: "sound") are not timed a second time
     const moved = edges === "sound" ? 0 : retime(heard, env, threshold(env));
     if (moved) console.log(`  ${moved} word timings set by the sound (the recognizer had them squeezed or stretched)`);
@@ -428,7 +468,7 @@ function cmdBuild(dir, opts) {
     if (last && last.file === g && Math.abs(last.start + last.duration - p.start) < 1e-3) last.duration = p.start + p.duration - last.start;
     else grounds.push({ file: g, start: p.start, duration: p.duration });
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook, grounds });
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook, grounds, ceiling: master()?.peak ?? null });
   // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
   // are timed in it. The preview does not need it, so a failure is said and the build goes on
   let voice = null;
@@ -472,11 +512,9 @@ function buildVoice(dir, clips, r, s) {
   const file = path.join(dir, "voice.cut.m4a");
   let level;
   try {
-    // levelled to another loudness before: made again from its pieces, not run through the chain twice
-    const done = levelledTo(file);
-    if (done && done.target !== s.final) fs.rmSync(`${file}.json`, { force: true });
-    voiceTrack((p) => source(dir, clips[p.clip].file), r.pieces, file);
-    level = levelled(file, s.final);
+    // the takes evened, then the whole at its loudness by voice-sound (lib/tracks.mjs)
+    const wav = voiceTrack((p) => source(dir, clips[p.clip].file), r.pieces, path.join(dir, "voice.cut.wav"));
+    level = levelledVoice(wav, file, s.final);
   } catch (e) { fail(`✗ ${e.message}`); }
   const srtFile = path.join(dir, "voice.cut.srt");
   fs.writeFileSync(srtFile, srt(r.words));
@@ -489,14 +527,15 @@ function buildVoice(dir, clips, r, s) {
   }
   const quiet = r.pieces.filter((p) => p.quiet);
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
-    audio: true, voice: rel(file), ...(copy ? { copy: rel(copy) } : {}), loudness: { lufs: level.lufs, peak: level.peak }, duration: r.duration,
+    audio: true, voice: rel(file), ...(copy ? { copy: rel(copy) } : {}), loudness: { lufs: level.lufs, measured: level.measured, peak: level.peak, levelled: level.levelled, said: level.said }, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
     pieces: r.pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : p.quiet ? { quiet: true } : { shows: true, rate: 1, ...(p.wait ? { wait: true } : {}) }), keep: p.keep })),
     removed: r.removed, warnings: r.warnings, words: r.words,
   }, null, 1));
   const gains = r.pieces.filter((p) => p.words.length).map((p) => p.gain);
-  console.log(`${rel(file)}: ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length - quiet.length} pieces, ${quiet.length} breaths of the room's quiet between them, takes evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB, the whole at ${level.lufs} LUFS (true peak ${level.peak} dBTP)`);
+  console.log(`${rel(file)}: ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length - quiet.length} pieces, ${quiet.length} breaths of the room's quiet between them, takes evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB, the whole at ${level.lufs} LUFS${level.levelled ? " as played on two speakers" : ""} (true peak ${level.peak} dBTP)`);
+  console.log(`The whole's level (voice-sound): ${level.said}`);
   console.log(`Words: ${r.words.length}, each timed in the voice: ${rel(path.join(dir, "edit.json"))} ("words"), subtitles ${rel(srtFile)}${copy ? `; a copy of both at ${rel(copy)}` : ""}. No HyperFrames project: there is no picture.`);
   console.log(`Next: node ${self()} check ${rel(dir)}`);
 }
@@ -963,7 +1002,14 @@ function cmdCheck(dir) {
   const levels = [...new Set(e.pieces.map((p) => p.lufs).filter((l) => l != null))];
   if (levels.length) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
-    console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${TAKE_LEVEL} LUFS; ${e.audio ? `the voice as a whole is at ${e.loudness?.lufs} LUFS, true peak ${e.loudness?.peak} dBTP` : `finish brings the rendered video to ${s.final} LUFS`}.`);
+    console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${s.loudness != null ? `${s.loudness} LUFS` : "the loudest one's level"}; ${e.audio ? `the voice as a whole is at ${e.loudness?.lufs} LUFS${e.loudness?.levelled ? " as played on two speakers" : ""}, true peak ${e.loudness?.peak} dBTP` : s.final != null ? `finish brings the rendered video to ${s.final} LUFS` : "finish leaves the rendered video's level as it is (no voice-sound)"}.`);
+    // what voice-sound mended in each recording and left, and what it did to the whole voice
+    for (const c of Object.values(clips)) {
+      const f = source(dir, `${String(c.n).padStart(2, "0")}.voice.json`);
+      if (fs.existsSync(f)) { try { console.log(`The voice of ${several ? `${e.audio ? "recording" : "video"} ${c.n}` : `the ${e.audio ? "recording" : "video"}`} (voice-sound): ${voiceSaid(read(f))}`); } catch {} }
+      else console.log(`The voice of ${several ? `${e.audio ? "recording" : "video"} ${c.n}` : `the ${e.audio ? "recording" : "video"}`}: not mended by voice-sound, cut with its sound as recorded.`);
+    }
+    if (e.audio && e.loudness?.said) console.log(`The whole's level (voice-sound): ${e.loudness.said}`);
     const breaths = e.pieces.filter((p) => p.quiet);
     if (breaths.length) console.log(`Breaths: ${breaths.length} of the room's own quiet between the stretches, ${breaths.reduce((t, p) => t + p.duration, 0).toFixed(1)} s in all.`);
   }
@@ -1054,19 +1100,24 @@ function cmdFinish(dir, file) {
   const p = probe(file);
   if (Math.abs(p.duration - e.duration) > 0.5) fail(`✗ ${rel(path.resolve(file))} is ${clock(p.duration)} long, the cut ${clock(e.duration)}: it is from before the last build. Render again.`);
 
-  // the level of the whole: a gain to the target and a limiter 2 dB under full scale, measured
-  // and corrected once (the limiter takes a little of the loudness); the picture is copied. A
-  // video at the level already stays as it is, so that finishing twice changes nothing.
-  const before = lufsOf(file);
-  if (!(Math.abs(before.lufs - s.final) <= 0.5 && before.peak <= -1)) {
+  // the level of the whole, the one place this skill sets it, with voice-sound's numbers (its
+  // master for video, or --loudness): a gain to the loudness and a limiter at the true peak aimed
+  // at, measured and corrected once (the limiter takes a little of the loudness), once more with
+  // the limiter lower where the encoding left the true peak over what is accepted; the picture is
+  // copied. A video at the level already stays as it is, so that finishing twice changes nothing.
+  // Without voice-sound there are no numbers: the sound stays as rendered, and that is said.
+  const m = master(), before = lufsOf(file);
+  if (!m) console.log(`${NEEDS_VOICE_SOUND}: the video's sound stays as it was rendered, at ${before.lufs} LUFS.`);
+  else if (!(Math.abs(before.lufs - s.final) <= 0.5 && before.peak <= m.max)) {
     const tmp = path.join(path.dirname(path.resolve(file)), `.${path.basename(file)}.part.mp4`);
-    const level = (gain, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "-1", "-c:v", "copy",
-      "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.79:attack=5:release=60:level=disabled`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out], { stdio: ["ignore", "ignore", "inherit"] });
+    const level = (gain, limit, out) => execFileSync("ffmpeg", ["-v", "error", "-y", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "-1", "-c:v", "copy",
+      "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=${(10 ** (limit / 20)).toFixed(4)}:attack=5:release=60:level=disabled`, "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out], { stdio: ["ignore", "ignore", "inherit"] });
     try {
-      let gain = s.final - before.lufs;
-      level(gain, tmp);
-      const got = lufsOf(tmp).lufs;
-      if (Math.abs(got - s.final) > 0.3) { gain += s.final - got; level(gain, tmp); }
+      let gain = s.final - before.lufs, limit = m.peak;
+      level(gain, limit, tmp);
+      let got = lufsOf(tmp);
+      if (Math.abs(got.lufs - s.final) > 0.3) { gain += s.final - got.lufs; level(gain, limit, tmp); got = lufsOf(tmp); }
+      if (got.peak > m.max) { limit -= got.peak - m.peak; level(gain, limit, tmp); }
       fs.renameSync(tmp, file);
     } finally {
       fs.rmSync(tmp, { force: true });

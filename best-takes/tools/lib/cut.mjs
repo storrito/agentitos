@@ -321,7 +321,11 @@ export function plan(words, cut, settings, voices, motion = null) {
     // under 3 s a level is guesswork: measure the take's surroundings too
     const pad = total < 3 ? (3 - total) / (2 * spans.length) : 0;
     t.lufs = loudness(voices[t.clip].blocks, spans.map(([a, b]) => [a - pad, b + pad]));
-    const gain = t.lufs == null ? 0 : target - t.lufs;
+  }
+  // no loudness to aim at (voice-sound missing): the takes go to the loudest one's level
+  const aim = target ?? Math.max(...takes.map((t) => t.lufs).filter((l) => l != null));
+  for (const t of takes) {
+    const gain = t.lufs == null ? 0 : aim - t.lufs;
     for (const p of t.pieces) {
       p.lufs = t.lufs;
       p.gain = +Math.max(-24, Math.min(24, gain + p.adjust)).toFixed(1);

@@ -841,7 +841,7 @@ test("sound alone: build writes the cut's voice at −14 LUFS with its words tim
     const checked = spawnSync(process.execPath, [tool, "check", takes], { encoding: "utf8" });
     assert.equal(checked.status, 0, checked.stdout + checked.stderr);
     assert.match(checked.stdout, /the room's quiet, 0\.43 s/);
-    assert.match(checked.stdout, /the voice as a whole is at -1[345](\.\d)? LUFS/);
+    assert.match(checked.stdout, /the voice as a whole is at -1[345](\.\d+)? LUFS as played on two speakers/);
     assert.match(checked.stdout, /The voice: /);
     // finish and captions say why not, in one sentence
     for (const args of [["finish", takes, voice], ["captions", takes, "--style", "bold"]]) {
@@ -893,5 +893,117 @@ test("another cut of the same recordings: new --like takes the words, levels and
     assert.match(none.stdout, /has no recordings taken in/);
     const again = spawnSync(process.execPath, [tool, "new", short, "--like", film], { encoding: "utf8" });
     assert.match(again.stdout, /is in use already/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ----------------------------------------------------------------------------- voice-sound
+// Stand-ins for agentitos' voice-sound and transcribe skills (VOICE_SOUND, TRANSCRIBE): voice-sound
+// writes down how it was called, and as STANDIN says mends (copies its input to the output and
+// prints a report), refuses ({"error"}, exit 1) or breaks (exit 2, a line on stderr)
+const STAND_IN_VOICE = `import fs from "node:fs";
+const [cmd, ...a] = process.argv.slice(2);
+fs.appendFileSync(process.env.STANDIN_LOG, JSON.stringify([cmd, ...a]) + "\\n");
+if (cmd === "targets") { console.log(JSON.stringify({ master: { lufs: -14, truePeakDbtp: { aim: -1.5, max: -1 } } })); process.exit(0); }
+if (process.env.STANDIN === "refuse") { console.log(JSON.stringify({ error: "No voice was found in it." })); process.exit(1); }
+if (process.env.STANDIN === "break") { console.error("Error: something broke"); process.exit(2); }
+fs.copyFileSync(a[0], a[1]);
+console.log(JSON.stringify({ steps: [{ id: "highpass" }, { id: "denoise", method: "afftdn-sample" }], left: [{ id: "noise", why: "Some noise stays." }], notJudged: [], delivered: { lufs: -17, asPlayedLufs: -14, truePeak: -1.6 } }));
+`;
+const STAND_IN_WORDS = `import fs from "node:fs";
+const out = process.argv[process.argv.indexOf("--out") + 1];
+fs.writeFileSync(out, JSON.stringify({ model: "test", edges: "sound", unwritten: [], words: ["Das", "ist", "gut."].map((text, i) => ({ text, kind: "word", start: 1 + i * 0.5, end: 1.4 + i * 0.5 })) }));
+`;
+function standIns(dir) {
+  fs.writeFileSync(path.join(dir, "voice.mjs"), STAND_IN_VOICE);
+  fs.writeFileSync(path.join(dir, "transcribe.mjs"), STAND_IN_WORDS);
+  return (standin) => ({ ...process.env, VOICE_SOUND: path.join(dir, "voice.mjs"), TRANSCRIBE: path.join(dir, "transcribe.mjs"), OPENROUTER_API_KEY: "test", STANDIN: standin, STANDIN_LOG: path.join(dir, `${standin}.log`) });
+}
+const calls = (dir, standin) => fs.readFileSync(path.join(dir, `${standin}.log`), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const TOOL = path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs");
+
+test("new: each recording's voice goes through voice-sound whole, before the cut, its loudness kept; what it mended and left is said", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-voice-"));
+  try {
+    const env = standIns(dir);
+    // a video: clean <its copy> <a hidden file> --json --level off, no --mono; the copy is the mended file
+    const video = recording(dir, "take.mp4", 220, 2);
+    const r = spawnSync(process.execPath, [TOOL, "new", path.join(dir, "v"), video], { encoding: "utf8", env: env("ok") });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const clean = calls(dir, "ok").find((c) => c[0] === "clean");
+    assert.equal(clean[1], path.join(dir, "v", "source", "01.mp4"));
+    assert.match(clean[2], /source\/\.01\.voice\.mp4$/);
+    assert.deepEqual(clean.slice(3), ["--json", "--level", "off"]);
+    assert.match(r.stdout, /The voice \(voice-sound\): the noise turned down\. Left: Some noise stays\./);
+    assert.ok(fs.existsSync(path.join(dir, "v", "source", "01.voice.json")) && !fs.existsSync(clean[2]));
+    // sound alone: one channel, the mended copy a WAV in the copy's place
+    const wav = soundAlone(dir, "voice.mp3", spoken(), 6);
+    const a = spawnSync(process.execPath, [TOOL, "new", path.join(dir, "a"), wav], { encoding: "utf8", env: env("alone") });
+    assert.equal(a.status, 0, a.stdout + a.stderr);
+    assert.deepEqual(calls(dir, "alone").find((c) => c[0] === "clean").slice(3), ["--json", "--level", "off", "--mono"]);
+    const w = JSON.parse(fs.readFileSync(path.join(dir, "a", "source", "words.json"), "utf8"));
+    assert.equal(w.clips[1].file, "01.wav");
+    assert.ok(!fs.existsSync(path.join(dir, "a", "source", "01.mp3")));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("new: voice-sound's refusal, its failure, or voice-sound missing is said in a sentence, and the recording is cut as it came", { skip: !ffmpeg && "no ffmpeg" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-voice-"));
+  try {
+    const env = standIns(dir), video = recording(dir, "take.mp4", 220, 1);
+    const size = fs.statSync(video).size;
+    for (const [standin, said] of [["refuse", /not mended \(No voice was found in it\); it is cut with its sound as recorded\./], ["break", /not mended \(it stopped \(exit 2\): Error: something broke\); it is cut with its sound as recorded\./]]) {
+      const r = spawnSync(process.execPath, [TOOL, "new", path.join(dir, standin), video], { encoding: "utf8", env: env(standin) });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.match(r.stdout, said);
+      assert.equal(fs.statSync(path.join(dir, standin, "source", "01.mp4")).size, size, "the copy as it came");
+      assert.ok(!fs.existsSync(path.join(dir, standin, "source", "01.voice.json")));
+    }
+    // a copy of this skill with no voice-sound beside it
+    const alone = path.join(dir, "skills", "best-takes");
+    fs.cpSync(path.dirname(path.dirname(TOOL)), alone, { recursive: true, filter: (f) => !f.includes("node_modules") });
+    const none = spawnSync(process.execPath, [path.join(alone, "tools", "takes.mjs"), "new", path.join(dir, "none"), video], { encoding: "utf8", env: { ...env("none"), VOICE_SOUND: "" } });
+    // (the machine's own clone of the skills may be found instead: then it mends)
+    if (!fs.existsSync("/home/sprite/skills/voice-sound/tools/voice.mjs")) {
+      assert.equal(none.status, 0, none.stdout + none.stderr);
+      assert.match(none.stdout, /needs agentitos' voice-sound skill beside this one .*: the videos are cut with their sound as it was recorded, evened to the loudest take\./);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("build of sound alone: the whole at its loudness by voice-sound's level stage (one channel, no noise or tone step), once; the composition's bus only a ceiling at the true peak voice-sound aims at", { skip: !ffmpeg && "no ffmpeg" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-voice-"));
+  try {
+    const env = standIns(dir), words = spoken(), takes = path.join(dir, "takes"), src = path.join(takes, "source");
+    fs.mkdirSync(src, { recursive: true });
+    const file = soundAlone(src, "01.wav", words, 15);
+    fs.writeFileSync(path.join(src, "01.env"), Buffer.from(envelope(samples(file)).buffer));
+    fs.writeFileSync(path.join(src, "01.loudness.json"), JSON.stringify(loudnessBlocks(file)));
+    fs.writeFileSync(path.join(src, "words.json"), JSON.stringify({ asr: "test", clips: { 1: { n: 1, file: "01.wav", from: "uploads/voice.wav", duration: 15, audio: true, lufs: -16 } }, words }));
+    fs.writeFileSync(path.join(takes, "cut.json"), JSON.stringify({ keep: [{ words: "0-6" }] }));
+    for (let k = 0; k < 2; k++) {
+      const b = spawnSync(process.execPath, [TOOL, "build", takes], { encoding: "utf8", env: env("level") });
+      assert.equal(b.status, 0, b.stdout + b.stderr);
+      assert.match(b.stdout, /at -14 LUFS as played on two speakers/);
+    }
+    const cleans = calls(dir, "level").filter((c) => c[0] === "clean");
+    assert.equal(cleans.length, 1, "built twice, levelled once");
+    assert.match(cleans[0][1], /voice\.cut\.wav$/);
+    assert.match(cleans[0][2], /voice\.cut\.m4a$/);
+    assert.deepEqual(cleans[0].slice(3), ["--json", "--denoise", "off", "--tone", "off", "--mono", "--loudness", "-14"]);
+    // a refusal there: the voice as it is, and said
+    fs.rmSync(path.join(takes, "voice.cut.m4a.level.json"));
+    const no = spawnSync(process.execPath, [TOOL, "build", takes], { encoding: "utf8", env: env("refuse") });
+    assert.equal(no.status, 0, no.stdout + no.stderr);
+    assert.match(no.stdout, /The whole's level \(voice-sound\): not levelled \(No voice was found in it\)/);
+    // the composition's bus: no filter of this skill's on the voice, the ceiling voice-sound's aim
+    const { writeComposition } = await import("./lib/composition.mjs");
+    const out = path.join(dir, "comp");
+    fs.mkdirSync(path.join(dir, "v", "source"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "v", "source", "01.mp4"), "");
+    writeComposition(out, { title: "t", width: 320, height: 180, fit: "cover", fps: 30, dir: path.join(dir, "v"), clips: { 1: { file: "01.mp4" } }, ceiling: -1.5,
+      pieces: [{ clip: 1, in: 0, start: 0, duration: 1, gain: 3, scale: 1 }] });
+    const html = fs.readFileSync(path.join(out, "index.html"), "utf8");
+    const bus = JSON.parse(html.match(/<hf-audio-group[^>]*data-fx-chain="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+    assert.deepEqual(bus.nodes.map((x) => [x.type, x.params]), [["truepeak", { ceiling: -1.5 }]]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
