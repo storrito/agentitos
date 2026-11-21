@@ -28,7 +28,9 @@
 //                                                         assets/voice/<id>.mp3, its words timed → <work>/voice.json
 //   node tools/launch.mjs narration <work> <voice> <words.json> <composition> [--id narration]
 //                                                         a voice the person recorded (best-takes' voice.cut.m4a
-//                                                         and edit.json) as a line of <work>/voice.json
+//                                                         and edit.json, or a recording and transcribe's
+//                                                         words.json, its sound by voice-sound) as a line of
+//                                                         <work>/voice.json
 //        [--gap <s>+<len>,…]                              the voice stopped after the word that ends by <s> for
 //                                                         <len> s of footage with its own sound: the pieces to place
 //   node tools/launch.mjs words <work> <composition>      the voice's words at their times in the film,
@@ -47,8 +49,9 @@
 //                                                         and after the last word (no compressor: no pumping),
 //                                                         out while footage plays its own sound
 //   node tools/launch.mjs image <out.png> --prompt "…" [--ratio 9:16] [--ref <image>…]   a picture
-//   node tools/launch.mjs finish <video.mp4>              the rendered video at −14 LUFS, the loudness
-//                                                         the platforms play at (in place)
+//   node tools/launch.mjs finish <video.mp4>              the rendered video at the loudness and true
+//                                                         peak the platforms play at (voice-sound's
+//                                                         targets), in place
 //
 // script.json: {"model"?, "voice"?, "instructions"?, "speed"?, "lines": [{"id": "hook", "text": "…",
 // "instructions"?}]}. A line already spoken with the same words, model, voice and instructions is
@@ -66,6 +69,7 @@ import { post, postAudio, streamAudio } from "./lib/openrouter.mjs";
 import { align } from "./lib/align.mjs";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { loudness, musicVolume, distance, inFilm } from "./lib/level.mjs";
+import { cleanVoice, master } from "./lib/voice-sound.mjs";
 
 const SKILL = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fail = (msg) => { console.error(msg); process.exit(1); };
@@ -765,33 +769,74 @@ export function recordedWords(j) {
     .map((w) => ({ text: String(w.text).trim(), start: +Number(w.start).toFixed(3), end: +Number(w.end).toFixed(3) }));
 }
 
+// best-takes' edit.json names the cut's voice ("voice") and times its words in the cut: the voice
+// they time is a cut, whose sound best-takes made from the whole recording
+export const isBestTakesCut = (j) => typeof j?.voice === "string";
+
+// what voice-sound's report says in a line: what it did, and what it left, to be passed on
+export function voiceSoundLine(report, reportFile) {
+  const did = (report.steps || []).map((s) => s.id).filter(Boolean);
+  const asPlayed = report.delivered?.asPlayedLufs;
+  const left = (report.left || []).map((l) => l.why).filter(Boolean);
+  // the neural denoiser failed on this machine (not: it took the voice for noise)
+  const failed = (report.steps || []).some((s) => s.fallback && !s.fallback.voice);
+  return `Its sound by voice-sound (${rel(reportFile)}): ${did.length ? did.join(", ") : "nothing to mend"}${Number.isFinite(asPlayed) ? `, at ${lufs(asPlayed)} LUFS as the film plays it` : ""}.`
+    + (failed ? " Its neural denoiser failed on this machine and ffmpeg's simpler method took the noise: say so, and that whoever runs the machine should hear of it." : "")
+    + (left.length ? ` Not mended, tell them in a sentence: ${left.join(" ")}` : "");
+}
+
 // a voice the person recorded (cut by best-takes, or any file with its words timed) as a line of the
 // film's voice, so that words, captions, music and check take it as they take a spoken line
 function cmdNarration(work, file, wordsFile, composition, opts) {
   if (!work || !file || !wordsFile || !composition) fail(`Usage: ${cmd("narration <work> <voice file> <its words.json> <composition> [--id narration]")}`);
   if (!fs.existsSync(file)) fail(`✗ There is no ${rel(file)}.`);
-  const words = recordedWords(readJson(wordsFile, null));
+  const wordsJson = readJson(wordsFile, null);
+  const words = recordedWords(wordsJson);
   if (!words) fail(`✗ ${rel(wordsFile)} has no "words": [{text, start, end}] (best-takes' edit.json, transcribe's words.json).`);
   if (!words.length) fail(`✗ ${rel(wordsFile)} has no words with their times.`);
   const id = String(opts.id || "narration");
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) fail(`✗ --id is lowercase letters, digits and dashes ("narration"); "${id}" is not one.`);
   const p = probe(file);
   if (!p.streams.some((s) => s.codec_type === "audio")) fail(`✗ ${rel(file)} has no sound.`);
-  const duration = +p.duration.toFixed(3);
-  if (words.at(-1).end > duration + 0.25) fail(`✗ The words of ${rel(wordsFile)} run to ${words.at(-1).end.toFixed(2)} s, the voice is ${duration.toFixed(2)} s long: they are not this voice's (the words of the cut, timed in the cut).`);
-  const ext = (path.extname(file).slice(1) || "m4a").toLowerCase();
+  if (words.at(-1).end > p.duration + 0.25) fail(`✗ The words of ${rel(wordsFile)} run to ${words.at(-1).end.toFixed(2)} s, the voice is ${p.duration.toFixed(2)} s long: they are not this voice's (the words of the cut, timed in the cut).`);
   const dir = path.join(composition, "assets", "voice");
   fs.mkdirSync(dir, { recursive: true });
-  const dest = path.join(dir, `${id}.${ext}`);
-  // without the file's tags: what is published names no place
-  ffmpeg(["-i", file, "-map", "0:a", "-map_metadata", "-1", "-c", "copy", dest]);
   const metaFile = path.join(work, "voice.json");
   const before = readJson(metaFile, {});
-  const line = { id, recorded: true, text: words.map((w) => w.text).join(" "), file: `assets/voice/${id}.${ext}`, duration, words };
+  let dest, sound = null, said;
+  if (isBestTakesCut(wordsJson)) {
+    // best-takes' cut: its sound is best-takes', made from the whole recording, and not cleaned
+    // again (the noise is read in the pauses, which the cut took out). Without the file's tags:
+    // what is published names no place
+    dest = path.join(dir, `${id}.${(path.extname(file).slice(1) || "m4a").toLowerCase()}`);
+    ffmpeg(["-i", file, "-map", "0:a", "-map_metadata", "-1", "-c", "copy", dest]);
+    said = "Its sound is best-takes', made from the whole recording: not cleaned again.";
+  } else {
+    // the whole recording through voice-sound, one channel as the film mounts it (both speakers
+    // get it whole), as long as it came; the same recording again keeps what it made
+    dest = path.join(dir, `${id}.m4a`);
+    const st = fs.statSync(file);
+    const key = crypto.createHash("sha1").update(JSON.stringify([path.resolve(file), st.size, st.mtimeMs])).digest("hex").slice(0, 12);
+    const reportFile = path.join(work, "sound", `${id}.m4a.json`);
+    const old = (before.lines || []).find((l) => l.id === id)?.sound;
+    let report = old?.key === key && fs.existsSync(dest) ? readJson(reportFile, null) : null;
+    if (!report) {
+      const cleaned = path.join(work, "sound", `${id}.m4a`);
+      fs.mkdirSync(path.dirname(cleaned), { recursive: true });
+      try { report = cleanVoice(file, cleaned, { mono: true }); }
+      catch (e) { fail(`✗ The recorded voice was not taken: ${e.message}`); }
+      fs.copyFileSync(cleaned, dest);
+      fs.rmSync(cleaned, { force: true });
+    }
+    sound = { by: "voice-sound", key, report: rel(reportFile) };
+    said = voiceSoundLine(report, reportFile);
+  }
+  const duration = +probe(dest).duration.toFixed(3);
+  const line = { id, recorded: true, text: words.map((w) => w.text).join(" "), file: `assets/voice/${path.basename(dest)}`, duration, words, ...(sound ? { sound } : {}) };
   const lines = [...(before.lines || []).filter((l) => l.id !== id), line];
   writeJson(metaFile, { ...before, lines });
   const v = loudness([dest]);
-  console.log(`${rel(dest)}: the recorded voice, ${duration.toFixed(2)} s, ${words.length} words with their times${v == null ? "" : `, ${lufs(v)} LUFS`} → ${rel(metaFile)} (line "${id}").`);
+  console.log(`${rel(dest)}: the recorded voice, ${duration.toFixed(2)} s, ${words.length} words with their times${v == null ? "" : `, ${lufs(v)} LUFS`} → ${rel(metaFile)} (line "${id}"). ${said}`);
   let gaps;
   try { gaps = gapSpecs(opts.gap); } catch (e) { fail(`✗ ${e.message}.`); }
   if (!gaps.length) {
@@ -1177,11 +1222,13 @@ export function meterOf(file) {
   return i && p ? { lufs: Number(i[1]), peak: Number(p[1]) } : null;
 }
 
-// what `finish` says of the file it wrote: the numbers measured on it, and why they are not −14 and −1
-export function finishLine(name, before, got, down) {
-  const lower = down ? ` The encoder lifted a peak over −1 dBTP, so the whole sound is ${down.toFixed(1)} dB lower.` : "";
-  const short = got.lufs < -14.5 - down ? ` Not −14: its peaks stand far over its loudness, and louder would press them.` : "";
-  const over = got.peak > -1 ? `\n  ! Its true peak is still over −1 dBTP: a platform may clip it.` : "";
+// what `finish` says of the file it wrote: the numbers measured on it, and why they are not the
+// target's (voice-sound's master: { lufs, truePeakDbtp: { aim, max } })
+export function finishLine(name, before, got, down, t) {
+  const max = t.truePeakDbtp.max;
+  const lower = down ? ` The encoder lifted a peak over ${lufs(max)} dBTP, so the whole sound is ${down.toFixed(1)} dB lower.` : "";
+  const short = got.lufs < t.lufs - 0.5 - down ? ` Not ${lufs(t.lufs)}: its peaks stand far over its loudness, and louder would press them.` : "";
+  const over = got.peak > max ? `\n  ! Its true peak is still over ${lufs(max)} dBTP: a platform may clip it.` : "";
   return `${name}: ${lufs(before)} → ${lufs(got.lufs)} LUFS, true peak ${lufs(got.peak)} dBTP, measured on the finished file.${lower}${short} Not heard: say so.${over}`;
 }
 
@@ -1189,8 +1236,13 @@ function cmdFinish(video) {
   if (!video || !fs.existsSync(video)) fail(`Usage: ${cmd("finish <video.mp4>")} (the rendered video)`);
   const p = probe(video);
   if (!p.streams.some((s) => s.codec_type === "audio")) return console.log(`${rel(video)}: no sound, nothing to level.`);
+  // the platforms' loudness and true peak, from voice-sound's targets
+  let t;
+  try { t = master(); } catch (e) { fail(`✗ The video was not levelled: ${e.message}`); }
+  // LRA only keeps loudnorm linear: the film's own dynamics stay
+  const target = `I=${t.lufs}:TP=${t.truePeakDbtp.aim}:LRA=11`;
   // measured first, then levelled to it in a second pass: one pass pumps on a short film
-  const r = spawnSync("ffmpeg", ["-hide_banner", "-i", video, "-af", "loudnorm=I=-14:TP=-1:LRA=11:print_format=json", "-f", "null", "-"], { encoding: "utf8" });
+  const r = spawnSync("ffmpeg", ["-hide_banner", "-i", video, "-af", `loudnorm=${target}:print_format=json`, "-f", "null", "-"], { encoding: "utf8" });
   const m = JSON.parse(r.stderr.slice(r.stderr.lastIndexOf("{"), r.stderr.lastIndexOf("}") + 1) || "{}");
   if (!m.input_i) fail(`✗ ffmpeg could not measure the loudness of ${rel(video)}.`);
   // a silent track (the render mixes silence when the film has no sound) has nothing to level
@@ -1198,7 +1250,7 @@ function cmdFinish(video) {
   // hidden beside it, so a half-written file never shows as an artifact
   const tmp = path.join(path.dirname(video), `.${path.basename(video, path.extname(video))}.levelled.mp4`);
   const level = (down) => ffmpeg(["-i", video, "-map", "0", "-map_metadata", "-1", "-c:v", "copy", "-af",
-    `loudnorm=I=-14:TP=-1:LRA=11:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true${down ? `,volume=${(-down).toFixed(2)}dB` : ""}`,
+    `loudnorm=${target}:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true${down ? `,volume=${(-down).toFixed(2)}dB` : ""}`,
     "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmp]);
   let got, down = 0;
   try {
@@ -1206,13 +1258,13 @@ function cmdFinish(video) {
     got = meterOf(tmp);
     // the encoder can lift a peak over what was levelled: again from the render, the whole sound lower by what is
     // over (how far it lifts changes with the level, so up to four times)
-    for (let pass = 0; pass < 4 && got && got.peak > -1; pass++) { down += got.peak + 1 + 0.2; level(down); got = meterOf(tmp); }
+    for (let pass = 0; pass < 4 && got && got.peak > t.truePeakDbtp.max; pass++) { down += got.peak - t.truePeakDbtp.aim; level(down); got = meterOf(tmp); }
     if (!got) fail(`✗ ffmpeg could not measure the levelled ${rel(video)}: it stays as rendered.`);
     fs.renameSync(tmp, video);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
-  console.log(finishLine(rel(video), Number(m.input_i), got, down));
+  console.log(finishLine(rel(video), Number(m.input_i), got, down, t));
 }
 
 // ------------------------------------------------------------------------------- main
