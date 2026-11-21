@@ -1015,13 +1015,16 @@ test("show's sound is levelled when it is cut: a loud and a quiet clip both come
       assert.ok(after.peak < 0, `${name}: peak ${after.peak} dBFS`);
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-  // the composition plays it through the voice's bus (high-pass, compressor, the −2 dB true-peak ceiling)
+  // the composition plays it through the voice's bus: a true-peak ceiling alone (the voice comes
+  // mended from voice-sound), at the ceiling the build gives (voice-sound's aim less the encoder's rise)
   const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "show-bus-"));
   try {
     const [w, h, z] = ZONES["9:16"];
-    writeComposition(path.join(d2, "c"), { title: "t", width: w, height: h, fps: 30, pieces: [{ view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop: [0, 0, 1, 1], rate: 1 }], sources: { screen: { file: "s.mp4", width: 1920, height: 1080, offset: 0, path: fileURLToPath(import.meta.url) } }, dir: d2, voice: "voice.cut.m4a", inserts: [{ start: 0, duration: 4, sound: 0.8, spoken: 3, audio: "show-1.m4a" }], areas: areas(w, h, z) });
+    writeComposition(path.join(d2, "c"), { title: "t", width: w, height: h, fps: 30, pieces: [{ view: "screen", source: "screen", start: 0, duration: 4, in: 0, out: 4, crop: [0, 0, 1, 1], rate: 1 }], sources: { screen: { file: "s.mp4", width: 1920, height: 1080, offset: 0, path: fileURLToPath(import.meta.url) } }, dir: d2, voice: "voice.cut.m4a", inserts: [{ start: 0, duration: 4, sound: 0.8, spoken: 3, audio: "show-1.m4a" }], areas: areas(w, h, z), ceiling: -2 });
     const html = fs.readFileSync(path.join(d2, "c", "index.html"), "utf8");
     assert.match(html, /<audio id="show-sound-1"[^>]*data-audio-group="voice"/);
+    const chain = JSON.parse(html.match(/<hf-audio-group id="voice"[^>]*data-fx-chain="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+    assert.deepEqual(chain.nodes.map((x) => [x.type, x.params]), [["truepeak", { ceiling: -2 }]]);
   } finally { fs.rmSync(d2, { recursive: true, force: true }); }
 });
 
