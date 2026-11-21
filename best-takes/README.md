@@ -149,7 +149,7 @@ Measured on a Sprite of a bot's size (8 CPUs, 8 GB, no GPU, Node 26, ffmpeg 8) o
 | 5 min | | not measured: no material of that length in the test set | | |
 | 15 min | | not measured: no material of that length in the test set | | |
 
-Of these 2.7 to 5.5 s, ffmpeg takes 1.9 to 4.7 s (cutting and levelling the pieces) and layout's `place.mjs` with platform-zones 0.4 to 0.5 s. `build` and `place` again in the same folder, as after a change: 2.2 to 4.4 s, 190 to 253 MB. voice-sound's level stage on the cut's voice is not in these numbers: on a laptop's 8 cores it added 5 s to the build of a 2:15 cut, and it runs again only when the cut changed.
+Of these 2.7 to 5.5 s, ffmpeg takes 1.9 to 4.7 s (cutting and levelling the pieces) and layout's `place.mjs` with platform-zones 0.4 to 0.5 s. `build` and `place` again in the same folder, as after a change: 2.2 to 4.4 s, 190 to 253 MB. voice-sound's level stage on the cut's voice is not in these numbers: on a laptop's 8 cores it added 5 s to the build of a 2:15 cut, and it runs again only when the cut changed. With the voice mended by voice-sound in `new` and levelled in `build`, a cut of sound alone, `new` (the words heard) and `build` together, on a machine of 8 cores and 4 GB with the neural denoiser (2026-11-21): 7.9 s for a clean minute and 14.6 s for a minute with noise under the voice, 16.5 s for a clean 3:00 and 28.1 s for a noisy 2:30.
 
 Not measured on the Sprite, because they call a model and nothing that calls a model runs there: `new` (the words by ElevenLabs Scribe), `propose` (Gemini), `faces` (a model on stills). SKILL.md gives a few seconds per minute of video, half a minute, and 40 to 100 s for a take of a minute, without the machine they were measured on.
 
