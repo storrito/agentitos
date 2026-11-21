@@ -19,7 +19,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { measure } from "./voice.mjs";
-import { repair, repairPlan, probeNoise, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept, denoiserSlots, SLOTS } from "./lib/repair.mjs";
+import { repair, repairPlan, probeNoise, neuralDenoiser, piecesOf, levelFor, DPDFNET_LIMITS, DPDFNET_MODEL, DENOISE_CAPS, NEURAL, PROBE_FIRES_DB, PROBE_MIN_DB, PROBE_KEPT, VOICE_KEPT, voiceKept, denoiserSlots, SLOTS, roomDenoise, ROOM_DENOISE, quietDeclines, PROBE_QUIET } from "./lib/repair.mjs";
 import { clean } from "./lib/clean.mjs";
 import { Refusal } from "./lib/analyse.mjs";
 
@@ -274,6 +274,67 @@ test("plan: dpdfnet where both files are there and noise was measured, never wit
     assert.doesNotMatch(JSON.stringify(changing), /dpdfnet|DPDFNet|sherpa/);
     assert.throws(() => repairPlan(made(), { method: "dpdfnet" }), (e) => e instanceof Refusal && /VOICE_SOUND_DENOISER/.test(e.message));
   });
+});
+
+// a phone in a very reverberant room and the same phone in a small furnished one, as measure read
+// them (rt60: the decays' 25th percentile; medianS: their median), and a dry reader
+const HALL = { rt60: 0.45, medianS: 0.58, decays: 16, rangeDb: 14, confidence: "medium" };
+const FURNISHED = { rt60: 0.33, medianS: 0.4, decays: 13, rangeDb: 13, confidence: "medium" };
+const DRY = { rt60: 0.1, medianS: 0.15, decays: 20, rangeDb: 16, confidence: "medium" };
+
+test("the room: fires on a reading like a reverberant room's, not on a furnished room's or a dry voice's", () => {
+  assert.equal(roomDenoise({ room: HALL }).fires, true);
+  for (const room of [FURNISHED, DRY, { rt60: null, medianS: null, decays: 0, confidence: "none" }, { rt60: 0.9, confidence: "high" }])
+    assert.equal(roomDenoise({ room }).fires, false, JSON.stringify(room));
+  assert.equal(roomDenoise({}).fires, false);
+  assert.equal(roomDenoise({ room: { ...HALL, medianS: ROOM_DENOISE.medianS } }).fires, true, "at the bound");
+});
+
+test("plan: a reverberant room starts the denoiser at the strong cap, says why and what stays; gentle, off, ffmpeg and a machine without it leave it", async () => {
+  const hall = made({ findings: [], room: HALL, levels: { speechLufs: -20, snrDb: 46, snrADb: 46 } });
+  await withEnv(STANDIN_ENV(), () => {
+    const p = repairPlan(hall);
+    assert.equal(p.method, "dpdfnet");
+    const st = p.steps.find((s) => s.id === "denoise");
+    assert.equal(st.limitDb, DPDFNET_LIMITS.strong);
+    assert.deepEqual(st.room, { medianS: 0.58, decays: 16, rt60: 0.45 });
+    assert.match(st.why, /^A reverberant room: the voice's decays last about 0\.6 s \(the median of 16\), so much of the room stands beside the voice: a neural denoiser \(DPDFNet-2\), which takes the room's tail for noise, asked to take at most 24 dB off(, in \d overlapping pieces of up to \d+ s)?\.$/);
+    const l = p.left.find((x) => x.id === "roomy");
+    assert.match(l.why, /^Some of the room stays/);
+    assert.equal(l.why.split(/\. /).length, 1);
+    // with noise named too: the strong cap, whatever the noise needs
+    const both = repairPlan(made({ room: HALL, levels: { speechLufs: -20, snrDb: 33, snrADb: 33 } })).steps.find((s) => s.id === "denoise");
+    assert.equal(both.limitDb, DPDFNET_LIMITS.strong);
+    assert.match(both.why, /, and noise 33 dB under the speech, broadband:/);
+    // the furnished room and the dry voice: nothing
+    for (const room of [FURNISHED, DRY]) assert.equal(repairPlan(made({ findings: [], room })).method, "off");
+    // --denoise off, gentle (its own limit, as asked, no word of a room), ffmpeg's method
+    assert.equal(repairPlan(hall, { denoise: "off" }).method, "off");
+    const gentle = repairPlan(hall, { denoise: "gentle" }).steps.find((s) => s.id === "denoise");
+    assert.equal(gentle.limitDb, DPDFNET_LIMITS.gentle);
+    assert.equal(gentle.room, undefined);
+    const ff = repairPlan(hall, { method: "ffmpeg" });
+    assert.equal(ff.method, "off");
+    assert.match(ff.left.find((x) => x.id === "roomy").why, /none of ffmpeg's filters removes it/);
+  });
+  // a machine without the denoiser: the room named and left, as before
+  await withEnv(NONE_ENV(), () => {
+    const p = repairPlan(hall);
+    assert.equal(p.method, "off");
+    assert.deepEqual(ids(p.steps), ["highpass"]);
+    assert.match(p.left.find((x) => x.id === "roomy").why, /stays: none of ffmpeg's filters removes it; a machine with the neural denoiser takes much of its tail/);
+  });
+});
+
+test("the probe on a recording without steady noise: an estimate that would fire must stand out clearly", () => {
+  // a dry voice on a phone, its pauses 68 dB under: 17.1 dB is the voice; a keyboard 13.9 dB fires
+  assert.equal(quietDeclines(17.1, 68.4), true);
+  assert.equal(quietDeclines(13.9, 69.7), false);
+  // pauses nearer the voice, or an estimate that would not fire anyway: the probe as it was
+  assert.equal(quietDeclines(17.1, 46), false);
+  assert.equal(quietDeclines(PROBE_FIRES_DB + 1, 68), false);
+  assert.equal(quietDeclines(17.1, null), false);
+  assert.ok(PROBE_QUIET.firesDb < PROBE_FIRES_DB);
 });
 
 // a plan without the denoiser, what it says of the machine taken out: what ffmpeg's method gives
@@ -671,9 +732,17 @@ test("the probe fires where the denoiser took much out: the whole recording deno
   const m = await measure(file("quiet-noise.wav"));
   const tones = [];
   // (a stand-in that lowers everything by 1 dB took out 0.109 of the amplitude and kept 0.891:
-  // 18.3 dB under the voice, and the voice 1 dB down)
+  // 18.3 dB under the voice, and the voice 1 dB down. This recording's pauses lie further under
+  // its speech than PROBE_QUIET's bound, where so even a taking is some of the voice and declined;
+  // the bound raised here, as for a recording whose pauses lie nearer)
+  assert.ok((m.levels.snrADb ?? m.levels.snrDb) >= PROBE_QUIET.snrDb, "pauses far under");
+  const quiet = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB }, () => probeNoise(file("quiet-noise.wav"), m, {}, file("probe-work")));
+  assert.equal(quiet.fires, false);
+  assert.equal(quiet.declined, "quiet");
+  assert.match(quiet.why, /^The pauses lie \d+ dB under the speech, so there is no steady noise, and what the neural denoiser took out of its sample lies 18 dB under the voice/);
+  const nearer = { probeQuiet: { snrDb: 99 } };
   const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB }, () =>
-    repair(file("quiet-noise.wav"), file("fired.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return d ? "volume=0dB" : ""; } }));
+    repair(file("quiet-noise.wav"), file("fired.out.wav"), m, { ...nearer, after: "", retone: (d) => { tones.push(d); return d ? "volume=0dB" : ""; } }));
   assert.equal(r.method, "dpdfnet");
   assert.equal(r.probe.fires, true);
   near(r.probe.underDb, 18.3, 0.2, "the estimate");
@@ -688,7 +757,7 @@ test("the probe fires where the denoiser took much out: the whole recording deno
   // the denoiser failing after the probe fired: nothing ffmpeg can do, said so, the tone told
   tones.length = 0;
   const f = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB, STANDIN_FAIL: 4, STANDIN_FAIL_AFTER: 1, STANDIN_COUNT: file("count-p") }, () =>
-    repair(file("quiet-noise.wav"), file("fired-failed.out.wav"), m, { after: "", retone: (d) => { tones.push(d); return ""; } }));
+    repair(file("quiet-noise.wav"), file("fired-failed.out.wav"), m, { ...nearer, after: "", retone: (d) => { tones.push(d); return ""; } }));
   fs.rmSync(file("count-p"), { force: true });
   const fs1 = f.steps.find((s) => s.id === "denoise");
   assert.equal(f.method, "off");
@@ -826,8 +895,9 @@ test("the probe fired, the run then took the voice down: no noise step, said in 
   const m = await measure(file("quiet-noise.wav"));
   const count = file("count-pd");
   fs.rmSync(count, { force: true });
-  // (the probe's call lowers everything by 1 dB; the real run's, the second, by 20)
-  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB, STANDIN_LOW_DB: -19, STANDIN_LOW_CALL: 2, STANDIN_COUNT: count }, () => repair(file("quiet-noise.wav"), file("pd.out.wav"), m));
+  // (the probe's call lowers everything by 1 dB; the real run's, the second, by 20. The probe's
+  // bound for pauses far under the speech raised, as in the test before)
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: LOWER_DB, STANDIN_LOW_DB: -19, STANDIN_LOW_CALL: 2, STANDIN_COUNT: count }, () => repair(file("quiet-noise.wav"), file("pd.out.wav"), m, { probeQuiet: { snrDb: 99 } }));
   const st = r.steps.find((s) => s.id === "denoise");
   assert.equal(r.probe.fires, true);
   assert.equal(r.method, "off");
@@ -836,6 +906,18 @@ test("the probe fired, the run then took the voice down: no noise step, said in 
   const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("pd-plain.out.wav"), m));
   assert.ok(fs.readFileSync(file("pd.out.wav")).equals(fs.readFileSync(file("pd-plain.out.wav"))));
   assert.equal(plain.method, "off");
+});
+
+test("a room whose voice the denoiser took down: its result thrown away, the room said to stay, the sound as without the denoiser", { skip }, async () => {
+  const m = { ...(await measure(file("quiet-noise.wav"))), room: HALL };
+  const r = await withEnv({ ...STANDIN_ENV(), STANDIN_GAIN_DB: -20 }, () => repair(file("quiet-noise.wav"), file("room-down.out.wav"), m));
+  assert.equal(r.method, "off");
+  assert.equal(r.probe, undefined, "no probe where the room starts the denoiser");
+  const st = r.steps.find((s) => s.id === "denoise");
+  assert.match(st.why, /^A reverberant room \(the voice's decays about 0\.6 s\), but the neural denoiser took the voice itself down \(.*\), so its result was thrown away, and none of ffmpeg's filters takes a room: it stays\.$/);
+  assert.match(r.left.find((l) => l.id === "roomy").why, /stays: none of ffmpeg's filters removes it/);
+  const plain = await withEnv(NONE_ENV(), () => repair(file("quiet-noise.wav"), file("room-plain.out.wav"), m));
+  assert.ok(fs.readFileSync(file("room-down.out.wav")).equals(fs.readFileSync(file("room-plain.out.wav"))));
 });
 
 // ---------------------------------------------------------------- a strength named

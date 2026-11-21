@@ -53,7 +53,7 @@ Where what is left says a knock (a clap, a bump) stays, say that it is still in 
 
 What it cannot mend it says, and you pass that on as it is, never softened:
 
-- **The room** (a hall, an echoing kitchen): it stays. Next time closer to the microphone, a room with soft things in it.
+- **The room** (a hall, an echoing kitchen): with the denoiser on the machine a clearly reverberant room is taken down between the words, and the line says what stays; a little room, and a room on a machine without the denoiser, stays. Next time closer to the microphone, a room with soft things in it.
 - **Noise that changes** (traffic, voices, a keyboard, wind): with the denoiser on the machine it is taken down, by as much as the line says, and what remains remains; without the denoiser it stays nearly as it was.
 - **A narrow source** (a call, a 16 kHz recording): what was not recorded is not brought back.
 
@@ -73,7 +73,7 @@ You measured it, you did not hear it. Show both, the result first, with what you
  [:ul
   [:li "It was quiet and uneven: now every sentence is as loud as the videos around it."]
   [:li "The fridge's hum is turned down, the noise in the pauses is lower."]
-  [:li "The kitchen's echo stays: no filter takes a room out of a voice."]]
+  [:li "The kitchen's echo is lower between the words; within them it stays."]]
  [:p "I measured this, I did not hear it. Does it sound right?"]
  [:button {:class "primary" :send "The sound is good"} "Sounds good"]
  [:p [:small "Or tell me what should be different."]]]
@@ -94,7 +94,7 @@ Run `clean` again on the upload (never on a result) with the option, and show bo
 | "that is not my voice", too sharp, too dull | `--tone off` |
 | it pumps, it breathes, too flat, "like the radio" | `--level plain`: as loud, with the recording's own dynamics (no evening out of its phrases) |
 | too loud, too quiet beside other videos | `--loudness <LUFS>` (a platform's own figure: `targets`) |
-| the echo, the room | nothing here helps; say so, and how to record it next time |
+| the echo, the room | nothing more here: what the line says was taken is all this tool takes of a room; say so, and how to record it next time |
 
 ### 4. After their yes
 
