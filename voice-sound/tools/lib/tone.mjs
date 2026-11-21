@@ -1,8 +1,8 @@
 // The tone stage of `voice.mjs clean`: a correction of what stands out in the voice's long-term
 // spectrum, never a house sound. A recording whose tone lies within a normal voice's range is
 // left exactly as it is: a step is planned only where lib/findings.mjs names a tone finding
-// (dull, harsh, boomy, thin, sibilant), and each band takes back only half of its distance beyond
-// what voices differ by among themselves.
+// (dull, harsh, boomy, thin, sibilant), and each band takes back all of its distance beyond what
+// voices differ by among themselves, and no more.
 //
 //   tonePlan(m, opts)   m: the object `measure` returns; opts.tone "auto" | "off" (default
 //                       "auto"); opts.denoised: true when the repair stage takes noise out;
@@ -27,16 +27,21 @@ import { findingsOf, NOISE_SOME_DB, NARROW_BOTTOM_HZ, SIBILANT_SOME_DB, SIBILANT
 // Voices differ from the average speech spectrum by up to about ±5 dB a band (Byrne et al. 1994):
 // a band is corrected only by what lies beyond that
 export const TOLERANCE_DB = 5;
-// the part of the distance beyond the tolerance a band takes back. Not all of it: a voice
-// corrected all the way sounds like nobody; and the measure itself moves by a few dB between two
-// short recordings of one speaker (the lab's clean speech: up to 8 dB at 2–4 kHz between two 7-s
-// readings of one man), so half
-export const SHARE = 0.5;
-// bounds on a filter's own gain: a cut to 6 dB; a boost to 3 dB (the range engineers give for
-// presence and air, +1 to 3 dB; a boost lifts whatever noise is there too); under 1 dB a band is
-// not worth a filter, so a finding takes at least that
-export const MAX_CUT_DB = 6;
-export const MAX_BOOST_DB = 3;
+// the part of the distance beyond the tolerance a band takes back: all of it, to the edge of what
+// voices differ by and no further, so the voice keeps its own colour inside that. Chosen by ear on
+// five recordings (harsh, dull, boomy, sibilant, and one with nothing standing out), each heard
+// with half of it, all of it and a target sound for every voice (2026-11-21): half left what stood
+// out half there. The risk it carries: the measure itself moves by a few dB between two short
+// recordings of one speaker (the lab's clean speech: up to 8 dB at 2–4 kHz between two 7-s
+// readings of one man), and a correction of all of the distance follows that error all the way
+export const SHARE = 1;
+// bounds on a filter's own gain: a cut to 12 dB; a boost to 6 dB, half of that, as a boost lifts
+// whatever noise is there with the voice (the guards below keep it off the highs where the noise
+// is close under the voice); under 1 dB a band is not worth a filter, so a finding takes at least
+// that. On the five recordings heard: −3 dB at 3 kHz for the harsh one, −5 dB at 160 Hz for the
+// boomy one, +1.5 dB at 3 kHz for the dull one
+export const MAX_CUT_DB = 12;
+export const MAX_BOOST_DB = 6;
 export const MIN_GAIN_DB = 1;
 // a band-limited source is judged and boosted only where it carries the voice: a band counts when
 // it ends this far under the voice's top (a 16 kHz source, top 8 kHz, keeps 2–4 kHz and loses
@@ -50,18 +55,25 @@ const OVER_BOTTOM = 0.75;
 // samples' absolute level, so the voice is brought to DEESS_LEVEL_LUFS before it and back after
 // (−28: the lab's voices peak at −2 dBFS and under there; at −20 half of them went over full
 // scale, where the filter's own tracking turns over). Its options were tried on the lab's
-// sibilant voices (agentitos-lab voice/try-tone.mjs --grid, 2026-11-19: 24 copies of clean speech
-// with +6 and +10 dB at 7 kHz, 12 clean ones): it acts like a threshold, nothing under i=0.4,
-// 1.7 / 3.7 dB off the loudest "s" at 0.48, 2.7 / 5 dB at 0.52, steeply more beyond (at −20 LUFS
-// i=0.5 took 10–13 dB, far under the speaker's own clean "s": a lisp), and more the more sibilant
-// the voice. f=0.7 (the split near 4 kHz) leaves 2–4 kHz within 0.2 dB where 0.5 takes up to
-// 1 dB; m hardly matters there. adynamicequalizer lowered the "s" no better, took more of
+// sibilant voices (the lab's voice/try-tone.mjs --grid, 2026-11-21: 12 copies of clean speech with +6 dB
+// at 7 kHz, 12 with +10 dB at 7.5 kHz, 12 clean ones): it acts like a threshold, nothing under
+// i=0.4, and more the more sibilant the voice; at −28 LUFS each 0.01 more takes 0.25 to 0.3 dB
+// more off the loudest "s", evenly up to 0.6 (the +6 / +10 dB copies: 1.7 / 3.7 dB at 0.48,
+// 3.2 / 5.6 at 0.54, 4.9 / 7.3 at 0.6; at −20 LUFS i=0.5 took 10–13 dB, far under the speaker's
+// own clean "s": a lisp). It runs only on the voices the measure calls sibilant (41 of the
+// copies), and there it takes more than on the rest: 0.51 … 0.56 takes a median 6.6 dB, all the
+// fault put there (0.46 … 0.54: 5.4 dB, 87 %), the +10 dB copies' loudest "s" ending 0.5 dB over
+// the speaker's own, the +6 dB ones' 1.9 dB under it. Twice as much is not to be had without a
+// lisp: a stronger end takes little more and puts more voices under their own "s" (0.51 … 0.58:
+// 13 of the 41 more than 1 dB under, 0.51 … 0.6: 14, against 10), so the strong end is 0.56, and
+// the weak one where it was chosen by ear on a sibilant reader (0.51, 2026-11-21). f=0.7 (the
+// split near 4 kHz) leaves 2–4 kHz within 0.2 dB where 0.5 takes up to 1 dB; m hardly matters there. adynamicequalizer lowered the "s" no better, took more of
 // 2–4 kHz and of clean voices, and its modes differ between ffmpeg 6.1 (cut, boost, direction)
 // and 8.0/9.0 (cutabove, …), so it is not used.
 export const DEESS_LEVEL_LUFS = -28;
 export const DEESS_FREQUENCY = 0.7;
 export const DEESS_MAX = 0.5;
-export const DEESS_INTENSITY = [0.46, 0.54]; // for sibilance at the finding's threshold … at its strong one and over
+export const DEESS_INTENSITY = [0.51, 0.56]; // for sibilance at the finding's threshold … at its strong one and over
 
 const RATE = 48000;
 const r1 = (x) => Math.round(x * 10) / 10;
@@ -115,7 +127,7 @@ function solve(band, target, measured, fixed = []) {
   g = target < 0 ? -clamp(-g, MIN_GAIN_DB, MAX_CUT_DB) : clamp(g, MIN_GAIN_DB, MAX_BOOST_DB);
   return { ...band, gainDb: r1(g), changeDb: r1(change(r1(g))) };
 }
-// the change aimed at: half of the distance beyond the tolerance, against its sign (0 within it)
+// the change aimed at: the distance beyond the tolerance (SHARE of it), against its sign (0 within it)
 const aim = (diff) => (Math.abs(diff) > TOLERANCE_DB ? -Math.sign(diff) * SHARE * (Math.abs(diff) - TOLERANCE_DB) : 0);
 
 export function tonePlan(m, opts = {}) {
