@@ -229,6 +229,8 @@ function numbers(m) {
     seconds: m.analysed?.seconds ?? null, channels: m.sound?.channels ?? null, sampleRate: m.sound?.sampleRate ?? null, codec: m.sound?.codec ?? null,
     lufs: lufsOrNull(lo.integratedLufs), rangeLu: lufsOrNull(lo.integratedLufs) == null ? null : lo.rangeLu, truePeak: lo.truePeakDb,
     speechLufs: lufsOrNull(L.speechLufs ?? null), noiseLufs: L.noiseLufs ?? null, snrDb: L.snrADb ?? L.snrDb ?? null, phraseSpreadLu: L.phrases?.spreadLu ?? null,
+    // (few or short pauses: the floor, and so the noise's distance, is an uncertain reading, as measure's own lines say)
+    ...(m.speech?.confidence === "low" ? { snrUncertain: true } : {}),
     voiceSeconds: m.speech?.seconds ?? null,
     findings: (m.findings || []).map((f) => ({ id: f.id, strength: f.strength })),
   };
@@ -733,11 +735,18 @@ export async function clean(file, out, opts = {}, stages = null) {
       left.push({ id: "hum", stage: "repair", ...still });
     }
     // the noise: what repair forecast ("it ends about N dB under") is said as the delivered file
-    // measures it, where the two lie more than NOISE_SAID_DB apart
-    const noiseAfter = numbers(m2).snrDb;
+    // measures it, where the two lie more than NOISE_SAID_DB apart. Not where the delivered file
+    // has too few pauses to read its floor in (someone talking straight through for 18 s read
+    // "18 → 9 dB" twice, the noise worse after a denoiser): then the forecast stands and says so
+    const after2 = numbers(m2), noiseAfter = after2.snrDb;
     for (const x of left) {
       const fc = x.id === "noise" && /ends about (\d+) dB under/.exec(x.why);
-      if (!fc || noiseAfter == null || Math.abs(Number(fc[1]) - noiseAfter) <= NOISE_SAID_DB) continue;
+      if (!fc || noiseAfter == null) continue;
+      if (after2.snrUncertain) {
+        x.why = x.why.replace(/so it ends about \d+ dB under/, `so it would end about ${fc[1]} dB under (the delivered file has too few pauses to measure it in)`);
+        continue;
+      }
+      if (Math.abs(Number(fc[1]) - noiseAfter) <= NOISE_SAID_DB) continue;
       x.why = x.why.replace(/so it ends about \d+ dB under/, `so it would end about ${fc[1]} dB under; the delivered file measures it ${i0(noiseAfter)} dB under the speech`);
       x.measuredDb = noiseAfter;
     }
@@ -798,7 +807,8 @@ export function lines(r) {
   for (const s of r.skipped || []) out.push(`Not done: ${s.why}`);
   const played = (x, ch) => (ch === 1 && x.lufs != null ? ` (one channel; ${f1(x.lufs + TWO_SPEAKERS_LU)} as played)` : "");
   out.push(`Before → after: loudness ${f1(b.lufs)}${played(b, b.channels)} → ${f1(a.lufs)}${played(a, fm.channels)} LUFS, range ${f1(b.rangeLu)} → ${f1(a.rangeLu)} LU, true peak ${f1(b.truePeak)} → ${f1(a.truePeak)} dBTP` +
-    (b.snrDb != null && a.snrDb != null ? `, noise ${i0(b.snrDb)} → ${i0(a.snrDb)} dB under the speech (A-weighted)`
+    (b.snrDb != null && a.snrDb != null && a.snrUncertain ? `, noise ${i0(b.snrDb)} dB under the speech (A-weighted)${b.snrUncertain ? ", an uncertain reading (few pauses)" : ""}, in the result not measured reliably (too few pauses to measure it in)`
+      : b.snrDb != null && a.snrDb != null ? `, noise ${i0(b.snrDb)} → ${i0(a.snrDb)} dB under the speech (A-weighted${b.snrUncertain ? "; the first an uncertain reading, few pauses" : ""})`
       : b.snrDb != null ? `, noise ${i0(b.snrDb)} dB under the speech (A-weighted), in the result not measurable (no pause left to measure it in)`
       : a.snrDb != null ? `, noise not measurable before (no pause), ${i0(a.snrDb)} dB under the speech after (A-weighted)` : "") + ".");
   if (r.left.length) out.push(`Not mended: ${r.left.map((x) => `${x.id}: ${x.why}`).join(" ")}`);

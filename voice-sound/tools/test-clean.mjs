@@ -136,6 +136,12 @@ test("the report's lines say where the noise could not be measured, never a bare
   assert.match(said(null, 30), /, noise not measurable before \(no pause\), 30 dB under the speech after \(A-weighted\)\.$/);
   assert.match(said(20, 30), /, noise 20 → 30 dB under the speech \(A-weighted\)\.$/);
   for (const [b, a] of [[67, null], [null, 30]]) assert.doesNotMatch(said(b, a), /\?/);
+  // too few pauses in the result to read its floor in: no number that says the noise got worse
+  const unsure = (b, a, bu, au) => { const x = r(b, a); if (bu) x.measured.before.snrUncertain = true; if (au) x.measured.after.snrUncertain = true; return lines(x).find((l) => l.startsWith("Before → after")); };
+  assert.match(unsure(18, 9, true, true), /, noise 18 dB under the speech \(A-weighted\), an uncertain reading \(few pauses\), in the result not measured reliably \(too few pauses to measure it in\)\.$/);
+  assert.doesNotMatch(unsure(18, 9, true, true), /→ 9/);
+  assert.match(unsure(18, 9, false, true), /, noise 18 dB under the speech \(A-weighted\), in the result not measured reliably/);
+  assert.match(unsure(18, 30, true, false), /, noise 18 → 30 dB under the speech \(A-weighted; the first an uncertain reading, few pauses\)\.$/);
 });
 
 test("the report: the file beside the output, the same object with --json, the lines an agent passes on", { skip }, () => {
