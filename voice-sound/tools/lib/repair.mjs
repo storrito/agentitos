@@ -972,7 +972,7 @@ function fallbackPlan(m, opts, e) {
   const said = `${what}, so ffmpeg's ${plan.method} did this for the whole recording`;
   const st = plan.steps.find((s) => s.id === "denoise");
   const u = opts.underVoice, room = roomDenoise(m, { ...ROOM_DENOISE, ...opts.room });
-  const fallback ={ from: "dpdfnet", reason: e.message, ...(e.voice && { voice: e.voice }) };
+  const fallback = { from: "dpdfnet", reason: e.message, ...(e.voice && { voice: e.voice }) };
   if (st) Object.assign(st, { why: `${st.why.replace(/\.$/, "")}; ${said}.`, fallback });
   else if (room.fires && (opts.denoise ?? "auto") === "auto") plan.steps.push({ id: "denoise", why: `A reverberant room (the voice's decays about ${room.medianS.toFixed(1)} s), but ${e.voice ? `the neural denoiser ${e.message.replace(/^it /, "")}, so its result was thrown away` : `the neural denoiser failed (${e.message})`}, and none of ffmpeg's filters takes a room: it stays.`, method: "off", room: { medianS: room.medianS, decays: room.decays }, fallback });
   else if (u?.fires) plan.steps.push({ id: "denoise", why: `Noise lies under the voice, about ${dB(u.underDb)} dB under the speech as the neural denoiser's probe found it, but ${e.voice ? `on the whole recording ${what.replace(/^the neural denoiser/, "the denoiser")}` : `the denoiser then failed (${e.message})`}, and ffmpeg's methods learn a noise from the pauses, where there is too little of it: it stays.`, method: "off", underVoiceDb: u.underDb, probe: u, fallback });
