@@ -2182,6 +2182,46 @@ test("the voice's muted pieces carry the room at the take's level, the same byte
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+const voiceSoundHere = fs.existsSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "voice-sound", "tools", "voice.mjs"));
+test("the cut's voice as mounted: a quiet voice (−37 dBFS) with a click 26 dB over its words, its takes evened as a float WAV, then voice-sound's level stage: the loudness as played, the true peak under the bus's ceiling, the room in a muted piece as far under the words as before; levelled once", { skip: (!hasFfmpeg && "no ffmpeg on this machine") || (!voiceSoundHere && "agentitos' voice-sound is not beside this skill") }, async () => {
+  const { levelledVoice } = await import("./lib/tracks.mjs");
+  const { levelVoice } = await import("./lib/voicesound.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "level-"));
+  try {
+    const voice = path.join(dir, "voice.wav"), sr = 48000;
+    wav(voice, roomVoice(sr, { room: 0.0005, words: 0.02 }), sr);
+    const pieces = [
+      { in: 0.2, duration: 1.9, gain: 0, rate: 1 },
+      { in: 2.1, duration: 0.5, gain: 0, rate: 1, mute: true, hold: true },
+      { in: 2.5, duration: 1.5, gain: 0, rate: 1 },
+    ];
+    const tone = roomTone(voice, ROOM_WORDS, path.join(dir, "room.wav"), 0.5);
+    const cut = voiceTrack(voice, pieces, path.join(dir, "voice.cut.wav"), { tone });
+    const before = decoded(cut, sr);
+    const room = (y) => dbOf(y.subarray(Math.round(1.95 * sr), Math.round(2.35 * sr))), said = (y) => dbOf(y.subarray(Math.round(0.4 * sr), Math.round(1.0 * sr)));
+    const out = path.join(dir, "voice.cut.m4a");
+    const v = levelledVoice(cut, out, { target: -14, ceiling: -2 }, levelVoice);
+    assert.equal(v.levelled, true, JSON.stringify(v));
+    const m = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", out, "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+    const s = m.slice(m.lastIndexOf("Summary:")), lufs = Number(s.match(/I:\s*(-?[\d.]+) LUFS/)[1]), peak = Number(s.match(/Peak:\s*(-?[\d.]+) dBFS/)[1]);
+    assert.ok(peak <= -2, `the mounted voice's true peak ${peak} dBTP is over the bus's ceiling`);
+    // one channel that both speakers get whole: the file 3 LU under the loudness as played
+    assert.ok(Math.abs(lufs + 17) <= 0.5, `${lufs} LUFS`);
+    assert.ok(Math.abs(v.lufs + 14) <= 0.5 && Math.abs(v.measured - lufs) <= 0.2, JSON.stringify(v));
+    // raised by some 20 dB, the room under the words as before (the leveller holds through the pauses)
+    const after = decoded(out, sr);
+    assert.ok(said(after) - said(before) > 15, `raised by ${(said(after) - said(before)).toFixed(1)} dB`);
+    assert.ok(Math.abs((room(after) - said(after)) - (room(before) - said(before))) < 1.5, `room against the words: ${(room(before) - said(before)).toFixed(1)} dB before, ${(room(after) - said(after)).toFixed(1)} after`);
+    // the same cut and numbers again: not levelled again; another ceiling: levelled again
+    const made = fs.statSync(out).mtimeMs;
+    levelledVoice(cut, out, { target: -14, ceiling: -2 }, () => assert.fail("levelled again"));
+    assert.equal(fs.statSync(out).mtimeMs, made);
+    let asked = 0;
+    levelledVoice(cut, out, { target: -14, ceiling: -3 }, (a, b, args) => { asked++; assert.deepEqual(args, ["--loudness", "-14", "--peak", "-3"]); return { error: "No voice was found in it." }; });
+    assert.equal(asked, 1);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a long muted piece: the room never repeats, its level steady, then it fades out and is silent", { skip: !hasFfmpeg && "no ffmpeg on this machine" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "room-long-"));
   try {

@@ -8,8 +8,8 @@
 // covering the frame (layout.cover); in the screen and phone views the webcam beside it in a circle, the same
 // moment, one element for the whole cut (the webcam's track, tracks.mjs) moved into place at each
 // piece. The sound is the main microphone's, mended by voice-sound, one track for the whole cut
-// with every take at the common level and 10 ms fades at the cuts (tracks.mjs), through one bus
-// with a true-peak ceiling. A browser plays only about 75 media
+// with every take at the common level and 10 ms fades at the cuts, brought to its loudness by
+// voice-sound's level stage (tracks.mjs), through one bus with a true-peak ceiling, a guard. A browser plays only about 75 media
 // elements on a page: the shots of the screens are one each, the voice and the webcam one in all.
 // On top: a label per keep that has one, a badge on a timelapse, the captions of agentitos'
 // captions skill, and music under the voice when asked, lower while someone speaks. A keep that
@@ -36,8 +36,8 @@ const px = (v) => `${+v.toFixed(1)}px`;
 // the most a shown video is enlarged over its own pixels
 export const SHOW_MOST = 2;
 
-// the voice's bus: a true-peak ceiling alone; the voice comes mended from voice-sound, each take at
-// the common level
+// the voice's bus: a true-peak ceiling alone; the voice comes mended and levelled by voice-sound,
+// its true peak at the ceiling already
 const bus = (ceiling) => ({ version: 1, nodes: [{ type: "truepeak", id: "n1", label: "Ceiling", params: { ceiling } }] });
 
 // a hard link where the file system allows one (no copy of a long video), else a copy
@@ -262,10 +262,12 @@ export function writeComposition(out, o) {
   const voiceClips = [`      <audio id="voice-track" class="clip" src="assets/${voice}" ${timing(0, total)} data-media-start="0"
         data-track-index="7" data-has-audio="true" data-audio-group="voice"></audio>`];
 
-  // music under it all, lower while someone speaks
+  // music under it all, lower while someone speaks; its volume moved by as much as the levelled
+  // voice's file lies from the master's loudness (music.shift, dB): the same `volume` sets it at
+  // the same distance under the voice, whatever loudness the voice is levelled to
   let musicHtml = "";
   if (music) {
-    const base = music.volume ?? 0.35, under = base * 0.35;
+    const base = +((music.volume ?? 0.35) * 10 ** ((music.shift || 0) / 20)).toFixed(4), under = base * 0.35;
     // up where nobody speaks for more than 1.2 s, down again 0.3 s before the next words
     const lane = [];
     let at = 0;
@@ -285,7 +287,7 @@ export function writeComposition(out, o) {
         data-track-index="8" data-has-audio="true" data-automation="${attr(auto)}"></audio>`;
   }
 
-  // the sound of a video a keep shows (show.mjs), levelled to the voice when it was cut: a quarter
+  // the sound of a video a keep shows (show.mjs), levelled to the voice's file when it was cut: a quarter
   // of its level under the first words, rising to its level by the last word, held, out at its
   // end; through the voice's bus, so under the same ceiling
   const insertHtml = inserts.filter((i) => i.audio).map((i, k) => `      <audio id="show-sound-${k + 1}" class="clip" src="assets/${i.audio}" ${timing(i.start, i.duration)} data-media-start="0"

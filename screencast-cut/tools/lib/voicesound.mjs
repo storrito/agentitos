@@ -7,10 +7,15 @@
 //   voiceSoundTool()                    → its tools/voice.mjs, or null
 //   cleanVoice(file, out, { log })      → its report ({ steps, left, notJudged, … }): the voice of
 //                                         `file` mended into `out` (a .wav), its loudness kept
-//                                         (--level off: the cut sets each take's level), one
+//                                         (--level off: the cut evens its takes, levelVoice
+//                                         levels the cut's voice), one
 //                                         channel (--mono: the voice is one track of the cut);
 //                                         its progress lines to log; a refusal or a failure throws
 //                                         the tool's sentence
+//   levelVoice(file, out, args)         → { report } or { error }: its level stage on the cut's
+//                                         voice, `clean <file> <out> --json --denoise off --tone off
+//                                         --mono …args` (repair and tone ran on the whole
+//                                         recording); a refusal or a failure is a sentence
 //   soundTargets()                      → { lufs, peakAim, peakMax }: the master for video
 //   mendedSaid(report)                  → the lines new prints: what was mended, what stays
 //   NEEDS_VOICE_SOUND                   → the sentence for when it is missing
@@ -52,6 +57,16 @@ export async function cleanVoice(file, out, { log = () => {} } = {}) {
   const r = answer(said);
   if (code || r.error || !fs.existsSync(out)) throw new Error(r.error || `voice-sound stopped (exit ${code})${last ? `: ${last}` : " without a word"}`);
   return r;
+}
+
+export function levelVoice(file, out, args = []) {
+  const tool = voiceSoundTool();
+  if (!tool) return { error: NEEDS_VOICE_SOUND };
+  const r = spawnSync(process.execPath, [tool, "clean", file, out, "--json", "--denoise", "off", "--tone", "off", "--mono", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 26 });
+  if (r.error) return { error: `voice-sound could not be started: ${r.error.message}` };
+  const j = answer(r.stdout || "");
+  if (r.status || j.error || !fs.existsSync(out)) return { error: j.error || `voice-sound stopped (exit ${r.status})${(r.stderr || "").trim() ? `: ${(r.stderr || "").trim().split("\n").pop().slice(0, 200)}` : ""}` };
+  return { report: j };
 }
 
 let master = null;

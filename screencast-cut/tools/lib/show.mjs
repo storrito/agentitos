@@ -271,7 +271,7 @@ export function soundSaid(i, target, clock, heard = null) {
 }
 
 // The gain in dB that brings a shown video's sound (its stretch's integrated loudness, ebur128 as
-// finish measures) to the voice's level before the bus (voice-sound's master loudness), so that "sound" means the
+// finish measures) to the voice's level as its file measures (the levelled voice's), so that "sound" means the
 // same for a quiet clip and a loud one: 1 is the voice's loudness, 0.8 about 2 dB under it. A
 // stretch too quiet to measure (silence) is left as it is.
 export function levelGain(lufs, target) {

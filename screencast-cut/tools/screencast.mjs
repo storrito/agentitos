@@ -69,7 +69,7 @@ import { grid, differ, samplesOf, mirrors, scenes, level, busy, focus, pauseMove
 import { plan, range, timeRange, pieceEndSaid, endSaid } from "./lib/cut.mjs";
 import { FRAMES, areas, linesOf, captionLine, captionsFor, captionArea, crop as cropFor, place, underHeaders, headerSentence } from "./lib/layout.mjs";
 import { writeComposition, brandOf } from "./lib/composition.mjs";
-import { voiceTrack, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
+import { voiceTrack, levelledVoice, cameraTrack, backdropTrack } from "./lib/tracks.mjs";
 import { roomTone } from "./lib/room.mjs";
 import { findFace } from "./lib/face.mjs";
 import { kindOf, route } from "./lib/openrouter.mjs";
@@ -78,7 +78,7 @@ import { zones, platformList } from "./lib/zones.mjs";
 import { faceView } from "./lib/placement.mjs";
 import { screenView, isScreenPiece, beyondZoom, MOST as ZOOM_MOST } from "./lib/screenview.mjs";
 import { showOf, showProblem, placeShows, cutShownSound, shownVideo, circleOn, soundSaid, listenShown, heardSaid } from "./lib/show.mjs";
-import { cleanVoice, mendedSaid, soundTargets, voiceSoundTool, NEEDS_VOICE_SOUND } from "./lib/voicesound.mjs";
+import { cleanVoice, levelVoice, mendedSaid, soundTargets, voiceSoundTool, NEEDS_VOICE_SOUND } from "./lib/voicesound.mjs";
 
 const VALUED = ["out", "title", "lang", "frame", "platform", "fps", "speed", "pause", "tail", "end", "loudness", "mic", "duck", "brand", "style", "product", "source", "keeps"];
 const FLAGS = ["off", "proposal", "recording"];
@@ -142,8 +142,9 @@ function settings(dir, opts) {
   return merged;
 }
 
-// The levels of the sound, from voice-sound's master for video: each take's before the bus (take),
-// the finished video's (final: --loudness where given), the ceiling of the bus and of finish's
+// The levels of the sound, from voice-sound's master for video: its loudness (take, which "sound"
+// and the music's volume are reckoned from), the finished video's and the levelled voice's as
+// played (final: --loudness where given), the ceiling of the bus, of the voice and of finish's
 // limiter (ENCODE_DB under the true peak aimed at), and the true peak a finished file may have
 function levels(s) {
   let t;
@@ -300,7 +301,7 @@ async function prepareRecording(sdir, folder, s, opts) {
 
   // the voice on the recording's timeline: the main microphone mended by agentitos' voice-sound
   // (the whole recording, before anything is cut: it reads the noise in the pauses; its loudness
-  // kept, the cut sets each take's level), then from 0. Where voice-sound refuses or fails, the
+  // kept: the build evens the takes and levels the cut's voice), then from 0. Where voice-sound refuses or fails, the
   // microphone as recorded, said.
   const voice = "voice.m4a", mended = at("voice.sound.wav");
   const delay = Math.round(sources[mic].offset * 1000);
@@ -909,10 +910,11 @@ async function cmdBuild(dir, opts) {
   const { env, thr, blocks } = voiceOf(dir);
   const voices = { 1: { env, thr, blocks, duration: meta.duration, sessions: meta.sessions } };
   // the speed: as asked, or by how fast the person speaks in the cut (pace())
-  let r = plan(words, cut, { ...s, loudness: lv.take, speed: 1 }, voices, moves);
+  // (the takes evened to one another: the voice as a whole is levelled below)
+  let r = plan(words, cut, { ...s, loudness: undefined, speed: 1 }, voices, moves);
   const talk = pace(r.pieces, words);
   const speed = s.speed === "auto" ? talk.speed : s.speed;
-  if (speed !== 1) r = plan(words, cut, { ...s, loudness: lv.take, speed }, voices, moves);
+  if (speed !== 1) r = plan(words, cut, { ...s, loudness: undefined, speed }, voices, moves);
   if (r.errors.length) fail(r.errors.map((e) => `✗ ${e}`).join("\n") + `\nFix ${rel(cutFile)} and build again.`);
   if (!r.pieces.length) fail("✗ Nothing to play: the keeps hold no words.");
 
@@ -1080,14 +1082,28 @@ async function cmdBuild(dir, opts) {
   // the voice and the webcam as one track each for the whole cut (a browser plays about 75 media
   // elements on a page, a clip per piece ran out of them)
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
+  // the takes evened among themselves as a float WAV beside the sources, then the whole once
+  // through voice-sound's level stage to the loudness as played and under the bus's ceiling: the
+  // file the composition mounts
+  const cutVoice = source(dir, "voice.cut.wav");
   try {
-    voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"), { tone });
+    voiceTrack(source(dir, voiceFile), r.pieces, cutVoice, { tone });
   } catch (e) {
     if (!tone?.file) throw e;
     // the room never stops a build: the muted pieces silent, as before
     console.log(`The voice's muted pieces stay silent: ffmpeg could not lay the room into them (${String(e.message).slice(0, 160)}).`);
-    voiceTrack(source(dir, voiceFile), r.pieces, path.join(out, "assets", "voice.cut.m4a"));
+    voiceTrack(source(dir, voiceFile), r.pieces, cutVoice);
   }
+  const vl = levelledVoice(cutVoice, path.join(out, "assets", "voice.cut.m4a"), { target: lv.final, ceiling: lv.ceiling }, levelVoice);
+  // what is set against the voice (a shown video's sound, the music) follows its level: by as much
+  // as the levelled voice's file lies from the master's loudness (shift), so that "sound" and the
+  // music's volume put them as far under the voice whatever the target; without the level stage
+  // nothing moves
+  const shift = vl.levelled && Number.isFinite(vl.measured) ? +(vl.measured - lv.take).toFixed(2) : 0;
+  const voiceAt = +(lv.take + shift).toFixed(2);
+  console.log(vl.levelled
+    ? `The voice (voice-sound's level stage): ${vl.lufs} LUFS as played on two speakers (its one channel ${vl.measured}), true peak ${vl.peak} dBTP, under the bus's ceiling of ${lv.ceiling} dB${vl.steps.includes("leveller") ? "; its uneven phrases evened" : ""}.`
+    : `The voice is not levelled (${String(vl.why).replace(/\.$/, "")}): its takes as evened, the bus's ceiling and finish set its level.`);
   let camera = null;
   if (sources.webcam?.video) {
     cameraTrack(source(dir, sources.webcam.file), sources.webcam.offset, r.pieces, path.join(out, "assets", "camera.mp4"), { fps: s.fps, parts: source(dir, "camera.parts") });
@@ -1104,7 +1120,7 @@ async function cmdBuild(dir, opts) {
     backdrop = "backdrop.mp4";
   }
   // a shown video's sound ("sound"): its stretch measured (ebur128, as finish does) and cut out
-  // beside the composition at the voice's level before the bus (lv.take), a limiter under
+  // beside the composition at the voice's level as its file measures (voiceAt), a limiter under
   // 0 dBFS, the file's metadata left behind; it plays through the voice's bus and its ceiling.
   // Where ffmpeg cannot, the video plays muted and the build says so. Whether a clip speaks under
   // the words is heard once (kept), for its line only, every keep's at the same time (a failure is
@@ -1112,15 +1128,15 @@ async function cmdBuild(dir, opts) {
   // at most LISTEN s once, not once per keep); not in the hold form, silent under the words
   const said = await Promise.all(shown.inserts.map(async (i) => {
     const audio = `${i.key}.m4a`;
-    const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), lv.take);
+    const a = cutShownSound(i.src, i.from, i.duration, path.join(out, "assets", audio), voiceAt);
     i.lufs = a.lufs; i.gain = a.gain;
     if (!a.ok) return `! keep ${i.k + 1}: the sound of ${i.file} could not be cut out (${a.why || "ffmpeg stopped"}), so it plays muted; give the video as MP4 with AAC sound and build again, or leave "sound" out.`;
     i.audio = audio;
     const heard = i.spoken > 0.3 && !i.hold ? await listenShown({ dir, src: i.src, from: i.from, duration: i.duration, audio: path.join(out, "assets", audio) }) : null;
-    return soundSaid(i, lv.take, clock, heardSaid(i, heard, r.words, clock));
+    return soundSaid(i, voiceAt, clock, heardSaid(i, heard, r.words, clock));
   }));
   shown.notes.push(...said);
-  const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music, inserts: shown.inserts, brand, areas: layout.areas, ceiling: lv.ceiling });
+  const { placed } = writeComposition(out, { title, lang: s.lang, width, height, fps: s.fps, pieces: r.pieces, sources: { ...sources, ...shown.sources }, dir, voice: "voice.cut.m4a", camera, backdrop, labels, captions, music: music && { ...music, shift }, inserts: shown.inserts, brand, areas: layout.areas, ceiling: lv.ceiling });
   // a phone's screen (or a tall video shown) whole, under the apps' headers: said per keep, once
   const headed = new Set();
   for (const { piece: p, layers } of placed) {
@@ -1144,6 +1160,8 @@ async function cmdBuild(dir, opts) {
 
   write(path.join(dir, "edit.json"), {
     out: rel(out), width, height, fps: s.fps, duration: r.duration, recorded: meta.duration,
+    // the mounted voice's level (voice-sound's level stage), and how far what was set to the voice moved with it
+    voice: { ...vl, ceiling: lv.ceiling, shift },
     pieces: r.pieces.map((p) => ({ in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), keep: p.keep,
       view: p.view, source: p.source, ...(p.show ? { show: showOf(cut.keep[p.keep]).file } : {}), ...(p.crop && p.crop.join() !== "0,0,1,1" ? { crop: p.crop } : {}), ...(p.pip === false ? { circle: false } : {}),
       ...(p.picture ? { picture: p.picture } : {}), ...(p.screen ? { screen: p.screen } : {}),
