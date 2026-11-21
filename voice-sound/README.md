@@ -59,7 +59,7 @@ Three stages, each in a file of its own. A step runs only when the numbers give 
   - *ffmpeg alone*: `afftdn` with the shape of the recording's own noise, sampled from its longest pause (laid in front of the recording, sampled, cut off again), at most 12 dB (`gentle` 6, `strong` 18), where a spectral filter starts to cost the voice more than the noise it removes. It learns one steady noise and cannot follow one that changes; that is named and left.
   - `--denoise gentle` or `strong` is the person's word that it is noisy: the step runs although nothing was measured, and `strong` goes to its cap whatever the aim needs, so it never writes what `auto` wrote. On the 42 clean recordings `strong` with the denoiser left the speech's level within 0.1 dB and cost PESQ 0.12 on average, 0.8 on one voice.
 
-**Tone** ([`tools/lib/tone.mjs`](tools/lib/tone.mjs)): a correction of what stands out, never a house sound. Each finding's band takes back half of its distance beyond ±5 dB from the average voice; cuts to 6 dB, boosts to 3 dB. No boost of the highs when the noise is close under the voice or the source is band-limited; a de-esser only for a sibilant voice. None of 42 clean studio recordings got a step; of 60 real ones (calls, amateur readers, phones), 18 did.
+**Tone** ([`tools/lib/tone.mjs`](tools/lib/tone.mjs)): a correction of what stands out, never a house sound. Each finding's band takes back all of its distance beyond ±5 dB from the average voice, to the edge of what voices differ by and no further; cuts to 12 dB, boosts to 6 dB. No boost of the highs when the noise is close under the voice or the source is band-limited; a de-esser only for a sibilant voice. None of 42 clean studio recordings got a step; of 60 real ones (calls, amateur readers, phones), 18 did.
 
 **Level** ([`tools/lib/level.mjs`](tools/lib/level.mjs)):
 
@@ -125,11 +125,11 @@ The master for video follows from that: −14 LUFS as played on two speakers, tr
 
 ## What it was measured on
 
-A lab corpus of 673 recordings: clean studio speech in German and English with 54 faults built in at known strengths, 80 pairs of clean and noisy speech, 60 real recordings (calls, phone takes, amateur readers, headsets in cafés). Three quarters to tune on, one quarter kept apart. On the 205 recordings of the tuning part (2026-11-20, ffmpeg 8.1.3), `clean` with its defaults against what two skills of this collection did to a voice before it. Scores from 1 to 5 by models that judge speech (DNSMOS, NISQA), each recording heard at the same level:
+A lab corpus of 673 recordings: clean studio speech in German and English with 54 faults built in at known strengths, 80 pairs of clean and noisy speech, 60 real recordings (calls, phone takes, amateur readers, headsets in cafés). Three quarters to tune on, one quarter kept apart. On the 205 recordings of the tuning part (ffmpeg 8.1.3; `clean` as it is now, 2026-11-21), `clean` with its defaults against what two skills of this collection did to a voice before it. Scores from 1 to 5 by models that judge speech (DNSMOS, NISQA), each recording heard at the same level:
 
 | | as recorded | best-takes' levelling | screencast-cut's cleaning | `clean`, ffmpeg alone | `clean` with the denoiser |
 | --- | --- | --- | --- | --- | --- |
-| 12 real recordings with a café or a keyboard, background | 2.72 | 2.18 | 2.93 | 2.81 | 3.56 |
+| 12 real recordings with a café or a keyboard, background | 2.72 | 2.18 | 2.93 | 2.82 | 3.56 |
 | the same, NISQA | 2.37 | 2.13 | 2.44 | 2.36 | 3.30 |
 | 60 noisy pairs, NISQA | 3.49 | 3.29 | 3.92 | 4.23 | 4.54 |
 | the same, PESQ against the clean original | 2.29 | 2.04 | 2.60 | 2.63 | 3.03 |
@@ -137,11 +137,11 @@ A lab corpus of 673 recordings: clean studio speech in German and English with 5
 | 41 with faults that are not noise, DNSMOS overall | 3.19 | 3.28 | 3.28 | 3.33 | 3.34 |
 | 31 other real recordings, DNSMOS overall | 3.12 | 3.06 | 3.13 | 3.17 | 3.22 |
 | 42 clean recordings, NISQA | 4.67 | 4.58 | 4.66 | 4.69 | 4.69 |
-| clearly worse than as recorded, of 163 that are not clean | – | 50 | 22 | 6 | 0 |
+| clearly worse than as recorded, of 163 that are not clean | – | 50 | 22 | 5 | 0 |
 
-("Clearly worse": DNSMOS overall down by more than 0.15, which is more than the score moves by itself.) The six with ffmpeg alone: two recordings with a keyboard and one with strong wind, which its method cannot follow; two clips of 1.3 and 1.5 s; and a voice 47 dB under the target whose noise was learnt from a pause of 0.4 s. On four of the six NISQA or PESQ rose all the same. Against the clean original where there is one (119 recordings), PESQ went from 2.73 to 2.98 with ffmpeg alone and to 3.24 with the denoiser; best-takes' levelling took it to 2.45. A clean recording keeps PESQ 4.48 of 4.64 against itself through `clean`: what its high-pass and its limiters cost. Every one of the 205 was delivered, between −14.2 and −13.9 LUFS with its true peak at −1.5 dBTP or under; best-takes' levelling landed within 0.5 LU on 170 of 204 and left 10 over −1 dBTP.
+("Clearly worse": DNSMOS overall down by more than 0.15, which is more than the score moves by itself.) The five with ffmpeg alone: a recording with a keyboard and one with strong wind, which its method cannot follow; two clips of 1.3 and 1.5 s; and a voice 47 dB under the target whose noise was learnt from a pause of 0.4 s. On four of the five NISQA or PESQ rose all the same. Against the clean original where there is one (119 recordings), PESQ went from 2.73 to 2.98 with ffmpeg alone and to 3.24 with the denoiser; best-takes' levelling took it to 2.45. A clean recording keeps PESQ 4.48 of 4.64 against itself through `clean`: what its high-pass and its limiters cost. Every one of the 205 was delivered, between −14.2 and −13.9 LUFS with its true peak at −1.5 dBTP or under; best-takes' levelling landed within 0.5 LU on 170 of 204 and left 10 over −1 dBTP.
 
-The quarter kept apart, 111 recordings that no setting was tuned on, run once at the end (2026-11-20, the same commit's rules): all 111 delivered, between −14.1 and −13.9 LUFS with the true peak at −1.5 dBTP or under. With the denoiser every group scored higher than as recorded (20 noisy pairs: DNSMOS overall 2.39 → 3.02, PESQ 1.42 → 2.25; 3 café and keyboard recordings: background 3.13 → 3.79; 41 with faults that are not noise: overall 3.18 → 3.39); clearly worse than as recorded were 1 of 97 that are not clean (a video call of several speakers, as much with ffmpeg alone) and none of 14 clean ones. With ffmpeg alone 4 of 97, screencast-cut's cleaning 15, best-takes' levelling 28.
+The quarter kept apart, 111 recordings that no setting was tuned on, run once at the end (2026-11-20, with the tone stage then taking back half of each distance, and not run again since): all 111 delivered, between −14.1 and −13.9 LUFS with the true peak at −1.5 dBTP or under. With the denoiser every group scored higher than as recorded (20 noisy pairs: DNSMOS overall 2.39 → 3.02, PESQ 1.42 → 2.25; 3 café and keyboard recordings: background 3.13 → 3.79; 41 with faults that are not noise: overall 3.18 → 3.39); clearly worse than as recorded were 1 of 97 that are not clean (a video call of several speakers, as much with ffmpeg alone) and none of 14 clean ones. With ffmpeg alone 4 of 97, screencast-cut's cleaning 15, best-takes' levelling 28.
 
 These are models' scores, not ears.
 
