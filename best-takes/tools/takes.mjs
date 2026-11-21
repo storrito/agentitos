@@ -121,8 +121,8 @@ function settings(dir, opts) {
   if (opts.platform) try { zones(1080, 1920, platformList(merged.platform)); } catch (e) { fail(`✗ --platform: ${e.message}`); }
   fs.writeFileSync(file, JSON.stringify(merged, null, 2) + "\n");
   // the pause from which a pause is cut: as given, else 1 s (picture) or TIGHT. The loudness: as
-  // given, else voice-sound's master for video; each take is brought to it, and the whole (finish,
-  // a voice alone's build). Without voice-sound none: the takes go to the loudest one's level
+  // given, else voice-sound's master for video: the cut's voice is brought to it (build, by
+  // voice-sound), and the rendered video (finish). Without voice-sound none
   const final = merged.loudness ?? master()?.lufs ?? null;
   return { ...merged, pause: merged.pause ?? (merged.pauses === "tight" ? TIGHT : 1), final, loudness: final };
 }
@@ -171,7 +171,7 @@ function newLike(dir, like, files, opts) {
 
 // A recording's voice mended whole by agentitos' voice-sound, before anything is cut (it reads the
 // noise in the pauses a cut removes): repair and tone, its loudness and dynamics kept (`--level
-// off`: the build evens the takes, finish sets the film's level), sound alone as one channel (its
+// off`: the build evens the takes and has voice-sound level the cut), sound alone as one channel (its
 // cut is one track). The mended file takes the copy's place, voice-sound's report beside it
 // (NN.voice.json). A refusal or a failure is said, and the recording is cut as it came.
 // mendVoice cleans into a hidden file; placeVoice, once the words are heard, puts it in place.
@@ -468,14 +468,16 @@ function cmdBuild(dir, opts) {
     if (last && last.file === g && Math.abs(last.start + last.duration - p.start) < 1e-3) last.duration = p.start + p.duration - last.start;
     else grounds.push({ file: g, start: p.start, duration: p.duration });
   }
-  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, captions, broll, brollMotion, hook, grounds, ceiling: master()?.peak ?? null });
-  // the cut's voice as one file, for a skill that sets other pictures to it: edit.json's words
-  // are timed in it. The preview does not need it, so a failure is said and the build goes on
-  let voice = null;
-  try { voice = voiceTrack((p) => source(dir, clips[p.clip].file), r.pieces, path.join(dir, "voice.cut.m4a")); }
-  catch (e) { console.log(`  (the cut's voice as one file was not made: ${e.message})`); }
+  // the cut's voice as one file, the track the composition mounts (and for a skill that sets other
+  // pictures to it: edit.json's words are timed in it): the takes evened, then the whole at its
+  // loudness by voice-sound, its peaks held (lib/tracks.mjs), as in a cut of sound alone
+  const voice = path.join(dir, "voice.cut.m4a");
+  let level;
+  try { level = levelledVoice(voiceTrack((p) => source(dir, clips[p.clip].file), r.pieces, path.join(dir, "voice.cut.wav")), voice, s.final); }
+  catch (e) { fail(`✗ The cut's voice: ${e.message}`); }
+  writeComposition(out, { title, lang: s.lang, width, height, fit: s.fit, fps: s.fps, pieces, clips, dir, voice, captions, broll, brollMotion, hook, grounds, ceiling: master()?.peak ?? null });
   fs.writeFileSync(path.join(dir, "edit.json"), JSON.stringify({
-    out: rel(out), ...(voice ? { voice: rel(voice) } : {}), width, height, fps: s.fps, duration: r.duration,
+    out: rel(out), voice: rel(voice), loudness: { lufs: level.lufs, measured: level.measured, peak: level.peak, levelled: level.levelled, said: level.said }, width, height, fps: s.fps, duration: r.duration,
     recorded: Object.values(clips).reduce((t, c) => t + c.duration, 0),
     pieces: pieces.map((p) => ({ clip: p.clip, in: +p.in.toFixed(3), out: +p.out.toFixed(3), start: +p.start.toFixed(3), duration: +p.duration.toFixed(3), lufs: p.lufs, gain: p.gain,
       ...(p.words.length ? { words: [p.words[0], p.words.at(-1)] } : { shows: true, rate: +p.rate.toFixed(2), ...(p.wait ? { wait: true } : {}) }), keep: p.keep,
@@ -486,7 +488,8 @@ function cmdBuild(dir, opts) {
   }, null, 1));
   const gains = r.pieces.filter((p) => !p.mute).map((p) => p.gain);
   console.log(`${rel(out)}: ${width}×${height}, ${clock(r.duration)} from ${clock(Object.values(clips).reduce((t, c) => t + c.duration, 0))} recorded, ${r.pieces.length} pieces, levels evened out by ${Math.min(...gains) >= 0 ? "+" : ""}${Math.min(...gains)} … ${Math.max(...gains) >= 0 ? "+" : ""}${Math.max(...gains)} dB → index.html`);
-  if (voice) console.log(`Voice: ${rel(voice)}, the cut's sound as one file (each take at its level); the words in ${rel(path.join(dir, "edit.json"))} are timed in it`);
+  console.log(`Voice: ${rel(voice)}, the cut's sound as one file the project mounts, at ${level.lufs} LUFS${level.levelled ? " as played on two speakers" : ""} (true peak ${level.peak} dBTP); the words in ${rel(path.join(dir, "edit.json"))} are timed in it`);
+  console.log(`The voice's level (voice-sound): ${level.said}`);
   if (cut.captions) console.log(`Captions: ${cut.captions.style || "hormozi"}, ${(cut.captions.highlight || []).length} key words`);
   if (brollSaid) console.log(`B-roll: ${brollSaid.replace(/^[^\n]*?: /, "")}`);
   if (hook) console.log(`Hook: „${s.hook}“ until ${hookEnds} s, ${placed?.hook ? `${placed.hook.kind === "text" ? "a text" : "a card"} where ${rel(placeFile)} puts it` : "a card at the top"}`);
@@ -1002,14 +1005,14 @@ function cmdCheck(dir) {
   const levels = [...new Set(e.pieces.map((p) => p.lufs).filter((l) => l != null))];
   if (levels.length) {
     const lo = Math.min(...levels), hi = Math.max(...levels);
-    console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to ${s.loudness != null ? `${s.loudness} LUFS` : "the loudest one's level"}; ${e.audio ? `the voice as a whole is at ${e.loudness?.lufs} LUFS${e.loudness?.levelled ? " as played on two speakers" : ""}, true peak ${e.loudness?.peak} dBTP` : s.final != null ? `finish brings the rendered video to ${s.final} LUFS` : "finish leaves the rendered video's level as it is (no voice-sound)"}.`);
+    console.log(`\nLevel: the takes are at ${lo === hi ? `${lo}` : `${lo} … ${hi}`} LUFS (${(hi - lo).toFixed(1)} dB apart), all brought to the loudest one's level; ${e.loudness ? `the voice as a whole is at ${e.loudness.lufs} LUFS${e.loudness.levelled ? " as played on two speakers" : ""}, true peak ${e.loudness.peak} dBTP` : "the voice as a whole is levelled by the next build"}${e.audio ? "" : s.final != null ? `; finish brings the rendered video to ${s.final} LUFS` : "; finish leaves the rendered video's level as it is (no voice-sound)"}.`);
     // what voice-sound mended in each recording and left, and what it did to the whole voice
     for (const c of Object.values(clips)) {
       const f = source(dir, `${String(c.n).padStart(2, "0")}.voice.json`);
       if (fs.existsSync(f)) { try { console.log(`The voice of ${several ? `${e.audio ? "recording" : "video"} ${c.n}` : `the ${e.audio ? "recording" : "video"}`} (voice-sound): ${voiceSaid(read(f))}`); } catch {} }
       else console.log(`The voice of ${several ? `${e.audio ? "recording" : "video"} ${c.n}` : `the ${e.audio ? "recording" : "video"}`}: not mended by voice-sound, cut with its sound as recorded.`);
     }
-    if (e.audio && e.loudness?.said) console.log(`The whole's level (voice-sound): ${e.loudness.said}`);
+    if (e.loudness?.said) console.log(`The whole's level (voice-sound): ${e.loudness.said}`);
     const breaths = e.pieces.filter((p) => p.quiet);
     if (breaths.length) console.log(`Breaths: ${breaths.length} of the room's own quiet between the stretches, ${breaths.reduce((t, p) => t + p.duration, 0).toFixed(1)} s in all.`);
   }

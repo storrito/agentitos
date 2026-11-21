@@ -78,7 +78,7 @@ export function roomQuiet(env, thr = Infinity, seconds = 3) {
 export function plan(words, cut, settings, voices, motion = null) {
   const errors = [], warnings = [], removed = [];
   const audio = !!settings.audio;
-  const fps = settings.fps, maxPause = settings.pause, target = settings.loudness;
+  const fps = settings.fps, maxPause = settings.pause;
   const used = new Map(), played = new Set();
   const waits = new Set((cut.waits || []).map(Number));
   const samples = motion || (() => []);
@@ -322,8 +322,9 @@ export function plan(words, cut, settings, voices, motion = null) {
     const pad = total < 3 ? (3 - total) / (2 * spans.length) : 0;
     t.lufs = loudness(voices[t.clip].blocks, spans.map(([a, b]) => [a - pad, b + pad]));
   }
-  // no loudness to aim at (voice-sound missing): the takes go to the loudest one's level
-  const aim = target ?? Math.max(...takes.map((t) => t.lufs).filter((l) => l != null));
+  // the takes go to the loudest one's level, to one another only: the cut's voice as a whole is
+  // brought to its loudness afterwards (voice-sound's level stage, lib/tracks.mjs), its peaks held
+  const aim = Math.max(...takes.map((t) => t.lufs).filter((l) => l != null));
   for (const t of takes) {
     const gain = t.lufs == null ? 0 : aim - t.lufs;
     for (const p of t.pieces) {

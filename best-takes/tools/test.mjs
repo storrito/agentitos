@@ -852,6 +852,59 @@ test("sound alone: build writes the cut's voice at −14 LUFS with its words tim
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// a video of a quiet voice whose peaks stand far over its loudness, as a real one's do: a tone
+// where each word is and short loud clicks in the words: −36 LUFS, its true peak at −8 dBTP, 28 dB
+// over it (brought to −14 by gain alone, its peaks would lie 14 dB over full scale)
+function quietTake(dir, name, words, seconds) {
+  const file = path.join(dir, name);
+  const on = words.map((w) => `between(t\\,${w.start}\\,${w.end})`).join("+");
+  const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `color=c=gray:s=320x180:r=30:d=${seconds}`,
+    "-f", "lavfi", "-i", `aevalsrc=(0.02*sin(2*PI*220*t)+0.4*sin(2*PI*900*t)*lt(mod(t\\,0.5)\\,0.001))*(${on})+0.0005*sin(2*PI*1500*t):s=48000:d=${seconds}`,
+    "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-b:a", "192k", "-shortest", file], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  return file;
+}
+
+const voiceSoundBeside = fs.existsSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "voice-sound", "tools", "voice.mjs"));
+test("build with a picture: the project mounts the cut's voice as one track, levelled by voice-sound to the loudness as played, its true peak at or under the bus's ceiling; the videos play muted", { skip: (!ffmpeg && "no ffmpeg") || (!voiceSoundBeside && "agentitos' voice-sound is not beside this skill") }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "best-takes-test-"));
+  try {
+    const words = spoken(), seconds = 15, takes = path.join(dir, "takes"), src = path.join(takes, "source");
+    fs.mkdirSync(src, { recursive: true });
+    const file = quietTake(src, "01.mp4", words, seconds);
+    fs.writeFileSync(path.join(src, "01.env"), Buffer.from(envelope(samples(file)).buffer));
+    fs.writeFileSync(path.join(src, "01.loudness.json"), JSON.stringify(loudnessBlocks(file)));
+    fs.writeFileSync(path.join(src, "words.json"), JSON.stringify({ asr: "test", clips: { 1: { n: 1, file: "01.mp4", from: "uploads/take.mp4", duration: seconds, width: 320, height: 180, fps: 30, lufs: -36 } }, words }));
+    fs.writeFileSync(path.join(takes, "cut.json"), JSON.stringify({ keep: [{ words: "0-6" }, { words: "7-8" }] }));
+    const out = path.join(dir, "composition");
+    const tool = path.join(path.dirname(new URL(import.meta.url).pathname), "takes.mjs");
+    const built = spawnSync(process.execPath, [tool, "build", takes, "--out", out, "--pauses", "tight"], { encoding: "utf8" });
+    assert.equal(built.status, 0, built.stdout + built.stderr);
+    assert.match(built.stdout, /at -1[34](\.\d+)? LUFS as played on two speakers/);
+    const html = fs.readFileSync(path.join(out, "index.html"), "utf8");
+    // every video muted, one audio element: the levelled voice, through the bus with its ceiling
+    const videos = [...html.matchAll(/<video[\s\S]*?<\/video>/g)].map((m) => m[0]);
+    assert.ok(videos.length >= 1 && videos.every((v) => /\bmuted\b/.test(v) && /data-has-audio="false"/.test(v) && !/data-audio-group/.test(v)));
+    assert.match(html, /<audio id="voice-track" class="clip" src="assets\/voice\.m4a"[^>]*data-audio-group="voice"/);
+    const bus = JSON.parse(html.match(/<hf-audio-group[^>]*data-fx-chain="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+    const ceiling = bus.nodes[0].params.ceiling;
+    const mounted = path.join(out, "assets", "voice.m4a");
+    const r = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", mounted, "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"], { encoding: "utf8" });
+    const summary = r.stderr.slice(r.stderr.lastIndexOf("Summary:"));
+    const lufs = Number(summary.match(/I:\s*(-?[\d.]+) LUFS/)[1]), peak = Number(summary.match(/Peak:\s*(-?[\d.]+) dBFS/)[1]);
+    assert.ok(peak <= ceiling, `the mounted voice's true peak ${peak} dBTP is over the ceiling ${ceiling}`);
+    // one channel that both speakers get whole: the file 3 LU under the loudness as played
+    near(lufs, -17, 0.5);
+    // the takes were brought to one another only: before the level stage the voice was as quiet as recorded
+    const wav = spawnSync("ffmpeg", ["-hide_banner", "-nostats", "-i", path.join(takes, "voice.cut.wav"), "-af", "ebur128=framelog=quiet", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+    assert.ok(Number(wav.slice(wav.lastIndexOf("Summary:")).match(/I:\s*(-?[\d.]+) LUFS/)[1]) < -30);
+    // built again: not levelled again
+    const made = fs.statSync(path.join(takes, "voice.cut.m4a")).mtimeMs;
+    assert.equal(spawnSync(process.execPath, [tool, "build", takes], { encoding: "utf8" }).status, 0);
+    assert.equal(fs.statSync(path.join(takes, "voice.cut.m4a")).mtimeMs, made);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("without a HyperFrames CLI on the PATH, the version this skill was last tried with is fetched", async () => {
   const { hyperframes, HYPERFRAMES_TESTED } = await import("./lib/media.mjs");
   const before = process.env.PATH, none = fs.mkdtempSync(path.join(os.tmpdir(), "no-hyperframes-"));

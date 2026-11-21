@@ -1,8 +1,8 @@
-// The cut's voice as one file. The preview and the render play every piece from its video, so
-// the cut's sound exists only inside the project; a skill that sets other pictures to the same
-// voice (a narrated film, kinetic type) needs it as a file, beside edit.json's words, which are
-// timed in the cut. Adapted from screencast-cut's tracks.mjs, whose voice is one recording:
-// here every piece comes from its own video.
+// The cut's voice as one file: the track the composition mounts (its videos play muted), the
+// voice of a cut of sound alone, and for a skill that sets other pictures to the same voice (a
+// narrated film, kinetic type) the file beside edit.json's words, which are timed in the cut.
+// Adapted from screencast-cut's tracks.mjs, whose voice is one recording: here every piece comes
+// from its own video.
 //
 //   voiceTrack(fileOf, pieces, out)   the sound of every spoken piece at its take's level with
 //                                     10 ms fades, silence for the pieces that only show
@@ -10,19 +10,21 @@
 //                                     The room's quiet of a cut of sound alone is a piece too.
 //                                     AAC in .m4a, 32-bit float in .wav (a take raised past full
 //                                     scale stays whole)
-//   levelledVoice(wav, out, target)   the voice of sound alone at its final loudness, by voice-sound
+//   levelledVoice(wav, out, target)   that voice at its final loudness, by voice-sound
 //   loudnessOf(file)                  { lufs, peak }: integrated loudness, true peak
 //
 // It runs on the cut's frames: each piece takes exactly its duration, so the file is as long as
-// the cut and a word's time in edit.json is its time in the file. The levels are the takes'
-// gains alone: the composition's ceiling and `finish` come after.
+// the cut and a word's time in edit.json is its time in the file. voiceTrack's levels are the
+// takes' gains alone, which bring them to one another; levelledVoice brings the whole to the
+// loudness and holds its peaks; the composition's ceiling is a guard after it, and `finish`
+// brings the whole film to its level.
 
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { cleanVoiceSync, voiceSaid, NEEDS_VOICE_SOUND } from "./voicesound.mjs";
 
 const n = (x) => +x.toFixed(4);
-// as the composition fades its pieces (lib/composition.mjs)
+// each spoken piece's fades at its ends, against clicks at the cuts
 const FADE = 0.01;
 
 function run(args, what) {
@@ -70,11 +72,12 @@ export function loudnessOf(file) {
   return { lufs: Number(summary.match(/I:\s*(-?[\d.]+) LUFS/)?.[1]), peak: Number(summary.match(/Peak:\s*(-?[\d.]+) dBFS/)?.[1]) };
 }
 
-// The cut's voice of sound alone (`wav`, voiceTrack's, its takes evened) at `target` LUFS, as
-// `out`: voice-sound's level stage, `clean <wav> <out> --denoise off --tone off --mono --loudness
-// <target> --json`. Its recordings were mended whole before they were cut (takes.mjs new); here
-// only a leveller where the phrases are uneven, the loudness as played on two speakers (one
-// channel: the file measures 3 LU lower), the peaks and the true peak after the encoding. Made
+// The cut's voice (`wav`, voiceTrack's, its takes evened) at `target` LUFS, as `out`: voice-sound's
+// level stage, `clean <wav> <out> --denoise off --tone off --mono --loudness <target> --json`. Its
+// recordings were mended whole before they were cut (takes.mjs new); here only a leveller where
+// the phrases are uneven, the loudness as played on two speakers (one channel, which the
+// composition plays whole on both: the file measures 3 LU lower), the peaks held by a slow
+// limiter and the true peak at voice-sound's aim after the encoding. Made
 // again only when the cut or the target changed (`<out>.level.json`), so that building twice
 // changes nothing. Without voice-sound, or where it refuses or fails, the cut's voice as it is,
 // not levelled, and `said` says why. → { lufs, measured, peak, said, levelled }
@@ -90,7 +93,8 @@ export function levelledVoice(wav, out, target) {
   let result;
   if (r.report) {
     const d = r.report.delivered || {};
-    result = { lufs: d.asPlayedLufs ?? d.lufs, measured: d.lufs, peak: d.truePeak, said: voiceSaid(r.report, "brought to the loudness, its peaks held"), levelled: true };
+    result = { lufs: d.asPlayedLufs ?? d.lufs, measured: d.lufs, peak: d.truePeak, said: voiceSaid(r.report, "brought to the loudness, its peaks held"), levelled: true,
+      steps: (r.report.steps || []).map((s) => s.id).filter(Boolean) };
   } else {
     run(["-v", "error", "-y", "-i", wav, "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", out], "the cut's voice");
     const l = loudnessOf(out);

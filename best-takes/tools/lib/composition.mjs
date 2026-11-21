@@ -1,11 +1,11 @@
 // The cut as a HyperFrames project: every piece a <video> clip on one track, edge to edge, its
 // range of the video chosen by data-media-start. Nothing is rendered to preview it; the player
-// plays the pieces straight from the videos. The sound stays on the clips, so each piece
-// carries its own sound: a gain that brings its take to the common level, and 10 ms fades at
-// its ends against clicks at the cuts. All pieces go through one bus, "voice": a true-peak ceiling
-// at what voice-sound's targets aim at (the voice itself was mended by voice-sound, each recording
-// whole, before it was cut; takes.mjs finish sets the level). A piece that shows a pause has no sound, and
-// one that plays faster says so (data-playback-rate). B-roll, when the cut has it, is a
+// plays the pieces straight from the videos, muted. The sound is the cut's voice as one track
+// (lib/tracks.mjs): each take at the common level with 10 ms fades at the cuts, the whole at its
+// loudness and its peaks held by voice-sound's level stage (the voice itself was mended by
+// voice-sound, each recording whole, before it was cut). It goes through one bus, "voice": a
+// true-peak ceiling at what voice-sound's targets aim at, a guard; takes.mjs finish brings the
+// rendered film to its level. A piece that plays faster says so (data-playback-rate). B-roll, when the cut has it, is a
 // sub-composition of agentitos' b-roll skill over the pieces; captions, when it has them, one of
 // its captions skill on top of that; a hook card (lib/hook.mjs) sits over the start. When the
 // b-roll shows beats beside the person, the pieces sit in its wrapper (#broll-person) and its
@@ -15,7 +15,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 const GSAP = "https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js";
-const FADE = 0.01;
 
 const attr = (v) => JSON.stringify(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -62,10 +61,12 @@ export function pieceStyle(p, width, height) {
   return css.join("; ");
 }
 
-export function writeComposition(out, { title, lang, width, height, fit, fps, pieces, clips, dir, captions, broll, brollMotion, hook, grounds = [], ceiling = null }) {
+// voice: the cut's voice as one file (tracks.mjs' levelledVoice), mounted as assets/voice.m4a
+export function writeComposition(out, { title, lang, width, height, fit, fps, pieces, clips, dir, voice, captions, broll, brollMotion, hook, grounds = [], ceiling = null }) {
   fs.mkdirSync(path.join(out, "assets"), { recursive: true });
   const name = path.basename(out);
   for (const c of new Set(pieces.map((p) => p.clip))) place(path.join(dir, "source", clips[c].file), path.join(out, "assets", path.basename(clips[c].file)));
+  if (voice) place(voice, path.join(out, "assets", "voice.m4a"));
   for (const g of new Set(grounds.map((x) => x.file))) place(path.join(dir, "source", g), path.join(out, "assets", g));
   // the ground: a blurred still of the video behind a picture that leaves part of the frame bare
   const groundsHtml = grounds.map((g, k) => `      <img id="ground${k + 1}" class="clip ground" src="assets/${g.file}" alt="" data-start="${n4(g.start)}" data-duration="${n4(g.duration)}" data-track-index="3" />`).join("\n");
@@ -80,17 +81,6 @@ export function writeComposition(out, { title, lang, width, height, fit, fps, pi
     const start = n4(p.start), end = n4(p.start + p.duration);
     let d = n4(end - start);
     if (start + d > end) d = n4(d - 0.0001);
-    // a gain stage lifts by 12 dB at most: a quiet take gets two
-    const lift = Math.abs(p.gain) > 12 ? [Math.sign(p.gain) * 12, +(p.gain - Math.sign(p.gain) * 12).toFixed(1)] : [p.gain];
-    const chain = { version: 1, nodes: lift.map((g, k) => ({ type: "gain", id: `g${k + 1}`, label: "Take level", params: { gain: g } })) };
-    const fades = { version: 1, lanes: [{ target: "volume", points: [{ t: 0, v: 0 }, { t: FADE, v: 1 }, { t: n(d - FADE), v: 1 }, { t: d, v: 0 }] }] };
-    const sound = p.mute
-      ? `muted
-        data-has-audio="false"`
-      : `data-has-audio="true"
-        data-audio-group="voice"
-        data-fx-chain="${attr(chain)}"
-        data-automation="${attr(fades)}"`;
     return `      <video
         id="p${String(k + 1).padStart(3, "0")}"
         class="clip"
@@ -102,9 +92,14 @@ export function writeComposition(out, { title, lang, width, height, fit, fps, pi
         data-track-index="0"${pieceStyle(p, width, height) ? `
         style="${pieceStyle(p, width, height)}"` : ""}
         playsinline
-        ${sound}
+        muted
+        data-has-audio="false"
       ></video>`;
   }).join("\n");
+  // the voice: one track for the whole cut, each take's level, the fades and the loudness in it
+  const voiceHtml = voice ? `
+      <audio id="voice-track" class="clip" src="assets/voice.m4a" data-start="0" data-duration="${total}" data-media-start="0"
+        data-track-index="7" data-has-audio="true" data-audio-group="voice"></audio>` : "";
 
   const html = `<!doctype html>
 <html lang="${esc(lang || "en")}">
@@ -128,7 +123,7 @@ ${hook.style}` : ""}
     <!-- generated by best-takes/tools/takes.mjs from cut.json: change cut.json and build again -->
     <div id="main" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}" data-fps="${fps}">
       <hf-audio-group id="voice" data-label="Voice" data-fx-chain="${attr(bus(ceiling))}"></hf-audio-group>
-${groundsHtml ? `${groundsHtml}\n` : ""}${brollMotion ? `      <div id="broll-person">\n${clipsHtml}\n      </div>` : clipsHtml}${broll ? `\n      ${broll}` : ""}${captions ? `\n      ${captions}` : ""}${hook ? `\n      ${hook.element}` : ""}
+${groundsHtml ? `${groundsHtml}\n` : ""}${brollMotion ? `      <div id="broll-person">\n${clipsHtml}\n      </div>` : clipsHtml}${voiceHtml}${broll ? `\n      ${broll}` : ""}${captions ? `\n      ${captions}` : ""}${hook ? `\n      ${hook.element}` : ""}
     </div>${hook ? `\n    <script>\n      ${hook.fit}\n    </script>` : ""}
     <script>
       window.__timelines["main"] = gsap.timeline({ paused: true });${hook ? `\n      ${hook.script}` : ""}

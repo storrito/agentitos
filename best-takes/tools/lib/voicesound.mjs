@@ -1,9 +1,9 @@
 // The voice's sound, from agentitos' voice-sound skill, run as a program (its code is never
 // imported): VOICE_SOUND, else beside this skill, else in the machine's clone of the skills. It
 // mends each recording whole, before it is cut (the noise is read in its pauses), and gives the
-// loudness and the true peak to aim at. This skill keeps no filter and no loudness number of its
-// own for the voice: it evens its takes against each other, and its finish sets the film's level
-// with voice-sound's numbers.
+// loudness and the true peak to aim at, and its level stage brings the cut's voice to that
+// loudness. This skill keeps no filter and no loudness number of its own for the voice: it evens
+// its takes against each other, and its finish sets the film's level with voice-sound's numbers.
 //
 //   voiceSoundTool()                  → its tools/voice.mjs, or null
 //   NEEDS_VOICE_SOUND                 → the sentence for when it is missing

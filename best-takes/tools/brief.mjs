@@ -140,8 +140,8 @@ ${rules(several, settings)}
 - **Speech not written down** inside a keep is an error of \`build\` until the keep says what
   it is: \`"unwritten": "cut"\` when you are sure it is no speech of the cut (a cough, someone
   else), \`"unwritten": "keep"\` when it belongs to the sentence (a word the model left out).` : ""}
-- **Loudness**: each take is measured and brought to the same level (${settings.final != null ? `${settings.final} LUFS, as
-  ${settings.audio ? "the cut's voice" : "the rendered video"} is` : "the loudest take's"}). For a part that should be quieter
+- **Loudness**: each take is measured and brought to the loudest take's level${settings.final != null ? `, and the cut's
+  voice as a whole to ${settings.final} LUFS by voice-sound` : ""}. For a part that should be quieter
   or louder on purpose, give its keep \`"gain": -3\` (dB, on top).
 
 ## cut.json
