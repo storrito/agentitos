@@ -93,7 +93,11 @@ export function levelledVoice(wav, out, target) {
   let result;
   if (r.report) {
     const d = r.report.delivered || {};
-    result = { lufs: d.asPlayedLufs ?? d.lufs, measured: d.lufs, peak: d.truePeak, said: voiceSaid(r.report, "brought to the loudness, its peaks held"), levelled: true,
+    // (what this run says it left of the noise is left out: with --denoise off it says "denoising
+    // is off", which reads as if nothing had been done; the noise was the whole recording's step,
+    // and `new` said what that left)
+    const level = { ...r.report, left: (r.report.left || []).filter((l) => l.id !== "noise") };
+    result = { lufs: d.asPlayedLufs ?? d.lufs, measured: d.lufs, peak: d.truePeak, said: voiceSaid(level, "brought to the loudness, its peaks held"), levelled: true,
       steps: (r.report.steps || []).map((s) => s.id).filter(Boolean) };
   } else {
     run(["-v", "error", "-y", "-i", wav, "-map_metadata", "-1", "-c:a", "aac", "-b:a", "192k", out], "the cut's voice");
