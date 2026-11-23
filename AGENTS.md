@@ -9,7 +9,7 @@ The collection makes videos for social media from raw material of any source and
 - Read `docs/standards.md` before you plan a skill or a change to what one does or asks; the pull request answers its table.
 - Read `docs/testing.md` before you look for material to try it on or run anything on a Sprite: the corpus the sessions share, and the test Sprites.
 - Read `docs/lessons.md` before you write the tools and the SKILL.md, and add to it when you are done what went wrong and would go wrong again.
-- Ask the skill's owner at the moments of `docs/standards.md`, section 10, each time on an acceptance page: before building (examples and the flow), at an intermediate result where a person's judgement matters (variants), and when the skill works (your own whole run as a bot, for their verdict).
+- Ask the skill's owner at the moments of `docs/standards.md`, section 10, each time on an acceptance page: before building (examples and the flow), at an intermediate result where a person's judgement matters (variants), and when the skill works (your own whole run, for their verdict). Show first, then harden: the first thing that works goes in front of them fast, and the review, further tests and the whole run follow only once they like its form; say before a larger piece how long it will take.
 - A decision that cannot be taken back (a one-way door: publishing, deleting, a name or a format others will build on) is the owner's, whatever else you decide yourself. What can be taken back you decide, and say what you chose. Merged means deployable: judge a pull request as if it ran on every bot's machine, not by whether git can revert it (`docs/standards.md`, section 10).
 
 ## Reuse what a skill already does
