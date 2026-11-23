@@ -38,7 +38,7 @@ People use the skills through rragent, whose bots run on Claude Opus 5.5 unless 
 
 - Every skill with a flow in the chat has at least one case in the lab ([testing.md](testing.md)) that Opus 5.5 passes with the SKILL.md as its definition and a model playing the person: from the first message to the finished file.
 - A flow with a question has a case for the person who says no or wants a change, not only for the one who agrees.
-- Before a skill counts as done, the agent makes one whole run as a bot would: with nothing but the SKILL.md, on Opus 5.5, real material, from the first message to the rendered file, its tools and the render on a Sprite of a bot's size where one is free. It writes down every sentence a tool printed that it could not act on. What such a run cannot show (the buttons, the preview beside the chat, Storrito taking a post) is named on the acceptance page (section 10).
+- Before a skill counts as done, the agent makes one whole run the way the chat host's own agent would make it. An agent of the bots' model stands in for it: it is given the host's own system prompt and the skill's text, and acts only through what a machine gives its agent (its tools, its REPL), on a test machine with the skill installed as a bot has it, with real material, from the first message to the rendered file. It runs on the subscription the sessions share. A run with the host's own agent costs money and is made only on the owner's word, with the cost said first. The steps are counted, and every sentence a tool printed that the run could not act on is written down. What such a run cannot show (the buttons, the preview beside the chat, Storrito taking a post, how long the host's agent thinks) is named on the acceptance page (section 10).
 - What the agent did in a run is read, not only whether it passed. A step it repeated, a file it opened that the SKILL.md did not send it to, a thing it built itself because a tool lacked it: each is a defect of the tool or of the text, and is fixed there.
 
 ## 4. It runs on a bot's machine
@@ -76,7 +76,7 @@ What holds whatever the numbers are:
 A skill's README has "How long it takes":
 
 - each tool's time and peak memory on a Sprite of a bot's size, for material of 15 s, 60 s, 5 min and 15 min as far as the skill takes them, the time also as a share of the material's length; where no such Sprite could be had, the machine it was measured on instead;
-- the four waits, the tool calls and the cents for models of the whole run as a bot (section 3), with the machine named.
+- the four waits, the tool calls and the cents for models of the whole run (section 3), with the machine named.
 
 Each is measured once, and again only after a change to what it measures.
 
@@ -104,7 +104,7 @@ A video is a HyperFrames composition: a preview first, the render after the pers
 ## 9. Somebody else looked
 
 - A pass says nothing about whether the result is good to look at or to listen to. The agent that built the skill looks at frames of the finished video from start to end and at the measured sound, and says in the pull request what it saw.
-- Before the pull request is ready, an agent that did not write the skill reads it against this page and one run's results: on another model than the author's where one is at hand, else on the author's at a higher effort. What it found, and what was done about it, is in the pull request.
+- Once the owner has seen a first result and likes its form (section 10, "Show first, then harden"), and before the pull request is ready, an agent that did not write the skill reads it against this page and one run's results: on another model than the author's where one is at hand, else on the author's at a higher effort. What it found, and what was done about it, is in the pull request.
 - One full round, then one check of its fixes. What an ordinary clip does not run into goes onto the README's list of what the skill does not do, not into a third round; a third round is for a fix that broke something.
 
 ## 10. The skill's owner is asked where a person is the better instrument
@@ -118,10 +118,19 @@ Whoever asked for the skill (its owner) works on it too. Their time is the scarc
 | at the first rough result | which of a few variants goes on (a look, a motion, a pace of cuts, a voice, a music bed, a hook, the wording of the chat) | taste again; a comparison takes them seconds and no measure agrees with them reliably |
 | while the tests are made | the right answer for a handful of files where the answer is a judgement: the better take, the moment that stands alone, the crop that holds the subject | their answers become the tests' truth |
 | when a measure is in doubt | whether what the tool flags is what they see or hear (a cut that jumps, lips out of step, a subject lost, a voice that sounds processed) | they notice in one viewing what would take a rig to measure |
-| when the skill works | the result of the agent's whole run as a bot (section 3): the finished videos beside what came in, the chat as it went, its questions and its waits. Are the questions the right ones and few enough, are the waits bearable, would they post the result | their verdict is the acceptance, and on the waits it sets section 5's values |
+| when the skill works | the result of the agent's whole run (section 3): the finished videos beside what came in, the chat as it went, its questions and its waits. Are the questions the right ones and few enough, are the waits bearable, would they post the result | their verdict is the acceptance, and on the waits it sets section 5's values |
 | at any time | every decision that cannot be taken back (a one-way door): what is published or sent outside, what is deleted, a name, a command or a file format that others will build on, a part of another skill removed, a change to what another skill gives its users (its default look, its questions), material of theirs or their recordings leaving the machine. Theirs as well: what to build and what to leave out, money (a paid service, a dearer model, a new Sprite), an account or a sign-in | authority, not perception |
 
 Not asked: what a tool can measure, what this page or AGENTS.md answers, how to implement something, a small flaw, and anything that can be taken back (a two-way door). The agent decides those and says what it chose. Where it is unclear whether a step can be taken back, it counts as one that cannot.
+
+**Show first, then harden** (the owner, 2026-11-21). A skill that is reviewed and measured for hours before its owner has seen a result costs their time and the tokens for a form they may not want. So the order is:
+
+1. Before a larger piece of work the agent says how long it will take and how many agents it starts. An agent it hands a piece to gets a time limit and reports with what is there.
+2. The first thing that works comes as fast as it can be made: the tools, the short text, one run by hand on a test machine, with the tests of the pure parts and a short README.
+3. That result goes in front of the owner on an acceptance page: the video beside what came in, the answers as the person reads them.
+4. Hardening follows only once they like the form: the review of section 9 and the check of its fixes, further tests, the whole run of section 3, measurements on more material, the long README.
+
+Whatever the hurry: nothing is published, nothing is paid for beyond a tool's cents without saying so first, and a one-way door is asked.
 
 A merge means the change can be deployed, so a pull request is judged as if it already ran on every bot's machine, not by whether git can revert it. What it would leave behind that a revert does not take back makes it a one-way door, as a schema change in a database or a new event in an event system is one: a file or a field that bots write into people's folders and later versions have to read, a command or an output that other skills and bots call, a skill's name, what a bot stores, schedules or posts. Such a pull request is merged on the owner's word; a new skill brings a name and commands, so its first merge is theirs. A pull request that leaves nothing of the kind the agent merges itself once it is ready: this page's table answered, the review's findings fixed, the tests green on the merged state.
 
@@ -142,7 +151,7 @@ How they are asked:
 | --- | --- |
 | 1 | the README's list of material taken and tried, with the files from the lab's corpus |
 | 2 | which skills' tools it calls; which of its own tools others can call (their rows in AGENTS.md's table); what it changed in another skill, in which pull request |
-| 3 | the lab's cases and their results (passed, turns, tool calls); the whole run as a bot, and what it could not show |
+| 3 | the lab's cases and their results (passed, turns, tool calls); the whole run with its steps, and what it could not show |
 | 4 | time and peak memory of each tool on the longest material, and on which machine |
 | 5 | the README's "How long it takes"; for a wait over its value, why |
 | 6 | every model, what for, the cents a run; for a local one its size, memory and licence |

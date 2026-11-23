@@ -8,7 +8,7 @@ Three places, cheapest first. [standards.md](standards.md) says what each has to
 
 ## 2. The lab: a skill from the first message to the file
 
-Storrito's sessions share `plugin-lab` (called `agentitos-lab` until 2026-11-20), a local repository without a remote, beside this repo's main checkout (`git worktree list` names that checkout first). Its media lie under `corpus/media/`, outside git. It holds two things:
+Storrito's sessions share `plugin-lab` (called `agentitos-lab` until 2026-11-20), a private repository of Storrito's, checked out beside this repo's main checkout (`git worktree list` names that checkout first). Its media lie under `corpus/media/`, outside git. It holds two things:
 
 - **The corpus**: raw material to try skills on, shared because finding, cutting and preparing material costs more than anything else in building a skill. Every file has an entry that says where it comes from, whether it may be shown outside, and what is true of it (what kind of recording, how many speakers, which language).
 - **The rig**: runs a skill with Claude Code on Opus 5.5 as the agent and a small model as the person, and writes down what was said, every tool call, how long it took and what it cost. The agent may run only the programs the rig's `run.mjs` lists.
@@ -31,7 +31,7 @@ What a pass in the lab does not say: how the page looks, whether buttons work, w
 
 A skill has to run where the bots run: 8 cores, 8 GB of memory. The lab's `sprites.md` says which test Sprites are in the pool and how large each is, how one is taken and given back, how files get onto one and back, and how a composition is rendered there with hfrender.
 
-- Where a test Sprite is free, a skill's tools are tried on one before its pull request is ready, with their time and peak memory, and the whole run as a bot (standards.md, section 3) renders there.
+- Where a test Sprite is free, a skill's tools are tried on one before its pull request is ready, with their time and peak memory, and the whole run (standards.md, section 3) is made and rendered there.
 - The larger test Sprites (16 cores, 32 GB) are there to be used in full while a skill is built: many variants rendered at once, a measurement over the whole corpus. What is measured for standards.md's sections 4 and 5 is measured on a Sprite of a bot's size.
 - Renders and other heavy work run on a Sprite, not on the machine the sessions share. While you work, check from the built composition; render once for a pull request, at the end.
 - A test Sprite's ffmpeg, fonts and HyperFrames are not always a bot's, which come with rragent's image: loudness, emoji and snapshots are checked against the bot's.
