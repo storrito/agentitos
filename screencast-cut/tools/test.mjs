@@ -1443,7 +1443,7 @@ test("second review 2: a circle moved to a bottom corner ends the skill's gap ab
 // What must be read ends a gap above the captions' one line as captions built it (area.json); the
 // rest of a screen runs on under them to the frame's edges; the circle stands as on main;
 // "captions": { "lines": 2 } builds as before.
-import { linesOf, captionLine, spread } from "./lib/layout.mjs";
+import { linesOf, captionLine, spread, partOf } from "./lib/layout.mjs";
 const LINE = { "1080x1920": { left: 192, width: 696, top: 1350, bottom: 1440, size: 52, lines: 1 }, "1080x1350": { left: 54, width: 972, top: 1140, bottom: 1230, size: 52, lines: 1 },
   "1080x1080": { left: 54, width: 972, top: 870, bottom: 960, size: 52, lines: 1 }, "1920x1080": { left: 96, width: 1728, top: 840, bottom: 930, size: 52, lines: 1 } };
 const oneLine = (w, h, opts = {}) => {
@@ -2259,4 +2259,23 @@ test("show: a muted hold's line says what is there: the room, the room then sile
   assert.match(said(0), /is [\d.]+ s of silence \(the recording's sound stops/);
   assert.match(said(30), /is [\d.]+ s of the room alone \(the recording's sound stops/);
   assert.match(said(0.5), /is [\d.]+ s of the room alone for 0\.5 s, then silence \(the recording's sound stops/);
+});
+
+test("a zoom shows its box alone: no other part of the screen around it, so no neighbouring column's words cut off at the frame's edge; a box at the screen's right edge in 9:16 is not left beside the screen's other part with ground on one side", () => {
+  const src = { width: 1920, height: 1080 }, z = ZONES["9:16"];
+  const a = areas(z[0], z[1], z[2], { captions: true });
+  // a slide's right column, to the screen's right edge (as a talk's slide with two columns)
+  for (const c of [[0.6, 0.09, 0.96, 0.67], [0.2, 0.2, 0.6, 0.5]]) {
+    const s = spread(a.content, a.bleed, c, src, { maxScale: 2, alone: true });
+    const region = [s.left + c[0] * s.width, s.top + c[1] * s.height, (c[2] - c[0]) * s.width, (c[3] - c[1]) * s.height];
+    const inside = (b, r) => b[0] >= r[0] - 0.5 && b[1] >= r[1] - 0.5 && b[0] + b[2] <= r[0] + r[2] + 0.5 && b[1] + b[3] <= r[1] + r[3] + 0.5;
+    assert.ok(inside(s.box, region), `${c}: what shows ${s.box.map(Math.round)} lies in the box ${region.map(Math.round)}`);
+    assert.ok(Math.abs(s.box[2] - region[2]) < 1, `${c}: the whole box across`);
+    // the same box drawn with the rest of the screen: more shows than the box
+    const around = spread(a.content, a.bleed, c, src, { maxScale: 2 });
+    assert.ok(around.box[2] * around.box[3] > s.box[2] * s.box[3] + 1, `${c}: without alone the screen around shows`);
+    assert.deepEqual([around.left, around.top, around.width], [s.left, s.top, s.width], `${c}: the box stands where it stood, at the same size`);
+  }
+  assert.equal(partOf([0, 0, 1, 1]), false);
+  assert.equal(partOf([0.6, 0.09, 0.96, 0.67]), true);
 });

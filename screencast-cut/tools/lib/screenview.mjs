@@ -38,7 +38,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { layoutTool, PLACE_TIMEOUT, softOf, FACE_MIN } from "./placement.mjs";
-import { spread, largest, labelBox } from "./layout.mjs";
+import { spread, partOf, largest, labelBox } from "./layout.mjs";
 import { clock } from "./media.mjs";
 
 // a line of a desktop's usual type, in px of the screen, for the plain fact where the keep does
@@ -57,7 +57,7 @@ const span = (b) => `x ${r0(b[0])}–${r0(b[0] + b[2])}`;
 // the frame's edges above the captions; the circle at the areas' place
 export function beforePicture(c, src, a, pip) {
   const rooms = pip ? [...a.content, ...(a.beside || [])] : a.solo || a.content;
-  const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });
+  const at = spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line, alone: partOf(c) });
   const scale = at.width / src.width;
   return { fit: BEFORE, scale: +scale.toFixed(4), left: at.left, top: at.top, window: at.box.map(r1),
     region: [at.left + c[0] * at.width, at.top + c[1] * at.height, (c[2] - c[0]) * at.width, (c[3] - c[1]) * at.height].map(r1),
@@ -183,11 +183,18 @@ const box4 = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinit
 // window that is not empty and the region in the frame; anything else is left out
 export const drawable = (c) => !!c && typeof c === "object" && DRAWN.test(c.fit) && Number.isFinite(c.scale) && c.scale > 0 && Number.isFinite(c.left) && Number.isFinite(c.top)
   && box4(c.window) && c.window[2] > 0 && c.window[3] > 0 && box4(c.faceInFrame?.[0]);
+// a window seen only as far as the region (the whole screen's region holds its window as it is)
+const within = (w, r) => {
+  const x0 = Math.max(w[0], r[0]), y0 = Math.max(w[1], r[1]), x1 = Math.min(w[0] + w[2], r[0] + r[2]), y1 = Math.min(w[1] + w[3], r[1] + r[3]);
+  return x1 > x0 && y1 > y0 ? [x0, y0, x1 - x0, y1 - y0] : w;
+};
 // a candidate of layout's as a picture the composition draws; its own circle is not taken (the
-// circle stays at main's place and size, seat())
+// circle stays at main's place and size, seat()); it shows its region only: the rest of the screen
+// around a part of it is not drawn (the neighbouring column's words, cut off at the frame's edge,
+// read as a fault)
 export function pictureOf(c) {
   const mark = markOf(c);
-  return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: c.window, region: c.faceInFrame[0], circle: null, mark, hard: c.hard || 0, ...(mark === "!" && softOf(c) ? { soft: softOf(c) } : {}) };
+  return { fit: c.fit, scale: c.scale, left: c.left, top: c.top, window: within(c.window, c.faceInFrame[0]), region: c.faceInFrame[0], circle: null, mark, hard: c.hard || 0, ...(mark === "!" && softOf(c) ? { soft: softOf(c) } : {}) };
 }
 
 // a fault in a few words, for the lists

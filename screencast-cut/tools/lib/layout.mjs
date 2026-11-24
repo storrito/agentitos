@@ -195,7 +195,14 @@ export function place(box, c, source) {
 // stands as near the uncovered edge as its room allows, on the room's bottom (just above the
 // caption line) or its top, instead of centred in it, so that no more ground shows than on main
 // (review of 2026-11-19: a chat box at the screen's bottom rose to y 300-624 over 42 % ground).
-export function spread(area, bleed, c, source, { maxScale = Infinity, near = false } = {}) {
+// a zoom box that is a part of the source, not the whole of it
+export const partOf = (c) => !!c && (c[0] > 0.001 || c[1] > 0.001 || c[2] < 0.999 || c[3] < 0.999);
+
+// alone: only the box is shown, where it stands, not the rest of the source around it (a box that is
+// a part of the screen: the neighbouring column's words, cut off at the frame's edge, read as a
+// fault; and a box at the screen's edge, which leaves the source short of the frame on that side,
+// stood centred in its room with ground on one side and the screen's other part on the other).
+export function spread(area, bleed, c, source, { maxScale = Infinity, near = false, alone = false } = {}) {
   const zw = (c[2] - c[0]) * source.width, zh = (c[3] - c[1]) * source.height;
   // the room that holds the box largest
   const rooms = Array.isArray(area[0]) ? area : [area];
@@ -218,6 +225,14 @@ export function spread(area, bleed, c, source, { maxScale = Infinity, near = fal
   };
   const left = axis(zw * scale, room0[0], room0[2], bx, bw, w, c[0]);
   const top = axis(zh * scale, room0[1], room0[3], by, bh, h, c[1], near);
+  if (alone) {
+    // what shows: the box, inside the bleed
+    const x0 = Math.max(left + c[0] * w, bx), y0 = Math.max(top + c[1] * h, by);
+    const x1 = Math.min(left + c[2] * w, bx + bw), y1 = Math.min(top + c[3] * h, by + bh);
+    const r = (v) => +v.toFixed(1);
+    return { left: r(left), top: r(top), width: r(w), height: r(h), box: [x0, y0, x1 - x0, y1 - y0],
+      inset: [y0 - top, left + w - x1, top + h - y1, x0 - left].map((v) => r(Math.max(0, v))) };
+  }
   // what shows: the source inside the bleed
   const x0 = Math.max(left, bx), y0 = Math.max(top, by), x1 = Math.min(left + w, bx + bw), y1 = Math.min(top + h, by + bh);
   const r = (v) => +v.toFixed(1);

@@ -21,7 +21,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { fit, largest, place, spread, cover, circle, labelSize, labelBox } from "./layout.mjs";
+import { fit, largest, place, spread, partOf, cover, circle, labelSize, labelBox } from "./layout.mjs";
 import { geometry } from "./placement.mjs";
 import { soundPoints } from "./show.mjs";
 
@@ -151,7 +151,7 @@ export function shots(pieces, sources, width, height, a, labels = []) {
         circles.push({ at: pic?.circle, panel: pic?.stack?.camera, timed: parts.length > 1 ? timed : {} });
         const rooms = p.pip === false || !sources.webcam ? a.solo || a.content : [...a.content, ...(a.beside || [])];
         // (a picture as before whose circle alone moved keeps the screen exactly as before)
-        const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line });
+        const at = pic && !pic.circleOnly ? { ...geometry(pic, src), box: pic.window } : spread(rooms, a.bleed || largest(a.content), c, src, { maxScale: 2, near: !!a.line, alone: partOf(c) });
         const [x, , w] = at.box;
         out.push({ source: p.source, box: at.box, crop: c, at, main: true, round: x > 1 && x + w < width - 1 ? round : 0, ...timed });
       });
