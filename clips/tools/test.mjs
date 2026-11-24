@@ -493,3 +493,25 @@ test("how long keeps play once best-takes cut them tight: words, fillers out, pa
   // two keeps: nothing between them counts
   assert.equal(+playedSeconds(TEETH.words, [[149, 153], [160, 162]]).toFixed(2), 2.16);
 });
+
+test("the framing is the program FRAME_TOOL names, else this skill's own", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clips-test-"));
+  const clip = path.join(dir, "01");
+  fs.mkdirSync(clip);
+  fs.writeFileSync(path.join(clip, "clip.mp4"), "");
+  fs.writeFileSync(path.join(clip, "clip.words.json"), "{}");
+  // a stand-in that writes down what it was called with and frames nothing
+  const stub = path.join(dir, "framing.mjs"), said = path.join(dir, "called.json");
+  fs.writeFileSync(stub, `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(said)}, JSON.stringify(process.argv.slice(2))); console.log("the stand-in framed nothing"); process.exit(1);\n`);
+  const r = run("clips.mjs", ["reframe", clip, "--whole", "3"], { FRAME_TOOL: stub });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /the stand-in framed nothing/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(said, "utf8")), [path.join(clip, "clip.mp4"), path.join(clip, "clip.words.json"), "--aspect", "9:16", "--out", path.join(clip, "framed.mp4"), "--whole", "3"]);
+  // a FRAME_TOOL that names no file: this skill's own frame.mjs, which stops at the empty video, not at a missing program
+  fs.rmSync(said);
+  const own = run("clips.mjs", ["reframe", clip, "--whole", "3"], { FRAME_TOOL: path.join(dir, "nowhere.mjs") });
+  assert.equal(own.status, 1);
+  assert.ok(!fs.existsSync(said));
+  assert.doesNotMatch(String(own.stdout) + String(own.stderr), /FRAME_TOOL names no framing program/);
+  fs.rmSync(dir, { recursive: true });
+});

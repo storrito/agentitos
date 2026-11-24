@@ -49,7 +49,9 @@
 //
 // The edit itself is best-takes' (build, check, captions; its README): this tool only sets it up
 // and prints the command lines with its path. best-takes is found at BEST_TAKES_TOOL, beside this
-// skill, or in the machine's clone of the skills.
+// skill, or in the machine's clone of the skills. The framing is this skill's own tools/frame.mjs,
+// or the program FRAME_TOOL names (the variable best-takes, screencast-cut and narrated-short look
+// for it by): a machine may hold the framing as a tool of its own.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -86,6 +88,11 @@ export function takesTool() {
   const candidates = [process.env.BEST_TAKES_TOOL, path.join(skill, "..", "best-takes", "tools", "takes.mjs"), "/home/sprite/skills/best-takes/tools/takes.mjs"];
   return candidates.find((p) => p && fs.existsSync(p)) || null;
 }
+
+export function frameTool() {
+  return [process.env.FRAME_TOOL, path.join(HERE, "frame.mjs")].find((p) => p && fs.existsSync(p)) || null;
+}
+const NEEDS_FRAME = "tools/frame.mjs is not beside this tool, and FRAME_TOOL names no framing program";
 
 // a tool of this skill or best-takes, its output shown, but not its "Next:" (this tool says what
 // comes next); a failure ends here with its message, or returns false when it may fail
@@ -173,9 +180,10 @@ function prepare(episode, dir, range, opts) {
   const framed = path.join(dir, "framed.mp4");
   if (fs.existsSync(framed)) video = framed;
   else if (width / height > 9 / 16 + 0.01) {
-    const ok = run(path.join(HERE, "frame.mjs"), [clip, wordsFile, "--aspect", "9:16", "--out", framed], { mayFail: true });
+    const frame = frameTool();
+    const ok = frame ? run(frame, [clip, wordsFile, "--aspect", "9:16", "--out", framed], { mayFail: true }) : false;
     if (ok && fs.existsSync(framed)) video = framed;
-    else console.log(`The footage stays centred${ok ? "" : " (the framing failed, see above)"}: best-takes crops it from the middle. Say so when the speaker is not in the middle.`);
+    else console.log(`The footage stays centred${ok ? "" : frame ? " (the framing failed, see above)" : ` (${NEEDS_FRAME})`}: best-takes crops it from the middle. Say so when the speaker is not in the middle.`);
   }
 
   // best-takes: every word again (äh included, closer than the episode's), the level, tight pauses
@@ -291,7 +299,9 @@ function frameAgain(dir, kept) {
     ...(kinds.some((k) => k.kind === "follow") ? ["--follow", kinds.filter((k) => k.kind === "follow").map((k) => k.t).join(",")] : []),
     ...(kept.lifts.length ? ["--lift", kept.lifts.map((l) => `${l.t}:${l.px}`).join(",")] : []),
   ];
-  run(path.join(HERE, "frame.mjs"), [clip, words, "--aspect", "9:16", "--out", framed, ...flags]);
+  const frame = frameTool();
+  if (!frame) fail(`Framing the clip anew needs the framing program: ${NEEDS_FRAME}.`);
+  run(frame, [clip, words, "--aspect", "9:16", "--out", framed, ...flags]);
   if (!fs.existsSync(framed)) fail("The framing gave no video, see above.");
   // the edit's source is the framed clip: the new one in its place (same length, same sound)
   const src = path.join(dir, "takes", "source", "01.mp4");
