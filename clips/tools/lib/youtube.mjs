@@ -12,7 +12,8 @@
 //   fetched(job, log)        → the download once it is done: { id, files, title, seconds, … }.
 //                              null when the downloads are off on the site (503): the caller goes
 //                              on as without them. Every other refusal, and a download that
-//                              failed, is a throw whose message is the sentence to pass on
+//                              failed, is a throw whose message is the sentence to pass on and
+//                              whose `reason` is the word behind it (balance, busy, bot, private, …)
 //   save(download, n, file)  → its n-th file written to `file`, fetched in pieces of 4 MB (the
 //                              gateway takes a request of about 7 MB; what it passes of an answer
 //                              is not measured), its SHA-256 held against what the download says
@@ -94,31 +95,32 @@ async function call(method, route, { body, headers } = {}) {
   }
 }
 
-const sentence = async (res) => {
+// what a refusal says: an Error with the sentence to pass on, and the word behind it as `reason`
+const refusal = async (res) => {
   const data = await res.json().catch(() => ({}));
-  return data.message || `storrito.ai's downloads answered ${res.status}.`;
+  return Object.assign(new Error(data.message || `storrito.ai's downloads answered ${res.status}.`), { reason: data.error || String(res.status) });
 };
 
 export async function fetched(job, log = () => {}) {
   // the key makes the request safe to send again: the same key finds the same download
   const asked = await call("POST", "/downloads", { body: { ...job, key: crypto.randomUUID() } });
   if (asked.status === 503) return null;
-  if (asked.status !== 202 && asked.status !== 200) throw new Error(await sentence(asked));
+  if (asked.status !== 202 && asked.status !== 200) throw await refusal(asked);
   const { id } = await asked.json();
   const began = Date.now();
   let said = "";
   for (;;) {
     const res = await call("GET", `/downloads/${id}`);
-    if (!res.ok) throw new Error(await sentence(res));
+    if (!res.ok) throw await refusal(res);
     const download = await res.json();
     if (download.status === "done") return download;
-    if (download.status === "failed") throw new Error(download.error || "The download failed.");
+    if (download.status === "failed") throw Object.assign(new Error(download.error || "The download failed."), { reason: download.reason || "failed" });
     const now = download.status === "queued" ? `waits for its turn${download.queue != null ? ` (${download.queue} before it)` : ""}`
       : download.status === "running" ? `runs${download.progress?.stage ? `: ${download.progress.stage}` : ""}` : "";
     if (now && now !== said) { said = now; log(`  the download ${now} …`); }
     if (Date.now() - began > LONGEST_MS) {
       await giveUp(id);
-      throw new Error("The download did not end in three hours and was cancelled. Fetch less at a time.");
+      throw Object.assign(new Error("The download did not end in three hours and was cancelled. Fetch less at a time."), { reason: "timeout" });
     }
     await sleep(LOOK_MS);
   }
@@ -133,7 +135,7 @@ export async function save(download, n, file) {
     for (let first = 0; first < told.bytes || first === 0; first += PIECE) {
       const last = Math.min(first + PIECE, told.bytes) - 1;
       const res = await call("GET", told.path, { headers: told.bytes ? { range: `bytes=${first}-${last}` } : {} });
-      if (res.status !== 206 && res.status !== 200) throw new Error(await sentence(res));
+      if (res.status !== 206 && res.status !== 200) throw await refusal(res);
       const bytes = Buffer.from(await res.arrayBuffer());
       fs.writeSync(out, bytes);
       hash.update(bytes);

@@ -24,7 +24,7 @@ Your folder: `footage/<name>/`, `<name>` one short slug of the subject.
 
 Node 20+, ffmpeg and curl. yt-dlp from the PATH, else the tool gets its own copy once into `~/.cache/agentitos/` (the one thing it fetches by itself, as clips does). No model, no key. When something else is missing, say so in one sentence; never install it.
 
-YouTube turns a machine in a data centre away ("Sign in to confirm you're not a bot"): the search still answers, the download does not. A proxy for the downloads is the machine's secret `YT_PROXY`; `node <skill>/tools/footage.mjs proxy` says whether one is saved. When a download from YouTube is wanted and none is, put a password field into your answer and say what it is for; never ask for it in the chat, never print it:
+YouTube turns a machine in a data centre away ("Sign in to confirm you're not a bot"): the search still answers, the download does not. On a machine of storrito.ai's the downloads go through storrito.ai instead, billed to the organisation's balance by their bytes: `node <skill>/tools/footage.mjs proxy` says so, and then no proxy is needed and none is ever asked for. On any other machine a proxy for the downloads is the machine's secret `YT_PROXY`, and the same command says whether one is saved. When a download from YouTube is wanted, the command says that none is saved and nothing of storrito.ai's downloads, put a password field into your answer and say what it is for; never ask for it in the chat, never print it:
 
 ```hiccup
 [:div
@@ -52,7 +52,7 @@ node <skill>/tools/footage.mjs fetch footage/<name> <source> [<source> …]
 
 A source is a YouTube id or link, a direct link to a video file (a maker's press page, an agency), or a file (`uploads/<file>`). YouTube comes up to 1080p, one after the other. Every source gets a line: `ok`, `skip` (already there), `FAIL` with why, or `not tried`.
 
-Exit 4 ends the YouTube part of the job; the files and links of the same call are fetched all the same. `BOTCHECK`: YouTube turned the download away (through a saved proxy after three tries, without one at once). `PROXY`: the saved proxy itself refused; tell the person that it needs a look. Either way stop downloading from YouTube now, go on with what came, a file or a direct link, or say that there is no footage. Never a loop of retries, never another way in.
+Exit 4 ends the YouTube part of the job; the files and links of the same call are fetched all the same. `BOTCHECK`: YouTube turned the download away (through a saved proxy after three tries, without one at once). `PROXY`: the saved proxy itself refused; tell the person that it needs a look. `BALANCE` (a machine of storrito.ai's): the organisation's balance is used up; pass the line before it on, which says where it is topped up. Either way stop downloading from YouTube now, go on with what came, a file or a direct link, or say that there is no footage. Never a loop of retries, never another way in.
 
 ### 3. Look at it
 

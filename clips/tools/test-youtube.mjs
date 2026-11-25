@@ -119,8 +119,8 @@ test("a file that arrives differently than told is no file", async () => {
 
 test("downloads that are off on the site are null; a refusal and a failed download are their sentence", async () => {
   assert.equal(await fetched({ video: "OFFoffOFFof", kind: "info" }), null);
-  await assert.rejects(fetched({ video: "BROKEbroke1", kind: "info" }), /balance is 0\.00 USD/);
-  await assert.rejects(fetched({ video: "PRIVATEpriv", kind: "audio" }), /The video is private/);
+  await assert.rejects(fetched({ video: "BROKEbroke1", kind: "info" }), (e) => /balance is 0\.00 USD/.test(e.message) && e.reason === "balance");
+  await assert.rejects(fetched({ video: "PRIVATEpriv", kind: "audio" }), (e) => /The video is private/.test(e.message) && e.reason === "private");
 });
 
 // episode.mjs as a program, as the agent runs it: without OpenRouter, so the words are the captions
