@@ -27,6 +27,14 @@
 // the proxy itself refuses, no further YouTube source is tried: the other sources are still
 // fetched, then the tool says BOTCHECK (or PROXY) and ends with exit 4.
 //
+// On a machine of storrito.ai's a YouTube source comes through storrito.ai's downloads instead
+// (lib/youtube.mjs, the connection sai-youtube-… at the Sprites gateway): no proxy is saved on
+// such a machine, and none is read. A download is billed to the organisation's balance by its
+// bytes. A refusal there is one sentence; after a bot check on every way storrito.ai has, or a
+// balance that is used up, no further YouTube source is tried, and the tool says BOTCHECK (or
+// BALANCE) and ends with exit 4. Where the downloads are off on the site the tool goes on as on
+// any other machine: its own yt-dlp, through the saved proxy when there is one.
+//
 // yt-dlp: the one on the PATH, else a copy downloaded once into ~/.cache/agentitos/ (as clips).
 // Every step says what it did and what to do next; an error is one sentence, exit 1.
 
@@ -34,6 +42,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { downloads, fetched, save, giveUp } from "./lib/youtube.mjs";
 
 const USAGE = "Usage: footage.mjs search \"<topic>\" … [--n 8] [--delay 6] [--json] | fetch <dir> <source> … | look <dir> | strip <dir> <stem> <from> <to> [<out.jpg>] | proxy";
 const fail = (msg, code = 1) => { console.log(msg); process.exit(code); };
@@ -250,7 +259,27 @@ function youtubeId(s) {
 }
 const isYoutube = (s) => { try { return /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(new URL(s).hostname); } catch { return false; } };
 
-function fetchSources(args) {
+// A YouTube video through storrito.ai's downloads: the whole video with at most 1080 lines into
+// <dir>/<stem>.mp4, and its facts beside it under the names yt-dlp gives them (FACTS). Answers
+// { ok, p }, { off } when the downloads are off on the site, or { why, reason }: the sentence to
+// print and the word behind it.
+async function throughDownloads(id, dir, stem) {
+  let got;
+  try { got = await fetched({ video: id, kind: "video", height: 1080 }, log); } catch (e) { return { why: e.message, reason: e.reason }; }
+  if (!got) return { off: true };
+  const out = path.join(dir, `${stem}.mp4`);
+  try { await save(got, 0, out); } catch (e) { await giveUp(got.id); return { why: e.message, reason: e.reason }; }
+  await giveUp(got.id);
+  const p = probe(out);
+  if (!p) { fs.rmSync(out, { force: true }); return { why: "what came is no video" }; }
+  const facts = { id, title: got.title, channel: got.channel, uploader: got.uploader, channel_url: got.channel_url,
+    webpage_url: got.webpage_url || `https://www.youtube.com/watch?v=${id}`, upload_date: got.upload_date, duration: got.seconds,
+    view_count: got.view_count, license: got.license, heatmap: got.heatmap };
+  fs.writeFileSync(path.join(dir, `${stem}.info.json`), JSON.stringify(Object.fromEntries(FACTS.filter((k) => facts[k] != null).map((k) => [k, facts[k]]))));
+  return { ok: true, p };
+}
+
+async function fetchSources(args) {
   const { pos } = parse(args);
   const [dirArg, ...sources] = pos;
   if (!dirArg || !sources.length) fail(`Name the folder and the sources: fetch footage/<name> <file | link | YouTube id> … ${USAGE}`);
@@ -267,6 +296,8 @@ function fetchSources(args) {
     }
   };
   let got = 0, refused = false, firstYoutube = true;
+  // storrito.ai's downloads, where this machine has them; asked of the gateway only for a YouTube source
+  let through = sources.some((s) => !(fs.existsSync(s) && fs.statSync(s).isFile()) && youtubeId(s)) ? Boolean(await downloads()) : false;
   for (const s of sources) {
     // a file of the person's
     if (fs.existsSync(s) && fs.statSync(s).isFile()) {
@@ -285,6 +316,17 @@ function fetchSources(args) {
       const stem = `yt_${id}`, out = path.join(dir, `${stem}.mp4`);
       if (fs.existsSync(out)) { console.log(`skip ${stem}: already there`); got++; continue; }
       if (refused) { console.log(`not tried: ${stem} (the YouTube download before it did not get through)`); continue; }
+      if (through) {
+        const r = await throughDownloads(id, dir, stem);
+        if (r.ok) { console.log(`ok   ${stem} ${r.p.height}p ${clock(r.p.duration)} (through storrito.ai's downloads)`); got++; continue; }
+        if (!r.off) {
+          console.log(`FAIL ${stem}: ${String(r.why).slice(0, 200)}`);
+          if (["bot", "exits"].includes(r.reason)) refused = "downloads";
+          else if (r.reason === "balance") refused = "balance";
+          continue;
+        }
+        through = false;   // off on the site: this machine's own yt-dlp from here on
+      }
       const via = proxy();
       if (!firstYoutube) sleep(15);   // one after the other, with a pause
       firstYoutube = false;
@@ -324,6 +366,14 @@ function fetchSources(args) {
   if (got) console.log(`${got} source(s) in ${rel(dir)}. Next: node ${self()} look ${rel(dir)}, then look at every sheet.`);
   if (refused === "proxy-down") {
     console.log("PROXY: the saved proxy does not let the download through to YouTube (it refused the connection itself). Do not try again now: go on with the sources that are there, a file or a direct link, and tell the person that the proxy needs a look.");
+    process.exit(4);
+  }
+  if (refused === "balance") {
+    console.log("BALANCE: the organisation's balance is used up, so storrito.ai makes no YouTube download (the line above says where it is topped up). Do not try again before it is: go on with the sources that are there, a file or a direct link, and pass the sentence on.");
+    process.exit(4);
+  }
+  if (refused === "downloads") {
+    console.log("BOTCHECK: YouTube turned the download away on every way storrito.ai has to it. Do not try again now and do not look for another way in: go on with the sources that are there, a file or a direct link, or leave it and say so.");
     process.exit(4);
   }
   if (refused) {
@@ -420,12 +470,14 @@ function strip(args) {
 const [command, ...rest] = process.argv.slice(2);
 try {
   if (command === "search") search(rest);
-  else if (command === "fetch") fetchSources(rest);
+  else if (command === "fetch") await fetchSources(rest);
   else if (command === "look") look(rest);
   else if (command === "strip") strip(rest);
-  else if (command === "proxy") console.log(proxy()
-    ? "A proxy for YouTube downloads is saved."
-    : "No proxy is saved: YouTube downloads go out from this machine itself (YT_PROXY in the environment, or the machine's secret of that name, sets one).");
+  else if (command === "proxy") console.log((await downloads())
+    ? "YouTube downloads go through storrito.ai's downloads on this machine: no proxy is needed, and none is read."
+    : proxy()
+      ? "A proxy for YouTube downloads is saved."
+      : "No proxy is saved: YouTube downloads go out from this machine itself (YT_PROXY in the environment, or the machine's secret of that name, sets one).");
   else fail(USAGE);
 } catch (e) {
   fail(`It did not work: ${String(e?.message || e).split("\n")[0]}`);

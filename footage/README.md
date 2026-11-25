@@ -41,7 +41,11 @@ Beside each YouTube source lies `<stem>.info.json` with the facts kept (id, titl
 
 ## YouTube from a server
 
-YouTube answers a download from a data centre's address with "Sign in to confirm you're not a bot", often from the first call (measured on a Sprite, 2026-11-12: the search answered, every download was refused, also with a PO-token provider). A proxy with a household or mobile address gets the same video a browser would:
+YouTube answers a download from a data centre's address with "Sign in to confirm you're not a bot", often from the first call (measured on a Sprite, 2026-11-12: the search answered, every download was refused, also with a PO-token provider). A proxy with a household or mobile address gets the same video a browser would.
+
+**On a machine of storrito.ai's no proxy is saved, and none is read.** Where the Sprites gateway has the connection `sai-youtube-…`, a YouTube source comes through storrito.ai's downloads (`tools/lib/youtube.mjs`): storrito.ai fetches the video through a way out that YouTube takes and hands the file on, the whole video with at most 1080 lines and its facts under the names yt-dlp gives them, billed to the organisation's balance by its bytes. A refusal is one sentence. After a bot check on every way storrito.ai has, or a balance that is used up, no further YouTube source of the call is tried, and the tool prints `BOTCHECK` or `BALANCE` and ends with exit 4. Where those downloads are off on the site the tool goes on as on any other machine. `node --test tools/test-youtube.mjs` holds it against a stand-in for storrito.ai's routes.
+
+On any other machine:
 
 - `YT_PROXY` in the environment, else the machine's secret of that name: [rragent](https://github.com/storrito/rragent) keeps a machine's secrets in `secrets.json` of its folder, typed by the person into a password field of the page and never shown to a bot; the tool takes the first such file above the working directory that holds `YT_PROXY` (`FOOTAGE_SECRETS` names another).
 - Only downloads go through it, never the search: a proxy is paid by the gigabyte.

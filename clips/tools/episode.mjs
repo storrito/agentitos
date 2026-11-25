@@ -36,6 +36,14 @@
 // YouTube (no speakers): without OpenRouter, or when the transcription fails, and then fetch says
 // so in its last line. A key that OpenRouter turns away ends fetch at once: nothing after it would
 // work. yt-dlp: the one on the PATH, else a copy downloaded once into ~/.cache/agentitos/.
+//
+// A YouTube link on a machine of storrito.ai's goes through storrito.ai's downloads instead of
+// this machine's yt-dlp (lib/youtube.mjs): YouTube turns a Sprite's own address away much of the
+// time. The facts, the sound, the captions and every cut are then a download each, billed to the
+// organisation's balance by its bytes; a refusal (the balance is used up, the video is private)
+// ends the tool with its sentence. A cut comes with at most 1440 lines unless --height, or
+// CLIPS_HEIGHT in the environment, says 720, 1080 or 2160. Where the downloads are off, and for a
+// link that is not YouTube's, yt-dlp runs here as before.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -43,6 +51,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { transcribeFile, transcribeTool, NEEDS_TRANSCRIBE } from "./lib/transcribe.mjs";
 import { duration } from "./lib/media.mjs";
+import { videoId, downloads, fetched, save, giveUp } from "./lib/youtube.mjs";
 import { openrouter, keyRejected, rejectedIn, REJECTED } from "./lib/openrouter.mjs";
 import { KINDS, MAX_SECONDS, arrange, momentsPrompt, listing } from "./lib/moments.mjs";
 import { NAMES_MODEL, NAMES_SCHEMA, LOOK_SCHEMA, pageOf, pageSources, ownTokens, entriesOf, applyNames, namesPrompt, namesListing, lookItems, lookPrompt, applyLook } from "./lib/names.mjs";
@@ -147,12 +156,19 @@ function ownTrack(info, lang) {
   const own = Object.keys(info.subtitles || {}).filter((k) => k !== "live_chat");
   return own.find((k) => lang && k.split("-")[0] === lang) || null;
 }
-function ownCaptions(info, url, lang) {
+async function ownCaptions(info, url, lang, video = null) {
   const track = ownTrack(info, lang);
   if (!track) return null;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-own-"));
   try {
-    download(["--skip-download", "--write-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "own"), url]);
+    if (video) {
+      const got = await fetched({ video, kind: "captions", track }, log);
+      if (!got) throw new Error("storrito.ai's downloads are off");
+      await save(got, 0, path.join(tmp, "own.json3"));
+      await giveUp(got.id);
+    } else {
+      download(["--skip-download", "--write-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "own"), url]);
+    }
     const file = fs.readdirSync(tmp).find((f) => f.endsWith(".json3"));
     return file ? captionWords(path.join(tmp, file)) : null;
   } catch (e) {
@@ -213,16 +229,63 @@ async function fetchFile(file, dir, names = true) {
   if (names) await namesAfterFetch(dir);
 }
 
+// ---------------------------------------------------------------- storrito.ai's downloads
+// A download of storrito.ai's once it is done; null when the downloads are off on the site. A
+// refusal ends the tool with its sentence, which the agent passes on.
+async function asked(job) {
+  try { return await fetched(job, log); } catch (e) { return fail(e.message); }
+}
+
+// The facts of a download as yt-dlp's -J names them, which the rest of fetch reads.
+function factsOf(video, got) {
+  const keyed = (keys) => Object.fromEntries((keys || []).map((k) => [k, []]));
+  return {
+    id: video, webpage_url: got.webpage_url || `https://www.youtube.com/watch?v=${video}`, title: got.title, channel: got.channel, uploader: got.uploader,
+    duration: got.seconds, language: got.language, description: got.description, chapters: got.chapters, tags: got.tags, creators: got.creators,
+    automatic_captions: keyed(got.captions?.automatic), subtitles: keyed(got.captions?.own),
+  };
+}
+
+// The stretch through storrito.ai's downloads: fetched with two seconds of air on both sides,
+// since a download begins where the video has a keyframe, then cut anew to the word on this
+// machine, as a file's stretch is (held against the cut of this machine's own yt-dlp on
+// 2026-11-25: the same frames). 1440 lines unless --height says otherwise: a third of that wide
+// shot is 810 pixels wide, and 4K costs two and a half times the bytes (30 s took 39 MB at 1440
+// lines, 95 MB at 2160, 24 MB at 1080). A way out through a modem gives 1080 lines at most; the
+// cut is what came. False when the downloads are off.
+const AIR = 2;
+async function cutThroughDownloads(video, from, to, base, height) {
+  const first = Math.max(0, Math.floor(from) - AIR), last = Math.ceil(to) + AIR;
+  const got = await asked({ video, kind: "sections", sections: [[first, last]], height });
+  if (!got) return false;
+  const raw = `${base}.raw.mp4`;
+  try { await save(got, 0, raw); } catch (e) { fail(e.message); }
+  await giveUp(got.id);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", (from - first).toFixed(2), "-i", raw, "-t", (to - from).toFixed(2),
+    "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", `${base}.mp4`], { stdio: ["ignore", "inherit", "inherit"] });
+  fs.rmSync(raw, { force: true });
+  return true;
+}
+
 async function fetchEpisode(url, dir, ...rest) {
   if (!url || !dir || rest.some((r) => r !== "--no-names")) fail("episode.mjs fetch <url|file> <dir> [--no-names]");
   const names = !rest.includes("--no-names");
   fs.mkdirSync(dir, { recursive: true });
   if (isFile(url)) return fetchFile(path.resolve(url), dir, names);
-  log("episode: reading the video's facts …");
+  // a YouTube link on a machine with storrito.ai's downloads goes through them; `video` turns
+  // null when they are off on the site, and this machine's yt-dlp does it as before
+  let video = (await downloads()) ? videoId(url) : null;
+  let info;
+  if (video) {
+    log("episode: reading the video's facts through storrito.ai's downloads …");
+    const got = await asked({ video, kind: "info" });
+    if (got) { await giveUp(got.id); info = factsOf(video, got); } else video = null;
+  }
+  if (!video) log("episode: reading the video's facts …");
   // the page's facts: without them (YouTube refused them three times) the sound may still come;
   // then there is no title, no description and no page for the names
-  let info;
-  try { info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url])); } catch (e) {
+  if (!info) try { info = JSON.parse(download(["-J", "--skip-download", "--no-playlist", url])); } catch (e) {
     log(`episode: YouTube gave no facts of the video (${String(e.stderr || e.message).trim().split("\n").pop()}); the sound without them …`);
     const id = (String(url).match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/) || [])[1] || null;
     info = { webpage_url: url, id, title: id ? `YouTube ${id}` : url, unread: true };
@@ -246,7 +309,15 @@ async function fetchEpisode(url, dir, ...rest) {
       // shorter, but Gemini's speakers fell apart there, nine to thirteen voices where the full
       // rate heard four (measured 2026-10-19, when Gemini wrote the episode down; Scribe's at the
       // lower rate are not measured)
-      download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
+      if (video) {
+        // the downloads give the full rate too, also through a modem (measured 2026-11-25)
+        const got = await fetched({ video, kind: "audio" }, log);
+        if (!got) throw new Error("storrito.ai's downloads are off");
+        await save(got, 0, path.join(dir, "audio.m4a"));
+        await giveUp(got.id);
+      } else {
+        download(["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "-o", path.join(dir, "audio.%(ext)s"), url]);
+      }
       audio = fs.readdirSync(dir).find((f) => /^audio\./.test(f) && !f.endsWith(".part"));
     } catch (e) {
       // the captions still give every word and its time; the speakers come with each cut clip
@@ -273,7 +344,15 @@ async function fetchEpisode(url, dir, ...rest) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "episode-"));
     if (!track) fail("No sound from YouTube and no captions: nothing to write the words down from. Try again in a while.");
     // one track only: YouTube answers a second one with 429 now and then
-    download(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "subs"), url]);
+    if (video) {
+      const got = await asked({ video, kind: "captions", track });
+      if (got) {
+        try { await save(got, 0, path.join(tmp, "subs.json3")); } catch (e) { fail(e.message); }
+        await giveUp(got.id);
+      }
+    } else {
+      download(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track, "--sub-format", "json3", "--no-playlist", "-o", path.join(tmp, "subs"), url]);
+    }
     const file = fs.readdirSync(tmp).find((f) => f.endsWith(".json3"));
     if (!file) fail("No sound from YouTube and no captions: nothing to write the words down from. Try again in a while.");
     words = captionWords(path.join(tmp, file));
@@ -287,7 +366,7 @@ async function fetchEpisode(url, dir, ...rest) {
   }, words, note, cost);
   // the page as a whole, for the names: the description in full, the chapters, the tags, and what
   // the video's own captions write that the transcription does not
-  const own = info.unread ? null : ownCaptions(info, url, lang);
+  const own = info.unread ? null : await ownCaptions(info, url, lang, video);
   const kept = JSON.parse(fs.readFileSync(path.join(dir, "words.json"), "utf8"));
   fs.writeFileSync(path.join(dir, "page.json"), JSON.stringify(pageOf(info.unread ? {} : info, own ? ownTokens(own, kept) : null), null, 1));
   if (!or) return;
@@ -407,8 +486,14 @@ async function namesAfterFetch(dir) {
 }
 
 // ---------------------------------------------------------------- cut
-function cut(dir, a, b, c) {
-  if (!dir || !a || !b) fail("episode.mjs cut <dir> <first>-<last> <clip.mp4>  or  cut <dir> <from> <to> <clip.mp4>");
+async function cut(dir, ...rest) {
+  // --height N, else CLIPS_HEIGHT (clips.mjs prepare runs this tool without flags), else 1440:
+  // the most lines of a cut that comes through storrito.ai's downloads
+  const flag = rest.indexOf("--height");
+  const height = flag === -1 ? Number(process.env.CLIPS_HEIGHT || 1440) : Number(rest.splice(flag, 2)[1]);
+  if (![720, 1080, 1440, 2160].includes(height)) fail("The height of a cut (--height, or CLIPS_HEIGHT) is 720, 1080, 1440 or 2160.");
+  const [a, b, c] = rest;
+  if (!dir || !a || !b) fail("episode.mjs cut <dir> <first>-<last> <clip.mp4> [--height N]  or  cut <dir> <from> <to> <clip.mp4> [--height N]");
   const episode = JSON.parse(fs.readFileSync(path.join(dir, "episode.json"), "utf8"));
   let from, to, out;
   const range = /^(\d+)-(\d+)$/.exec(a);
@@ -437,6 +522,12 @@ function cut(dir, a, b, c) {
       "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "-1", "-vf", "scale=-2:'min(2160,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
       "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", `${base}.mp4`], { stdio: ["ignore", "inherit", "inherit"] });
     fs.writeFileSync(`${base}.json`, JSON.stringify({ file: episode.file, from: +from.toFixed(2), to: +to.toFixed(2) }));
+    console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: the skill that edits it (kinetic-lyrics: short.mjs new <short> ${base}.mp4).`);
+    return;
+  }
+  const video = (await downloads()) ? videoId(episode.url) : null;
+  if (video && (await cutThroughDownloads(video, from, to, base, height))) {
+    fs.writeFileSync(`${base}.json`, JSON.stringify({ url: episode.url, from: +from.toFixed(2), to: +to.toFixed(2) }));
     console.log(`${base}.mp4: ${(to - from).toFixed(1)} s from ${mmss(from)}. Next: the skill that edits it (kinetic-lyrics: short.mjs new <short> ${base}.mp4).`);
     return;
   }
@@ -597,7 +688,7 @@ async function moments(dir, ...rest) {
 
 const [command, ...args] = process.argv.slice(2);
 if (command === "fetch") await fetchEpisode(...args);
-else if (command === "cut") cut(...args);
+else if (command === "cut") await cut(...args);
 else if (command === "moments") await moments(...args);
 else if (command === "names") await names(...args);
-else fail(`episode.mjs fetch <url|file> <dir> [--no-names] | ${NAMES_USAGE.replace("episode.mjs ", "")} | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4>`);
+else fail(`episode.mjs fetch <url|file> <dir> [--no-names] | ${NAMES_USAGE.replace("episode.mjs ", "")} | moments <dir> [--count N] [--max-seconds N] | cut <dir> <first>-<last> <clip.mp4> [--height N]`);
